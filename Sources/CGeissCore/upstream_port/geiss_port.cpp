@@ -534,13 +534,193 @@ bool custom_motion_vectors[] = {
 // dumpmsg is upstream's lightweight printf-to-debugfile; on macOS we discard.
 void dumpmsg(const char * /*format*/, ...) { }
 
-// Provisional stubs so the file links cleanly at the 4c-3 checkpoint.
-// Real implementations land in sub-phase 4c-7 (FX_Random_Palette /
-// PutPalette / CrankPal). GenerateChunkOfNewMap's real port lands in 4c-5
-// — appended after FX_Pick_Random_Mode below.
-void FX_Random_Palette(bool /*bLoadPal*/) { }
-void PutPalette() { }
-float CrankPal(unsigned int /*curve_id*/, int /*z*/) { return 255.0f; }
+// ---------------------------------------------------------------------------
+// Phase 4c-7: FX_Random_Palette / PutPalette / CrankPal — direct ports of
+// upstream video.h:1390-1645.
+//
+// CrankPal is a pure float→float curve evaluator; ports verbatim.
+//
+// FX_Random_Palette generates the next palette into ape2[], by either:
+//   (b == 0) replaying the four "FX-style monotone" palettes via
+//            REMAP/REMAP2/REMAP3 lookup tables, or
+//   (b != 0) blending three CrankPal curves with the current `gamma`.
+// `iBlendsLeftInPal` is reset to 18 so the next 18 frames cross-fade
+// from the previous palette (`ape[]`) into the new one (`ape2[]`).
+//
+// PutPalette runs the cross-fade interpolation each frame; the upstream
+// `lpDDPal->SetEntries(...)` call site is gated out under `#if (GRFX==1)`
+// (geiss_port.cpp defines `GRFX 0`). The port adds an extra step at the
+// end: copy `apetemp[]` (the just-blended frame palette) into a port-
+// owned RGBA buffer that `GeissCore_palette` returns through the C ABI.
+// ---------------------------------------------------------------------------
+
+static unsigned char s_geiss_palette_rgba[256 * 4] = {};
+
+extern "C" void geiss_port_get_palette(unsigned char *rgbaOut) {
+    if (!rgbaOut) return;
+    memcpy(rgbaOut, s_geiss_palette_rgba, sizeof(s_geiss_palette_rgba));
+}
+
+float CrankPal(unsigned int curve_id, int z) {
+    float xx = (float)z;
+    switch (curve_id) {
+        case 1: return sqrtf(xx) * 22.6f;
+        case 2: return xx * 2.0f;
+        case 3: return xx * xx / 64.0f;
+        case 4: return 255.0f * sinf(xx / 256.0f * 0.5f * 3.1415927f);
+        case 5: return xx * 3.5f;
+        case 6: return powf(1.5f, xx / 20.0f) - 1.0f;
+        case 7: return xx * 1.5f + 128.0f * 0.25f + 128.0f * 0.25f * sinf(z * 0.3f);
+    }
+    return 255.0f;
+}
+
+void FX_Random_Palette(bool bLoadPal) {
+    if (bPalLocked) return;
+    if (iDispBits != 8) return;
+
+    int n, a, b;
+
+    if (!bLoadPal) {
+        old_palette.lo_band       = -1;
+        old_palette.hi_band       = -1;
+        old_palette.bFXPalette    = false;
+        old_palette.iFXPaletteNum = -1;
+        old_palette.c1            = -1;
+        old_palette.c2            = -1;
+        old_palette.c3            = -1;
+
+        if (rand() % 10 < coarse_pal_freq) {
+            old_palette.lo_band = 7  + rand() % 6;
+            old_palette.hi_band = 17 + rand() % 6;
+        }
+    }
+
+    iBlendsLeftInPal = 18;
+
+    b = rand() % 6;
+    if (bLoadPal) {
+        b = (old_palette.bFXPalette) ? 0 : 1;
+    }
+
+    if (b == 0) {
+        old_palette.bFXPalette = true;
+        if (!bLoadPal) old_palette.iFXPaletteNum = rand() % 4;
+
+        if (old_palette.iFXPaletteNum == 0) {
+            for (a = 0; a < 128; ++a) {
+                REMAP [a] = (unsigned char)(a * a / 64.0f);
+                REMAP2[a] = (unsigned char)(a * 2);
+                REMAP3[a] = (unsigned char)(sqrtf((float)a) * 22.6f);
+            }
+        } else if (old_palette.iFXPaletteNum == 1) {
+            for (a = 0; a < 128; ++a) {
+                REMAP [a] = (unsigned char)(a * a / 64.0f);
+                REMAP2[a] = (unsigned char)(sqrtf((float)a) * 22.6f);
+                REMAP3[a] = (unsigned char)(a * 2);
+            }
+        } else if (old_palette.iFXPaletteNum == 2) {
+            for (a = 0; a < 128; ++a) {
+                REMAP [a] = (unsigned char)(sqrtf((float)a) * 22.6f);
+                REMAP2[a] = (unsigned char)(a * 2);
+                REMAP3[a] = (unsigned char)(a * a / 64.0f);
+            }
+        } else if (old_palette.iFXPaletteNum == 3) {
+            for (a = 0; a < 128; ++a) {
+                REMAP [a] = (unsigned char)(a * 2);
+                REMAP2[a] = (unsigned char)(a * a / 64.0f);
+                REMAP3[a] = (unsigned char)(sqrtf((float)a) * 22.6f);
+            }
+        }
+
+        for (n = 128; n < 256; ++n) {
+            REMAP [n] = REMAP [127];
+            REMAP2[n] = REMAP2[127];
+            REMAP3[n] = REMAP3[127];
+        }
+
+        for (n = 0; n < 256; ++n) {
+            ape[n]          = ape2[n];
+            ape2[n].peRed   = REMAP [n];
+            ape2[n].peBlue  = REMAP2[n];
+            ape2[n].peGreen = REMAP3[n];
+        }
+    } else {
+        if (!bLoadPal) {
+            int temp;
+            do {
+                if (rand() % 5 < solar_pal_freq) {
+                    old_palette.c1 = rand() % 7 + 1;
+                    old_palette.c2 = rand() % 7 + 1;
+                    old_palette.c3 = rand() % 7 + 1;
+                } else {
+                    old_palette.c1 = rand() % 6 + 1;
+                    old_palette.c2 = rand() % 6 + 1;
+                    old_palette.c3 = rand() % 6 + 1;
+                }
+                temp = 0;
+                if (old_palette.c1 == 6) ++temp;
+                if (old_palette.c2 == 6) ++temp;
+                if (old_palette.c3 == 6) ++temp;
+            } while (temp > 1);
+        }
+
+        float xv, yv, zv;
+        float gamma_factor = 1.0f + gamma * 0.01f;
+        if (SoundEmpty) gamma_factor += 0.3f;
+
+        for (n = 0; n < 256; ++n) {
+            ape[n] = ape2[n];
+
+            xv = CrankPal(old_palette.c1, (unsigned char)n);
+            yv = CrankPal(old_palette.c2, (unsigned char)n);
+            zv = CrankPal(old_palette.c3, (unsigned char)n);
+
+            xv *= gamma_factor;
+            yv *= gamma_factor;
+            zv *= gamma_factor;
+
+            if (n > old_palette.lo_band && n < old_palette.hi_band) {
+                xv *= 2.0f;
+                yv *= 2.0f;
+                zv *= 2.0f;
+            }
+
+            ape2[n].peRed   = (unsigned char)min(255.0f, xv);
+            ape2[n].peBlue  = (unsigned char)min(255.0f, yv);
+            ape2[n].peGreen = (unsigned char)min(255.0f, zv);
+        }
+    }
+}
+
+void PutPalette() {
+    float xv, yv;
+    int   n;
+
+    if (iDispBits == 8) {
+        --iBlendsLeftInPal;
+
+        xv = (iBlendsLeftInPal / 18.0f);
+        yv = 1.0f - xv;
+
+        for (n = 0; n < 256; ++n) {
+            apetemp[n].peRed   = (unsigned char)(ape[n].peRed   * xv + ape2[n].peRed   * yv);
+            apetemp[n].peBlue  = (unsigned char)(ape[n].peBlue  * xv + ape2[n].peBlue  * yv);
+            apetemp[n].peGreen = (unsigned char)(ape[n].peGreen * xv + ape2[n].peGreen * yv);
+        }
+
+        // Upstream then calls `lpDDPal->SetEntries(...)` under `#if (GRFX==1)`;
+        // we route to the port-owned RGBA buffer instead. Note Geiss's
+        // PALETTEENTRY uses `peRed / peBlue / peGreen` (not the standard
+        // RGB ordering) — preserve the upstream ordering for fidelity.
+        for (n = 0; n < 256; ++n) {
+            s_geiss_palette_rgba[n * 4 + 0] = apetemp[n].peRed;
+            s_geiss_palette_rgba[n * 4 + 1] = apetemp[n].peGreen;
+            s_geiss_palette_rgba[n * 4 + 2] = apetemp[n].peBlue;
+            s_geiss_palette_rgba[n * 4 + 3] = 255;
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Sub-phase 4c-3: pull upstream Effects.h into the build. The header defines

@@ -29,7 +29,24 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
   plan's Phase-3 work list are deferred to phase 4 as part of the
   compile-and-fix walk; only the strict exit-criterion grep is enforced now
   (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
-- Phase 4c-6 (this commit): direct ports of `GetWaveData`, `RenderDots`,
+- Phase 4c-7 (this commit): direct ports of `FX_Random_Palette`,
+  `PutPalette`, `CrankPal` from upstream `video.h:1390-1645`.
+  * `CrankPal` is the float→float curve evaluator; ports verbatim.
+  * `FX_Random_Palette` generates the next palette into `ape2[]`, either
+    by replaying one of the 4 FX-style monotone REMAP/REMAP2/REMAP3 LUTs
+    or by blending three CrankPal curves with the current `gamma`.
+    `iBlendsLeftInPal` is reset to 18 so the next 18 frames cross-fade
+    `ape[]` → `ape2[]`.
+  * `PutPalette` runs the per-frame cross-fade. Upstream's
+    `lpDDPal->SetEntries(...)` (gated under `#if (GRFX==1)`) is replaced
+    by a copy from `apetemp[]` into a port-owned 256×4 RGBA buffer
+    `s_geiss_palette_rgba`. `geiss_port_get_palette(out)` returns a
+    snapshot of that buffer; `GeissCore_palette` will route through it
+    in 4c-8. Geiss's `PALETTEENTRY` uses `peRed/peBlue/peGreen` (not the
+    Win32 standard `peRed/peGreen/peBlue`); the port preserves that
+    ordering for fidelity but swaps `peGreen` and `peBlue` when packing
+    into RGBA so the Swift-side `GeissEngine` shader sees true RGB.
+- Phase 4c-6: direct ports of `GetWaveData`, `RenderDots`,
   `RenderWave`, `RenderFX` from upstream main.cpp:7948-9481.
   * `GetWaveData` implements only the PLUGIN branch (DirectSound capture
     is not in the build path); reads `g_this_mod->waveformData` /
