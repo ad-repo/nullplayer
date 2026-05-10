@@ -84,6 +84,9 @@ void RenderFX(void);
 void GetWaveData(void);
 void RenderDots(unsigned char *VS1);
 void RenderWave(unsigned char *VS1);
+void FX_Random_Palette(bool bLoadPal);
+void PutPalette(void);
+extern int iBlendsLeftInPal;
 
 extern "C" {
     void geiss_port_init_module(void);
@@ -156,6 +159,18 @@ GeissCore *GeissCore_create(int width, int height) {
     if (!FX_Init()) {
         delete core;
         return nullptr;
+    }
+
+    // Upstream's `doInit()` (Win32 surface, not in the build) seeds the
+    // initial palette before the first frame; `FX_Init`'s rush-map loop
+    // runs at intframe==0, so the palette-refresh path inside
+    // `GenerateChunkOfNewMap` (gated `intframe > 0`) is skipped. Force a
+    // palette generation here, then run the 18-frame cross-fade pump
+    // synchronously so the first call to `GeissCore_palette` returns
+    // something other than all-black.
+    FX_Random_Palette(false);
+    while (iBlendsLeftInPal > 0) {
+        PutPalette();
     }
     return core;
 }
