@@ -412,6 +412,15 @@ float CrankPal(unsigned int curve_id, int z);
 void  GenerateChunkOfNewMap(bool bLoadPreset = false, int iPresetNum = 0);
 void  FX_Pick_Random_Mode();
 void  dumpmsg(const char *format, ...);
+float AdjustRateToFPS(float per_frame_decay_rate_at_fps1, float fps1, float actual_fps);
+
+// Direct port of upstream main.cpp:548 — converts a per-frame decay rate
+// authored at one FPS into the equivalent rate at the running FPS.
+inline float AdjustRateToFPS(float per_frame_decay_rate_at_fps1, float fps1, float actual_fps) {
+    float per_second_decay_rate_at_fps1 = powf(per_frame_decay_rate_at_fps1, fps1);
+    float per_frame_decay_rate_at_fps2  = powf(per_second_decay_rate_at_fps1, 1.0f / actual_fps);
+    return per_frame_decay_rate_at_fps2;
+}
 
 // ---------------------------------------------------------------------------
 // CModeInfo — direct port of the upstream class (main.cpp:1258-1330). Used
@@ -1514,7 +1523,672 @@ void GenerateChunkOfNewMap(bool bLoadPreset, int iPresetNum) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 4c-5 marker.
+// Phase 4c-6: GetWaveData / RenderDots / RenderWave / RenderFX
+//
+// GetWaveData is the audio-analysis pipeline — level trigger, FFT-based
+// fourier analysis, smoothing, centroid normalisation. Its upstream PLUGIN
+// branch reads from `g_this_mod->waveformData[ch][i]` (8-bit, biased by
+// 128) and `g_this_mod->spectrumData[ch][i]` (8-bit). The port fills those
+// arrays from `GeissAudioState` via `geiss_port_set_pcm` /
+// `geiss_port_set_spectrum` (called by `GeissCore_addPCM` /
+// `GeissCore_setSpectrum`); the PLUGIN branch is then preserved verbatim.
+//
+// RenderDots, RenderWave, and RenderFX are pure visual / DSP code with
+// almost no Win32 surface (a `SetCursor(NULL)` in RenderFX, a `sprintf`
+// of debug text in RenderWave); the port preserves the algorithms
+// line-for-line.
+// ---------------------------------------------------------------------------
+
+extern "C" void geiss_port_set_pcm(const float *samples, int count) {
+    if (!samples || count <= 0) return;
+    const int n = (count > 576) ? 576 : count;
+    // Geiss expects 8-bit samples biased by +128 (Winamp vis convention):
+    // a value of 128 == silence, 0 / 255 == extreme negative / positive.
+    for (int i = 0; i < n; ++i) {
+        float s = samples[i];
+        if (s >  1.0f) s =  1.0f;
+        if (s < -1.0f) s = -1.0f;
+        unsigned char b = (unsigned char)(int)(128.0f + s * 127.0f);
+        s_geiss_stub_module.waveformData[0][i] = b;
+        s_geiss_stub_module.waveformData[1][i] = b;
+    }
+}
+
+extern "C" void geiss_port_set_spectrum(const float *mags, int count) {
+    if (!mags || count <= 0) return;
+    const int n = (count > 576) ? 576 : count;
+    for (int i = 0; i < n; ++i) {
+        float m = mags[i];
+        if (m < 0.0f) m = 0.0f;
+        if (m > 1.0f) m = 1.0f;
+        unsigned char b = (unsigned char)(int)(m * 255.0f);
+        s_geiss_stub_module.spectrumData[0][i] = b;
+        s_geiss_stub_module.spectrumData[1][i] = b;
+    }
+}
+
+extern "C" void geiss_port_init_module(void) {
+    // Wire g_this_mod to the stub module so upstream reads of
+    // `g_this_mod->waveformData[...]` / `spectrumData[...]` work.
+    s_geiss_stub_module.description    = (char *)"NullPlayer-Geiss";
+    s_geiss_stub_module.hwndParent     = nullptr;
+    s_geiss_stub_module.hDllInstance   = nullptr;
+    s_geiss_stub_module.sRate          = 44100;
+    s_geiss_stub_module.nCh            = 2;
+    s_geiss_stub_module.latencyMs      = 0;
+    s_geiss_stub_module.delayMs        = 0;
+    s_geiss_stub_module.spectrumNch    = 2;
+    s_geiss_stub_module.waveformNch    = 2;
+    g_this_mod = &s_geiss_stub_module;
+}
+
+void GetWaveData() {
+    float fDiv   = (1.0f / (64.0f * (640.0f / (float)FXW)));
+    float billy  = volscale * fDiv;
+    int   i;
+
+    if (SoundReady && SoundActive) {
+        // PLUGIN branch — reads waveform / spectrum from g_this_mod.
+        int FXW_DIV_4 = FXW / 4;
+        int x = 0;
+        int y = 5;
+        int v;
+        int old_v;
+
+        if (visMode != spectrum) {
+            y += FXW_DIV_4;
+
+            while (y < (511 - 365 + FXW_DIV_4)) {
+                old_v = ((int)(g_this_mod->waveformData[0][y - 5] ^ 128) - 128);
+                v     = ((int)(g_this_mod->waveformData[0][y]     ^ 128) - 128);
+                if ((abs(v - last_frame_v) <= 1) &&
+                    (last_frame_slope * (v - old_v) >= 0)) {
+                    last_frame_slope = v - old_v;
+                    last_frame_v     = v;
+                    break;
+                }
+                ++y;
+            }
+
+            if (y >= (511 - 365 + FXW_DIV_4)) {
+                y = 5 + FXW_DIV_4;
+                old_v = ((int)(g_this_mod->waveformData[0][y - 5] ^ 128) - 128);
+                v     = ((int)(g_this_mod->waveformData[0][y]     ^ 128) - 128);
+                last_frame_slope = v - old_v;
+                last_frame_v     = v;
+            }
+
+            y -= FXW_DIV_4;
+        }
+
+        if (visMode == spectrum) {
+            __int16 nL, nR;
+            int decamt = 2200;
+            for (x = 0, y = 0; x < BUFSIZE && y < 512; x += 2, ++y) {
+                nL = (((int)(256 - g_this_mod->spectrumData[0][y])) << 10);
+                nR = (((int)(256 - g_this_mod->spectrumData[1][y])) << 10);
+                nL *= (int)(0.4f + 5.6f * (y / 512.0f));
+                nR *= (int)(0.4f + 5.6f * (y / 512.0f));
+                g_SoundBuffer[x]     = (__int16)min((int)nL, g_SoundBuffer[x]     + decamt);
+                g_SoundBuffer[x + 1] = (__int16)min((int)nR, g_SoundBuffer[x + 1] + decamt);
+            }
+        } else {
+            for ( ; x < BUFSIZE && y < 512; x += 2, ++y) {
+                g_SoundBuffer[x]     = (__int16)((((int)(g_this_mod->waveformData[0][y] ^ 128)) - 128) << 8);
+                g_SoundBuffer[x + 1] = (__int16)((((int)(g_this_mod->waveformData[1][y] ^ 128)) - 128) << 8);
+            }
+        }
+
+        // Smoothing + scaling + centroid normalisation, verbatim.
+        float center[2];
+
+        for (i = 0; i < BUFSIZE - 2; ++i)
+            g_fSoundBuffer[i] = 0.8f * g_SoundBuffer[i] + 0.2f * g_SoundBuffer[i + 2];
+
+        for (i = 0; i < BUFSIZE; ++i)
+            g_fSoundBuffer[i] *= billy;
+
+        if (visMode != spectrum) {
+            center[0] = 0;
+            center[1] = 0;
+            for (i = 0; i < BUFSIZE; i += 8) center[0] += g_fSoundBuffer[i];
+            for (i = 1; i < BUFSIZE; i += 8) center[1] += g_fSoundBuffer[i];
+            center[0] /= (float)FXW * 0.125f;
+            center[1] /= (float)FXW * 0.125f;
+            for (i = 0; i < BUFSIZE; i += 2) g_fSoundBuffer[i]     -= center[0];
+            for (i = 1; i < BUFSIZE; i += 2) g_fSoundBuffer[i]     -= center[1];
+        }
+
+        if (iDispBits > 8) {
+            int n;
+            float theta;
+            float a, b;
+            float old_power;
+            float net_power_change = 1.0f;
+
+            for (n = 1; n < FOURIER_DETAIL; ++n) {
+                a = 0;
+                b = 0;
+                float w = 6.28f * (20.0f * powf(2.0f, n / (float)FOURIER_DETAIL * 10.0f) / 44100.0f);
+                for (i = 0; i < 256; ++i) {
+                    theta = w * i;
+                    a += g_fSoundBuffer[i * 2] * cosf(theta);
+                    b += g_fSoundBuffer[i * 2] * sinf(theta);
+                }
+                old_power           = g_power[n];
+                g_power[n]          = sqrtf(a * a + b * b);
+                g_power_smoothed[n] = g_power_smoothed[n] * 0.94f + 0.06f * g_power[n];
+                net_power_change   += fabsf(old_power - g_power[n]);
+            }
+
+            net_power_change /= (float)(iVolumeSum / (intframe + 1));
+            net_power_change *= 0.01f;
+            if (intframe < 50)
+                suggested_damping = 1.0f;
+            else
+                suggested_damping = suggested_damping * 0.98f + net_power_change * 0.02f;
+
+            suggested_damping = 1.0f; // upstream forces this; map damping is disabled
+            debug_param       = suggested_damping;
+        }
+    }
+}
+
+void RenderDots(unsigned char *VS1) {
+    if (SoundReady && SoundActive) {
+        int   peaks = 0, i = 0, high, low;
+        float vol = 0;
+
+        low  = g_SoundBuffer[0];
+        high = g_SoundBuffer[0];
+        i = BUFSIZE - 4;
+        while (i > 0) {
+            low  = min((int)low,  (int)g_SoundBuffer[i]);
+            high = max((int)high, (int)g_SoundBuffer[i]);
+            i -= 4;
+        }
+        vol = (high - low) / 256.0f;
+
+        past_vol_pos          = (past_vol_pos + 1) % PAST_VOL_N;
+        past_vol[past_vol_pos]= current_vol;
+
+        float rate;
+        current_vol = vol;
+        rate = AdjustRateToFPS(0.30f, 30.0f, fps_at_last_mode_switch); avg_vol_narrow = avg_vol_narrow * rate + vol * (1 - rate);
+        rate = AdjustRateToFPS(0.85f, 30.0f, fps_at_last_mode_switch); avg_vol        = avg_vol        * rate + vol * (1 - rate);
+        rate = AdjustRateToFPS(0.96f, 30.0f, fps_at_last_mode_switch); avg_vol_wide   = avg_vol_wide   * rate + vol * (1 - rate);
+        rate = AdjustRateToFPS(0.90f, 30.0f, fps_at_last_mode_switch); avg_peaks      = avg_peaks      * rate + peaks * (1 - rate);
+
+        iVolumeSum += (int)avg_vol;
+
+        g_hit = max(g_hit - 1, -1);
+
+        if (!g_bDisableSongTitlePopups && g_hit == -1 &&
+            (rand() % 7000) < g_random_songtitle_freq * g_random_songtitle_freq * 30.0f / fps_at_last_mode_switch) {
+            g_hit = (int)(g_song_tooltip_frames * fps_at_last_mode_switch / 30.0f);
+            g_title_R = 128 + rand() % 99;
+            g_title_G = 128 + rand() % 99;
+            g_title_B = 128 + rand() % 99;
+        }
+
+        if (effect[NUCLIDE] > 0 && !SoundEmpty) {
+            if (vol > avg_vol_narrow * 1.1f) {
+                int nodes = 3 + rand() % 5;
+                int n;
+                int phase = rand() % 1000;
+                int rad;
+                int x, y, cxv, cyv, str;
+                int val;
+                int r;
+                if (FXW == 320)
+                    r = (int)(2 + 40 * (vol / avg_vol_narrow - 1.1f));
+                else
+                    r = (int)(3 + 40 * (vol / avg_vol_narrow - 1.1f));
+                if (r < 1) r = 1;
+                if (FXW == 320 && r >  7) r = 7;
+                if (FXW != 320 && r > 10) r = 10;
+
+                if (FXW == 320) {
+                    rad = 22 + rand() % 6;
+                } else {
+                    rad = 34 + rand() % 8;
+                    if (FXW > 1024) rad = (int)(rad * FXW / 1024.0f);
+                }
+
+                float crv = 1.0f, cgv = 1.0f, cbv = 1.0f;
+                if (iDispBits > 8) {
+                    int   intfram = intframe + chaser_offset;
+                    float fv = 7 * sinf(intfram * 0.007f + 29) + 5 * cosf(intfram * 0.0057f + 27);
+                    crv = 0.58f + 0.21f * sinf(intfram * gF[0] + 20 - fv) + 0.21f * cosf(intfram * gF[3] + 17 + fv);
+                    cgv = 0.58f + 0.21f * sinf(intfram * gF[1] + 42 + fv) + 0.21f * cosf(intfram * gF[4] + 26 - fv);
+                    cbv = 0.58f + 0.21f * sinf(intfram * gF[2] + 57 - fv) + 0.21f * cosf(intfram * gF[5] + 35 + fv);
+                }
+
+                long T_offset;
+                int  pixelsize = (iDispBits == 8) ? 1 : 4;
+
+                for (n = 0; n < nodes; ++n) {
+                    cxv = (int)(gXC + rad * cosf(n / (float)nodes * 6.28f + phase));
+                    cyv = (int)(gYC + rad * sinf(n / (float)nodes * 6.28f + phase));
+
+                    for (y = -10; y <= 10; ++y) {
+                        T_offset = ((cyv + y) * FXW + (cxv - 10)) * pixelsize;
+                        for (x = -10; x <= 10; ++x) {
+                            val = (int)((r - sqrt_tab[x + 10][y + 10]) * 25);
+                            if (val > 0) {
+                                if (iDispBits == 8) {
+                                    str = VS1[T_offset] + val;
+                                    VS1[T_offset] = (unsigned char)min(255, str);
+                                } else {
+                                    str = (int)(VS1[T_offset    ] + val * cbv); VS1[T_offset    ] = (unsigned char)min(255, str);
+                                    str = (int)(VS1[T_offset + 1] + val * cgv); VS1[T_offset + 1] = (unsigned char)min(255, str);
+                                    str = (int)(VS1[T_offset + 2] + val * crv); VS1[T_offset + 2] = (unsigned char)min(255, str);
+                                }
+                            }
+                            T_offset += pixelsize;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void RenderWave(unsigned char *VS1) {
+    int   xL, xR, yL, yR, i;
+    float zL, prev_zL, zR, prev_zR;
+    long  D_offset;
+    int   base = 150;
+
+    base = (int)(current_vol * 4 + avg_vol * 0.4f) - 10;
+
+    past_vol[past_vol_pos] = avg_vol_narrow;
+
+    float avg_vol_uniform = 0;
+    for (i = 0; i < PAST_VOL_N; ++i) avg_vol_uniform += past_vol[i];
+    avg_vol_uniform /= (float)PAST_VOL_N;
+
+    float beat_strength = 0;
+    for (i = 1; i < PAST_VOL_N; ++i)
+        beat_strength += max(0.0f, fabsf(past_vol[i] - past_vol[i - 1]) - avg_vol_uniform * 0.15f);
+    beat_strength /= avg_vol_uniform;
+    beat_strength *= 10;
+    if (avg_vol_uniform < 10) beat_strength = 0;
+
+    if (beat_strength > 90 + 19) bBeatMode = true;
+    if (beat_strength < 90 - 19) bBeatMode = false;
+
+    float variance = 0;
+    float temp_var;
+    for (i = 0; i < PAST_VOL_N; ++i) {
+        temp_var = (past_vol[i] - avg_vol_uniform);
+        variance += temp_var * temp_var;
+    }
+    variance /= (float)(PAST_VOL_N - 1);
+    float std_dev = sqrtf(variance);
+    (void)std_dev;
+
+    float max_vol = 0;
+    for (i = 0; i < PAST_VOL_N / 3; ++i) max_vol = max(max_vol, past_vol[i]);
+    bBigBeat = (avg_vol_narrow > max_vol * fBigBeatThreshold);
+
+    float brite_scale = (current_vol - avg_vol_uniform) / (std_dev * 0.5f);
+    if (brite_scale < 0.0f) brite_scale = 0.0f;
+    if (brite_scale > 1.0f) brite_scale = 1.0f;
+
+    if (bBeatMode && g_bUseBeatDetection && visMode != spectrum && waveform != 6) {
+        base = (int)(base * brite_scale);
+    }
+
+    int old_slider1 = slider1;
+    if (bBeatMode && g_bSlideShift) {
+        if (current_vol > g_ShiftMaxVol) {
+            g_ShiftMaxVol = current_vol * 1.05f;
+            if (g_FramesSinceShift > 2) {
+                g_FramesSinceShift = 0;
+                slider1 = ((rand() % (FXW / 2)) + 50) / 145;
+                if (old_slider1 > 0) slider1 *= -1;
+                slider1 += (rand() % 3 - 1) * FXW;
+            }
+        } else {
+            float rate2 = AdjustRateToFPS(0.975f, 30.0f, fps);
+            float limit_vol = avg_vol_uniform * 1.43f;
+            g_ShiftMaxVol = g_ShiftMaxVol * rate2 + limit_vol * (1 - rate2);
+            ++g_FramesSinceShift;
+        }
+    }
+
+    snprintf(szDEBUG, sizeof(szDEBUG), "%5.3f ", debug_param);
+    if (bBeatMode) strncat(szDEBUG, ", beat mode", sizeof(szDEBUG) - strlen(szDEBUG) - 1);
+    if (bBigBeat ) strncat(szDEBUG, ", BIGBEAT",  sizeof(szDEBUG) - strlen(szDEBUG) - 1);
+
+    if (base > 155) base = 155;
+    if (base <   0) base = 0;
+
+    unsigned char r, g, b;
+    r = (unsigned char)base;
+    g = (unsigned char)base;
+    b = (unsigned char)base;
+    if (iDispBits > 8) {
+        if (g_bSyncColorToSound) {
+            float ir2, ig2, ib2;
+            int   intfram = intframe + chaser_offset;
+            float fv = 7 * sinf(intfram * 0.006f + 59) + 5 * cosf(intfram * 0.0077f + 17);
+            ir2 = base * 1.07f * (1 + 0.3f * sinf(intfram * gF[0] + 10 - fv)) * (1 + 0.20f * cosf(intfram * gF[1] + 37 + fv));
+            ig2 = base * 1.07f * (1 + 0.3f * sinf(intfram * gF[2] + 32 + fv)) * (1 + 0.20f * cosf(intfram * gF[3] + 16 - fv));
+            ib2 = base * 1.07f * (1 + 0.3f * sinf(intfram * gF[4] + 87 - fv)) * (1 + 0.20f * cosf(intfram * gF[5] + 25 + fv));
+
+            int a;
+            float ir = 0, ig = 0, ib = 0;
+            for (a = 0; a < (int)(FOURIER_DETAIL * 0.31f); ++a)                                              ir += g_power_smoothed[a];
+            for (a = (int)(FOURIER_DETAIL * 0.30f); a < (int)(FOURIER_DETAIL * 0.59f); ++a)                  ig += g_power_smoothed[a];
+            for (a = (int)(FOURIER_DETAIL * 0.56f); a < FOURIER_DETAIL; ++a)                                 ib += g_power_smoothed[a];
+            ir *= 0.93f;
+            ig *= 1.18f;
+            ib *= 2.40f;
+            ir -= ib * 0.4f;
+            float fnorm = base / sqrtf(ir * ir + ig * ig + ib * ib);
+            ir *= fnorm; ig *= fnorm; ib *= fnorm;
+
+            ir = (ir * 0.97f + ir2 * 0.03f) * 1.35f;
+            ig = (ig * 0.97f + ig2 * 0.03f) * 1.35f;
+            ib = (ib * 0.97f + ib2 * 0.03f) * 1.35f;
+            if (ir < 0) ir = 0; if (ir > 255) ir = 255;
+            if (ig < 0) ig = 0; if (ig > 255) ig = 255;
+            if (ib < 0) ib = 0; if (ib > 255) ib = 255;
+            r = (unsigned char)ir; g = (unsigned char)ig; b = (unsigned char)ib;
+        } else {
+            float ir, ig, ib;
+            float intfram = (float)(intframe + chaser_offset) * 30.0f / fps_at_last_mode_switch;
+            float fv = 7 * sinf(intfram * 0.006f + 59) + 5 * cosf(intfram * 0.0077f + 17);
+            float c1 = 0.55f;
+            float c2 = 0.50f;
+            ir = base * 1.07f * (1 + c1 * sinf(intfram * gF[0] + 10 - fv)) * (1 + c2 * cosf(intfram * gF[1] + 37 + fv));
+            ig = base * 1.07f * (1 + c1 * sinf(intfram * gF[2] + 32 + fv)) * (1 + c2 * cosf(intfram * gF[3] + 16 - fv));
+            ib = base * 1.07f * (1 + c1 * sinf(intfram * gF[4] + 87 - fv)) * (1 + c2 * cosf(intfram * gF[5] + 25 + fv));
+            if (ir < 0) ir = 0; if (ir > 255) ir = 255;
+            if (ig < 0) ig = 0; if (ig > 255) ig = 255;
+            if (ib < 0) ib = 0; if (ib > 255) ib = 255;
+            r = (unsigned char)ir; g = (unsigned char)ig; b = (unsigned char)ib;
+        }
+    }
+
+    if (SoundReady && SoundActive && !SoundEmpty) {
+        int passes = 0;
+        if (waveform == 1 || waveform == 2) {
+            if (FXW >= 1920)      passes = 2;
+            else if (FXW > 1024)  passes = 1;
+        } else {
+            if (FXW >= 1440)      passes = 1;
+        }
+        float amp_scale_per_pass = 1.14f;
+        for (int pass = 0; pass < passes; ++pass) {
+            float fSoundBufTemp[16384];
+            memcpy(fSoundBufTemp, g_fSoundBuffer, sizeof(float) * min(16384, FXW * 4));
+            float sL = fSoundBufTemp[0];
+            float sR = fSoundBufTemp[1];
+            for (int idx = 0; idx < FXW * 2; idx += 2) {
+                float tL = fSoundBufTemp[idx + 2] * amp_scale_per_pass;
+                float tR = fSoundBufTemp[idx + 3] * amp_scale_per_pass;
+                float* p = &g_fSoundBuffer[idx * 2];
+                p[0] = sL; p[1] = sR;
+                p[2] = 0.5f * (sL + tL);
+                p[3] = 0.5f * (sR + tR);
+                sL = tL; sR = tR;
+            }
+        }
+
+        if (waveform == 1) {
+            int y_center = gYC;
+            int start    = 0;
+            int end      = FXW;
+            if (mode == 10) {
+                y_center = (int)(((FXH - FX_YCUT) + (FXH * 0.5f)) * 0.5f);
+                if (visMode == spectrum)
+                    y_center = (int)(0.9f * (FXH - FX_YCUT) + 0.1f * (FXH * 0.5f));
+                start += 10;
+                end   -= 10;
+                if (FXW >= 640) { start += 5; end -= 5; }
+            }
+            zL = g_fSoundBuffer[start & 0xFFFFFFFE] + y_center;
+            for (i = start; i < end; ++i) {
+                prev_zL = zL;
+                zL = g_fSoundBuffer[(i & 0xFFFFFFFE)] + y_center;
+                zL = prev_zL * 0.9f + zL * 0.1f;
+                yL = (int)zL;
+                if (yL >= FX_YCUT_HIDE && yL < FXH - FX_YCUT_HIDE) {
+                    D_offset = FXW * yL + i;
+                    if (iDispBits == 8) { if (VS1[D_offset] < r) VS1[D_offset] = r; }
+                    else { D_offset *= 4;
+                        if (VS1[D_offset    ] < b) VS1[D_offset    ] = b;
+                        if (VS1[D_offset + 1] < g) VS1[D_offset + 1] = g;
+                        if (VS1[D_offset + 2] < r) VS1[D_offset + 2] = r; }
+                }
+            }
+        } else if (waveform == 2) {
+            float fDiv = 0.7f;
+            float h1   = gYC - FXH * 0.12f;
+            float h2   = gYC + FXH * 0.12f;
+            zL = g_fSoundBuffer[0] * fDiv + h1;
+            zR = g_fSoundBuffer[1] * fDiv + h2;
+            for (i = 0; i < FXW; ++i) {
+                prev_zL = zL; prev_zR = zR;
+                zL = g_fSoundBuffer[(i & 0xFFFFFFFE)]     * fDiv + h1;
+                zR = g_fSoundBuffer[(i & 0xFFFFFFFE) + 1] * fDiv + h2;
+                zL = prev_zL * 0.9f + zL * 0.1f;
+                zR = prev_zR * 0.9f + zR * 0.1f;
+                yL = (int)zL; yR = (int)zR;
+                if (yL > FX_YCUT_HIDE && yL < FXH - FX_YCUT_HIDE) {
+                    D_offset = FXW * yL + i;
+                    if (iDispBits == 8) { if (VS1[D_offset] < r) VS1[D_offset] = r; }
+                    else { D_offset *= 4;
+                        if (VS1[D_offset    ] < b) VS1[D_offset    ] = b;
+                        if (VS1[D_offset + 1] < g) VS1[D_offset + 1] = g;
+                        if (VS1[D_offset + 2] < r) VS1[D_offset + 2] = r; }
+                }
+                if (yR > FX_YCUT_HIDE && yR < FXH - FX_YCUT_HIDE) {
+                    D_offset = FXW * yR + i;
+                    if (iDispBits == 8) { if (VS1[D_offset] < r) VS1[D_offset] = r; }
+                    else { D_offset *= 4;
+                        if (VS1[D_offset    ] < b) VS1[D_offset    ] = b;
+                        if (VS1[D_offset + 1] < g) VS1[D_offset + 1] = g;
+                        if (VS1[D_offset + 2] < r) VS1[D_offset + 2] = r; }
+                }
+            }
+        } else if (waveform == 3) {
+            zL = g_fSoundBuffer[FX_YCUT_HIDE ^ (FX_YCUT_HIDE & 1)] + gXC;
+            for (i = FX_YCUT_HIDE; i < FXH - FX_YCUT_HIDE; ++i) {
+                prev_zL = zL;
+                zL = g_fSoundBuffer[(i & 0xFFFFFFFE)] + gXC;
+                zL = prev_zL * 0.9f + zL * 0.1f;
+                xL = (int)zL;
+                if (xL >= 0 && xL < FXW) {
+                    D_offset = FXW * i + xL;
+                    if (iDispBits == 8) { if (VS1[D_offset] < r) VS1[D_offset] = r; }
+                    else { D_offset *= 4;
+                        if (VS1[D_offset    ] < b) VS1[D_offset    ] = b;
+                        if (VS1[D_offset + 1] < g) VS1[D_offset + 1] = g;
+                        if (VS1[D_offset + 2] < r) VS1[D_offset + 2] = r; }
+                }
+            }
+        } else if (waveform == 4) {
+            float fDiv = 0.9f;
+            zL = g_fSoundBuffer[FX_YCUT_HIDE ^ (FX_YCUT_HIDE & 1)] * fDiv;
+            zR = g_fSoundBuffer[(FX_YCUT_HIDE ^ (FX_YCUT_HIDE & 1)) + 1] * fDiv;
+            for (i = FX_YCUT_HIDE; i < FXH - FX_YCUT_HIDE; ++i) {
+                prev_zL = zL; prev_zR = zR;
+                zL = g_fSoundBuffer[(i & 0xFFFFFFFE)]     * fDiv;
+                zR = g_fSoundBuffer[(i & 0xFFFFFFFE) + 1] * fDiv;
+                zL = prev_zL * 0.9f + zL * 0.1f;
+                zR = prev_zR * 0.9f + zR * 0.1f;
+                xL = (int)zL + i;
+                xR = (int)zR + i + (FXW - FXH);
+                if (xL >= 0 && xL < FXW) {
+                    D_offset = FXW * i + xL;
+                    if (iDispBits == 8) { if (VS1[D_offset] < r) VS1[D_offset] = r; }
+                    else { D_offset *= 4;
+                        if (VS1[D_offset    ] < b) VS1[D_offset    ] = b;
+                        if (VS1[D_offset + 1] < g) VS1[D_offset + 1] = g;
+                        if (VS1[D_offset + 2] < r) VS1[D_offset + 2] = r; }
+                }
+                if (xR >= 0 && xR < FXW) {
+                    D_offset = FXW * i + xR;
+                    if (iDispBits == 8) { if (VS1[D_offset] < r) VS1[D_offset] = r; }
+                    else { D_offset *= 4;
+                        if (VS1[D_offset    ] < b) VS1[D_offset    ] = b;
+                        if (VS1[D_offset + 1] < g) VS1[D_offset + 1] = g;
+                        if (VS1[D_offset + 2] < r) VS1[D_offset + 2] = r; }
+                }
+            }
+        } else if (waveform == 5) {
+            int   px, py;
+            float range_inv = 1.0f / WAVE_5_BLEND_RANGE;
+            float amt;
+            float rad;
+            float base_rad = (FXW == 320) ? 40.0f : FXW / 640.0f * 60.0f;
+            float fDiv = 0.7f;
+
+            for (i = 0; i < WAVE_5_BLEND_RANGE; ++i) {
+                amt = i * range_inv;
+                g_fSoundBuffer[(i & 0xFFFFFFFE)] = g_fSoundBuffer[(i & 0xFFFFFFFE)] * amt
+                                                 + (1 - amt) * g_fSoundBuffer[(i + 314) ^ ((i + 314) & 1)];
+            }
+
+            rad = base_rad + g_fSoundBuffer[0] * fDiv;
+            for (i = 0; i < 314; ++i) {
+                rad = rad * 0.5f + 0.5f * (base_rad + g_fSoundBuffer[(i & 0xFFFFFFFE)] * fDiv);
+                if (rad >= 5) {
+                    px = (int)((float)gXC + rad * cosf(i * 0.02f));
+                    py = (int)((float)gYC + rad * sinf(i * 0.02f));
+                    if (px >= 0 && px < FXW && py >= FX_YCUT && py < FXH - FX_YCUT) {
+                        D_offset = FXW * py + px;
+                        if (iDispBits == 8) { if (VS1[D_offset] < r) VS1[D_offset] = r; }
+                        else { D_offset *= 4;
+                            if (VS1[D_offset    ] < b) VS1[D_offset    ] = b;
+                            if (VS1[D_offset + 1] < g) VS1[D_offset + 1] = g;
+                            if (VS1[D_offset + 2] < r) VS1[D_offset + 2] = r; }
+                    }
+                }
+            }
+        } else if (waveform == 6) {
+            int   px, py;
+            float fDiv = 1.2f;
+            float px2, py2;
+            float ang = sinf(intframe * 0.01f);
+            float cosang = cosf(ang);
+            float sinang = sinf(ang);
+
+            px2 = g_fSoundBuffer[0];
+            py2 = g_fSoundBuffer[1];
+            for (i = 0; i < 314; ++i) {
+                px2 = px2 * 0.5f + 0.5f * g_fSoundBuffer[i * 2]     * fDiv;
+                py2 = py2 * 0.5f + 0.5f * g_fSoundBuffer[i * 2 + 1] * fDiv;
+                px = (int)(px2 * cosang + py2 * sinang);
+                py = (int)(px2 * -sinang + py2 * cosang);
+                px += gXC; py += gYC;
+                if (px >= 0 && px < FXW && py >= FX_YCUT && py < FXH - FX_YCUT) {
+                    D_offset = FXW * py + px;
+                    if (iDispBits == 8) { if (VS1[D_offset] < r) VS1[D_offset] = r; }
+                    else { D_offset *= 4;
+                        if (VS1[D_offset    ] < b) VS1[D_offset    ] = b;
+                        if (VS1[D_offset + 1] < g) VS1[D_offset + 1] = g;
+                        if (VS1[D_offset + 2] < r) VS1[D_offset + 2] = r; }
+                }
+            }
+        } else if (waveform == 7) {
+            float dx = cosf(intframe * 0.03f);
+            float dy = sinf(intframe * 0.03f);
+            int   x_, y_;
+            float t;
+
+            if (fabsf(dx) > 0.001f) {
+                float m = dy / dx;
+                if (fabsf(dx) > fabsf(dy)) {
+                    float bb = gYC - m * gXC;
+                    for (x_ = 0; x_ < FXW; ++x_) {
+                        y_ = (int)(m * x_ + bb);
+                        if (y_ > FX_YCUT && y_ < FXH - FX_YCUT) {
+                            D_offset = FXW * y_ + x_;
+                            t = min(1.0f, fabsf(g_fSoundBuffer[x_ ^ (x_ & 1)] / 64.0f));
+                            if (iDispBits == 8) { if (VS1[D_offset] < r * t) VS1[D_offset] = (unsigned char)(r * t); }
+                            else { D_offset *= 4;
+                                if (VS1[D_offset    ] < r * t) VS1[D_offset    ] = (unsigned char)(b * t);
+                                if (VS1[D_offset + 1] < g * t) VS1[D_offset + 1] = (unsigned char)(g * t);
+                                if (VS1[D_offset + 2] < b * t) VS1[D_offset + 2] = (unsigned char)(r * t); }
+                        }
+                    }
+                } else {
+                    m = dx / dy;
+                    float bb = gXC - m * gYC;
+                    for (y_ = FX_YCUT; y_ < FXH - FX_YCUT; ++y_) {
+                        x_ = (int)(m * y_ + bb);
+                        if (x_ >= 0 && x_ < FXW) {
+                            D_offset = FXW * y_ + x_;
+                            t = min(1.0f, fabsf(g_fSoundBuffer[y_ ^ (y_ & 1)] / 64.0f));
+                            if (iDispBits == 8) { if (VS1[D_offset] < r * t) VS1[D_offset] = (unsigned char)(r * t); }
+                            else { D_offset *= 4;
+                                if (VS1[D_offset    ] < r * t) VS1[D_offset    ] = (unsigned char)(b * t);
+                                if (VS1[D_offset + 1] < g * t) VS1[D_offset + 1] = (unsigned char)(g * t);
+                                if (VS1[D_offset + 2] < b * t) VS1[D_offset + 2] = (unsigned char)(r * t); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void RenderFX() {
+    unsigned int fx;
+
+    // SetCursor(NULL) is upstream's hack to suppress the Winamp cursor —
+    // dead code on macOS; the no-op stub in win_compat.h handles it.
+    SetCursor(NULL);
+
+    floatframe += 1.6f * min(1.0f, 47.0f / fps);
+    intframe++;
+    frames_this_mode++;
+
+    if ((intframe % 11) == 0)
+        clearframes = 1;
+
+    if (iBlendsLeftInPal > 0) {
+        --iBlendsLeftInPal;
+        PutPalette();
+    }
+
+    if (effect[SHADE]   > 0) ShadeBobs();
+    if (effect[CHASERS] >= 1) Two_Chasers(floatframe + chaser_offset);
+    if (effect[BAR] == 1) {
+        float speed_mult           = 0.6f;
+        float chromatic_dispersion = 4.0f;
+        if (iDispBits == 8) {
+            Solid_Line(floatframe + chaser_offset * speed_mult, VS1);
+        } else {
+            Solid_Line(floatframe + chaser_offset * speed_mult,                                                                              VS1);
+            Solid_Line(floatframe + chaser_offset * speed_mult + 3.5f * chromatic_dispersion * (sinf(floatframe * 0.03f + 1) + cosf(floatframe * 0.04f + 3)), &VS1[1]);
+            Solid_Line(floatframe + chaser_offset * speed_mult - 3.5f * chromatic_dispersion * (cosf(floatframe * 0.05f + 2) + sinf(floatframe * 0.06f + 4)), &VS1[2]);
+        }
+    }
+    if (effect[DOTS]    == 1) One_Dotty_Chaser(floatframe);
+    if (effect[NUCLIDE] == 1) Nuclide();
+    if (effect[GRID]    == 1) Grid();
+
+    if (effect[SOLAR] == 1) {
+        if (FXW == 320) {
+            fx = (unsigned int)(3 + solar_max * (2.4f + 0.35f * sinf(intframe * 0.05f) + 0.4f * sinf(intframe * 0.038f + 1)));
+            Drop_Solar_Particles_320((int)(fx * 0.01f));
+        } else {
+            fx = (unsigned int)(3 + solar_max * 1.6f + solar_max * 0.43f * sinf(intframe * 0.05f) + solar_max * 0.43f * sinf(intframe * 0.038f + 1));
+            Drop_Solar_Particles((int)(fx * 0.05f));
+        }
+    }
+
+    Diminish_Center(VS1);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4c-6 marker.
 // ---------------------------------------------------------------------------
 extern "C" int geiss_port_step(void);
-extern "C" int geiss_port_step(void) { return 5; }
+extern "C" int geiss_port_step(void) { return 6; }

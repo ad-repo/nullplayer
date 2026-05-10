@@ -29,7 +29,28 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
   plan's Phase-3 work list are deferred to phase 4 as part of the
   compile-and-fix walk; only the strict exit-criterion grep is enforced now
   (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
-- Phase 4c-5 (this commit): direct port of `GenerateChunkOfNewMap`
+- Phase 4c-6 (this commit): direct ports of `GetWaveData`, `RenderDots`,
+  `RenderWave`, `RenderFX` from upstream main.cpp:7948-9481.
+  * `GetWaveData` implements only the PLUGIN branch (DirectSound capture
+    is not in the build path); reads `g_this_mod->waveformData` /
+    `spectrumData` for level-trigger, smoothing, centroid normalisation,
+    and FFT-based fourier analysis (`g_power[]`, `g_power_smoothed[]`).
+  * `RenderDots` is the audio-driven dot-bursts (NUCLIDE effect).
+  * `RenderWave` covers all 7 waveform-render modes verbatim, plus beat
+    detection (`bBeatMode`/`bBigBeat` thresholds) and slide-shift
+    triggering.
+  * `RenderFX` is the per-frame effect dispatcher — calls ShadeBobs,
+    Two_Chasers, Solid_Line, One_Dotty_Chaser, Nuclide, Grid,
+    Drop_Solar_Particles* (all already compiled via Effects.h),
+    Diminish_Center, plus PutPalette via the iBlendsLeftInPal blend
+    pipeline.
+  * `geiss_port_set_pcm` / `geiss_port_set_spectrum` populate the
+    Winamp-stub module's audio arrays (8-bit unsigned, biased by 128 per
+    Winamp vis convention) — `GeissCore.cpp` will delegate
+    `GeissCore_addPCM` / `GeissCore_setSpectrum` through these in 4c-8.
+  * `geiss_port_init_module` wires `g_this_mod = &s_geiss_stub_module`.
+  * `AdjustRateToFPS` (upstream main.cpp:548) lands as an inline helper.
+- Phase 4c-5: direct port of `GenerateChunkOfNewMap`
   (upstream `main.cpp:4312-5411`). The function builds DATA_FX2
   incrementally — one row of pixels per call — until a full frame's
   worth of warp-map weights + per-pixel cumulative-delta lookat offsets
