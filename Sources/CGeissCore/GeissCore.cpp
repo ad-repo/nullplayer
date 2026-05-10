@@ -1,7 +1,9 @@
 #include "GeissCore.h"
+#include "win_compat.h"
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -12,14 +14,83 @@
 #include <time.h>
 #endif
 
-// Phase 1 stub: no upstream Geiss sources are referenced. This file proves
-// the C ABI seam end-to-end with a deterministic XOR pattern and a
-// hue-cycling palette. The real Geiss effect core lands in Phase 4.
+// ---------------------------------------------------------------------------
+// Phase 4c-8: GeissCore_* C ABI wired through to the port translation unit
+// (`upstream_port/geiss_port.cpp`). Per-call dispatch into the real Geiss
+// frame loop:
 //
-// Phase 3: introduces `geiss_now_ms()` (replacement for Win32 `GetTickCount`)
-// and `GeissAudioState` (replacement for Winamp's `vis.h` host audio struct).
-// Both are declared with C linkage so the upstream effect core can call them
-// once it is added to the build in phase 4.
+//   GeissCore_create(w, h) → set FXW/FXH/FX_YCUT_*, geiss_port_init_module,
+//                            FX_Init (allocates VS1/VS2/DATA_FX, populates
+//                            modeInfo[], runs initial rush-map loop)
+//   GeissCore_destroy      → FX_Fini
+//   GeissCore_resize       → FX_Fini + reset geometry + FX_Init
+//   GeissCore_addPCM       → geiss_port_set_pcm
+//   GeissCore_setSpectrum  → geiss_port_set_spectrum
+//   GeissCore_render       → faithful reproduction of upstream main.cpp:3756
+//                            render1() — RenderFX → Process_Map → GetWaveData
+//                            → RenderDots → RenderWave → swap → memcpy(VS1,
+//                            indexBuf). After a full frame, advance the
+//                            warp-map generation by one chunk
+//                            (GenerateChunkOfNewMap), and when the chunk
+//                            completes (y_map_pos == -1) pick the next
+//                            random mode so the visualization auto-cycles.
+//   GeissCore_palette      → geiss_port_get_palette
+//   GeissCore_nextEffect / _prevEffect — manual mode change (set new_mode,
+//                            kick off rush-map regeneration).
+//   GeissCore_randomEffect → FX_Pick_Random_Mode + rush-map.
+//   GeissCore_currentEffectName — formats "Mode N" into a static buffer.
+// ---------------------------------------------------------------------------
+
+// External symbols defined in upstream_port/geiss_port.cpp (and
+// upstream/proc_map.cpp for Process_Map). C++ linkage for the globals
+// (matches Proc_map.h's plain `extern long` declarations); C linkage for
+// the helper functions.
+extern long           FXW;
+extern long           FXH;
+extern long           FX_YCUT;
+extern long           FX_YCUT_HIDE;
+extern long           FX_YCUT_NUM_LINES;
+extern long           FX_YCUT_xFXW_x8;
+extern long           FX_YCUT_xFXW;
+extern long           FX_YCUT_HIDE_xFXW;
+extern long           FXW_x_FXH;
+extern long           BUFSIZE;
+extern int            iDispBits;
+extern int            new_mode;
+extern int            mode;
+extern int            y_map_pos;
+extern long           intframe;
+extern unsigned char *VS1;
+extern unsigned char *VS2;
+extern unsigned char *TEMPPTR;
+extern int            BOOL_g_rush_map_dummy; // (unused — keeps the comment block honest)
+
+// `g_rush_map` is declared `BOOL` in geiss_port.cpp, which `win_compat.h`
+// typedef's to `int`. Match here.
+extern int g_rush_map;
+
+// `Process_Map`, `FX_*`, `RenderFX`, `GetWaveData`, `RenderDots`,
+// `RenderWave`, `GenerateChunkOfNewMap` are defined in
+// upstream/proc_map.cpp + upstream_port/geiss_port.cpp with C++ linkage
+// (no extern "C" wrap upstream), so the matching declarations here are
+// also C++ linkage. The `geiss_port_*` helpers are explicitly extern "C"
+// in geiss_port.cpp, so they're declared the same way here.
+void Process_Map(void *p1, void *p2);
+int  FX_Init(void);
+void FX_Fini(void);
+void FX_Pick_Random_Mode(void);
+void GenerateChunkOfNewMap(bool bLoadPreset, int iPresetNum);
+void RenderFX(void);
+void GetWaveData(void);
+void RenderDots(unsigned char *VS1);
+void RenderWave(unsigned char *VS1);
+
+extern "C" {
+    void geiss_port_init_module(void);
+    void geiss_port_set_pcm(const float *samples, int count);
+    void geiss_port_set_spectrum(const float *mags, int count);
+    void geiss_port_get_palette(unsigned char *rgbaOut);
+}
 
 // ---------------------------------------------------------------------------
 // Phase 3: monotonic millisecond clock — replaces Win32 GetTickCount.
@@ -43,31 +114,31 @@ extern "C" uint32_t geiss_now_ms(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3: GeissAudioState replaces Winamp 2 vis SDK's host-supplied buffers.
-// Layout matches the Winamp `vis.h` `winampVisModule` audio fields the upstream
-// code reads: signed 8-bit waveform per channel, 8-bit magnitude spectrum per
-// channel, 576 bins each. Phase 4 routes upstream reads of `mod->waveformData`
-// / `mod->spectrumData` through this struct.
+// Geometry helper — populate the upstream globals before FX_Init.
+// FX_YCUT (top/bottom mask band) defaults to 90 in upstream at 640x480; we
+// scale it down for smaller framebuffers so it doesn't consume too much of
+// the visible area on a 256x192 visualization window.
 // ---------------------------------------------------------------------------
-
-#define GEISS_AUDIO_BINS 576
-
-extern "C" {
-    struct GeissAudioState {
-        unsigned char waveformData[2][GEISS_AUDIO_BINS];
-        unsigned char spectrumData[2][GEISS_AUDIO_BINS];
-    };
+static void geiss_set_geometry(int width, int height) {
+    FXW                = width;
+    FXH                = height;
+    // Upstream uses FX_YCUT=90 at 480 lines (~19% of height). Match that
+    // ratio so the off-screen mask is consistent.
+    FX_YCUT            = max(1L, (long)(height * 90 / 480));
+    FX_YCUT_HIDE       = FX_YCUT + 2;
+    FX_YCUT_NUM_LINES  = FXW * (FXH - FX_YCUT * 2);
+    FX_YCUT_xFXW_x8    = FX_YCUT * FXW * 8;
+    FX_YCUT_xFXW       = FX_YCUT * FXW;
+    FX_YCUT_HIDE_xFXW  = FX_YCUT_HIDE * FXW;
+    FXW_x_FXH          = FXW * FXH;
+    BUFSIZE            = max((long)(FXW * 2), (long)((314 + 50) * 2 + 20));
+    iDispBits          = 8;
 }
-
-static GeissAudioState g_geiss_audio = {};
-
-extern "C" GeissAudioState *geiss_audio_state(void);
-extern "C" GeissAudioState *geiss_audio_state(void) { return &g_geiss_audio; }
 
 struct GeissCore {
     int width;
     int height;
-    uint64_t tick;
+    char effectName[32];
 };
 
 extern "C" {
@@ -76,112 +147,108 @@ GeissCore *GeissCore_create(int width, int height) {
     if (width <= 0 || height <= 0) return nullptr;
     GeissCore *core = new (std::nothrow) GeissCore{};
     if (!core) return nullptr;
-    core->width = width;
+    core->width  = width;
     core->height = height;
-    core->tick = 0;
+
+    geiss_set_geometry(width, height);
+    geiss_port_init_module();
+
+    if (!FX_Init()) {
+        delete core;
+        return nullptr;
+    }
     return core;
 }
 
 void GeissCore_destroy(GeissCore *core) {
+    if (!core) return;
+    FX_Fini();
     delete core;
 }
 
 void GeissCore_resize(GeissCore *core, int width, int height) {
     if (!core || width <= 0 || height <= 0) return;
-    core->width = width;
+    if (core->width == width && core->height == height) return;
+
+    FX_Fini();
+    core->width  = width;
     core->height = height;
+    geiss_set_geometry(width, height);
+    FX_Init();
 }
 
 void GeissCore_addPCM(GeissCore * /*core*/, const float *samples, int count) {
-    // Convert mono Float32 PCM (range roughly [-1, 1]) into the signed-8-bit
-    // waveform layout the upstream Geiss code expects (range [-128, 127],
-    // stored unsigned to match the original char-array typing). Duplicate into
-    // both channels so legacy code that averages L+R still sees mono input.
-    if (!samples || count <= 0) return;
-    const int n = (count > GEISS_AUDIO_BINS) ? GEISS_AUDIO_BINS : count;
-    for (int i = 0; i < n; ++i) {
-        float s = samples[i];
-        if (s >  1.0f) s =  1.0f;
-        if (s < -1.0f) s = -1.0f;
-        unsigned char b = (unsigned char)(int)(s * 127.0f);
-        g_geiss_audio.waveformData[0][i] = b;
-        g_geiss_audio.waveformData[1][i] = b;
-    }
+    geiss_port_set_pcm(samples, count);
 }
 
 void GeissCore_setSpectrum(GeissCore * /*core*/, const float *mags, int count) {
-    // Spectrum is computed by the Swift side via Accelerate (vDSP_fft_zrip)
-    // and pushed through this entry point. Quantize to 8-bit per Winamp
-    // convention; duplicate into both channels.
-    if (!mags || count <= 0) return;
-    const int n = (count > GEISS_AUDIO_BINS) ? GEISS_AUDIO_BINS : count;
-    for (int i = 0; i < n; ++i) {
-        float m = mags[i];
-        if (m < 0.0f)   m = 0.0f;
-        if (m > 1.0f)   m = 1.0f;
-        unsigned char b = (unsigned char)(int)(m * 255.0f);
-        g_geiss_audio.spectrumData[0][i] = b;
-        g_geiss_audio.spectrumData[1][i] = b;
-    }
+    geiss_port_set_spectrum(mags, count);
 }
 
 void GeissCore_render(GeissCore *core, unsigned char *indexBuf) {
     if (!core || !indexBuf) return;
-    const int w = core->width;
-    const int h = core->height;
-    const unsigned int t = static_cast<unsigned int>(core->tick & 0xFFu);
-    for (int y = 0; y < h; ++y) {
-        unsigned char *row = indexBuf + static_cast<size_t>(y) * static_cast<size_t>(w);
-        for (int x = 0; x < w; ++x) {
-            row[x] = static_cast<unsigned char>(((static_cast<unsigned int>(x) ^ static_cast<unsigned int>(y) ^ t) & 0xFFu));
-        }
-    }
-    ++core->tick;
-}
+    if (VS1 == nullptr || VS2 == nullptr) return;
 
-// Convert HSV (h,s,v in [0,1]) to RGB bytes.
-static void hsv_to_rgb(float h, float s, float v, unsigned char *r, unsigned char *g, unsigned char *b) {
-    float hh = h * 6.0f;
-    int i = static_cast<int>(std::floor(hh));
-    float f = hh - static_cast<float>(i);
-    float p = v * (1.0f - s);
-    float q = v * (1.0f - s * f);
-    float t = v * (1.0f - s * (1.0f - f));
-    float rf = 0, gf = 0, bf = 0;
-    switch (i % 6) {
-        case 0: rf = v; gf = t; bf = p; break;
-        case 1: rf = q; gf = v; bf = p; break;
-        case 2: rf = p; gf = v; bf = t; break;
-        case 3: rf = p; gf = q; bf = v; break;
-        case 4: rf = t; gf = p; bf = v; break;
-        case 5: rf = v; gf = p; bf = q; break;
+    // Mirror upstream main.cpp:3756 render1() — the canonical Geiss frame
+    // loop. RenderFX writes effect overlays into VS1; Process_Map warps
+    // VS1 through DATA_FX into VS2; RenderDots / RenderWave overlay
+    // audio-driven content onto VS2; the buffers are swapped so the
+    // just-rendered frame ends up in VS1 for next frame's warp source.
+    RenderFX();
+    Process_Map(VS1, VS2);
+    GetWaveData();
+    RenderDots(VS2);
+    RenderWave(VS2);
+    TEMPPTR = VS1; VS1 = VS2; VS2 = TEMPPTR;
+
+    // Advance the warp-map generation by one chunk per frame. When the
+    // chunk completes (y_map_pos returns to -1 inside
+    // GenerateChunkOfNewMap), pick the next random mode so the
+    // visualization auto-cycles — same role upstream's GeissProc thread
+    // played.
+    int prev_y_map_pos = y_map_pos;
+    GenerateChunkOfNewMap(false, 0);
+    if (prev_y_map_pos != -1 && y_map_pos == -1) {
+        // Map just finished applying — queue the next mode.
+        FX_Pick_Random_Mode();
     }
-    *r = static_cast<unsigned char>(rf * 255.0f);
-    *g = static_cast<unsigned char>(gf * 255.0f);
-    *b = static_cast<unsigned char>(bf * 255.0f);
+
+    // Output VS1 into the caller's indexBuf. Upstream's "back-buffer
+    // merge" paths (`Merge_All_VS_To_Backbuffer`, songtitle GDI text,
+    // ratings overlay) are dead code on macOS — the indexed framebuffer
+    // is the final output.
+    memcpy(indexBuf, VS1, (size_t)(FXW * FXH));
 }
 
 void GeissCore_palette(GeissCore *core, unsigned char *rgbaOut) {
     if (!core || !rgbaOut) return;
-    // Hue offset advances slowly (one full rotation every ~256 frames at 60fps).
-    float offset = static_cast<float>(core->tick) / 256.0f;
-    for (int i = 0; i < 256; ++i) {
-        float h = std::fmod(static_cast<float>(i) / 256.0f + offset, 1.0f);
-        unsigned char r, g, b;
-        hsv_to_rgb(h, 1.0f, 1.0f, &r, &g, &b);
-        rgbaOut[i * 4 + 0] = r;
-        rgbaOut[i * 4 + 1] = g;
-        rgbaOut[i * 4 + 2] = b;
-        rgbaOut[i * 4 + 3] = 255;
-    }
+    geiss_port_get_palette(rgbaOut);
 }
 
-void GeissCore_nextEffect(GeissCore * /*core*/)   { /* no-op */ }
-void GeissCore_prevEffect(GeissCore * /*core*/)   { /* no-op */ }
-void GeissCore_randomEffect(GeissCore * /*core*/) { /* no-op */ }
+void GeissCore_nextEffect(GeissCore *core) {
+    if (!core) return;
+    new_mode = (new_mode % 25) + 1;
+    y_map_pos  = -1;
+    g_rush_map = 1;
+}
 
-const char *GeissCore_currentEffectName(GeissCore * /*core*/) {
-    return "Stub Effect";
+void GeissCore_prevEffect(GeissCore *core) {
+    if (!core) return;
+    new_mode = ((new_mode - 2 + 25) % 25) + 1;
+    y_map_pos  = -1;
+    g_rush_map = 1;
+}
+
+void GeissCore_randomEffect(GeissCore *core) {
+    if (!core) return;
+    FX_Pick_Random_Mode();
+    g_rush_map = 1;
+}
+
+const char *GeissCore_currentEffectName(GeissCore *core) {
+    if (!core) return "Mode 0";
+    snprintf(core->effectName, sizeof(core->effectName), "Mode %d", mode);
+    return core->effectName;
 }
 
 } // extern "C"

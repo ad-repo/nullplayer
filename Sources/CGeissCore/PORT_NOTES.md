@@ -29,7 +29,35 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
   plan's Phase-3 work list are deferred to phase 4 as part of the
   compile-and-fix walk; only the strict exit-criterion grep is enforced now
   (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
-- Phase 4c-7 (this commit): direct ports of `FX_Random_Palette`,
+- Phase 4c-8 (this commit): the `GeissCore_*` C ABI is now wired through
+  the port. `GeissCore.cpp`'s phase-1 stub bodies are replaced with calls
+  into the real engine:
+  * `GeissCore_create(w,h)` → sets FXW/FXH/FX_YCUT_*, calls
+    `geiss_port_init_module()`, then `FX_Init()` (allocates VS1/VS2/
+    DATA_FX, populates modeInfo[], runs the initial rush-map loop).
+  * `GeissCore_destroy` → `FX_Fini()`.
+  * `GeissCore_resize` → `FX_Fini()` + reset geometry + `FX_Init()`.
+  * `GeissCore_addPCM` / `_setSpectrum` → `geiss_port_set_pcm` /
+    `geiss_port_set_spectrum`.
+  * `GeissCore_render(core, indexBuf)` faithfully reproduces upstream
+    `render1()` (main.cpp:3756): RenderFX → Process_Map(VS1, VS2) →
+    GetWaveData → RenderDots(VS2) → RenderWave(VS2) → swap VS1↔VS2 →
+    `memcpy(indexBuf, VS1, FXW*FXH)`. After the frame, advance the
+    warp-map generation by one chunk via `GenerateChunkOfNewMap(false,0)`;
+    if `y_map_pos` transitions to -1 (chunk applied), invoke
+    `FX_Pick_Random_Mode()` so the visualization auto-cycles through
+    modes — same role upstream's GeissProc thread played.
+  * `GeissCore_palette` → `geiss_port_get_palette`.
+  * `GeissCore_nextEffect` / `_prevEffect` set `new_mode` directly and
+    rush-map a regen.
+  * `GeissCore_randomEffect` → `FX_Pick_Random_Mode()` + rush.
+  * `GeissCore_currentEffectName` formats `"Mode N"` into a per-core
+    static buffer.
+  Geometry helper `geiss_set_geometry(w,h)` scales `FX_YCUT` proportional
+  to height (upstream uses 90 at 480 lines, ~19%); the exit grep audit
+  preserves all upstream variables. `swift build` green; `GeissEngine.swift`
+  is unchanged — it already drove the C ABI correctly through phase 1.
+- Phase 4c-7: direct ports of `FX_Random_Palette`,
   `PutPalette`, `CrankPal` from upstream `video.h:1390-1645`.
   * `CrankPal` is the float→float curve evaluator; ports verbatim.
   * `FX_Random_Palette` generates the next palette into `ape2[]`, either
