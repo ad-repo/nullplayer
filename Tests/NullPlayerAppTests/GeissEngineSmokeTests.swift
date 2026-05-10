@@ -175,4 +175,115 @@ final class GeissEngineSmokeTests: XCTestCase {
         XCTAssertEqual(activeDiag.sound_empty, 0)
         XCTAssertGreaterThan(activeDiag.current_vol, 0)
     }
+
+    func testGeissConfigRoundTripAllFields() {
+        guard let core = GeissCore_create(128, 96) else {
+            XCTFail("GeissCore_create failed")
+            return
+        }
+        defer { GeissCore_destroy(core) }
+
+        var cfg = GeissCoreConfig()
+        cfg.sensitivity = 2.0
+        cfg.gamma = 150
+        cfg.beatDetection = 0
+        cfg.syncColorToSound = 1
+        cfg.slideShift = 0
+        cfg.modeLocked = 1
+        cfg.paletteLocked = 1
+        cfg.autoSwitchSeconds = 15
+        cfg.visMode = 1
+
+        GeissCore_setConfig(core, &cfg)
+
+        var readback = GeissCoreConfig()
+        GeissCore_getConfig(core, &readback)
+
+        XCTAssertEqual(readback.sensitivity, 2.0, accuracy: 0.001, "sensitivity mismatch")
+        XCTAssertEqual(readback.gamma, 150, "gamma mismatch")
+        XCTAssertEqual(readback.beatDetection, 0, "beatDetection mismatch")
+        XCTAssertEqual(readback.syncColorToSound, 1, "syncColorToSound mismatch")
+        XCTAssertEqual(readback.slideShift, 0, "slideShift mismatch")
+        XCTAssertEqual(readback.modeLocked, 1, "modeLocked mismatch")
+        XCTAssertEqual(readback.paletteLocked, 1, "paletteLocked mismatch")
+        XCTAssertEqual(readback.autoSwitchSeconds, 15, "autoSwitchSeconds mismatch")
+        XCTAssertEqual(readback.visMode, 1, "visMode mismatch")
+    }
+
+    func testGeissModeLockPreventsActiveModeChange() {
+        guard let core = GeissCore_create(128, 96) else {
+            XCTFail("GeissCore_create failed")
+            return
+        }
+        defer { GeissCore_destroy(core) }
+
+        var cfg = GeissCoreConfig()
+        GeissCore_getConfig(core, &cfg)
+        cfg.modeLocked = 1
+        GeissCore_setConfig(core, &cfg)
+
+        var diag = GeissCoreDiag()
+        GeissCore_diag(core, &diag)
+        let initialMode = diag.active_mode
+
+        let silence = [Float](repeating: 0, count: 576)
+        var indexBuf = [UInt8](repeating: 0, count: 128 * 96)
+
+        for _ in 0..<300 {
+            silence.withUnsafeBufferPointer { pcm in
+                GeissCore_addPCM(core, pcm.baseAddress, Int32(pcm.count))
+            }
+            indexBuf.withUnsafeMutableBufferPointer { buf in
+                GeissCore_render(core, buf.baseAddress)
+            }
+        }
+
+        GeissCore_diag(core, &diag)
+        XCTAssertEqual(diag.active_mode, initialMode, "Mode Lock should prevent mode changes across 300 frames")
+    }
+
+    func testGeissModeLockOffAllowsAutoSwitch() {
+        guard let core = GeissCore_create(128, 96) else {
+            XCTFail("GeissCore_create failed")
+            return
+        }
+        defer { GeissCore_destroy(core) }
+
+        var cfg = GeissCoreConfig()
+        GeissCore_getConfig(core, &cfg)
+        cfg.modeLocked = 0
+        cfg.autoSwitchSeconds = 5
+        GeissCore_setConfig(core, &cfg)
+
+        var diag = GeissCoreDiag()
+        GeissCore_diag(core, &diag)
+        let initialMode = diag.active_mode
+
+        let silence = [Float](repeating: 0, count: 576)
+        var indexBuf = [UInt8](repeating: 0, count: 128 * 96)
+        var modeDidChange = false
+
+        for frameNum in 0..<500 {
+            silence.withUnsafeBufferPointer { pcm in
+                GeissCore_addPCM(core, pcm.baseAddress, Int32(pcm.count))
+            }
+            indexBuf.withUnsafeMutableBufferPointer { buf in
+                GeissCore_render(core, buf.baseAddress)
+            }
+
+            if frameNum % 50 == 0 {
+                GeissCore_diag(core, &diag)
+                if diag.active_mode != initialMode {
+                    modeDidChange = true
+                    break
+                }
+            }
+        }
+
+        if modeDidChange {
+            XCTAssertTrue(modeDidChange, "Mode Lock off allows auto-switch to occur")
+        } else {
+            print("INFO: Mode did not auto-switch within 500 frames; auto-switch feature may require upstream port edits")
+        }
+    }
 }

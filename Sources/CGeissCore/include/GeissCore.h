@@ -53,6 +53,23 @@ typedef struct GeissCoreDiag {
 
 void GeissCore_diag(GeissCore *core, GeissCoreDiag *out);
 
+// Configuration lever getters/setters exposed in phase-1.
+typedef struct GeissCoreConfig {
+    float sensitivity;          // volscale, 0.25–4.0, default 0.20f
+    int   gamma;                // 0..200, factor = 1 + gamma*0.01, default 10
+    int   beatDetection;        // bool, default TRUE
+    int   syncColorToSound;     // bool, default FALSE
+    int   slideShift;           // bool, default TRUE
+    int   modeLocked;           // bLocked, default FALSE (requires §0.1, §0.2)
+    int   paletteLocked;        // bPalLocked, default FALSE
+    int   autoSwitchSeconds;    // frames_til_auto_switch__registry, written as seconds, default 550/fps
+    int   visMode;              // 0 = wave, 1 = spectrum, default wave
+} GeissCoreConfig;
+
+void GeissCore_getConfig(GeissCore *core, GeissCoreConfig *out);
+void GeissCore_setConfig(GeissCore *core, const GeissCoreConfig *cfg);
+void GeissCore_randomizePalette(GeissCore *core);
+
 #ifdef __cplusplus
 }
 #endif

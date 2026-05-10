@@ -166,3 +166,72 @@ The inline comment `25//16//19` shows the cap moved up over upstream releases (1
 - `Sources/NullPlayer/App/AppStateManager.swift` — `visualizationEngineType` save/restore
 - `Tests/NullPlayerAppTests/GeissEngineSmokeTests.swift` — lifecycle smoke test
 - `Sources/NullPlayer/Resources/ThirdPartyLicenses/GEISS_LICENSE.txt` — bundled license
+
+## Configuration Levers (Phase 1)
+
+User-facing controls for Geiss parameters are exposed via a two-level ABI: C ABI (`GeissCoreConfig` struct + getters/setters in `geiss_port.cpp`), wrapped by Swift (`GeissEngine.Config` + accessors in `GeissEngine.swift`), persisted in `UserDefaults`, and surfaced via context-menu toggles and submenus in `ModernProjectMView` and `ProjectMView`.
+
+### C ABI surface
+
+| Symbol | Role | Notes |
+|--------|------|-------|
+| `GeissCoreConfig` (struct) | Packed config container, 9 fields | See `GeissCore.h:69-78` |
+| `GeissCore_getConfig(core, &out)` | Read current file-scope statics | Implemented in `geiss_port.cpp:2404` |
+| `GeissCore_setConfig(core, &cfg)` | Write file-scope statics; trigger side effects | `gamma` rebuild, `autoSwitchSeconds` → frames, etc. |
+| `GeissCore_randomizePalette(core)` | Trigger immediate palette shuffle | Extracted from `FX_Random_Palette` body (mirrored upstream `main.cpp`'s hotkey logic) |
+
+### Port edits (§0)
+
+1. **`GeissCore.cpp:246`** — gate `FX_Pick_Random_Mode()` on `!bLocked` so user-set mode lock survives chunk completion.
+2. **`geiss_port.cpp:1622`** — guard `bLocked = FALSE;` so mode lock is not automatically cleared on mode change.
+3. **`geiss_port.cpp:213` (registry write)** — `setConfig` converts user seconds value to frames using live `fps`, writes to `frames_til_auto_switch__registry`. The existing render path picks it up.
+
+### Upstream symbol mapping
+
+| Field | Upstream symbol | Type | Default |
+|-------|-----------------|------|---------|
+| `sensitivity` | `volscale` (`geiss_port.cpp:281`) | float | `0.20f` |
+| `gamma` | `gamma` (`geiss_port.cpp:214`) | int 0–200 | `10` |
+| `beatDetection` | `g_bUseBeatDetection` (`geiss_port.cpp:334`) | BOOL | TRUE |
+| `syncColorToSound` | `g_bSyncColorToSound` (`geiss_port.cpp:335`) | BOOL | FALSE |
+| `slideShift` | `g_bSlideShift` (`geiss_port.cpp:300`) | bool | true |
+| `modeLocked` | `bLocked` (`geiss_port.cpp:315`) | bool | false |
+| `paletteLocked` | `bPalLocked` (`geiss_port.cpp:316`) | bool | false |
+| `autoSwitchSeconds` | `frames_til_auto_switch__registry` (`geiss_port.cpp:213`) | int, seconds | derived from `550` / fps |
+| `visMode` | `visMode` (`geiss_port.cpp:373`) | visModeEnum (0=wave, 1=spectrum) | wave (0) |
+
+### UserDefaults keys
+
+```
+geiss.sensitivity       (Float)
+geiss.gamma             (Int)
+geiss.beatDetection     (Bool)
+geiss.syncColorToSound  (Bool)
+geiss.slideShift        (Bool)
+geiss.modeLocked        (Bool)
+geiss.paletteLocked     (Bool)
+geiss.autoSwitchSeconds (Int)
+geiss.visMode           (Int)
+```
+
+Read with `object(forKey:)` in `VisualizationGLView.loadGeissConfigFromDefaults()` so missing keys ≠ zero. Applied to `GeissEngine` immediately after construction in `.geiss` case of `createEngine(type:width:height:)`.
+
+### Menu surface
+
+Context-menu items (right-click in visualization window) added via `GeissMenuBuilder.addGeissConfigMenuItems(to:target:visualizationView:)`:
+
+- **Toggles** (checkmark on click): Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock
+- **Submenus**:
+  - "Geiss Sensitivity": 0.25×, 0.5×, 1.0×, 2.0×, 3.0×, 4.0× (checkmark on current closest value)
+  - "Gamma": 1.00×, 1.25×, 1.50×, 2.00×, 2.50×, 3.00× (0, 25, 50, 100, 150, 200)
+  - "Auto-Switch": 5s, 15s, 30s, 60s, 120s (no "Off" — use Mode Lock to stop)
+  - "Waveform Mode": Wave, Spectrum
+- **Action**: "Randomize Palette" (triggers `GeissCore_randomizePalette`)
+
+Both `ProjectMView` (classic) and `ModernProjectMView` (modern) conform to `GeissMenuTarget` protocol and invoke the builder from `addGeissEffectsMenuItems(to:)` (after the Effects submenu). Menu state reflects `VisualizationGLView.getGeissConfig()` at render time.
+
+### Deferred to future phases
+
+- Per-mode effect probability/limit tables (`modeprefs`)
+- Palette frequency controls (`solar_pal_freq`, `coarse_pal_freq`)
+- Per-shape waveform selection (requires gating `geiss_port.cpp:1605` mode-change path)

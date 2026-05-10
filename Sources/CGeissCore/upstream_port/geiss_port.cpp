@@ -1619,7 +1619,8 @@ void GenerateChunkOfNewMap(bool bLoadPreset, int iPresetNum) {
         old_scale1    = scale1;
         old_scale2    = scale2;
 
-        bLocked = FALSE;
+        // Don't clear user-set mode lock on effect change (see Plan §0.2)
+        // bLocked = FALSE;
 
         // Clear off-screen edge bands for the new mode.
         if (mode != 6) {
@@ -2394,6 +2395,184 @@ void RenderFX() {
     }
 
     Diminish_Center(VS1);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1c-1: Configuration lever ABI
+// ---------------------------------------------------------------------------
+// Getters/setters for user-facing Geiss control levers, exposed to Swift
+// via GeissEngine.swift. All operate on file-scope statics in this unit.
+// See also: plan §1 in skills/geiss-port/SKILL.md.
+
+extern "C" void geiss_port_get_config(GeissCoreConfig *out);
+extern "C" void geiss_port_get_config(GeissCoreConfig *out) {
+    if (!out) return;
+    out->sensitivity = volscale;
+    out->gamma = gamma;
+    out->beatDetection = g_bUseBeatDetection ? 1 : 0;
+    out->syncColorToSound = g_bSyncColorToSound ? 1 : 0;
+    out->slideShift = g_bSlideShift ? 1 : 0;
+    out->modeLocked = bLocked ? 1 : 0;
+    out->paletteLocked = bPalLocked ? 1 : 0;
+    out->autoSwitchSeconds = (int)(frames_til_auto_switch__registry / fps);
+    out->visMode = (int)visMode;
+}
+
+extern "C" void geiss_port_set_config(const GeissCoreConfig *cfg);
+extern "C" void geiss_port_set_config(const GeissCoreConfig *cfg) {
+    if (!cfg) return;
+
+    // sensitivity: pure read, applies next frame.
+    volscale = cfg->sensitivity;
+
+    // gamma: requires palette rebuild (mirrors upstream's gamma hotkey path).
+    // Since FX_Random_Palette is the only palette mutation, trigger it.
+    if (gamma != cfg->gamma) {
+        gamma = cfg->gamma;
+        FX_Random_Palette(true);  // true = don't shuffle c1/c2/c3, just recompute with new gamma
+    }
+
+    // beatDetection: pure read, applies next frame.
+    g_bUseBeatDetection = cfg->beatDetection ? TRUE : FALSE;
+
+    // syncColorToSound: pure read, applies next frame.
+    g_bSyncColorToSound = cfg->syncColorToSound ? TRUE : FALSE;
+
+    // slideShift: pure read, applies next frame.
+    g_bSlideShift = cfg->slideShift;
+
+    // modeLocked: applies at next chunk-completion (requires §0.1, §0.2).
+    bLocked = cfg->modeLocked ? true : false;
+
+    // paletteLocked: gated at palette mutation (line 579).
+    bPalLocked = cfg->paletteLocked ? true : false;
+
+    // autoSwitchSeconds: convert to frames using live fps, write to registry.
+    // (§0.3: the existing chunk-detection path picks it up from the registry)
+    frames_til_auto_switch__registry = (int)(cfg->autoSwitchSeconds * fps);
+
+    // visMode: pure read, applies next frame.
+    visMode = (visModeEnum)cfg->visMode;
+}
+
+// geiss_port_randomize_palette(): trigger an immediate palette mutation,
+// extracted from FX_Random_Palette's palette-generation logic.
+// Mirrors upstream main.cpp's random-palette hotkey path (~lines 2900–2950
+// in the original, though the exact line range drifts across versions).
+// This is the user-facing "Randomize Palette" action called from the menu.
+extern "C" void geiss_port_randomize_palette(void);
+extern "C" void geiss_port_randomize_palette(void) {
+    if (bPalLocked) return;
+    if (iDispBits != 8) return;
+
+    // Randomize the palette-generation parameters and regenerate.
+    // This is the palette-shuffle path from FX_Random_Palette(false).
+
+    int n, a, b;
+
+    old_palette.lo_band       = -1;
+    old_palette.hi_band       = -1;
+    old_palette.bFXPalette    = false;
+    old_palette.iFXPaletteNum = -1;
+    old_palette.c1            = -1;
+    old_palette.c2            = -1;
+    old_palette.c3            = -1;
+
+    if (rand() % 10 < coarse_pal_freq) {
+        old_palette.lo_band = 7  + rand() % 6;
+        old_palette.hi_band = 17 + rand() % 6;
+    }
+
+    iBlendsLeftInPal = 18;
+
+    b = rand() % 6;
+
+    if (b == 0) {
+        old_palette.bFXPalette = true;
+        old_palette.iFXPaletteNum = rand() % 4;
+
+        if (old_palette.iFXPaletteNum == 0) {
+            for (a = 0; a < 128; ++a) {
+                REMAP [a] = (unsigned char)(a * a / 64.0f);
+                REMAP2[a] = (unsigned char)(a * 2);
+                REMAP3[a] = (unsigned char)(sqrtf((float)a) * 22.6f);
+            }
+        } else if (old_palette.iFXPaletteNum == 1) {
+            for (a = 0; a < 128; ++a) {
+                REMAP [a] = (unsigned char)(a * a / 64.0f);
+                REMAP2[a] = (unsigned char)(sqrtf((float)a) * 22.6f);
+                REMAP3[a] = (unsigned char)(a * 2);
+            }
+        } else if (old_palette.iFXPaletteNum == 2) {
+            for (a = 0; a < 128; ++a) {
+                REMAP [a] = (unsigned char)(sqrtf((float)a) * 22.6f);
+                REMAP2[a] = (unsigned char)(a * 2);
+                REMAP3[a] = (unsigned char)(a * a / 64.0f);
+            }
+        } else if (old_palette.iFXPaletteNum == 3) {
+            for (a = 0; a < 128; ++a) {
+                REMAP [a] = (unsigned char)(a * 2);
+                REMAP2[a] = (unsigned char)(a * a / 64.0f);
+                REMAP3[a] = (unsigned char)(sqrtf((float)a) * 22.6f);
+            }
+        }
+
+        for (n = 128; n < 256; ++n) {
+            REMAP [n] = REMAP [127];
+            REMAP2[n] = REMAP2[127];
+            REMAP3[n] = REMAP3[127];
+        }
+
+        for (n = 0; n < 256; ++n) {
+            ape[n]          = ape2[n];
+            ape2[n].peRed   = REMAP [n];
+            ape2[n].peBlue  = REMAP2[n];
+            ape2[n].peGreen = REMAP3[n];
+        }
+    } else {
+        int temp;
+        do {
+            if (rand() % 5 < solar_pal_freq) {
+                old_palette.c1 = rand() % 7 + 1;
+                old_palette.c2 = rand() % 7 + 1;
+                old_palette.c3 = rand() % 7 + 1;
+            } else {
+                old_palette.c1 = rand() % 6 + 1;
+                old_palette.c2 = rand() % 6 + 1;
+                old_palette.c3 = rand() % 6 + 1;
+            }
+            temp = 0;
+            if (old_palette.c1 == 6) ++temp;
+            if (old_palette.c2 == 6) ++temp;
+            if (old_palette.c3 == 6) ++temp;
+        } while (temp > 1);
+
+        float xv, yv, zv;
+        float gamma_factor = 1.0f + gamma * 0.01f;
+        if (SoundEmpty) gamma_factor += 0.3f;
+
+        for (n = 0; n < 256; ++n) {
+            ape[n] = ape2[n];
+
+            xv = CrankPal(old_palette.c1, (unsigned char)n);
+            yv = CrankPal(old_palette.c2, (unsigned char)n);
+            zv = CrankPal(old_palette.c3, (unsigned char)n);
+
+            xv *= gamma_factor;
+            yv *= gamma_factor;
+            zv *= gamma_factor;
+
+            if (n > old_palette.lo_band && n < old_palette.hi_band) {
+                xv *= 2.0f;
+                yv *= 2.0f;
+                zv *= 2.0f;
+            }
+
+            ape2[n].peRed   = (unsigned char)min(255.0f, xv);
+            ape2[n].peBlue  = (unsigned char)min(255.0f, yv);
+            ape2[n].peGreen = (unsigned char)min(255.0f, zv);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

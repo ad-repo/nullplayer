@@ -11,7 +11,7 @@ import AppKit
 // =============================================================================
 
 /// Modern ProjectM visualization view with full modern skin support
-class ModernProjectMView: NSView {
+class ModernProjectMView: NSView, GeissMenuTarget {
     
     // MARK: - Properties
     
@@ -1009,7 +1009,9 @@ class ModernProjectMView: NSView {
             menu.addItem(effectsMenuItem)
         }
 
-        menu.addItem(NSMenuItem.separator())
+        if let glView = visualizationGLView {
+            GeissMenuBuilder.addGeissConfigMenuItems(to: menu, target: self, visualizationView: glView)
+        }
     }
 
     @objc private func nextGeissEffectAction(_ sender: Any?) {
@@ -1064,7 +1066,69 @@ class ModernProjectMView: NSView {
     @objc private func togglePerformanceMode(_ sender: Any?) {
         visualizationGLView?.toggleLowPowerMode()
     }
-    
+
+    // MARK: - Geiss Menu Handlers (GeissMenuTarget protocol implementations)
+
+    @objc func toggleBeatDetection(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.beatDetection.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func toggleSyncColorToSound(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.syncColorToSound.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func toggleSlideShift(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.slideShift.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func toggleModeLock(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.modeLocked.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func togglePaletteLock(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.paletteLocked.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func setSensitivity(_ sender: NSMenuItem) {
+        let sensitivity = Float(sender.tag) / 100.0
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.sensitivity = sensitivity
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func setGamma(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.gamma = sender.tag
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func setAutoSwitch(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.autoSwitchSeconds = sender.tag
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func setVisMode(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.visMode = sender.tag
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func randomizePalette(_ sender: NSMenuItem) {
+        guard let geiss = visualizationGLView?.currentEngine as? GeissEngine else { return }
+        geiss.randomizePalette()
+    }
+
     @objc private func closeWindow(_ sender: Any?) {
         window?.close()
     }

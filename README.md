@@ -27,6 +27,7 @@
 - Navidrome/Subsonic server integration with scrobbling support
 - Local media library with metadata parsing, editing, library management
 - ProjectM visualizations with 100 included. Users can download more
+- Geiss visualization — port of Ryan Geiss's classic Winamp visualization with runtime controls for sensitivity, gamma, beat detection, palette lock, auto-switch, and more
 - Sonic similarity radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
 - Plex radio track history with configurable exclusion rules. Stop the same songs from being added to your Plex radio stations
 - Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.

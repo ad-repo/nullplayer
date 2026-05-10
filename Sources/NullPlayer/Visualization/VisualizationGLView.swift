@@ -50,8 +50,12 @@ class VisualizationGLView: NSOpenGLView {
         guard case .projectM = currentEngineType else { return false }
         return (engine as? ProjectMWrapper)?.isAvailable ?? false
     }
-    
-    
+
+    /// Current visualization engine (exposed for menu handlers)
+    var currentEngine: VisualizationEngine? {
+        return engine
+    }
+
     /// Whether audio is currently playing (affects visualization behavior)
     private var isAudioActive = false
     
@@ -65,7 +69,11 @@ class VisualizationGLView: NSOpenGLView {
     
     /// Idle beat sensitivity (used when audio is not playing for calmer visualization)
     private let idleBeatSensitivity: Float = 0.2
-    
+
+    /// Cached Geiss configuration loaded from UserDefaults.
+    /// Applied to GeissEngine immediately after construction (before first render).
+    private var geissConfigCache: GeissEngine.Config?
+
     /// Pending NSOpenGLView surface update (window moved/resized).
     /// Set on main thread by AppKit via update(); cleared on render thread after openGLContext?.update().
     /// nonisolated(unsafe): Bool write/read is word-aligned; worst case is a one-frame-late update.
@@ -168,6 +176,9 @@ class VisualizationGLView: NSOpenGLView {
             normalBeatSensitivity = UserDefaults.standard.float(forKey: "projectMBeatSensitivity")
         }
 
+        // Load saved Geiss configuration preferences
+        loadGeissConfigFromDefaults()
+
         // Set up OpenGL context
         openGLContext?.makeCurrentContext()
         setupOpenGL()
@@ -201,6 +212,9 @@ class VisualizationGLView: NSOpenGLView {
         if UserDefaults.standard.object(forKey: "projectMBeatSensitivity") != nil {
             normalBeatSensitivity = UserDefaults.standard.float(forKey: "projectMBeatSensitivity")
         }
+
+        // Load saved Geiss configuration preferences
+        loadGeissConfigFromDefaults()
 
         setupOpenGL()
         setupGeissFFT()
@@ -295,6 +309,11 @@ class VisualizationGLView: NSOpenGLView {
             let geiss = GeissEngine(width: width, height: height)
             if geiss.isAvailable {
                 NSLog("VisualizationGLView: Geiss engine initialized")
+                // Apply persisted configuration before first render
+                if let cfg = geissConfigCache {
+                    geiss.setConfig(cfg)
+                    NSLog("VisualizationGLView: Applied cached Geiss config to engine")
+                }
                 return geiss
             } else {
                 NSLog("VisualizationGLView: Geiss engine not available")
@@ -1049,5 +1068,75 @@ class VisualizationGLView: NSOpenGLView {
     func selectGeissEffect(at index: Int) {
         guard let geiss = engine as? GeissEngine else { return }
         geiss.selectEffect(at: index)
+    }
+
+    // MARK: - Geiss Configuration (UserDefaults persistence)
+
+    private func loadGeissConfigFromDefaults() {
+        var cfg = GeissEngine.Config(
+            sensitivity: 0.20,
+            gamma: 10,
+            beatDetection: true,
+            syncColorToSound: false,
+            slideShift: true,
+            modeLocked: false,
+            paletteLocked: false,
+            autoSwitchSeconds: 14,
+            visMode: 0
+        )
+
+        if let val = UserDefaults.standard.object(forKey: "geiss.sensitivity") as? NSNumber {
+            cfg.sensitivity = val.floatValue
+        }
+        if let val = UserDefaults.standard.object(forKey: "geiss.gamma") as? NSNumber {
+            cfg.gamma = val.intValue
+        }
+        if let val = UserDefaults.standard.object(forKey: "geiss.beatDetection") as? NSNumber {
+            cfg.beatDetection = val.boolValue
+        }
+        if let val = UserDefaults.standard.object(forKey: "geiss.syncColorToSound") as? NSNumber {
+            cfg.syncColorToSound = val.boolValue
+        }
+        if let val = UserDefaults.standard.object(forKey: "geiss.slideShift") as? NSNumber {
+            cfg.slideShift = val.boolValue
+        }
+        if let val = UserDefaults.standard.object(forKey: "geiss.modeLocked") as? NSNumber {
+            cfg.modeLocked = val.boolValue
+        }
+        if let val = UserDefaults.standard.object(forKey: "geiss.paletteLocked") as? NSNumber {
+            cfg.paletteLocked = val.boolValue
+        }
+        if let val = UserDefaults.standard.object(forKey: "geiss.autoSwitchSeconds") as? NSNumber {
+            cfg.autoSwitchSeconds = val.intValue
+        }
+        if let val = UserDefaults.standard.object(forKey: "geiss.visMode") as? NSNumber {
+            cfg.visMode = val.intValue
+        }
+
+        geissConfigCache = cfg
+    }
+
+    func setGeissConfig(_ cfg: GeissEngine.Config) {
+        geissConfigCache = cfg
+        UserDefaults.standard.set(cfg.sensitivity, forKey: "geiss.sensitivity")
+        UserDefaults.standard.set(cfg.gamma, forKey: "geiss.gamma")
+        UserDefaults.standard.set(cfg.beatDetection, forKey: "geiss.beatDetection")
+        UserDefaults.standard.set(cfg.syncColorToSound, forKey: "geiss.syncColorToSound")
+        UserDefaults.standard.set(cfg.slideShift, forKey: "geiss.slideShift")
+        UserDefaults.standard.set(cfg.modeLocked, forKey: "geiss.modeLocked")
+        UserDefaults.standard.set(cfg.paletteLocked, forKey: "geiss.paletteLocked")
+        UserDefaults.standard.set(cfg.autoSwitchSeconds, forKey: "geiss.autoSwitchSeconds")
+        UserDefaults.standard.set(cfg.visMode, forKey: "geiss.visMode")
+
+        if let geiss = engine as? GeissEngine {
+            geiss.setConfig(cfg)
+        }
+    }
+
+    func getGeissConfig() -> GeissEngine.Config? {
+        if let geiss = engine as? GeissEngine {
+            return geiss.config
+        }
+        return geissConfigCache
     }
 }

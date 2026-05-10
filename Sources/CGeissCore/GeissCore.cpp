@@ -76,6 +76,9 @@ extern int            BOOL_g_rush_map_dummy; // (unused — keeps the comment bl
 // typedef's to `int`. Match here.
 extern int g_rush_map;
 
+// Mode-lock flag (bLocked in geiss_port.cpp) — prevents auto-cycling
+extern bool bLocked;
+
 // `Process_Map`, `FX_*`, `RenderFX`, `GetWaveData`, `RenderDots`,
 // `RenderWave`, `GenerateChunkOfNewMap` are defined in
 // upstream/proc_map.cpp + upstream_port/geiss_port.cpp with C++ linkage
@@ -100,6 +103,9 @@ extern "C" {
     void geiss_port_set_pcm(const float *samples, int count);
     void geiss_port_set_spectrum(const float *mags, int count);
     void geiss_port_get_palette(unsigned char *rgbaOut);
+    void geiss_port_get_config(GeissCoreConfig *out);
+    void geiss_port_set_config(const GeissCoreConfig *cfg);
+    void geiss_port_randomize_palette(void);
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +247,7 @@ void GeissCore_render(GeissCore *core, unsigned char *indexBuf) {
     // played.
     int prev_y_map_pos = y_map_pos;
     GenerateChunkOfNewMap(false, 0);
-    if (prev_y_map_pos != -1 && y_map_pos == -1) {
+    if (prev_y_map_pos != -1 && y_map_pos == -1 && !bLocked) {
         // Map just finished applying — queue the next mode.
         FX_Pick_Random_Mode();
     }
@@ -321,6 +327,18 @@ void GeissCore_diag(GeissCore *core, GeissCoreDiag *out) {
     out->sound_active = SoundActive;
     out->sound_empty  = SoundEmpty;
     out->current_vol  = current_vol;
+}
+
+void GeissCore_getConfig(GeissCore * /*core*/, GeissCoreConfig *out) {
+    geiss_port_get_config(out);
+}
+
+void GeissCore_setConfig(GeissCore * /*core*/, const GeissCoreConfig *cfg) {
+    geiss_port_set_config(cfg);
+}
+
+void GeissCore_randomizePalette(GeissCore * /*core*/) {
+    geiss_port_randomize_palette();
 }
 
 } // extern "C"

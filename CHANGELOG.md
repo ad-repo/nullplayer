@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.22.0
+
+### New Features
+
+- **Geiss visualization** — a port of Ryan Geiss's classic Winamp visualization is available alongside ProjectM and EKG in both classic and modern UI. The right-click context menu exposes effect navigation plus runtime levers: Geiss Sensitivity, Gamma, Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock, Auto-Switch interval, visMode (Wave/Spectrum), and Randomize Palette. The visualization fills the window, reacts to audio state (paused/silent/playing), and all settings persist across launches.
+
+### Bug Fixes
+
+- **Main window transparency after occlusion fixed** — the main window no longer renders partially transparent after being occluded, minimized, or hidden behind other windows. Returning to visibility now triggers a full redraw rather than relying on per-tick sub-region repaints.
+- **Internet radio Sonos discovery and cast classification fixed** — internet radio is now correctly treated as non-local for cast logging and Sonos device discovery. A new explicit `isRadioOrigin` flag on `Track` ensures radio sessions are routed and reported correctly when casting.
+
 ## 0.21.1
 
 ### Bug Fixes

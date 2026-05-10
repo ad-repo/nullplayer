@@ -10,6 +10,19 @@ import CGeissCore
 /// the actual Geiss effect core lands in Phase 4.
 final class GeissEngine: VisualizationEngine {
 
+    // MARK: - Config
+    struct Config: Equatable {
+        var sensitivity: Float
+        var gamma: Int
+        var beatDetection: Bool
+        var syncColorToSound: Bool
+        var slideShift: Bool
+        var modeLocked: Bool
+        var paletteLocked: Bool
+        var autoSwitchSeconds: Int
+        var visMode: Int
+    }
+
     // MARK: - VisualizationEngine
 
     private(set) var isAvailable: Bool = false
@@ -172,6 +185,52 @@ final class GeissEngine: VisualizationEngine {
         defer { coreLock.unlock() }
         guard let core else { return }
         GeissCore_selectEffect(core, Int32(index))
+    }
+
+    var config: Config {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core else {
+            return Config(sensitivity: 0.20, gamma: 10, beatDetection: true, syncColorToSound: false,
+                         slideShift: true, modeLocked: false, paletteLocked: false, autoSwitchSeconds: 550, visMode: 0)
+        }
+        var cCfg = GeissCoreConfig()
+        GeissCore_getConfig(core, &cCfg)
+        return Config(
+            sensitivity: cCfg.sensitivity,
+            gamma: Int(cCfg.gamma),
+            beatDetection: cCfg.beatDetection != 0,
+            syncColorToSound: cCfg.syncColorToSound != 0,
+            slideShift: cCfg.slideShift != 0,
+            modeLocked: cCfg.modeLocked != 0,
+            paletteLocked: cCfg.paletteLocked != 0,
+            autoSwitchSeconds: Int(cCfg.autoSwitchSeconds),
+            visMode: Int(cCfg.visMode)
+        )
+    }
+
+    func setConfig(_ cfg: Config) {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core else { return }
+        var cCfg = GeissCoreConfig()
+        cCfg.sensitivity = cfg.sensitivity
+        cCfg.gamma = Int32(cfg.gamma)
+        cCfg.beatDetection = cfg.beatDetection ? 1 : 0
+        cCfg.syncColorToSound = cfg.syncColorToSound ? 1 : 0
+        cCfg.slideShift = cfg.slideShift ? 1 : 0
+        cCfg.modeLocked = cfg.modeLocked ? 1 : 0
+        cCfg.paletteLocked = cfg.paletteLocked ? 1 : 0
+        cCfg.autoSwitchSeconds = Int32(cfg.autoSwitchSeconds)
+        cCfg.visMode = Int32(cfg.visMode)
+        GeissCore_setConfig(core, &cCfg)
+    }
+
+    func randomizePalette() {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core else { return }
+        GeissCore_randomizePalette(core)
     }
 
     func renderFrame() {
