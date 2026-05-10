@@ -194,6 +194,14 @@ typedef struct _WINDOWPLACEMENT {
 #ifndef NEAR
 #define NEAR
 #endif
+// MSVC's lowercase `far` / `near` keywords (16-bit memory model leftovers).
+// They appear in upstream Geiss as `unsigned char far *VS2` parameters.
+#ifndef far
+#define far
+#endif
+#ifndef near
+#define near
+#endif
 #ifndef PASCAL
 #define PASCAL
 #endif

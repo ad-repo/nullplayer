@@ -29,7 +29,23 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
   plan's Phase-3 work list are deferred to phase 4 as part of the
   compile-and-fix walk; only the strict exit-criterion grep is enforced now
   (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
-- Phase 4c-1+2 (this commit): introduces the port scaffolding for
+- Phase 4c-3 (this commit): `upstream/Effects.h` is now compiled directly
+  into the build via `geiss_port.cpp`'s `#include`. ~1000 lines of real
+  Geiss visual algorithms (`ShadeBobs`, `Diminish_Center`,
+  `Drop_Solar_Particles_320`, `Drop_Solar_Particles`, `Solid_Line`,
+  `Two_Chasers`, `Nuclide`, `Neutrons`, `One_Dotty_Chaser`, `Mode6Edges`,
+  `Grid`, `DoCrystals`, `LoadPreset`, `SavePreset`, `LoadCustomMsg`)
+  link cleanly. The file's full set of upstream globals (FXW/FXH/VS1/VS2/
+  effect[]/mode/gXC/gYC/floatframe/intframe/center_dwindle/old_palette/…)
+  is defined in `geiss_port.cpp` mirroring the upstream main.cpp 540–1330
+  range. `PLUGIN=1` is defined so PLUGIN-conditional branches take the
+  Winamp-vis path; `GRFX=0` is defined so DirectDraw blit paths in
+  upstream code are gated out. `win_compat.h` gains lowercase `far` /
+  `near` defines for 16-bit-memory-model leftovers (`unsigned char far *`
+  parameters in `Solid_Line` etc.). Provisional stubs for
+  `FX_Random_Palette` / `PutPalette` / `CrankPal` / `GenerateChunkOfNewMap`
+  keep the link clean — real ports land in 4c-5 / 4c-7.
+- Phase 4c-1+2: introduces the port scaffolding for
   preserving the *real* Geiss visual algorithms on macOS without trying to
   carve up upstream/main.cpp's 9557 lines of mixed Win32 + visual code.
   New files:
