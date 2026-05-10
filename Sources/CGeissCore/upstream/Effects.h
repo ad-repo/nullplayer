@@ -946,7 +946,7 @@ void Mode6Edges()
 
 void Grid()
 {
-  int xInc = FXW/30;//(FXW >= 800) ? FXW/40 : FXW/30;//FXW/30;
+  int xInc = max(1, FXW/30);//(FXW >= 800) ? FXW/40 : FXW/30;//FXW/30;
 	int yInc = xInc;//FXH/40;
     unsigned char s = max(0, 65 + 45*sinf(intframe*0.06033f*30.0f/fps_at_last_mode_switch  )  
                                 + 35*cosf(intframe*0.04710f*30.0f/fps_at_last_mode_switch+1)

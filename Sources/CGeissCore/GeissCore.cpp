@@ -134,13 +134,13 @@ extern "C" uint32_t geiss_now_ms(void) {
 // Upstream reserves a large top/bottom mask band (`FX_YCUT` is 90 at
 // 640x480). NullPlayer displays the indexed framebuffer directly inside a
 // resizable window, so keeping that band creates visible letterboxing. Use a
-// one-pixel guard instead: several upstream effects address `FX_YCUT - 1`, so
-// zero would risk negative offsets.
+// two-pixel guard instead: several upstream effects address `FX_YCUT - 1` and
+// then step back another scanline.
 // ---------------------------------------------------------------------------
 static void geiss_set_geometry(int width, int height) {
     FXW                = width;
     FXH                = height;
-    FX_YCUT            = 1;
+    FX_YCUT            = 2;
     FX_YCUT_HIDE       = FX_YCUT + 2;
     FX_YCUT_NUM_LINES  = FXW * (FXH - FX_YCUT * 2);
     FX_YCUT_xFXW_x8    = FX_YCUT * FXW * 8;

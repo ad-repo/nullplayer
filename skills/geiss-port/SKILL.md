@@ -95,7 +95,7 @@ The C core is **not** thread-safe; `coreLock` is the only barrier.
 
 `GeissCore_nextEffect` / `_prevEffect` set `new_mode` and force `y_map_pos = -1`, `g_rush_map = 1` so the next `GenerateChunkOfNewMap` rebuilds the warp map immediately. `GeissCore_randomEffect` calls `FX_Pick_Random_Mode()`.
 
-Auto-cycling: on every render, when the current chunk finishes applying (`y_map_pos` transitions to -1), `FX_Pick_Random_Mode()` is called. There is no explicit cycle interval — cadence is governed by chunk completion.
+Auto-cycling: on every render, when the configured `autoSwitchSeconds` interval has elapsed, the current chunk finishes applying (`y_map_pos` transitions to -1), and the engine is not mode-locked, `FX_Pick_Random_Mode()` is called. The cadence is chunk-boundary-triggered but subject to the `autoSwitchSeconds` interval tracked through `frames_til_auto_switch__registry`.
 
 ### Hidden modes in upstream
 
