@@ -29,7 +29,15 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
   plan's Phase-3 work list are deferred to phase 4 as part of the
   compile-and-fix walk; only the strict exit-criterion grep is enforced now
   (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
-- Phase 4+: pending.
+- Phase 4a (this commit): `upstream/helper.cpp` is now in the compile set
+  (`Package.swift` narrows the `exclude` list from `["upstream"]` to just
+  `main.cpp`, `proc_map.cpp`, `LICENSE`, `README.md`). `helper.h` is on the
+  internal header search path via `cxxSettings: [.headerSearchPath("upstream")]`.
+  This is the proof-of-build for upstream files; the real engine wiring waits
+  on subsequent sub-phases.
+- Phase 4b–4z: pending — upstream `main.cpp` Win32-body deletion, `proc_map.cpp`
+  asm rewrite (24 blocks → portable C dispatcher), `video.h` MMX/blit prune,
+  effect-core wiring through the C ABI, then first real Geiss render.
 
 ## File classification
 

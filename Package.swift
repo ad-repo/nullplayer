@@ -38,10 +38,19 @@ let package = Package(
             name: "CGeissCore",
             dependencies: [],
             path: "Sources/CGeissCore",
-            exclude: ["upstream"],
+            // Phase 4a: helper.cpp (POSIX-clean) is now compiled. main.cpp,
+            // proc_map.cpp, and the inline-asm/Win32-body-laden sources stay
+            // excluded — they land in subsequent phase-4 sub-phases.
+            exclude: [
+                "upstream/main.cpp",
+                "upstream/proc_map.cpp",
+                "upstream/LICENSE",
+                "upstream/README.md",
+            ],
             publicHeadersPath: "include",
             cxxSettings: [
                 .headerSearchPath("."),
+                .headerSearchPath("upstream"),
                 .define("__APPLE__"),
                 .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
             ]
