@@ -29,7 +29,21 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
   plan's Phase-3 work list are deferred to phase 4 as part of the
   compile-and-fix walk; only the strict exit-criterion grep is enforced now
   (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
-- Phase 4c-3 (this commit): `upstream/Effects.h` is now compiled directly
+- Phase 4c-4 (this commit): direct ports of `FX_Init`,
+  `FX_Pick_Random_Mode`, `FX_Fini` from upstream `main.cpp:3869-4304`. The
+  CModeInfo class (upstream `main.cpp:1258-1330`) and the
+  `mode_motion_dampened` / `rotation_dither` / `custom_motion_vectors`
+  arrays land here verbatim. The Win32 `GetWindowsPath` and `finiObjects`
+  calls are replaced with no-op port helpers; `delete` calls in upstream
+  `FX_Fini` are corrected to `free()` to pair with `FX_Init`'s `malloc`
+  (the upstream code's `delete malloc-buffer` mismatch was undefined
+  behaviour that happened to work on MSVC). The 16-byte alignment fix-up
+  uses `uintptr_t` instead of upstream's `unsigned long` (which is 32-bit
+  on Win64 but 64-bit on macOS — the original cast worked accidentally).
+  REMAP / REMAP2 / REMAP3 pointers are wired to `_REMAP_VALUES[0..512]`
+  early in `FX_Init` (upstream relies on `doInit()` to do this; the macOS
+  port has no `doInit`).
+- Phase 4c-3: `upstream/Effects.h` is now compiled directly
   into the build via `geiss_port.cpp`'s `#include`. ~1000 lines of real
   Geiss visual algorithms (`ShadeBobs`, `Diminish_Center`,
   `Drop_Solar_Particles_320`, `Drop_Solar_Particles`, `Solid_Line`,

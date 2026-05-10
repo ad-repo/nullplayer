@@ -410,7 +410,109 @@ void  FX_Random_Palette(bool bLoadPal = false);
 void  PutPalette();
 float CrankPal(unsigned int curve_id, int z);
 void  GenerateChunkOfNewMap(bool bLoadPreset = false, int iPresetNum = 0);
+void  FX_Pick_Random_Mode();
 void  dumpmsg(const char *format, ...);
+
+// ---------------------------------------------------------------------------
+// CModeInfo — direct port of the upstream class (main.cpp:1258-1330). Used
+// by FX_Init to populate per-mode effect-frequency tables and by RenderFX
+// to clip the active effect set to the mode's min/max bounds.
+// ---------------------------------------------------------------------------
+class CModeInfo {
+public:
+    CModeInfo();
+
+    int   effect_freq[NUM_EFFECTS];
+    int   solar_max;
+    float center_dwindle;
+    int   max_effects;
+    int   min_effects;
+
+    void  Clip_Num_Effects();
+
+protected:
+    static int Get_Num_Effects();
+};
+
+CModeInfo::CModeInfo() {
+    min_effects    = 1;
+    max_effects    = 2;
+    solar_max      = 60;
+    center_dwindle = 0.99f;
+    for (int i = 0; i < NUM_EFFECTS; ++i)
+        effect_freq[i] = 1000 / NUM_EFFECTS;
+}
+
+int CModeInfo::Get_Num_Effects() {
+    int n = 0;
+    for (int i = 0; i < NUM_EFFECTS; ++i)
+        if (effect[i] > 0) ++n;
+    return n;
+}
+
+void CModeInfo::Clip_Num_Effects() {
+    int n = Get_Num_Effects();
+    int j;
+    BOOL bGotOne;
+
+    if (!SoundActive || SoundEmpty)
+    while (n < min_effects) {
+        bGotOne = FALSE;
+        for (j = 0; j < NUM_EFFECTS; ++j)
+            if ((effect[j] == -1) && (rand() % 1000 < effect_freq[j]) && (bGotOne == FALSE)) {
+                effect[j] = 1;
+                bGotOne = TRUE;
+                ++n;
+            }
+    }
+
+    for (j = 0; j < NUM_EFFECTS; ++j)
+        if (effect_freq[j] >= 1000)
+            effect[j] = 1;
+
+    while (n > max_effects) {
+        j = rand() % NUM_EFFECTS;
+        if (effect[j] == 1 && effect_freq[j] < 1000) {
+            effect[j] = -1;
+            --n;
+        }
+    }
+}
+
+CModeInfo modeInfo[NUM_MODES + 1]; // array starts at 1
+
+// ---------------------------------------------------------------------------
+// Mode-property tables from upstream main.cpp:1223-1255. These are *file
+// scope* in upstream; geiss_port.cpp owns the canonical copies and
+// `Effects.h` uses them indirectly via `modeInfo` / mode-related branches.
+// ---------------------------------------------------------------------------
+bool mode_motion_dampened[] = {
+    true,  true,  true,  false, true,  true,  false, true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,
+    false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+};
+bool rotation_dither[] = {
+    false, true,  false, false, false, false, false, false, false, true,
+    false, true,  false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+};
+bool custom_motion_vectors[] = {
+    false, false, false, false, false, false, true,  false, false, false,
+    true,  false, true,  false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+    false, false, false, false, false,
+};
 
 // ---------------------------------------------------------------------------
 // Compatibility helpers used by Effects.h that have to be C++-callable but
@@ -444,7 +546,415 @@ void GenerateChunkOfNewMap(bool /*bLoadPreset*/, int /*iPresetNum*/) { }
 #include "Effects.h"
 
 // ---------------------------------------------------------------------------
-// Phase 4c-3 marker.
+// Phase 4c-4: FX_Init / FX_Fini / FX_Pick_Random_Mode — direct ports of
+// upstream main.cpp lines 3869-4304. The Win32 calls in upstream's FX_Init
+// (`GetWindowsPath`, `finiObjects`) are replaced with no-ops; everything
+// else is preserved verbatim. The `delete` calls in upstream FX_Fini are
+// changed to `free()` so they pair with FX_Init's `malloc()`. The 16-byte
+// pointer realignment fix-up in FX_Init was a Win32 SSE workaround; we
+// keep it because it's harmless and several downstream effects assume the
+// alignment.
+// ---------------------------------------------------------------------------
+
+static void GeissPort_GetWindowsPath() {
+    // Upstream sets a global `winpath` to "C:\Windows\". macOS port leaves
+    // it empty — the only thing that reads it is dialog/registry code we
+    // do not exercise.
+    winpath[0] = '\0';
+}
+
+static void GeissPort_finiObjects() {
+    // Upstream's finiObjects releases DirectDraw + window handles. The
+    // macOS port has nothing to release here — buffers are torn down in
+    // FX_Fini, and we have no DDraw / window state to begin with.
+}
+
+BOOL FX_Init() {
+    unsigned long z, x;
+
+    dumpmsg("Starting FX_Init()");
+
+    GeissPort_GetWindowsPath();
+
+    if (RND == 1) srand((unsigned)time(NULL));
+    chaser_offset = rand() % 40000L;
+
+    // PORT(phase4c-4): upstream uses the bare REMAP/REMAP2/REMAP3 pointers
+    // assuming `doInit()` set them to point into `_REMAP_VALUES`. We don't
+    // run doInit, so wire the pointers up here.
+    REMAP  = &_REMAP_VALUES[0];
+    REMAP2 = &_REMAP_VALUES[256];
+    REMAP3 = &_REMAP_VALUES[512];
+
+    if (iDispBits == 8) {
+        VS1 = (unsigned char *)malloc(FXW * FXH + 1024);
+        if (VS1 == nullptr) { dumpmsg("Out of memory"); GeissPort_finiObjects(); return 1; }
+        VS2 = (unsigned char *)malloc(FXW * FXH + 1024);
+        if (VS2 == nullptr) { dumpmsg("Out of memory"); GeissPort_finiObjects(); return 1; }
+        memset(VS1, 0, FXW * FXH);
+        memset(VS2, 0, FXW * FXH);
+    } else {
+        VS1 = (unsigned char *)malloc(FXW * FXH * 4 + 1024);
+        if (VS1 == nullptr) { dumpmsg("Out of memory"); GeissPort_finiObjects(); return 1; }
+        VS2 = (unsigned char *)malloc(FXW * FXH * 4 + 1024);
+        if (VS2 == nullptr) { dumpmsg("Out of memory"); GeissPort_finiObjects(); return 1; }
+        memset(VS1, 0, FXW * FXH * 4);
+        memset(VS2, 0, FXW * FXH * 4);
+    }
+    DATA_FX = (unsigned char *)malloc(FXW * FXH * 8 + 1024);
+    if (DATA_FX == nullptr) { dumpmsg("Out of memory"); GeissPort_finiObjects(); return 1; }
+    DATA_FX2 = (unsigned char *)malloc(FXW * FXH * 8 + 1024);
+    if (DATA_FX2 == nullptr) { dumpmsg("Out of memory"); GeissPort_finiObjects(); return 1; }
+
+    original_VS[0]      = VS1;
+    original_VS[1]      = VS2;
+    original_DATA_FX[0] = DATA_FX;
+    original_DATA_FX[1] = DATA_FX2;
+
+    // 16-byte alignment fix-up, preserved verbatim from upstream — uses
+    // uintptr_t instead of `unsigned long` (which is 32-bit on Win64 and
+    // 64-bit on macOS, so the upstream cast worked accidentally).
+    if (((uintptr_t)VS1) % 16 != 0) {
+        dumpmsg("align VS1");
+        VS1 = (unsigned char *)((((uintptr_t)VS1) / 16 + 1) * 16);
+    }
+    if (((uintptr_t)VS2) % 16 != 0) {
+        dumpmsg("align VS2");
+        VS2 = (unsigned char *)((((uintptr_t)VS2) / 16 + 1) * 16);
+    }
+    if (((uintptr_t)DATA_FX) % 16 != 0) {
+        dumpmsg("align DATA_FX");
+        DATA_FX = (unsigned char *)((((uintptr_t)DATA_FX) / 16 + 1) * 16);
+    }
+    if (((uintptr_t)DATA_FX2) % 16 != 0) {
+        dumpmsg("align DATA_FX2");
+        DATA_FX2 = (unsigned char *)((((uintptr_t)DATA_FX2) / 16 + 1) * 16);
+    }
+
+    memset(g_power,          0, sizeof(float) * FOURIER_DETAIL);
+    memset(g_power_smoothed, 0, sizeof(float) * FOURIER_DETAIL);
+
+    if (iDispBits == 16) {
+        for (z = 0; z < 256; ++z) REMAP[z]  = (unsigned char)(min(255UL, z * 2) >> 3);
+        for (z = 0; z < 256; ++z) REMAP2[z] = (unsigned char)(min(255UL, z * 2) >> 2);
+    } else {
+        for (z = 0; z < 256; ++z) REMAP[z]  = (unsigned char)min(255UL, z * 2);
+    }
+
+    for (z = 0; z < SCATTERVALS; ++z)
+        fScatter[z] = 0.05f - 0.025f * ((rand() % 1000) * 0.001f);
+
+    frames_since_last_plop = 1;
+
+    for (z = 0; z < 20; ++z) { chaser_x[z] = 1; chaser_y[z] = 1; }
+
+    for (x = 0; x <= 20; ++x)
+        for (z = 0; z <= 20; ++z)
+            sqrt_tab[x][z] = (float)sqrtf(float((x - 10) * (x - 10) + (z - 10) * (z - 10)));
+
+    for (z = 0; z < 10; ++z) {
+        micro_c1[z] = 0.08f + 0.09f * (rand() % 1000) * 0.001f;
+        micro_c2[z] = 0.08f + 0.09f * (rand() % 1000) * 0.001f;
+        micro_c3[z] = 0.08f + 0.09f * (rand() % 1000) * 0.001f;
+        micro_f1[z] = 0.1f  + 0.05f * (rand() % 1000) * 0.001f;
+        micro_f2[z] = 0.1f  + 0.05f * (rand() % 1000) * 0.001f;
+        micro_f3[z] = 0.1f  + 0.05f * (rand() % 1000) * 0.001f;
+        micro_f4[z] = 0.1f  + 0.05f * (rand() % 1000) * 0.001f;
+        micro_rad[0][z] = 2.0f + 2.8f * (rand() % 1000) * 0.001f;
+        micro_rad[1][z] = 2.0f + 2.8f * (rand() % 1000) * 0.001f;
+        micro_rad[2][z] = 2.0f + 2.8f * (rand() % 1000) * 0.001f;
+        micro_rad[3][z] = 2.0f + 2.8f * (rand() % 1000) * 0.001f;
+    }
+
+    for (z = 0; z < 6;    ++z) gF[z]         = ((rand() % 1000) * 0.001f) * 0.01f + 0.02f;
+    for (z = 0; z < 2345; ++z) rand_array[z] = (rand() % 100) * 0.0005f;
+
+    // Per-mode effect-frequency tables (modeInfo[1..16], modeInfo[17..NUM_MODES]),
+    // verbatim from upstream main.cpp:4009-4243.
+    z = 1;
+    modeInfo[z].effect_freq[CHASERS] = 220;
+    modeInfo[z].effect_freq[BAR    ] = 150;
+    modeInfo[z].effect_freq[DOTS   ] =  10;
+    modeInfo[z].effect_freq[SOLAR  ] = 680;
+    modeInfo[z].effect_freq[GRID   ] =   4;
+    modeInfo[z].effect_freq[NUCLIDE] = 170;
+    modeInfo[z].effect_freq[SHADE  ] = 400;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = (iDispBits == 8) ? 400 : 800;
+    modeInfo[z].center_dwindle = 1.0f;
+
+    z = 2;
+    modeInfo[z].effect_freq[CHASERS] = 750;
+    modeInfo[z].effect_freq[BAR    ] = 500;
+    modeInfo[z].effect_freq[DOTS   ] = 750;
+    modeInfo[z].effect_freq[SOLAR  ] = 750;
+    modeInfo[z].effect_freq[GRID   ] =   0;
+    modeInfo[z].effect_freq[NUCLIDE] =   0;
+    modeInfo[z].effect_freq[SHADE  ] =   0;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 35;
+    modeInfo[z].center_dwindle = 1.0f;
+    modeInfo[z].max_effects = 5;
+
+    z = 3;
+    modeInfo[z].effect_freq[CHASERS] = 100;
+    modeInfo[z].effect_freq[BAR    ] = 100;
+    modeInfo[z].effect_freq[DOTS   ] = 100;
+    modeInfo[z].effect_freq[SOLAR  ] = 500;
+    modeInfo[z].effect_freq[GRID   ] =  10;
+    modeInfo[z].effect_freq[NUCLIDE] =   0;
+    modeInfo[z].effect_freq[SHADE  ] = 300;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 60;
+    modeInfo[z].center_dwindle = 0.99f;
+
+    z = 4;
+    modeInfo[z].effect_freq[CHASERS] = 500;
+    modeInfo[z].effect_freq[BAR    ] = 100;
+    modeInfo[z].effect_freq[DOTS   ] = 100;
+    modeInfo[z].effect_freq[SOLAR  ] = 100;
+    modeInfo[z].effect_freq[GRID   ] =  30;
+    modeInfo[z].effect_freq[NUCLIDE] =   0;
+    modeInfo[z].effect_freq[SHADE  ] =   0;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 34;
+    modeInfo[z].center_dwindle = 0.98f;
+
+    z = 5;
+    modeInfo[z].effect_freq[CHASERS] = 100;
+    modeInfo[z].effect_freq[BAR    ] = 350;
+    modeInfo[z].effect_freq[DOTS   ] = 100;
+    modeInfo[z].effect_freq[SOLAR  ] = 500;
+    modeInfo[z].effect_freq[GRID   ] =  15;
+    modeInfo[z].effect_freq[NUCLIDE] = 180;
+    modeInfo[z].effect_freq[SHADE  ] = 500;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 60;
+    modeInfo[z].center_dwindle = 0.99f;
+
+    z = 6;
+    modeInfo[z].effect_freq[CHASERS] = 400;
+    modeInfo[z].effect_freq[BAR    ] = 120;
+    modeInfo[z].effect_freq[DOTS   ] = 200;
+    modeInfo[z].effect_freq[SOLAR  ] =   0;
+    modeInfo[z].effect_freq[GRID   ] =   0;
+    modeInfo[z].effect_freq[NUCLIDE] =   0;
+    modeInfo[z].effect_freq[SHADE  ] =   0;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 60;
+    modeInfo[z].center_dwindle = 1.0f;
+
+    z = 7;
+    modeInfo[z].effect_freq[CHASERS] =  50;
+    modeInfo[z].effect_freq[BAR    ] = 200;
+    modeInfo[z].effect_freq[DOTS   ] =   0;
+    modeInfo[z].effect_freq[SOLAR  ] = 300;
+    modeInfo[z].effect_freq[GRID   ] =   0;
+    modeInfo[z].effect_freq[NUCLIDE] = 600;
+    modeInfo[z].effect_freq[SHADE  ] = 350;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 65;
+    modeInfo[z].center_dwindle = 0.985f;
+
+    z = 8;
+    modeInfo[z].effect_freq[CHASERS] = 150;
+    modeInfo[z].effect_freq[BAR    ] = 150;
+    modeInfo[z].effect_freq[DOTS   ] = 150;
+    modeInfo[z].effect_freq[SOLAR  ] = 150;
+    modeInfo[z].effect_freq[GRID   ] =  25;
+    modeInfo[z].effect_freq[NUCLIDE] =   0;
+    modeInfo[z].effect_freq[SHADE  ] =
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 60;
+    modeInfo[z].center_dwindle = 0.96f;
+
+    z = 9;
+    modeInfo[z].effect_freq[CHASERS] = 450;
+    modeInfo[z].effect_freq[BAR    ] = 200;
+    modeInfo[z].effect_freq[DOTS   ] =  50;
+    modeInfo[z].effect_freq[SOLAR  ] = 200;
+    modeInfo[z].effect_freq[GRID   ] =   0;
+    modeInfo[z].effect_freq[NUCLIDE] = 100;
+    modeInfo[z].effect_freq[SHADE  ] = 200;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 50;
+    modeInfo[z].center_dwindle = 0.985f;
+
+    z = 10;
+    modeInfo[z].effect_freq[CHASERS] = 150;
+    modeInfo[z].effect_freq[BAR    ] =  20;
+    modeInfo[z].effect_freq[DOTS   ] =  80;
+    modeInfo[z].effect_freq[SOLAR  ] =   0;
+    modeInfo[z].effect_freq[GRID   ] =   0;
+    modeInfo[z].effect_freq[NUCLIDE] =  80;
+    modeInfo[z].effect_freq[SHADE  ] =   0;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max      = 0;
+    modeInfo[z].center_dwindle = 1.0f;
+    modeInfo[z].min_effects    = 0;
+    modeInfo[z].max_effects    = 2;
+
+    z = 11;
+    modeInfo[z].effect_freq[CHASERS] = 360;
+    modeInfo[z].effect_freq[BAR    ] = 200;
+    modeInfo[z].effect_freq[DOTS   ] = 230;
+    modeInfo[z].effect_freq[SOLAR  ] = 550;
+    modeInfo[z].effect_freq[GRID   ] =  10;
+    modeInfo[z].effect_freq[NUCLIDE] = 330;
+    modeInfo[z].effect_freq[SHADE  ] = 150;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max      = 750;
+    modeInfo[z].center_dwindle = 1.0f;
+    modeInfo[z].min_effects    = 0;
+    modeInfo[z].max_effects    = 4;
+
+    z = 12; // sideways splitter
+    modeInfo[z].effect_freq[CHASERS] = 360;
+    modeInfo[z].effect_freq[BAR    ] = 200;
+    modeInfo[z].effect_freq[DOTS   ] = 230;
+    modeInfo[z].effect_freq[SOLAR  ] =   0;
+    modeInfo[z].effect_freq[GRID   ] =   0;
+    modeInfo[z].effect_freq[NUCLIDE] = 330;
+    modeInfo[z].effect_freq[SHADE  ] =   0;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max      = 500;
+    modeInfo[z].center_dwindle = 0.915f;
+    modeInfo[z].min_effects    = 0;
+    modeInfo[z].max_effects    = 2;
+
+    z = 13;
+    modeInfo[z].effect_freq[CHASERS] = 500;
+    modeInfo[z].effect_freq[BAR    ] =   0;
+    modeInfo[z].effect_freq[DOTS   ] = 100;
+    modeInfo[z].effect_freq[SOLAR  ] =   0;
+    modeInfo[z].effect_freq[GRID   ] =  30;
+    modeInfo[z].effect_freq[NUCLIDE] =   0;
+    modeInfo[z].effect_freq[SHADE  ] =   0;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 34;
+    modeInfo[z].center_dwindle = 0.98f;
+
+    z = 14;
+    modeInfo[z].effect_freq[CHASERS] = 500;
+    modeInfo[z].effect_freq[BAR    ] =   0;
+    modeInfo[z].effect_freq[DOTS   ] = 100;
+    modeInfo[z].effect_freq[SOLAR  ] =   0;
+    modeInfo[z].effect_freq[GRID   ] =  30;
+    modeInfo[z].effect_freq[NUCLIDE] =   0;
+    modeInfo[z].effect_freq[SHADE  ] =   0;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 34;
+    modeInfo[z].center_dwindle = 0.98f;
+
+    z = 15;
+    modeInfo[z].effect_freq[CHASERS] =   0;
+    modeInfo[z].effect_freq[BAR    ] =   0;
+    modeInfo[z].effect_freq[DOTS   ] =   0;
+    modeInfo[z].effect_freq[SOLAR  ] =   0;
+    modeInfo[z].effect_freq[GRID   ] =   0;
+    modeInfo[z].effect_freq[NUCLIDE] = 200;
+    modeInfo[z].effect_freq[SHADE  ] =   0;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].center_dwindle = 1.0f;
+    modeInfo[z].min_effects    = 0;
+    modeInfo[z].max_effects    = 1;
+
+    z = 16;
+    modeInfo[z].effect_freq[CHASERS] = 500;
+    modeInfo[z].effect_freq[BAR    ] = 100;
+    modeInfo[z].effect_freq[DOTS   ] = 100;
+    modeInfo[z].effect_freq[SOLAR  ] = 100;
+    modeInfo[z].effect_freq[GRID   ] =  30;
+    modeInfo[z].effect_freq[NUCLIDE] =   0;
+    modeInfo[z].effect_freq[SHADE  ] =   0;
+    modeInfo[z].effect_freq[SPECTRAL]=   0;
+    modeInfo[z].solar_max = 34;
+    modeInfo[z].center_dwindle = 0.98f;
+
+    for (z = 17; z <= NUM_MODES; ++z) {
+        modeInfo[z].effect_freq[CHASERS] = 150;
+        modeInfo[z].effect_freq[BAR    ] = 150;
+        modeInfo[z].effect_freq[DOTS   ] = 150;
+        modeInfo[z].effect_freq[SOLAR  ] = 150;
+        modeInfo[z].effect_freq[GRID   ] =  12;
+        modeInfo[z].effect_freq[NUCLIDE] =   0;
+        modeInfo[z].effect_freq[SHADE  ] =  50;
+        modeInfo[z].effect_freq[SPECTRAL]=   0;
+        modeInfo[z].solar_max      = 600;
+        modeInfo[z].min_effects    = 1;
+        modeInfo[z].max_effects    = 3;
+        modeInfo[z].center_dwindle = 1.0f;
+    }
+
+    for (z = 1; z <= NUM_MODES; ++z) {
+        if (iDispBits > 8) {
+            modeInfo[z].effect_freq[NUCLIDE] = max(0, min(900, (int)(modeInfo[z].effect_freq[NUCLIDE] * 1.3f)));
+            modeInfo[z].effect_freq[CHASERS] = max(0, min(900, modeInfo[z].effect_freq[CHASERS] -  50));
+            modeInfo[z].effect_freq[DOTS]    = max(0, min(900, modeInfo[z].effect_freq[DOTS   ] + 220));
+            modeInfo[z].effect_freq[BAR ]    = max(0, min(900, modeInfo[z].effect_freq[BAR    ] + 220));
+            modeInfo[z].effect_freq[SHADE]   = max(0, min(900, modeInfo[z].effect_freq[SHADE  ] + 150));
+        }
+        modeInfo[z].effect_freq[GRID] = min(1000, modeInfo[z].effect_freq[GRID] + 8);
+    }
+
+    modeInfo[20].center_dwindle = 0.98f;
+    modeInfo[21].center_dwindle = 0.98f;
+    modeInfo[22].center_dwindle = 0.98f;
+    modeInfo[23].center_dwindle = 0.98f;
+
+    dumpmsg("  Calling initial FX_Pick_Random_Mode() and GenerateChunkOfNewMap() loop...");
+
+    FX_Pick_Random_Mode();
+    g_rush_map  = TRUE;
+    y_map_pos   = -1;
+    do {
+        GenerateChunkOfNewMap();
+    } while (y_map_pos != -1);
+
+    dumpmsg("Finished with FX_Init().");
+
+    return TRUE;
+}
+
+void FX_Fini() {
+    // Upstream uses `delete` for buffers allocated via `malloc()` — undefined
+    // behaviour in C++ that happens to work on MSVC. We use the matching
+    // `free()`. The pointer-realignment fix-up in FX_Init means VS1/VS2/
+    // DATA_FX/DATA_FX2 may differ from `original_*` by up to 15 bytes; we
+    // free the *originals*.
+    if (original_VS[0]      != nullptr) { free(original_VS[0]);      original_VS[0]      = nullptr; VS1      = nullptr; }
+    if (original_VS[1]      != nullptr) { free(original_VS[1]);      original_VS[1]      = nullptr; VS2      = nullptr; }
+    if (original_DATA_FX[0] != nullptr) { free(original_DATA_FX[0]); original_DATA_FX[0] = nullptr; DATA_FX  = nullptr; }
+    if (original_DATA_FX[1] != nullptr) { free(original_DATA_FX[1]); original_DATA_FX[1] = nullptr; DATA_FX2 = nullptr; }
+    // Upstream's PLUGIN-only `DeleteObject(g_title_font)` is dead-code on
+    // macOS — there is no GDI font to release.
+    g_title_font = nullptr;
+}
+
+void FX_Pick_Random_Mode() {
+    if (modeprefs_total <= 0) {
+        new_mode = 1 + rand() % NUM_MODES;
+        if (rand() % 25 == 0) new_mode = 7;
+        if (rand() % 25 == 0) new_mode = 5;
+        y_map_pos = -1;
+    } else {
+        int a = rand() % modeprefs_total;
+        int b = 0;
+        int i = 1;
+        while (i <= NUM_MODES) {
+            b += modeprefs[i];
+            if (a < b) {
+                new_mode = i;
+                i = 9999;
+                y_map_pos = -1;
+            }
+            ++i;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4c-4 marker.
 // ---------------------------------------------------------------------------
 extern "C" int geiss_port_step(void);
-extern "C" int geiss_port_step(void) { return 3; }
+extern "C" int geiss_port_step(void) { return 4; }
