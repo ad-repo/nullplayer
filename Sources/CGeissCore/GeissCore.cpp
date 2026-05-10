@@ -45,6 +45,9 @@
 // upstream/proc_map.cpp for Process_Map). C++ linkage for the globals
 // (matches Proc_map.h's plain `extern long` declarations); C linkage for
 // the helper functions.
+extern int            effect[9];
+extern int            gXC, gYC;
+extern long           frames_this_mode;
 extern long           FXW;
 extern long           FXH;
 extern long           FX_YCUT;
@@ -264,6 +267,22 @@ const char *GeissCore_currentEffectName(GeissCore *core) {
     if (!core) return "Mode 0";
     snprintf(core->effectName, sizeof(core->effectName), "Mode %d", mode);
     return core->effectName;
+}
+
+void GeissCore_diag(GeissCore *core, GeissCoreDiag *out) {
+    if (!core || !out) return;
+    out->active_mode      = mode;
+    out->new_mode         = new_mode;
+    out->y_map_pos        = y_map_pos;
+    out->frames_this_mode = (int)frames_this_mode;
+    for (int i = 0; i < 9; ++i) {
+        out->effects[i] = (int8_t)effect[i];
+    }
+    out->gXC       = gXC;
+    out->gYC       = gYC;
+    out->iDispBits = iDispBits;
+    out->FXW       = (int)FXW;
+    out->FXH       = (int)FXH;
 }
 
 } // extern "C"

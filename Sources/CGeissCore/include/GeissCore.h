@@ -29,6 +29,23 @@ void        GeissCore_prevEffect(GeissCore *core);
 void        GeissCore_randomEffect(GeissCore *core);
 const char *GeissCore_currentEffectName(GeissCore *core);
 
+// Diagnostic accessor — exposes engine state for tests / debugging.
+// Returns the int via the out-pointer; the int8 array `effects8` (length 9)
+// receives the per-effect on/off state (1 = active, -1 = off, 0 = unset).
+// Intended for the phase-4 closeout smoke test.
+typedef struct GeissCoreDiag {
+    int active_mode;       // current `mode` global
+    int new_mode;          // staged `new_mode` global
+    int y_map_pos;         // current map-build position (-1 = idle)
+    int frames_this_mode;  // frames since last mode switch
+    int8_t effects[9];     // effect[CHASERS..SPECTRAL]
+    int gXC, gYC;
+    int iDispBits;
+    int FXW, FXH;
+} GeissCoreDiag;
+
+void GeissCore_diag(GeissCore *core, GeissCoreDiag *out);
+
 #ifdef __cplusplus
 }
 #endif
