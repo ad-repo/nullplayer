@@ -11307,9 +11307,7 @@ class PlexBrowserView: NSView {
             // Clear current playlist, load radio tracks, and start playing
             NSLog("startTrackRadio: Loading tracks into audio engine...")
             let audioEngine = WindowManager.shared.audioEngine
-            audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
-            audioEngine.play()
             NSLog("Track Radio started with %d tracks", tracks.count)
         }
     }
@@ -11328,9 +11326,7 @@ class PlexBrowserView: NSView {
             
             // Clear current playlist, load radio tracks, and start playing
             let audioEngine = WindowManager.shared.audioEngine
-            audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
-            audioEngine.play()
             NSLog("Album Radio started with %d tracks", tracks.count)
         }
     }
@@ -11349,9 +11345,7 @@ class PlexBrowserView: NSView {
             
             // Clear current playlist, load radio tracks, and start playing
             let audioEngine = WindowManager.shared.audioEngine
-            audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
-            audioEngine.play()
             NSLog("Artist Radio started with %d tracks", tracks.count)
         }
     }
@@ -11371,9 +11365,7 @@ class PlexBrowserView: NSView {
                     }
                     if !libraryTracks.isEmpty {
                         let audioEngine = WindowManager.shared.audioEngine
-                        audioEngine.clearPlaylist()
                         audioEngine.loadTracks(libraryTracks)
-                        audioEngine.play()
                         NSLog("Library Radio started with %d random cached tracks", libraryTracks.count)
                     }
                 }
@@ -11381,9 +11373,7 @@ class PlexBrowserView: NSView {
             }
             
             let audioEngine = WindowManager.shared.audioEngine
-            audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
-            audioEngine.play()
             NSLog("Library Radio started with %d tracks", tracks.count)
         }
     }
@@ -16171,9 +16161,7 @@ class PlexBrowserView: NSView {
                 return
             }
             let audioEngine = WindowManager.shared.audioEngine
-            audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
-            audioEngine.play()
             NSLog("%@ started with %d tracks", radioType.displayName, tracks.count)
             self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
             self.radioPlayTask = nil
@@ -16210,9 +16198,7 @@ class PlexBrowserView: NSView {
                 return
             }
             let audioEngine = WindowManager.shared.audioEngine
-            audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
-            audioEngine.play()
             self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
             self.radioPlayTask = nil
         }
@@ -16248,9 +16234,7 @@ class PlexBrowserView: NSView {
                 return
             }
             let audioEngine = WindowManager.shared.audioEngine
-            audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
-            audioEngine.play()
             self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
             self.radioPlayTask = nil
         }
@@ -16286,9 +16270,7 @@ class PlexBrowserView: NSView {
                 return
             }
             let audioEngine = WindowManager.shared.audioEngine
-            audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
-            audioEngine.play()
             self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
             self.radioPlayTask = nil
         }
@@ -16306,9 +16288,7 @@ class PlexBrowserView: NSView {
         }
         guard !tracks.isEmpty else { return }
         let audioEngine = WindowManager.shared.audioEngine
-        audioEngine.clearPlaylist()
         audioEngine.loadTracks(tracks)
-        audioEngine.play()
     }
     
     // MARK: - Subsonic Playback
