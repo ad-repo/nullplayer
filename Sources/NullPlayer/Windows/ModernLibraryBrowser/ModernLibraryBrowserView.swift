@@ -10084,7 +10084,7 @@ class ModernLibraryBrowserView: NSView {
                 self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
                 return
             }
-            let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            WindowManager.shared.audioEngine.loadTracks(tracks)
             self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
             self.radioPlayTask = nil
         }
@@ -10111,7 +10111,7 @@ class ModernLibraryBrowserView: NSView {
                 self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
                 return
             }
-            let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            WindowManager.shared.audioEngine.loadTracks(tracks)
             self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
             self.radioPlayTask = nil
         }
@@ -10138,7 +10138,7 @@ class ModernLibraryBrowserView: NSView {
                 self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
                 return
             }
-            let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            WindowManager.shared.audioEngine.loadTracks(tracks)
             self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
             self.radioPlayTask = nil
         }
@@ -10165,7 +10165,7 @@ class ModernLibraryBrowserView: NSView {
                 self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
                 return
             }
-            let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            WindowManager.shared.audioEngine.loadTracks(tracks)
             self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
             self.radioPlayTask = nil
         }
@@ -10179,7 +10179,7 @@ class ModernLibraryBrowserView: NSView {
         case .decadeRadio(let s, let e, _): tracks = MediaLibrary.shared.createLocalDecadeRadio(start: s, end: e)
         }
         if !tracks.isEmpty {
-            let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            WindowManager.shared.audioEngine.loadTracks(tracks)
         }
     }
 

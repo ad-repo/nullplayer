@@ -1089,6 +1089,7 @@ class CastManager {
             // behind the current inflight task and deadlock the cast handoff.
             if session.device.type == .sonos {
                 let engine = WindowManager.shared.audioEngine
+                var requestedTrackRejected = false
 
                 while true {
                     var fetchedSampleRate: Int? = nil
@@ -1115,10 +1116,21 @@ class CastManager {
                           trackToCast.sampleRate.map { "\($0) Hz" } ?? "nil",
                           fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
 
+                    if trackToCast.id == track.id {
+                        requestedTrackRejected = true
+                    }
+
                     guard let compatible = engine.advanceToFirstSonosCompatibleTrack() else {
-                        NSLog("CastManager: castNewTrack Sonos found no compatible replacement after rejecting '%@' — stopping cast",
+                        NSLog("CastManager: castNewTrack Sonos found no compatible replacement after rejecting '%@' — keeping cast session, surfacing error",
                               trackToCast.title)
-                        await _stopCastingCore()
+                        await MainActor.run {
+                            self.isCastingTrackChange = false
+                            self.pendingCastTrack = nil
+                            NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
+                        }
+                        if requestedTrackRejected {
+                            self.postError(.playbackFailed("'\(track.title)' is not a supported format on Sonos"))
+                        }
                         return
                     }
 
