@@ -1676,16 +1676,15 @@ class SkinRenderer {
         // Fill background with black for visualization area
         NSColor.black.setFill()
         context.fill(bounds)
-        
+
         let titleHeight = SkinElements.Playlist.titleHeight  // 20px like playlist
-        let bottomHeight = SkinElements.ProjectM.Layout.bottomBorder
+        let bottomHeight = 7 * Skin.scaleFactor
 
         // Left/right side borders using the same leftSideTile sprite as the playlist
         drawPlaylistStyleSideBorders(in: context, bounds: bounds, titleHeight: titleHeight, bottomHeight: bottomHeight)
 
-        // Bottom bar solid fill
-        NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0).setFill()
-        context.fill(NSRect(x: 0, y: bounds.height - bottomHeight, width: bounds.width, height: bottomHeight))
+        // Bottom strip: rotated side-tile so it matches the left/right borders.
+        drawPlaylistStyleBottomBorder(in: context, bounds: bounds, bottomHeight: bottomHeight)
 
         // Draw title bar using PLEDIT.BMP sprites (without custom text)
         drawSpectrumAnalyzerTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
@@ -2114,31 +2113,30 @@ class SkinRenderer {
         }
     }
     
-    /// Draw GEN.BMP bottom bar (three-part: left corner, tiled middle, right corner)
-    private func drawGenBottomBar(cgImage: CGImage, in context: CGContext, bounds: NSRect) {
+    /// Draw GEN.BMP bottom bar (three-part: left corner, tiled middle, right corner).
+    /// When `height` is provided, the sprite is vertically squashed to that height.
+    private func drawGenBottomBar(cgImage: CGImage, in context: CGContext, bounds: NSRect, height: CGFloat? = nil) {
         let bottomLeftCorner = SkinElements.GenWindow.Chrome.bottomLeftCorner
         let bottomTile = SkinElements.GenWindow.Chrome.bottomTile
         let bottomRightCorner = SkinElements.GenWindow.Chrome.bottomRightCorner
-        
-        let bottomY = bounds.height - bottomLeftCorner.height
-        
-        // Draw left corner
+
+        let drawHeight = height ?? bottomLeftCorner.height
+        let bottomY = bounds.height - drawHeight
+
         drawSprite(from: cgImage, sourceRect: bottomLeftCorner,
-                  destRect: NSRect(x: 0, y: bottomY, width: bottomLeftCorner.width, height: bottomLeftCorner.height),
+                  destRect: NSRect(x: 0, y: bottomY, width: bottomLeftCorner.width, height: drawHeight),
                   in: context)
-        
-        // Draw right corner
+
         let rightCornerX = bounds.width - bottomRightCorner.width
         drawSprite(from: cgImage, sourceRect: bottomRightCorner,
-                  destRect: NSRect(x: rightCornerX, y: bottomY, width: bottomRightCorner.width, height: bottomRightCorner.height),
+                  destRect: NSRect(x: rightCornerX, y: bottomY, width: bottomRightCorner.width, height: drawHeight),
                   in: context)
-        
-        // Draw tiled middle section
+
         let middleX = bottomLeftCorner.width
         let middleWidth = bounds.width - bottomLeftCorner.width - bottomRightCorner.width
         if middleWidth > 0 {
             drawTiledSprite(from: cgImage, sourceRect: bottomTile,
-                           destRect: NSRect(x: middleX, y: bottomY, width: middleWidth, height: bottomTile.height),
+                           destRect: NSRect(x: middleX, y: bottomY, width: middleWidth, height: drawHeight),
                            in: context, tileVertically: false)
         }
     }
@@ -2404,10 +2402,8 @@ class SkinRenderer {
         // Draw side borders
         drawPlaylistSideBorders(in: context, bounds: bounds)
         
-        // Match the simple bottom strip used by waveform/spectrum/projectm windows.
-        let borderY = bounds.height - bottomHeight
-        NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0).setFill()
-        context.fill(NSRect(x: 0, y: borderY, width: bounds.width, height: bottomHeight))
+        // Bottom strip: rotated side-tile so it matches the left/right borders.
+        drawPlaylistStyleBottomBorder(in: context, bounds: bounds, bottomHeight: bottomHeight)
         
         // Scrollbar removed - users scroll with trackpad/wheel
     }
@@ -2514,6 +2510,63 @@ class SkinRenderer {
         }
     }
     
+    /// Build a horizontally-tileable bottom-border tile by rotating the playlist `leftSideTile`
+    /// 90° CCW so its outer edge ends up at the bottom of the strip. Result: 29 × 12 image.
+    private func rotatedSideTileForBottomBorder() -> CGImage? {
+        guard let pleditImage = skin.pledit,
+              let pleditCG = pleditImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        let src = SkinElements.Playlist.leftSideTile  // 12 × 29
+        let cropRect = CGRect(x: src.origin.x, y: src.origin.y, width: src.width, height: src.height)
+        guard let srcCG = pleditCG.cropping(to: cropRect) else { return nil }
+
+        let outW = Int(src.height)  // 29
+        let outH = Int(src.width)   // 12
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let ctx = CGContext(data: nil, width: outW, height: outH,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: colorSpace, bitmapInfo: bitmapInfo) else { return nil }
+        ctx.interpolationQuality = .none
+
+        // Bottom-up CG context. Rotate 90° CCW so the tile's outer edge (source x=0)
+        // ends up at the BOTTOM (y=0 in CG bottom-up = visible bottom of the strip).
+        ctx.translateBy(x: CGFloat(outW), y: 0)
+        ctx.rotate(by: .pi / 2)
+        ctx.draw(srcCG, in: CGRect(x: 0, y: 0, width: src.width, height: src.height))
+        return ctx.makeImage()
+    }
+
+    /// Draw the bottom border strip using the side-tile texture rotated 90°, so it matches
+    /// the look of the left/right borders. Falls back to a solid dark fill.
+    private func drawPlaylistStyleBottomBorder(in context: CGContext, bounds: NSRect, bottomHeight: CGFloat) {
+        // Snap to integer pixels so the strip aligns with the snapped side-tile rects below it.
+        let snappedHeight = bottomHeight.rounded(.down)
+        let bottomY = (bounds.height - snappedHeight).rounded(.down)
+        guard let rotated = rotatedSideTileForBottomBorder() else {
+            NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
+            context.fill(NSRect(x: 0, y: bottomY, width: bounds.width, height: snappedHeight))
+            return
+        }
+        let tileNaturalWidth = CGFloat(rotated.width)
+        context.saveGState()
+        context.clip(to: NSRect(x: 0, y: bottomY, width: bounds.width, height: snappedHeight))
+        context.interpolationQuality = .none
+        var x: CGFloat = 0
+        while x < bounds.width {
+            let drawWidth = min(tileNaturalWidth, bounds.width - x)
+            // Render rotated tile into top-down context: translate to dest, flip Y locally.
+            context.saveGState()
+            context.translateBy(x: x, y: bottomY + snappedHeight)
+            context.scaleBy(x: 1, y: -1)
+            context.draw(rotated, in: CGRect(x: 0, y: 0, width: drawWidth, height: snappedHeight))
+            context.restoreGState()
+            x += tileNaturalWidth
+        }
+        context.restoreGState()
+    }
+
     /// Draw left and right side borders (shared by playlist, spectrum, waveform, projectM).
     /// Both borders use the same leftSideTile sprite; the right border is drawn horizontally
     /// mirrored so both sides appear identical.
@@ -2537,10 +2590,14 @@ class SkinRenderer {
             context.fill(NSRect(x: bounds.width - sideW, y: contentTop, width: sideW, height: contentBottom - contentTop))
         }
 
-        var y = contentBottom - tileH
+        // Snap tile rects to integer pixels — when bottomHeight/contentBottom is fractional
+        // (e.g. scaleFactor == 1.25), unsnapped destination rects let sub-pixel rendering
+        // bleed between adjacent tiles, producing visible blue seams at every tile join.
+        let snappedBottom = contentBottom.rounded(.down)
+        var y = snappedBottom - tileH
         while y > contentTop - tileH {
-            let drawY = max(contentTop, y)
-            let h = min(tileH, contentBottom - drawY)
+            let drawY = max(contentTop, y).rounded(.down)
+            let h = min(tileH, snappedBottom - drawY)
             if h > 0 {
                 let leftDest = NSRect(x: 0, y: drawY, width: sideW, height: h)
                 let rightDest = NSRect(x: bounds.width - sideW, y: drawY, width: sideW, height: h)

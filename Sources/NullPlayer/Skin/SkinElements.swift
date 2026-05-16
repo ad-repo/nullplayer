@@ -659,8 +659,8 @@ struct SkinElements {
         /// Title bar height
         static let titleHeight: CGFloat = 20
         
-        /// Bottom border height (thin decorative border, no control bar)
-        static let bottomHeight: CGFloat = 3
+        /// Bottom border height (decorative border, no control bar)
+        static let bottomHeight: CGFloat = 7
         
         // === TITLE BAR (active: y=0, inactive: y=21) ===
         // Total width: 25 + 100 + 25 + 25 = 175px (tiled to fill)
@@ -997,7 +997,7 @@ struct SkinElements {
             static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
             static let leftBorder: CGFloat = 12
             static let rightBorder: CGFloat = 12
-            static let bottomBorder: CGFloat = 3 * Skin.scaleFactor
+            static let bottomBorder: CGFloat = 7 * Skin.scaleFactor
         }
 
         /// Window control button positions in title bar (scaled)
@@ -1030,7 +1030,7 @@ struct SkinElements {
             static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
             static let leftBorder: CGFloat = 12
             static let rightBorder: CGFloat = 12
-            static let bottomBorder: CGFloat = 3 * Skin.scaleFactor
+            static let bottomBorder: CGFloat = 7 * Skin.scaleFactor
         }
     }
 
