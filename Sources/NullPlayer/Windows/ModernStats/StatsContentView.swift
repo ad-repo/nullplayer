@@ -102,18 +102,6 @@ struct StatsOverviewView: View {
     @ObservedObject var agent: PlayHistoryAgent
     var skinTextColor: Color = .primary
 
-    private func compactTopDimensionHeight(rowCount: Int, maxHeight: CGFloat = 180) -> CGFloat {
-        guard rowCount > 0 else { return 56 }
-
-        let titleHeight: CGFloat = 20
-        let titleSpacing: CGFloat = 4
-        let rowHeight: CGFloat = 18
-        let rowSpacing: CGFloat = 3
-        let rowVerticalPadding: CGFloat = 4
-        let visibleRowsHeight = CGFloat(rowCount) * rowHeight + CGFloat(max(0, rowCount - 1)) * rowSpacing
-        return min(maxHeight, titleHeight + titleSpacing + rowVerticalPadding + visibleRowsHeight)
-    }
-
     var body: some View {
         ScrollView(.vertical) {
             VStack(spacing: 16) {
@@ -128,7 +116,7 @@ struct StatsOverviewView: View {
                         set: { (v: String?) in agent.selectArtist(v) }
                     )
                 )
-                .frame(height: 220)
+                .frame(height: topDimensionListHeight(rowCount: agent.topArtists.count, maxHeight: 220))
 
                 if let selectedArtist = agent.filter.selectedArtist {
                     ArtistTrackDetailView(
@@ -146,7 +134,7 @@ struct StatsOverviewView: View {
                     selected: .constant(nil),
                     allowsSelection: false
                 )
-                .frame(height: 180)
+                .frame(height: topDimensionListHeight(rowCount: agent.topMovies.count))
 
                 TopDimensionChartView(
                     title: "Top TV Shows",
@@ -155,7 +143,7 @@ struct StatsOverviewView: View {
                     selected: .constant(nil),
                     allowsSelection: false
                 )
-                .frame(height: compactTopDimensionHeight(rowCount: agent.topTVShows.count))
+                .frame(height: topDimensionListHeight(rowCount: agent.topTVShows.count))
 
                 InternetRadioSection(
                     rows: agent.topRadioStations,
@@ -487,6 +475,18 @@ private func formatStatsPlayTime(_ duration: Double) -> String {
     return "<1m"
 }
 
+private func topDimensionListHeight(rowCount: Int, maxHeight: CGFloat = 180) -> CGFloat {
+    guard rowCount > 0 else { return 56 }
+
+    let titleHeight: CGFloat = 20
+    let titleSpacing: CGFloat = 4
+    let rowHeight: CGFloat = 18
+    let rowSpacing: CGFloat = 3
+    let rowVerticalPadding: CGFloat = 4
+    let visibleRowsHeight = CGFloat(rowCount) * rowHeight + CGFloat(max(0, rowCount - 1)) * rowSpacing
+    return min(maxHeight, titleHeight + titleSpacing + rowVerticalPadding + visibleRowsHeight)
+}
+
 struct InternetRadioSection: View {
     let rows: [TopDimensionRow]
     let totalSeconds: Double
@@ -528,7 +528,7 @@ struct InternetRadioSection: View {
                     allowsSelection: false,
                     showsTotalMinutes: true
                 )
-                .frame(height: 180)
+                .frame(height: topDimensionListHeight(rowCount: rows.count))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
