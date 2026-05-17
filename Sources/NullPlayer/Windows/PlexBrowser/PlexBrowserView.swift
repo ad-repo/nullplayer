@@ -7618,6 +7618,7 @@ class PlexBrowserView: NSView {
             localItem.state = .on
         }
         menu.addItem(localItem)
+        menu.addItem(NSMenuItem.separator())
         
         // Internet Radio option
         let radioItem = NSMenuItem(title: "Internet Radio", action: #selector(selectRadioSource), keyEquivalent: "")
