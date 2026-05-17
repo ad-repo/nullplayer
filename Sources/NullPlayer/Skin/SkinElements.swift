@@ -659,8 +659,8 @@ struct SkinElements {
         /// Title bar height
         static let titleHeight: CGFloat = 20
         
-        /// Bottom border height (thin decorative border, no control bar)
-        static let bottomHeight: CGFloat = 3
+        /// Bottom border height (decorative border, no control bar)
+        static let bottomHeight: CGFloat = 7
         
         // === TITLE BAR (active: y=0, inactive: y=21) ===
         // Total width: 25 + 100 + 25 + 25 = 175px (tiled to fill)
@@ -765,7 +765,7 @@ struct SkinElements {
             static let tabBarHeight: CGFloat = 24
             static let serverBarHeight: CGFloat = 24
             static let searchBarHeight: CGFloat = 26
-            static let statusBarHeight: CGFloat = 3  // Thin bottom border
+            static let statusBarHeight: CGFloat = 7 * Skin.scaleFactor  // Match playlist/spectrum/waveform bottom border
             static let scrollbarWidth: CGFloat = 0   // No scrollbar - users scroll with trackpad/wheel
             static let alphabetWidth: CGFloat = 16
             static let leftBorder: CGFloat = 12
@@ -863,10 +863,10 @@ struct SkinElements {
             static let titleBarHeight: CGFloat = 18
             static let searchBarHeight: CGFloat = 24
             static let columnHeaderHeight: CGFloat = 22
-            static let statusBarHeight: CGFloat = 3   // Thin bottom border
+            static let statusBarHeight: CGFloat = 7 * Skin.scaleFactor   // Match playlist/spectrum/waveform bottom border
             static let scrollbarWidth: CGFloat = 0    // No scrollbar - users scroll with trackpad/wheel
-            static let leftBorder: CGFloat = 3        // Thin side borders
-            static let rightBorder: CGFloat = 3       // Edge only (no scrollbar)
+            static let leftBorder: CGFloat = 12       // Match playlist-style side rails
+            static let rightBorder: CGFloat = 12      // Match playlist-style side rails
             static let padding: CGFloat = 3
         }
         
@@ -903,9 +903,9 @@ struct SkinElements {
             static let titleBarHeight: CGFloat = 20
             static let leftBorder: CGFloat = 12
             static let rightBorder: CGFloat = 12
-            static let bottomBorder: CGFloat = 3
+            static let bottomBorder: CGFloat = 7 * Skin.scaleFactor
         }
-        
+
         // MARK: - Title Bar (same style as playlist)
         
         struct TitleBar {
@@ -997,7 +997,7 @@ struct SkinElements {
             static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
             static let leftBorder: CGFloat = 12
             static let rightBorder: CGFloat = 12
-            static let bottomBorder: CGFloat = 3 * Skin.scaleFactor
+            static let bottomBorder: CGFloat = 7 * Skin.scaleFactor
         }
 
         /// Window control button positions in title bar (scaled)
@@ -1030,7 +1030,7 @@ struct SkinElements {
             static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
             static let leftBorder: CGFloat = 12
             static let rightBorder: CGFloat = 12
-            static let bottomBorder: CGFloat = 3 * Skin.scaleFactor
+            static let bottomBorder: CGFloat = 7 * Skin.scaleFactor
         }
     }
 

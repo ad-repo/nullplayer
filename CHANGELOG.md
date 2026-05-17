@@ -15,6 +15,7 @@
 
 - **Main window transparency after occlusion fixed** — the main window no longer renders partially transparent after being occluded, minimized, or hidden behind other windows. Returning to visibility now triggers a full redraw rather than relying on per-tick sub-region repaints.
 - **Internet radio Sonos discovery and cast classification fixed** — internet radio is now correctly treated as non-local for cast logging and Sonos device discovery. A new explicit `isRadioOrigin` flag on `Track` ensures radio sessions are routed and reported correctly when casting.
+- **Classic playlist / spectrum / waveform / projectM / library chrome rebuilt as a continuous U-shape border** — these windows now render with a visible 7px bottom strip matching the side borders' artwork, side borders that extend through the bottom-corner regions, and a continuous gold-trim outline that wraps left → bottom → right with no slits at the corners. The top-right corner is also fixed to mirror the leftCorner sprite (with the close/shade button icons re-drawn on top), eliminating the offset that previously left the interior content area wider under the title bar than below it. Tile destinations are pixel-snapped to prevent the sub-pixel blue seams that appear at fractional `Skin.scaleFactor` values.
 
 ## 0.21.1
 
