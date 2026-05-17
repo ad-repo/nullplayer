@@ -392,6 +392,7 @@ struct PlayTimeSummarySection: View {
                         Button("Reconcile Genres") { agent.startGenreBackfill() }
                             .buttonStyle(.plain)
                             .foregroundColor(.accentColor)
+                            .help("Attempt to fill in missing play history genres")
                     }
                 }
             }
