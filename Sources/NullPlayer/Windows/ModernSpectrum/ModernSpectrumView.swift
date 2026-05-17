@@ -828,6 +828,7 @@ class ModernSpectrumView: NSView {
     @objc private func setNormalizationMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
     @objc private func setFlameStyle(_ sender: NSMenuItem) {

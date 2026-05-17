@@ -501,25 +501,27 @@ class AudioEngine {
     private var fftNewSpectrum = [Float](repeating: 0, count: 75)
     private var fftPcmSamples = [Float](repeating: 0, count: 512)
     
-    /// Pre-computed frequency weights for spectrum analyzer (professional analyzer tilt)
+    /// Pre-computed frequency weights for spectrum analyzer (light compensation)
     private let spectrumFrequencyWeights: [Float] = {
         // Generate weights for 75 bands spanning 20Hz-20kHz logarithmically
+        // Keep this shared producer conservative; visualizers apply their own shaping.
         let bandCount = 75
         let minFreq: Float = 20
         let maxFreq: Float = 20000
-        func smoothstep(_ edge0: Float, _ edge1: Float, _ value: Float) -> Float {
-            let t = min(1.0, max(0.0, (value - edge0) / (edge1 - edge0)))
-            return t * t * (3.0 - 2.0 * t)
-        }
         
         return (0..<bandCount).map { band in
             let freqRatio = Float(band) / Float(bandCount - 1)
             let freq = minFreq * pow(maxFreq / minFreq, freqRatio)
 
-            let subHighpass = 0.22 + 0.78 * smoothstep(28, 90, freq)
-            let lowMidTaper = 0.88 + 0.12 * smoothstep(90, 350, freq)
-            let airLift = 1.0 + 0.08 * smoothstep(6_000, 14_000, freq)
-            return subHighpass * lowMidTaper * airLift
+            if freq < 40 {
+                return 0.70
+            } else if freq < 100 {
+                return 0.85
+            } else if freq < 300 {
+                return 0.92
+            } else {
+                return 1.0
+            }
         }
     }()
     
