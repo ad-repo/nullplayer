@@ -2488,9 +2488,33 @@ class SkinRenderer {
         
         drawSprite(from: pleditImage, sourceRect: leftCorner,
                   to: NSRect(x: 0, y: 0, width: leftCornerWidth + cornerOverlap, height: titleHeight), in: context)
-        
-        drawSprite(from: pleditImage, sourceRect: rightCorner,
-                  to: NSRect(x: bounds.width - rightCornerWidth - cornerOverlap, y: 0, width: rightCornerWidth + cornerOverlap, height: titleHeight), in: context)
+
+        // Right corner: mirror the leftCorner sprite so its inner+outer bevels match the
+        // mirrored leftSideTile border below it (symmetric with the left). The original
+        // rightCorner sprite places its inner bevel ~3px from the window edge (designed to
+        // abut the old 20-wide scrollbar tile), so its interior boundary doesn't line up with
+        // the 12-wide side border below — leaving the interior content area wider under the
+        // title bar than below it. Mirroring leftCorner avoids that step.
+        let rightMirrorRect = NSRect(x: bounds.width - leftCornerWidth - cornerOverlap, y: 0,
+                                     width: leftCornerWidth + cornerOverlap, height: titleHeight)
+        context.saveGState()
+        context.translateBy(x: rightMirrorRect.midX, y: 0)
+        context.scaleBy(x: -1, y: 1)
+        context.translateBy(x: -rightMirrorRect.midX, y: 0)
+        drawSprite(from: pleditImage, sourceRect: leftCorner, to: rightMirrorRect, in: context)
+        context.restoreGState()
+
+        // The close + shade button icons were baked into rightCorner; re-draw just those
+        // icons on top of the mirrored corner so the user-facing buttons are preserved.
+        let buttonInactiveYOffset: CGFloat = isActive ? 0 : 21
+        let closeBtnSource = NSRect(x: 167, y: 3 + buttonInactiveYOffset, width: 9, height: 9)
+        let shadeBtnSource = NSRect(x: 158, y: 3 + buttonInactiveYOffset, width: 9, height: 9)
+        drawSprite(from: pleditImage, sourceRect: closeBtnSource,
+                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
+                             y: 3, width: 9, height: 9), in: context)
+        drawSprite(from: pleditImage, sourceRect: shadeBtnSource,
+                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.shadeOffset,
+                             y: 3, width: 9, height: 9), in: context)
         
         // Draw window control button pressed states if needed
         if pressedButton == .close {
