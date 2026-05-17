@@ -942,7 +942,7 @@ class ContextMenuBuilder {
         let modeMenu = NSMenu()
         modeMenu.autoenablesItems = false
         
-        for mode in MainWindowVisMode.allCases {
+        for mode in MainWindowVisMode.visualizationOrder {
             let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setMainVisMode(_:)), keyEquivalent: "")
             item.target = MenuActions.shared
             item.representedObject = mode
@@ -1217,7 +1217,7 @@ class ContextMenuBuilder {
         let currentQuality = UserDefaults.standard.string(forKey: "spectrumQualityMode")
             .flatMap { SpectrumQualityMode(rawValue: $0) } ?? .classic
         
-        for mode in SpectrumQualityMode.allCases {
+        for mode in SpectrumQualityMode.visualizationOrder {
             let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setSpectrumQuality(_:)), keyEquivalent: "")
             item.target = MenuActions.shared
             item.representedObject = mode
@@ -4041,7 +4041,7 @@ class MenuActions: NSObject {
     @objc func setSpectrumNormalization(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
-        // Normalization mode is read each frame, no notification needed
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
 
     @objc func loadVisClassicProfile(_ sender: NSMenuItem) {

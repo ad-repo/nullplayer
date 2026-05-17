@@ -1206,7 +1206,7 @@ class ModernMainWindowView: NSView {
     
     /// Cycle through visualization modes on the mini spectrum area
     private func cycleMainVisMode() {
-        let allModes = MainWindowVisMode.allCases
+        let allModes = MainWindowVisMode.visualizationOrder
         guard let currentIndex = allModes.firstIndex(of: mainVisMode) else {
             mainVisMode = .spectrum
             return
@@ -1238,6 +1238,7 @@ class ModernMainWindowView: NSView {
                 let specRect = currentMainSpectrumOverlayRect()
                 let overlay = SpectrumAnalyzerView(frame: specRect)
                 overlay.isEmbedded = true  // prevent contamination of "spectrumQualityMode" UserDefaults
+                overlay.normalizationUserDefaultsKey = "mainWindowNormalizationMode"
                 overlay.wantsLayer = true
                 overlay.layer?.cornerRadius = 4 * scale
                 overlay.layer?.masksToBounds = true
@@ -1340,6 +1341,7 @@ class ModernMainWindowView: NSView {
                let style = EKGStyle(rawValue: savedStyle) { overlay.ekgStyle = style }
             if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
                let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
+            overlay.refreshNormalizationMode()
             if mainVisMode == .visClassicExact {
                 let enabled = VisClassicBridge.transparentBgDefault(for: .mainWindow)
                 _ = overlay.setVisClassicTransparentBackground(enabled)

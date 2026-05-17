@@ -17,16 +17,16 @@ The main window's built-in visualization area (76x16 pixels in Winamp coordinate
 
 | Mode | Description |
 |------|-------------|
-| **Spectrum** | Classic 19-bar spectrum analyzer drawn with skin colors via CGContext (default) |
-| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible rendering |
+| **Classic** | Low-fi 19-bar spectrum analyzer with skin colors and cropped analyzer sub curve (default; persisted internally as `Spectrum`) |
+| **Enhanced** | Compact professional LED analyzer with cropped sub range, clean peak caps, and restrained meter colors |
+| **Ultra** | Dense professional spectrum analyzer with cropped sub range, fast decay, clean peak caps, and restrained meter colors |
 | **Fire** | GPU flame simulation using Metal compute shaders |
-| **Enhanced** | LED matrix with rainbow gradient, gravity-bouncing peaks, amber fade trails |
-| **Ultra** | Maximum fidelity seamless gradient with smooth decay, physics-based peaks, reflections |
 | **JWST** | Deep space flythrough with 3D star field and JWST diffraction flares |
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks |
 | **Matrix** | Falling digital rain with procedural glyphs mapped to spectrum bands |
 | **Snow** | Audio-reactive snowfall with flurry-to-blizzard intensity and bass-driven wind gusts |
 | **EKG** | Realistic high-resolution ECG monitor trace synchronized to detected BPM and waveform amplitude, with selectable monitor palettes |
+| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible rendering |
 
 ### Switching Modes
 
@@ -288,16 +288,16 @@ Participates in docking system with Main, EQ, and Playlist:
 
 | Mode | Description |
 |------|-------------|
-| **Winamp** | Discrete color bands from skin palette with floating peaks, 3D bar shading, LED gaps (default) |
-| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible INI behavior |
-| **Enhanced** | Rainbow LED matrix (55x16) with gravity-bouncing peaks, amber fade trails, rounded corners |
-| **Ultra** | Maximum fidelity seamless gradient with smooth decay, physics-based bouncing peaks, reflection effect |
+| **Classic** | Low-fi stepped bars from the skin palette with chunky peak caps, hard LED bands, and the shared cropped analyzer sub curve (default) |
+| **Enhanced** | Compact professional LED analyzer with cropped logarithmic frequency mapping, controlled low-bass shaping, clean peak caps, and short release trails |
+| **Ultra** | Dense professional analyzer with cropped logarithmic frequency mapping, controlled low-bass shaping, fast decay, and clean peak caps |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues (4 color styles) |
 | **JWST** | Deep space flythrough with 3D star field, JWST diffraction flares |
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks (8 color schemes) |
 | **Matrix** | Falling digital rain with procedural glyphs (5 color schemes, 2 intensity presets) |
 | **Snow** | Layered procedural snowfall with spectrum-shaped density, gusting drift, and soft atmospheric haze |
 | **EKG** | Beat-synced ECG monitor with phosphor trace, medical grid, scan glow, BPM-driven QRS pulses, PCM amplitude-driven peak height, and selectable palettes |
+| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible INI behavior |
 
 ### Switching Modes
 
@@ -305,6 +305,14 @@ Participates in docking system with Main, EQ, and Playlist:
 - **Right-click** → Mode to select specific mode
 - **Left/Right arrows**: Cycle flame/lightning/matrix styles (or prev/next profile in `vis_classic`)
 - **[ / ]**: Previous/next profile in `vis_classic`
+
+### Spectrum Analyzer Curve
+
+Classic, Enhanced, and Ultra avoid spending visible columns on the deepest sub range because these modes do not render frequency labels. `SpectrumAnalyzerView` maps the visible analyzer width over a cropped logarithmic source range starting at 48 Hz, then applies controlled low-bass tapers that begin around 42 Hz before the values reach the mode-specific renderers.
+
+- Classic keeps its low-fi identity after the shared curve: 19/84 stepped bars, hard palette bands, quantized heights, and chunky peak caps.
+- Enhanced uses the same standard cropped curve as Classic, with smoother LED release trails and clean peak caps.
+- Ultra uses the same analyzer strategy at a denser bar count, with a slightly faster decay and air lift for the larger spectrum window.
 
 ### `vis_classic` Exact Mode and Waveform Demand
 

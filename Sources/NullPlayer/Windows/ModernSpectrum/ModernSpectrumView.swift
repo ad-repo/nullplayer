@@ -553,7 +553,7 @@ class ModernSpectrumView: NSView {
     
     private func cycleQualityMode() {
         guard let view = spectrumAnalyzerView else { return }
-        let modes = SpectrumQualityMode.allCases
+        let modes = SpectrumQualityMode.visualizationOrder
         guard let idx = modes.firstIndex(of: view.qualityMode) else { return }
         // Skip modes whose shader file is missing
         var newIdx = (idx + 1) % modes.count
@@ -600,7 +600,7 @@ class ModernSpectrumView: NSView {
         
         // Quality Mode submenu
         let qualityMenu = NSMenu()
-        for mode in SpectrumQualityMode.allCases {
+        for mode in SpectrumQualityMode.visualizationOrder {
             let item = NSMenuItem(title: mode.displayName, action: #selector(setQualityMode(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = mode
@@ -828,6 +828,7 @@ class ModernSpectrumView: NSView {
     @objc private func setNormalizationMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
     @objc private func setFlameStyle(_ sender: NSMenuItem) {

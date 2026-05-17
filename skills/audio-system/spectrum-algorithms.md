@@ -139,16 +139,17 @@ bandMagnitude = interpMag × bandwidthScale[band]
 ```
 
 **Step 3: Pre-computed Frequency Weighting**
-Apply frequency-dependent weighting to reduce sub-bass dominance:
+Apply conservative shared frequency weighting to reduce sub-bass dominance without baking mode-specific visual tuning into every spectrum consumer:
 ```text
-// Pre-computed weights by frequency:
-freq < 40 Hz:    weight = 0.70   // Sub-bass: 30% reduction
-freq < 100 Hz:   weight = 0.85   // Bass: 15% reduction
-freq < 300 Hz:   weight = 0.92   // Low-mid: 8% reduction
-freq >= 300 Hz:  weight = 1.00   // Full level
+freq < 40 Hz:    weight = 0.70   // Sub-bass: light reduction
+freq < 100 Hz:   weight = 0.85   // Bass: very light reduction
+freq < 300 Hz:   weight = 0.92   // Low-mid: minimal reduction
+freq >= 300 Hz:  weight = 1.00   // Everything else: full level
 
 newSpectrum[band] = bandMagnitude × frequencyWeight[band]
 ```
+
+Mode-specific visualizers may apply additional shaping after receiving this shared spectrum. Keep analyzer presentation curves in `SpectrumAnalyzerView` rather than in the audio producer so Fire, JWST, Lightning, Matrix, Snow, ProjectM, and Geiss do not inherit analyzer-only tuning.
 
 **Step 4: Global Peak Tracking**
 Find maximum value across all 75 bands:

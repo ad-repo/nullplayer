@@ -73,7 +73,7 @@ class StreamingAudioPlayer {
     /// Pre-computed frequency weights for spectrum analyzer (light compensation)
     private static let spectrumFrequencyWeights: [Float] = {
         // Generate weights for 75 bands spanning 20Hz-20kHz logarithmically
-        // Light compensation - let bass punch through
+        // Keep this shared producer conservative; visualizers apply their own shaping.
         let bandCount = 75
         let minFreq: Float = 20
         let maxFreq: Float = 20000
@@ -81,16 +81,15 @@ class StreamingAudioPlayer {
         return (0..<bandCount).map { band in
             let freqRatio = Float(band) / Float(bandCount - 1)
             let freq = minFreq * pow(maxFreq / minFreq, freqRatio)
-            
-            // Minimal frequency weighting - just slight sub-bass reduction
+
             if freq < 40 {
-                return 0.70  // Sub-bass: light reduction
+                return 0.70
             } else if freq < 100 {
-                return 0.85  // Bass: very light reduction
+                return 0.85
             } else if freq < 300 {
-                return 0.92  // Low-mid: minimal reduction
+                return 0.92
             } else {
-                return 1.0   // Everything else: full level
+                return 1.0
             }
         }
     }()

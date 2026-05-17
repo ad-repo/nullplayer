@@ -40,6 +40,20 @@ enum SpectrumQualityMode: String, CaseIterable {
     case visClassicExact = "vis_classic" // Exact-port vis_classic analyzer core (CPU frame path)
     
     var displayName: String { rawValue }
+
+    /// Shared user-facing order for visualization mode menus and click cycling.
+    static let visualizationOrder: [SpectrumQualityMode] = [
+        .classic,
+        .enhanced,
+        .ultra,
+        .flame,
+        .cosmic,
+        .electricity,
+        .matrix,
+        .snow,
+        .ekg,
+        .visClassicExact
+    ]
     
     /// The Metal shader file required for this mode.
     /// Returns nil if the mode shares a shader already checked by another mode.
@@ -410,6 +424,11 @@ class SpectrumAnalyzerView: NSView {
     /// Embedded views (e.g., main window overlay) should set this to their own key
     /// (e.g., "mainWindowNormalizationMode") to avoid cross-contamination.
     var normalizationUserDefaultsKey: String = "spectrumNormalizationMode"
+    {
+        didSet {
+            refreshNormalizationMode()
+        }
+    }
     
     /// Quality mode (Classic discrete vs Enhanced smooth vs Ultra high-quality)
     var qualityMode: SpectrumQualityMode = .classic {
@@ -491,6 +510,10 @@ class SpectrumAnalyzerView: NSView {
     /// Bass energy attenuation factor (1.0 = full bass, <1.0 = reduced bass influence).
     /// Used to tame bass-heavy visuals in small embedded views where bass dominates.
     var bassAttenuation: Float = 1.0
+
+    func refreshNormalizationMode() {
+        cachedIsAccurateNormalization = UserDefaults.standard.string(forKey: normalizationUserDefaultsKey) == SpectrumNormalizationMode.accurate.rawValue
+    }
     
     /// Current lightning style preset (only used when qualityMode == .electricity)
     var lightningStyle: LightningStyle = .classic {
@@ -655,7 +678,7 @@ class SpectrumAnalyzerView: NSView {
     }()
     nonisolated(unsafe) private var rawSpectrum: [Float] = []       // From audio engine (75 bands)
     nonisolated(unsafe) private var displaySpectrum: [Float] = []   // After decay smoothing (Enhanced/Classic)
-    nonisolated(unsafe) private var ultraDisplaySpectrum: [Float] = []  // After decay smoothing (Ultra mode - 96 bars)
+    nonisolated(unsafe) private var ultraDisplaySpectrum: [Float] = []  // After decay smoothing (Ultra mode)
     nonisolated(unsafe) private var renderBarCount: Int = 19        // Bar count for rendering
     nonisolated(unsafe) private var renderDecayFactor: Float = 0.25 // Decay factor for rendering
     nonisolated(unsafe) private var renderColorPalette: [SIMD4<Float>] = [] // Colors for rendering
@@ -668,8 +691,8 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var cellBrightness: [[Float]] = []   // Brightness per cell [column][row]
     private let ledRowCount = 24  // Maximum LED rows in matrix (Enhanced mode)
     nonisolated(unsafe) private var effectiveLedRowCount = 24  // Adaptive row count — fewer rows for small views to avoid sub-pixel cells
-    private let ultraLedRowCount = 64  // Ultra high resolution
-    private let ultraBarCount = 512  // Maximum fidelity
+    private let ultraLedRowCount = 32  // High enough for analyzer detail, low enough to avoid sub-pixel smear
+    private let ultraBarCount = 96  // Professional dense analyzer layout without 512-column aliasing
     
     // Ultra mode state tracking
     nonisolated(unsafe) private var ultraCellBrightness: [[Float]] = []  // Brightness per cell [column][row] for Ultra
@@ -2812,6 +2835,7 @@ class SpectrumAnalyzerView: NSView {
         let decay = renderDecayFactor
         let outputCount = renderBarCount
         let ultraOutputCount = ultraBarCount
+        let ultraDecay = min(0.38, max(0.0, decay * 0.72))
         let effectiveDecay: Float = decay
         
         // Check normalization mode - Accurate uses full height for max dynamic range
@@ -2819,6 +2843,7 @@ class SpectrumAnalyzerView: NSView {
         
         // Scale factor: Accurate mode uses full height, others leave headroom for peaks
         let displayScale: Float = isAccurateMode ? 1.0 : 0.95
+        let classicRowStep: Float = 1.0 / Float(max(1, ledRowCount))
         
         // Map raw spectrum to display bars
         if rawSpectrum.isEmpty {
@@ -2834,7 +2859,7 @@ class SpectrumAnalyzerView: NSView {
             // Also decay Ultra spectrum (only when in ultra mode)
             if renderQualityMode == .ultra {
                 for i in 0..<ultraDisplaySpectrum.count {
-                    ultraDisplaySpectrum[i] *= effectiveDecay
+                    ultraDisplaySpectrum[i] *= ultraDecay
                     if ultraDisplaySpectrum[i] < 0.01 {
                         ultraDisplaySpectrum[i] = 0
                     }
@@ -2849,13 +2874,48 @@ class SpectrumAnalyzerView: NSView {
                 displaySpectrum = Array(repeating: 0, count: outputCount)
             }
             
-            // Ensure ultraDisplaySpectrum has correct size (96 bars for Ultra mode)
+            // Ensure ultraDisplaySpectrum has correct size for Ultra mode
             if ultraDisplaySpectrum.count != ultraOutputCount {
                 ultraDisplaySpectrum = Array(repeating: 0, count: ultraOutputCount)
             }
             
             // Update standard display spectrum (for Enhanced/Classic modes)
-            if inputCount >= outputCount {
+            if renderQualityMode == .enhanced || renderQualityMode == .classic {
+                for barIndex in 0..<outputCount {
+                    let sourceIndex = standardSpectrumSourceBandIndex(
+                        outputIndex: barIndex,
+                        outputCount: outputCount,
+                        inputCount: inputCount
+                    )
+                    let lowerIndex = Int(sourceIndex)
+                    let upperIndex = min(lowerIndex + 1, inputCount - 1)
+                    let fraction = sourceIndex - Float(lowerIndex)
+                    let interpolated = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                    let frequencyHz = analyzerBandCenterFrequency(sourceIndex, bandCount: inputCount)
+                    var newValue = standardSpectrumAnalyzerLevel(interpolated, frequencyHz: frequencyHz)
+                    if renderQualityMode == .classic {
+                        newValue = floor(newValue / classicRowStep) * classicRowStep
+                    }
+
+                    if renderQualityMode == .classic {
+                        if newValue > displaySpectrum[barIndex] {
+                            displaySpectrum[barIndex] = newValue
+                        } else {
+                            displaySpectrum[barIndex] = displaySpectrum[barIndex] * effectiveDecay + newValue * (1 - effectiveDecay)
+                        }
+                    } else {
+                        if newValue > displaySpectrum[barIndex] {
+                            displaySpectrum[barIndex] = displaySpectrum[barIndex] * 0.18 + newValue * 0.82
+                        } else {
+                            displaySpectrum[barIndex] = displaySpectrum[barIndex] * min(0.42, effectiveDecay) + newValue * (1 - min(0.42, effectiveDecay))
+                        }
+                    }
+
+                    if displaySpectrum[barIndex] > 0.01 {
+                        hasData = true
+                    }
+                }
+            } else if inputCount >= outputCount {
                 let bandsPerBar = inputCount / outputCount
                 for barIndex in 0..<outputCount {
                     let start = barIndex * bandsPerBar
@@ -2864,7 +2924,10 @@ class SpectrumAnalyzerView: NSView {
                     for i in start..<end {
                         sum += rawSpectrum[i]
                     }
-                    let newValue = (sum / Float(end - start)) * displayScale
+                    var newValue = (sum / Float(end - start)) * displayScale
+                    if renderQualityMode == .classic {
+                        newValue = floor(newValue / classicRowStep) * classicRowStep
+                    }
 
                     if newValue > displaySpectrum[barIndex] {
                         displaySpectrum[barIndex] = newValue
@@ -2882,7 +2945,10 @@ class SpectrumAnalyzerView: NSView {
                     let lowerIndex = Int(sourceIndex)
                     let upperIndex = min(lowerIndex + 1, inputCount - 1)
                     let fraction = sourceIndex - Float(lowerIndex)
-                    let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                    var newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                    if renderQualityMode == .classic {
+                        newValue = floor(newValue / classicRowStep) * classicRowStep
+                    }
 
                     if newValue > displaySpectrum[barIndex] {
                         displaySpectrum[barIndex] = newValue
@@ -2896,19 +2962,26 @@ class SpectrumAnalyzerView: NSView {
                 }
             }
                 
-            // Update Ultra display spectrum (96 bars - only computed when in ultra mode)
+            // Update Ultra display spectrum only when in ultra mode. Ultra uses its own
+            // faster release and frequency tilt so it behaves like an analyzer, not a trail effect.
             if renderQualityMode == .ultra {
                 for barIndex in 0..<ultraOutputCount {
-                    let sourceIndex = Float(barIndex) * Float(inputCount - 1) / Float(ultraOutputCount - 1)
+                    let sourceIndex = ultraSourceBandIndex(
+                        outputIndex: barIndex,
+                        outputCount: ultraOutputCount,
+                        inputCount: inputCount
+                    )
                     let lowerIndex = Int(sourceIndex)
                     let upperIndex = min(lowerIndex + 1, inputCount - 1)
                     let fraction = sourceIndex - Float(lowerIndex)
-                    let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                    let interpolated = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                    let frequencyHz = analyzerBandCenterFrequency(sourceIndex, bandCount: inputCount)
+                    let newValue = ultraAnalyzerLevel(interpolated, frequencyHz: frequencyHz)
 
                     if newValue > ultraDisplaySpectrum[barIndex] {
-                        ultraDisplaySpectrum[barIndex] = newValue
+                        ultraDisplaySpectrum[barIndex] = ultraDisplaySpectrum[barIndex] * 0.12 + newValue * 0.88
                     } else {
-                        ultraDisplaySpectrum[barIndex] = ultraDisplaySpectrum[barIndex] * effectiveDecay + newValue * (1 - effectiveDecay)
+                        ultraDisplaySpectrum[barIndex] = ultraDisplaySpectrum[barIndex] * ultraDecay + newValue * (1 - ultraDecay)
                     }
                 }
             }
@@ -2944,7 +3017,7 @@ class SpectrumAnalyzerView: NSView {
     
     /// Updates peak hold positions and per-cell brightness for LED matrix mode
     /// Note: Only called when qualityMode == .enhanced
-    /// Features: gravity-based bouncing peaks, two-phase warm-glow fade trails
+    /// Features: clean analyzer peak caps and short LED release trails
     private func updateLEDMatrixState() {
         let colCount = renderBarCount
         
@@ -2953,32 +3026,29 @@ class SpectrumAnalyzerView: NSView {
         
         // Arrays are pre-allocated in commonInit - no resizing needed
         
-        // Physics constants for gravity-based peak animation
-        let gravity: Float = 0.005            // Acceleration downward per frame
-        let bounceCoeff: Float = 0.25         // Energy retained on bounce
-        let minBounceVelocity: Float = 0.008  // Minimum velocity to trigger bounce
+        // Analyzer-style peak caps: responsive attack, clean fall, no bounce.
+        let gravity: Float = 0.012
+        let bounceCoeff: Float = 0.0
+        let minBounceVelocity: Float = 0.01
         
-        // Two-phase cell brightness transition for warm glow trail effect
-        let cellAttackRate: Float = 0.5       // Fast attack for punchy response
-        let cellFadeRateSlow: Float = 0.018   // Phase 1: slow fade (warm glow lingers)
-        let cellFadeRateFast: Float = 0.055   // Phase 2: faster fade to dark
-        let warmGlowThreshold: Float = 0.45   // Below this brightness, fade faster
+        // Short release trails keep motion readable without smearing.
+        let cellAttackRate: Float = 0.78
+        let cellFadeRateSlow: Float = 0.045
+        let cellFadeRateFast: Float = 0.11
+        let warmGlowThreshold: Float = 0.35
         
         for col in 0..<min(colCount, displaySpectrum.count) {
             let currentLevel = displaySpectrum[col]
             let currentRow = Int(currentLevel * Float(effectiveLedRowCount))
             
-            // Physics-based peak animation (gravity + bounce)
+            // Peak cap animation
             if currentLevel > peakHoldPositions[col] {
-                // New peak - jump to current level and reset velocity
                 peakHoldPositions[col] = currentLevel
                 peakVelocities[col] = 0
             } else {
-                // Apply gravity (acceleration downward)
                 peakVelocities[col] -= gravity
                 peakHoldPositions[col] += peakVelocities[col]
                 
-                // Bounce off bar level
                 if peakHoldPositions[col] < currentLevel {
                     peakHoldPositions[col] = currentLevel
                     if abs(peakVelocities[col]) > minBounceVelocity {
@@ -2988,54 +3058,45 @@ class SpectrumAnalyzerView: NSView {
                     }
                 }
                 
-                // Clamp to valid range
                 peakHoldPositions[col] = max(0, min(1.0, peakHoldPositions[col]))
             }
             
-            // Two-phase cell fade for warm glow trail effect
-            // Phase 1 (bright → warmGlowThreshold): slow fade, cells linger with warm glow
-            // Phase 2 (warmGlowThreshold → 0): faster fade, cells quickly go dark
             for row in 0..<effectiveLedRowCount {
                 let targetBrightness: Float = row < currentRow ? 1.0 : 0.0
                 let current = cellBrightness[col][row]
                 
                 if targetBrightness > current {
-                    // Fast attack - cells light up quickly for punchy response
                     cellBrightness[col][row] = min(1.0, current + cellAttackRate)
                 } else if current > warmGlowThreshold {
-                    // Phase 1: slow fade - warm glow lingers beautifully
                     cellBrightness[col][row] = max(0, current - cellFadeRateSlow)
                 } else {
-                    // Phase 2: faster fade to dark
                     cellBrightness[col][row] = max(0, current - cellFadeRateFast)
                 }
             }
         }
     }
     
-    /// Updates peak hold positions for Classic mode with gravity-based physics
-    /// Peaks jump to new bar heights, then float and fall with satisfying gravity
+    /// Updates low-fi stepped peak hold positions for Classic mode.
     private func updateClassicPeakState() {
         let colCount = renderBarCount
         
-        // Physics constants for satisfying peak animation
-        let gravity: Float = 0.004           // Acceleration downward per frame
-        let bounceCoeff: Float = 0.3         // Energy retained on bounce
-        let minBounceVelocity: Float = 0.008 // Minimum velocity to trigger bounce
+        // Low-fi stepped peak animation: no bounce, visible frame-by-frame fall.
+        let gravity: Float = 0.006
+        let bounceCoeff: Float = 0.0
+        let minBounceVelocity: Float = 0.01
+        let rowStep: Float = 1.0 / Float(max(1, ledRowCount))
         
         for col in 0..<min(colCount, displaySpectrum.count) {
-            let currentLevel = displaySpectrum[col]
+            let currentLevel = floor(displaySpectrum[col] / rowStep) * rowStep
             
             if currentLevel > peakHoldPositions[col] {
                 // New peak - jump to current level and reset velocity
                 peakHoldPositions[col] = currentLevel
                 peakVelocities[col] = 0
             } else {
-                // Apply gravity (acceleration downward)
                 peakVelocities[col] -= gravity
                 peakHoldPositions[col] += peakVelocities[col]
                 
-                // Bounce off bar level
                 if peakHoldPositions[col] < currentLevel {
                     peakHoldPositions[col] = currentLevel
                     if abs(peakVelocities[col]) > minBounceVelocity {
@@ -3045,15 +3106,78 @@ class SpectrumAnalyzerView: NSView {
                     }
                 }
                 
-                // Clamp to valid range
-                peakHoldPositions[col] = max(0, min(1.0, peakHoldPositions[col]))
+                let clamped = max(0, min(1.0, peakHoldPositions[col]))
+                peakHoldPositions[col] = floor(clamped / rowStep) * rowStep
             }
         }
     }
 
-    /// Updates state for Ultra mode with physics-based peaks and higher resolution
-    /// Designed for maximum fluidity: smooth exponential decay, gradient bar tops,
-    /// no hard cutoffs -- everything flows and breathes naturally
+    private func ultraSourceBandIndex(outputIndex: Int, outputCount: Int, inputCount: Int) -> Float {
+        // Ultra has no frequency labels, so don't spend screen width on mostly
+        // unreadable infrasonic/sub-only bins. Map the visible analyzer range
+        // back onto the full drawable width.
+        return analyzerSourceBandIndex(
+            outputIndex: outputIndex,
+            outputCount: outputCount,
+            inputCount: inputCount,
+            analyzerMinFreq: 48
+        )
+    }
+
+    private func standardSpectrumSourceBandIndex(outputIndex: Int, outputCount: Int, inputCount: Int) -> Float {
+        // Enhanced is usually used in the small main-window display. Crop the
+        // deepest sub range for the same reason as Ultra: it has no frequency labels.
+        // Classic shares this curve so the low end does not regress to a shelf.
+        return analyzerSourceBandIndex(
+            outputIndex: outputIndex,
+            outputCount: outputCount,
+            inputCount: inputCount,
+            analyzerMinFreq: 48
+        )
+    }
+
+    private func analyzerSourceBandIndex(outputIndex: Int, outputCount: Int, inputCount: Int, analyzerMinFreq: Float) -> Float {
+        let sourceMinFreq: Float = 20
+        let sourceMaxFreq: Float = 20_000
+        let ratio = Float(outputIndex) / Float(max(1, outputCount - 1))
+        let frequency = analyzerMinFreq * pow(sourceMaxFreq / analyzerMinFreq, ratio)
+        let bandPosition = log(frequency / sourceMinFreq) / log(sourceMaxFreq / sourceMinFreq)
+        let sourceIndex = bandPosition * Float(inputCount) - 0.5
+        return min(max(sourceIndex, 0), Float(max(0, inputCount - 1)))
+    }
+
+    private func analyzerBandCenterFrequency(_ bandIndex: Float, bandCount: Int) -> Float {
+        let minFreq: Float = 20
+        let maxFreq: Float = 20_000
+        let clampedBand = min(max(bandIndex, 0), Float(max(0, bandCount - 1)))
+        let ratio = (clampedBand + 0.5) / Float(max(1, bandCount))
+        return minFreq * pow(maxFreq / minFreq, ratio)
+    }
+
+    private func smoothstep(_ edge0: Float, _ edge1: Float, _ value: Float) -> Float {
+        let t = min(1.0, max(0.0, (value - edge0) / (edge1 - edge0)))
+        return t * t * (3.0 - 2.0 * t)
+    }
+
+    private func standardSpectrumAnalyzerLevel(_ rawValue: Float, frequencyHz: Float) -> Float {
+        let lowBassControl = 0.58 + 0.42 * smoothstep(42, 90, frequencyHz)
+        let lowMidTaper = 0.90 + 0.10 * smoothstep(90, 240, frequencyHz)
+        let airLift = 1.0 + 0.08 * smoothstep(6_000, 14_000, frequencyHz)
+        let shaped = min(1.0, max(0.0, rawValue * lowBassControl * lowMidTaper * airLift))
+        return pow(shaped, 1.08)
+    }
+
+    private func ultraAnalyzerLevel(_ rawValue: Float, frequencyHz: Float) -> Float {
+        // Keep low bass controlled without creating an empty left margin. Ultra
+        // already crops the deepest sub range out of its visible mapping.
+        let subHighpass = 0.48 + 0.52 * smoothstep(42, 86, frequencyHz)
+        let lowMidTaper = 0.88 + 0.12 * smoothstep(86, 220, frequencyHz)
+        let airLift = 1.0 + 0.10 * smoothstep(6_000, 14_000, frequencyHz)
+        let shaped = min(1.0, max(0.0, rawValue * subHighpass * lowMidTaper * airLift))
+        return pow(shaped, 1.10)
+    }
+
+    /// Updates state for Ultra mode with fast analyzer-style peaks and clean bars.
     private func updateUltraMatrixState() {
         let colCount = ultraBarCount
         let rowCount = ultraLedRowCount
@@ -3061,20 +3185,20 @@ class SpectrumAnalyzerView: NSView {
         
         // Arrays are pre-allocated in commonInit - no resizing needed
         
-        // Physics constants for smooth, satisfying peak animation
-        let gravity: Float = 0.008            // Gentle gravity for floatier peaks
-        let bounceCoeff: Float = 0.3          // Energy retained on bounce
-        let minBounceVelocity: Float = 0.01   // Minimum velocity to trigger bounce
-        
-        let decayMultiplier: Float = 0.94
+        // Analyzer-style peak caps: quick hold/reset on attack, clean fall on release.
+        let gravity: Float = 0.014
+        let bounceCoeff: Float = 0.0
+        let minBounceVelocity: Float = 0.012
+
+        let decayMultiplier: Float = 0.78
         
         // Soft gradient zone at bar top (in normalized 0-1 space)
         // Instead of hard cutoff, brightness ramps smoothly over this range
-        let gradientZone: Float = 3.0 / rowCountF  // ~3 cells of soft transition
-        
-        // Gentle floor to avoid always-lit bottom with smooth ramp
-        let floor: Float = 0.08
-        let ceiling: Float = 1.0
+        let gradientZone: Float = 2.0 / rowCountF  // ~2 cells of soft transition
+
+        // Noise gate for a stable black floor with full-height headroom for strong peaks.
+        let floor: Float = 0.04
+        let ceiling: Float = 0.98
         let range = ceiling - floor
         
         animationTime += 1.0 / 60.0
@@ -3119,11 +3243,11 @@ class SpectrumAnalyzerView: NSView {
                     vDSP_vfill(&one, base, 1, vDSP_Length(litEndRow))
                 }
 
-                // Gradient zone (~3 rows): soft ramp, take max with decayed value
+                // Gradient zone (~2 rows): soft ramp, take max with decayed value
                 for row in litEndRow..<gradEndRow {
                     let rowNorm = Float(row) / rowCountF
                     let t = (currentLevel - rowNorm) / gradientZone
-                    let target = 0.4 + 0.6 * t
+                    let target = 0.35 + 0.65 * t
                     base[row] = max(target, base[row] * decayMultiplier)
                 }
 
@@ -3135,7 +3259,7 @@ class SpectrumAnalyzerView: NSView {
                 }
 
                 // Floor cleanup: zero sub-perceptual ghost values
-                for i in 0..<count where base[i] < 0.003 { base[i] = 0 }
+                for i in 0..<count where base[i] < 0.01 { base[i] = 0 }
             }
         }
     }
@@ -3169,12 +3293,14 @@ class SpectrumAnalyzerView: NSView {
         
         switch localQualityMode {
         case .enhanced:
-            // Derive cell width directly from viewport so bars always fill the full width.
-            // barWidth is floor()'d by the view so barCount*barWidth < scaledWidth; using
-            // scaledWidth/barCount avoids the right-side gap entirely.
-            let cellSpacing: Float = 0.0
-            let cellHeight = (scaledHeight - 2.0) / Float(effectiveLedRowCount)  // 2px top margin so peaks aren't clipped
-            let cellWidth = scaledWidth / Float(localBarCount)
+            // Fill the full viewport while adding gaps only when cells are large
+            // enough to support them. This avoids a fused heatmap in larger views
+            // and avoids dead space in the compact main-window display.
+            let cellSpacing: Float = scaledWidth / Float(max(1, localBarCount)) >= 4.0 ? max(1.0, Float(floor(scale))) : 0.0
+            let totalSpacing = Float(max(0, localBarCount - 1)) * cellSpacing
+            let verticalSpacing = Float(max(0, effectiveLedRowCount - 1)) * cellSpacing
+            let cellHeight = max(1.0, (scaledHeight - 2.0 - verticalSpacing) / Float(effectiveLedRowCount))
+            let cellWidth = max(1.0, (scaledWidth - totalSpacing) / Float(localBarCount))
 
             // Update params buffer
             if let buffer = paramsBuffer {
@@ -3217,11 +3343,13 @@ class SpectrumAnalyzerView: NSView {
             }
             
         case .ultra:
-            // Calculate cell dimensions for Ultra mode - ZERO gaps for seamless gradient
+            // Calculate cell dimensions for Ultra mode - narrow gaps read cleaner than a fused heatmap
             let ultraCols = ultraBarCount
-            let cellSpacing: Float = 0.0  // No gaps at all - completely seamless
-            let cellHeight = scaledHeight / Float(ultraLedRowCount)
-            let cellWidth = scaledWidth / Float(ultraCols)
+            let cellSpacing: Float = scaledWidth / Float(ultraCols) >= 3.0 ? max(0.0, Float(floor(scale))) : 0.0
+            let totalSpacing = Float(max(0, ultraCols - 1)) * cellSpacing
+            let verticalSpacing = Float(max(0, ultraLedRowCount - 1)) * cellSpacing
+            let cellHeight = max(1.0, (scaledHeight - verticalSpacing) / Float(ultraLedRowCount))
+            let cellWidth = max(1.0, (scaledWidth - totalSpacing) / Float(ultraCols))
             
             // Update Ultra params buffer
             if let buffer = ultraParamsBuffer {
@@ -3233,8 +3361,8 @@ class SpectrumAnalyzerView: NSView {
                     cellWidth: cellWidth,
                     cellHeight: cellHeight,
                     cellSpacing: cellSpacing,
-                    glowRadius: 4.0,            // Glow spread
-                    glowIntensity: 1.0,         // Maximum glow for flashy neon effect
+                    glowRadius: 2.0,
+                    glowIntensity: 0.35,
                     reflectionHeight: 0.0,      // No reflection
                     reflectionAlpha: 0.0,
                     time: localAnimationTime,
@@ -3258,7 +3386,7 @@ class SpectrumAnalyzerView: NSView {
                 }
             }
             
-            // Update peak positions buffer for Ultra mode (96 bars)
+            // Update peak positions buffer for Ultra mode
             if let buffer = peakPositionsBuffer {
                 let ptr = buffer.contents().bindMemory(to: Float.self, capacity: ultraCols)
                 for col in 0..<ultraCols {
@@ -3271,6 +3399,7 @@ class SpectrumAnalyzerView: NSView {
             let totalSpacing = Float(max(0, localBarCount - 1)) * cellSpacing
             let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
             let cellWidth: Float = max(1.0, (scaledWidth - totalSpacing) / Float(max(1, localBarCount)))
+            let rowStep: Float = 1.0 / Float(max(1, ledRowCount))
             
             // Update params buffer for Classic
             if let buffer = paramsBuffer {
@@ -3291,7 +3420,7 @@ class SpectrumAnalyzerView: NSView {
             if let buffer = heightBuffer {
                 let ptr = buffer.contents().bindMemory(to: Float.self, capacity: localBarCount)
                 for i in 0..<min(localBarCount, localSpectrum.count) {
-                    ptr[i] = localSpectrum[i]
+                    ptr[i] = floor(localSpectrum[i] / rowStep) * rowStep
                 }
                 if localBarCount > localSpectrum.count {
                     for i in localSpectrum.count..<localBarCount {
