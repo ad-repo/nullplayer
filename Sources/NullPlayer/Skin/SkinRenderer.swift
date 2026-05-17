@@ -2605,7 +2605,7 @@ class SkinRenderer {
     private func drawPlaylistStyleBottomBorder(in context: CGContext, bounds: NSRect, bottomHeight: CGFloat) {
         let sideW: CGFloat = 12
         let goldTrimHeight: CGFloat = 2
-        let snappedHeight = bottomHeight.rounded(.down)
+        let snappedHeight = bottomHeight.rounded(.up)
         let bottomY = (bounds.height - snappedHeight).rounded(.down)
         let stripStartX = sideW
         let stripEndX = max(stripStartX, bounds.width - sideW)

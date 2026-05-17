@@ -865,8 +865,8 @@ struct SkinElements {
             static let columnHeaderHeight: CGFloat = 22
             static let statusBarHeight: CGFloat = 7 * Skin.scaleFactor   // Match playlist/spectrum/waveform bottom border
             static let scrollbarWidth: CGFloat = 0    // No scrollbar - users scroll with trackpad/wheel
-            static let leftBorder: CGFloat = 3        // Thin side borders
-            static let rightBorder: CGFloat = 3       // Edge only (no scrollbar)
+            static let leftBorder: CGFloat = 12       // Match playlist-style side rails
+            static let rightBorder: CGFloat = 12      // Match playlist-style side rails
             static let padding: CGFloat = 3
         }
         
