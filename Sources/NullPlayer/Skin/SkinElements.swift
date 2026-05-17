@@ -765,7 +765,7 @@ struct SkinElements {
             static let tabBarHeight: CGFloat = 24
             static let serverBarHeight: CGFloat = 24
             static let searchBarHeight: CGFloat = 26
-            static let statusBarHeight: CGFloat = 3  // Thin bottom border
+            static let statusBarHeight: CGFloat = 7 * Skin.scaleFactor  // Match playlist/spectrum/waveform bottom border
             static let scrollbarWidth: CGFloat = 0   // No scrollbar - users scroll with trackpad/wheel
             static let alphabetWidth: CGFloat = 16
             static let leftBorder: CGFloat = 12
@@ -863,7 +863,7 @@ struct SkinElements {
             static let titleBarHeight: CGFloat = 18
             static let searchBarHeight: CGFloat = 24
             static let columnHeaderHeight: CGFloat = 22
-            static let statusBarHeight: CGFloat = 3   // Thin bottom border
+            static let statusBarHeight: CGFloat = 7 * Skin.scaleFactor   // Match playlist/spectrum/waveform bottom border
             static let scrollbarWidth: CGFloat = 0    // No scrollbar - users scroll with trackpad/wheel
             static let leftBorder: CGFloat = 3        // Thin side borders
             static let rightBorder: CGFloat = 3       // Edge only (no scrollbar)
@@ -903,9 +903,9 @@ struct SkinElements {
             static let titleBarHeight: CGFloat = 20
             static let leftBorder: CGFloat = 12
             static let rightBorder: CGFloat = 12
-            static let bottomBorder: CGFloat = 3
+            static let bottomBorder: CGFloat = 7 * Skin.scaleFactor
         }
-        
+
         // MARK: - Title Bar (same style as playlist)
         
         struct TitleBar {

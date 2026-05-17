@@ -1501,14 +1501,13 @@ class SkinRenderer {
         context.fill(bounds)
         
         let titleHeight = SkinElements.Playlist.titleHeight  // 20px like playlist
-        let bottomHeight = SkinElements.ProjectM.Layout.bottomBorder
+        let bottomHeight = 7 * Skin.scaleFactor  // match playlist/spectrum/waveform
 
         // Left/right side borders using the same leftSideTile sprite as the playlist
         drawPlaylistStyleSideBorders(in: context, bounds: bounds, titleHeight: titleHeight, bottomHeight: bottomHeight)
 
-        // Bottom bar solid fill
-        NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0).setFill()
-        context.fill(NSRect(x: 0, y: bounds.height - bottomHeight, width: bounds.width, height: bottomHeight))
+        // Bottom strip: rotated side-tile + continuous gold trim across the bottom (U-shape).
+        drawPlaylistStyleBottomBorder(in: context, bounds: bounds, bottomHeight: bottomHeight)
 
         // Draw title bar using PLEDIT.BMP sprites (without custom text)
         drawProjectMTitleBarFromPledit(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
@@ -1534,11 +1533,18 @@ class SkinRenderer {
         // Draw left corner
         drawSprite(from: pleditImage, sourceRect: leftCorner,
                   to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
-        
-        // Draw right corner (contains window buttons)
-        drawSprite(from: pleditImage, sourceRect: rightCorner,
-                  to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
-        
+
+        // Right corner: mirror the leftCorner sprite so its inner bevel aligns with the
+        // 12-wide side border below (same fix as playlist/spectrum/waveform).
+        let rightMirrorRect = NSRect(x: bounds.width - leftCornerWidth, y: 0,
+                                     width: leftCornerWidth, height: titleHeight)
+        context.saveGState()
+        context.translateBy(x: rightMirrorRect.midX, y: 0)
+        context.scaleBy(x: -1, y: 1)
+        context.translateBy(x: -rightMirrorRect.midX, y: 0)
+        drawSprite(from: pleditImage, sourceRect: leftCorner, to: rightMirrorRect, in: context)
+        context.restoreGState()
+
         // Fill the middle section with tiles
         let middleStart = leftCornerWidth
         let middleEnd = bounds.width - rightCornerWidth
@@ -1549,18 +1555,27 @@ class SkinRenderer {
                       to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
             x += tileWidth
         }
-        
+
+        // Re-draw the close icon (baked into rightCorner) on top of the mirrored corner.
+        let closeIconYOffset: CGFloat = isActive ? 0 : 21
+        let closeBtnSource = NSRect(x: 167, y: 3 + closeIconYOffset, width: 9, height: 9)
+        drawSprite(from: pleditImage, sourceRect: closeBtnSource,
+                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
+                             y: 3, width: 9, height: 9), in: context)
+
+        _ = rightCorner
+
         // Note: Custom text removed - let the skin's title bar show through
-        
+
         // Draw close button pressed state if needed
         if pressedButton == .close {
-            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset, 
+            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
                                    y: 3, width: 9, height: 9)
             NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
             context.fill(closeRect)
         }
     }
-    
+
     /// Draw "PROJECTM" text using GenFont from gen.png
     /// Creates a solid background gap in the title bar decorations for the text
     private func drawProjectMTitleText(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
@@ -1710,11 +1725,20 @@ class SkinRenderer {
         // Draw left corner
         drawSprite(from: pleditImage, sourceRect: leftCorner,
                   to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
-        
-        // Draw right corner (contains window buttons)
-        drawSprite(from: pleditImage, sourceRect: rightCorner,
-                  to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
-        
+
+        // Right corner: mirror the leftCorner sprite so its inner bevel aligns with the
+        // 12-wide side border below (same fix as the playlist — the original rightCorner
+        // sprite was designed for the legacy 20-wide scrollbar tile and its inner bevel
+        // sits too far inward, leaving the interior content area wider under the title bar).
+        let rightMirrorRect = NSRect(x: bounds.width - leftCornerWidth, y: 0,
+                                     width: leftCornerWidth, height: titleHeight)
+        context.saveGState()
+        context.translateBy(x: rightMirrorRect.midX, y: 0)
+        context.scaleBy(x: -1, y: 1)
+        context.translateBy(x: -rightMirrorRect.midX, y: 0)
+        drawSprite(from: pleditImage, sourceRect: leftCorner, to: rightMirrorRect, in: context)
+        context.restoreGState()
+
         // Fill the middle section with tiles
         let middleStart = leftCornerWidth
         let middleEnd = bounds.width - rightCornerWidth
@@ -1725,18 +1749,27 @@ class SkinRenderer {
                       to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
             x += tileWidth
         }
-        
+
+        // Re-draw the close icon (baked into rightCorner) on top of the mirrored corner.
+        let closeIconYOffset: CGFloat = isActive ? 0 : 21
+        let closeBtnSource = NSRect(x: 167, y: 3 + closeIconYOffset, width: 9, height: 9)
+        drawSprite(from: pleditImage, sourceRect: closeBtnSource,
+                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
+                             y: 3, width: 9, height: 9), in: context)
+
+        _ = rightCorner  // original sprite no longer drawn; reference kept above for parity
+
         // Note: Custom text removed - let the skin's title bar show through
-        
+
         // Draw close button pressed state if needed
         if pressedButton == .close {
-            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset, 
+            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
                                    y: 3, width: 9, height: 9)
             NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
             context.fill(closeRect)
         }
     }
-    
+
     /// Draw "NULLPLAYER ANALYZER" text using GenFont from gen.png
     private func drawSpectrumAnalyzerTitleText(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
         // Load gen.png from skin or bundle
@@ -2562,25 +2595,35 @@ class SkinRenderer {
         return ctx.makeImage()
     }
 
-    /// Draw the bottom border strip using the side-tile texture rotated 90°, so it matches
-    /// the look of the left/right borders. Falls back to a solid dark fill.
+    /// Draw the bottom border strip using the side-tile texture rotated 90°. The strip is
+    /// inset by `sideW` on each end so the side borders (drawn full-height by
+    /// `drawPlaylistStyleSideBorders`) form the bottom-corner regions with their own
+    /// vertical artwork. After the inset strip, a 2px-tall gold-trim row is drawn across the
+    /// FULL width so the gold outline is continuous all the way from the left side border's
+    /// outer bevel, across the bottom, to the right side border's outer bevel — one U-shape
+    /// with no slits at the corners.
     private func drawPlaylistStyleBottomBorder(in context: CGContext, bounds: NSRect, bottomHeight: CGFloat) {
-        // Snap to integer pixels so the strip aligns with the snapped side-tile rects below it.
+        let sideW: CGFloat = 12
+        let goldTrimHeight: CGFloat = 2
         let snappedHeight = bottomHeight.rounded(.down)
         let bottomY = (bounds.height - snappedHeight).rounded(.down)
+        let stripStartX = sideW
+        let stripEndX = max(stripStartX, bounds.width - sideW)
+
         guard let rotated = rotatedSideTileForBottomBorder() else {
             NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
-            context.fill(NSRect(x: 0, y: bottomY, width: bounds.width, height: snappedHeight))
+            context.fill(NSRect(x: stripStartX, y: bottomY, width: stripEndX - stripStartX, height: snappedHeight))
             return
         }
         let tileNaturalWidth = CGFloat(rotated.width)
+
+        // 1) Inset rotated tile strip between the side borders.
         context.saveGState()
-        context.clip(to: NSRect(x: 0, y: bottomY, width: bounds.width, height: snappedHeight))
+        context.clip(to: NSRect(x: stripStartX, y: bottomY, width: stripEndX - stripStartX, height: snappedHeight))
         context.interpolationQuality = .none
-        var x: CGFloat = 0
-        while x < bounds.width {
-            let drawWidth = min(tileNaturalWidth, bounds.width - x)
-            // Render rotated tile into top-down context: translate to dest, flip Y locally.
+        var x: CGFloat = stripStartX
+        while x < stripEndX {
+            let drawWidth = min(tileNaturalWidth, stripEndX - x)
             context.saveGState()
             context.translateBy(x: x, y: bottomY + snappedHeight)
             context.scaleBy(x: 1, y: -1)
@@ -2589,16 +2632,44 @@ class SkinRenderer {
             x += tileNaturalWidth
         }
         context.restoreGState()
+
+        // 2) Crop the rotated tile's bottom `goldTrimHeight` rows — those rows come from the
+        //    leftSideTile's outer bevel (the gold-trim column), so every pixel is the same
+        //    gold-trim pixel as the side borders' outer edges. Tile that strip across the FULL
+        //    window width at the very bottom row, so the gold outline runs continuously left
+        //    → across → right with no slits at the corners.
+        let goldStripRect = CGRect(x: 0, y: 0, width: rotated.width, height: Int(goldTrimHeight))
+        guard let goldStrip = rotated.cropping(to: goldStripRect) else { return }
+        let goldNaturalWidth = CGFloat(goldStrip.width)
+        let goldY = (bounds.height - goldTrimHeight).rounded(.down)
+        context.saveGState()
+        context.clip(to: NSRect(x: 0, y: goldY, width: bounds.width, height: goldTrimHeight))
+        context.interpolationQuality = .none
+        var gx: CGFloat = 0
+        while gx < bounds.width {
+            let drawWidth = min(goldNaturalWidth, bounds.width - gx)
+            context.saveGState()
+            context.translateBy(x: gx, y: goldY + goldTrimHeight)
+            context.scaleBy(x: 1, y: -1)
+            context.draw(goldStrip, in: CGRect(x: 0, y: 0, width: drawWidth, height: goldTrimHeight))
+            context.restoreGState()
+            gx += goldNaturalWidth
+        }
+        context.restoreGState()
     }
 
     /// Draw left and right side borders (shared by playlist, spectrum, waveform, projectM).
     /// Both borders use the same leftSideTile sprite; the right border is drawn horizontally
     /// mirrored so both sides appear identical.
     private func drawPlaylistStyleSideBorders(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, bottomHeight: CGFloat) {
+        _ = bottomHeight  // Side borders extend the full window height so the bottom-corner
+                          // regions are filled with the same vertical artwork (gold trim
+                          // included). The bottom strip insets between the side borders so
+                          // there's no rotation seam at the corners.
         let sideW: CGFloat = 12
         let tileH: CGFloat = 29
         let contentTop = titleHeight
-        let contentBottom = bounds.height - bottomHeight
+        let contentBottom = bounds.height
         let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
 
         guard let pleditImage = skin.pledit else {
@@ -2793,10 +2864,18 @@ class SkinRenderer {
         // Use NSImage-based drawing (same as ProjectM) to avoid interpolation artifacts
         drawSprite(from: pleditImage, sourceRect: leftCorner,
                   to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
-        
-        drawSprite(from: pleditImage, sourceRect: rightCorner,
-                  to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
-        
+
+        // Right corner: mirror the leftCorner sprite so its inner bevel aligns with the
+        // 12-wide side border below (same fix as playlist/spectrum/waveform/projectM).
+        let rightMirrorRect = NSRect(x: bounds.width - leftCornerWidth, y: 0,
+                                     width: leftCornerWidth, height: titleHeight)
+        context.saveGState()
+        context.translateBy(x: rightMirrorRect.midX, y: 0)
+        context.scaleBy(x: -1, y: 1)
+        context.translateBy(x: -rightMirrorRect.midX, y: 0)
+        drawSprite(from: pleditImage, sourceRect: leftCorner, to: rightMirrorRect, in: context)
+        context.restoreGState()
+
         // Fill the middle section with tiles
         let middleStart = leftCornerWidth
         let middleEnd = bounds.width - rightCornerWidth
@@ -2807,9 +2886,22 @@ class SkinRenderer {
                       to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
             x += tileWidth
         }
-        
+
+        // Re-draw the close + shade icons (baked into rightCorner) on top of mirrored corner.
+        let closeIconYOffset: CGFloat = isActive ? 0 : 21
+        let closeBtnSource = NSRect(x: 167, y: 3 + closeIconYOffset, width: 9, height: 9)
+        let shadeBtnSource = NSRect(x: 158, y: 3 + closeIconYOffset, width: 9, height: 9)
+        drawSprite(from: pleditImage, sourceRect: closeBtnSource,
+                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
+                             y: 3, width: 9, height: 9), in: context)
+        drawSprite(from: pleditImage, sourceRect: shadeBtnSource,
+                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.shadeOffset,
+                             y: 3, width: 9, height: 9), in: context)
+
+        _ = rightCorner
+
         // Note: Custom text removed - let the skin's title bar show through
-        
+
         if pressedButton == .close {
             let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
                                    y: 3, width: 9, height: 9)
@@ -2847,9 +2939,18 @@ class SkinRenderer {
             x += tileWidth
         }
         
-        drawSprite(from: image, sourceRect: layout.rightCorner,
-                  to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
-        
+        // Right corner: mirror the leftCorner sprite so the outer bevel matches the side
+        // border below (same fix as playlist/spectrum/waveform/projectM). The close + shade
+        // buttons are drawn separately via drawButton below, so no icon overlay is needed.
+        let rightMirrorRect = NSRect(x: bounds.width - rightCornerWidth, y: 0,
+                                     width: rightCornerWidth, height: titleHeight)
+        context.saveGState()
+        context.translateBy(x: rightMirrorRect.midX, y: 0)
+        context.scaleBy(x: -1, y: 1)
+        context.translateBy(x: -rightMirrorRect.midX, y: 0)
+        drawSprite(from: image, sourceRect: layout.leftCorner, to: rightMirrorRect, in: context)
+        context.restoreGState()
+
         // Draw "NULLPLAYER LIBRARY" text using GenFont with proper active/inactive colors
         drawLibraryTitleText(in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
         
@@ -3452,50 +3553,18 @@ class SkinRenderer {
         drawPlaylistStyleSideBorders(in: context, bounds: bounds, titleHeight: titleHeight, bottomHeight: borderHeight)
     }
     
-    /// Draw Plex browser status bar at bottom
+    /// Draw Plex browser status bar at bottom — uses the same U-shape rotated-side-tile +
+    /// continuous gold-trim treatment as the playlist/spectrum/waveform/projectM windows.
     private func drawPlexBrowserStatusBar(in context: CGContext, bounds: NSRect) {
-        // Try to use library-window.png first
-        if let libraryImage = skin.libraryWindowImage {
-            drawLibraryWindowStatusBar(from: libraryImage, in: context, bounds: bounds)
-            return
-        }
-        
-        // Fall back to playlist colors
-        let layout = SkinElements.PlexBrowser.Layout.self
-        let statusHeight = layout.statusBarHeight
-        let statusY = bounds.height - statusHeight
-        
-        // Use playlist colors for consistent look
-        let colors = skin.playlistColors
-        
-        // Draw status bar background
-        colors.normalBackground.withAlphaComponent(0.8).setFill()
-        context.fill(NSRect(x: 0, y: statusY, width: bounds.width, height: statusHeight))
-        
-        // Draw top border line - skip on non-Retina displays to prevent visible lines
-        let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
-        if backingScale >= 1.5 {
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(NSRect(x: 0, y: statusY, width: bounds.width, height: 1))
-        }
+        let bottomHeight = SkinElements.PlexBrowser.Layout.statusBarHeight
+        drawPlaylistStyleBottomBorder(in: context, bounds: bounds, bottomHeight: bottomHeight)
     }
     
-    /// Draw bottom border using a thin line like other windows
-    private func drawLibraryWindowStatusBar(from image: NSImage, in context: CGContext, bounds: NSRect) {
-        // Just draw a thin bottom border line (2-3 pixels) to match playlist/EQ windows
-        let borderHeight = SkinElements.LibraryWindow.Layout.statusBarHeight
-        let statusY = bounds.height - borderHeight
-        
-        // Draw thin bottom border matching the window chrome color
-        NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0).setFill()
-        context.fill(NSRect(x: 0, y: statusY, width: bounds.width, height: borderHeight))
-        
-        // Draw highlight line at top of border - skip on non-Retina displays to prevent visible lines
-        let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
-        if backingScale >= 1.5 {
-            NSColor(calibratedRed: 0.20, green: 0.20, blue: 0.30, alpha: 1.0).setFill()
-            context.fill(NSRect(x: 0, y: statusY, width: bounds.width, height: 1))
-        }
+    /// Draw bottom border matching playlist/spectrum/waveform: rotated side-tile strip inset
+    /// between the side borders + continuous gold trim across the full bottom (U-shape).
+    private func drawLibraryWindowStatusBar(from _: NSImage, in context: CGContext, bounds: NSRect) {
+        let bottomHeight = 7 * Skin.scaleFactor
+        drawPlaylistStyleBottomBorder(in: context, bounds: bounds, bottomHeight: bottomHeight)
     }
     
     /// Draw Plex browser scrollbar

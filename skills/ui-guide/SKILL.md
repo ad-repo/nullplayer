@@ -173,6 +173,18 @@ Valid widths: 275, 300, 425, 450, 475, 500, 550px
 
 **Non-Retina displays**: Even with aligned widths, tile seams may be visible on 1x displays. See the non-retina-fixes skill for techniques like background fill, tile overlap, and bottom-to-top drawing.
 
+## Classic Playlist-Style Window Chrome
+
+`drawPlaylistWindow` / `drawSpectrumAnalyzerWindow` / `drawProjectMNormal` / `drawPlexBrowserWindow` all share three helpers in `SkinRenderer` and render as one continuous U-shape outline:
+
+- **`drawPlaylistStyleSideBorders`** — vertical `leftSideTile` (mirrored on the right). The side borders extend to `bounds.height`, INCLUDING the bottom-corner regions, so the outer gold trim runs continuously down each side.
+- **`drawPlaylistStyleBottomBorder`** — rotated `leftSideTile` strip inset between the side borders (`x = 12` to `bounds.width − 12`), plus a 2px-tall gold-trim row tiled across the FULL window width at the very bottom. The gold trim is cropped from the rotated tile's bottom 2 rows, which come from the source's gold-bevel column, so every pixel matches the side borders' outer trim color.
+- **Top-right corner fix** — the right corner of the title bar is rendered by MIRRORING the `leftCorner` sprite (not by drawing the original `rightCorner`). The original `rightCorner` artwork was designed to abut the legacy 20-wide scrollbar tile, so its inner bevel sits too far inward and leaves the interior content area visibly wider under the title bar than below. The close (and shade, where applicable) button icons baked into the original `rightCorner` are re-drawn on top from sprite coords `(167, 3, 9, 9)` and `(158, 3, 9, 9)` (with `+21` y offset for the inactive state).
+
+**Bottom-border thickness lives in layout structs**: `Playlist.bottomHeight`, `SpectrumWindow.Layout.bottomBorder`, `WaveformWindow.Layout.bottomBorder`, `ProjectM.Layout.bottomBorder`, `PlexBrowser.Layout.statusBarHeight`, and `LibraryWindow.Layout.statusBarHeight` are all `7 * Skin.scaleFactor`. Interior content rendering uses these constants, so keep them in sync if you change the strip height.
+
+**Pixel snapping**: Both helpers snap tile destinations with `.rounded(.down)` to avoid sub-pixel rendering that bleeds the default Winamp skin's blue-tinted edge pixels between adjacent tiles. See non-retina-fixes skill for the underlying issue.
+
 ## Menu Bar Integration (AppKit)
 
 When adding or refactoring top menu bar content:
