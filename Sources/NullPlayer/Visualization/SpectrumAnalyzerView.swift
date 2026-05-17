@@ -2866,9 +2866,9 @@ class SpectrumAnalyzerView: NSView {
             }
             
             // Update standard display spectrum (for Enhanced/Classic modes)
-            if renderQualityMode == .enhanced {
+            if renderQualityMode == .enhanced || renderQualityMode == .classic {
                 for barIndex in 0..<outputCount {
-                    let sourceIndex = enhancedSourceBandIndex(
+                    let sourceIndex = standardSpectrumSourceBandIndex(
                         outputIndex: barIndex,
                         outputCount: outputCount,
                         inputCount: inputCount
@@ -2878,12 +2878,23 @@ class SpectrumAnalyzerView: NSView {
                     let fraction = sourceIndex - Float(lowerIndex)
                     let interpolated = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
                     let frequencyHz = analyzerBandCenterFrequency(sourceIndex, bandCount: inputCount)
-                    let newValue = enhancedAnalyzerLevel(interpolated, frequencyHz: frequencyHz)
+                    var newValue = standardSpectrumAnalyzerLevel(interpolated, frequencyHz: frequencyHz)
+                    if renderQualityMode == .classic {
+                        newValue = floor(newValue / classicRowStep) * classicRowStep
+                    }
 
-                    if newValue > displaySpectrum[barIndex] {
-                        displaySpectrum[barIndex] = displaySpectrum[barIndex] * 0.18 + newValue * 0.82
+                    if renderQualityMode == .classic {
+                        if newValue > displaySpectrum[barIndex] {
+                            displaySpectrum[barIndex] = newValue
+                        } else {
+                            displaySpectrum[barIndex] = displaySpectrum[barIndex] * effectiveDecay + newValue * (1 - effectiveDecay)
+                        }
                     } else {
-                        displaySpectrum[barIndex] = displaySpectrum[barIndex] * min(0.42, effectiveDecay) + newValue * (1 - min(0.42, effectiveDecay))
+                        if newValue > displaySpectrum[barIndex] {
+                            displaySpectrum[barIndex] = displaySpectrum[barIndex] * 0.18 + newValue * 0.82
+                        } else {
+                            displaySpectrum[barIndex] = displaySpectrum[barIndex] * min(0.42, effectiveDecay) + newValue * (1 - min(0.42, effectiveDecay))
+                        }
                     }
 
                     if displaySpectrum[barIndex] > 0.01 {
@@ -3051,8 +3062,7 @@ class SpectrumAnalyzerView: NSView {
         }
     }
     
-    /// Updates peak hold positions for Classic mode with gravity-based physics
-    /// Peaks jump to new bar heights, then float and fall with satisfying gravity
+    /// Updates low-fi stepped peak hold positions for Classic mode.
     private func updateClassicPeakState() {
         let colCount = renderBarCount
         
@@ -3100,9 +3110,10 @@ class SpectrumAnalyzerView: NSView {
         )
     }
 
-    private func enhancedSourceBandIndex(outputIndex: Int, outputCount: Int, inputCount: Int) -> Float {
+    private func standardSpectrumSourceBandIndex(outputIndex: Int, outputCount: Int, inputCount: Int) -> Float {
         // Enhanced is usually used in the small main-window display. Crop the
         // deepest sub range for the same reason as Ultra: it has no frequency labels.
+        // Classic shares this curve so the low end does not regress to a shelf.
         return analyzerSourceBandIndex(
             outputIndex: outputIndex,
             outputCount: outputCount,
@@ -3134,7 +3145,7 @@ class SpectrumAnalyzerView: NSView {
         return t * t * (3.0 - 2.0 * t)
     }
 
-    private func enhancedAnalyzerLevel(_ rawValue: Float, frequencyHz: Float) -> Float {
+    private func standardSpectrumAnalyzerLevel(_ rawValue: Float, frequencyHz: Float) -> Float {
         let lowBassControl = 0.58 + 0.42 * smoothstep(42, 90, frequencyHz)
         let lowMidTaper = 0.90 + 0.10 * smoothstep(90, 240, frequencyHz)
         let airLift = 1.0 + 0.08 * smoothstep(6_000, 14_000, frequencyHz)
