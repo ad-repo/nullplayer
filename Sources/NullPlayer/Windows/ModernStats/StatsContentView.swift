@@ -102,6 +102,18 @@ struct StatsOverviewView: View {
     @ObservedObject var agent: PlayHistoryAgent
     var skinTextColor: Color = .primary
 
+    private func compactTopDimensionHeight(rowCount: Int, maxHeight: CGFloat = 180) -> CGFloat {
+        guard rowCount > 0 else { return 56 }
+
+        let titleHeight: CGFloat = 20
+        let titleSpacing: CGFloat = 4
+        let rowHeight: CGFloat = 18
+        let rowSpacing: CGFloat = 3
+        let rowVerticalPadding: CGFloat = 4
+        let visibleRowsHeight = CGFloat(rowCount) * rowHeight + CGFloat(max(0, rowCount - 1)) * rowSpacing
+        return min(maxHeight, titleHeight + titleSpacing + rowVerticalPadding + visibleRowsHeight)
+    }
+
     var body: some View {
         ScrollView(.vertical) {
             VStack(spacing: 16) {
@@ -117,6 +129,15 @@ struct StatsOverviewView: View {
                     )
                 )
                 .frame(height: 220)
+
+                if let selectedArtist = agent.filter.selectedArtist {
+                    ArtistTrackDetailView(
+                        artistName: selectedArtist,
+                        rows: agent.artistTracks,
+                        skinTextColor: skinTextColor,
+                        onClear: { agent.selectArtist(nil) }
+                    )
+                }
 
                 TopDimensionChartView(
                     title: "Top Movies",
@@ -134,7 +155,7 @@ struct StatsOverviewView: View {
                     selected: .constant(nil),
                     allowsSelection: false
                 )
-                .frame(height: 180)
+                .frame(height: compactTopDimensionHeight(rowCount: agent.topTVShows.count))
 
                 InternetRadioSection(
                     rows: agent.topRadioStations,
@@ -184,6 +205,129 @@ struct StatsOverviewView: View {
             }
             .padding(12)
         }
+    }
+}
+
+struct ArtistTrackDetailView: View {
+    let artistName: String
+    let rows: [ArtistTrackRow]
+    var skinTextColor: Color = .primary
+    let onClear: () -> Void
+
+    private var listHeight: CGFloat {
+        let headerHeight: CGFloat = 22
+        let rowHeight: CGFloat = 34
+        let emptyHeight: CGFloat = 44
+        guard !rows.isEmpty else { return emptyHeight }
+        return min(260, headerHeight + CGFloat(rows.count) * rowHeight)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("Tracks by \(artistName)")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(skinTextColor)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(trackCountLabel)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Button(action: onClear) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear artist filter")
+            }
+
+            if rows.isEmpty {
+                Text("No tracks recorded for this artist.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: listHeight, alignment: .center)
+            } else {
+                VStack(spacing: 0) {
+                    ArtistTrackHeaderRow(skinTextColor: skinTextColor)
+                    Divider()
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                                ArtistTrackRowView(row: row, skinTextColor: skinTextColor)
+                                if index < rows.count - 1 {
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(height: listHeight)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var trackCountLabel: String {
+        rows.count == 1 ? "1 track" : "\(rows.count) tracks"
+    }
+}
+
+private struct ArtistTrackHeaderRow: View {
+    var skinTextColor: Color = .primary
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Track")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Plays")
+                .frame(width: 42, alignment: .trailing)
+            Text("Time")
+                .frame(width: 64, alignment: .trailing)
+            Text("Last")
+                .frame(width: 78, alignment: .trailing)
+        }
+        .font(.caption2)
+        .foregroundColor(skinTextColor.opacity(0.65))
+        .frame(height: 22)
+    }
+}
+
+private struct ArtistTrackRowView: View {
+    let row: ArtistTrackRow
+    var skinTextColor: Color = .primary
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.title)
+                    .font(.caption)
+                    .foregroundColor(skinTextColor)
+                    .lineLimit(1)
+                Text(row.album)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text("\(row.playCount)")
+                .font(.caption2)
+                .foregroundColor(skinTextColor.opacity(0.75))
+                .monospacedDigit()
+                .frame(width: 42, alignment: .trailing)
+            Text(formatStatsPlayTime(row.totalSeconds))
+                .font(.caption2)
+                .foregroundColor(skinTextColor.opacity(0.75))
+                .monospacedDigit()
+                .frame(width: 64, alignment: .trailing)
+            Text(row.lastPlayedAt.formatted(date: .abbreviated, time: .omitted))
+                .font(.caption2)
+                .foregroundColor(skinTextColor.opacity(0.75))
+                .monospacedDigit()
+                .frame(width: 78, alignment: .trailing)
+        }
+        .frame(height: 34)
     }
 }
 
