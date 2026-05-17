@@ -8,7 +8,7 @@
 
 ### Improvements
 
-- **Spectrum analyzer modes refined** — Ultra now uses a denser professional analyzer look with cropped sub-frequency mapping, controlled low-bass shaping, fast decay, and clean peak caps. Enhanced has the same corrected sub curve in a compact LED presentation. Classic keeps a low-fi skin-palette aesthetic with stepped bars and chunky peaks while sharing the corrected analyzer curve so the sub range no longer appears as a shelf or empty left gap.
+- **Spectrum analyzer modes refined** — Ultra now uses a denser professional analyzer look with cropped sub-frequency mapping, controlled low-bass shaping, fast decay, and clean peak caps. Enhanced has the same cropped sub curve in a compact LED presentation. Classic keeps a low-fi skin-palette aesthetic with stepped bars and chunky peaks while sharing the cropped analyzer curve so the sub range no longer appears as a shelf or empty left gap.
 - **Visualization menus aligned** — main-window and spectrum-window visualization menus now use the same user-facing order and labels, with Classic/Enhanced/Ultra first, visual effects next, and `vis_classic` last.
 
 ### Bug Fixes

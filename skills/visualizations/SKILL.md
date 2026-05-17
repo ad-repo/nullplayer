@@ -308,7 +308,7 @@ Participates in docking system with Main, EQ, and Playlist:
 
 ### Spectrum Analyzer Curve
 
-Classic, Enhanced, and Ultra avoid spending visible columns on the deepest sub range because these modes do not render frequency labels. `SpectrumAnalyzerView` maps the visible analyzer width over a cropped logarithmic source range starting around 48 Hz, then applies a controlled low-bass taper before the values reach the mode-specific renderers.
+Classic, Enhanced, and Ultra avoid spending visible columns on the deepest sub range because these modes do not render frequency labels. `SpectrumAnalyzerView` maps the visible analyzer width over a cropped logarithmic source range starting at 48 Hz, then applies controlled low-bass tapers that begin around 42 Hz before the values reach the mode-specific renderers.
 
 - Classic keeps its low-fi identity after the shared curve: 19/84 stepped bars, hard palette bands, quantized heights, and chunky peak caps.
 - Enhanced uses the same standard cropped curve as Classic, with smoother LED release trails and clean peak caps.
