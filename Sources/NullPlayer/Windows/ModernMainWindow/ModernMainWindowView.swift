@@ -1206,7 +1206,7 @@ class ModernMainWindowView: NSView {
     
     /// Cycle through visualization modes on the mini spectrum area
     private func cycleMainVisMode() {
-        let allModes = MainWindowVisMode.allCases
+        let allModes = MainWindowVisMode.visualizationOrder
         guard let currentIndex = allModes.firstIndex(of: mainVisMode) else {
             mainVisMode = .spectrum
             return

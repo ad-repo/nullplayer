@@ -17,16 +17,16 @@ The main window's built-in visualization area (76x16 pixels in Winamp coordinate
 
 | Mode | Description |
 |------|-------------|
-| **Spectrum** | Classic low-fi 19-bar spectrum analyzer with skin colors and cropped analyzer sub curve (default) |
-| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible rendering |
-| **Fire** | GPU flame simulation using Metal compute shaders |
+| **Classic** | Low-fi 19-bar spectrum analyzer with skin colors and cropped analyzer sub curve (default; persisted internally as `Spectrum`) |
 | **Enhanced** | Compact professional LED analyzer with cropped sub range, clean peak caps, and restrained meter colors |
 | **Ultra** | Dense professional spectrum analyzer with cropped sub range, fast decay, clean peak caps, and restrained meter colors |
+| **Fire** | GPU flame simulation using Metal compute shaders |
 | **JWST** | Deep space flythrough with 3D star field and JWST diffraction flares |
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks |
 | **Matrix** | Falling digital rain with procedural glyphs mapped to spectrum bands |
 | **Snow** | Audio-reactive snowfall with flurry-to-blizzard intensity and bass-driven wind gusts |
 | **EKG** | Realistic high-resolution ECG monitor trace synchronized to detected BPM and waveform amplitude, with selectable monitor palettes |
+| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible rendering |
 
 ### Switching Modes
 
@@ -288,8 +288,7 @@ Participates in docking system with Main, EQ, and Playlist:
 
 | Mode | Description |
 |------|-------------|
-| **Winamp** | Low-fi stepped bars from the skin palette with chunky peak caps, hard LED bands, and the shared cropped analyzer sub curve (default) |
-| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible INI behavior |
+| **Classic** | Low-fi stepped bars from the skin palette with chunky peak caps, hard LED bands, and the shared cropped analyzer sub curve (default) |
 | **Enhanced** | Compact professional LED analyzer with cropped logarithmic frequency mapping, controlled low-bass shaping, clean peak caps, and short release trails |
 | **Ultra** | Dense professional analyzer with cropped logarithmic frequency mapping, controlled low-bass shaping, fast decay, and clean peak caps |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues (4 color styles) |
@@ -298,6 +297,7 @@ Participates in docking system with Main, EQ, and Playlist:
 | **Matrix** | Falling digital rain with procedural glyphs (5 color schemes, 2 intensity presets) |
 | **Snow** | Layered procedural snowfall with spectrum-shaped density, gusting drift, and soft atmospheric haze |
 | **EKG** | Beat-synced ECG monitor with phosphor trace, medical grid, scan glow, BPM-driven QRS pulses, PCM amplitude-driven peak height, and selectable palettes |
+| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible INI behavior |
 
 ### Switching Modes
 

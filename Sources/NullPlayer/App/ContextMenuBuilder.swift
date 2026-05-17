@@ -942,7 +942,7 @@ class ContextMenuBuilder {
         let modeMenu = NSMenu()
         modeMenu.autoenablesItems = false
         
-        for mode in MainWindowVisMode.allCases {
+        for mode in MainWindowVisMode.visualizationOrder {
             let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setMainVisMode(_:)), keyEquivalent: "")
             item.target = MenuActions.shared
             item.representedObject = mode
@@ -1217,7 +1217,7 @@ class ContextMenuBuilder {
         let currentQuality = UserDefaults.standard.string(forKey: "spectrumQualityMode")
             .flatMap { SpectrumQualityMode(rawValue: $0) } ?? .classic
         
-        for mode in SpectrumQualityMode.allCases {
+        for mode in SpectrumQualityMode.visualizationOrder {
             let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setSpectrumQuality(_:)), keyEquivalent: "")
             item.target = MenuActions.shared
             item.representedObject = mode

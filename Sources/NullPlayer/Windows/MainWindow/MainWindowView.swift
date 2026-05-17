@@ -13,7 +13,28 @@ enum MainWindowVisMode: String, CaseIterable {
     case snow = "Snow"               // Audio-reactive snowfall (Metal overlay)
     case ekg = "EKG"                 // BPM-synced ECG monitor (Metal overlay)
     
-    var displayName: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .spectrum: return SpectrumQualityMode.classic.displayName
+        default: return rawValue
+        }
+    }
+
+    /// Shared user-facing order for visualization mode menus and click cycling.
+    static let visualizationOrder: [MainWindowVisMode] = SpectrumQualityMode.visualizationOrder.compactMap { qualityMode in
+        switch qualityMode {
+        case .classic: return .spectrum
+        case .enhanced: return .enhanced
+        case .ultra: return .ultra
+        case .flame: return .fire
+        case .cosmic: return .cosmic
+        case .electricity: return .electricity
+        case .matrix: return .matrix
+        case .snow: return .snow
+        case .ekg: return .ekg
+        case .visClassicExact: return .visClassicExact
+        }
+    }
     
     /// Whether this mode uses the Metal overlay (all modes except spectrum)
     var usesMetal: Bool { self != .spectrum }
@@ -459,7 +480,7 @@ class MainWindowView: NSView {
     
     /// Cycle the main window visualization mode through all available modes
     private func cycleMainVisMode() {
-        let allModes = MainWindowVisMode.allCases
+        let allModes = MainWindowVisMode.visualizationOrder
         guard let currentIndex = allModes.firstIndex(of: mainVisMode) else {
             mainVisMode = .spectrum
             return

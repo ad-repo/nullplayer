@@ -40,6 +40,20 @@ enum SpectrumQualityMode: String, CaseIterable {
     case visClassicExact = "vis_classic" // Exact-port vis_classic analyzer core (CPU frame path)
     
     var displayName: String { rawValue }
+
+    /// Shared user-facing order for visualization mode menus and click cycling.
+    static let visualizationOrder: [SpectrumQualityMode] = [
+        .classic,
+        .enhanced,
+        .ultra,
+        .flame,
+        .cosmic,
+        .electricity,
+        .matrix,
+        .snow,
+        .ekg,
+        .visClassicExact
+    ]
     
     /// The Metal shader file required for this mode.
     /// Returns nil if the mode shares a shader already checked by another mode.
