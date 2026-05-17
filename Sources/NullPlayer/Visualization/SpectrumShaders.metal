@@ -394,10 +394,9 @@ fragment float4 spectrum_fragment(
 // MARK: - Ultra Mode Shaders (Maximum Quality)
 // =============================================================================
 // Ultra mode features:
-// - 24 LED rows (vs 16 in Enhanced) for smoother vertical resolution
-// - Vibrant rainbow colors with high saturation
-// - Smooth rounded cells with inner gradient for 3D depth
-// - Prominent floating peaks
+// - Dense analyzer bars with clean peak caps
+// - Vertical green/yellow/red meter palette
+// - Short decay trails tuned for readability
 // =============================================================================
 
 /// Parameters for Ultra mode (56 bytes)
@@ -520,49 +519,40 @@ fragment float4 ultra_matrix_fragment(
     UltraVertexOut in [[stage_in]],
     constant UltraParams& params [[buffer(1)]]
 ) {
-    // Skip unlit cells (low threshold for smooth trail tails)
-    if (in.brightness < 0.003 && in.isPeak < 0.5) {
+    // Skip unlit cells aggressively so release does not smear.
+    if (in.brightness < 0.01 && in.isPeak < 0.5) {
         discard_fragment();
     }
     
     float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
     
-    // === SMOOTH RAINBOW COLOR ===
-    float hue = in.normalizedColumn * 0.85;
-    float3 baseColor = hsv2rgb(hue, 1.0, 1.0);
-    
-    // === WARM TRAIL COLOR SHIFT ===
-    // As brightness fades, color shifts toward warm amber for a fluid heat-trail look
-    // Only kicks in at lower brightness to avoid color flashing in dense interior areas
-    float warmth = pow(max(0.0, 1.0 - displayBrightness * 1.5), 2.0);
-    float3 warmTint = float3(1.0, 0.35, 0.06);  // Warm amber
-    float3 trailColor = mix(baseColor, warmTint, warmth * 0.5);
+    // === PROFESSIONAL METER PALETTE ===
+    float3 green = float3(0.02, 0.86, 0.30);
+    float3 yellow = float3(0.96, 0.84, 0.10);
+    float3 red = float3(1.00, 0.16, 0.06);
+    float lowToMid = smoothstep(0.34, 0.72, in.normalizedRow);
+    float midToHigh = smoothstep(0.72, 0.94, in.normalizedRow);
+    float3 baseColor = mix(mix(green, yellow, lowToMid), red, midToHigh);
     
     // === PERCEPTUAL GAMMA ===
-    // Apply gamma curve so brightness fades look smooth to human eyes
-    // Without this, linear fade looks like it "snaps" off at the end
-    float percBrightness = pow(displayBrightness, 0.75);
+    // A slightly harder curve keeps low-level release crisp.
+    float percBrightness = pow(displayBrightness, 0.92);
     
-    float3 color = trailColor * percBrightness;
+    float3 color = baseColor * percBrightness;
     
-    // === SMOOTH VERTICAL GRADIENT ===
-    // Higher rows subtly brighter for visual depth (smooth interpolation)
-    float heightBoost = mix(0.8, 1.15, smoothstep(0.0, 1.0, in.normalizedRow));
-    color *= heightBoost;
+    // Subtle column separation without rainbow color-coding.
+    float columnShade = mix(0.92, 1.0, smoothstep(0.0, 1.0, fract(in.normalizedColumn * 12.0)));
+    color *= columnShade;
     
-    // === SOFT PEAK GLOW ===
+    // === PEAK CAP ===
     if (in.isPeak > 0.5) {
-        // Peak: bright white-tinted color with soft pulse
-        float3 peakColor = mix(baseColor, float3(1.0), 0.45);
-        float pulse = 1.0 + sin(params.time * 6.0) * 0.05;
-        color = peakColor * pulse;
+        color = mix(baseColor, float3(1.0, 0.96, 0.70), 0.55);
     }
     
-    // === HIGH-BRIGHTNESS BLOOM ===
-    // Cells at near-full brightness get a subtle extra glow boost
+    // Bright cells get a restrained edge lift instead of neon bloom.
     if (displayBrightness > 0.85) {
-        float bloom = (displayBrightness - 0.85) * 3.0;  // 0 to 0.45
-        color += baseColor * bloom * 0.2;
+        float lift = (displayBrightness - 0.85) * 2.0;
+        color += baseColor * lift * 0.08;
     }
     
     // Brightness boost (for small embedded views)

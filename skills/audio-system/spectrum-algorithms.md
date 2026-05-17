@@ -139,13 +139,14 @@ bandMagnitude = interpMag × bandwidthScale[band]
 ```
 
 **Step 3: Pre-computed Frequency Weighting**
-Apply frequency-dependent weighting to reduce sub-bass dominance:
+Apply a continuous frequency-dependent weighting curve to reduce sub-bass dominance without creating stepped shelves:
 ```text
-// Pre-computed weights by frequency:
-freq < 40 Hz:    weight = 0.70   // Sub-bass: 30% reduction
-freq < 100 Hz:   weight = 0.85   // Bass: 15% reduction
-freq < 300 Hz:   weight = 0.92   // Low-mid: 8% reduction
-freq >= 300 Hz:  weight = 1.00   // Full level
+smoothstep(edge0, edge1, freq) = t*t*(3 - 2*t), where t = clamp((freq-edge0)/(edge1-edge0), 0, 1)
+
+subHighpass = 0.22 + 0.78 × smoothstep(28 Hz, 90 Hz, freq)
+lowMidTaper = 0.88 + 0.12 × smoothstep(90 Hz, 350 Hz, freq)
+airLift = 1.00 + 0.08 × smoothstep(6000 Hz, 14000 Hz, freq)
+weight = subHighpass × lowMidTaper × airLift
 
 newSpectrum[band] = bandMagnitude × frequencyWeight[band]
 ```

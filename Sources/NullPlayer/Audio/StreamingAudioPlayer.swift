@@ -70,28 +70,25 @@ class StreamingAudioPlayer {
     /// Whether we've reported format info for the current track
     private var hasReportedFormat: Bool = false
     
-    /// Pre-computed frequency weights for spectrum analyzer (light compensation)
+    /// Pre-computed frequency weights for spectrum analyzer (professional analyzer tilt)
     private static let spectrumFrequencyWeights: [Float] = {
         // Generate weights for 75 bands spanning 20Hz-20kHz logarithmically
-        // Light compensation - let bass punch through
         let bandCount = 75
         let minFreq: Float = 20
         let maxFreq: Float = 20000
+        func smoothstep(_ edge0: Float, _ edge1: Float, _ value: Float) -> Float {
+            let t = min(1.0, max(0.0, (value - edge0) / (edge1 - edge0)))
+            return t * t * (3.0 - 2.0 * t)
+        }
         
         return (0..<bandCount).map { band in
             let freqRatio = Float(band) / Float(bandCount - 1)
             let freq = minFreq * pow(maxFreq / minFreq, freqRatio)
-            
-            // Minimal frequency weighting - just slight sub-bass reduction
-            if freq < 40 {
-                return 0.70  // Sub-bass: light reduction
-            } else if freq < 100 {
-                return 0.85  // Bass: very light reduction
-            } else if freq < 300 {
-                return 0.92  // Low-mid: minimal reduction
-            } else {
-                return 1.0   // Everything else: full level
-            }
+
+            let subHighpass = 0.22 + 0.78 * smoothstep(28, 90, freq)
+            let lowMidTaper = 0.88 + 0.12 * smoothstep(90, 350, freq)
+            let airLift = 1.0 + 0.08 * smoothstep(6_000, 14_000, freq)
+            return subHighpass * lowMidTaper * airLift
         }
     }()
     

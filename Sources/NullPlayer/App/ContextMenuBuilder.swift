@@ -4041,7 +4041,7 @@ class MenuActions: NSObject {
     @objc func setSpectrumNormalization(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
-        // Normalization mode is read each frame, no notification needed
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
 
     @objc func loadVisClassicProfile(_ sender: NSMenuItem) {

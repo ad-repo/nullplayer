@@ -350,6 +350,7 @@ class MainWindowView: NSView {
         let overlay = SpectrumAnalyzerView(frame: .zero)
         // Mark as embedded BEFORE setting qualityMode to prevent UserDefaults contamination
         overlay.isEmbedded = true
+        overlay.normalizationUserDefaultsKey = "mainWindowNormalizationMode"
         // Set quality mode based on current main window vis mode
         if let qualityMode = mainVisMode.spectrumQualityMode {
             overlay.qualityMode = qualityMode
@@ -534,6 +535,7 @@ class MainWindowView: NSView {
                let mode = SpectrumDecayMode(rawValue: savedDecay) {
                 overlay.decayMode = mode
             }
+            overlay.refreshNormalizationMode()
             updateMainVisClassicOverlayOpacity()
         }
     }
