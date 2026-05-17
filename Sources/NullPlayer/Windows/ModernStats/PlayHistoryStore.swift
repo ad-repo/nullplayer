@@ -308,12 +308,34 @@ final class PlayHistoryStore: Sendable {
             """
         guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
         let stmt = try db.prepare(sql, params)
-        return stmt.map { row in
+        var rows = stmt.map { row in
             let name = row[0] as? String ?? "Unknown"
             let count = Int(row[1] as? Int64 ?? 0)
             let mins = row[2] as? Double ?? 0
             return TopDimensionRow(id: name, displayName: name, playCount: count, totalMinutes: mins)
         }
+        if !rows.contains(where: { $0.id == "Unknown" }),
+           let unknownRow = try fetchUnknownGenreRow(whereStr: whereStr, params: params) {
+            rows.append(unknownRow)
+        }
+        return rows
+    }
+
+    private func fetchUnknownGenreRow(whereStr: String, params: [Binding?]) throws -> TopDimensionRow? {
+        var unknownWhereStr = whereStr
+        addCondition("(pe.event_genre IS NULL OR trim(pe.event_genre) = '')", to: &unknownWhereStr)
+        let sql = """
+            SELECT COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
+            \(unknownWhereStr)
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return nil }
+        let stmt = try db.prepare(sql, params)
+        guard let row = stmt.makeIterator().next() else { return nil }
+        let count = Int(row[0] as? Int64 ?? 0)
+        guard count > 0 else { return nil }
+        let mins = row[1] as? Double ?? 0
+        return TopDimensionRow(id: "Unknown", displayName: "Unknown", playCount: count, totalMinutes: mins)
     }
 
     func fetchContentTypeBreakdown(filter: StatsFilterState) throws -> [TopDimensionRow] {

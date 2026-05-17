@@ -389,7 +389,7 @@ struct PlayTimeSummarySection: View {
                                 .foregroundColor(.accentColor)
                         }
                     } else {
-                        Button("Discover Genres") { agent.startGenreBackfill() }
+                        Button("Reconcile Genres") { agent.startGenreBackfill() }
                             .buttonStyle(.plain)
                             .foregroundColor(.accentColor)
                     }
