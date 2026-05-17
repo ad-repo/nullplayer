@@ -3820,6 +3820,7 @@ class ModernLibraryBrowserView: NSView {
         let localItem = NSMenuItem(title: "Local Files", action: #selector(selectLocalSource), keyEquivalent: "")
         localItem.target = self; if case .local = currentSource { localItem.state = .on }
         menu.addItem(localItem)
+        menu.addItem(NSMenuItem.separator())
         let radioItem = NSMenuItem(title: "Internet Radio", action: #selector(selectRadioSource), keyEquivalent: "")
         radioItem.target = self; if case .radio = currentSource { radioItem.state = .on }
         menu.addItem(radioItem)
