@@ -77,7 +77,13 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var backfillTotal = 0
 
     @Published private(set) var filter = StatsFilterState() {
-        didSet { if filter != oldValue { invalidateCache(); scheduleRefresh() } }
+        didSet {
+            if filter != oldValue {
+                invalidateCache()
+                artistTracks = []
+                scheduleRefresh()
+            }
+        }
     }
     @Published var granularity = StatsGranularity.day {
         didSet { cachedTimeSeries = nil; scheduleRefresh() }
