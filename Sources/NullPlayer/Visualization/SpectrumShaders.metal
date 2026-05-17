@@ -3,8 +3,8 @@
 // =============================================================================
 // GPU-accelerated LED matrix spectrum analyzer supporting three quality modes:
 // - Classic (qualityMode=0): Discrete color bands from skin palette
-// - Enhanced (qualityMode=1): Rainbow LED matrix with floating peaks
-// - Ultra (qualityMode=2): Maximum quality with bloom, reflection, physics peaks
+// - Enhanced (qualityMode=1): Compact LED analyzer with peak caps
+// - Ultra (qualityMode=2): Dense professional analyzer with clean peak caps
 // =============================================================================
 
 #include <metal_stdlib>
@@ -164,40 +164,35 @@ fragment float4 led_matrix_fragment(
         discard_fragment();
     }
 
-    // === BASE COLOR ===
-    float hue = in.normalizedColumn;
-    float3 baseColor = hsv2rgb(hue, 1.0, 1.0);
+    // === METER COLOR ===
+    float3 lowColor = float3(0.04, 0.78, 0.48);
+    float3 midColor = float3(0.88, 0.82, 0.12);
+    float3 highColor = float3(1.00, 0.18, 0.06);
+    float lowToMid = smoothstep(0.42, 0.76, in.normalizedRow);
+    float midToHigh = smoothstep(0.76, 0.94, in.normalizedRow);
+    float3 baseColor = mix(mix(lowColor, midColor, lowToMid), highColor, midToHigh);
     float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
-    float percBrightness = pow(displayBrightness, 0.72);
+    float percBrightness = pow(displayBrightness, 0.88);
 
-    // === WARM FADE TRAIL ===
-    float3 warmTint = float3(1.0, 0.35, 0.05);
-    float warmBlend = pow(max(0.0, 1.0 - displayBrightness * 2.0), 2.0) * 0.45;
-    float3 color = mix(baseColor, warmTint, warmBlend) * percBrightness;
+    float3 color = baseColor * percBrightness;
 
-    // === INNER LED GLOW (3D depth) ===
+    // === INNER LED DEPTH ===
     float radialDist = length(centered);
-    float innerGlow = 1.0 - smoothstep(0.0, 1.0, radialDist) * 0.22;
+    float innerGlow = 1.0 - smoothstep(0.0, 1.0, radialDist) * 0.14;
     color *= innerGlow;
 
-    // === SPECULAR HIGHLIGHT ===
-    float2 specPos = in.uv - float2(0.35, 0.72);
-    float specular = exp(-dot(specPos, specPos) * 14.0) * 0.6 * percBrightness;
-    color += float3(specular);
+    // Keep columns readable without rainbow striping.
+    float columnShade = mix(0.88, 1.0, smoothstep(0.0, 1.0, fract(in.normalizedColumn * 9.0)));
+    color *= columnShade * mix(0.92, 1.12, in.normalizedRow);
 
-    // === HEIGHT-BASED INTENSITY ===
-    color *= mix(0.85, 1.35, in.normalizedRow);
-
-    // === HIGH-BRIGHTNESS BLOOM ===
+    // === HIGH-BRIGHTNESS EDGE LIFT ===
     if (percBrightness > 0.8) {
-        color += baseColor * (percBrightness - 0.8) * 3.5 * 0.25;
+        color += baseColor * (percBrightness - 0.8) * 0.35;
     }
 
-    // === PEAK CELL RENDERING ===
+    // === PEAK CAP ===
     if (in.isPeak > 0.5) {
-        float3 peakColor = mix(baseColor, float3(1.0), 0.5);
-        float pulse = 1.0 + sin(params.time * 8.0) * 0.07;
-        color = peakColor * 1.3 * pulse;
+        color = mix(baseColor, float3(1.0, 0.95, 0.68), 0.55);
     }
 
     color = min(color * params.brightnessBoost, float3(1.0));

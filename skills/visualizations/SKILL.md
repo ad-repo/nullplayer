@@ -20,7 +20,7 @@ The main window's built-in visualization area (76x16 pixels in Winamp coordinate
 | **Spectrum** | Classic 19-bar spectrum analyzer drawn with skin colors via CGContext (default) |
 | **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible rendering |
 | **Fire** | GPU flame simulation using Metal compute shaders |
-| **Enhanced** | LED matrix with rainbow gradient, gravity-bouncing peaks, amber fade trails |
+| **Enhanced** | Compact LED analyzer with cropped sub range, clean peak caps, and restrained meter colors |
 | **Ultra** | Dense professional spectrum analyzer with fast decay, clean peak caps, and restrained meter colors |
 | **JWST** | Deep space flythrough with 3D star field and JWST diffraction flares |
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks |

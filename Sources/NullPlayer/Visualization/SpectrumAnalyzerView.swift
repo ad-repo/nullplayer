@@ -2865,7 +2865,31 @@ class SpectrumAnalyzerView: NSView {
             }
             
             // Update standard display spectrum (for Enhanced/Classic modes)
-            if inputCount >= outputCount {
+            if renderQualityMode == .enhanced {
+                for barIndex in 0..<outputCount {
+                    let sourceIndex = enhancedSourceBandIndex(
+                        outputIndex: barIndex,
+                        outputCount: outputCount,
+                        inputCount: inputCount
+                    )
+                    let lowerIndex = Int(sourceIndex)
+                    let upperIndex = min(lowerIndex + 1, inputCount - 1)
+                    let fraction = sourceIndex - Float(lowerIndex)
+                    let interpolated = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                    let frequencyHz = analyzerBandCenterFrequency(sourceIndex, bandCount: inputCount)
+                    let newValue = enhancedAnalyzerLevel(interpolated, frequencyHz: frequencyHz)
+
+                    if newValue > displaySpectrum[barIndex] {
+                        displaySpectrum[barIndex] = displaySpectrum[barIndex] * 0.18 + newValue * 0.82
+                    } else {
+                        displaySpectrum[barIndex] = displaySpectrum[barIndex] * min(0.42, effectiveDecay) + newValue * (1 - min(0.42, effectiveDecay))
+                    }
+
+                    if displaySpectrum[barIndex] > 0.01 {
+                        hasData = true
+                    }
+                }
+            } else if inputCount >= outputCount {
                 let bandsPerBar = inputCount / outputCount
                 for barIndex in 0..<outputCount {
                     let start = barIndex * bandsPerBar
@@ -2919,7 +2943,7 @@ class SpectrumAnalyzerView: NSView {
                     let upperIndex = min(lowerIndex + 1, inputCount - 1)
                     let fraction = sourceIndex - Float(lowerIndex)
                     let interpolated = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
-                    let frequencyHz = ultraBandCenterFrequency(sourceIndex, bandCount: inputCount)
+                    let frequencyHz = analyzerBandCenterFrequency(sourceIndex, bandCount: inputCount)
                     let newValue = ultraAnalyzerLevel(interpolated, frequencyHz: frequencyHz)
 
                     if newValue > ultraDisplaySpectrum[barIndex] {
@@ -2961,7 +2985,7 @@ class SpectrumAnalyzerView: NSView {
     
     /// Updates peak hold positions and per-cell brightness for LED matrix mode
     /// Note: Only called when qualityMode == .enhanced
-    /// Features: gravity-based bouncing peaks, two-phase warm-glow fade trails
+    /// Features: clean analyzer peak caps and short LED release trails
     private func updateLEDMatrixState() {
         let colCount = renderBarCount
         
@@ -2970,32 +2994,29 @@ class SpectrumAnalyzerView: NSView {
         
         // Arrays are pre-allocated in commonInit - no resizing needed
         
-        // Physics constants for gravity-based peak animation
-        let gravity: Float = 0.005            // Acceleration downward per frame
-        let bounceCoeff: Float = 0.25         // Energy retained on bounce
-        let minBounceVelocity: Float = 0.008  // Minimum velocity to trigger bounce
+        // Analyzer-style peak caps: responsive attack, clean fall, no bounce.
+        let gravity: Float = 0.012
+        let bounceCoeff: Float = 0.0
+        let minBounceVelocity: Float = 0.01
         
-        // Two-phase cell brightness transition for warm glow trail effect
-        let cellAttackRate: Float = 0.5       // Fast attack for punchy response
-        let cellFadeRateSlow: Float = 0.018   // Phase 1: slow fade (warm glow lingers)
-        let cellFadeRateFast: Float = 0.055   // Phase 2: faster fade to dark
-        let warmGlowThreshold: Float = 0.45   // Below this brightness, fade faster
+        // Short release trails keep motion readable without smearing.
+        let cellAttackRate: Float = 0.78
+        let cellFadeRateSlow: Float = 0.045
+        let cellFadeRateFast: Float = 0.11
+        let warmGlowThreshold: Float = 0.35
         
         for col in 0..<min(colCount, displaySpectrum.count) {
             let currentLevel = displaySpectrum[col]
             let currentRow = Int(currentLevel * Float(effectiveLedRowCount))
             
-            // Physics-based peak animation (gravity + bounce)
+            // Peak cap animation
             if currentLevel > peakHoldPositions[col] {
-                // New peak - jump to current level and reset velocity
                 peakHoldPositions[col] = currentLevel
                 peakVelocities[col] = 0
             } else {
-                // Apply gravity (acceleration downward)
                 peakVelocities[col] -= gravity
                 peakHoldPositions[col] += peakVelocities[col]
                 
-                // Bounce off bar level
                 if peakHoldPositions[col] < currentLevel {
                     peakHoldPositions[col] = currentLevel
                     if abs(peakVelocities[col]) > minBounceVelocity {
@@ -3005,25 +3026,18 @@ class SpectrumAnalyzerView: NSView {
                     }
                 }
                 
-                // Clamp to valid range
                 peakHoldPositions[col] = max(0, min(1.0, peakHoldPositions[col]))
             }
             
-            // Two-phase cell fade for warm glow trail effect
-            // Phase 1 (bright → warmGlowThreshold): slow fade, cells linger with warm glow
-            // Phase 2 (warmGlowThreshold → 0): faster fade, cells quickly go dark
             for row in 0..<effectiveLedRowCount {
                 let targetBrightness: Float = row < currentRow ? 1.0 : 0.0
                 let current = cellBrightness[col][row]
                 
                 if targetBrightness > current {
-                    // Fast attack - cells light up quickly for punchy response
                     cellBrightness[col][row] = min(1.0, current + cellAttackRate)
                 } else if current > warmGlowThreshold {
-                    // Phase 1: slow fade - warm glow lingers beautifully
                     cellBrightness[col][row] = max(0, current - cellFadeRateSlow)
                 } else {
-                    // Phase 2: faster fade to dark
                     cellBrightness[col][row] = max(0, current - cellFadeRateFast)
                 }
             }
@@ -3072,7 +3086,26 @@ class SpectrumAnalyzerView: NSView {
         // Ultra has no frequency labels, so don't spend screen width on mostly
         // unreadable infrasonic/sub-only bins. Map the visible analyzer range
         // back onto the full drawable width.
-        let analyzerMinFreq: Float = 48
+        return analyzerSourceBandIndex(
+            outputIndex: outputIndex,
+            outputCount: outputCount,
+            inputCount: inputCount,
+            analyzerMinFreq: 48
+        )
+    }
+
+    private func enhancedSourceBandIndex(outputIndex: Int, outputCount: Int, inputCount: Int) -> Float {
+        // Enhanced is usually used in the small main-window display. Crop the
+        // deepest sub range for the same reason as Ultra: it has no frequency labels.
+        return analyzerSourceBandIndex(
+            outputIndex: outputIndex,
+            outputCount: outputCount,
+            inputCount: inputCount,
+            analyzerMinFreq: 48
+        )
+    }
+
+    private func analyzerSourceBandIndex(outputIndex: Int, outputCount: Int, inputCount: Int, analyzerMinFreq: Float) -> Float {
         let sourceMinFreq: Float = 20
         let sourceMaxFreq: Float = 20_000
         let ratio = Float(outputIndex) / Float(max(1, outputCount - 1))
@@ -3082,7 +3115,7 @@ class SpectrumAnalyzerView: NSView {
         return min(max(sourceIndex, 0), Float(max(0, inputCount - 1)))
     }
 
-    private func ultraBandCenterFrequency(_ bandIndex: Float, bandCount: Int) -> Float {
+    private func analyzerBandCenterFrequency(_ bandIndex: Float, bandCount: Int) -> Float {
         let minFreq: Float = 20
         let maxFreq: Float = 20_000
         let clampedBand = min(max(bandIndex, 0), Float(max(0, bandCount - 1)))
@@ -3093,6 +3126,14 @@ class SpectrumAnalyzerView: NSView {
     private func smoothstep(_ edge0: Float, _ edge1: Float, _ value: Float) -> Float {
         let t = min(1.0, max(0.0, (value - edge0) / (edge1 - edge0)))
         return t * t * (3.0 - 2.0 * t)
+    }
+
+    private func enhancedAnalyzerLevel(_ rawValue: Float, frequencyHz: Float) -> Float {
+        let lowBassControl = 0.58 + 0.42 * smoothstep(42, 90, frequencyHz)
+        let lowMidTaper = 0.90 + 0.10 * smoothstep(90, 240, frequencyHz)
+        let airLift = 1.0 + 0.08 * smoothstep(6_000, 14_000, frequencyHz)
+        let shaped = min(1.0, max(0.0, rawValue * lowBassControl * lowMidTaper * airLift))
+        return pow(shaped, 1.08)
     }
 
     private func ultraAnalyzerLevel(_ rawValue: Float, frequencyHz: Float) -> Float {
@@ -3221,12 +3262,14 @@ class SpectrumAnalyzerView: NSView {
         
         switch localQualityMode {
         case .enhanced:
-            // Derive cell width directly from viewport so bars always fill the full width.
-            // barWidth is floor()'d by the view so barCount*barWidth < scaledWidth; using
-            // scaledWidth/barCount avoids the right-side gap entirely.
-            let cellSpacing: Float = 0.0
-            let cellHeight = (scaledHeight - 2.0) / Float(effectiveLedRowCount)  // 2px top margin so peaks aren't clipped
-            let cellWidth = scaledWidth / Float(localBarCount)
+            // Fill the full viewport while adding gaps only when cells are large
+            // enough to support them. This avoids a fused heatmap in larger views
+            // and avoids dead space in the compact main-window display.
+            let cellSpacing: Float = scaledWidth / Float(max(1, localBarCount)) >= 4.0 ? max(1.0, Float(floor(scale))) : 0.0
+            let totalSpacing = Float(max(0, localBarCount - 1)) * cellSpacing
+            let verticalSpacing = Float(max(0, effectiveLedRowCount - 1)) * cellSpacing
+            let cellHeight = max(1.0, (scaledHeight - 2.0 - verticalSpacing) / Float(effectiveLedRowCount))
+            let cellWidth = max(1.0, (scaledWidth - totalSpacing) / Float(localBarCount))
 
             // Update params buffer
             if let buffer = paramsBuffer {
