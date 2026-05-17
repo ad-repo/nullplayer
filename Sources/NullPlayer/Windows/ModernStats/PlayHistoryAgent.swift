@@ -52,6 +52,7 @@ private struct StatsRefreshResult {
     var contentTypeBreakdown: [TopDimensionRow]
     var outputDeviceBreakdown: [TopDimensionRow]
     var recentEvents: [RecentEventRow]
+    var artistTracks: [ArtistTrackRow]
 }
 
 @MainActor
@@ -68,6 +69,7 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var contentTypeBreakdown: [TopDimensionRow] = []
     @Published var outputDeviceBreakdown: [TopDimensionRow] = []
     @Published var recentEvents:   [RecentEventRow]  = []
+    @Published var artistTracks:   [ArtistTrackRow]  = []
     @Published var isLoading: Bool = false
     @Published var error: String? = nil
     @Published var isBackfilling = false
@@ -75,7 +77,13 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var backfillTotal = 0
 
     @Published private(set) var filter = StatsFilterState() {
-        didSet { if filter != oldValue { invalidateCache(); scheduleRefresh() } }
+        didSet {
+            if filter != oldValue {
+                invalidateCache()
+                artistTracks = []
+                scheduleRefresh()
+            }
+        }
     }
     @Published var granularity = StatsGranularity.day {
         didSet { cachedTimeSeries = nil; scheduleRefresh() }
@@ -95,6 +103,7 @@ final class PlayHistoryAgent: ObservableObject {
     private var cachedContentTypeBreakdown: [TopDimensionRow]?
     private var cachedOutputDeviceBreakdown: [TopDimensionRow]?
     private var cachedRecentEvents:   [RecentEventRow]?
+    private var cachedArtistTracks:   [ArtistTrackRow]?
 
     private let store = PlayHistoryStore()
 
@@ -140,6 +149,7 @@ final class PlayHistoryAgent: ObservableObject {
         cachedSourceBreakdown = nil; cachedContentTypeBreakdown = nil
         cachedOutputDeviceBreakdown = nil
         cachedRecentEvents = nil
+        cachedArtistTracks = nil
     }
 
     func scheduleRefresh() {
@@ -178,6 +188,8 @@ final class PlayHistoryAgent: ObservableObject {
                 let outputDeviceBreakdown = try store.fetchTopDimension(dimension: .outputDevice, filter: currentFilter)
                 try Task.checkCancellation()
                 let recentEvents = try store.fetchRecentEvents(filter: currentFilter)
+                try Task.checkCancellation()
+                let artistTracks = try store.fetchArtistTracks(filter: currentFilter)
                 return StatsRefreshResult(
                     playTimeSummaries: playTimeSummaries,
                     topArtists: topArtists,
@@ -190,7 +202,8 @@ final class PlayHistoryAgent: ObservableObject {
                     sourceBreakdown: sourceBreakdown,
                     contentTypeBreakdown: contentTypeBreakdown,
                     outputDeviceBreakdown: outputDeviceBreakdown,
-                    recentEvents: recentEvents
+                    recentEvents: recentEvents,
+                    artistTracks: artistTracks
                 )
             }.value
             try Task.checkCancellation()
@@ -206,6 +219,7 @@ final class PlayHistoryAgent: ObservableObject {
             contentTypeBreakdown = result.contentTypeBreakdown
             outputDeviceBreakdown = result.outputDeviceBreakdown
             recentEvents = result.recentEvents
+            artistTracks = result.artistTracks
             cachedPlayTimeSummaries = result.playTimeSummaries
             cachedTopArtists = result.topArtists
             cachedTopMovies = result.topMovies
@@ -218,6 +232,7 @@ final class PlayHistoryAgent: ObservableObject {
             cachedContentTypeBreakdown = result.contentTypeBreakdown
             cachedOutputDeviceBreakdown = result.outputDeviceBreakdown
             cachedRecentEvents = result.recentEvents
+            cachedArtistTracks = result.artistTracks
         } catch is CancellationError {
             // Refresh was superseded by a newer request — discard results silently
         } catch {

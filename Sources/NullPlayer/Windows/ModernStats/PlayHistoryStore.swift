@@ -63,6 +63,15 @@ struct RecentEventRow: Identifiable, Sendable {
     }
 }
 
+struct ArtistTrackRow: Identifiable, Sendable {
+    let id: String
+    let title: String
+    let album: String
+    let playCount: Int
+    let totalSeconds: Double
+    let lastPlayedAt: Date
+}
+
 struct PlayTimeSummaryRow: Identifiable, Sendable {
     let id: String
     let title: String
@@ -299,12 +308,34 @@ final class PlayHistoryStore: Sendable {
             """
         guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
         let stmt = try db.prepare(sql, params)
-        return stmt.map { row in
+        var rows = stmt.map { row in
             let name = row[0] as? String ?? "Unknown"
             let count = Int(row[1] as? Int64 ?? 0)
             let mins = row[2] as? Double ?? 0
             return TopDimensionRow(id: name, displayName: name, playCount: count, totalMinutes: mins)
         }
+        if !rows.contains(where: { $0.id == "Unknown" }),
+           let unknownRow = try fetchUnknownGenreRow(whereStr: whereStr, params: params) {
+            rows.append(unknownRow)
+        }
+        return rows
+    }
+
+    private func fetchUnknownGenreRow(whereStr: String, params: [Binding?]) throws -> TopDimensionRow? {
+        var unknownWhereStr = whereStr
+        addCondition("(pe.event_genre IS NULL OR trim(pe.event_genre) = '')", to: &unknownWhereStr)
+        let sql = """
+            SELECT COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
+            \(unknownWhereStr)
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return nil }
+        let stmt = try db.prepare(sql, params)
+        guard let row = stmt.makeIterator().next() else { return nil }
+        let count = Int(row[0] as? Int64 ?? 0)
+        guard count > 0 else { return nil }
+        let mins = row[1] as? Double ?? 0
+        return TopDimensionRow(id: "Unknown", displayName: "Unknown", playCount: count, totalMinutes: mins)
     }
 
     func fetchContentTypeBreakdown(filter: StatsFilterState) throws -> [TopDimensionRow] {
@@ -359,6 +390,53 @@ final class PlayHistoryStore: Sendable {
                                   genre: genre, source: source,
                                   playedAt: Date(timeIntervalSince1970: ts),
                                   durationListened: dur, skipped: skip)
+        }
+    }
+
+    func fetchArtistTracks(filter: StatsFilterState) throws -> [ArtistTrackRow] {
+        guard filter.selectedArtist != nil else { return [] }
+
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'music'", to: &whereStr)
+
+        let titleExpr = "COALESCE(NULLIF(trim(pe.event_title), ''), NULLIF(trim(lt.title), ''), 'Unknown')"
+        let albumExpr = "COALESCE(NULLIF(trim(pe.event_album), ''), NULLIF(trim(lt.album), ''), 'Unknown Album')"
+        let trackKeyExpr = """
+            COALESCE(
+                NULLIF(trim(pe.track_url), ''),
+                NULLIF(trim(pe.track_id), ''),
+                \(titleExpr) || '|' || \(albumExpr)
+            )
+            """
+        let sql = """
+            SELECT \(trackKeyExpr) AS track_key,
+                   MAX(\(titleExpr)) AS title,
+                   MAX(\(albumExpr)) AS album,
+                   COUNT(*) AS play_count,
+                   COALESCE(SUM(pe.duration_listened), 0.0) AS total_seconds,
+                   MAX(pe.played_at) AS last_played_at
+            \(historyFromClause)
+            \(whereStr)
+            GROUP BY track_key
+            ORDER BY play_count DESC, last_played_at DESC
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
+        let stmt = try db.prepare(sql, params)
+        return stmt.compactMap { row in
+            guard let id = row[0] as? String else { return nil }
+            let title = row[1] as? String ?? "Unknown"
+            let album = row[2] as? String ?? "Unknown Album"
+            let count = Int(row[3] as? Int64 ?? 0)
+            let seconds = row[4] as? Double ?? 0
+            let lastPlayed = row[5] as? Double ?? 0
+            return ArtistTrackRow(
+                id: id,
+                title: title,
+                album: album,
+                playCount: count,
+                totalSeconds: seconds,
+                lastPlayedAt: Date(timeIntervalSince1970: lastPlayed)
+            )
         }
     }
 
