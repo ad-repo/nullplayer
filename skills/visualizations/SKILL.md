@@ -17,7 +17,7 @@ The main window's built-in visualization area (76x16 pixels in Winamp coordinate
 
 | Mode | Description |
 |------|-------------|
-| **Spectrum** | Classic 19-bar spectrum analyzer drawn with skin colors via CGContext (default) |
+| **Spectrum** | Classic low-fi 19-bar spectrum analyzer with skin colors (default) |
 | **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible rendering |
 | **Fire** | GPU flame simulation using Metal compute shaders |
 | **Enhanced** | Compact LED analyzer with cropped sub range, clean peak caps, and restrained meter colors |

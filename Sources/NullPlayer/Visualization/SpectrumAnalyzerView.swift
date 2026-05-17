@@ -2829,6 +2829,7 @@ class SpectrumAnalyzerView: NSView {
         
         // Scale factor: Accurate mode uses full height, others leave headroom for peaks
         let displayScale: Float = isAccurateMode ? 1.0 : 0.95
+        let classicRowStep: Float = 1.0 / Float(max(1, ledRowCount))
         
         // Map raw spectrum to display bars
         if rawSpectrum.isEmpty {
@@ -2898,7 +2899,10 @@ class SpectrumAnalyzerView: NSView {
                     for i in start..<end {
                         sum += rawSpectrum[i]
                     }
-                    let newValue = (sum / Float(end - start)) * displayScale
+                    var newValue = (sum / Float(end - start)) * displayScale
+                    if renderQualityMode == .classic {
+                        newValue = floor(newValue / classicRowStep) * classicRowStep
+                    }
 
                     if newValue > displaySpectrum[barIndex] {
                         displaySpectrum[barIndex] = newValue
@@ -2916,7 +2920,10 @@ class SpectrumAnalyzerView: NSView {
                     let lowerIndex = Int(sourceIndex)
                     let upperIndex = min(lowerIndex + 1, inputCount - 1)
                     let fraction = sourceIndex - Float(lowerIndex)
-                    let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                    var newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                    if renderQualityMode == .classic {
+                        newValue = floor(newValue / classicRowStep) * classicRowStep
+                    }
 
                     if newValue > displaySpectrum[barIndex] {
                         displaySpectrum[barIndex] = newValue
@@ -3049,24 +3056,23 @@ class SpectrumAnalyzerView: NSView {
     private func updateClassicPeakState() {
         let colCount = renderBarCount
         
-        // Physics constants for satisfying peak animation
-        let gravity: Float = 0.004           // Acceleration downward per frame
-        let bounceCoeff: Float = 0.3         // Energy retained on bounce
-        let minBounceVelocity: Float = 0.008 // Minimum velocity to trigger bounce
+        // Low-fi stepped peak animation: no bounce, visible frame-by-frame fall.
+        let gravity: Float = 0.006
+        let bounceCoeff: Float = 0.0
+        let minBounceVelocity: Float = 0.01
+        let rowStep: Float = 1.0 / Float(max(1, ledRowCount))
         
         for col in 0..<min(colCount, displaySpectrum.count) {
-            let currentLevel = displaySpectrum[col]
+            let currentLevel = floor(displaySpectrum[col] / rowStep) * rowStep
             
             if currentLevel > peakHoldPositions[col] {
                 // New peak - jump to current level and reset velocity
                 peakHoldPositions[col] = currentLevel
                 peakVelocities[col] = 0
             } else {
-                // Apply gravity (acceleration downward)
                 peakVelocities[col] -= gravity
                 peakHoldPositions[col] += peakVelocities[col]
                 
-                // Bounce off bar level
                 if peakHoldPositions[col] < currentLevel {
                     peakHoldPositions[col] = currentLevel
                     if abs(peakVelocities[col]) > minBounceVelocity {
@@ -3076,8 +3082,8 @@ class SpectrumAnalyzerView: NSView {
                     }
                 }
                 
-                // Clamp to valid range
-                peakHoldPositions[col] = max(0, min(1.0, peakHoldPositions[col]))
+                let clamped = max(0, min(1.0, peakHoldPositions[col]))
+                peakHoldPositions[col] = floor(clamped / rowStep) * rowStep
             }
         }
     }
@@ -3368,6 +3374,7 @@ class SpectrumAnalyzerView: NSView {
             let totalSpacing = Float(max(0, localBarCount - 1)) * cellSpacing
             let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
             let cellWidth: Float = max(1.0, (scaledWidth - totalSpacing) / Float(max(1, localBarCount)))
+            let rowStep: Float = 1.0 / Float(max(1, ledRowCount))
             
             // Update params buffer for Classic
             if let buffer = paramsBuffer {
@@ -3388,7 +3395,7 @@ class SpectrumAnalyzerView: NSView {
             if let buffer = heightBuffer {
                 let ptr = buffer.contents().bindMemory(to: Float.self, capacity: localBarCount)
                 for i in 0..<min(localBarCount, localSpectrum.count) {
-                    ptr[i] = localSpectrum[i]
+                    ptr[i] = floor(localSpectrum[i] / rowStep) * rowStep
                 }
                 if localBarCount > localSpectrum.count {
                     for i in localSpectrum.count..<localBarCount {

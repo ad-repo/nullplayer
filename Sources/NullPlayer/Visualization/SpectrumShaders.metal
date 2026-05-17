@@ -292,16 +292,20 @@ fragment float4 spectrum_fragment(
     float barHeight = in.normalizedHeight * params.maxHeight;
     float peakHeight = in.peakPosition * params.maxHeight;
     
-    // === PEAK INDICATOR - bright floating line above bars ===
-    float peakThickness = 3.0;
+    // === PEAK INDICATOR - chunky low-fi cap ===
+    float bandCount = float(params.rowCount);
+    float bandHeight = max(1.0, params.maxHeight / bandCount);
+    float quantizedBarHeight = floor(barHeight / bandHeight) * bandHeight;
+    float quantizedPeakHeight = floor(peakHeight / bandHeight) * bandHeight;
+    float peakThickness = max(1.0, floor(bandHeight * 0.55));
     bool isPeakPixel = false;
     if (in.peakPosition > 0.015) {
-        float peakDist = abs(pixelY - peakHeight);
+        float peakDist = abs(pixelY - quantizedPeakHeight);
         isPeakPixel = peakDist < peakThickness;
     }
     
     // === BAR BODY ===
-    bool isBarPixel = pixelY <= barHeight && in.normalizedHeight > 0.001;
+    bool isBarPixel = pixelY <= quantizedBarHeight && in.normalizedHeight > 0.001;
     
     // Discard empty space (not bar, not peak)
     if (!isBarPixel && !isPeakPixel) {
@@ -309,78 +313,37 @@ fragment float4 spectrum_fragment(
     }
     
     // === DISCRETE COLOR BANDS ===
-    // Quantize to rowCount bands for authentic Classic LED look
-    float bandCount = float(params.rowCount);
-    float bandHeight = params.maxHeight / bandCount;
     float bandIndex = floor(pixelY / bandHeight);
     float withinBand = fmod(pixelY, bandHeight);
     
     // Map band position to 24-color skin palette
     float yNorm = clamp((bandIndex + 0.5) / bandCount, 0.0, 1.0);
     const int colorCount = 24;
-    float indexFloat = yNorm * float(colorCount - 1);
-    int idx0 = clamp(int(indexFloat), 0, colorCount - 2);
-    int idx1 = idx0 + 1;
-    float blend = fract(indexFloat);
-    float4 bandColor = mix(colors[idx0], colors[idx1], blend);
+    int colorIndex = clamp(int(floor(yNorm * float(colorCount))), 0, colorCount - 1);
+    float4 bandColor = colors[colorIndex];
     
     // === PEAK RENDERING ===
     if (isPeakPixel) {
         // Color at peak height from palette, heavily brightened
-        float peakBandIndex = floor(peakHeight / bandHeight);
+        float peakBandIndex = floor(quantizedPeakHeight / bandHeight);
         float peakYNorm = clamp((peakBandIndex + 0.5) / bandCount, 0.0, 1.0);
-        float peakIdxFloat = peakYNorm * float(colorCount - 1);
-        int peakIdx0 = clamp(int(peakIdxFloat), 0, colorCount - 2);
-        int peakIdx1 = peakIdx0 + 1;
-        float peakBlend = fract(peakIdxFloat);
-        float4 peakBaseColor = mix(colors[peakIdx0], colors[peakIdx1], peakBlend);
+        int peakColorIndex = clamp(int(floor(peakYNorm * float(colorCount))), 0, colorCount - 1);
+        float4 peakBaseColor = colors[peakColorIndex];
         
-        // Brighten significantly + white tint for visibility
-        float3 peakColor = peakBaseColor.rgb * 1.5 + 0.25;
-        
-        // 3D cylindrical highlight on peak line
-        float cx = in.uv.x * 2.0 - 1.0;
-        float peakCylinder = 1.0 - pow(abs(cx), 2.0) * 0.2;
-        float peakSpec = exp(-cx * cx * 4.0) * 0.3;
-        peakColor = peakColor * peakCylinder + peakSpec;
-        
-        // Soften peak edges (anti-alias)
-        float peakDist = abs(pixelY - peakHeight);
-        float peakAlpha = 1.0 - smoothstep(peakThickness * 0.5, peakThickness, peakDist);
-        
-        return float4(min(float3(1.0), peakColor), peakAlpha);
+        float3 peakColor = min(float3(1.0), peakBaseColor.rgb * 1.35 + 0.12);
+        return float4(peakColor, 1.0);
     }
     
-    // === BAND GAPS (fixed 1px line at top of each band for segmented LED look) ===
-    // Use exactly 1 pixel regardless of band size - authentic Classic style
+    // === BAND GAPS ===
     if (withinBand > bandHeight - 1.0) {
-        return float4(bandColor.rgb * 0.35, 1.0);
+        return float4(bandColor.rgb * 0.18, 1.0);
     }
     
-    // === 3D BAR SHADING ===
-    float cx = in.uv.x * 2.0 - 1.0;
-    
-    // Cylindrical shading - bright center, darker edges
-    float cylinder = 1.0 - pow(abs(cx), 2.0) * 0.4;
-    
-    // Specular highlight running down center of each bar
-    float specular = exp(-cx * cx * 5.0) * 0.2;
-    
-    // Subtle brightness boost toward top of bar for depth
-    float vertBoost = pow(clamp(pixelY / max(barHeight, 1.0), 0.0, 1.0), 1.5) * 0.12;
-    
-    // === TOP BAND GLOW ===
-    // The highest lit band gets an extra brightness kick
-    float topBandStart = floor(barHeight / bandHeight) * bandHeight;
-    float isTopBand = (bandIndex * bandHeight >= topBandStart - bandHeight && bandIndex * bandHeight < topBandStart) ? 1.0 : 0.0;
-    float topGlow = isTopBand * 0.15;
-    
-    // === COMBINE ===
-    float3 litColor = bandColor.rgb * cylinder + specular + bandColor.rgb * (vertBoost + topGlow);
-    
-    // Ensure colors stay vibrant (minimum brightness floor)
-    litColor = max(litColor, bandColor.rgb * 0.75);
-    litColor = min(litColor, float3(1.0));
+    // === LOW-FI BAR SHADING ===
+    // Coarse edge darkening only; no gloss/specular effects.
+    float edge = (in.uv.x < 0.18 || in.uv.x > 0.82) ? 0.72 : 1.0;
+    float rowDither = fmod(bandIndex, 2.0) < 1.0 ? 0.92 : 1.0;
+    float3 litColor = min(bandColor.rgb * edge * rowDither, float3(1.0));
     
     return float4(litColor, 1.0);
 }
