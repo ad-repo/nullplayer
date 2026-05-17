@@ -6,6 +6,10 @@
 
 - **Geiss visualization** — a port of Ryan Geiss's classic Winamp visualization is available alongside ProjectM in both classic and modern UI. The right-click context menu exposes effect navigation plus runtime levers: Geiss Sensitivity, Gamma, Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock, Auto-Switch interval, Visualization Mode (Wave/Spectrum), and Randomize Palette. The visualization fills the window, reacts to audio state (paused/silent/playing), and all settings persist across launches.
 
+### Improvements
+
+- **Spectrum analyzer modes refined** — Ultra now uses a denser professional analyzer look with cropped sub-frequency mapping, controlled low-bass shaping, fast decay, and clean peak caps. Enhanced has the same corrected sub curve in a compact LED presentation. Classic keeps a low-fi skin-palette aesthetic with stepped bars and chunky peaks while sharing the corrected analyzer curve so the sub range no longer appears as a shelf or empty left gap.
+
 ### Bug Fixes
 
 - **Main window transparency after occlusion fixed** — the main window no longer renders partially transparent after being occluded, minimized, or hidden behind other windows. Returning to visibility now triggers a full redraw rather than relying on per-tick sub-region repaints.
