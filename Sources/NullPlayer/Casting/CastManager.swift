@@ -2203,7 +2203,6 @@ class CastManager {
     
     @objc private func handleDidWake() {
         NSLog("CastManager: Mac woke up, checking cast state")
-        guard isCasting else { return }
         
         Task {
             // Wait a moment for network to reconnect
@@ -2215,6 +2214,10 @@ class CastManager {
                oldIP != newIP {
                 NSLog("CastManager: IP changed after wake (%@ -> %@)", oldIP, newIP)
             }
+
+            upnpManager.refreshNetworkStateAfterWake()
+
+            guard isCasting else { return }
             
             // Poll Sonos to see if it's still playing
             if let result = await upnpManager.pollSonosPlaybackState() {
