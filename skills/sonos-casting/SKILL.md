@@ -224,12 +224,13 @@ NullPlayer polls Sonos every 5 seconds during casting:
 - See `skills/audio-system/audio-pipelines.md` — Cast Route-Change Safety.
 
 **Network change detection:**
-- LocalMediaServer monitors network changes via NWPathMonitor
-- IP address refreshed automatically when Wi-Fi changes
+- LocalMediaServer monitors network changes via NWPathMonitor and refreshes its own bound IP when Wi-Fi changes.
+- UPnPManager also monitors network changes. When the active local IP changes, or the network returns after being unavailable, it stops SSDP/mDNS discovery, clears cached Sonos/DLNA device URLs and Sonos topology, then starts discovery on the new interface.
+- Active Sonos casts are ended on network change. A LAN switch leaves the old coordinator IP unreachable, and the same speaker may have a different IP on the new LAN, so the user starts a new cast after rediscovery.
 
 **Mac sleep/wake handling:**
 - CastManager observes sleep/wake notifications
-- On wake: waits 2s for network, polls Sonos state, updates UI
+- On wake: waits 2s for network, refreshes local/UPnP network state, then polls Sonos state if casting and updates UI
 
 **Server health checks:**
 - LocalMediaServer pings itself every 30 seconds

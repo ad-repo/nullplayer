@@ -34,6 +34,14 @@ class UPnPManager {
     
     /// mDNS browser for Sonos discovery (fallback/supplement to SSDP)
     private var sonosBrowser: NWBrowser?
+
+    /// Network monitor used to detect interface/IP changes that invalidate cached device URLs.
+    private var networkMonitor: NWPathMonitor?
+    private let networkMonitorQueue = DispatchQueue(label: "com.nullplayer.upnp.networkmonitor")
+    private var hasReceivedInitialPathUpdate = false
+    private var lastKnownLocalIP: String?
+    private var lastPathWasSatisfied = false
+    private var lastNetworkChangeHandledAt: Date?
     
     /// Pending device descriptions being fetched - access via stateQueue
     private var _pendingDescriptions: Set<String> = []
@@ -311,6 +319,8 @@ class UPnPManager {
     
     /// Start discovering UPnP devices on the network
     func startDiscovery() {
+        startNetworkMonitoringIfNeeded()
+
         guard !isDiscovering else {
             NSLog("UPnPManager: Already discovering, skipping start")
             return
@@ -351,6 +361,129 @@ class UPnPManager {
         
         // Start mDNS discovery for Sonos (more reliable fallback)
         startSonosMDNSDiscovery()
+    }
+
+    /// Re-check the local IP after wake without waiting for NWPathMonitor timing.
+    func refreshNetworkStateAfterWake() {
+        networkMonitorQueue.async { [weak self] in
+            guard let self = self else { return }
+            let previousIP = self.lastKnownLocalIP
+            let currentIP = self.discoverLocalIPAddress()
+
+            guard let previousIP = previousIP else {
+                self.lastKnownLocalIP = currentIP
+                self.lastPathWasSatisfied = currentIP != nil
+                guard currentIP != nil,
+                      self.isDiscovering || !self.devices.isEmpty || self.activeSession?.device.type == .sonos else {
+                    return
+                }
+                self.handleNetworkChangeIfNeeded(
+                    previousIP: nil,
+                    newIP: currentIP,
+                    reason: "wake IP initialized"
+                )
+                return
+            }
+
+            guard let currentIP = currentIP, currentIP != previousIP else { return }
+            self.handleNetworkChangeIfNeeded(
+                previousIP: previousIP,
+                newIP: currentIP,
+                reason: "wake IP refresh"
+            )
+        }
+    }
+
+    private func startNetworkMonitoringIfNeeded() {
+        guard networkMonitor == nil else { return }
+
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            self?.handleNetworkPathUpdate(path)
+        }
+        monitor.start(queue: networkMonitorQueue)
+        networkMonitor = monitor
+    }
+
+    private func handleNetworkPathUpdate(_ path: NWPath) {
+        let isSatisfied = path.status == .satisfied
+        let wasSatisfied = lastPathWasSatisfied
+        let previousIP = lastKnownLocalIP
+        let currentIP = isSatisfied ? discoverLocalIPAddress() : nil
+
+        if !hasReceivedInitialPathUpdate {
+            hasReceivedInitialPathUpdate = true
+            lastPathWasSatisfied = isSatisfied
+            if let currentIP = currentIP {
+                lastKnownLocalIP = currentIP
+            }
+            if path.status == .unsatisfied {
+                NSLog("UPnPManager: Network unavailable - discovery may fail")
+            }
+            return
+        }
+
+        if path.status == .unsatisfied {
+            lastPathWasSatisfied = false
+            NSLog("UPnPManager: Network unavailable - discovery may fail")
+            return
+        }
+
+        guard isSatisfied else { return }
+        lastPathWasSatisfied = true
+
+        let ipChanged = currentIP != nil && currentIP != previousIP
+        let reconnected = !wasSatisfied
+        guard ipChanged || reconnected else { return }
+
+        handleNetworkChangeIfNeeded(
+            previousIP: previousIP,
+            newIP: currentIP,
+            reason: ipChanged ? "IP changed" : "network reconnected"
+        )
+    }
+
+    private func handleNetworkChangeIfNeeded(previousIP: String?, newIP: String?, reason: String) {
+        let now = Date()
+        if let lastHandled = lastNetworkChangeHandledAt,
+           now.timeIntervalSince(lastHandled) < 2.0 {
+            NSLog("UPnPManager: Ignoring network change within debounce window (%@)", reason)
+            return
+        }
+
+        lastNetworkChangeHandledAt = now
+        if let newIP = newIP {
+            lastKnownLocalIP = newIP
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.handleNetworkChanged(previousIP: previousIP, newIP: newIP, reason: reason)
+        }
+    }
+
+    private func handleNetworkChanged(previousIP: String?, newIP: String?, reason: String) {
+        NSLog("UPnPManager: Network changed (%@) - IP changed from %@ to %@",
+              reason,
+              previousIP ?? "nil",
+              newIP ?? "nil")
+
+        let shouldDisconnectSonosSession = activeSession?.device.type == .sonos
+
+        stopDiscovery()
+        clearDevices(postNotification: true) { [weak self] in
+            guard let self = self else { return }
+
+            if shouldDisconnectSonosSession {
+                self.disconnectSession()
+            }
+
+            self.startDiscovery()
+        }
+    }
+
+    /// Discover the local network IP address from network interfaces.
+    private func discoverLocalIPAddress() -> String? {
+        NetworkInterfaceResolver.discoverLocalIPv4Address()
     }
     
     /// Send an immediate M-SEARCH boost (for refresh operations)
@@ -1181,7 +1314,7 @@ class UPnPManager {
     }
     
     /// Remove all discovered devices
-    func clearDevices() {
+    func clearDevices(postNotification: Bool = false, completion: (() -> Void)? = nil) {
         NSLog("UPnPManager: clearDevices called")
         
         // Cancel any pending Sonos topology fetch (on main queue where it was scheduled)
@@ -1211,6 +1344,14 @@ class UPnPManager {
             self.sonosGroupsFetched = false
             
             NSLog("UPnPManager: Cleared %d devices, %d zones, cancelled %d tasks", deviceCount, zoneCount, taskCount)
+
+            if postNotification {
+                CastManager.postNotificationOnMain(name: CastManager.devicesDidChangeNotification)
+            }
+
+            if let completion = completion {
+                DispatchQueue.main.async(execute: completion)
+            }
         }
     }
     
