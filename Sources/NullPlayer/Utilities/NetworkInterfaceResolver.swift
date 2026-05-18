@@ -1,6 +1,8 @@
 import Foundation
 
+/// Resolves the app's local IPv4 address from active Ethernet-style interfaces.
 enum NetworkInterfaceResolver {
+    /// Returns the preferred active non-loopback IPv4 address, favoring en0/en1 before other en* adapters.
     static func discoverLocalIPv4Address() -> String? {
         var preferredAddress: String?
         var ethernetAddress: String?
@@ -26,9 +28,12 @@ enum NetworkInterfaceResolver {
             guard name.hasPrefix("en") else { continue }
 
             var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            getnameinfo(socketAddress, socklen_t(socketAddress.pointee.sa_len),
-                        &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
+            let result = getnameinfo(socketAddress, socklen_t(socketAddress.pointee.sa_len),
+                                     &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
+            guard result == 0 else { continue }
+
             let address = String(cString: hostname)
+            guard !address.isEmpty else { continue }
 
             if name == "en0" || name == "en1" {
                 preferredAddress = address

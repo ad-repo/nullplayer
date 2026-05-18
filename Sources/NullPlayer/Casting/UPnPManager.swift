@@ -38,6 +38,7 @@ class UPnPManager {
     /// Network monitor used to detect interface/IP changes that invalidate cached device URLs.
     private var networkMonitor: NWPathMonitor?
     private let networkMonitorQueue = DispatchQueue(label: "com.nullplayer.upnp.networkmonitor")
+    private var networkMonitoringEnabled = false
     private var hasReceivedInitialPathUpdate = false
     private var lastKnownLocalIP: String?
     private var lastPathWasSatisfied = false
@@ -395,6 +396,7 @@ class UPnPManager {
     }
 
     private func startNetworkMonitoringIfNeeded() {
+        networkMonitoringEnabled = true
         guard networkMonitor == nil else { return }
 
         let monitor = NWPathMonitor()
@@ -406,6 +408,8 @@ class UPnPManager {
     }
 
     private func handleNetworkPathUpdate(_ path: NWPath) {
+        guard networkMonitoringEnabled else { return }
+
         let isSatisfied = path.status == .satisfied
         let wasSatisfied = lastPathWasSatisfied
         let previousIP = lastKnownLocalIP
@@ -637,6 +641,10 @@ class UPnPManager {
     func stopDiscovery() {
         NSLog("UPnPManager: Stopping discovery")
         isDiscovering = false
+        networkMonitoringEnabled = false
+        networkMonitor?.cancel()
+        networkMonitor = nil
+        hasReceivedInitialPathUpdate = false
         
         // Stop SSDP discovery
         // The fd must be closed in the cancel handler, not immediately after cancel(),
