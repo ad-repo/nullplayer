@@ -42,7 +42,8 @@ class UPnPManager {
     private var hasReceivedInitialPathUpdate = false
     private var lastKnownLocalIP: String?
     private var lastPathWasSatisfied = false
-    private var lastNetworkChangeHandledAt: Date?
+    private var lastNetworkChangeHandledAt: UInt64?
+    private let networkChangeDebounceNanoseconds: UInt64 = 2_000_000_000
     
     /// Pending device descriptions being fetched - access via stateQueue
     private var _pendingDescriptions: Set<String> = []
@@ -366,37 +367,47 @@ class UPnPManager {
 
     /// Re-check the local IP after wake without waiting for NWPathMonitor timing.
     func refreshNetworkStateAfterWake() {
-        networkMonitorQueue.async { [weak self] in
+        DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            let previousIP = self.lastKnownLocalIP
-            let currentIP = self.discoverLocalIPAddress()
+            let shouldRefreshDiscovery = self.isDiscovering
+                || !self.devices.isEmpty
+                || self.activeSession?.device.type == .sonos
 
-            guard let previousIP = previousIP else {
-                self.lastKnownLocalIP = currentIP
-                self.lastPathWasSatisfied = currentIP != nil
-                guard currentIP != nil,
-                      self.isDiscovering || !self.devices.isEmpty || self.activeSession?.device.type == .sonos else {
+            self.networkMonitorQueue.async { [weak self] in
+                guard let self = self else { return }
+                let previousIP = self.lastKnownLocalIP
+                let currentIP = self.discoverLocalIPAddress()
+
+                guard let previousIP = previousIP else {
+                    self.lastKnownLocalIP = currentIP
+                    self.lastPathWasSatisfied = currentIP != nil
+                    // A wake before NWPathMonitor's first callback seeds the baseline.
+                    // Only existing discovery/session state needs an explicit refresh.
+                    guard currentIP != nil, shouldRefreshDiscovery else { return }
+                    self.handleNetworkChangeIfNeeded(
+                        previousIP: nil,
+                        newIP: currentIP,
+                        reason: "wake IP initialized",
+                        disconnectActiveSonosSession: false
+                    )
                     return
                 }
-                self.handleNetworkChangeIfNeeded(
-                    previousIP: nil,
-                    newIP: currentIP,
-                    reason: "wake IP initialized"
-                )
-                return
-            }
 
-            guard let currentIP = currentIP, currentIP != previousIP else { return }
-            self.handleNetworkChangeIfNeeded(
-                previousIP: previousIP,
-                newIP: currentIP,
-                reason: "wake IP refresh"
-            )
+                guard let currentIP = currentIP, currentIP != previousIP else { return }
+                self.handleNetworkChangeIfNeeded(
+                    previousIP: previousIP,
+                    newIP: currentIP,
+                    reason: "wake IP refresh",
+                    disconnectActiveSonosSession: true
+                )
+            }
         }
     }
 
     private func startNetworkMonitoringIfNeeded() {
-        networkMonitoringEnabled = true
+        networkMonitorQueue.sync {
+            networkMonitoringEnabled = true
+        }
         guard networkMonitor == nil else { return }
 
         let monitor = NWPathMonitor()
@@ -421,6 +432,8 @@ class UPnPManager {
             if let currentIP = currentIP {
                 lastKnownLocalIP = currentIP
             }
+            // The first NWPathMonitor callback establishes a baseline; later callbacks
+            // decide whether cached device URLs need to be invalidated.
             if path.status == .unsatisfied {
                 NSLog("UPnPManager: Network unavailable - discovery may fail")
             }
@@ -436,21 +449,27 @@ class UPnPManager {
         guard isSatisfied else { return }
         lastPathWasSatisfied = true
 
-        let ipChanged = currentIP != nil && currentIP != previousIP
+        let ipChanged = currentIP != nil && previousIP != nil && currentIP != previousIP
         let reconnected = !wasSatisfied
         guard ipChanged || reconnected else { return }
 
         handleNetworkChangeIfNeeded(
             previousIP: previousIP,
             newIP: currentIP,
-            reason: ipChanged ? "IP changed" : "network reconnected"
+            reason: ipChanged ? "IP changed" : "network reconnected",
+            disconnectActiveSonosSession: ipChanged
         )
     }
 
-    private func handleNetworkChangeIfNeeded(previousIP: String?, newIP: String?, reason: String) {
-        let now = Date()
+    private func handleNetworkChangeIfNeeded(
+        previousIP: String?,
+        newIP: String?,
+        reason: String,
+        disconnectActiveSonosSession: Bool
+    ) {
+        let now = DispatchTime.now().uptimeNanoseconds
         if let lastHandled = lastNetworkChangeHandledAt,
-           now.timeIntervalSince(lastHandled) < 2.0 {
+           now - lastHandled < networkChangeDebounceNanoseconds {
             NSLog("UPnPManager: Ignoring network change within debounce window (%@)", reason)
             return
         }
@@ -461,17 +480,27 @@ class UPnPManager {
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.handleNetworkChanged(previousIP: previousIP, newIP: newIP, reason: reason)
+            self?.handleNetworkChanged(
+                previousIP: previousIP,
+                newIP: newIP,
+                reason: reason,
+                disconnectActiveSonosSession: disconnectActiveSonosSession
+            )
         }
     }
 
-    private func handleNetworkChanged(previousIP: String?, newIP: String?, reason: String) {
+    private func handleNetworkChanged(
+        previousIP: String?,
+        newIP: String?,
+        reason: String,
+        disconnectActiveSonosSession: Bool
+    ) {
         NSLog("UPnPManager: Network changed (%@) - IP changed from %@ to %@",
               reason,
               previousIP ?? "nil",
               newIP ?? "nil")
 
-        let shouldDisconnectSonosSession = activeSession?.device.type == .sonos
+        let shouldDisconnectSonosSession = disconnectActiveSonosSession && activeSession?.device.type == .sonos
 
         stopDiscovery()
         clearDevices(postNotification: true) { [weak self] in
@@ -641,10 +670,15 @@ class UPnPManager {
     func stopDiscovery() {
         NSLog("UPnPManager: Stopping discovery")
         isDiscovering = false
-        networkMonitoringEnabled = false
+        networkMonitorQueue.sync {
+            networkMonitoringEnabled = false
+            hasReceivedInitialPathUpdate = false
+            lastKnownLocalIP = nil
+            lastPathWasSatisfied = false
+            lastNetworkChangeHandledAt = nil
+        }
         networkMonitor?.cancel()
         networkMonitor = nil
-        hasReceivedInitialPathUpdate = false
         
         // Stop SSDP discovery
         // The fd must be closed in the cancel handler, not immediately after cancel(),
@@ -1321,7 +1355,8 @@ class UPnPManager {
         }
     }
     
-    /// Remove all discovered devices
+    /// Remove all discovered devices.
+    /// If `postNotification` is true, the completion runs on main after the devices-changed notification is posted.
     func clearDevices(postNotification: Bool = false, completion: (() -> Void)? = nil) {
         NSLog("UPnPManager: clearDevices called")
         
