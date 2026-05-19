@@ -522,18 +522,49 @@ void Tripex::ToggleHelp()
 
 int Tripex::PortGetEffectCount() const
 {
-	return (int)enabled_effects.size();
+	// Hide the internal "Blank" fade helper at slot 0.
+	int total = (int)enabled_effects.size();
+	return total > 0 ? total - 1 : 0;
 }
 
 const char* Tripex::PortGetEffectName(int index) const
 {
-	if (index < 0 || index >= (int)enabled_effects.size()) return "";
-	return enabled_effects[index]->name.c_str();
+	int total = (int)enabled_effects.size();
+	int internal_idx = index + 1; // skip Blank
+	if (internal_idx < 1 || internal_idx >= total) return "";
+	return enabled_effects[internal_idx]->name.c_str();
 }
 
 int Tripex::PortGetCurrentEffectIndex() const
 {
-	return effect_idx;
+	// effect_idx == 0 is the Blank/initial state; surface -1 until the
+	// first real effect is active.
+	return effect_idx > 0 ? effect_idx - 1 : -1;
+}
+
+void Tripex::PortJumpToEffect(int index_external)
+{
+	int total = (int)enabled_effects.size();
+	if (total <= 1) return;
+
+	int target = index_external + 1; // skip Blank
+	if (target < 1) target = 1;
+	if (target >= total) target = total - 1;
+	if (target == effect_idx) return;
+
+	effect_idx = target;
+	ShowStatusMsg("Current Effect: %s", enabled_effects[effect_idx]->name.c_str());
+	txs.reset(TXS_IN_FADE);
+	effect_frames = 0;
+
+	Effect::ReconfigureParams params(*audio.get(), texture_library);
+	Error* error = enabled_effects[effect_idx]->Reconfigure(params);
+	if (error) {
+		// Swallow — a reconfigure failure here just means the next
+		// frame will retry; surfacing it would require an Error*
+		// return type we don't have in this signature.
+		delete error;
+	}
 }
 
 void Tripex::PortSetHold(bool on)

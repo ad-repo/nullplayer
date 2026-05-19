@@ -29,9 +29,19 @@ public:
 	// NullPlayer port: expose effect list + current index for the Swift
 	// menu builder. `enabled_effects` is populated by Startup() based on
 	// each effect's `preference`; returns 0 before Startup completes.
+	//
+	// The internal `enabled_effects[0]` is the "Blank" fade helper —
+	// Tripex uses it to fade to/from black between effects, not as a
+	// user-facing effect. The Port API hides it: external index 0
+	// maps to internal index 1, count is reduced by 1.
 	int         PortGetEffectCount() const;
 	const char* PortGetEffectName(int index) const;
 	int         PortGetCurrentEffectIndex() const;
+
+	// Direct effect jump (mirrors the TXS_EFFECT_LEFT/RIGHT body but
+	// without queueing). External index — same convention as the
+	// accessors above. Out-of-range values are clamped.
+	void        PortJumpToEffect(int index_external);
 
 	// Explicit Hold setter (port). ToggleHoldingEffect() is a flip; the
 	// Swift cycle driver needs deterministic on/off semantics.

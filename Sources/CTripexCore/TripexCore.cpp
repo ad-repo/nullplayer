@@ -82,13 +82,21 @@ extern "C" int TripexCore_renderFrame(TripexCoreHandle* h) {
 extern "C" void TripexCore_prevEffect(TripexCoreHandle* h) {
     if (!h || !h->tripex) return;
     std::lock_guard<std::mutex> lk(h->lock);
-    h->tripex->MoveToPrevEffect();
+    int count = h->tripex->PortGetEffectCount();
+    if (count <= 0) return;
+    int cur = h->tripex->PortGetCurrentEffectIndex();
+    int next = (cur < 0) ? 0 : (cur - 1 + count) % count;
+    h->tripex->PortJumpToEffect(next);
 }
 
 extern "C" void TripexCore_nextEffect(TripexCoreHandle* h) {
     if (!h || !h->tripex) return;
     std::lock_guard<std::mutex> lk(h->lock);
-    h->tripex->MoveToNextEffect();
+    int count = h->tripex->PortGetEffectCount();
+    if (count <= 0) return;
+    int cur = h->tripex->PortGetCurrentEffectIndex();
+    int next = (cur < 0) ? 0 : (cur + 1) % count;
+    h->tripex->PortJumpToEffect(next);
 }
 
 extern "C" void TripexCore_changeEffect(TripexCoreHandle* h) {
@@ -154,16 +162,7 @@ extern "C" int TripexCore_currentEffectIndex(TripexCoreHandle* h) {
 extern "C" void TripexCore_selectEffect(TripexCoreHandle* h, int index) {
     if (!h || !h->tripex) return;
     std::lock_guard<std::mutex> lk(h->lock);
-    int total = h->tripex->PortGetEffectCount();
-    if (total <= 0) return;
-    if (index < 0) index = 0;
-    if (index >= total) index = total - 1;
-    int current = h->tripex->PortGetCurrentEffectIndex();
-    int delta = index - current;
-    // Tripex's prev/next are queued — fire all deltas; they'll be applied
-    // across subsequent frames. For now, just issue one of each per step.
-    while (delta > 0) { h->tripex->MoveToNextEffect(); --delta; }
-    while (delta < 0) { h->tripex->MoveToPrevEffect(); ++delta; }
+    h->tripex->PortJumpToEffect(index);
 }
 
 extern "C" void TripexCore_setOption(TripexCoreHandle* h, const char* key, int value) {
