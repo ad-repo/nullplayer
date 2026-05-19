@@ -41,6 +41,50 @@ typedef void           *HWND;
 typedef void           *HINSTANCE;
 typedef void           *HMODULE;
 
+typedef struct _TripexPOINT { LONG x, y; } POINT;
+typedef struct _TripexRECT  { LONG left, top, right, bottom; } RECT;
+
+#include <strings.h>
+#include <math.h>
+#include <float.h>
+#ifndef _copysign
+#define _copysign copysign
+#endif
+
+#ifndef fopen_s
+static inline int fopen_s(FILE** f, const char* name, const char* mode) {
+    if (!f) return 1;
+    *f = fopen(name, mode);
+    return (*f == NULL) ? 1 : 0;
+}
+#endif
+
+#ifndef WAVE_FORMAT_PCM
+#define WAVE_FORMAT_PCM 1
+#endif
+
+#ifndef __assume
+#define __assume(x) ((void)0)
+#endif
+
+#ifndef ZeroMemory
+#define ZeroMemory(p, sz) memset((p), 0, (sz))
+#endif
+
+#ifndef FAILED
+#define FAILED(hr) (((HRESULT)(hr)) < 0)
+#endif
+#ifndef SUCCEEDED
+#define SUCCEEDED(hr) (((HRESULT)(hr)) >= 0)
+#endif
+
+#ifndef _stricmp
+#define _stricmp strcasecmp
+#endif
+#ifndef _strnicmp
+#define _strnicmp strncasecmp
+#endif
+
 #ifndef TRUE
 #define TRUE 1
 #endif

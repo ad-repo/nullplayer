@@ -21,6 +21,7 @@ typedef unsigned int uint32;
 
 #else
 
-	#error Unsupported compiler.
+	// NullPlayer port: clang/macOS via Sources/CTripexCore/include/win_compat.h.
+	#include "win_compat.h"
 
 #endif

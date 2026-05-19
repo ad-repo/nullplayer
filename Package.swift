@@ -38,15 +38,29 @@ let package = Package(
             name: "CTripexCore",
             dependencies: [],
             path: "Sources/CTripexCore",
-            // Chunk 1: only the C ABI stub compiles. Upstream Tripex sources
-            // (D3D9 + Win32) are vendored on disk for reference but not yet
-            // in the compile set — Chunk 2 will switch to a targeted
-            // `exclude:` list as RendererOpenGL/HostAudioSource land.
-            sources: ["TripexCore.cpp"],
+            // D3D9 + Win32 + WaveOut TUs replaced by upstream_port/
+            // RendererOpenGL + HostAudioSource (Chunks 3–4). main.cpp is a
+            // Win32 message-loop shell with no logic to re-home — Tripex's
+            // beat/fade/effect-switching state lives on the Tripex class.
+            exclude: [
+                "upstream/main.cpp",
+                "upstream/RendererDirect3d.cpp",
+                "upstream/RendererDirect3d.h",
+                "upstream/AudioDevice.cpp",
+                "upstream/AudioDevice.h",
+                "upstream/LICENSE",
+                "upstream/README.md",
+                "upstream/Dll.vcxproj",
+                "upstream/Tripex.vcxproj",
+                "upstream/Tripex.vcxproj.filters",
+                "upstream/packages.config",
+            ],
             publicHeadersPath: "include",
             cxxSettings: [
                 .headerSearchPath("."),
                 .headerSearchPath("include"),
+                .headerSearchPath("upstream"),
+                .headerSearchPath("upstream_port"),
                 .define("__APPLE__"),
                 .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
             ]
@@ -154,5 +168,7 @@ let package = Package(
     // Use Swift 5 language mode to keep concurrency warnings as warnings, not errors
     // This allows gradual adoption of strict concurrency without blocking builds
     swiftLanguageModes: [.v5],
-    cxxLanguageStandard: .cxx14
+    // CTripexCore uses std::shared_ptr<T[]> (C++17). C++17 is backwards
+    // compatible with CGeissCore / CVisClassicCore code.
+    cxxLanguageStandard: .cxx17
 )

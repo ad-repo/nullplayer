@@ -7,11 +7,17 @@ Engine alongside ProjectM and Geiss. Executed per the 8-chunk plan in
 
 ## Status
 
-- **Chunk 1 (this commit):** upstream vendored, reconnaissance complete, C
-  ABI skeleton + win_compat shim in place, `CTripexCore` target compiles in
-  isolation (only `TripexCore.cpp` is in the compile set — all upstream
-  sources are pending Chunk 2 adaptation).
-- **Chunk 2+:** see plan document.
+- **Chunk 1:** upstream vendored, reconnaissance complete, C ABI skeleton +
+  win_compat shim, target compiles with only `TripexCore.cpp` in the compile
+  set.
+- **Chunk 2 (this commit):** all non-D3D/non-Win32 upstream TUs compile on
+  clang/macOS. Excludes: `main.cpp`, `RendererDirect3d.{cpp,h}`,
+  `AudioDevice.{cpp,h}`, plus build-system files. `Platform.h` patched
+  in-place (one-line change: `#error` replaced with `#include "win_compat.h"`
+  under the `_MSC_VER` guard). Header stubs in `include/`: `Windows.h`,
+  `wtypes.h`, `d3d9.h`, `conio.h`, `mmeapi.h` (all empty/typedefs-only).
+  `cxxLanguageStandard` bumped to C++17 (Tripex's `std::shared_ptr<T[]>`).
+- **Chunk 3+:** see plan document.
 
 ## Reconnaissance findings
 
@@ -112,11 +118,13 @@ removing the `#error`) or a preprocessor wrapping shim in Chunk 2 when
 upstream `.cpp` files start entering the compile set. Currently a non-issue
 because Chunk 1 does not include any upstream sources.
 
-### C++ exceptions — to be verified in Chunk 2
+### C++ exceptions — present, default clang handling is sufficient
 
-Plan flagged this as an open question. Cannot answer until upstream files
-compile. Geiss verified clean via `nm -u | grep __cxa_throw`. Re-run the
-same check at end of Chunk 2.
+`nm -u .build/.../CTripexCore.build/upstream/*.o | grep __cxa_throw`
+returns hits (Error.cpp throws). Default clang C++ compilation enables
+`-fexceptions`, so no additional flag is needed. If we ever switch to
+`-fno-exceptions` for binary-size reasons, the upstream `throw` sites must
+be rewritten — non-trivial scope, defer indefinitely.
 
 ## Exclusion plan (preview for Chunk 2)
 
