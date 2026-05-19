@@ -513,6 +513,22 @@ void Tripex::ToggleHelp()
 	txs.flip(TXS_SHOW_HELP);
 }
 
+int Tripex::PortGetEffectCount() const
+{
+	return (int)enabled_effects.size();
+}
+
+const char* Tripex::PortGetEffectName(int index) const
+{
+	if (index < 0 || index >= (int)enabled_effects.size()) return "";
+	return enabled_effects[index]->name.c_str();
+}
+
+int Tripex::PortGetCurrentEffectIndex() const
+{
+	return effect_idx;
+}
+
 int Tripex::GetClippedLineLength(const TextureFont& font, const char* text, int clip_width)
 {
 	bool is_first_word = true;

@@ -26,6 +26,13 @@ public:
 	void ToggleAudioInfo();
 	void ToggleHelp();
 
+	// NullPlayer port: expose effect list + current index for the Swift
+	// menu builder. `enabled_effects` is populated by Startup() based on
+	// each effect's `preference`; returns 0 before Startup completes.
+	int         PortGetEffectCount() const;
+	const char* PortGetEffectName(int index) const;
+	int         PortGetCurrentEffectIndex() const;
+
 private:
 	static const int MSG_DISPLAY_TIME = 4000;
 	static const int MSG_FADEOUT_TIME = 1000;
