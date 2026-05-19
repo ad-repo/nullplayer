@@ -49,10 +49,46 @@ OpenGLTexture::~OpenGLTexture()
 
 void OpenGLTexture::SetDirty()
 {
-    // No-op: texture content is uploaded eagerly on creation / explicit
-    // upload paths. Tripex calls SetDirty after writing to a CPU-side
-    // buffer for dynamic textures — implement readback when Chunk 4
-    // exercises dynamic effects.
+    dirty = true;
+}
+
+void OpenGLTexture::EnsureUploaded()
+{
+    if (!dirty || !cpu_data) return;
+    GLint prev = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)gl_id);
+
+    if (format == TextureFormat::P8 && cpu_palette) {
+        // Expand palette index → BGRA into a scratch buffer, then upload.
+        // Source is strided; destination is tightly packed width*height.
+        const ColorRgb* pal = (const ColorRgb*)cpu_palette;
+        const uint8* src = (const uint8*)cpu_data;
+        std::vector<uint8> rgba((size_t)width * (size_t)height * 4);
+        uint8* dst = rgba.data();
+        for (int y = 0; y < height; y++) {
+            const uint8* row = src + (size_t)y * cpu_data_stride;
+            for (int x = 0; x < width; x++) {
+                const ColorRgb& c = pal[row[x]];
+                dst[0] = c.b; dst[1] = c.g; dst[2] = c.r; dst[3] = 255;
+                dst += 4;
+            }
+        }
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
+                        GL_BGRA, GL_UNSIGNED_BYTE, rgba.data());
+    } else {
+        // X8R8G8B8 strided source. Pixels are 4 bytes; row stride is in bytes.
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, (GLint)(cpu_data_stride / 4));
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
+                        GL_BGRA, GL_UNSIGNED_BYTE, cpu_data);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    }
+
+    dirty = false;
+    glBindTexture(GL_TEXTURE_2D, (GLuint)prev);
 }
 
 Error* OpenGLTexture::GetPixelData(std::vector<uint8>& /*buffer*/) const
@@ -116,22 +152,45 @@ static GLenum GLTextureFormatFor(TextureFormat fmt)
 
 Error* RendererOpenGL::CreateTexture(int width, int height, TextureFormat format,
                                      const void* data, uint32 /*data_size*/,
-                                     uint32 /*data_stride*/,
-                                     const ColorRgb* /*palette*/,
+                                     uint32 data_stride,
+                                     const ColorRgb* palette,
                                      TextureFlags flags,
                                      std::shared_ptr<Texture>& out_texture)
 {
     auto tex = std::make_shared<OpenGLTexture>(width, height, format, flags);
 
     glBindTexture(GL_TEXTURE_2D, (GLuint)tex->gl_id);
-    const GLenum gl_fmt = GLTextureFormatFor(format);
+    // Allocate storage as RGBA8 — we always present as BGRA8 to the
+    // shader (P8 is palette-expanded on upload).
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
-                 gl_fmt, GL_UNSIGNED_BYTE, data);
+                 GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
 
     const GLint filter = ((int)flags & (int)TextureFlags::Filter) ? GL_LINEAR : GL_NEAREST;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    const bool is_dynamic = ((int)flags & (int)TextureFlags::Dynamic) != 0;
+    if (is_dynamic) {
+        // Retain pointers for re-upload on SetDirty. Tripex owns the
+        // backing storage (Canvas::data) for the lifetime of the texture.
+        tex->cpu_data        = data;
+        tex->cpu_data_stride = data_stride ? data_stride : (unsigned int)(width * (format == TextureFormat::P8 ? 1 : 4));
+        tex->cpu_palette     = palette;
+        tex->dirty           = true;
+        tex->EnsureUploaded();
+    } else if (data) {
+        // Static one-shot upload via the same expansion path.
+        tex->cpu_data        = data;
+        tex->cpu_data_stride = data_stride ? data_stride : (unsigned int)(width * (format == TextureFormat::P8 ? 1 : 4));
+        tex->cpu_palette     = palette;
+        tex->dirty           = true;
+        tex->EnsureUploaded();
+        // Drop the source pointers — caller doesn't guarantee lifetime
+        // for non-Dynamic textures (matches D3D backend's nullptr stash).
+        tex->cpu_data    = nullptr;
+        tex->cpu_palette = nullptr;
+    }
 
     out_texture = tex;
     return nullptr;
@@ -395,6 +454,7 @@ Error* RendererOpenGL::DrawIndexedPrimitive(const RenderState& render_state,
     const TextureStage& stage = render_state.texture_stages[0];
     if (stage.texture) {
         OpenGLTexture* gt = static_cast<OpenGLTexture*>(stage.texture);
+        gt->EnsureUploaded();
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, (GLuint)gt->gl_id);
         GLint wrap_u = (stage.address_u == TextureAddress::Wrap) ? GL_REPEAT : GL_CLAMP_TO_EDGE;

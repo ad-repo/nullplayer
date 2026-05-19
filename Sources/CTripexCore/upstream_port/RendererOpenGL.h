@@ -13,10 +13,25 @@ class OpenGLTexture : public Texture {
 public:
     unsigned int gl_id; // GLuint
 
+    // For Dynamic textures Tripex retains a CPU-side buffer that it
+    // mutates each frame, then signals re-upload via SetDirty. Mirrors
+    // D3D9 RendererDirect3d::TextureImpl's data/data_stride/palette
+    // fields. Non-Dynamic textures leave these null and dirty stays
+    // false — the initial CreateTexture upload is final.
+    const void*       cpu_data        = nullptr;
+    unsigned int      cpu_data_stride = 0; // bytes per row in source
+    const void*       cpu_palette     = nullptr; // ColorRgb[256] or null
+    bool              dirty           = false;
+
     OpenGLTexture(int width, int height, TextureFormat format, TextureFlags flags);
     ~OpenGLTexture() override;
     void SetDirty() override;
     Error* GetPixelData(std::vector<uint8>& buffer) const override;
+
+    // Re-upload CPU-side buffer to GL using stored stride / palette.
+    // Caller must have a current GL context. No-op when not dirty or
+    // when cpu_data is null (non-Dynamic).
+    void EnsureUploaded();
 };
 
 class RendererOpenGL : public Renderer {
