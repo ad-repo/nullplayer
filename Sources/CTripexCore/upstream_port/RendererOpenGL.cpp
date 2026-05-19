@@ -390,22 +390,6 @@ Error* RendererOpenGL::DrawIndexedPrimitive(const RenderState& render_state,
     if (!num_vertices || !num_faces || !vertices || !faces) return nullptr;
     if (!EnsurePipeline()) return new Error("RendererOpenGL: pipeline init failed");
 
-    // Diagnostic: log first draw + every 240th to confirm draws happen.
-    static size_t draw_count = 0;
-    static size_t draws_this_log_window = 0;
-    if (draw_count == 0) {
-        fprintf(stderr, "[Tripex] first DrawIndexedPrimitive: verts=%zu faces=%zu first.pos=(%g,%g,%g) rhw=%g viewport=%dx%d\n",
-                num_vertices, num_faces,
-                vertices[0].position.x, vertices[0].position.y, vertices[0].position.z,
-                vertices[0].rhw, width_, height_);
-    }
-    draw_count++;
-    draws_this_log_window++;
-    if ((draw_count % 240) == 0) {
-        fprintf(stderr, "[Tripex] %zu draws so far (last 240: %zu)\n", draw_count, draws_this_log_window);
-        draws_this_log_window = 0;
-    }
-
     glUseProgram((GLuint)program_);
     glUniform2f((GLint)uni_viewport_, (float)width_, (float)height_);
 
