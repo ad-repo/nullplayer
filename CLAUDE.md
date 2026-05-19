@@ -24,6 +24,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **radio-streaming**: Internet radio + library radio support
 - **visualizations**: Album art, ProjectM, spectrum modes, Metal gotchas
 - **geiss-port**: Geiss Winamp-visualization port — architecture, ABI, configuration levers
+- **tripex-port**: Tripex (ben-marsh/tripex) D3D9→OpenGL port — architecture, C ABI, RendererOpenGL, audio ring buffer
 - **testing**: UI testing workflows
 - **non-retina-fixes**: Display artifact fixes
 - **local-library**: SQLite schema, scan pipeline, NAS responsiveness, display-layer query patterns

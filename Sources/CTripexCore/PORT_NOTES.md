@@ -34,7 +34,11 @@ Engine alongside ProjectM and Geiss. Executed per the 8-chunk plan in
   branch in `VisualizationGLView.createEngine`, `CTripexCore` linked into
   the `NullPlayer` target. Restores `tripex.lastEffectIndex` UserDefault
   on engine creation.
-- **Chunk 7+:** TripexMenuBuilder + UI sliders.
+- **Chunk 7:** TripexMenuBuilder + per-engine submenu (effect list, nav,
+  hold/audio-info/help toggles). No sliders — Tripex effects own their
+  randomization internally.
+- **Chunk 8 (this commit):** skills/tripex-port/SKILL.md documentation,
+  CLAUDE.md updated to reference the new skill.
 
 ### Chunk 6 gotchas
 
