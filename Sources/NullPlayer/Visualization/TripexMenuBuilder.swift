@@ -30,15 +30,18 @@ final class TripexMenuBuilder {
         menu.addItem(currentItem)
         menu.addItem(NSMenuItem.separator())
 
-        let nextItem = NSMenuItem(title: "Next Effect", action: #selector(TripexMenuTarget.nextTripexEffectAction(_:)), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+        // Menu items use empty keyEquivalents — bare-key shortcuts
+        // (→ / ← / R) are wired directly in ProjectMView.keyDown,
+        // mirroring the ProjectM/Geiss control scheme.
+        let nextItem = NSMenuItem(title: "Next Effect", action: #selector(TripexMenuTarget.nextTripexEffectAction(_:)), keyEquivalent: "")
         nextItem.target = target
         menu.addItem(nextItem)
 
-        let prevItem = NSMenuItem(title: "Previous Effect", action: #selector(TripexMenuTarget.previousTripexEffectAction(_:)), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        let prevItem = NSMenuItem(title: "Previous Effect", action: #selector(TripexMenuTarget.previousTripexEffectAction(_:)), keyEquivalent: "")
         prevItem.target = target
         menu.addItem(prevItem)
 
-        let randomItem = NSMenuItem(title: "Random Effect", action: #selector(TripexMenuTarget.randomTripexEffectAction(_:)), keyEquivalent: "r")
+        let randomItem = NSMenuItem(title: "Random Effect", action: #selector(TripexMenuTarget.randomTripexEffectAction(_:)), keyEquivalent: "")
         randomItem.target = target
         menu.addItem(randomItem)
 
@@ -48,7 +51,7 @@ final class TripexMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
-        let holdItem = NSMenuItem(title: "Hold Current Effect", action: #selector(TripexMenuTarget.toggleTripexHoldAction(_:)), keyEquivalent: "h")
+        let holdItem = NSMenuItem(title: "Hold Current Effect", action: #selector(TripexMenuTarget.toggleTripexHoldAction(_:)), keyEquivalent: "")
         holdItem.target = target
         menu.addItem(holdItem)
 
@@ -56,7 +59,7 @@ final class TripexMenuBuilder {
         audioInfoItem.target = target
         menu.addItem(audioInfoItem)
 
-        let helpItem = NSMenuItem(title: "Show Help Overlay", action: #selector(TripexMenuTarget.toggleTripexHelpAction(_:)), keyEquivalent: "?")
+        let helpItem = NSMenuItem(title: "Show Help Overlay", action: #selector(TripexMenuTarget.toggleTripexHelpAction(_:)), keyEquivalent: "")
         helpItem.target = target
         menu.addItem(helpItem)
 

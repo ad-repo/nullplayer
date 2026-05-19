@@ -668,24 +668,30 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
         case 124: // Right arrow - next preset/effect
             if visualizationGLView?.currentEngineType == .geiss {
                 visualizationGLView?.nextGeissEffect()
+            } else if visualizationGLView?.currentEngineType == .tripex {
+                visualizationGLView?.nextTripexEffect()
             } else if hasShift {
                 visualizationGLView?.nextPreset(hardCut: true)
             } else {
                 visualizationGLView?.nextPreset(hardCut: false)
             }
-            
+
         case 123: // Left arrow - previous preset/effect
             if visualizationGLView?.currentEngineType == .geiss {
                 visualizationGLView?.previousGeissEffect()
+            } else if visualizationGLView?.currentEngineType == .tripex {
+                visualizationGLView?.previousTripexEffect()
             } else if hasShift {
                 visualizationGLView?.previousPreset(hardCut: true)
             } else {
                 visualizationGLView?.previousPreset(hardCut: false)
             }
-            
+
         case 15: // R key - random preset/effect
             if visualizationGLView?.currentEngineType == .geiss {
                 visualizationGLView?.randomGeissEffect()
+            } else if visualizationGLView?.currentEngineType == .tripex {
+                visualizationGLView?.randomTripexEffect()
             } else if hasShift {
                 visualizationGLView?.randomPreset(hardCut: true)
             } else {
