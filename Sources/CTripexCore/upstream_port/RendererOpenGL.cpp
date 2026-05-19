@@ -81,8 +81,13 @@ void RendererOpenGL::Resize(int width, int height)
 Error* RendererOpenGL::BeginFrame()
 {
     glViewport(0, 0, width_, height_);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    // Diagnostic clear color so we can tell BeginFrame is firing vs.
+    // not running at all — slight dark blue instead of pure black.
+    glClearColor(0.0f, 0.0f, 0.06f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    // D3D9 front-face = CW. Match that so Tripex's geometry isn't all
+    // back-face culled when we (or upstream) enable culling.
+    glFrontFace(GL_CW);
     return nullptr;
 }
 
@@ -385,6 +390,22 @@ Error* RendererOpenGL::DrawIndexedPrimitive(const RenderState& render_state,
     if (!num_vertices || !num_faces || !vertices || !faces) return nullptr;
     if (!EnsurePipeline()) return new Error("RendererOpenGL: pipeline init failed");
 
+    // Diagnostic: log first draw + every 240th to confirm draws happen.
+    static size_t draw_count = 0;
+    static size_t draws_this_log_window = 0;
+    if (draw_count == 0) {
+        fprintf(stderr, "[Tripex] first DrawIndexedPrimitive: verts=%zu faces=%zu first.pos=(%g,%g,%g) rhw=%g viewport=%dx%d\n",
+                num_vertices, num_faces,
+                vertices[0].position.x, vertices[0].position.y, vertices[0].position.z,
+                vertices[0].rhw, width_, height_);
+    }
+    draw_count++;
+    draws_this_log_window++;
+    if ((draw_count % 240) == 0) {
+        fprintf(stderr, "[Tripex] %zu draws so far (last 240: %zu)\n", draw_count, draws_this_log_window);
+        draws_this_log_window = 0;
+    }
+
     glUseProgram((GLuint)program_);
     glUniform2f((GLint)uni_viewport_, (float)width_, (float)height_);
 
@@ -409,14 +430,11 @@ Error* RendererOpenGL::DrawIndexedPrimitive(const RenderState& render_state,
         glUniform1i((GLint)uni_enable_tex_, 0);
     }
 
-    if (render_state.enable_culling) {
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
-    } else {
-        glDisable(GL_CULL_FACE);
-    }
+    // Diagnostic: disable culling and depth-test unconditionally for now.
+    // Re-enable once we've verified geometry reaches the framebuffer.
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
     ApplyBlendMode(render_state.blend_mode);
-    ApplyDepthMode(render_state.depth_mode);
 
     glBindVertexArray((GLuint)vao_);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)vbo_);
