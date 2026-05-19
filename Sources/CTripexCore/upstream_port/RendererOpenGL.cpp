@@ -309,6 +309,21 @@ bool RendererOpenGL::EnsurePipeline()
                           (const void*)offsetof(VertexTL, tex_coords));
 
     glBindVertexArray(0);
+
+    // 1×1 white default texture. macOS GL3 driver validates the
+    // fragment shader's `sampler2D u_tex` binding even when our
+    // `u_enable_tex` branch skips the sample — so we always keep
+    // something real bound to texture unit 0.
+    GLuint white = 0;
+    glGenTextures(1, &white);
+    const uint8_t white_pixel[4] = { 255, 255, 255, 255 };
+    glBindTexture(GL_TEXTURE_2D, white);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white_pixel);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    default_white_ = (unsigned int)white;
+
     return true;
 }
 
@@ -386,6 +401,11 @@ Error* RendererOpenGL::DrawIndexedPrimitive(const RenderState& render_state,
         glUniform1i((GLint)uni_tex_, 0);
         glUniform1i((GLint)uni_enable_tex_, 1);
     } else {
+        // Bind 1×1 white so the sampler validates; the shader branches
+        // texture-sampling off via u_enable_tex.
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, (GLuint)default_white_);
+        glUniform1i((GLint)uni_tex_, 0);
         glUniform1i((GLint)uni_enable_tex_, 0);
     }
 

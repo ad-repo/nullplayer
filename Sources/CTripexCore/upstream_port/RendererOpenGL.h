@@ -53,6 +53,7 @@ private:
     unsigned int vao_ = 0;
     unsigned int vbo_ = 0;
     unsigned int ibo_ = 0;
+    unsigned int default_white_ = 0;
     int uni_viewport_ = -1;
     int uni_tex_ = -1;
     int uni_enable_tex_ = -1;
