@@ -119,11 +119,6 @@ Error* RendererOpenGL::BeginFrame()
     glViewport(0, 0, width_, height_);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    // Front-face = CCW (GL default). Tripex emits CW triangles in
-    // screen-space coords (top-down, D3D convention); our vertex
-    // shader Y-flips screen→NDC, which inverts winding to CCW. Setting
-    // glFrontFace(GL_CW) here would cull every Actor-based effect.
-    glFrontFace(GL_CCW);
     return nullptr;
 }
 
@@ -474,12 +469,14 @@ Error* RendererOpenGL::DrawIndexedPrimitive(const RenderState& render_state,
         glUniform1i((GLint)uni_enable_tex_, 0);
     }
 
-    if (render_state.enable_culling) {
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
-    } else {
-        glDisable(GL_CULL_FACE);
-    }
+    // Force culling off regardless of RenderState. Tripex's pre-transformed
+    // VertexTL stream mixes 2D screen-space effects (CW in NDC after our
+    // Y-flip) with 3D Actor-projected effects whose final NDC winding
+    // depends on the L-handed→R-handed coordinate flip — no single
+    // glFrontFace value satisfies both, and Tripex was tuned for D3D9's
+    // CW=front. Disabling cull avoids any back-face cull dropping geometry.
+    // Effects don't rely on culling for correctness; it was a D3D9 perf hint.
+    glDisable(GL_CULL_FACE);
     ApplyBlendMode(render_state.blend_mode);
     ApplyDepthMode(render_state.depth_mode);
 
