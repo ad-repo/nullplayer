@@ -179,7 +179,14 @@ Error* Tripex::Render(AudioSource& audio_source)
 	uint32 dwTimeChange = time - last_time;
 	float elapsed = dwTimeChange / 1000.0f;
 
-	frames += std::min(4.0f, dwTimeChange / (1000.0f / 15.0f));
+	// PORT FIX (was: frames += ...). Upstream accumulates `frames`
+	// without ever resetting it, which makes `effect_frames` grow
+	// quadratically (cycles every ~1–5 s instead of ~26 s) and makes
+	// Effect::CanRender(frames) return true unconditionally once frames
+	// exceeds 3.8 — breaking several effects' per-frame gating. `frames`
+	// is read as a per-call delta by CanRender / GetElapsed, so a plain
+	// assignment is the intended behavior.
+	frames = std::min(4.0f, dwTimeChange / (1000.0f / 15.0f));
 	last_time = time;
 
 	effect_frames += frames;
