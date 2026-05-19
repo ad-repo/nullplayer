@@ -9,7 +9,11 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#ifdef __cplusplus
 #include <chrono>
+#endif
 
 // MSVC integer aliases used by Platform.h pattern (Tripex's Platform.h does
 // not define these — Tripex code uses int8/uint8 etc., not MSVC __intN — but
@@ -99,7 +103,10 @@ static inline int fopen_s(FILE** f, const char* name, const char* mode) {
 #define CALLBACK
 #endif
 
-// GetTickCount64 → monotonic milliseconds since first call.
+// Timing shims — only needed from C++ TUs (upstream Tripex code).
+// Hidden from the C-mode Swift importer, which compiles TripexCore.h
+// alongside this header without <chrono> available.
+#ifdef __cplusplus
 static inline ULONGLONG GetTickCount64(void) {
     using clock = std::chrono::steady_clock;
     static const auto t0 = clock::now();
@@ -111,7 +118,7 @@ static inline DWORD GetTickCount(void) {
     return (DWORD)GetTickCount64();
 }
 
-// timeGetTime() is used by some Tripex timing paths; alias to GetTickCount.
 static inline DWORD timeGetTime(void) { return GetTickCount(); }
+#endif // __cplusplus
 
 #endif // TRIPEX_WIN_COMPAT_H

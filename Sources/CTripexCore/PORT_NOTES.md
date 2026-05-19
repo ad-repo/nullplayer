@@ -27,7 +27,26 @@ Engine alongside ProjectM and Geiss. Executed per the 8-chunk plan in
   → `glBlendFunc`/`glDepthFunc`/`glCullFace`/wrap-mode translation).
   `TripexCore_create` now constructs the whole graph (renderer + audio +
   Tripex) and calls `Tripex::Startup`; failure surfaces as NULL handle.
-- **Chunk 5+:** full ABI surface + Swift wiring + menu UI.
+- **Chunk 5:** full C ABI (19 entry points) + mutex serialization +
+  upstream Tripex.{h,cpp} accessors (PortGet…) for effect inventory.
+- **Chunk 6 (this commit):** `TripexEngine.swift` conforming to
+  `VisualizationEngine`, `.tripex` added to `VisualizationType`, factory
+  branch in `VisualizationGLView.createEngine`, `CTripexCore` linked into
+  the `NullPlayer` target. Restores `tripex.lastEffectIndex` UserDefault
+  on engine creation.
+- **Chunk 7+:** TripexMenuBuilder + UI sliders.
+
+### Chunk 6 gotchas
+
+- Module-import shock: `win_compat.h` originally `#include <chrono>` at
+  top level. Swift compiles CTripexCore as a C clang module, which fails
+  on `<chrono>`. Fix: guard `<chrono>` + GetTickCount64/timeGetTime
+  behind `#ifdef __cplusplus`. Effects only run from C++ TUs anyway.
+- Linker ODR: `Actor::WORD_INVALID_INDEX` is a class-scope
+  `static const uint16` with an in-class initializer. MSVC treats this
+  as a definition; clang requires an out-of-class definition when the
+  member is ODR-used (e.g. `vector::push_back(WORD_INVALID_INDEX)`).
+  Added `upstream_port/tripex_compat.cpp` with the required definition.
 
 ### Known Chunk-4 deferrals
 

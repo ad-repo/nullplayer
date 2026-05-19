@@ -122,6 +122,7 @@ let package = Package(
                 "NullPlayerCore",
                 "CVisClassicCore",
                 "CGeissCore",
+                "CTripexCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "KSPlayer",

@@ -339,6 +339,21 @@ class VisualizationGLView: NSOpenGLView {
                 NSLog("VisualizationGLView: Geiss engine not available")
                 return nil
             }
+
+        case .tripex:
+            let tripex = TripexEngine(width: width, height: height)
+            if tripex.isAvailable {
+                NSLog("VisualizationGLView: Tripex engine initialized")
+                // Restore last selected effect if persisted.
+                let stored = UserDefaults.standard.integer(forKey: TripexEngine.DefaultsKey.lastEffectIndex)
+                if stored > 0, stored < tripex.effectCount {
+                    tripex.selectEffect(at: stored)
+                }
+                return tripex
+            } else {
+                NSLog("VisualizationGLView: Tripex engine not available")
+                return nil
+            }
         }
     }
 
