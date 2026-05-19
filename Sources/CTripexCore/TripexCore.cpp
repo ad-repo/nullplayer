@@ -42,6 +42,10 @@ extern "C" TripexCoreHandle* TripexCore_create(int width, int height) {
         delete h;
         return nullptr;
     }
+    // Suppress upstream's on-screen hotkey help overlay (Startup enables
+    // it by default). All port-relevant shortcuts live in the right-click
+    // Visualization menu; users opt in via "Show Help Overlay".
+    h->tripex->ToggleHelp();
     return h;
 }
 
