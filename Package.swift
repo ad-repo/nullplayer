@@ -35,6 +35,23 @@ let package = Package(
             ]
         ),
         .target(
+            name: "CTripexCore",
+            dependencies: [],
+            path: "Sources/CTripexCore",
+            // Chunk 1: only the C ABI stub compiles. Upstream Tripex sources
+            // (D3D9 + Win32) are vendored on disk for reference but not yet
+            // in the compile set — Chunk 2 will switch to a targeted
+            // `exclude:` list as RendererOpenGL/HostAudioSource land.
+            sources: ["TripexCore.cpp"],
+            publicHeadersPath: "include",
+            cxxSettings: [
+                .headerSearchPath("."),
+                .headerSearchPath("include"),
+                .define("__APPLE__"),
+                .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
+            ]
+        ),
+        .target(
             name: "CGeissCore",
             dependencies: [],
             path: "Sources/CGeissCore",
