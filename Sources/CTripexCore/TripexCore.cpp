@@ -12,6 +12,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <cstdio>
 
 struct TripexCoreHandle {
     std::mutex                       lock;
@@ -35,11 +36,9 @@ extern "C" TripexCoreHandle* TripexCore_create(int width, int height) {
     h->tripex   = std::make_shared<Tripex>(h->renderer);
     Error* err = h->tripex->Startup();
     if (err != nullptr) {
-        h->last_error = err->GetDescription();
+        std::string desc = err->GetDescription();
         delete err;
-        // Surface failure cleanly: caller gets NULL and (currently) no way
-        // to read the error string. Acceptable for Chunk 5 — Chunk 6's
-        // Swift wiring will log via os_log on failure path.
+        fprintf(stderr, "[Tripex] Startup failed: %s\n", desc.c_str());
         delete h;
         return nullptr;
     }

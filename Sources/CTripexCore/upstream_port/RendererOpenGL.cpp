@@ -14,6 +14,19 @@
 #include "Face.h"
 #include <OpenGL/gl3.h>
 #include <stddef.h>
+#include <vector>
+
+// Image decoding is split into a separate translation unit so the
+// CoreGraphics / ImageIO headers don't collide with Tripex's `Point` /
+// `Rect` class templates (MacTypes.h declares C structs of the same names).
+extern "C" {
+    // Returns 0 on success and fills width/height/rgba (caller frees via free()).
+    // Returns -1 on failure; *error_msg points to a static C string description.
+    int TripexPort_DecodeImageRGBA(const void* data, unsigned int data_size,
+                                   int* out_width, int* out_height,
+                                   unsigned char** out_rgba,
+                                   const char** out_error);
+}
 
 ////// OpenGLTexture //////
 
@@ -121,12 +134,33 @@ Error* RendererOpenGL::CreateTexture(int width, int height, TextureFormat format
     return nullptr;
 }
 
-Error* RendererOpenGL::CreateTextureFromImage(const void* /*data*/, uint32 /*data_size*/,
-                                              std::shared_ptr<Texture>& /*out_texture*/)
+Error* RendererOpenGL::CreateTextureFromImage(const void* data, uint32 data_size,
+                                              std::shared_ptr<Texture>& out_texture)
 {
-    // Image-format decoding (PNG/JPEG/etc.) deferred to Chunk 4; effects
-    // that exercise this path will surface in QA.
-    return new Error("RendererOpenGL::CreateTextureFromImage not implemented (Chunk 4)");
+    if (!data || data_size == 0) {
+        return new Error("RendererOpenGL::CreateTextureFromImage: empty data");
+    }
+
+    int w = 0, h = 0;
+    unsigned char* rgba = nullptr;
+    const char* err_msg = nullptr;
+    if (TripexPort_DecodeImageRGBA(data, data_size, &w, &h, &rgba, &err_msg) != 0) {
+        return new Error(err_msg ? err_msg : "CreateTextureFromImage: decode failed");
+    }
+
+    auto tex = std::make_shared<OpenGLTexture>(w, h, TextureFormat::X8R8G8B8, TextureFlags::Filter);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)tex->gl_id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)w, (GLsizei)h, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    free(rgba);
+
+    out_texture = tex;
+    return nullptr;
 }
 
 // ------------------------------------------------------------------
@@ -183,6 +217,8 @@ void main() {
 }
 )";
 
+#include <stdio.h>
+
 static unsigned int CompileShader(unsigned int kind, const char* src)
 {
     GLuint sh = glCreateShader(kind);
@@ -191,6 +227,11 @@ static unsigned int CompileShader(unsigned int kind, const char* src)
     GLint ok = GL_FALSE;
     glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
     if (!ok) {
+        GLint log_len = 0;
+        glGetShaderiv(sh, GL_INFO_LOG_LENGTH, &log_len);
+        std::vector<char> log(log_len > 0 ? log_len : 1, 0);
+        glGetShaderInfoLog(sh, (GLsizei)log.size(), nullptr, log.data());
+        fprintf(stderr, "[Tripex] shader compile failed (kind=%u):\n%s\n", kind, log.data());
         glDeleteShader(sh);
         return 0;
     }
@@ -224,6 +265,11 @@ bool RendererOpenGL::EnsurePipeline()
     GLint ok = GL_FALSE;
     glGetProgramiv(prog, GL_LINK_STATUS, &ok);
     if (!ok) {
+        GLint log_len = 0;
+        glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &log_len);
+        std::vector<char> log(log_len > 0 ? log_len : 1, 0);
+        glGetProgramInfoLog(prog, (GLsizei)log.size(), nullptr, log.data());
+        fprintf(stderr, "[Tripex] program link failed:\n%s\n", log.data());
         glDeleteProgram(prog);
         return false;
     }

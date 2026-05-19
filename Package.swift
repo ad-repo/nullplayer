@@ -63,6 +63,12 @@ let package = Package(
                 .headerSearchPath("upstream_port"),
                 .define("__APPLE__"),
                 .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
+            ],
+            linkerSettings: [
+                // RendererOpenGL.cpp uses ImageIO + CoreGraphics to decode
+                // upstream's embedded JPEG textures.
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("ImageIO"),
             ]
         ),
         .target(
