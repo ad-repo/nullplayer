@@ -81,12 +81,10 @@ void RendererOpenGL::Resize(int width, int height)
 Error* RendererOpenGL::BeginFrame()
 {
     glViewport(0, 0, width_, height_);
-    // Diagnostic clear color so we can tell BeginFrame is firing vs.
-    // not running at all — slight dark blue instead of pure black.
-    glClearColor(0.0f, 0.0f, 0.06f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     // D3D9 front-face = CW. Match that so Tripex's geometry isn't all
-    // back-face culled when we (or upstream) enable culling.
+    // back-face culled when culling is enabled per RenderState.
     glFrontFace(GL_CW);
     return nullptr;
 }
@@ -414,11 +412,14 @@ Error* RendererOpenGL::DrawIndexedPrimitive(const RenderState& render_state,
         glUniform1i((GLint)uni_enable_tex_, 0);
     }
 
-    // Diagnostic: disable culling and depth-test unconditionally for now.
-    // Re-enable once we've verified geometry reaches the framebuffer.
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
+    if (render_state.enable_culling) {
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+    } else {
+        glDisable(GL_CULL_FACE);
+    }
     ApplyBlendMode(render_state.blend_mode);
+    ApplyDepthMode(render_state.depth_mode);
 
     glBindVertexArray((GLuint)vao_);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)vbo_);

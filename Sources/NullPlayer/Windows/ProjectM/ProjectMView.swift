@@ -10,7 +10,7 @@ import AppKit
 // =============================================================================
 
 /// ProjectM visualization view with full skin support
-class ProjectMView: NSView, GeissMenuTarget {
+class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
     
     // MARK: - Properties
     
@@ -741,6 +741,7 @@ class ProjectMView: NSView, GeissMenuTarget {
         let isProjectMAvailable = visualizationGLView?.isProjectMAvailable ?? false
         let isProjectMActive = currentEngineType == .projectM && isProjectMAvailable
         let isGeissActive = currentEngineType == .geiss
+        let isTripexActive = currentEngineType == .tripex
         
         // Preset navigation (only when projectM is available)
         if isProjectMActive {
@@ -890,6 +891,8 @@ class ProjectMView: NSView, GeissMenuTarget {
             }
         } else if isGeissActive {
             addGeissEffectsMenuItems(to: menu)
+        } else if isTripexActive {
+            addTripexEffectsMenuItems(to: menu)
         }
 
         // Visualization Engine selector
@@ -1028,6 +1031,24 @@ class ProjectMView: NSView, GeissMenuTarget {
         if let glView = visualizationGLView {
             GeissMenuBuilder.addGeissConfigMenuItems(to: menu, target: self, visualizationView: glView)
         }
+    }
+
+    private func addTripexEffectsMenuItems(to menu: NSMenu) {
+        guard let glView = visualizationGLView else { return }
+        TripexMenuBuilder.addTripexConfigMenuItems(to: menu, target: self, visualizationView: glView)
+    }
+
+    // MARK: - TripexMenuTarget
+
+    @objc func nextTripexEffectAction(_ sender: NSMenuItem)     { visualizationGLView?.nextTripexEffect() }
+    @objc func previousTripexEffectAction(_ sender: NSMenuItem) { visualizationGLView?.previousTripexEffect() }
+    @objc func randomTripexEffectAction(_ sender: NSMenuItem)   { visualizationGLView?.randomTripexEffect() }
+    @objc func reconfigureTripexAction(_ sender: NSMenuItem)    { visualizationGLView?.reconfigureTripex() }
+    @objc func toggleTripexHoldAction(_ sender: NSMenuItem)     { visualizationGLView?.toggleTripexHold() }
+    @objc func toggleTripexAudioInfoAction(_ sender: NSMenuItem){ visualizationGLView?.toggleTripexAudioInfo() }
+    @objc func toggleTripexHelpAction(_ sender: NSMenuItem)     { visualizationGLView?.toggleTripexHelp() }
+    @objc func selectTripexEffectFromMenu(_ sender: NSMenuItem) {
+        visualizationGLView?.selectTripexEffect(at: sender.tag)
     }
 
     @objc private func nextGeissEffectAction(_ sender: Any?) {
