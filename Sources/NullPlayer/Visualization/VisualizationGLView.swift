@@ -1125,6 +1125,51 @@ class VisualizationGLView: NSOpenGLView {
         geiss.randomizePalette()
     }
 
+    // MARK: - Tripex helpers (used by TripexMenuBuilder)
+
+    var tripexEffectCount: Int {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let t = engine as? TripexEngine else { return 0 }
+        return t.effectCount
+    }
+
+    var currentTripexEffectIndex: Int {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let t = engine as? TripexEngine else { return -1 }
+        return t.currentEffectIndex
+    }
+
+    func tripexEffectName(at index: Int) -> String {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let t = engine as? TripexEngine else { return "" }
+        return t.effectName(at: index)
+    }
+
+    func nextTripexEffect()     { withTripex { $0.nextEffect() } }
+    func previousTripexEffect() { withTripex { $0.previousEffect() } }
+    func randomTripexEffect()   { withTripex { $0.randomEffect() } }
+    func reconfigureTripex()    { withTripex { $0.reconfigure() } }
+    func toggleTripexHold()     { withTripex { $0.toggleHold() } }
+    func toggleTripexAudioInfo(){ withTripex { $0.toggleAudioInfo() } }
+    func toggleTripexHelp()     { withTripex { $0.toggleHelp() } }
+
+    func selectTripexEffect(at index: Int) {
+        withTripex { t in
+            t.selectEffect(at: index)
+            UserDefaults.standard.set(index, forKey: TripexEngine.DefaultsKey.lastEffectIndex)
+        }
+    }
+
+    private func withTripex(_ body: (TripexEngine) -> Void) {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let t = engine as? TripexEngine else { return }
+        body(t)
+    }
+
     // MARK: - Geiss Configuration (UserDefaults persistence)
 
     private func loadGeissConfigFromDefaults() {
