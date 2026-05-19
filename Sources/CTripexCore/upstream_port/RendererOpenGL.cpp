@@ -119,9 +119,11 @@ Error* RendererOpenGL::BeginFrame()
     glViewport(0, 0, width_, height_);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    // D3D9 front-face = CW. Match that so Tripex's geometry isn't all
-    // back-face culled when culling is enabled per RenderState.
-    glFrontFace(GL_CW);
+    // Front-face = CCW (GL default). Tripex emits CW triangles in
+    // screen-space coords (top-down, D3D convention); our vertex
+    // shader Y-flips screen→NDC, which inverts winding to CCW. Setting
+    // glFrontFace(GL_CW) here would cull every Actor-based effect.
+    glFrontFace(GL_CCW);
     return nullptr;
 }
 
