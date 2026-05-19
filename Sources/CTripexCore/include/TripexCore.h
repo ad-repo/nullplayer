@@ -38,6 +38,8 @@ void              TripexCore_nextEffect(TripexCoreHandle* handle);
 void              TripexCore_changeEffect(TripexCoreHandle* handle);      // random
 void              TripexCore_reconfigureEffect(TripexCoreHandle* handle); // re-randomise current effect params
 void              TripexCore_toggleHoldingEffect(TripexCoreHandle* handle);
+void              TripexCore_setHold(TripexCoreHandle* handle, int on);
+int               TripexCore_isHolding(TripexCoreHandle* handle);
 void              TripexCore_toggleAudioInfo(TripexCoreHandle* handle);
 void              TripexCore_toggleHelp(TripexCoreHandle* handle);
 

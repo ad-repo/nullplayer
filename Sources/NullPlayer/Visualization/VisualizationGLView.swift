@@ -1153,6 +1153,7 @@ class VisualizationGLView: NSOpenGLView {
     func randomTripexEffect()   { withTripex { $0.randomEffect() } }
     func reconfigureTripex()    { withTripex { $0.reconfigure() } }
     func toggleTripexHold()     { withTripex { $0.toggleHold() } }
+    func setTripexHold(_ on: Bool) { withTripex { $0.setHold(on) } }
     func toggleTripexAudioInfo(){ withTripex { $0.toggleAudioInfo() } }
     func toggleTripexHelp()     { withTripex { $0.toggleHelp() } }
 

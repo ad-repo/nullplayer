@@ -14,7 +14,11 @@ import AppKit
 ///   - Effects submenu — checked entry tracks `currentEffectIndex`
 final class TripexMenuBuilder {
 
-    static func addTripexConfigMenuItems(to menu: NSMenu, target: AnyObject, visualizationView: VisualizationGLView) {
+    static func addTripexConfigMenuItems(to menu: NSMenu,
+                                         target: AnyObject,
+                                         visualizationView: VisualizationGLView,
+                                         cycleMode: TripexCycleMode = .cycle,
+                                         cycleInterval: TimeInterval = 30.0) {
         let currentIndex = visualizationView.currentTripexEffectIndex
         let count = visualizationView.tripexEffectCount
 
@@ -51,9 +55,36 @@ final class TripexMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
-        let holdItem = NSMenuItem(title: "Hold Current Effect", action: #selector(TripexMenuTarget.toggleTripexHoldAction(_:)), keyEquivalent: "")
-        holdItem.target = target
-        menu.addItem(holdItem)
+        // Cycle controls — mirror ProjectM's Manual/Auto-Cycle/Auto-Random
+        // + Cycle Interval submenu for a uniform UX across engines.
+        let cycleOffItem = NSMenuItem(title: "Manual Only", action: #selector(TripexMenuTarget.setTripexCycleModeOff(_:)), keyEquivalent: "")
+        cycleOffItem.target = target
+        cycleOffItem.state = cycleMode == .off ? .on : .off
+        menu.addItem(cycleOffItem)
+
+        let cycleSeqItem = NSMenuItem(title: "Auto-Cycle", action: #selector(TripexMenuTarget.setTripexCycleModeCycle(_:)), keyEquivalent: "")
+        cycleSeqItem.target = target
+        cycleSeqItem.state = cycleMode == .cycle ? .on : .off
+        menu.addItem(cycleSeqItem)
+
+        let cycleRandItem = NSMenuItem(title: "Auto-Random", action: #selector(TripexMenuTarget.setTripexCycleModeRandom(_:)), keyEquivalent: "")
+        cycleRandItem.target = target
+        cycleRandItem.state = cycleMode == .random ? .on : .off
+        menu.addItem(cycleRandItem)
+
+        let intervalMenu = NSMenu()
+        for (name, seconds) in [("5 seconds", 5.0), ("10 seconds", 10.0), ("20 seconds", 20.0), ("30 seconds", 30.0), ("60 seconds", 60.0), ("2 minutes", 120.0)] {
+            let item = NSMenuItem(title: name, action: #selector(TripexMenuTarget.setTripexCycleIntervalFromMenu(_:)), keyEquivalent: "")
+            item.target = target
+            item.tag = Int(seconds)
+            item.state = abs(cycleInterval - seconds) < 0.5 ? .on : .off
+            intervalMenu.addItem(item)
+        }
+        let intervalMenuItem = NSMenuItem(title: "Cycle Interval", action: nil, keyEquivalent: "")
+        intervalMenuItem.submenu = intervalMenu
+        menu.addItem(intervalMenuItem)
+
+        menu.addItem(NSMenuItem.separator())
 
         let audioInfoItem = NSMenuItem(title: "Show Audio Info", action: #selector(TripexMenuTarget.toggleTripexAudioInfoAction(_:)), keyEquivalent: "")
         audioInfoItem.target = target
@@ -83,6 +114,11 @@ final class TripexMenuBuilder {
     }
 }
 
+/// Tripex cycle mode — mirrors ProjectM's PresetCycleMode for uniform UX.
+enum TripexCycleMode {
+    case off, cycle, random
+}
+
 @objc(TripexMenuTarget) protocol TripexMenuTarget: AnyObject {
     func nextTripexEffectAction(_ sender: NSMenuItem)
     func previousTripexEffectAction(_ sender: NSMenuItem)
@@ -92,4 +128,9 @@ final class TripexMenuBuilder {
     func toggleTripexAudioInfoAction(_ sender: NSMenuItem)
     func toggleTripexHelpAction(_ sender: NSMenuItem)
     func selectTripexEffectFromMenu(_ sender: NSMenuItem)
+
+    func setTripexCycleModeOff(_ sender: Any?)
+    func setTripexCycleModeCycle(_ sender: Any?)
+    func setTripexCycleModeRandom(_ sender: Any?)
+    func setTripexCycleIntervalFromMenu(_ sender: NSMenuItem)
 }

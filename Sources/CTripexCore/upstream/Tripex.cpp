@@ -536,6 +536,17 @@ int Tripex::PortGetCurrentEffectIndex() const
 	return effect_idx;
 }
 
+void Tripex::PortSetHold(bool on)
+{
+	if (on) txs.set(TXS_HOLD);
+	else    txs.reset(TXS_HOLD);
+}
+
+bool Tripex::PortIsHolding() const
+{
+	return txs.test(TXS_HOLD);
+}
+
 int Tripex::GetClippedLineLength(const TextureFont& font, const char* text, int clip_width)
 {
 	bool is_first_word = true;

@@ -33,6 +33,11 @@ public:
 	const char* PortGetEffectName(int index) const;
 	int         PortGetCurrentEffectIndex() const;
 
+	// Explicit Hold setter (port). ToggleHoldingEffect() is a flip; the
+	// Swift cycle driver needs deterministic on/off semantics.
+	void        PortSetHold(bool on);
+	bool        PortIsHolding() const;
+
 private:
 	static const int MSG_DISPLAY_TIME = 4000;
 	static const int MSG_FADEOUT_TIME = 1000;

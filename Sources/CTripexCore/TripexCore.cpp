@@ -109,6 +109,18 @@ extern "C" void TripexCore_toggleHoldingEffect(TripexCoreHandle* h) {
     h->tripex->ToggleHoldingEffect();
 }
 
+extern "C" void TripexCore_setHold(TripexCoreHandle* h, int on) {
+    if (!h || !h->tripex) return;
+    std::lock_guard<std::mutex> lk(h->lock);
+    h->tripex->PortSetHold(on != 0);
+}
+
+extern "C" int TripexCore_isHolding(TripexCoreHandle* h) {
+    if (!h || !h->tripex) return 0;
+    std::lock_guard<std::mutex> lk(h->lock);
+    return h->tripex->PortIsHolding() ? 1 : 0;
+}
+
 extern "C" void TripexCore_toggleAudioInfo(TripexCoreHandle* h) {
     if (!h || !h->tripex) return;
     std::lock_guard<std::mutex> lk(h->lock);
