@@ -47,4 +47,15 @@ public:
 private:
     int width_;
     int height_;
+
+    // GL pipeline state lazily initialized on first draw.
+    unsigned int program_ = 0;
+    unsigned int vao_ = 0;
+    unsigned int vbo_ = 0;
+    unsigned int ibo_ = 0;
+    int uni_viewport_ = -1;
+    int uni_tex_ = -1;
+    int uni_enable_tex_ = -1;
+
+    bool EnsurePipeline();
 };

@@ -17,7 +17,27 @@ Engine alongside ProjectM and Geiss. Executed per the 8-chunk plan in
   under the `_MSC_VER` guard). Header stubs in `include/`: `Windows.h`,
   `wtypes.h`, `d3d9.h`, `conio.h`, `mmeapi.h` (all empty/typedefs-only).
   `cxxLanguageStandard` bumped to C++17 (Tripex's `std::shared_ptr<T[]>`).
-- **Chunk 3+:** see plan document.
+- **Chunk 3:** `RendererOpenGL` skeleton — clears framebuffer, allocates
+  textures via `glGenTextures`/`glTexImage2D`. `OpenGLTexture` subclass of
+  `Texture`. `DrawIndexedPrimitive` is a no-op.
+- **Chunk 4 (this commit):** `HostAudioSource` (lock-free-ish ring buffer
+  of int16 stereo @ 44.1 kHz; `Push` from Swift, `Read` consumed by Tripex),
+  full `DrawIndexedPrimitive` impl (GL 3.2 core VAO/VBO/IBO streaming,
+  shader pair that maps `VertexTL` screen-space coords to NDC, RenderState
+  → `glBlendFunc`/`glDepthFunc`/`glCullFace`/wrap-mode translation).
+  `TripexCore_create` now constructs the whole graph (renderer + audio +
+  Tripex) and calls `Tripex::Startup`; failure surfaces as NULL handle.
+- **Chunk 5+:** full ABI surface + Swift wiring + menu UI.
+
+### Known Chunk-4 deferrals
+
+- `CreateTextureFromImage` is still unimplemented. If any effect's startup
+  loads a PNG/JPG, `Tripex::Startup` will return an error and
+  `TripexCore_create` will return NULL — surfaces in Chunk 6 QA.
+- `OpenGLTexture::GetPixelData` and `SetDirty` need real impls for any
+  effect that does GPU→CPU readback or dynamic upload. Stubbed for now.
+- Renderer's base destructor is non-virtual upstream — `~RendererOpenGL`
+  is intentionally not marked `override` to satisfy clang.
 
 ## Reconnaissance findings
 
