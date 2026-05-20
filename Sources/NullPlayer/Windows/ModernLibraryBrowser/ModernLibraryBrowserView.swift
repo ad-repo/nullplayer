@@ -2515,19 +2515,21 @@ class ModernLibraryBrowserView: NSView {
         return storedColumnWidth(for: column, group: group) ?? column.minWidth
     }
     
-    private func totalColumnsWidth(columns: [ModernBrowserColumn], group: LibraryColumnVisibilityGroup?) -> CGFloat {
-        var total: CGFloat = 8
-        for column in columns {
-            total += column.id == "title" ? column.minWidth : (storedColumnWidth(for: column, group: group) ?? column.minWidth)
+    private func totalColumnsWidth(
+        columns: [ModernBrowserColumn],
+        availableWidth: CGFloat,
+        group: LibraryColumnVisibilityGroup?
+    ) -> CGFloat {
+        8 + columns.reduce(0) { total, column in
+            total + widthForColumn(column, availableWidth: availableWidth, columns: columns, group: group)
         }
-        return total
     }
 
     private func clampHorizontalScrollOffset() {
         let columns = currentVisibleColumns()
         let group = currentColumnGroup()
         let availableWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
-        let maxOffset = max(0, totalColumnsWidth(columns: columns, group: group) - availableWidth)
+        let maxOffset = max(0, totalColumnsWidth(columns: columns, availableWidth: availableWidth, group: group) - availableWidth)
         horizontalScrollOffset = max(0, min(horizontalScrollOffset, maxOffset))
     }
     
@@ -3259,7 +3261,7 @@ class ModernLibraryBrowserView: NSView {
             let columns = currentVisibleColumns()
             let group = currentColumnGroup()
             let availableWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
-            let totalWidth = totalColumnsWidth(columns: columns, group: group)
+            let totalWidth = totalColumnsWidth(columns: columns, availableWidth: availableWidth, group: group)
             let maxOffset = max(0, totalWidth - availableWidth)
             if maxOffset > 0 {
                 horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - event.deltaX * 3))
