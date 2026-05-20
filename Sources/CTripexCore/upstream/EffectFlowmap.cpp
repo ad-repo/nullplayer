@@ -52,7 +52,11 @@ public:
 		float x, y;
 	};
 
-	const float MAX_CALC_TIME = 0.02f * CLOCKS_PER_SEC;//02
+	// Calculate() compares this budget against GetSystemTimestampMs().
+	// Upstream used 0.02 * CLOCKS_PER_SEC, which is 20 on Windows but
+	// 20000 on macOS because CLOCKS_PER_SEC is 1,000,000 there. That
+	// makes Flowmap monopolize the render thread for seconds per frame.
+	const float MAX_CALC_TIME_MS = 20.0f;
 
 	static const int PRECISION = 8; //4 //8
 
@@ -142,8 +146,6 @@ public:
 		bSetColours = true;
 		bMeasureTime = true;
 		fFirstRender = true;
-		nCalcX;
-		nCalcY;
 		ang = 0;
 		fStep = 1.0f;
 		fNextStep = 1.0f;
@@ -153,6 +155,10 @@ public:
 		fOddFrame = true;
 		fadecolour = 1;
 		nCalcPixel = 0;
+		nCalcX = 0;
+		nCalcY = 0;
+		dFrames = 0;
+		dOscFade = 0;
 
 		dSpin = 0;
 		dOscSpin = 0;
@@ -636,7 +642,7 @@ public:
 			pSrc.x = -255.5f;//(width - 1.0f) / 2.0f;
 			pSrc.y = fStartY;//(height - 1.0f) / 2.0f;
 		}
-		Calculate(tflowmap ^ 1, std::max<int>(1, 512 * 3 * fMult * params.elapsed), std::max<int>(2, 512 * 3 * fMult * params.elapsed), params.elapsed * MAX_CALC_TIME);
+		Calculate(tflowmap ^ 1, std::max<int>(1, 512 * 3 * fMult * params.elapsed), std::max<int>(2, 512 * 3 * fMult * params.elapsed), params.elapsed * MAX_CALC_TIME_MS);
 		if (bSetColours || ((bMeasureTime && nSamples > 5) || nCalcY >= height))
 		{
 			if (bSetColours || !bMeasureTime)
@@ -846,7 +852,14 @@ public:
 	}
 	bool CanRenderImpl(float dElapsed)
 	{
-		return (dElapsed >= fStep);//(dElapsed >= 1.0);//(dElapsed >= 0.8);//1);
+		// The NullPlayer port feeds effects a per-display-frame elapsed
+		// value. Flowmap's original fStep gate expected Tripex's old
+		// accumulated skipped-frame counter, so at 60fps the effect could
+		// never become renderable and Tripex would keep the previous frame
+		// onscreen forever. Flowmap already limits map generation time in
+		// Calculate(), so it is safe to let it draw every frame.
+		(void)dElapsed;
+		return true;
 	}
 };
 

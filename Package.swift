@@ -69,6 +69,10 @@ let package = Package(
                 // upstream's embedded JPEG textures.
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("ImageIO"),
+                // OpenGL is deprecated on macOS 10.14+ but still ships;
+                // link explicitly rather than relying on transitive linkage
+                // from Swift's `import OpenGL.GL3`.
+                .linkedFramework("OpenGL"),
             ]
         ),
         .target(

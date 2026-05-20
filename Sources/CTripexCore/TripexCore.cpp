@@ -141,6 +141,18 @@ extern "C" void TripexCore_toggleHelp(TripexCoreHandle* h) {
     h->tripex->ToggleHelp();
 }
 
+extern "C" void TripexCore_setIntensityScale(TripexCoreHandle* h, float scale) {
+    if (!h || !h->tripex) return;
+    std::lock_guard<std::mutex> lk(h->lock);
+    h->tripex->PortSetIntensityScale(scale);
+}
+
+extern "C" float TripexCore_getIntensityScale(TripexCoreHandle* h) {
+    if (!h || !h->tripex) return 1.0f;
+    std::lock_guard<std::mutex> lk(h->lock);
+    return h->tripex->PortGetIntensityScale();
+}
+
 extern "C" int TripexCore_effectCount(TripexCoreHandle* h) {
     if (!h || !h->tripex) return 0;
     std::lock_guard<std::mutex> lk(h->lock);

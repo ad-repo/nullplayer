@@ -140,6 +140,17 @@ final class TripexEngine: VisualizationEngine {
     func toggleAudioInfo() { withCore { TripexCore_toggleAudioInfo($0) } }
     func toggleHelp()      { withCore { TripexCore_toggleHelp($0) } }
 
+    var intensityScale: Float {
+        get {
+            coreLock.lock(); defer { coreLock.unlock() }
+            guard let core else { return 1.0 }
+            return TripexCore_getIntensityScale(core)
+        }
+        set {
+            withCore { TripexCore_setIntensityScale($0, newValue) }
+        }
+    }
+
     func selectEffect(at index: Int) {
         withCore { TripexCore_selectEffect($0, Int32(index)) }
     }
@@ -158,5 +169,10 @@ extension TripexEngine {
     enum DefaultsKey {
         static let lastEffectIndex   = "tripex.lastEffectIndex"
         static let lockedEffectIndex = "tripex.lockedEffectIndex"
+        static let intensityScale    = "tripex.intensityScale"
+        // Cycle controls — shared by classic ProjectMView and ModernProjectMView
+        // so both windows read/write the same canonical Tripex cycling state.
+        static let cycleMode         = "tripex.cycleMode"
+        static let cycleInterval     = "tripex.cycleInterval"
     }
 }

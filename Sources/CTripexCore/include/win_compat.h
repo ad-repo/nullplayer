@@ -6,6 +6,12 @@
 // renderer (RendererOpenGL) and stub the Win32 surface the math/effect code
 // references. main.cpp + RendererDirect3d.{cpp,h} + AudioDevice.cpp are
 // excluded from compilation entirely — those carry the bulk of Win32/D3D.
+//
+// DO NOT include this header from Swift bridging headers, Objective-C TUs,
+// or any file that pulls in <CoreGraphics/CoreGraphics.h> or MacTypes.h.
+// The POINT/RECT/DWORD/etc. typedefs below collide with system types
+// (CGPoint/NSRect on macOS). Keep this header confined to the vendored
+// Tripex C++ TUs in this target.
 
 #include <stddef.h>
 #include <stdint.h>

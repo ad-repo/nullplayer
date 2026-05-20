@@ -40,7 +40,6 @@ public:
 		coil.vertices.resize(CLENGTH * 4);
 		coil.faces.resize((CLENGTH - 1) * 8);
 		coil.flags.set(Actor::F_DRAW_TRANSPARENT);
-		coil.flags.set(Actor::F_DRAW_Z_BUFFER);
 		coil.flags.set(Actor::F_NO_CULL);
 
 		int v = 0;
@@ -89,7 +88,9 @@ public:
 
 		obj.vertices.resize(PTCIRCUM * PTLENGTH);
 		obj.faces.resize((PTCIRCUM * 2) * (PTLENGTH - 1));
-		obj.flags.set(Actor::F_DRAW_Z_BUFFER);
+		// With global culling disabled in the OpenGL port, the transparent
+		// z pre-pass can write depth from interior faces and leave black
+		// holes in the additive render. Draw this effect as pure additive.
 		obj.flags.set(Actor::F_DRAW_TRANSPARENT);
 
 		f = 0;

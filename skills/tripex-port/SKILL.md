@@ -17,12 +17,12 @@ The port inherits the visualizer window's CVDisplayLink-driven render cadence, f
 
 | Path | Role |
 |------|------|
-| `include/TripexCore.h` | C ABI consumed by Swift. 19 entry points: lifecycle (`_create`/`_destroy`/`_resize`), audio (`_pushPCM`), render (`_renderFrame`), effect navigation (`_prev`/`_next`/`_change`/`_reconfigure`/`_toggleHoldingEffect`/`_toggleAudioInfo`/`_toggleHelp`), inventory (`_effectCount`/`_effectName`/`_currentEffectIndex`/`_selectEffect`), generic int options (`_setOption`/`_getOption`), and `_lastError`. |
+| `include/TripexCore.h` | C ABI consumed by Swift. Lifecycle (`_create`/`_destroy`/`_resize`), audio (`_pushPCM`), render (`_renderFrame`), effect navigation (`_prev`/`_next`/`_change`/`_reconfigure`/`_toggleHoldingEffect`/`_setHold`/`_isHolding`/`_toggleAudioInfo`/`_toggleHelp`), intensity (`_setIntensityScale`/`_getIntensityScale`), inventory (`_effectCount`/`_effectName`/`_currentEffectIndex`/`_selectEffect`), generic int options (`_setOption`/`_getOption`), and `_lastError`. |
 | `include/win_compat.h` | Typedefs (DWORD/HRESULT/WORD/LONG/POINT/RECT/etc.), inline shims (GetTickCount64/timeGetTime/fopen_s/_stricmp/_copysign), macros (FAILED/SUCCEEDED/ZeroMemory/__assume/WAVE_FORMAT_PCM). `<chrono>` is guarded by `#ifdef __cplusplus` so the Swift clang-module importer doesn't choke. |
 | `include/Windows.h`, `wtypes.h`, `mmeapi.h`, `conio.h`, `d3d9.h` | Empty stubs (or thin typedef wrappers) so upstream `#include <X>` lines resolve without forcing edits to upstream sources. Anything D3D-specific stays unresolved because the only TUs that use those types are excluded from compilation. |
 | `TripexCore.cpp` | C++ glue. Owns `TripexCoreHandle` (renderer + Tripex + HostAudioSource + options map + last_error + mutex), serializes every public ABI entry. |
-| `upstream/` | Verbatim MIT source from ben-marsh/tripex `src/Tripex/*`. `LICENSE` and `README.md` retained. **One inline edit** to `Platform.h` replaces `#error Unsupported compiler.` with `#include "win_compat.h"` under the `_MSC_VER` `#else` branch — the absolute minimum upstream patch. Three small accessors (`PortGetEffectCount` / `PortGetEffectName` / `PortGetCurrentEffectIndex`) added to `Tripex.{h,cpp}` because `enabled_effects` and `effect_idx` are otherwise private. |
-| `upstream_port/RendererOpenGL.{cpp,h}` | Concrete subclass of upstream's `Renderer`. GL 3.2 core profile: shared VAO/VBO/IBO, single shader pair (vertex maps `VertexTL` screen-space coords to NDC; fragment modulates diffuse by texture and adds specular). `RenderState` (BlendMode/DepthMode/cull/wrap) translated per draw to `glBlendFunc`/`glDepthFunc`/`glCullFace`/`glTexParameteri`. Buffers refilled per draw via `glBufferData(..., GL_STREAM_DRAW)`. |
+| `upstream/` | Verbatim MIT source from ben-marsh/tripex `src/Tripex/*`, with targeted NullPlayer port edits: `Platform.h` includes `win_compat.h`; `Tripex.{h,cpp}` exposes menu/control helpers (`PortGet*`, `PortJumpToEffect`, hold, intensity); `Tripex::Render` uses per-frame timing; a few effects have macOS/timing/depth fixes noted in `PORT_STATUS.md`. |
+| `upstream_port/RendererOpenGL.{cpp,h}` | Concrete subclass of upstream's `Renderer`. GL 3.2 core profile: shared VAO/VBO/IBO, single shader pair (vertex maps `VertexTL` screen-space coords to NDC; fragment modulates diffuse by texture and conditionally adds specular). `RenderState` (BlendMode/DepthMode/specular/wrap) translated per draw to `glBlendFunc`/`glDepthFunc`/shader uniforms/`glTexParameteri`. Culling is currently force-disabled because Tripex mixes 2D and Actor-projected winding conventions. Streaming buffers retain capacity and are orphaned before sub-data uploads. |
 | `upstream_port/HostAudioSource.{cpp,h}` | Concrete subclass of upstream's `AudioSource`. Mutex-guarded ring buffer (~2s @ 44.1 kHz stereo). `Push` from Swift, `Read` consumed per-frame by Tripex; underrun pads with silence. |
 | `upstream_port/tripex_compat.cpp` | Out-of-class definitions required under clang/C++17 ODR rules. Currently just `const uint16 Actor::WORD_INVALID_INDEX;` (used by-reference in `vector::push_back`). |
 | `PORT_NOTES.md` | Developer-only port log (reconnaissance findings, chunk status, gotchas register). **Not shipped in the .app.** |
@@ -68,10 +68,28 @@ PCM is delivered by NullPlayer as mono float in `[-1, 1]`. `TripexEngine.addPCMM
 
 `VertexTL` layout (32 bytes): `Vector3 position`, `float rhw`, `ColorRgb diffuse`, `ColorRgb specular`, `Point<float> tex_coords[1]`. The Swift-side GL context must be a 3.2 core profile (NullPlayer's `VisualizationGLView` provides this). The shader pair lives inline in `RendererOpenGL.cpp` as `kVertexShaderSrc` / `kFragmentShaderSrc`.
 
-### Known unimplemented paths
+### Implemented texture paths
 
-- `RendererOpenGL::CreateTextureFromImage` — image decoding (PNG/JPG/etc.). No effect in the upstream tree currently exercises this code path during startup; if a new effect does, `Tripex::Startup` will return an error and `TripexCore_create` will return NULL. Implement with `CGImageSource` if/when needed.
-- `OpenGLTexture::GetPixelData` and `SetDirty` — GPU→CPU readback and CPU→GPU dynamic upload. Stubs return an Error / no-op respectively. Implement on demand.
+- `RendererOpenGL::CreateTextureFromImage` decodes embedded JPG/PNG/etc.
+  through the ImageIO/CoreGraphics helper in `ImageDecode.cpp`.
+- `OpenGLTexture::SetDirty` re-uploads dynamic textures, including P8
+  palette expansion, so Canvas-based effects can animate. Dynamic P8 uploads
+  reuse a per-texture scratch buffer.
+- `OpenGLTexture::GetPixelData` reads back BGRA pixels with `glGetTexImage`,
+  which `EffectBumpmapping` uses while reconfiguring.
+
+### Effect timing and performance notes
+
+- `Tripex::Render` uses per-frame timing (`frames = ...`), not accumulated
+  skipped-frame timing. Effects with custom `CanRenderImpl` gates may need
+  review if they stall under this model.
+- Flowmap, MotionBlur1, and Phased have already been adjusted for the
+  per-frame timing model.
+- Tube and WaterGlobe are the main current performance-sensitive effects.
+  Both avoid the transparent z pre-pass in the OpenGL port; an attempted
+  analytic/radial normal optimization made them look worse and was reverted.
+- If Tube/WaterGlobe still need more speed, the next deliberate tradeoff is
+  mesh LOD, especially WaterGlobe's `CreateTetrahedronGeosphere(200, 5)`.
 
 ## C ABI surface (full)
 
@@ -88,6 +106,10 @@ void              TripexCore_reconfigureEffect(TripexCoreHandle*);
 void              TripexCore_toggleHoldingEffect(TripexCoreHandle*);
 void              TripexCore_toggleAudioInfo(TripexCoreHandle*);
 void              TripexCore_toggleHelp(TripexCoreHandle*);
+void              TripexCore_setHold(TripexCoreHandle*, int on);
+int               TripexCore_isHolding(TripexCoreHandle*);
+void              TripexCore_setIntensityScale(TripexCoreHandle*, float scale);
+float             TripexCore_getIntensityScale(TripexCoreHandle*);
 int               TripexCore_effectCount(TripexCoreHandle*);
 const char*       TripexCore_effectName(TripexCoreHandle*, int index);
 int               TripexCore_currentEffectIndex(TripexCoreHandle*);
@@ -97,28 +119,44 @@ int               TripexCore_getOption(TripexCoreHandle*, const char* key, int f
 const char*       TripexCore_lastError(TripexCoreHandle*);
 ```
 
-`_selectEffect` reaches an arbitrary index by issuing internal `MoveToNext`/`MoveToPrev` deltas — Tripex's public API has no random-access selection. The effect change is queued via `txs` flags and takes effect on the next render frame.
+`_selectEffect` maps the user-facing index to `enabled_effects[index + 1]`
+to hide Tripex's internal "Blank" fade helper. It jumps directly through
+`PortJumpToEffect`, resets fade state, and reconfigures the target effect.
 
 ## Persistence
 
 UserDefaults keys, persisted via `UserDefaults.standard`:
 
-- `tripex.lastEffectIndex` (Int) — written by `VisualizationGLView.selectTripexEffect(at:)`, read by the `.tripex` factory branch in `createEngine(type:width:height:)`. Restores last selected effect on engine creation.
+- `tripex.lastEffectIndex` (Int) — restores last selected effect.
+- `tripex.cycleMode` (String) — `off`, `cycle`, or `random`.
+- `tripex.cycleInterval` (Double) — seconds between Swift-driven effect changes.
+- `tripex.intensityScale` (Float) — engine-level audio/intensity multiplier.
 
-The Tripex `_setOption` / `_getOption` store is currently unused by any UI surface — reserved for future effect-parameter sliders if/when individual effects expose useful tunables. The `tripex.lockedEffectIndex` constant is reserved in `TripexEngine.DefaultsKey` but not yet read or written.
+The Tripex `_setOption` / `_getOption` store is currently unused by any UI
+surface — reserved for future options that do not deserve dedicated ABI.
+The `tripex.lockedEffectIndex` constant is reserved in `TripexEngine.DefaultsKey`
+but not currently read or written.
 
 ## Menu surface
 
 `TripexMenuBuilder.addTripexConfigMenuItems(to:target:visualizationView:)` produces the per-engine submenu when Tripex is the active engine. Surface:
 
 - Current effect name (disabled label).
-- Next / Previous / Random / Reconfigure effect.
-- Hold Current Effect / Show Audio Info / Show Help Overlay (toggle actions).
+- Next / Previous / Random / Randomize Effect Settings.
+- Hold Current Effect.
+- Auto-Cycle / Auto-Random + Cycle Interval. Clicking the checked auto
+  mode unchecks it and disables cycling; there is no separate "Manual Only"
+  item.
+- Intensity submenu (`0.25x` through `4.0x`).
+- Show Audio Info / Show Help Overlay (toggle actions).
 - Effects submenu listing all enabled effects with a checkmark on `currentTripexEffectIndex`.
 
 `TripexMenuTarget` is the @objc protocol the host view conforms to. `ModernProjectMView` implements it and forwards each action to the corresponding `VisualizationGLView.*Tripex*` helper.
 
-There are **no sliders** — Tripex effects own their own randomization parameters internally, and the upstream API exposes none of them. `_setOption`/`_getOption` exist for future expansion.
+Tripex does not expose native per-effect sliders. The exposed "levers" are
+the native engine-level controls that make sense in NullPlayer: hold,
+cycle mode, cycle interval, intensity, randomize current effect settings,
+and overlays.
 
 ## Mode-specific guards (per CLAUDE.md gotcha)
 
@@ -130,8 +168,8 @@ There are **no sliders** — Tripex effects own their own randomization paramete
 1. **Renderer backend** — D3D9 replaced by OpenGL 3.2 core (NSOpenGLView). `RendererDirect3d.{cpp,h}` excluded; `RendererOpenGL.{cpp,h}` substituted.
 2. **Audio backend** — WaveOut device replaced by host audio tap. `AudioDevice.{cpp,h}` excluded; `HostAudioSource.{cpp,h}` substituted. NullPlayer's audio engine is the source of truth, and Tripex consumes a synthesized in-memory stream.
 3. **No window** — upstream's `WinMain` is excluded; the host `NSOpenGLView` owns the framebuffer / GL context / display-link cadence. Tripex doesn't know whether it's rendering to a real window or an offscreen FBO.
-4. **No keyboard input** — upstream binds F1/F2/Left/Right/R/E/H/M/O/T inside `WndProc`. Equivalent actions are wired via the right-click menu instead. Direct keyboard handling would require routing NSEvent through the host view.
-5. **Three small accessors in `Tripex.h`** — `PortGetEffectCount`/`PortGetEffectName`/`PortGetCurrentEffectIndex`. Upstream keeps `enabled_effects` and `effect_idx` private; the C ABI needs read access for the menu builder.
+4. **Host keyboard routing** — upstream binds F1/F2/Left/Right/R/E/H/M/O/T inside `WndProc`. NullPlayer routes bare key events from the ProjectM host windows to Tripex helpers for previous/next/random and relies on native menus for the rest.
+5. **Port helpers in `Tripex.h`** — `PortGetEffectCount`/`PortGetEffectName`/`PortGetCurrentEffectIndex`, direct jump, deterministic hold, and intensity scale. Upstream keeps this state private; the C ABI needs it for menus and Swift-driven cycling.
 6. **One inline edit to `Platform.h`** — `#error Unsupported compiler.` replaced with `#include "win_compat.h"` under the `_MSC_VER` `#else` branch.
 
 ## Adding a Tripex configuration menu item
@@ -173,7 +211,7 @@ After modifying any of the touched files, run:
 
 1. `swift build` — green, including all upstream `.cpp` files compiling without error.
 2. Launch app → right-click visualizer → **Visualization Engine** → **Tripex** → confirm the window switches and a frame renders.
-3. Use the per-engine submenu items (Next / Previous / Random / Reconfigure / Hold / Show Audio Info / Show Help / Effects submenu entries) → confirm each takes effect.
+3. Use the per-engine submenu items (Next / Previous / Random / Randomize Effect Settings / Hold / Auto-Cycle / Auto-Random / Intensity / Show Audio Info / Show Help / Effects submenu entries) → confirm each takes effect.
 4. Switch back to ProjectM → confirm no GL state corruption.
 5. Close + relaunch app with Tripex saved as last-engine + non-zero `tripex.lastEffectIndex` → confirm the same effect restores.
 6. Run with a long-playing track (>10 min) → Activity Monitor should show steady-state memory, no growth.
@@ -183,4 +221,7 @@ After modifying any of the touched files, run:
 - Source: `https://github.com/ben-marsh/tripex`, MIT license (Copyright (c) 2025 Ben Marsh).
 - Vendored from `src/Tripex/*` (97 files including LICENSE/README).
 - `LICENSE` and `README.md` retained verbatim under `upstream/` but excluded from compilation.
-- Two upstream edits (`Platform.h` `#error` replacement; `Tripex.h`/`Tripex.cpp` `PortGet*` accessors) are marked in their respective files with `NullPlayer port:` comments.
+- Upstream edits are intentionally small but no longer limited to the initial
+  `Platform.h` and `PortGet*` accessors. Current port patches include timing,
+  menu/control helpers, selected effect fixes, and Tube/WaterGlobe performance
+  fixes. See `PORT_STATUS.md` before changing behavior.

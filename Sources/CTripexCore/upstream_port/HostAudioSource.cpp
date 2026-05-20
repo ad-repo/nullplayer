@@ -1,5 +1,8 @@
 #include "HostAudioSource.h"
 #include <string.h>
+#ifndef NDEBUG
+#include <stdio.h>
+#endif
 
 HostAudioSource::HostAudioSource()
     : ring_(RING_CAPACITY, 0)
@@ -24,11 +27,10 @@ void HostAudioSource::Push(const int16* samples, size_t num_samples)
     }
 
     // Drop oldest samples if we'd overflow.
-    size_t free_space = RING_CAPACITY - available_.load();
-    if (num_samples > free_space) {
-        size_t drop = num_samples - free_space;
+    if (num_samples > RING_CAPACITY - available_) {
+        size_t drop = num_samples - (RING_CAPACITY - available_);
         read_pos_ = (read_pos_ + drop) % RING_CAPACITY;
-        available_.fetch_sub(drop);
+        available_ -= drop;
     }
 
     size_t first = std::min(num_samples, RING_CAPACITY - write_pos_);
@@ -37,7 +39,9 @@ void HostAudioSource::Push(const int16* samples, size_t num_samples)
         memcpy(&ring_[0], samples + first, (num_samples - first) * sizeof(int16));
     }
     write_pos_ = (write_pos_ + num_samples) % RING_CAPACITY;
-    available_.fetch_add(num_samples);
+    available_ += num_samples;
+    // Post-condition: available_ ≤ RING_CAPACITY (drop above guarantees
+    // enough free space for the full num_samples write).
 }
 
 void HostAudioSource::Read(void* read_data, size_t read_size)
@@ -47,8 +51,7 @@ void HostAudioSource::Read(void* read_data, size_t read_size)
     int16* out = (int16*)read_data;
 
     std::lock_guard<std::mutex> lock(mutex_);
-    size_t have = available_.load();
-    size_t to_copy = std::min(samples_needed, have);
+    size_t to_copy = std::min(samples_needed, available_);
 
     if (to_copy > 0) {
         size_t first = std::min(to_copy, RING_CAPACITY - read_pos_);
@@ -57,11 +60,18 @@ void HostAudioSource::Read(void* read_data, size_t read_size)
             memcpy(out + first, &ring_[0], (to_copy - first) * sizeof(int16));
         }
         read_pos_ = (read_pos_ + to_copy) % RING_CAPACITY;
-        available_.fetch_sub(to_copy);
+        available_ -= to_copy;
     }
 
     // Pad the rest with silence so callers always get the requested size.
     if (to_copy < samples_needed) {
+#ifndef NDEBUG
+        static size_t s_underrun_count = 0;
+        if ((++s_underrun_count % 256) == 1) {
+            fprintf(stderr, "[Tripex] HostAudioSource underrun: needed %zu, had %zu (count=%zu)\n",
+                    samples_needed, samples_needed - (samples_needed - to_copy), s_underrun_count);
+        }
+#endif
         memset(out + to_copy, 0, (samples_needed - to_copy) * sizeof(int16));
     }
 }

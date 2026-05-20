@@ -2,7 +2,9 @@
 
 #include "Renderer.h"
 #include "Texture.h"
+#include <cstddef>
 #include <memory>
+#include <vector>
 
 // macOS GL 3.2 core profile is supplied by the host process (NullPlayer's
 // VisualizationGLView creates the context). We do not include any GL
@@ -22,6 +24,7 @@ public:
     unsigned int      cpu_data_stride = 0; // bytes per row in source
     const void*       cpu_palette     = nullptr; // ColorRgb[256] or null
     bool              dirty           = false;
+    std::vector<uint8> upload_scratch;
 
     OpenGLTexture(int width, int height, TextureFormat format, TextureFlags flags);
     ~OpenGLTexture() override;
@@ -69,9 +72,15 @@ private:
     unsigned int vbo_ = 0;
     unsigned int ibo_ = 0;
     unsigned int default_white_ = 0;
+    size_t vbo_capacity_bytes_ = 0;
+    size_t ibo_capacity_bytes_ = 0;
     int uni_viewport_ = -1;
     int uni_tex_ = -1;
     int uni_enable_tex_ = -1;
+    int uni_enable_specular_ = -1;
+    // Sticky once EnsurePipeline returns false — avoids re-attempting
+    // shader compile/link every frame after a hard failure.
+    bool pipeline_failed_ = false;
 
     bool EnsurePipeline();
 };

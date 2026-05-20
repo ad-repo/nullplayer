@@ -50,13 +50,11 @@ Tripex::~Tripex()
 
 void Tripex::ShowStatusMsg(const char* format, ...)
 {
-	va_list arg_list;
-	va_start(arg_list, format);
-
-	vsnprintf(status_msg, sizeof(status_msg), format, arg_list);
-	status_time = GetSystemTimestampMs();
-
-	va_end(arg_list);
+	// NullPlayer surfaces Tripex state in native menus. The upstream
+	// transient banner duplicates that UI and obscures the visualization.
+	(void)format;
+	status_msg[0] = 0;
+	status_time = 0;
 }
 
 Error* Tripex::Startup()
@@ -345,11 +343,11 @@ Error* Tripex::Render(AudioSource& audio_source)
 		return nullptr;
 	}
 
-	audio->Update(elapsed, enabled_effects[effect_idx]->sensitivity, audio_source);
+	audio->Update(elapsed, enabled_effects[effect_idx]->sensitivity * port_intensity_scale, audio_source);
 
 	for (int i = 0; i < 2; i++)
 	{
-		audio->SetIntensityBeatScale(draw_effects[i]->sensitivity * 3.0f);
+		audio->SetIntensityBeatScale(draw_effects[i]->sensitivity * port_intensity_scale * 3.0f);
 
 		Effect::CalculateParams params(draw_effects[i]->fBr, draw_effects[i]->GetElapsed(frames), *audio.get(), *renderer);
 
@@ -576,6 +574,16 @@ void Tripex::PortSetHold(bool on)
 bool Tripex::PortIsHolding() const
 {
 	return txs.test(TXS_HOLD);
+}
+
+void Tripex::PortSetIntensityScale(float scale)
+{
+	port_intensity_scale = std::max(0.0f, std::min(4.0f, scale));
+}
+
+float Tripex::PortGetIntensityScale() const
+{
+	return port_intensity_scale;
 }
 
 int Tripex::GetClippedLineLength(const TextureFont& font, const char* text, int clip_width)

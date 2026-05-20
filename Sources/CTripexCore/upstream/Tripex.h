@@ -47,6 +47,8 @@ public:
 	// Swift cycle driver needs deterministic on/off semantics.
 	void        PortSetHold(bool on);
 	bool        PortIsHolding() const;
+	void        PortSetIntensityScale(float scale);
+	float       PortGetIntensityScale() const;
 
 private:
 	static const int MSG_DISPLAY_TIME = 4000;
@@ -90,6 +92,7 @@ private:
 	std::shared_ptr<Texture> gui;
 	uint32 last_time;
 	float frames = 0.0f;
+	float port_intensity_scale = 1.0f;
 
 	std::vector<std::shared_ptr<Effect>> effects;
 	std::vector<std::shared_ptr<Effect>> enabled_effects;

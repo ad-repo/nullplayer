@@ -10,6 +10,7 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
     // MARK: - Properties
     
     private var projectMView: ModernProjectMView!
+    private var localKeyDownMonitor: Any?
     
     /// Whether the window is in shade mode
     private(set) var isShadeMode = false
@@ -75,6 +76,24 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
         projectMView.controller = self
         projectMView.autoresizingMask = [.width, .height]
         window?.contentView = projectMView
+        setupKeyDownMonitor()
+    }
+
+    private func setupKeyDownMonitor() {
+        localKeyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self,
+                  event.window === self.window,
+                  self.projectMView.handleVisualizationKeyDown(event) else {
+                return event
+            }
+            return nil
+        }
+    }
+
+    deinit {
+        if let localKeyDownMonitor {
+            NSEvent.removeMonitor(localKeyDownMonitor)
+        }
     }
     
     // MARK: - Window Display
@@ -190,6 +209,11 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
         isCustomFullscreen = true
         window.level = .screenSaver  // Above everything except system dialogs
         window.setFrame(screen.frame, display: true, animate: true)
+        projectMView.resumeRenderingAfterWindowTransition()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self, self.isCustomFullscreen else { return }
+            self.projectMView.resumeRenderingAfterWindowTransition()
+        }
         
         // Hide cursor after a short delay
         NSCursor.setHiddenUntilMouseMoves(true)
@@ -218,6 +242,11 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
         // Restore pre-fullscreen frame
         if let frame = preFullscreenFrame {
             window.setFrame(frame, display: true, animate: true)
+        }
+        projectMView.resumeRenderingAfterWindowTransition()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self, !self.isCustomFullscreen else { return }
+            self.projectMView.resumeRenderingAfterWindowTransition()
         }
         
         preFullscreenFrame = nil
@@ -291,6 +320,7 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
 extension ModernProjectMWindowController: NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         guard let window = window else { return }
+        if isCustomFullscreen { return }
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: newOrigin)
     }

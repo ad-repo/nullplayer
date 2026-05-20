@@ -2,14 +2,13 @@ import AppKit
 
 /// Shared menu builder for Tripex-specific configuration UI.
 ///
-/// Tripex (ben-marsh/tripex) exposes only navigation + toggle controls —
-/// individual effects own their parameters internally, so the menu surface
-/// is materially smaller than GeissMenuBuilder.
+/// Tripex effects own most parameters internally, so this surfaces the
+/// meaningful engine-level levers instead of fake per-effect controls.
 ///
 /// Surface:
 ///   - Current effect (label, disabled)
-///   - Next / Previous / Random / Reconfigure
-///   - Hold (toggle, persists `tripex.heldEffect` state implicitly via core)
+///   - Next / Previous / Random / Randomize Settings
+///   - Hold / auto-cycle / intensity
 ///   - Show Audio Info / Show Help (toggle overlays)
 ///   - Effects submenu — checked entry tracks `currentEffectIndex`
 final class TripexMenuBuilder {
@@ -34,33 +33,32 @@ final class TripexMenuBuilder {
         menu.addItem(currentItem)
         menu.addItem(NSMenuItem.separator())
 
-        // Menu items use empty keyEquivalents — bare-key shortcuts
-        // (→ / ← / R) are wired directly in ProjectMView.keyDown,
-        // mirroring the ProjectM/Geiss control scheme.
-        let nextItem = NSMenuItem(title: "Next Effect", action: #selector(TripexMenuTarget.nextTripexEffectAction(_:)), keyEquivalent: "")
+        let nextItem = NSMenuItem(title: "Next Effect",
+                                  action: #selector(TripexMenuTarget.nextTripexEffectAction(_:)),
+                                  keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
         nextItem.target = target
         menu.addItem(nextItem)
 
-        let prevItem = NSMenuItem(title: "Previous Effect", action: #selector(TripexMenuTarget.previousTripexEffectAction(_:)), keyEquivalent: "")
+        let prevItem = NSMenuItem(title: "Previous Effect",
+                                  action: #selector(TripexMenuTarget.previousTripexEffectAction(_:)),
+                                  keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
         prevItem.target = target
         menu.addItem(prevItem)
 
-        let randomItem = NSMenuItem(title: "Random Effect", action: #selector(TripexMenuTarget.randomTripexEffectAction(_:)), keyEquivalent: "")
+        let randomItem = NSMenuItem(title: "Random Effect", action: #selector(TripexMenuTarget.randomTripexEffectAction(_:)), keyEquivalent: "r")
         randomItem.target = target
         menu.addItem(randomItem)
 
-        let reconfigureItem = NSMenuItem(title: "Reconfigure Effect", action: #selector(TripexMenuTarget.reconfigureTripexAction(_:)), keyEquivalent: "")
+        let reconfigureItem = NSMenuItem(title: "Randomize Effect Settings", action: #selector(TripexMenuTarget.reconfigureTripexAction(_:)), keyEquivalent: "")
         reconfigureItem.target = target
         menu.addItem(reconfigureItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        // Cycle controls — mirror ProjectM's Manual/Auto-Cycle/Auto-Random
-        // + Cycle Interval submenu for a uniform UX across engines.
-        let cycleOffItem = NSMenuItem(title: "Manual Only", action: #selector(TripexMenuTarget.setTripexCycleModeOff(_:)), keyEquivalent: "")
-        cycleOffItem.target = target
-        cycleOffItem.state = cycleMode == .off ? .on : .off
-        menu.addItem(cycleOffItem)
+        let holdItem = NSMenuItem(title: "Hold Current Effect", action: #selector(TripexMenuTarget.toggleTripexHoldAction(_:)), keyEquivalent: "")
+        holdItem.target = target
+        holdItem.state = visualizationView.isTripexHolding ? .on : .off
+        menu.addItem(holdItem)
 
         let cycleSeqItem = NSMenuItem(title: "Auto-Cycle", action: #selector(TripexMenuTarget.setTripexCycleModeCycle(_:)), keyEquivalent: "")
         cycleSeqItem.target = target
@@ -83,6 +81,21 @@ final class TripexMenuBuilder {
         let intervalMenuItem = NSMenuItem(title: "Cycle Interval", action: nil, keyEquivalent: "")
         intervalMenuItem.submenu = intervalMenu
         menu.addItem(intervalMenuItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let intensityMenu = NSMenu()
+        let currentIntensity = visualizationView.tripexIntensityScale
+        for (title, value) in [("0.25x", 0.25), ("0.5x", 0.5), ("1.0x", 1.0), ("1.5x", 1.5), ("2.0x", 2.0), ("3.0x", 3.0), ("4.0x", 4.0)] {
+            let item = NSMenuItem(title: title, action: #selector(TripexMenuTarget.setTripexIntensity(_:)), keyEquivalent: "")
+            item.target = target
+            item.tag = Int((value * 100).rounded())
+            item.state = abs(currentIntensity - Float(value)) < 0.01 ? .on : .off
+            intensityMenu.addItem(item)
+        }
+        let intensityMenuItem = NSMenuItem(title: "Intensity", action: nil, keyEquivalent: "")
+        intensityMenuItem.submenu = intensityMenu
+        menu.addItem(intensityMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -128,8 +141,14 @@ enum TripexCycleMode {
     func toggleTripexAudioInfoAction(_ sender: NSMenuItem)
     func toggleTripexHelpAction(_ sender: NSMenuItem)
     func selectTripexEffectFromMenu(_ sender: NSMenuItem)
+    func setTripexIntensity(_ sender: NSMenuItem)
 
-    func setTripexCycleModeOff(_ sender: Any?)
+    // Cycle mode uses a toggle-on-state pattern (no explicit "Off" action):
+    // - clicking Auto-Cycle while it shows `.on` sets mode → .off
+    // - clicking Auto-Cycle while it shows `.off` sets mode → .cycle
+    // - clicking Auto-Random follows the same pattern with .random
+    // Switching between .cycle and .random works because the inactive item
+    // shows `.off` and so its handler sets (not clears) the mode.
     func setTripexCycleModeCycle(_ sender: Any?)
     func setTripexCycleModeRandom(_ sender: Any?)
     func setTripexCycleIntervalFromMenu(_ sender: NSMenuItem)

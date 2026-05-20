@@ -3,7 +3,6 @@
 #include "AudioSource.h"
 #include <mutex>
 #include <vector>
-#include <atomic>
 
 // Host-side AudioSource: NullPlayer's audio tap pushes interleaved
 // int16 stereo @ 44100 Hz into a ring buffer; Tripex's Effect::Render
@@ -31,6 +30,8 @@ private:
     std::vector<int16> ring_;
     size_t write_pos_;
     size_t read_pos_;
-    std::atomic<size_t> available_; // samples available to read
+    // Samples available to read. Protected by mutex_ — the outer C ABI lock
+    // also serializes producer/consumer, so plain size_t is sufficient.
+    size_t available_;
     std::mutex mutex_;
 };

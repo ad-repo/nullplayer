@@ -53,7 +53,12 @@ public:
 	}
 	bool CanRenderImpl(float fElapsed)
 	{
-		return (fElapsed > 0.5);
+		// NullPlayer's port feeds Tripex a per-display-frame delta.
+		// The original gate relied on Tripex accumulating skipped frames;
+		// with per-frame timing this effect may never become renderable,
+		// leaving the previous effect frozen onscreen.
+		(void)fElapsed;
+		return true;
 	}
 
 	Error* Calculate(const CalculateParams& params) override

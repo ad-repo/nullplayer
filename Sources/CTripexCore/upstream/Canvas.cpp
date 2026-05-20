@@ -65,13 +65,10 @@ Texture* Canvas::GetTexture(int x, int y)
 Error* Canvas::Render(Renderer& renderer, const RenderState& render_state)
 {
 	Error* error;
-	std::vector<Face> faces;
-	faces.push_back(Face(0, 1, 3));
-	faces.push_back(Face(1, 2, 3));
+	Face faces[2] = { Face(0, 1, 3), Face(1, 2, 3) };
 	//WORD face[6] = { 0, 1, 3, 1, 2, 3 };
 
-	std::vector<VertexTL> v;
-	v.resize(4);
+	VertexTL v[4];
 	//	ZVertexTL v[4];
 	v[0].position.z = 1;
 	v[0].rhw = 1;
@@ -149,10 +146,9 @@ Error* Canvas::Render(Renderer& renderer, const RenderState& render_state)
 			RenderState temp_render_state = render_state;
 			temp_render_state.texture_stages[0].texture = GetTexture(hi, vi);
 
-			error = renderer.DrawIndexedPrimitive(temp_render_state, v, faces);
+			error = renderer.DrawIndexedPrimitive(temp_render_state, 4, v, 2, faces);
 			if (error) return TraceError(error);
 		}
 	}
 	return nullptr;
 }
-

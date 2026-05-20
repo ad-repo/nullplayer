@@ -160,7 +160,9 @@ public:
 		: Effect({ &envmap_texture_class })
 	{
 		obj.Start();
-		obj.flags.set(Actor::F_DRAW_Z_BUFFER);
+		// The port keeps culling disabled for D3D9/OpenGL winding parity.
+		// WaterGlobe's transparent z pre-pass then lets back/interior faces
+		// seed depth and punch black gaps into the additive pass.
 		obj.angle = 10000;
 
 		camera.position = Vector3(0, 0, -320);

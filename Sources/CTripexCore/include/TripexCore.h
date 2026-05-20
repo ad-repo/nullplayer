@@ -24,6 +24,8 @@ void              TripexCore_resize(TripexCoreHandle* handle, int width, int hei
 
 // Audio. Push interleaved int16 stereo PCM at 44100 Hz. `count` is the
 // total number of int16 samples (i.e. 2 × frame count for stereo).
+// count=0 or samples=NULL is a safe no-op; count>0 requires samples to
+// point to at least `count` int16 values.
 void              TripexCore_pushPCM(TripexCoreHandle* handle, const int16_t* samples, size_t count);
 
 // Renders one frame using the host's current GL context. Returns 0 on
@@ -42,6 +44,8 @@ void              TripexCore_setHold(TripexCoreHandle* handle, int on);
 int               TripexCore_isHolding(TripexCoreHandle* handle);
 void              TripexCore_toggleAudioInfo(TripexCoreHandle* handle);
 void              TripexCore_toggleHelp(TripexCoreHandle* handle);
+void              TripexCore_setIntensityScale(TripexCoreHandle* handle, float scale);
+float             TripexCore_getIntensityScale(TripexCoreHandle* handle);
 
 int               TripexCore_effectCount(TripexCoreHandle* handle);
 const char*       TripexCore_effectName(TripexCoreHandle* handle, int index);
@@ -49,14 +53,17 @@ int               TripexCore_currentEffectIndex(TripexCoreHandle* handle);
 // Reach `index` by issuing Prev/Next deltas; bounded to [0, effectCount).
 void              TripexCore_selectEffect(TripexCoreHandle* handle, int index);
 
-// Generic int-option store. Backed by a std::unordered_map<std::string,int>
-// inside the handle; bindings to Tripex internals come later. Returns
-// `fallback` if the key was never set.
+// Generic int-option store. Reserved for future bindings to Tripex
+// internals — currently unused by NullPlayer's Swift integration but
+// exported for C callers. Backed by a std::unordered_map<std::string,int>
+// inside the handle; returns `fallback` if the key was never set.
 void              TripexCore_setOption(TripexCoreHandle* handle, const char* key, int value);
 int               TripexCore_getOption(TripexCoreHandle* handle, const char* key, int fallback);
 
 // Last error description (NUL-terminated, owned by the handle, valid until
 // the next ABI call). Returns empty string when no error is pending.
+// Exported as part of the public C ABI; Swift currently reads errors via
+// _create returning NULL but C callers can poll this directly.
 const char*       TripexCore_lastError(TripexCoreHandle* handle);
 
 #ifdef __cplusplus

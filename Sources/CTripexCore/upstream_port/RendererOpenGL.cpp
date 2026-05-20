@@ -14,7 +14,26 @@
 #include "Face.h"
 #include <OpenGL/gl3.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <vector>
+
+// Drain glGetError and log non-GL_NO_ERROR codes from `where`. Throttled so
+// a persistent error doesn't flood stderr. Compiled out in release builds.
+static void LogGLErrors(const char* where)
+{
+#ifndef NDEBUG
+    static size_t s_count = 0;
+    GLenum e;
+    while ((e = glGetError()) != GL_NO_ERROR) {
+        if ((++s_count % 64) == 1) {
+            fprintf(stderr, "[Tripex] GL error 0x%04x at %s (count=%zu)\n",
+                    (unsigned)e, where, s_count);
+        }
+    }
+#else
+    (void)where;
+#endif
+}
 
 // Image decoding is split into a separate translation unit so the
 // CoreGraphics / ImageIO headers don't collide with Tripex's `Point` /
@@ -64,8 +83,8 @@ void OpenGLTexture::EnsureUploaded()
         // Source is strided; destination is tightly packed width*height.
         const ColorRgb* pal = (const ColorRgb*)cpu_palette;
         const uint8* src = (const uint8*)cpu_data;
-        std::vector<uint8> rgba((size_t)width * (size_t)height * 4);
-        uint8* dst = rgba.data();
+        upload_scratch.resize((size_t)width * (size_t)height * 4);
+        uint8* dst = upload_scratch.data();
         for (int y = 0; y < height; y++) {
             const uint8* row = src + (size_t)y * cpu_data_stride;
             for (int x = 0; x < width; x++) {
@@ -77,7 +96,7 @@ void OpenGLTexture::EnsureUploaded()
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
-                        GL_BGRA, GL_UNSIGNED_BYTE, rgba.data());
+                        GL_BGRA, GL_UNSIGNED_BYTE, upload_scratch.data());
     } else {
         // X8R8G8B8 strided source. Pixels are 4 bytes; row stride is in bytes.
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
@@ -91,9 +110,22 @@ void OpenGLTexture::EnsureUploaded()
     glBindTexture(GL_TEXTURE_2D, (GLuint)prev);
 }
 
-Error* OpenGLTexture::GetPixelData(std::vector<uint8>& /*buffer*/) const
+Error* OpenGLTexture::GetPixelData(std::vector<uint8>& buffer) const
 {
-    return new Error("OpenGLTexture::GetPixelData not implemented");
+    if (!gl_id) {
+        return new Error("OpenGLTexture::GetPixelData: no GL texture");
+    }
+
+    std::vector<uint8> pixels((size_t)width * (size_t)height * 4);
+
+    GLint prev = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)gl_id);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels.data());
+    glBindTexture(GL_TEXTURE_2D, (GLuint)prev);
+
+    buffer.swap(pixels);
+    return nullptr;
 }
 
 ////// RendererOpenGL //////
@@ -106,6 +138,32 @@ RendererOpenGL::RendererOpenGL(int width, int height)
 
 RendererOpenGL::~RendererOpenGL()
 {
+    // Caller must have a current GL context (host tears down the engine
+    // while its context is still bound — see TripexEngine.cleanup()).
+    if (program_) {
+        glDeleteProgram((GLuint)program_);
+        program_ = 0;
+    }
+    if (vao_) {
+        GLuint v = (GLuint)vao_;
+        glDeleteVertexArrays(1, &v);
+        vao_ = 0;
+    }
+    if (vbo_) {
+        GLuint b = (GLuint)vbo_;
+        glDeleteBuffers(1, &b);
+        vbo_ = 0;
+    }
+    if (ibo_) {
+        GLuint b = (GLuint)ibo_;
+        glDeleteBuffers(1, &b);
+        ibo_ = 0;
+    }
+    if (default_white_) {
+        GLuint t = (GLuint)default_white_;
+        glDeleteTextures(1, &t);
+        default_white_ = 0;
+    }
 }
 
 void RendererOpenGL::Resize(int width, int height)
@@ -135,7 +193,13 @@ Rect<int> RendererOpenGL::GetViewportRect() const
 
 Rect<float> RendererOpenGL::GetClipRect() const
 {
-    return Rect<float>(-1.0f, -1.0f, 1.0f, 1.0f);
+    // Actor.cpp clips twice: first in camera space for z, then after its
+    // CPU projection in D3D-style screen pixels. Match RendererDirect3d's
+    // viewport-space clip rectangle here; returning NDC [-1, 1] clips away
+    // nearly every Actor-projected effect while grid effects still render.
+    return Rect<float>(-0.25f, -0.25f,
+                       (float)width_ - 0.25f,
+                       (float)height_ - 0.25f);
 }
 
 static GLenum GLTextureFormatFor(TextureFormat fmt)
@@ -190,6 +254,7 @@ Error* RendererOpenGL::CreateTexture(int width, int height, TextureFormat format
     }
 
     out_texture = tex;
+    LogGLErrors("CreateTexture");
     return nullptr;
 }
 
@@ -219,6 +284,7 @@ Error* RendererOpenGL::CreateTextureFromImage(const void* data, uint32 data_size
     free(rgba);
 
     out_texture = tex;
+    LogGLErrors("CreateTextureFromImage");
     return nullptr;
 }
 
@@ -264,6 +330,7 @@ in vec2 v_texcoord;
 
 uniform sampler2D u_tex;
 uniform int       u_enable_tex;
+uniform int       u_enable_specular;
 
 out vec4 frag_color;
 
@@ -272,13 +339,15 @@ void main() {
     if (u_enable_tex != 0) {
         base = base * texture(u_tex, v_texcoord);
     }
-    frag_color = vec4(base.rgb + v_specular.rgb, base.a);
+    vec3 specular = (u_enable_specular != 0) ? v_specular.rgb : vec3(0.0);
+    frag_color = vec4(base.rgb + specular, base.a);
 }
 )";
 
 #include <stdio.h>
+#include <string>
 
-static unsigned int CompileShader(unsigned int kind, const char* src)
+static unsigned int CompileShader(unsigned int kind, const char* src, std::string& out_err)
 {
     GLuint sh = glCreateShader(kind);
     glShaderSource(sh, 1, &src, nullptr);
@@ -290,22 +359,32 @@ static unsigned int CompileShader(unsigned int kind, const char* src)
         glGetShaderiv(sh, GL_INFO_LOG_LENGTH, &log_len);
         std::vector<char> log(log_len > 0 ? log_len : 1, 0);
         glGetShaderInfoLog(sh, (GLsizei)log.size(), nullptr, log.data());
-        fprintf(stderr, "[Tripex] shader compile failed (kind=%u):\n%s\n", kind, log.data());
+        const char* kind_str = (kind == GL_VERTEX_SHADER) ? "vertex" : "fragment";
+        fprintf(stderr, "[Tripex] %s shader compile failed:\n%s\n", kind_str, log.data());
+        out_err = std::string("shader compile failed (") + kind_str + "): " + log.data();
         glDeleteShader(sh);
         return 0;
     }
     return sh;
 }
 
+// Last shader/link error, surfaced by DrawIndexedPrimitive when EnsurePipeline
+// fails. Translation-unit-local so the renderer header stays GL-agnostic.
+static std::string g_pipeline_error;
+
 bool RendererOpenGL::EnsurePipeline()
 {
     if (program_ != 0) return true;
+    if (pipeline_failed_) return false;
 
-    GLuint vs = CompileShader(GL_VERTEX_SHADER, kVertexShaderSrc);
-    GLuint fs = CompileShader(GL_FRAGMENT_SHADER, kFragmentShaderSrc);
+    std::string vs_err, fs_err;
+    GLuint vs = CompileShader(GL_VERTEX_SHADER, kVertexShaderSrc, vs_err);
+    GLuint fs = CompileShader(GL_FRAGMENT_SHADER, kFragmentShaderSrc, fs_err);
     if (!vs || !fs) {
         if (vs) glDeleteShader(vs);
         if (fs) glDeleteShader(fs);
+        g_pipeline_error = vs_err.empty() ? fs_err : vs_err;
+        pipeline_failed_ = true;
         return false;
     }
 
@@ -329,14 +408,18 @@ bool RendererOpenGL::EnsurePipeline()
         std::vector<char> log(log_len > 0 ? log_len : 1, 0);
         glGetProgramInfoLog(prog, (GLsizei)log.size(), nullptr, log.data());
         fprintf(stderr, "[Tripex] program link failed:\n%s\n", log.data());
+        g_pipeline_error = std::string("program link failed: ") + log.data();
         glDeleteProgram(prog);
+        pipeline_failed_ = true;
         return false;
     }
+    g_pipeline_error.clear();
 
     program_ = (unsigned int)prog;
     uni_viewport_   = glGetUniformLocation(prog, "u_viewport");
     uni_tex_        = glGetUniformLocation(prog, "u_tex");
     uni_enable_tex_ = glGetUniformLocation(prog, "u_enable_tex");
+    uni_enable_specular_ = glGetUniformLocation(prog, "u_enable_specular");
 
     GLuint vao = 0, vbo = 0, ibo = 0;
     glGenVertexArrays(1, &vao);
@@ -386,6 +469,24 @@ bool RendererOpenGL::EnsurePipeline()
     return true;
 }
 
+static void UploadStreamingBuffer(GLenum target,
+                                  size_t& capacity_bytes,
+                                  size_t required_bytes,
+                                  const void* data)
+{
+    if (required_bytes == 0) return;
+
+    if (required_bytes > capacity_bytes) {
+        capacity_bytes = required_bytes + (required_bytes / 2);
+        glBufferData(target, (GLsizeiptr)capacity_bytes, nullptr, GL_STREAM_DRAW);
+    } else {
+        // Orphan the previous store so the driver does not have to wait for
+        // the last draw using this buffer before accepting new data.
+        glBufferData(target, (GLsizeiptr)capacity_bytes, nullptr, GL_STREAM_DRAW);
+    }
+    glBufferSubData(target, 0, (GLsizeiptr)required_bytes, data);
+}
+
 static void ApplyBlendMode(BlendMode mode)
 {
     switch (mode) {
@@ -406,11 +507,11 @@ static void ApplyBlendMode(BlendMode mode)
             break;
         case BlendMode::OverlayBackground:
             glEnable(GL_BLEND);
-            glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
             break;
         case BlendMode::OverlayForeground:
             glEnable(GL_BLEND);
-            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR);
             break;
     }
 }
@@ -424,7 +525,7 @@ static void ApplyDepthMode(DepthMode mode)
             break;
         case DepthMode::Normal:
             glEnable(GL_DEPTH_TEST);
-            glDepthFunc(GL_LEQUAL);
+            glDepthFunc(GL_LESS);
             glDepthMask(GL_TRUE);
             break;
         case DepthMode::Stencil:
@@ -442,10 +543,15 @@ Error* RendererOpenGL::DrawIndexedPrimitive(const RenderState& render_state,
                                             const Face* faces)
 {
     if (!num_vertices || !num_faces || !vertices || !faces) return nullptr;
-    if (!EnsurePipeline()) return new Error("RendererOpenGL: pipeline init failed");
+    if (!EnsurePipeline()) {
+        std::string msg = "RendererOpenGL: pipeline init failed";
+        if (!g_pipeline_error.empty()) { msg += ": "; msg += g_pipeline_error; }
+        return new Error(msg.c_str());
+    }
 
     glUseProgram((GLuint)program_);
     glUniform2f((GLint)uni_viewport_, (float)width_, (float)height_);
+    glUniform1i((GLint)uni_enable_specular_, render_state.enable_specular ? 1 : 0);
 
     // Texture binding (single stage; matches RenderState::NUM_TEXTURE_STAGES).
     const TextureStage& stage = render_state.texture_stages[0];
@@ -482,16 +588,19 @@ Error* RendererOpenGL::DrawIndexedPrimitive(const RenderState& render_state,
 
     glBindVertexArray((GLuint)vao_);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)vbo_);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(num_vertices * sizeof(VertexTL)),
-                 vertices, GL_STREAM_DRAW);
+    UploadStreamingBuffer(GL_ARRAY_BUFFER,
+                          vbo_capacity_bytes_,
+                          num_vertices * sizeof(VertexTL),
+                          vertices);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)ibo_);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(num_faces * sizeof(Face)),
-                 faces, GL_STREAM_DRAW);
+    UploadStreamingBuffer(GL_ELEMENT_ARRAY_BUFFER,
+                          ibo_capacity_bytes_,
+                          num_faces * sizeof(Face),
+                          faces);
 
     glDrawElements(GL_TRIANGLES, (GLsizei)(num_faces * 3), GL_UNSIGNED_SHORT, nullptr);
 
-    glBindVertexArray(0);
-    glUseProgram(0);
+    LogGLErrors("DrawIndexedPrimitive");
     return nullptr;
 }

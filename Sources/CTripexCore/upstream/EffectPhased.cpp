@@ -91,7 +91,11 @@ public:
 
 	bool CanRenderImpl(float fElapsed)
 	{
-		return fElapsed > 0.5f;//(fElapsed > 0.5f);
+		// See EffectMotionBlur1: after the port timing fix, fElapsed is
+		// a per-display-frame delta rather than an accumulated skip
+		// counter, so threshold-gating can stall the selected effect.
+		(void)fElapsed;
+		return true;
 	}
 };
 
