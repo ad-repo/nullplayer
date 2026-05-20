@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.22.1
+
+### Bug Fixes
+
+- **Audio route-change exception guarded** — `AVAudioEngine` graph reconnects now catch Objective-C exceptions raised by `AVAudioEngine.connect(_:to:format:)` during route churn. A failed reconnect is deferred and retried through the existing audio graph recovery path instead of aborting the app.
+
 ## 0.22.0
 
 ### New Features

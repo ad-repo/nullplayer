@@ -178,6 +178,13 @@ When a rebuild is deferred:
 - If a rebuild cannot restart playback after nodes were stopped/disconnected, move the engine to a non-playing state, stop time updates, and keep the rebuild deferred for retry.
 - Local files loaded in `.stopped` state still need to be re-scheduled after rebuild, but must not auto-play.
 
+`AVAudioEngine.connect(_:to:format:)` can raise an Objective-C `NSException` from `AVAudioEngineGraph::UpdateGraphAfterReconfig` during route churn. Swift `do/catch` does not catch this. All route-change graph reconnect work must go through the `ObjCExceptionCatcher` bridge (`NPObjCExceptionCatch`) and treat a caught exception as a failed rebuild:
+
+- Log the exception reason.
+- Set `audioGraphRebuildDeferredForCast = true`.
+- Move local playback to a non-playing state if nodes were already stopped/disconnected.
+- Schedule the normal deferred rebuild retry path instead of allowing the process to abort.
+
 This prevents `AVAudioEngineGraph::UpdateGraphAfterReconfig` exceptions during cast/room/output churn and keeps the next local playback action intact once routing stabilizes.
 
 ### Device Preference Persistence

@@ -108,6 +108,12 @@ let package = Package(
             dependencies: [],
             path: "Sources/NullPlayerCore"
         ),
+        .target(
+            name: "ObjCExceptionCatcher",
+            dependencies: [],
+            path: "Sources/ObjCExceptionCatcher",
+            publicHeadersPath: "include"
+        ),
         // System library target for libprojectM (ProjectM visualization)
         // To enable projectM support:
         // 1. Build libprojectM v4.1.6+ as a universal binary
@@ -130,6 +136,7 @@ let package = Package(
             name: "NullPlayer",
             dependencies: [
                 "NullPlayerCore",
+                "ObjCExceptionCatcher",
                 "CVisClassicCore",
                 "CGeissCore",
                 "CTripexCore",

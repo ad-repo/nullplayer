@@ -5,6 +5,7 @@ import CoreAudio
 import AudioToolbox
 import AudioStreaming
 import NullPlayerCore
+import ObjCExceptionCatcher
 
 // MARK: - Notifications
 
@@ -1149,6 +1150,27 @@ class AudioEngine {
         state = fallbackState
         stopTimeUpdates()
     }
+
+    private func reconnectAudioGraph(format mixerFormat: AVAudioFormat) -> Bool {
+        var exceptionError: NSError?
+        let connected = NPObjCExceptionCatch({
+            self.engine.connect(self.playerNode, to: self.mixerNode, format: mixerFormat)
+            self.engine.connect(self.crossfadePlayerNode, to: self.mixerNode, format: mixerFormat)
+            self.engine.connect(self.mixerNode, to: self.eqNode, format: mixerFormat)
+            self.engine.connect(self.eqNode, to: self.engine.mainMixerNode, format: mixerFormat)
+        }, &exceptionError)
+
+        guard connected else {
+            let reason = exceptionError?.localizedFailureReason
+                ?? exceptionError?.localizedDescription
+                ?? "unknown Objective-C exception"
+            NSLog("AudioEngine: AVAudioEngine graph reconnect failed; deferring rebuild: %@", reason)
+            audioGraphRebuildDeferredForCast = true
+            return false
+        }
+
+        return true
+    }
     
     /// Rebuild the audio graph with the new output format
     /// Called after a device change that affects the audio format
@@ -1199,11 +1221,16 @@ class AudioEngine {
         engine.disconnectNodeOutput(mixerNode)
         engine.disconnectNodeOutput(eqNode)
         
-        // Reconnect all nodes with new format
-        engine.connect(playerNode, to: mixerNode, format: mixerFormat)
-        engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
-        engine.connect(mixerNode, to: eqNode, format: mixerFormat)
-        engine.connect(eqNode, to: engine.mainMixerNode, format: mixerFormat)
+        // Reconnect all nodes with new format. AVAudioEngine raises NSException
+        // for some route-change graph states, so Swift do/catch is not enough.
+        guard reconnectAudioGraph(format: mixerFormat) else {
+            moveToNonPlayingStateAfterGraphRebuildFailure(
+                position: resumePosition,
+                fallbackState: wasStopped ? .stopped : .paused
+            )
+            scheduleDeferredAudioGraphRebuildRetry()
+            return
+        }
 
         if tapWasInstalled {
             installSpectrumTap(format: nil)
