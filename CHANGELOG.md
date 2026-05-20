@@ -2,6 +2,10 @@
 
 ## 0.22.1
 
+### Improvements
+
+- **Library browser columns are configurable across UI modes** — classic and modern library browsers now share the same Artist, Album, and Track column inventories, with sectioned right-click header menus for Artists and Albums. Classic column visibility persists separately from Modern, and the Title column remains locked on.
+
 ### Bug Fixes
 
 - **Audio route-change exception guarded** — `AVAudioEngine` graph reconnects now catch Objective-C exceptions raised by `AVAudioEngine.connect(_:to:format:)` during route churn. A failed reconnect is deferred and retried through the existing audio graph recovery path instead of aborting the app.
