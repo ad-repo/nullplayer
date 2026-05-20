@@ -73,4 +73,19 @@ enum LibraryColumnVisibility {
         }
         return []
     }
+
+    static func channelSortValue(_ label: String) -> Double {
+        switch label {
+        case "Mono": return 1
+        case "Stereo": return 2
+        case "5.1": return 6
+        case "7.1": return 8
+        default:
+            let decimalSeparator = UnicodeScalar(".")
+            let numeric = label.unicodeScalars.filter {
+                CharacterSet.decimalDigits.contains($0) || $0 == decimalSeparator
+            }
+            return Double(String(String.UnicodeScalarView(numeric))) ?? 0
+        }
+    }
 }

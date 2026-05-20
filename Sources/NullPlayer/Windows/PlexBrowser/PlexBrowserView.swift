@@ -41,7 +41,7 @@ enum BrowserSource: Equatable, Codable {
             return "INTERNET RADIO"
         }
     }
-    
+
     /// Short name for compact display
     var shortName: String {
         switch self {
@@ -332,6 +332,7 @@ class PlexBrowserView: NSView {
 
     /// Column being resized (id) and resize state
     private var resizingColumnId: String?
+    private var resizingColumnGroup: LibraryColumnVisibilityGroup?
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0
     
@@ -427,26 +428,48 @@ class PlexBrowserView: NSView {
 
     private func hasArtistRows() -> Bool {
         displayItems.contains {
+            guard $0.indentLevel == 0 else { return false }
             switch $0.type {
             case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist: return true
             default: return false
             }
         }
     }
-    
-    /// Get columns for a specific item (nil = use simple list rendering)
-    private func columnsForItem(_ item: PlexDisplayItem) -> [BrowserColumn]? {
+
+    private func columnGroup(for item: PlexDisplayItem) -> LibraryColumnVisibilityGroup? {
         switch item.type {
         case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack:
-            return visibleColumns(allColumns: BrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
+            return .track
         case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum:
-            return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
+            return .album
         case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist:
-            // Only show columns for top-level artists (not nested under search results)
-            if item.indentLevel == 0 {
-                return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
-            }
+            return item.indentLevel == 0 ? .artist : nil
+        default:
             return nil
+        }
+    }
+
+    private func currentColumnGroup() -> LibraryColumnVisibilityGroup? {
+        if hasTrackRows() { return .track }
+        if hasAlbumRows() { return .album }
+        if hasArtistRows() { return .artist }
+        return nil
+    }
+
+    /// Get columns for a specific item (nil = use simple list rendering)
+    private func columnsForItem(_ item: PlexDisplayItem) -> [BrowserColumn]? {
+        switch columnGroup(for: item) {
+        case .track:
+            return visibleColumns(allColumns: BrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
+        case .album:
+            return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
+        case .artist:
+            return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
+        case nil:
+            break
+        }
+
+        switch item.type {
         case .radioStation:
             if isInternetRadioItem(item) {
                 return BrowserColumn.internetRadioColumns
@@ -458,28 +481,54 @@ class PlexBrowserView: NSView {
     }
     
     /// Get width for a column (uses stored width or default)
-    private func widthForColumn(_ column: BrowserColumn, availableWidth: CGFloat, columns: [BrowserColumn]) -> CGFloat {
+    private func columnWidthKey(_ columnId: String, group: LibraryColumnVisibilityGroup) -> String {
+        "\(group.rawValue):\(columnId)"
+    }
+
+    private func storedColumnWidth(for column: BrowserColumn, group: LibraryColumnVisibilityGroup?) -> CGFloat? {
+        guard let group else { return columnWidths[column.id] }
+        return columnWidths[columnWidthKey(column.id, group: group)]
+    }
+
+    private func setColumnWidth(_ width: CGFloat, for columnId: String, group: LibraryColumnVisibilityGroup) {
+        columnWidths[columnWidthKey(columnId, group: group)] = width
+    }
+
+    private func widthForColumn(
+        _ column: BrowserColumn,
+        availableWidth: CGFloat,
+        columns: [BrowserColumn],
+        group: LibraryColumnVisibilityGroup?
+    ) -> CGFloat {
         if column.id == "title" {
             // Title column gets remaining space
             let fixedWidth = columns.filter { $0.id != "title" }.reduce(0) { 
-                $0 + (columnWidths[$1.id] ?? $1.minWidth)
+                $0 + (storedColumnWidth(for: $1, group: group) ?? $1.minWidth)
             }
             return max(column.minWidth, availableWidth - fixedWidth - 8)
         }
-        return columnWidths[column.id] ?? column.minWidth
+        return storedColumnWidth(for: column, group: group) ?? column.minWidth
     }
     
     /// Calculate total width needed for all columns
-    private func totalColumnsWidth(columns: [BrowserColumn]) -> CGFloat {
+    private func totalColumnsWidth(columns: [BrowserColumn], group: LibraryColumnVisibilityGroup?) -> CGFloat {
         var total: CGFloat = 8  // Initial padding
         for column in columns {
             if column.id == "title" {
                 total += column.minWidth  // Title uses minWidth for total calculation
             } else {
-                total += columnWidths[column.id] ?? column.minWidth
+                total += storedColumnWidth(for: column, group: group) ?? column.minWidth
             }
         }
         return total
+    }
+
+    private func clampHorizontalScrollOffset() {
+        let columns = currentVisibleColumns()
+        let group = currentColumnGroup()
+        let availableWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth
+        let maxOffset = max(0, totalColumnsWidth(columns: columns, group: group) - availableWidth)
+        horizontalScrollOffset = max(0, min(horizontalScrollOffset, maxOffset))
     }
     
     /// Save column widths to UserDefaults
@@ -490,8 +539,22 @@ class PlexBrowserView: NSView {
     /// Load column widths from UserDefaults
     private func loadColumnWidths() {
         if let saved = UserDefaults.standard.dictionary(forKey: "BrowserColumnWidths") as? [String: CGFloat] {
-            columnWidths = saved
+            columnWidths = migrateColumnWidths(saved)
         }
+    }
+
+    private func migrateColumnWidths(_ saved: [String: CGFloat]) -> [String: CGFloat] {
+        var migrated: [String: CGFloat] = [:]
+        for (key, width) in saved {
+            if key.contains(":") {
+                migrated[key] = width
+                continue
+            }
+            for group in LibraryColumnVisibilityGroup.allCases where allColumns(for: group).contains(where: { $0.id == key }) {
+                migrated[columnWidthKey(key, group: group)] = width
+            }
+        }
+        return migrated
     }
 
     private func saveVisibleColumns() {
@@ -522,7 +585,10 @@ class PlexBrowserView: NSView {
         if hasAlbumRows() {
             return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
         }
-        return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
+        if hasArtistRows() {
+            return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
+        }
+        return []
     }
     
     /// Apply column sort to display items
@@ -610,10 +676,16 @@ class PlexBrowserView: NSView {
             
             // Try numeric comparison for numeric columns
             if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
-               sortColumn.id == "albums" || sortColumn.id == "discNum" || sortColumn.id == "channels" {
+               sortColumn.id == "albums" || sortColumn.id == "discNum" {
                 let aNum = Int(aVal.components(separatedBy: "-").last ?? aVal) ?? 0
                 let bNum = Int(bVal.components(separatedBy: "-").last ?? bVal) ?? 0
                 return ascending ? aNum < bNum : aNum > bNum
+            }
+
+            if sortColumn.id == "channels" {
+                let aChannels = LibraryColumnVisibility.channelSortValue(aVal)
+                let bChannels = LibraryColumnVisibility.channelSortValue(bVal)
+                return ascending ? aChannels < bChannels : aChannels > bChannels
             }
             
             // Duration comparison (convert to seconds)
@@ -3259,7 +3331,8 @@ class PlexBrowserView: NSView {
         let totalWidth = rect.width
         
         // Calculate total columns width to determine if horizontal scroll is needed
-        let columnsWidth = totalColumnsWidth(columns: columns)
+        let group = currentColumnGroup()
+        let columnsWidth = totalColumnsWidth(columns: columns, group: group)
         let maxHorizontalScroll = max(0, columnsWidth - totalWidth)
         
         // Clamp horizontal scroll offset
@@ -3285,7 +3358,7 @@ class PlexBrowserView: NSView {
         
         var x = rect.minX + 4 - horizontalScrollOffset
         for (index, column) in columns.enumerated() {
-            let width = widthForColumn(column, availableWidth: totalWidth, columns: columns)
+            let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
             let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
                 (hasInternetRadioColumns && column.id == "rating")
             
@@ -3359,8 +3432,9 @@ class PlexBrowserView: NSView {
         let smallFont = NSFont.systemFont(ofSize: 9)
         
         var x = rect.minX + indent + 4 - horizontalScrollOffset
+        let group = columnGroup(for: item)
         for column in columns {
-            let width = widthForColumn(column, availableWidth: totalWidth, columns: columns)
+            let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
             let value = item.columnValue(for: column)
             let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
                 (isInternetRadioItem(item) && column.id == "rating")
@@ -6772,8 +6846,9 @@ class PlexBrowserView: NSView {
         let indent = CGFloat(item.indentLevel) * 16
         let availableWidth = rowRect.width - indent
         var x = rowRect.minX + indent + 4 - horizontalScrollOffset
+        let group = columnGroup(for: item)
         for column in columns {
-            let width = widthForColumn(column, availableWidth: availableWidth, columns: columns)
+            let width = widthForColumn(column, availableWidth: availableWidth, columns: columns, group: group)
             if column.id == "rating" {
                 let cellRect = NSRect(x: x, y: rowRect.minY, width: width, height: rowRect.height)
                 guard cellRect.contains(skinPoint) else { return nil }
@@ -6808,13 +6883,14 @@ class PlexBrowserView: NSView {
         guard headerRect.contains(skinPoint) else { return nil }
         
         guard let columns = headerColumnsForCurrentContent() else { return nil }
+        let group = currentColumnGroup()
         
         // Check if near a column separator (within 4 pixels)
         var x = headerRect.minX + 4
         let hitMargin: CGFloat = 4
         
         for (index, column) in columns.enumerated() {
-            let width = widthForColumn(column, availableWidth: headerRect.width, columns: columns)
+            let width = widthForColumn(column, availableWidth: headerRect.width, columns: columns, group: group)
             let separatorX = x + width
             
             // Check if click is near the separator (except for last column)
@@ -6853,12 +6929,13 @@ class PlexBrowserView: NSView {
         }
         
         guard let columns = headerColumnsForCurrentContent() else { return nil }
+        let group = currentColumnGroup()
         
         // Find which column was clicked
         var x = headerRect.minX + 4
         
         for column in columns {
-            let width = widthForColumn(column, availableWidth: headerRect.width, columns: columns)
+            let width = widthForColumn(column, availableWidth: headerRect.width, columns: columns, group: group)
             if skinPoint.x >= x && skinPoint.x < x + width {
                 return column.id
             }
@@ -7079,6 +7156,7 @@ class PlexBrowserView: NSView {
         }
 
         setVisibleColumnIds(ids, for: group)
+        clampHorizontalScrollOffset()
         needsDisplay = true
     }
 
@@ -7087,8 +7165,9 @@ class PlexBrowserView: NSView {
               let group = LibraryColumnVisibilityGroup(rawValue: rawValue) else { return }
 
         setVisibleColumnIds(defaultColumnIds(for: group), for: group)
-        let columnIds = Set(allColumns(for: group).map { $0.id })
-        columnWidths = columnWidths.filter { !columnIds.contains($0.key) }
+        let prefix = "\(group.rawValue):"
+        columnWidths = columnWidths.filter { !$0.key.hasPrefix(prefix) }
+        clampHorizontalScrollOffset()
         needsDisplay = true
     }
     
@@ -7432,8 +7511,17 @@ class PlexBrowserView: NSView {
         // Check for column resize
         if let columnId = hitTestColumnResize(at: skinPoint) {
             resizingColumnId = columnId
+            resizingColumnGroup = currentColumnGroup()
             resizeStartX = skinPoint.x
-            resizeStartWidth = columnWidths[columnId] ?? BrowserColumn.findColumn(id: columnId)?.minWidth ?? 50
+            let group = resizingColumnGroup
+            let columns = currentVisibleColumns()
+            let headerWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth
+            resizeStartWidth = widthForColumn(
+                BrowserColumn.findColumn(id: columnId) ?? .title,
+                availableWidth: headerWidth,
+                columns: columns,
+                group: group
+            )
             NSCursor.resizeLeftRight.push()
             return
         }
@@ -8742,13 +8830,13 @@ class PlexBrowserView: NSView {
     
     override func mouseDragged(with event: NSEvent) {
         // Handle column resize dragging
-        if let columnId = resizingColumnId {
+        if let columnId = resizingColumnId, let group = resizingColumnGroup {
             let point = convert(event.locationInWindow, from: nil)
             let skinPoint = convertToSkinCoordinates(point)
             let deltaX = skinPoint.x - resizeStartX
             let minWidth = BrowserColumn.findColumn(id: columnId)?.minWidth ?? 30
             let newWidth = max(minWidth, resizeStartWidth + deltaX)
-            columnWidths[columnId] = newWidth
+            setColumnWidth(newWidth, for: columnId, group: group)
             needsDisplay = true
             return
         }
@@ -8806,6 +8894,7 @@ class PlexBrowserView: NSView {
         // End column resizing
         if resizingColumnId != nil {
             resizingColumnId = nil
+            resizingColumnGroup = nil
             NSCursor.pop()
         }
         
@@ -8880,31 +8969,16 @@ class PlexBrowserView: NSView {
         let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
         let totalHeight = CGFloat(displayItems.count) * itemHeight
         
-        // Determine which columns are active for horizontal scroll calculation
-        let columns: [BrowserColumn]?
-        if displayItems.contains(where: { 
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
-        }) {
-            columns = BrowserColumn.trackColumns
-        } else if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
-        }) {
-            columns = BrowserColumn.albumColumns
-        } else if displayItems.contains(where: {
-            switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist: return true; default: return false }
-        }) {
-            columns = BrowserColumn.artistColumns
-        } else {
-            columns = nil
-        }
+        let columns = currentVisibleColumns()
+        let group = currentColumnGroup()
         
         var needsRedraw = false
         
         // Handle horizontal scrolling (shift+scroll or trackpad horizontal gesture)
-        if let cols = columns, (event.modifierFlags.contains(.shift) || abs(event.deltaX) > abs(event.deltaY)) {
+        if !columns.isEmpty, (event.modifierFlags.contains(.shift) || abs(event.deltaX) > abs(event.deltaY)) {
             let alphabetWidth = Layout.alphabetWidth
             let availableWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - alphabetWidth
-            let columnsWidth = totalColumnsWidth(columns: cols)
+            let columnsWidth = totalColumnsWidth(columns: columns, group: group)
             let maxHorizontalScroll = max(0, columnsWidth - availableWidth)
             
             if maxHorizontalScroll > 0 {
@@ -17224,7 +17298,7 @@ extension PlexDisplayItem {
         case "lastPlayed":
             return ""
         case "path":
-            return track.media.first?.parts.first?.file?.components(separatedBy: "/").last ?? ""
+            return track.media.first?.parts.first?.file ?? ""
         default:
             return ""
         }
@@ -17270,7 +17344,7 @@ extension PlexDisplayItem {
         case "lastPlayed":
             return ""
         case "path":
-            return song.path?.components(separatedBy: "/").last ?? ""
+            return song.path ?? ""
         default:
             return ""
         }
@@ -17316,7 +17390,7 @@ extension PlexDisplayItem {
         case "lastPlayed":
             return track.lastPlayed.map { Self.formatDate($0) } ?? ""
         case "path":
-            return track.url.lastPathComponent
+            return track.url.path
         default:
             return ""
         }
@@ -17465,7 +17539,7 @@ extension PlexDisplayItem {
         case "lastPlayed":
             return ""
         case "path":
-            return song.path?.components(separatedBy: "/").last ?? ""
+            return song.path ?? ""
         default:
             return ""
         }
@@ -17546,7 +17620,7 @@ extension PlexDisplayItem {
         case "lastPlayed":
             return ""
         case "path":
-            return song.path?.components(separatedBy: "/").last ?? ""
+            return song.path ?? ""
         default:
             return ""
         }

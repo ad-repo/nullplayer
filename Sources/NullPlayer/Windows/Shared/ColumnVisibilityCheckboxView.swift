@@ -18,7 +18,7 @@ final class ColumnVisibilityCheckboxView: NSView {
         button.target = self
         button.action = #selector(toggleFromButton)
         button.frame.origin = NSPoint(x: 16, y: (frame.height - button.frame.height) / 2)
-        button.autoresizingMask = [.width, .height]
+        button.autoresizingMask = []
         addSubview(button)
     }
 

@@ -108,4 +108,12 @@ final class LibraryColumnVisibilityTests: XCTestCase {
         XCTAssertEqual(LibraryColumnVisibilityGroup.album.resetTitle, "Reset Album Columns")
         XCTAssertEqual(LibraryColumnVisibilityGroup.track.resetTitle, "Reset Track Columns")
     }
+
+    func testChannelSortValueMapsFormattedLabelsToComparableChannelCounts() {
+        XCTAssertEqual(LibraryColumnVisibility.channelSortValue("Mono"), 1)
+        XCTAssertEqual(LibraryColumnVisibility.channelSortValue("Stereo"), 2)
+        XCTAssertEqual(LibraryColumnVisibility.channelSortValue("5.1"), 6)
+        XCTAssertEqual(LibraryColumnVisibility.channelSortValue("7.1"), 8)
+        XCTAssertEqual(LibraryColumnVisibility.channelSortValue("10ch"), 10)
+    }
 }
