@@ -349,6 +349,8 @@ When audio isn't playing:
 ### Local Playback (AVAudioEngine)
 MP3, M4A, AAC, WAV, AIFF, FLAC, ALAC, OGG
 
+Route-change graph rebuilds must catch Objective-C exceptions from `AVAudioEngine.connect(_:to:format:)` via the `ObjCExceptionCatcher` bridge. If reconnect raises `AVAudioEngineGraph::UpdateGraphAfterReconfig`, defer the rebuild and retry through the existing cast/route-stabilization path instead of relying on Swift `do/catch`.
+
 ### Streaming Playback (AudioStreaming)
 HTTP/HTTPS URLs with MP3, AAC, Ogg Vorbis
 
