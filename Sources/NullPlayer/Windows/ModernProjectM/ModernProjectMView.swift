@@ -11,7 +11,7 @@ import AppKit
 // =============================================================================
 
 /// Modern ProjectM visualization view with full modern skin support
-class ModernProjectMView: NSView, GeissMenuTarget {
+class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
     
     // MARK: - Properties
     
@@ -54,12 +54,17 @@ class ModernProjectMView: NSView, GeissMenuTarget {
     
     /// Current preset cycle mode
     private var presetCycleMode: PresetCycleMode = .off
-    
+
     /// Timer for preset cycling
     private var presetCycleTimer: Timer?
-    
+
     /// Cycle interval in seconds
     private var presetCycleInterval: TimeInterval = 30.0
+
+    /// Tripex cycle state — mirrors ProjectM controls for uniform UX.
+    private var tripexCycleMode: PresetCycleMode = .cycle
+    private var tripexCycleTimer: Timer?
+    private var tripexCycleInterval: TimeInterval = 30.0
 
     /// Store for persisted projectM preset ratings.
     private let presetRatingsStore = ProjectMPresetRatingsStore.shared
@@ -114,7 +119,16 @@ class ModernProjectMView: NSView, GeissMenuTarget {
         
         // Create and add OpenGL visualization view
         setupVisualizationView()
-        
+
+        // Restore Tripex cycle state from defaults; applied if Tripex is
+        // the active engine at launch (otherwise applied on engine switch).
+        loadTripexCycleStateFromDefaults()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self,
+                  self.visualizationGLView?.currentEngineType == .tripex else { return }
+            self.applyTripexCycleMode()
+        }
+
         // Subscribe to PCM data notifications (low-latency direct from audio tap)
         pcmObserver = NotificationCenter.default.addObserver(
             forName: .audioPCMDataUpdated,
@@ -178,6 +192,7 @@ class ModernProjectMView: NSView, GeissMenuTarget {
         NotificationCenter.default.removeObserver(self)
         WindowManager.shared.audioEngine.removeSpectrumConsumer("modernProjectMView")
         stopPresetCycleTimer()
+        stopTripexCycleTimer()
         visualizationGLView?.stopRendering()
     }
     
@@ -417,6 +432,12 @@ class ModernProjectMView: NSView, GeissMenuTarget {
         }
     }
 
+    func resumeRenderingAfterWindowTransition() {
+        if !isShadeMode {
+            visualizationGLView?.resumeRenderingAfterWindowTransition()
+        }
+    }
+
     // MARK: - Preset Ratings
 
     private func starString(for rating: Int) -> String {
@@ -623,6 +644,14 @@ class ModernProjectMView: NSView, GeissMenuTarget {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
+        if handleVisualizationKeyDown(event) {
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    @discardableResult
+    func handleVisualizationKeyDown(_ event: NSEvent) -> Bool {
         // Preset rating overlay shortcuts:
         // - Escape dismisses
         // - Delete/Backspace clears rating
@@ -631,17 +660,17 @@ class ModernProjectMView: NSView, GeissMenuTarget {
             switch event.keyCode {
             case 53: // Escape
                 hidePresetRatingOverlay()
-                return
+                return true
             case 51, 117: // Delete/Backspace or Forward Delete
                 presetRatingOverlay.setRating(0)
                 submitCurrentPresetRating(0)
-                return
+                return true
             case 18...22: // 1-5 keys
                 let starRating = Int(event.keyCode - 17)
                 let ratingOnTenScale = starRating * 2
                 presetRatingOverlay.setRating(ratingOnTenScale)
                 submitCurrentPresetRating(ratingOnTenScale)
-                return
+                return true
             default:
                 break
             }
@@ -654,46 +683,56 @@ class ModernProjectMView: NSView, GeissMenuTarget {
         case 53: // Escape - exit fullscreen if in fullscreen mode
             if isFullscreen {
                 controller?.toggleFullscreen()
-                return
+                return true
             }
-            super.keyDown(with: event)
-            return
+            return false
             
         case 3: // F key - toggle fullscreen
             controller?.toggleFullscreen()
+            return true
             
         case 35: // P key - toggle quality mode (30fps/60fps)
             togglePerformanceMode(nil)
+            return true
             
         case 124: // Right arrow - next preset/effect
             if visualizationGLView?.currentEngineType == .geiss {
                 visualizationGLView?.nextGeissEffect()
+            } else if visualizationGLView?.currentEngineType == .tripex {
+                visualizationGLView?.nextTripexEffect()
             } else if hasShift {
                 visualizationGLView?.nextPreset(hardCut: true)
             } else {
                 visualizationGLView?.nextPreset(hardCut: false)
             }
-            
+            return true
+
         case 123: // Left arrow - previous preset/effect
             if visualizationGLView?.currentEngineType == .geiss {
                 visualizationGLView?.previousGeissEffect()
+            } else if visualizationGLView?.currentEngineType == .tripex {
+                visualizationGLView?.previousTripexEffect()
             } else if hasShift {
                 visualizationGLView?.previousPreset(hardCut: true)
             } else {
                 visualizationGLView?.previousPreset(hardCut: false)
             }
-            
+            return true
+
         case 15: // R key - random preset/effect
             if visualizationGLView?.currentEngineType == .geiss {
                 visualizationGLView?.randomGeissEffect()
+            } else if visualizationGLView?.currentEngineType == .tripex {
+                visualizationGLView?.randomTripexEffect()
             } else if hasShift {
                 visualizationGLView?.randomPreset(hardCut: true)
             } else {
                 visualizationGLView?.randomPreset(hardCut: false)
             }
+            return true
             
         case 8: // C key - toggle cycle mode
-            guard visualizationGLView?.currentEngineType == .projectM else { return }
+            guard visualizationGLView?.currentEngineType == .projectM else { return false }
             switch presetCycleMode {
             case .off:
                 presetCycleMode = .cycle
@@ -708,9 +747,10 @@ class ModernProjectMView: NSView, GeissMenuTarget {
                 stopPresetCycleTimer()
                 NSLog("ModernProjectMView: Auto-cycle disabled")
             }
+            return true
             
         default:
-            super.keyDown(with: event)
+            return false
         }
     }
     
@@ -723,6 +763,7 @@ class ModernProjectMView: NSView, GeissMenuTarget {
         let isProjectMAvailable = visualizationGLView?.isProjectMAvailable ?? false
         let isProjectMActive = currentEngineType == .projectM && isProjectMAvailable
         let isGeissActive = currentEngineType == .geiss
+        let isTripexActive = currentEngineType == .tripex
         
         // Preset navigation (only when projectM is available)
         if isProjectMActive {
@@ -872,6 +913,8 @@ class ModernProjectMView: NSView, GeissMenuTarget {
             }
         } else if isGeissActive {
             addGeissEffectsMenuItems(to: menu)
+        } else if isTripexActive {
+            addTripexEffectsMenuItems(to: menu)
         }
         
         // Visualization Engine selector
@@ -1014,6 +1057,39 @@ class ModernProjectMView: NSView, GeissMenuTarget {
         }
     }
 
+    private func addTripexEffectsMenuItems(to menu: NSMenu) {
+        guard let glView = visualizationGLView else { return }
+        let mode: TripexCycleMode
+        switch tripexCycleMode {
+        case .off:    mode = .off
+        case .cycle:  mode = .cycle
+        case .random: mode = .random
+        }
+        TripexMenuBuilder.addTripexConfigMenuItems(to: menu,
+                                                   target: self,
+                                                   visualizationView: glView,
+                                                   cycleMode: mode,
+                                                   cycleInterval: tripexCycleInterval)
+    }
+
+    // MARK: - TripexMenuTarget
+
+    @objc func nextTripexEffectAction(_ sender: NSMenuItem)     { visualizationGLView?.nextTripexEffect() }
+    @objc func previousTripexEffectAction(_ sender: NSMenuItem) { visualizationGLView?.previousTripexEffect() }
+    @objc func randomTripexEffectAction(_ sender: NSMenuItem)   { visualizationGLView?.randomTripexEffect() }
+    @objc func reconfigureTripexAction(_ sender: NSMenuItem)    { visualizationGLView?.reconfigureTripex() }
+    @objc func toggleTripexHoldAction(_ sender: NSMenuItem)     { visualizationGLView?.toggleTripexHold() }
+    @objc func toggleTripexAudioInfoAction(_ sender: NSMenuItem){ visualizationGLView?.toggleTripexAudioInfo() }
+    @objc func toggleTripexHelpAction(_ sender: NSMenuItem)     { visualizationGLView?.toggleTripexHelp() }
+    @objc func selectTripexEffectFromMenu(_ sender: NSMenuItem) {
+        visualizationGLView?.selectTripexEffect(at: sender.tag)
+    }
+    @objc func setTripexIntensity(_ sender: NSMenuItem) {
+        let value = Float(sender.tag) / 100.0
+        visualizationGLView?.tripexIntensityScale = value
+        UserDefaults.standard.set(value, forKey: TripexEngine.DefaultsKey.intensityScale)
+    }
+
     @objc private func nextGeissEffectAction(_ sender: Any?) {
         visualizationGLView?.nextGeissEffect()
     }
@@ -1149,7 +1225,90 @@ class ModernProjectMView: NSView, GeissMenuTarget {
             presetCycleMode = .off
             stopPresetCycleTimer()
         }
+        if type != .tripex {
+            stopTripexCycleTimer()
+        }
         visualizationGLView?.switchEngine(to: type)
+        if type == .tripex {
+            loadTripexCycleStateFromDefaults()
+            applyTripexCycleMode()
+        }
+    }
+
+    // MARK: - Tripex cycle controls (uniform with ProjectM)
+
+    private func loadTripexCycleStateFromDefaults() {
+        let raw = UserDefaults.standard.string(forKey: TripexEngine.DefaultsKey.cycleMode) ?? "cycle"
+        switch raw {
+        case "off":    tripexCycleMode = .off
+        case "random": tripexCycleMode = .random
+        default:       tripexCycleMode = .cycle
+        }
+        let stored = UserDefaults.standard.double(forKey: TripexEngine.DefaultsKey.cycleInterval)
+        tripexCycleInterval = stored > 0 ? stored : 30.0
+    }
+
+    private func saveTripexCycleStateToDefaults() {
+        let raw: String
+        switch tripexCycleMode {
+        case .off:    raw = "off"
+        case .cycle:  raw = "cycle"
+        case .random: raw = "random"
+        }
+        UserDefaults.standard.set(raw, forKey: TripexEngine.DefaultsKey.cycleMode)
+        UserDefaults.standard.set(tripexCycleInterval, forKey: TripexEngine.DefaultsKey.cycleInterval)
+    }
+
+    private func applyTripexCycleMode() {
+        visualizationGLView?.setTripexHold(true)
+        if tripexCycleMode == .off {
+            stopTripexCycleTimer()
+        } else {
+            startTripexCycleTimer()
+        }
+    }
+
+    private func startTripexCycleTimer() {
+        stopTripexCycleTimer()
+        tripexCycleTimer = Timer.scheduledTimer(withTimeInterval: tripexCycleInterval, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            switch self.tripexCycleMode {
+            case .cycle:  self.visualizationGLView?.nextTripexEffect()
+            case .random: self.visualizationGLView?.randomTripexEffect()
+            case .off:    break
+            }
+        }
+    }
+
+    private func stopTripexCycleTimer() {
+        tripexCycleTimer?.invalidate()
+        tripexCycleTimer = nil
+    }
+
+    @objc func setTripexCycleModeCycle(_ sender: Any?) {
+        if (sender as? NSMenuItem)?.state == .on {
+            tripexCycleMode = .off
+        } else {
+            tripexCycleMode = .cycle
+        }
+        saveTripexCycleStateToDefaults()
+        applyTripexCycleMode()
+    }
+
+    @objc func setTripexCycleModeRandom(_ sender: Any?) {
+        if (sender as? NSMenuItem)?.state == .on {
+            tripexCycleMode = .off
+        } else {
+            tripexCycleMode = .random
+        }
+        saveTripexCycleStateToDefaults()
+        applyTripexCycleMode()
+    }
+
+    @objc func setTripexCycleIntervalFromMenu(_ sender: NSMenuItem) {
+        tripexCycleInterval = TimeInterval(sender.tag)
+        saveTripexCycleStateToDefaults()
+        if tripexCycleMode != .off { startTripexCycleTimer() }
     }
     
     // MARK: - Preset Cycle Mode

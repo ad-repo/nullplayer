@@ -1,0 +1,116 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="error.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="Misc.cpp" />
+    <ClCompile Include="AudioData.cpp" />
+    <ClCompile Include="Effect.cpp" />
+    <ClCompile Include="Fourier.cpp" />
+    <ClCompile Include="EffectBezierCube.cpp" />
+    <ClCompile Include="EffectBlank.cpp" />
+    <ClCompile Include="EffectBumpmapping.cpp" />
+    <ClCompile Include="EffectCollapsingLightSphere.cpp" />
+    <ClCompile Include="EffectDistortion1.cpp" />
+    <ClCompile Include="EffectDistortion2.cpp" />
+    <ClCompile Include="EffectDotstar.cpp" />
+    <ClCompile Include="EffectFlowmap.cpp" />
+    <ClCompile Include="EffectLightRing.cpp" />
+    <ClCompile Include="EffectLightSphere.cpp" />
+    <ClCompile Include="EffectLightStar.cpp" />
+    <ClCompile Include="EffectLightTentacles.cpp" />
+    <ClCompile Include="EffectMorphingSphere.cpp" />
+    <ClCompile Include="EffectMotionBlur1.cpp" />
+    <ClCompile Include="EffectMotionBlur2.cpp" />
+    <ClCompile Include="EffectMotionBlur3.cpp" />
+    <ClCompile Include="EffectPhased.cpp" />
+    <ClCompile Include="EffectRings.cpp" />
+    <ClCompile Include="EffectSpectrum.cpp" />
+    <ClCompile Include="EffectSun.cpp" />
+    <ClCompile Include="EffectTube.cpp" />
+    <ClCompile Include="EffectTunnel.cpp" />
+    <ClCompile Include="EffectWaterGlobe.cpp" />
+    <ClCompile Include="Vector3.cpp" />
+    <ClCompile Include="BezierCurve.cpp" />
+    <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="Matrix44.cpp" />
+    <ClCompile Include="Actor.cpp" />
+    <ClCompile Include="Canvas.cpp" />
+    <ClCompile Include="Texture.cpp" />
+    <ClCompile Include="TextureFont.cpp" />
+    <ClCompile Include="Tripex.cpp" />
+    <ClCompile Include="StarModel.cpp">
+      <Filter>Data</Filter>
+    </ClCompile>
+    <ClCompile Include="TextureData.cpp">
+      <Filter>Data</Filter>
+    </ClCompile>
+    <ClCompile Include="ColorHsv.cpp" />
+    <ClCompile Include="GeometryBuffer.cpp" />
+    <ClCompile Include="Renderer.cpp" />
+    <ClCompile Include="TextureLibrary.cpp" />
+    <ClCompile Include="RendererDirect3d.cpp" />
+    <ClCompile Include="Vertex.cpp" />
+    <ClCompile Include="VertexGrid.cpp" />
+    <ClCompile Include="AudioSource.cpp" />
+    <ClCompile Include="AudioDevice.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Effect.h" />
+    <ClInclude Include="Error.h" />
+    <ClInclude Include="Misc.h" />
+    <ClInclude Include="AudioData.h" />
+    <ClInclude Include="Fourier.h" />
+    <ClInclude Include="Platform.h" />
+    <ClInclude Include="Vector3.h" />
+    <ClInclude Include="BezierCurve.h" />
+    <ClInclude Include="Camera.h" />
+    <ClInclude Include="ColorRgb.h" />
+    <ClInclude Include="ColorHsv.h" />
+    <ClInclude Include="Edge.h" />
+    <ClInclude Include="Face.h" />
+    <ClInclude Include="Matrix44.h" />
+    <ClInclude Include="Actor.h" />
+    <ClInclude Include="Canvas.h" />
+    <ClInclude Include="Point.h" />
+    <ClInclude Include="Rect.h" />
+    <ClInclude Include="Texture.h" />
+    <ClInclude Include="TextureFont.h" />
+    <ClInclude Include="Tripex.h" />
+    <ClInclude Include="StarModel.h">
+      <Filter>Data</Filter>
+    </ClInclude>
+    <ClInclude Include="TextureData.h">
+      <Filter>Data</Filter>
+    </ClInclude>
+    <ClInclude Include="Vertex.h" />
+    <ClInclude Include="GeometryBuffer.h" />
+    <ClInclude Include="Renderer.h" />
+    <ClInclude Include="TextureLibrary.h" />
+    <ClInclude Include="ComPtr.h" />
+    <ClInclude Include="RendererDirect3d.h" />
+    <ClInclude Include="VertexGrid.h" />
+    <ClInclude Include="WideColorRgb.h" />
+    <ClInclude Include="AudioSource.h" />
+    <ClInclude Include="AudioDevice.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Fourier.inl" />
+    <None Include="packages.config" />
+    <None Include=".editorconfig" />
+    <None Include=".gitignore" />
+    <None Include="Vector3.inl" />
+    <None Include="Matrix44.inl" />
+    <None Include="Edge.inl" />
+    <None Include="Face.inl" />
+    <None Include="Point.inl" />
+    <None Include="Rect.inl" />
+    <None Include="ColorRgb.inl" />
+    <None Include="WideColorRgb.inl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Data">
+      <UniqueIdentifier>{2766085a-d0b7-4b72-8b8b-5174e1a65fc5}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

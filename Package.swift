@@ -35,6 +35,47 @@ let package = Package(
             ]
         ),
         .target(
+            name: "CTripexCore",
+            dependencies: [],
+            path: "Sources/CTripexCore",
+            // D3D9 + Win32 + WaveOut TUs replaced by upstream_port/
+            // RendererOpenGL + HostAudioSource (Chunks 3–4). main.cpp is a
+            // Win32 message-loop shell with no logic to re-home — Tripex's
+            // beat/fade/effect-switching state lives on the Tripex class.
+            exclude: [
+                "upstream/main.cpp",
+                "upstream/RendererDirect3d.cpp",
+                "upstream/RendererDirect3d.h",
+                "upstream/AudioDevice.cpp",
+                "upstream/AudioDevice.h",
+                "upstream/LICENSE",
+                "upstream/README.md",
+                "upstream/Dll.vcxproj",
+                "upstream/Tripex.vcxproj",
+                "upstream/Tripex.vcxproj.filters",
+                "upstream/packages.config",
+            ],
+            publicHeadersPath: "include",
+            cxxSettings: [
+                .headerSearchPath("."),
+                .headerSearchPath("include"),
+                .headerSearchPath("upstream"),
+                .headerSearchPath("upstream_port"),
+                .define("__APPLE__"),
+                .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
+            ],
+            linkerSettings: [
+                // RendererOpenGL.cpp uses ImageIO + CoreGraphics to decode
+                // upstream's embedded JPEG textures.
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("ImageIO"),
+                // OpenGL is deprecated on macOS 10.14+ but still ships;
+                // link explicitly rather than relying on transitive linkage
+                // from Swift's `import OpenGL.GL3`.
+                .linkedFramework("OpenGL"),
+            ]
+        ),
+        .target(
             name: "CGeissCore",
             dependencies: [],
             path: "Sources/CGeissCore",
@@ -91,6 +132,7 @@ let package = Package(
                 "NullPlayerCore",
                 "CVisClassicCore",
                 "CGeissCore",
+                "CTripexCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "KSPlayer",
@@ -137,5 +179,7 @@ let package = Package(
     // Use Swift 5 language mode to keep concurrency warnings as warnings, not errors
     // This allows gradual adoption of strict concurrency without blocking builds
     swiftLanguageModes: [.v5],
-    cxxLanguageStandard: .cxx14
+    // CTripexCore uses std::shared_ptr<T[]> (C++17). C++17 is backwards
+    // compatible with CGeissCore / CVisClassicCore code.
+    cxxLanguageStandard: .cxx17
 )

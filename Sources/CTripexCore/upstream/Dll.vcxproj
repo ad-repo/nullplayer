@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{710DCDB6-78F3-46CE-904E-53ED99F52E38}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>17.0.35514.174</_ProjectFileVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>Debug\</OutDir>
+    <IntDir>Debug\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>Release\</OutDir>
+    <IntDir>Release\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <AdditionalIncludeDirectories>$(SolutionDir)\STLPort\stlport;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;DLL_EXPORTS;__STDC__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <MinimalRebuild>false</MinimalRebuild>
+      <ExceptionHandling />
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <PrecompiledHeader />
+      <WarningLevel>Level1</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <AdditionalOptions>/FORCE:MULTIPLE
+
+ %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(SolutionDir)/Harness/Debug/vis-tx3.dll</OutputFile>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(OutDir)Dll.pdb</ProgramDatabaseFile>
+      <GenerateMapFile>false</GenerateMapFile>
+      <MapFileName />
+      <SubSystem>Windows</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <EntryPointSymbol />
+      <ImportLibrary>$(OutDir)Dll.lib</ImportLibrary>
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <AdditionalIncludeDirectories>$(SolutionDir)\STLPort\stlport;H:\Microsoft Xbox SDK\xbox\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;DLL_EXPORTS;__STDC__;_XBOX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ExceptionHandling />
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <PrecompiledHeader />
+      <AssemblerOutput />
+      <AssemblerListingLocation>$(IntDir)Asm/</AssemblerListingLocation>
+      <WarningLevel>Level1</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <AdditionalOptions>/FORCE:MULTIPLE
+ %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>lib/xbox_dx8.lib;msvcrt.lib;H:\Microsoft Xbox SDK\xbox\lib\libcp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(SolutionDir)/DLL/Release/tripex3.vis</OutputFile>
+      <AdditionalLibraryDirectories>$(VCInstallDir)\Crt\Src\Intel\Dll_Lib\;H:\Microsoft Xbox SDK\xbox\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateMapFile>true</GenerateMapFile>
+      <SubSystem>Windows</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <EntryPointSymbol>EntryPoint</EntryPointSymbol>
+      <ImportLibrary>$(OutDir)Dll.lib</ImportLibrary>
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="CCfgItem.cpp" />
+    <ClCompile Include="config-defaults.cpp" />
+    <ClCompile Include="config-variables.cpp" />
+    <ClCompile Include="config.cpp">
+      <IntrinsicFunctions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</IntrinsicFunctions>
+    </ClCompile>
+    <ClCompile Include="crt.cpp" />
+    <ClCompile Include="CTextureItem.cpp" />
+    <ClCompile Include="effect-beziercube.cpp" />
+    <ClCompile Include="effect-blank.cpp" />
+    <ClCompile Include="effect-collapsinglightsphere.cpp" />
+    <ClCompile Include="effect-distortion1.cpp" />
+    <ClCompile Include="effect-distortion2.cpp" />
+    <ClCompile Include="effect-dotstar.cpp" />
+    <ClCompile Include="effect-flowmap.cpp" />
+    <ClCompile Include="effect-lightring.cpp" />
+    <ClCompile Include="effect-lightsphere.cpp" />
+    <ClCompile Include="effect-lightstar.cpp" />
+    <ClCompile Include="effect-lighttentacles.cpp" />
+    <ClCompile Include="effect-morphingsphere.cpp" />
+    <ClCompile Include="effect-motionblur1.cpp" />
+    <ClCompile Include="effect-motionblur2.cpp" />
+    <ClCompile Include="effect-motionblur3.cpp" />
+    <ClCompile Include="effect-phased.cpp" />
+    <ClCompile Include="effect-rings.cpp" />
+    <ClCompile Include="effect-spectrum.cpp" />
+    <ClCompile Include="effect-sun.cpp" />
+    <ClCompile Include="effect-tube.cpp" />
+    <ClCompile Include="effect-tunnel.cpp" />
+    <ClCompile Include="effect-waterglobe.cpp" />
+    <ClCompile Include="effect.cpp" />
+    <ClCompile Include="error.cpp" />
+    <ClCompile Include="general.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="malloc.c" />
+    <ClCompile Include="Misc.cpp" />
+    <ClCompile Include="StdAfx.cpp" />
+    <ClCompile Include="TextureData.cpp" />
+    <ClCompile Include="xbmc.cpp" />
+    <ClCompile Include="ZAudio.cpp" />
+    <ClCompile Include="ZBezier.cpp" />
+    <ClCompile Include="ZCamera.cpp" />
+    <ClCompile Include="ZDirect3d.cpp" />
+    <ClCompile Include="ZEffect.cpp" />
+    <ClCompile Include="ZFft.cpp" />
+    <ClCompile Include="ZGrid.cpp" />
+    <ClCompile Include="ZMatrix.cpp" />
+    <ClCompile Include="ZObject-Clip.cpp" />
+    <ClCompile Include="ZObject-Primitives.cpp" />
+    <ClCompile Include="ZObject.cpp" />
+    <ClCompile Include="ZPaletteCanvas.cpp" />
+    <ClCompile Include="ZSpriteBuffer.cpp" />
+    <ClCompile Include="ZTexture.cpp" />
+    <ClCompile Include="ZTextureFont.cpp" />
+    <ClCompile Include="ZTripex.cpp" />
+    <ClCompile Include="ZVector.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="CCfgItem.h" />
+    <ClInclude Include="config-defaults.h" />
+    <ClInclude Include="config-variables.h" />
+    <ClInclude Include="config.h" />
+    <ClInclude Include="crt.h" />
+    <ClInclude Include="CTextureItem.h" />
+    <ClInclude Include="effect.h" />
+    <ClInclude Include="error.h" />
+    <ClInclude Include="general.h" />
+    <ClInclude Include="main.h" />
+    <ClInclude Include="malloc.h" />
+    <ClInclude Include="Misc.h" />
+    <ClInclude Include="star.h" />
+    <ClInclude Include="StdAfx.h" />
+    <ClInclude Include="TextureData.h" />
+    <ClInclude Include="xbmc.h" />
+    <ClInclude Include="ZArray.h" />
+    <ClInclude Include="ZAudio.h" />
+    <ClInclude Include="ZBezier.h" />
+    <ClInclude Include="ZCamera.h" />
+    <ClInclude Include="ZColour.h" />
+    <ClInclude Include="ZColourHSV.h" />
+    <ClInclude Include="ZDirect3d.h" />
+    <ClInclude Include="ZEdge.h" />
+    <ClInclude Include="ZEffect.h" />
+    <ClInclude Include="ZFace.h" />
+    <ClInclude Include="ZFft.h" />
+    <ClInclude Include="ZGrid.h" />
+    <ClInclude Include="ZMatrix.h" />
+    <ClInclude Include="ZObject.h" />
+    <ClInclude Include="ZPalette.h" />
+    <ClInclude Include="ZPaletteCanvas.h" />
+    <ClInclude Include="ZPoint.h" />
+    <ClInclude Include="ZPtr.h" />
+    <ClInclude Include="ZRect.h" />
+    <ClInclude Include="ZSpriteBuffer.h" />
+    <ClInclude Include="ZTexture.h" />
+    <ClInclude Include="ZTextureFont.h" />
+    <ClInclude Include="ZTripex.h" />
+    <ClInclude Include="ZVector.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ZFft.inl" />
+    <None Include="ZMatrix.inl" />
+    <None Include="ZVector.inl" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

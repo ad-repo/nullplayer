@@ -96,6 +96,9 @@ enum VisualizationType: String, CaseIterable, Codable {
     /// Geiss engine (palette-LUT indexed framebuffer; stubbed in Phase 1)
     case geiss = "Geiss"
 
+    /// Tripex engine (ben-marsh/tripex, ported to OpenGL on macOS)
+    case tripex = "Tripex"
+
     /// Human-readable display name
     var displayName: String {
         return self.rawValue

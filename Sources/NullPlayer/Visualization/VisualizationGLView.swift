@@ -339,6 +339,25 @@ class VisualizationGLView: NSOpenGLView {
                 NSLog("VisualizationGLView: Geiss engine not available")
                 return nil
             }
+
+        case .tripex:
+            let tripex = TripexEngine(width: width, height: height)
+            if tripex.isAvailable {
+                NSLog("VisualizationGLView: Tripex engine initialized")
+                if UserDefaults.standard.object(forKey: TripexEngine.DefaultsKey.intensityScale) != nil {
+                    let storedIntensity = UserDefaults.standard.float(forKey: TripexEngine.DefaultsKey.intensityScale)
+                    tripex.intensityScale = storedIntensity > 0 ? storedIntensity : 1.0
+                }
+                // Restore last selected effect if persisted.
+                let stored = UserDefaults.standard.integer(forKey: TripexEngine.DefaultsKey.lastEffectIndex)
+                if stored > 0, stored < tripex.effectCount {
+                    tripex.selectEffect(at: stored)
+                }
+                return tripex
+            } else {
+                NSLog("VisualizationGLView: Tripex engine not available")
+                return nil
+            }
         }
     }
 
@@ -470,6 +489,10 @@ class VisualizationGLView: NSOpenGLView {
         // Startup callers may legitimately request rendering before AppKit reports .visible.
         return true
     }
+
+    private var isCustomFullscreenPresentation: Bool {
+        window?.level == .screenSaver
+    }
     
     func startRendering() {
         guard isRenderEligible() else { return }
@@ -520,6 +543,18 @@ class VisualizationGLView: NSOpenGLView {
         }
         
         NSLog("VisualizationGLView: Stopped rendering")
+    }
+
+    func resumeRenderingAfterWindowTransition() {
+        isDragSuspended = false
+        stoppedDueToOcclusion = false
+        let shouldRender = isRenderEligible()
+        stopRendering()
+        openGLContext?.update()
+        updateDisplayLinkForCurrentScreen()
+        if shouldRender {
+            startRendering()
+        }
     }
     
     /// Toggle between low power mode (30fps) and full quality mode (60fps)
@@ -683,13 +718,25 @@ class VisualizationGLView: NSOpenGLView {
         // Suspend rendering while a window drag is in progress. Moving an NSOpenGLView
         // window while the GPU is flushing forces WindowServer to stall on surface
         // position synchronization, which backs up the main thread's setFrameOrigin calls.
-        guard !isDragSuspended else { return }
+        guard !isDragSuspended || isCustomFullscreenPresentation else { return }
 
-        // Frame skipping in low power mode: render every other frame (30fps instead of 60fps)
-        // This halves CPU usage while still providing smooth visualization
+        // Frame skipping in low power mode throttles drawing, but audio-fed
+        // engines still need every PCM snapshot. Tripex in particular
+        // consumes audio by elapsed wall time; skipping addPCMMono on the
+        // non-drawn ticks underfeeds its ring buffer and makes audio-driven
+        // effects fade toward black in 30fps mode.
         if isLowPowerMode {
             frameCounter += 1
-            guard frameCounter % 2 == 0 else { return }
+            if frameCounter % 2 != 0 {
+                let pcm = dataLock.withLock { localPCM }
+                if engineLock.try() {
+                    if let eng = engine, eng.isAvailable {
+                        addPCM(to: eng, pcm: pcm)
+                    }
+                    engineLock.unlock()
+                }
+                return
+            }
         }
         
         guard let context = openGLContext else { return }
@@ -750,6 +797,13 @@ class VisualizationGLView: NSOpenGLView {
         // Update viewport size if changed
         engine.setViewportSize(width: width, height: height)
 
+        addPCM(to: engine, pcm: pcm)
+
+        // Render the frame
+        engine.renderFrame()
+    }
+
+    private func addPCM(to engine: VisualizationEngine, pcm: [Float]) {
         // Apply PCM gain multiplier for audio sensitivity control
         if pcmGain != 1.0 {
             var amplified = pcm
@@ -761,9 +815,6 @@ class VisualizationGLView: NSOpenGLView {
         } else {
             engine.addPCMMono(pcm)
         }
-
-        // Render the frame
-        engine.renderFrame()
     }
 
     /// Whether projectM has valid presets loaded (backward compatibility)
@@ -842,6 +893,13 @@ class VisualizationGLView: NSOpenGLView {
 
     @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
+        if isCustomFullscreenPresentation {
+            stoppedDueToOcclusion = false
+            if !isRendering {
+                startRendering()
+            }
+            return
+        }
         if window?.occlusionState.contains(.visible) == true {
             if stoppedDueToOcclusion {
                 stoppedDueToOcclusion = false
@@ -1108,6 +1166,71 @@ class VisualizationGLView: NSOpenGLView {
         defer { engineLock.unlock() }
         guard let geiss = engine as? GeissEngine else { return }
         geiss.randomizePalette()
+    }
+
+    // MARK: - Tripex helpers (used by TripexMenuBuilder)
+
+    var tripexEffectCount: Int {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let t = engine as? TripexEngine else { return 0 }
+        return t.effectCount
+    }
+
+    var currentTripexEffectIndex: Int {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let t = engine as? TripexEngine else { return -1 }
+        return t.currentEffectIndex
+    }
+
+    var isTripexHolding: Bool {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let t = engine as? TripexEngine else { return false }
+        return t.isHolding
+    }
+
+    var tripexIntensityScale: Float {
+        get {
+            engineLock.lock()
+            defer { engineLock.unlock() }
+            guard let t = engine as? TripexEngine else { return 1.0 }
+            return t.intensityScale
+        }
+        set {
+            withTripex { $0.intensityScale = newValue }
+        }
+    }
+
+    func tripexEffectName(at index: Int) -> String {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let t = engine as? TripexEngine else { return "" }
+        return t.effectName(at: index)
+    }
+
+    func nextTripexEffect()     { withTripex { $0.nextEffect() } }
+    func previousTripexEffect() { withTripex { $0.previousEffect() } }
+    func randomTripexEffect()   { withTripex { $0.randomEffect() } }
+    func reconfigureTripex()    { withTripex { $0.reconfigure() } }
+    func toggleTripexHold()     { withTripex { $0.toggleHold() } }
+    func setTripexHold(_ on: Bool) { withTripex { $0.setHold(on) } }
+    func toggleTripexAudioInfo(){ withTripex { $0.toggleAudioInfo() } }
+    func toggleTripexHelp()     { withTripex { $0.toggleHelp() } }
+
+    func selectTripexEffect(at index: Int) {
+        withTripex { t in
+            t.selectEffect(at: index)
+            UserDefaults.standard.set(index, forKey: TripexEngine.DefaultsKey.lastEffectIndex)
+        }
+    }
+
+    private func withTripex(_ body: (TripexEngine) -> Void) {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let t = engine as? TripexEngine else { return }
+        body(t)
     }
 
     // MARK: - Geiss Configuration (UserDefaults persistence)
