@@ -104,6 +104,7 @@ void WaveOutAudioDevice::Read(void* read_data, size_t read_size)
 	if (read_size > 0)
 	{
 		memset(out, 0, read_size);
+		read_pos += read_size;
 	}
 }
 
