@@ -327,6 +327,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **Enter**: Play Now (insert and play)
 - **Shift+Enter**: Play Next (insert after current, no auto-play if empty)
 - **Option+Enter**: Add to Queue (append, no auto-play if empty)
+- **Right-click column headers**: Configure visible columns. Artists shows Artist, Album, and Track sections; Albums shows Album and Track sections. Checkbox clicks keep the menu open; each section has its own reset.
 - **Right Arrow**: Expand item (artists, albums, playlists, shows, seasons); if already expanded, move to first child
 - **Left Arrow**: Collapse expanded item; if not expanded, jump to parent item
 - **Tab / Shift+Tab**: Cycle forward/backward through tabs (Artists → Albums → Playlists (Plists in the UI) → Movies → Shows → Search → Radio → Data)

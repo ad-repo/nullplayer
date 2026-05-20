@@ -324,7 +324,12 @@ class PlexBrowserView: NSView {
     private var columnWidths: [String: CGFloat] = [:] {
         didSet { saveColumnWidths() }
     }
-    
+
+    /// Visible columns (ordered lists of column IDs; persisted separately from Modern UI)
+    private var visibleTrackColumnIds: [String] = BrowserColumn.defaultTrackColumnIds { didSet { saveVisibleColumns() } }
+    private var visibleAlbumColumnIds: [String] = BrowserColumn.defaultAlbumColumnIds { didSet { saveVisibleColumns() } }
+    private var visibleArtistColumnIds: [String] = BrowserColumn.defaultArtistColumnIds { didSet { saveVisibleColumns() } }
+
     /// Column being resized (id) and resize state
     private var resizingColumnId: String?
     private var resizeStartX: CGFloat = 0
@@ -389,44 +394,57 @@ class PlexBrowserView: NSView {
         if hasInternetRadioColumns {
             return BrowserColumn.internetRadioColumns
         }
-        if displayItems.contains(where: {
+        let columns = currentVisibleColumns()
+        guard !columns.isEmpty else { return nil }
+        return columns
+    }
+
+    private func visibleColumns(allColumns: [BrowserColumn], visibleIds: [String]) -> [BrowserColumn] {
+        LibraryColumnVisibility.visibleColumns(allColumns: allColumns, visibleIds: visibleIds) { $0.id }
+    }
+
+    private func normalizedColumnIds(_ ids: [String], allColumns: [BrowserColumn]) -> [String] {
+        LibraryColumnVisibility.normalizedIds(ids, allIds: allColumns.map { $0.id })
+    }
+
+    private func hasTrackRows() -> Bool {
+        displayItems.contains {
             switch $0.type {
             case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack: return true
             default: return false
             }
-        }) {
-            return BrowserColumn.trackColumns
         }
-        if displayItems.contains(where: {
+    }
+
+    private func hasAlbumRows() -> Bool {
+        displayItems.contains {
             switch $0.type {
             case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum: return true
             default: return false
             }
-        }) {
-            return BrowserColumn.albumColumns
         }
-        if displayItems.contains(where: {
+    }
+
+    private func hasArtistRows() -> Bool {
+        displayItems.contains {
             switch $0.type {
             case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist: return true
             default: return false
             }
-        }) {
-            return BrowserColumn.artistColumns
         }
-        return nil
     }
     
     /// Get columns for a specific item (nil = use simple list rendering)
     private func columnsForItem(_ item: PlexDisplayItem) -> [BrowserColumn]? {
         switch item.type {
         case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack:
-            return BrowserColumn.trackColumns
+            return visibleColumns(allColumns: BrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
         case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum:
-            return BrowserColumn.albumColumns
+            return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
         case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist:
             // Only show columns for top-level artists (not nested under search results)
             if item.indentLevel == 0 {
-                return BrowserColumn.artistColumns
+                return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
             }
             return nil
         case .radioStation:
@@ -474,6 +492,37 @@ class PlexBrowserView: NSView {
         if let saved = UserDefaults.standard.dictionary(forKey: "BrowserColumnWidths") as? [String: CGFloat] {
             columnWidths = saved
         }
+    }
+
+    private func saveVisibleColumns() {
+        UserDefaults.standard.set(visibleTrackColumnIds, forKey: "ClassicBrowserVisibleTrackColumns")
+        UserDefaults.standard.set(visibleAlbumColumnIds, forKey: "ClassicBrowserVisibleAlbumColumns")
+        UserDefaults.standard.set(visibleArtistColumnIds, forKey: "ClassicBrowserVisibleArtistColumns")
+    }
+
+    private func loadVisibleColumns() {
+        if let saved = UserDefaults.standard.stringArray(forKey: "ClassicBrowserVisibleTrackColumns") {
+            visibleTrackColumnIds = normalizedColumnIds(saved, allColumns: BrowserColumn.allTrackColumns)
+        }
+        if let saved = UserDefaults.standard.stringArray(forKey: "ClassicBrowserVisibleAlbumColumns") {
+            visibleAlbumColumnIds = normalizedColumnIds(saved, allColumns: BrowserColumn.allAlbumColumns)
+        }
+        if let saved = UserDefaults.standard.stringArray(forKey: "ClassicBrowserVisibleArtistColumns") {
+            visibleArtistColumnIds = normalizedColumnIds(saved, allColumns: BrowserColumn.allArtistColumns)
+        }
+    }
+
+    private func currentVisibleColumns() -> [BrowserColumn] {
+        if hasInternetRadioColumns {
+            return BrowserColumn.internetRadioColumns
+        }
+        if hasTrackRows() {
+            return visibleColumns(allColumns: BrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
+        }
+        if hasAlbumRows() {
+            return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
+        }
+        return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
     }
     
     /// Apply column sort to display items
@@ -560,7 +609,8 @@ class PlexBrowserView: NSView {
             let bVal = b.columnValue(for: sortColumn)
             
             // Try numeric comparison for numeric columns
-            if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" || sortColumn.id == "albums" {
+            if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
+               sortColumn.id == "albums" || sortColumn.id == "discNum" || sortColumn.id == "channels" {
                 let aNum = Int(aVal.components(separatedBy: "-").last ?? aVal) ?? 0
                 let bNum = Int(bVal.components(separatedBy: "-").last ?? bVal) ?? 0
                 return ascending ? aNum < bNum : aNum > bNum
@@ -573,11 +623,12 @@ class PlexBrowserView: NSView {
                 return ascending ? aSeconds < bSeconds : aSeconds > bSeconds
             }
             
-            // Bitrate comparison
-            if sortColumn.id == "bitrate" {
-                let aKbps = Int(aVal.replacingOccurrences(of: "k", with: "")) ?? 0
-                let bKbps = Int(bVal.replacingOccurrences(of: "k", with: "")) ?? 0
-                return ascending ? aKbps < bKbps : aKbps > bKbps
+            // Bitrate / sample-rate comparison
+            if sortColumn.id == "bitrate" || sortColumn.id == "sampleRate" {
+                let cleaned = { (value: String) -> Double in
+                    Double(value.replacingOccurrences(of: "k", with: "")) ?? 0
+                }
+                return ascending ? cleaned(aVal) < cleaned(bVal) : cleaned(aVal) > cleaned(bVal)
             }
             
             // Size comparison
@@ -1010,6 +1061,7 @@ class PlexBrowserView: NSView {
         
         // Load saved column widths and sort
         loadColumnWidths()
+        loadVisibleColumns()
         loadColumnSort()
         
         // Load saved source
@@ -6815,6 +6867,25 @@ class PlexBrowserView: NSView {
         
         return nil
     }
+
+    private func hitTestColumnHeaderArea(at skinPoint: NSPoint) -> Bool {
+        guard !browseMode.isHistoryMode else { return false }
+        if hasInternetRadioColumns { return false }
+        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        guard hasColumns else { return false }
+
+        var headerY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
+        if browseMode == .search {
+            headerY += Layout.searchBarHeight
+        }
+        let headerRect = NSRect(
+            x: Layout.leftBorder,
+            y: headerY,
+            width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth,
+            height: columnHeaderHeight
+        )
+        return headerRect.contains(skinPoint)
+    }
     
     /// Check if point hits the scrollbar (disabled - no scrollbar widget)
     private func hitTestScrollbar(at skinPoint: NSPoint) -> Bool {
@@ -6873,6 +6944,12 @@ class PlexBrowserView: NSView {
             showArtContextMenu(at: event)
             return
         }
+
+        // Right-click on column header: show column visibility menu
+        if hitTestColumnHeaderArea(at: skinPoint) {
+            showColumnConfigMenu(at: event)
+            return
+        }
         
         // Check list area for item context menu
         if !isArtOnlyMode, !browseMode.isHistoryMode, let clickedIndex = hitTestListArea(at: skinPoint) {
@@ -6901,6 +6978,118 @@ class PlexBrowserView: NSView {
         }
         // Default right-click behavior
         super.rightMouseDown(with: event)
+    }
+
+    private func showColumnConfigMenu(at event: NSEvent) {
+        if hasInternetRadioColumns { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        for group in columnGroupsForCurrentMenu() {
+            addColumnVisibilityGroup(group, to: menu)
+        }
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private func columnGroupsForCurrentMenu() -> [LibraryColumnVisibilityGroup] {
+        LibraryColumnVisibility.menuGroups(
+            isArtistsMode: browseMode == .artists,
+            isAlbumsMode: browseMode == .albums,
+            hasTrackRows: hasTrackRows(),
+            hasAlbumRows: hasAlbumRows(),
+            hasArtistRows: hasArtistRows()
+        )
+    }
+
+    private func addColumnVisibilityGroup(_ group: LibraryColumnVisibilityGroup, to menu: NSMenu) {
+        if !menu.items.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        let header = NSMenuItem(title: group.headerTitle, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+
+        let visibleIds = Set(visibleColumnIds(for: group))
+        for column in allColumns(for: group) {
+            let item = NSMenuItem()
+            item.view = ColumnVisibilityCheckboxView(
+                title: column.title,
+                isChecked: column.id == "title" || visibleIds.contains(column.id),
+                isEnabled: column.id != "title"
+            ) { [weak self] isVisible in
+                self?.toggleColumnVisibility(group: group, columnId: column.id, visible: isVisible)
+            }
+            menu.addItem(item)
+        }
+
+        let resetItem = NSMenuItem(title: group.resetTitle, action: #selector(resetColumnGroup(_:)), keyEquivalent: "")
+        resetItem.target = self
+        resetItem.representedObject = group.rawValue
+        menu.addItem(resetItem)
+    }
+
+    private func allColumns(for group: LibraryColumnVisibilityGroup) -> [BrowserColumn] {
+        switch group {
+        case .artist: return BrowserColumn.allArtistColumns
+        case .album: return BrowserColumn.allAlbumColumns
+        case .track: return BrowserColumn.allTrackColumns
+        }
+    }
+
+    private func defaultColumnIds(for group: LibraryColumnVisibilityGroup) -> [String] {
+        switch group {
+        case .artist: return BrowserColumn.defaultArtistColumnIds
+        case .album: return BrowserColumn.defaultAlbumColumnIds
+        case .track: return BrowserColumn.defaultTrackColumnIds
+        }
+    }
+
+    private func visibleColumnIds(for group: LibraryColumnVisibilityGroup) -> [String] {
+        switch group {
+        case .artist: return normalizedColumnIds(visibleArtistColumnIds, allColumns: BrowserColumn.allArtistColumns)
+        case .album: return normalizedColumnIds(visibleAlbumColumnIds, allColumns: BrowserColumn.allAlbumColumns)
+        case .track: return normalizedColumnIds(visibleTrackColumnIds, allColumns: BrowserColumn.allTrackColumns)
+        }
+    }
+
+    private func setVisibleColumnIds(_ ids: [String], for group: LibraryColumnVisibilityGroup) {
+        switch group {
+        case .artist:
+            visibleArtistColumnIds = normalizedColumnIds(ids, allColumns: BrowserColumn.allArtistColumns)
+        case .album:
+            visibleAlbumColumnIds = normalizedColumnIds(ids, allColumns: BrowserColumn.allAlbumColumns)
+        case .track:
+            visibleTrackColumnIds = normalizedColumnIds(ids, allColumns: BrowserColumn.allTrackColumns)
+        }
+    }
+
+    private func toggleColumnVisibility(group: LibraryColumnVisibilityGroup, columnId: String, visible: Bool) {
+        guard columnId != "title" else { return }
+
+        var ids = visibleColumnIds(for: group)
+        if visible {
+            if !ids.contains(columnId) {
+                ids.append(columnId)
+            }
+        } else {
+            ids.removeAll { $0 == columnId }
+            if columnSortId == columnId { columnSortId = nil }
+        }
+
+        setVisibleColumnIds(ids, for: group)
+        needsDisplay = true
+    }
+
+    @objc private func resetColumnGroup(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let group = LibraryColumnVisibilityGroup(rawValue: rawValue) else { return }
+
+        setVisibleColumnIds(defaultColumnIds(for: group), for: group)
+        let columnIds = Set(allColumns(for: group).map { $0.id })
+        columnWidths = columnWidths.filter { !columnIds.contains($0.key) }
+        needsDisplay = true
     }
     
     /// Show the visualizer effect selection menu
@@ -16873,24 +17062,41 @@ private struct BrowserColumn {
     static let playCount = BrowserColumn(id: "plays", title: "Plays", minWidth: 45)
     static let dateAdded = BrowserColumn(id: "dateAdded", title: "Date Added", minWidth: 80)
     static let lastPlayed = BrowserColumn(id: "lastPlayed", title: "Last Played", minWidth: 80)
-    
-    /// Columns shown for track lists
-    static let trackColumns: [BrowserColumn] = [
-        .trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount, .dateAdded, .lastPlayed
+    static let discNumber = BrowserColumn(id: "discNum", title: "Disc", minWidth: 35)
+    static let albumArtist = BrowserColumn(id: "albumArtist", title: "Album Artist", minWidth: 100)
+    static let sampleRate = BrowserColumn(id: "sampleRate", title: "Sample Rate", minWidth: 60)
+    static let channels = BrowserColumn(id: "channels", title: "Channels", minWidth: 50)
+    static let filePath = BrowserColumn(id: "path", title: "Path", minWidth: 150)
+
+    static let allTrackColumns: [BrowserColumn] = [
+        .trackNumber, .title, .artist, .album, .albumArtist, .year, .genre, .duration,
+        .bitrate, .sampleRate, .channels, .size, .rating, .playCount, .discNumber,
+        .dateAdded, .lastPlayed, .filePath
     ]
     
-    /// Columns shown for album lists  
-    static let albumColumns: [BrowserColumn] = [
+    static let allAlbumColumns: [BrowserColumn] = [
         .title, .year, .genre, .duration, .rating
     ]
     
     // Artist-specific columns
     static let albums = BrowserColumn(id: "albums", title: "Albums", minWidth: 55)
     
-    /// Columns shown for artist lists
-    static let artistColumns: [BrowserColumn] = [
-        .title, .albums, .genre
+    static let allArtistColumns: [BrowserColumn] = [
+        .title, .rating, .albums, .genre
     ]
+
+    static let defaultTrackColumnIds: [String] = ["trackNum", "title", "artist", "album", "rating", "year", "genre", "duration", "bitrate", "size", "plays"]
+    static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
+    static let defaultArtistColumnIds: [String] = ["title", "rating", "albums", "genre"]
+
+    /// Default columns shown for track lists.
+    static let trackColumns: [BrowserColumn] = defaultTrackColumnIds.compactMap { id in allTrackColumns.first { $0.id == id } }
+
+    /// Default columns shown for album lists.
+    static let albumColumns: [BrowserColumn] = defaultAlbumColumnIds.compactMap { id in allAlbumColumns.first { $0.id == id } }
+
+    /// Default columns shown for artist lists.
+    static let artistColumns: [BrowserColumn] = defaultArtistColumnIds.compactMap { id in allArtistColumns.first { $0.id == id } }
 
     /// Fixed columns shown for Internet Radio source.
     static let internetRadioColumns: [BrowserColumn] = [
@@ -16899,9 +17105,9 @@ private struct BrowserColumn {
     
     /// Find a column by ID across all column types
     static func findColumn(id: String) -> BrowserColumn? {
-        if let c = trackColumns.first(where: { $0.id == id }) { return c }
-        if let c = albumColumns.first(where: { $0.id == id }) { return c }
-        if let c = artistColumns.first(where: { $0.id == id }) { return c }
+        if let c = allTrackColumns.first(where: { $0.id == id }) { return c }
+        if let c = allAlbumColumns.first(where: { $0.id == id }) { return c }
+        if let c = allArtistColumns.first(where: { $0.id == id }) { return c }
         if let c = internetRadioColumns.first(where: { $0.id == id }) { return c }
         return nil
     }
@@ -16942,6 +17148,12 @@ extension PlexDisplayItem {
             return jellyfinAlbumValue(album, for: column)
         case .jellyfinArtist(let artist):
             return jellyfinArtistValue(artist, for: column)
+        case .embyTrack(let song):
+            return embyTrackValue(song, for: column)
+        case .embyAlbum(let album):
+            return embyAlbumValue(album, for: column)
+        case .embyArtist(let artist):
+            return embyArtistValue(artist, for: column)
         case .radioStation(let station):
             return radioStationValue(station, for: column)
         default:
@@ -16985,6 +17197,8 @@ extension PlexDisplayItem {
             return track.grandparentTitle ?? ""
         case "album":
             return track.parentTitle ?? ""
+        case "albumArtist":
+            return track.grandparentTitle ?? ""
         case "year":
             return track.parentYear.map { String($0) } ?? ""
         case "genre":
@@ -16993,16 +17207,24 @@ extension PlexDisplayItem {
             return track.formattedDuration
         case "bitrate":
             return track.media.first?.bitrate.map { "\($0)k" } ?? ""
+        case "sampleRate":
+            return track.media.first?.audioSampleRate.map { Self.formatSampleRate($0) } ?? ""
+        case "channels":
+            return track.media.first?.audioChannels.map { Self.formatChannels($0) } ?? ""
         case "size":
             return Self.formatFileSize(track.media.first?.parts.first?.size)
         case "rating":
             return Self.formatRating(track.userRating)
         case "plays":
             return track.ratingCount.map { String($0) } ?? ""
+        case "discNum":
+            return track.parentIndex.map { String($0) } ?? ""
         case "dateAdded":
             return track.addedAt.map { Self.formatDate($0) } ?? ""
         case "lastPlayed":
             return ""
+        case "path":
+            return track.media.first?.parts.first?.file?.components(separatedBy: "/").last ?? ""
         default:
             return ""
         }
@@ -17021,6 +17243,8 @@ extension PlexDisplayItem {
             return song.artist ?? ""
         case "album":
             return song.album ?? ""
+        case "albumArtist":
+            return song.albumArtist ?? song.artist ?? ""
         case "year":
             return song.year.map { String($0) } ?? ""
         case "genre":
@@ -17029,16 +17253,24 @@ extension PlexDisplayItem {
             return song.formattedDuration
         case "bitrate":
             return song.bitRate.map { "\($0)k" } ?? ""
+        case "sampleRate":
+            return song.samplingRate.map { Self.formatSampleRate($0) } ?? ""
+        case "channels":
+            return ""
         case "size":
             return Self.formatFileSize(song.size)
         case "rating":
             return Self.formatRating(song.userRating.map { Double($0 * 2) })
         case "plays":
             return song.playCount.map { String($0) } ?? ""
+        case "discNum":
+            return song.discNumber.map { String($0) } ?? ""
         case "dateAdded":
             return song.created.map { Self.formatDate($0) } ?? ""
         case "lastPlayed":
             return ""
+        case "path":
+            return song.path?.components(separatedBy: "/").last ?? ""
         default:
             return ""
         }
@@ -17057,6 +17289,8 @@ extension PlexDisplayItem {
             return track.artist ?? ""
         case "album":
             return track.album ?? ""
+        case "albumArtist":
+            return track.albumArtist ?? track.artist ?? ""
         case "year":
             return track.year.map { String($0) } ?? ""
         case "genre":
@@ -17065,16 +17299,24 @@ extension PlexDisplayItem {
             return track.formattedDuration
         case "bitrate":
             return track.bitrate.map { "\($0)k" } ?? ""
+        case "sampleRate":
+            return track.sampleRate.map { Self.formatSampleRate($0) } ?? ""
+        case "channels":
+            return track.channels.map { Self.formatChannels($0) } ?? ""
         case "size":
             return Self.formatFileSize(track.fileSize)
         case "rating":
             return Self.formatRating(track.rating.map { Double($0) })
         case "plays":
             return track.playCount > 0 ? String(track.playCount) : ""
+        case "discNum":
+            return track.discNumber.map { String($0) } ?? ""
         case "dateAdded":
             return Self.formatDate(track.dateAdded)
         case "lastPlayed":
             return track.lastPlayed.map { Self.formatDate($0) } ?? ""
+        case "path":
+            return track.url.lastPathComponent
         default:
             return ""
         }
@@ -17141,6 +17383,8 @@ extension PlexDisplayItem {
             return String(artist.albumCount)
         case "genre":
             return artist.genre ?? ""
+        case "rating":
+            return ""
         default:
             return ""
         }
@@ -17154,6 +17398,8 @@ extension PlexDisplayItem {
             return String(artist.albumCount)
         case "genre":
             return ""  // Subsonic artists don't have genre
+        case "rating":
+            return artist.starred != nil ? "★★★★★" : ""
         default:
             return ""
         }
@@ -17189,6 +17435,8 @@ extension PlexDisplayItem {
             return song.artist ?? ""
         case "album":
             return song.album ?? ""
+        case "albumArtist":
+            return song.albumArtist ?? song.artist ?? ""
         case "year":
             return song.year.map { String($0) } ?? ""
         case "genre":
@@ -17197,16 +17445,27 @@ extension PlexDisplayItem {
             return PlexDisplayItem.formatDuration(TimeInterval(song.duration))
         case "bitrate":
             return song.bitRate.map { "\($0)k" } ?? ""
+        case "sampleRate":
+            return song.sampleRate.map { Self.formatSampleRate($0) } ?? ""
+        case "channels":
+            return song.channels.map { Self.formatChannels($0) } ?? ""
         case "size":
-            return ""
+            return Self.formatFileSize(song.size)
         case "rating":
+            if let userRating = song.userRating, userRating > 0 {
+                return Self.formatRating(Double(userRating) / 10.0)
+            }
             return song.isFavorite ? "★★★★★" : ""
         case "plays":
             return song.playCount.map { String($0) } ?? ""
+        case "discNum":
+            return song.discNumber.map { String($0) } ?? ""
         case "dateAdded":
             return song.created.map { Self.formatDate($0) } ?? ""
         case "lastPlayed":
             return ""
+        case "path":
+            return song.path?.components(separatedBy: "/").last ?? ""
         default:
             return ""
         }
@@ -17221,9 +17480,9 @@ extension PlexDisplayItem {
         case "genre":
             return album.genre ?? ""
         case "duration":
-            return ""
+            return album.formattedDuration
         case "rating":
-            return ""
+            return album.isFavorite ? "★★★★★" : ""
         default:
             return ""
         }
@@ -17237,6 +17496,89 @@ extension PlexDisplayItem {
             return String(artist.albumCount)
         case "genre":
             return ""
+        case "rating":
+            return artist.isFavorite ? "★★★★★" : ""
+        default:
+            return ""
+        }
+    }
+
+    // MARK: - Emby Track Values
+
+    private func embyTrackValue(_ song: EmbySong, for column: BrowserColumn) -> String {
+        switch column.id {
+        case "trackNum":
+            if let disc = song.discNumber, disc > 1, let num = song.track {
+                return "\(disc)-\(num)"
+            }
+            return song.track.map { String($0) } ?? ""
+        case "artist":
+            return song.artist ?? ""
+        case "album":
+            return song.album ?? ""
+        case "albumArtist":
+            return song.albumArtist ?? song.artist ?? ""
+        case "year":
+            return song.year.map { String($0) } ?? ""
+        case "genre":
+            return song.genre ?? ""
+        case "duration":
+            return song.formattedDuration
+        case "bitrate":
+            return song.bitRate.map { "\($0)k" } ?? ""
+        case "sampleRate":
+            return song.sampleRate.map { Self.formatSampleRate($0) } ?? ""
+        case "channels":
+            return song.channels.map { Self.formatChannels($0) } ?? ""
+        case "size":
+            return Self.formatFileSize(song.size)
+        case "rating":
+            if let userRating = song.userRating, userRating > 0 {
+                return Self.formatRating(Double(userRating) / 10.0)
+            }
+            return song.isFavorite ? "★★★★★" : ""
+        case "plays":
+            return song.playCount.map { String($0) } ?? ""
+        case "discNum":
+            return song.discNumber.map { String($0) } ?? ""
+        case "dateAdded":
+            return song.created.map { Self.formatDate($0) } ?? ""
+        case "lastPlayed":
+            return ""
+        case "path":
+            return song.path?.components(separatedBy: "/").last ?? ""
+        default:
+            return ""
+        }
+    }
+
+    // MARK: - Emby Album Values
+
+    private func embyAlbumValue(_ album: EmbyAlbum, for column: BrowserColumn) -> String {
+        switch column.id {
+        case "year":
+            return album.year.map { String($0) } ?? ""
+        case "genre":
+            return album.genre ?? ""
+        case "duration":
+            return album.formattedDuration
+        case "rating":
+            return album.isFavorite ? "★★★★★" : ""
+        default:
+            return ""
+        }
+    }
+
+    // MARK: - Emby Artist Values
+
+    private func embyArtistValue(_ artist: EmbyArtist, for column: BrowserColumn) -> String {
+        switch column.id {
+        case "albums":
+            return String(artist.albumCount)
+        case "genre":
+            return ""
+        case "rating":
+            return artist.isFavorite ? "★★★★★" : ""
         default:
             return ""
         }
@@ -17285,6 +17627,24 @@ extension PlexDisplayItem {
     private static func formatStarRating(_ rating: Int) -> String {
         let clamped = min(5, max(0, rating))
         return String(repeating: "★", count: clamped) + String(repeating: "☆", count: 5 - clamped)
+    }
+
+    private static func formatSampleRate(_ hz: Int) -> String {
+        let khz = Double(hz) / 1000.0
+        if khz == Double(Int(khz)) {
+            return "\(Int(khz))k"
+        }
+        return String(format: "%.1fk", khz)
+    }
+
+    private static func formatChannels(_ count: Int) -> String {
+        switch count {
+        case 1: return "Mono"
+        case 2: return "Stereo"
+        case 6: return "5.1"
+        case 8: return "7.1"
+        default: return "\(count)ch"
+        }
     }
 
     private static let dateFormatter: DateFormatter = {

@@ -194,6 +194,7 @@ When adding or refactoring top menu bar content:
 - Keep side effects (network discovery, long-running work) out of menu construction.
 - Prefer lifecycle startup for services and `menuNeedsUpdate(_:)` for state refresh when a menu opens.
 - For Sonos room selection UX, use `SonosRoomCheckboxView` when persistent-open submenu behavior is required.
+- For library-browser column visibility menus, use `ColumnVisibilityCheckboxView` for persistent-open checkbox rows. Keep column preferences mode-scoped: Modern uses `BrowserVisible*Columns`; Classic uses `ClassicBrowserVisible*Columns`.
 
 ## Dockable Center-Stack Windows
 

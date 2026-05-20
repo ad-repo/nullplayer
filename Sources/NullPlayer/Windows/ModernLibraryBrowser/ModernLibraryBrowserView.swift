@@ -244,7 +244,7 @@ class ModernLibraryBrowserView: NSView {
     private var visibleTrackColumnIds: [String] = ModernBrowserColumn.defaultTrackColumnIds { didSet { saveVisibleColumns() } }
     private var visibleAlbumColumnIds: [String] = ModernBrowserColumn.defaultAlbumColumnIds { didSet { saveVisibleColumns() } }
     private var visibleArtistColumnIds: [String] = ModernBrowserColumn.defaultArtistColumnIds { didSet { saveVisibleColumns() } }
-    
+
     // Display items
     private var displayItems: [ModernDisplayItem] = []
     
@@ -2395,42 +2395,55 @@ class ModernLibraryBrowserView: NSView {
         if hasInternetRadioColumns {
             return ModernBrowserColumn.internetRadioColumns
         }
+        let columns = currentVisibleColumns()
+        guard !columns.isEmpty else { return nil }
+        return columns
+    }
+
+    private func visibleColumns(allColumns: [ModernBrowserColumn], visibleIds: [String]) -> [ModernBrowserColumn] {
+        LibraryColumnVisibility.visibleColumns(allColumns: allColumns, visibleIds: visibleIds) { $0.id }
+    }
+
+    private func normalizedColumnIds(_ ids: [String], allColumns: [ModernBrowserColumn]) -> [String] {
+        LibraryColumnVisibility.normalizedIds(ids, allIds: allColumns.map { $0.id })
+    }
+
+    private func hasTrackRows() -> Bool {
         if displayItems.contains(where: {
             switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack: return true; default: return false }
         }) {
-            return ModernBrowserColumn.trackColumns
+            return true
         }
+        return false
+    }
+
+    private func hasAlbumRows() -> Bool {
         if displayItems.contains(where: {
             switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum: return true; default: return false }
         }) {
-            return ModernBrowserColumn.albumColumns
+            return true
         }
+        return false
+    }
+
+    private func hasArtistRows() -> Bool {
         if displayItems.contains(where: {
             switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist: return true; default: return false }
         }) {
-            return ModernBrowserColumn.artistColumns
+            return true
         }
-        return nil
+        return false
     }
     
     private func columnsForItem(_ item: ModernDisplayItem) -> [ModernBrowserColumn]? {
         switch item.type {
         case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack:
-            let visible = visibleTrackColumnIds
-            return ModernBrowserColumn.allTrackColumns
-                .filter { visible.contains($0.id) }
-                .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
+            return visibleColumns(allColumns: ModernBrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
         case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum:
-            let visible = visibleAlbumColumnIds
-            return ModernBrowserColumn.allAlbumColumns
-                .filter { visible.contains($0.id) }
-                .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
+            return visibleColumns(allColumns: ModernBrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
         case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist:
             if item.indentLevel == 0 {
-                let visible = visibleArtistColumnIds
-                return ModernBrowserColumn.allArtistColumns
-                    .filter { visible.contains($0.id) }
-                    .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
+                return visibleColumns(allColumns: ModernBrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
             }
             return nil
         case .radioStation:
@@ -2501,13 +2514,13 @@ class ModernLibraryBrowserView: NSView {
     
     private func loadVisibleColumns() {
         if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleTrackColumns") {
-            visibleTrackColumnIds = saved
+            visibleTrackColumnIds = normalizedColumnIds(saved, allColumns: ModernBrowserColumn.allTrackColumns)
         }
         if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleAlbumColumns") {
-            visibleAlbumColumnIds = saved
+            visibleAlbumColumnIds = normalizedColumnIds(saved, allColumns: ModernBrowserColumn.allAlbumColumns)
         }
         if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleArtistColumns") {
-            visibleArtistColumnIds = saved
+            visibleArtistColumnIds = normalizedColumnIds(saved, allColumns: ModernBrowserColumn.allArtistColumns)
         }
     }
     
@@ -2516,32 +2529,13 @@ class ModernLibraryBrowserView: NSView {
         if hasInternetRadioColumns {
             return ModernBrowserColumn.internetRadioColumns
         }
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
-        }) {
-            return ModernBrowserColumn.allTrackColumns.filter { visibleTrackColumnIds.contains($0.id) }
-                .sorted { visibleTrackColumnIds.firstIndex(of: $0.id)! < visibleTrackColumnIds.firstIndex(of: $1.id)! }
+        if hasTrackRows() {
+            return visibleColumns(allColumns: ModernBrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
         }
-        if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
-        }) {
-            return ModernBrowserColumn.allAlbumColumns.filter { visibleAlbumColumnIds.contains($0.id) }
-                .sorted { visibleAlbumColumnIds.firstIndex(of: $0.id)! < visibleAlbumColumnIds.firstIndex(of: $1.id)! }
+        if hasAlbumRows() {
+            return visibleColumns(allColumns: ModernBrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
         }
-        return ModernBrowserColumn.allArtistColumns.filter { visibleArtistColumnIds.contains($0.id) }
-            .sorted { visibleArtistColumnIds.firstIndex(of: $0.id)! < visibleArtistColumnIds.firstIndex(of: $1.id)! }
-    }
-    
-    /// Returns all possible columns for the given column category (for the right-click menu)
-    private func allColumnsForCurrentView() -> [ModernBrowserColumn] {
-        if hasInternetRadioColumns { return ModernBrowserColumn.internetRadioColumns }
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
-        }) { return ModernBrowserColumn.allTrackColumns }
-        if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
-        }) { return ModernBrowserColumn.allAlbumColumns }
-        return ModernBrowserColumn.allArtistColumns
+        return visibleColumns(allColumns: ModernBrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
     }
     
     private func applyColumnSort(collapseExpanded: Bool = false) {
@@ -4272,78 +4266,111 @@ class ModernLibraryBrowserView: NSView {
         if hasInternetRadioColumns { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        
-        let allColumns = allColumnsForCurrentView()
-        let visibleIds = currentVisibleColumnIds()
-        
-        for column in allColumns {
-            let item = NSMenuItem(title: column.title, action: #selector(toggleColumnVisibility(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = column.id
-            item.state = visibleIds.contains(column.id) ? .on : .off
-            // Title column is always visible
-            if column.id == "title" { item.isEnabled = false }
-            menu.addItem(item)
+
+        for group in columnGroupsForCurrentMenu() {
+            addColumnVisibilityGroup(group, to: menu)
         }
-        
-        menu.addItem(NSMenuItem.separator())
-        let resetItem = NSMenuItem(title: "Reset to Default", action: #selector(resetColumnsToDefault), keyEquivalent: "")
-        resetItem.target = self
-        menu.addItem(resetItem)
         
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
-    
-    private func currentVisibleColumnIds() -> [String] {
-        if hasInternetRadioColumns { return ModernBrowserColumn.internetRadioColumns.map { $0.id } }
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
-        }) { return visibleTrackColumnIds }
-        if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
-        }) { return visibleAlbumColumnIds }
-        return visibleArtistColumnIds
+
+    private func columnGroupsForCurrentMenu() -> [LibraryColumnVisibilityGroup] {
+        LibraryColumnVisibility.menuGroups(
+            isArtistsMode: browseMode == .artists,
+            isAlbumsMode: browseMode == .albums,
+            hasTrackRows: hasTrackRows(),
+            hasAlbumRows: hasAlbumRows(),
+            hasArtistRows: hasArtistRows()
+        )
     }
-    
-    @objc private func toggleColumnVisibility(_ sender: NSMenuItem) {
-        guard let columnId = sender.representedObject as? String else { return }
-        
-        // Determine which column ID list to modify
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
-        }) {
-            if let index = visibleTrackColumnIds.firstIndex(of: columnId) {
-                visibleTrackColumnIds.remove(at: index)
-                // Clear sort if hiding the sorted column
-                if columnSortId == columnId { columnSortId = nil }
-            } else {
-                visibleTrackColumnIds.append(columnId)
+
+    private func addColumnVisibilityGroup(_ group: LibraryColumnVisibilityGroup, to menu: NSMenu) {
+        if !menu.items.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        let header = NSMenuItem(title: group.headerTitle, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+
+        let visibleIds = Set(visibleColumnIds(for: group))
+        for column in allColumns(for: group) {
+            let item = NSMenuItem()
+            item.view = ColumnVisibilityCheckboxView(
+                title: column.title,
+                isChecked: column.id == "title" || visibleIds.contains(column.id),
+                isEnabled: column.id != "title"
+            ) { [weak self] isVisible in
+                self?.toggleColumnVisibility(group: group, columnId: column.id, visible: isVisible)
             }
-        } else if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
-        }) {
-            if let index = visibleAlbumColumnIds.firstIndex(of: columnId) {
-                visibleAlbumColumnIds.remove(at: index)
-                if columnSortId == columnId { columnSortId = nil }
-            } else {
-                visibleAlbumColumnIds.append(columnId)
+            menu.addItem(item)
+        }
+
+        let resetItem = NSMenuItem(title: group.resetTitle, action: #selector(resetColumnGroup(_:)), keyEquivalent: "")
+        resetItem.target = self
+        resetItem.representedObject = group.rawValue
+        menu.addItem(resetItem)
+    }
+
+    private func allColumns(for group: LibraryColumnVisibilityGroup) -> [ModernBrowserColumn] {
+        switch group {
+        case .artist: return ModernBrowserColumn.allArtistColumns
+        case .album: return ModernBrowserColumn.allAlbumColumns
+        case .track: return ModernBrowserColumn.allTrackColumns
+        }
+    }
+
+    private func defaultColumnIds(for group: LibraryColumnVisibilityGroup) -> [String] {
+        switch group {
+        case .artist: return ModernBrowserColumn.defaultArtistColumnIds
+        case .album: return ModernBrowserColumn.defaultAlbumColumnIds
+        case .track: return ModernBrowserColumn.defaultTrackColumnIds
+        }
+    }
+
+    private func visibleColumnIds(for group: LibraryColumnVisibilityGroup) -> [String] {
+        switch group {
+        case .artist: return normalizedColumnIds(visibleArtistColumnIds, allColumns: ModernBrowserColumn.allArtistColumns)
+        case .album: return normalizedColumnIds(visibleAlbumColumnIds, allColumns: ModernBrowserColumn.allAlbumColumns)
+        case .track: return normalizedColumnIds(visibleTrackColumnIds, allColumns: ModernBrowserColumn.allTrackColumns)
+        }
+    }
+
+    private func setVisibleColumnIds(_ ids: [String], for group: LibraryColumnVisibilityGroup) {
+        switch group {
+        case .artist:
+            visibleArtistColumnIds = normalizedColumnIds(ids, allColumns: ModernBrowserColumn.allArtistColumns)
+        case .album:
+            visibleAlbumColumnIds = normalizedColumnIds(ids, allColumns: ModernBrowserColumn.allAlbumColumns)
+        case .track:
+            visibleTrackColumnIds = normalizedColumnIds(ids, allColumns: ModernBrowserColumn.allTrackColumns)
+        }
+    }
+
+    private func toggleColumnVisibility(group: LibraryColumnVisibilityGroup, columnId: String, visible: Bool) {
+        guard columnId != "title" else { return }
+
+        var ids = visibleColumnIds(for: group)
+        if visible {
+            if !ids.contains(columnId) {
+                ids.append(columnId)
             }
         } else {
-            if let index = visibleArtistColumnIds.firstIndex(of: columnId) {
-                visibleArtistColumnIds.remove(at: index)
-                if columnSortId == columnId { columnSortId = nil }
-            } else {
-                visibleArtistColumnIds.append(columnId)
-            }
+            ids.removeAll { $0 == columnId }
+            if columnSortId == columnId { columnSortId = nil }
         }
+
+        setVisibleColumnIds(ids, for: group)
         needsDisplay = true
     }
     
-    @objc private func resetColumnsToDefault() {
-        visibleTrackColumnIds = ModernBrowserColumn.defaultTrackColumnIds
-        visibleAlbumColumnIds = ModernBrowserColumn.defaultAlbumColumnIds
-        visibleArtistColumnIds = ModernBrowserColumn.defaultArtistColumnIds
-        columnWidths.removeAll()
+    @objc private func resetColumnGroup(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let group = LibraryColumnVisibilityGroup(rawValue: rawValue) else { return }
+
+        setVisibleColumnIds(defaultColumnIds(for: group), for: group)
+        let columnIds = Set(allColumns(for: group).map { $0.id })
+        columnWidths = columnWidths.filter { !columnIds.contains($0.key) }
         needsDisplay = true
     }
     
@@ -10571,7 +10598,7 @@ extension ModernDisplayItem {
         case "genre": return track.genre ?? ""
         case "duration": return track.formattedDuration
         case "bitrate": return track.media.first?.bitrate.map { "\($0)k" } ?? ""
-        case "sampleRate": return ""  // Not available in Plex API track model
+        case "sampleRate": return track.media.first?.audioSampleRate.map { Self.formatSampleRate($0) } ?? ""
         case "channels": return track.media.first?.audioChannels.map { Self.formatChannels($0) } ?? ""
         case "size": return Self.formatFileSize(track.media.first?.parts.first?.size)
         case "rating": return Self.formatRating(track.userRating)
@@ -10596,7 +10623,7 @@ extension ModernDisplayItem {
         case "genre": return song.genre ?? ""
         case "duration": return song.formattedDuration
         case "bitrate": return song.bitRate.map { "\($0)k" } ?? ""
-        case "sampleRate": return ""  // Not available in Subsonic API
+        case "sampleRate": return song.samplingRate.map { Self.formatSampleRate($0) } ?? ""
         case "channels": return ""  // Not available in Subsonic API
         case "size": return Self.formatFileSize(song.size)
         case "rating":
@@ -10811,6 +10838,7 @@ extension ModernDisplayItem {
             case .track(let t): return t.addedAt
             case .subsonicTrack(let s): return s.created
             case .jellyfinTrack(let s): return s.created
+            case .embyTrack(let s): return s.created
             default: return nil
             }
         case "lastPlayed":
