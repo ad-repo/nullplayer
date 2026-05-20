@@ -146,8 +146,5 @@ final class MetMuseumImageCache {
             removed += 1
         }
 
-        if removed > 0 {
-            NSLog("MetMuseumImageCache: Pruned %d files from disk cache", removed)
-        }
     }
 }

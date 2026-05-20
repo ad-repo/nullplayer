@@ -700,6 +700,8 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
                 visualizationGLView?.nextGeissEffect()
             } else if visualizationGLView?.currentEngineType == .tripex {
                 visualizationGLView?.nextTripexEffect()
+            } else if visualizationGLView?.currentEngineType == .metMuseum {
+                visualizationGLView?.nextMetMuseumArtwork()
             } else if hasShift {
                 visualizationGLView?.nextPreset(hardCut: true)
             } else {
@@ -712,6 +714,9 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
                 visualizationGLView?.previousGeissEffect()
             } else if visualizationGLView?.currentEngineType == .tripex {
                 visualizationGLView?.previousTripexEffect()
+            } else if visualizationGLView?.currentEngineType == .metMuseum {
+                // Met Museum is random-only; left arrow advances like right.
+                visualizationGLView?.nextMetMuseumArtwork()
             } else if hasShift {
                 visualizationGLView?.previousPreset(hardCut: true)
             } else {
@@ -724,6 +729,8 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
                 visualizationGLView?.randomGeissEffect()
             } else if visualizationGLView?.currentEngineType == .tripex {
                 visualizationGLView?.randomTripexEffect()
+            } else if visualizationGLView?.currentEngineType == .metMuseum {
+                visualizationGLView?.nextMetMuseumArtwork()
             } else if hasShift {
                 visualizationGLView?.randomPreset(hardCut: true)
             } else {

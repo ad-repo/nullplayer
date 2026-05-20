@@ -43,7 +43,7 @@ final class MetMuseumEngine: VisualizationEngine {
 
     // MARK: - State
 
-    private let coreLock = NSLock()
+    private let coreLock = NSRecursiveLock()
     private var config: Config = Config()
 
     private var width: Int = 0
@@ -350,6 +350,14 @@ final class MetMuseumEngine: VisualizationEngine {
         NSLog("MetMuseumEngine: Image cache cleared")
     }
 
+    /// Immediately advance to a new random artwork. Safe to call from any thread.
+    func skipToNextArtwork() {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard isAvailable else { return }
+        advanceSlideshowImmediate()
+    }
+
     func setAudioActive(_ active: Bool) {
         coreLock.lock()
         defer { coreLock.unlock() }
@@ -357,10 +365,8 @@ final class MetMuseumEngine: VisualizationEngine {
         if !active && config.pauseOnAudioPause {
             slideshowTask?.cancel()
             slideshowTask = nil
-            NSLog("MetMuseumEngine: Paused slideshow (audio paused)")
         } else if active && slideshowTask == nil {
             startSlideshow()
-            NSLog("MetMuseumEngine: Resumed slideshow (audio playing)")
         }
     }
 
@@ -513,7 +519,7 @@ final class MetMuseumEngine: VisualizationEngine {
 
         vec3 rgb2hsv(vec3 rgb) {
             vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
-            vec4 p = rgb.g < rgb.b ? vec4(rgb.bg, K.wz) : vec4(rgb.bz, K.xy);
+            vec4 p = rgb.g < rgb.b ? vec4(rgb.bg, K.wz) : vec4(rgb.gb, K.xy);
             vec4 q = rgb.r < p.x ? vec4(p.xyw, rgb.r) : vec4(rgb.r, p.yzx);
             float d = q.x - min(q.w, q.y);
             float e = 1.0e-10;
@@ -529,17 +535,18 @@ final class MetMuseumEngine: VisualizationEngine {
         vec2 computeAspectAdjustedUV(vec2 uv) {
             vec2 adjustedUV = uv;
             if (u_aspectMode == 0) {
-                // Fit: letterbox/pillarbox
+                // Fit: letterbox/pillarbox. Map viewport UV into image space so the
+                // image fully fits and the leftover bands fall outside [0,1].
                 float imageAspect = u_imageAspect.x / u_imageAspect.y;
                 float viewAspect = u_viewportAspect.x / u_viewportAspect.y;
                 if (imageAspect > viewAspect) {
-                    // Image is wider, add vertical bars
+                    // Image wider than viewport: full image width, letterbox top/bottom
                     float scale = imageAspect / viewAspect;
-                    adjustedUV.y = (adjustedUV.y - 0.5) / scale + 0.5;
+                    adjustedUV.y = (adjustedUV.y - 0.5) * scale + 0.5;
                 } else {
-                    // Image is taller, add horizontal bars
+                    // Image taller than viewport: full image height, pillarbox sides
                     float scale = viewAspect / imageAspect;
-                    adjustedUV.x = (adjustedUV.x - 0.5) / scale + 0.5;
+                    adjustedUV.x = (adjustedUV.x - 0.5) * scale + 0.5;
                 }
             } else if (u_aspectMode == 1) {
                 // Fill: crop to fill viewport
@@ -559,31 +566,44 @@ final class MetMuseumEngine: VisualizationEngine {
             return adjustedUV;
         }
 
-        void main() {
-            vec2 currentUV = computeAspectAdjustedUV(v_uv);
-            vec4 current = texture(u_current, currentUV);
-            vec4 next = texture(u_next, computeAspectAdjustedUV(v_uv));
+        // Sample a texture, returning black for UVs outside [0,1] so letterbox
+        // bars don't smear the edge pixel via CLAMP_TO_EDGE.
+        vec4 sampleBounded(sampler2D tex, vec2 uv) {
+            if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
+                return vec4(0.0, 0.0, 0.0, 1.0);
+            }
+            return texture(tex, uv);
+        }
 
-            vec4 result;
-            if (u_mode == 0) {
-                // Crossfade
-                result = mix(current, next, u_progress);
-            } else if (u_mode == 1) {
-                // Ken Burns (slow 10% zoom over 30s, then crossfade during transition)
+        void main() {
+            vec2 imgUV = computeAspectAdjustedUV(v_uv);
+
+            // For Ken Burns, zoom inside image space; the zoom is clamped so it
+            // never escapes the image bounds, so the letterbox bars stay intact.
+            vec2 curUV = imgUV;
+            if (u_mode == 1) {
                 float zoomAmount = clamp(u_imageElapsed / 30.0, 0.0, 0.1);
                 float scale = 1.0 + zoomAmount;
-                vec2 zoomUV = (currentUV - 0.5) / scale + 0.5;
-                result = mix(texture(u_current, zoomUV), next, u_progress);
+                curUV = (imgUV - 0.5) / scale + 0.5;
+            }
+
+            vec4 current = sampleBounded(u_current, curUV);
+            vec4 next = sampleBounded(u_next, imgUV);
+
+            vec4 result;
+            if (u_mode == 0 || u_mode == 1) {
+                // Crossfade (mode 0) and Ken Burns crossfade (mode 1)
+                result = mix(current, next, u_progress);
             } else if (u_mode == 2) {
                 // Beat-cut (hard cut at progress >= 1.0)
                 result = u_progress >= 1.0 ? next : current;
             } else if (u_mode == 3) {
                 // Slide: current scrolls left, next scrolls in from right
-                vec2 curSlideUV = vec2(currentUV.x + u_progress, currentUV.y);
-                vec2 nxtSlideUV = vec2(currentUV.x + u_progress - 1.0, currentUV.y);
-                vec4 curSlide = (curSlideUV.x <= 1.0) ? texture(u_current, curSlideUV) : vec4(0.0);
-                vec4 nxtSlide = (nxtSlideUV.x >= 0.0) ? texture(u_next, nxtSlideUV) : vec4(0.0);
-                result = (currentUV.x < (1.0 - u_progress)) ? curSlide : nxtSlide;
+                vec2 curSlideUV = vec2(imgUV.x + u_progress, imgUV.y);
+                vec2 nxtSlideUV = vec2(imgUV.x + u_progress - 1.0, imgUV.y);
+                vec4 curSlide = sampleBounded(u_current, curSlideUV);
+                vec4 nxtSlide = sampleBounded(u_next, nxtSlideUV);
+                result = (imgUV.x < (1.0 - u_progress)) ? curSlide : nxtSlide;
             } else {
                 result = current;
             }
@@ -784,7 +804,6 @@ final class MetMuseumEngine: VisualizationEngine {
         imageStartTime = Date()
         coreLock.unlock()
 
-        NSLog("MetMuseumEngine: Uploaded image %dx%d to texture", w, h)
     }
 
     private func compileShader(type: GLenum, source: String) -> GLuint? {
@@ -805,7 +824,8 @@ final class MetMuseumEngine: VisualizationEngine {
             glGetShaderiv(shader, GLenum(GL_INFO_LOG_LENGTH), &logLen)
             var log = [GLchar](repeating: 0, count: Int(max(logLen, 1)))
             glGetShaderInfoLog(shader, GLsizei(log.count), nil, &log)
-            NSLog("MetMuseumEngine: shader compile failed: %s", log)
+            let msg = String(cString: log)
+            NSLog("MetMuseumEngine: shader compile failed: %@", msg)
             glDeleteShader(shader)
             return nil
         }
@@ -831,7 +851,8 @@ final class MetMuseumEngine: VisualizationEngine {
             glGetProgramiv(prog, GLenum(GL_INFO_LOG_LENGTH), &logLen)
             var log = [GLchar](repeating: 0, count: Int(max(logLen, 1)))
             glGetProgramInfoLog(prog, GLsizei(log.count), nil, &log)
-            NSLog("MetMuseumEngine: program link failed: %s", log)
+            let msg = String(cString: log)
+            NSLog("MetMuseumEngine: program link failed: %@", msg)
             glDeleteProgram(prog)
             return nil
         }

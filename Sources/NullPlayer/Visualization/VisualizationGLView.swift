@@ -559,7 +559,6 @@ class VisualizationGLView: NSOpenGLView {
         
         CVDisplayLinkStart(displayLink)
         isRendering = true
-        NSLog("VisualizationGLView: Started rendering")
     }
     
     func stopRendering() {
@@ -577,8 +576,6 @@ class VisualizationGLView: NSOpenGLView {
             contextRef.release()
             displayLinkContextRef = nil
         }
-        
-        NSLog("VisualizationGLView: Stopped rendering")
     }
 
     func resumeRenderingAfterWindowTransition() {
@@ -1275,6 +1272,14 @@ class VisualizationGLView: NSOpenGLView {
         defer { engineLock.unlock() }
         guard let t = engine as? TripexEngine else { return }
         body(t)
+    }
+
+    /// Skip immediately to a new random artwork (Met Museum).
+    func nextMetMuseumArtwork() {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let mm = engine as? MetMuseumEngine else { return }
+        mm.skipToNextArtwork()
     }
 
     /// Accessor for Met Museum departments state (used by menu builder)
