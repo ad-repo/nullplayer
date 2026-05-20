@@ -11,7 +11,7 @@ import AppKit
 // =============================================================================
 
 /// Modern ProjectM visualization view with full modern skin support
-class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
+class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarget {
     
     // MARK: - Properties
     
@@ -764,6 +764,7 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
         let isProjectMActive = currentEngineType == .projectM && isProjectMAvailable
         let isGeissActive = currentEngineType == .geiss
         let isTripexActive = currentEngineType == .tripex
+        let isMetMuseumActive = currentEngineType == .metMuseum
         
         // Preset navigation (only when projectM is available)
         if isProjectMActive {
@@ -915,6 +916,8 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
             addGeissEffectsMenuItems(to: menu)
         } else if isTripexActive {
             addTripexEffectsMenuItems(to: menu)
+        } else if isMetMuseumActive {
+            addMetMuseumEffectsMenuItems(to: menu)
         }
         
         // Visualization Engine selector
@@ -1088,6 +1091,114 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
         let value = Float(sender.tag) / 100.0
         visualizationGLView?.tripexIntensityScale = value
         UserDefaults.standard.set(value, forKey: TripexEngine.DefaultsKey.intensityScale)
+    }
+
+    private func addMetMuseumEffectsMenuItems(to menu: NSMenu) {
+        guard let glView = visualizationGLView else { return }
+        MetMuseumMenuBuilder.addMetMuseumEffectsMenuItems(to: menu,
+                                                          target: self,
+                                                          visualizationView: glView)
+    }
+
+    // MARK: - MetMuseumMenuTarget
+
+    @objc func selectMetMuseumDepartment(_ sender: NSMenuItem) {
+        let deptID = sender.tag
+        let value: Int? = (deptID == -1) ? nil : deptID
+        if let v = value {
+            UserDefaults.standard.set(v, forKey: MetMuseumEngine.DefaultsKey.departmentID)
+        } else {
+            UserDefaults.standard.removeObject(forKey: MetMuseumEngine.DefaultsKey.departmentID)
+        }
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            var config = engine.getConfig()
+            config.departmentID = value
+            engine.setConfig(config)
+        }
+    }
+
+    @objc func setMetMuseumInterval(_ sender: NSMenuItem) {
+        let seconds = Double(sender.tag)
+        UserDefaults.standard.set(seconds, forKey: MetMuseumEngine.DefaultsKey.intervalSeconds)
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            var config = engine.getConfig()
+            config.intervalSeconds = seconds
+            engine.setConfig(config)
+        }
+    }
+
+    @objc func setMetMuseumTransitionMode(_ sender: NSMenuItem) {
+        guard let modeStr = sender.representedObject as? String,
+              let mode = MetMuseumEngine.TransitionMode(rawValue: modeStr) else { return }
+        UserDefaults.standard.set(modeStr, forKey: MetMuseumEngine.DefaultsKey.transitionMode)
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            var config = engine.getConfig()
+            config.transitionMode = mode
+            engine.setConfig(config)
+        }
+    }
+
+    @objc func setMetMuseumTransitionDuration(_ sender: NSMenuItem) {
+        let seconds = Double(sender.tag) / 100.0
+        UserDefaults.standard.set(seconds, forKey: MetMuseumEngine.DefaultsKey.transitionDuration)
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            var config = engine.getConfig()
+            config.transitionDurationSeconds = seconds
+            engine.setConfig(config)
+        }
+    }
+
+    @objc func setMetMuseumAspectMode(_ sender: NSMenuItem) {
+        guard let aspectStr = sender.representedObject as? String,
+              let aspect = MetMuseumEngine.AspectMode(rawValue: aspectStr) else { return }
+        UserDefaults.standard.set(aspectStr, forKey: MetMuseumEngine.DefaultsKey.aspectMode)
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            var config = engine.getConfig()
+            config.aspectMode = aspect
+            engine.setConfig(config)
+        }
+    }
+
+    @objc func toggleMetMuseumAudioReactive(_ sender: NSMenuItem) {
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            var config = engine.getConfig()
+            config.audioReactiveEffects = !config.audioReactiveEffects
+            UserDefaults.standard.set(config.audioReactiveEffects, forKey: MetMuseumEngine.DefaultsKey.audioReactive)
+            engine.setConfig(config)
+        }
+    }
+
+    @objc func toggleMetMuseumBeatTriggered(_ sender: NSMenuItem) {
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            var config = engine.getConfig()
+            config.beatTriggeredChanges = !config.beatTriggeredChanges
+            UserDefaults.standard.set(config.beatTriggeredChanges, forKey: MetMuseumEngine.DefaultsKey.beatTriggered)
+            engine.setConfig(config)
+        }
+    }
+
+    @objc func toggleMetMuseumPauseOnAudioPause(_ sender: NSMenuItem) {
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            var config = engine.getConfig()
+            config.pauseOnAudioPause = !config.pauseOnAudioPause
+            UserDefaults.standard.set(config.pauseOnAudioPause, forKey: MetMuseumEngine.DefaultsKey.pauseOnAudioPause)
+            engine.setConfig(config)
+        }
+    }
+
+    @objc func toggleMetMuseumShowAttribution(_ sender: NSMenuItem) {
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            var config = engine.getConfig()
+            config.showAttribution = !config.showAttribution
+            UserDefaults.standard.set(config.showAttribution, forKey: MetMuseumEngine.DefaultsKey.showAttribution)
+            engine.setConfig(config)
+        }
+    }
+
+    @objc func clearMetMuseumCache(_ sender: NSMenuItem) {
+        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
+            engine.clearCache()
+        }
     }
 
     @objc private func nextGeissEffectAction(_ sender: Any?) {

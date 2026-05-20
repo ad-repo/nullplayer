@@ -358,6 +358,42 @@ class VisualizationGLView: NSOpenGLView {
                 NSLog("VisualizationGLView: Tripex engine not available")
                 return nil
             }
+
+        case .metMuseum:
+            let metMuseum = MetMuseumEngine(width: width, height: height)
+            if metMuseum.isAvailable {
+                NSLog("VisualizationGLView: Met Museum engine initialized")
+                // Restore persisted configuration
+                var config = metMuseum.getConfig()
+
+                if let deptID = UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.departmentID) as? Int {
+                    config.departmentID = (deptID == -1) ? nil : deptID
+                }
+                if let interval = UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.intervalSeconds) as? Double {
+                    config.intervalSeconds = interval
+                }
+                if let modeStr = UserDefaults.standard.string(forKey: MetMuseumEngine.DefaultsKey.transitionMode),
+                   let mode = MetMuseumEngine.TransitionMode(rawValue: modeStr) {
+                    config.transitionMode = mode
+                }
+                if let duration = UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.transitionDuration) as? Double {
+                    config.transitionDurationSeconds = duration
+                }
+                if let aspectStr = UserDefaults.standard.string(forKey: MetMuseumEngine.DefaultsKey.aspectMode),
+                   let aspect = MetMuseumEngine.AspectMode(rawValue: aspectStr) {
+                    config.aspectMode = aspect
+                }
+                config.audioReactiveEffects = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.audioReactive)
+                config.beatTriggeredChanges = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.beatTriggered)
+                config.pauseOnAudioPause = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.pauseOnAudioPause)
+                config.showAttribution = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.showAttribution)
+
+                metMuseum.setConfig(config)
+                return metMuseum
+            } else {
+                NSLog("VisualizationGLView: Met Museum engine not available")
+                return nil
+            }
         }
     }
 
@@ -694,6 +730,10 @@ class VisualizationGLView: NSOpenGLView {
                 pm.beatSensitivity = normalBeatSensitivity
                 NSLog("VisualizationGLView: Audio active, beat sensitivity = %.2f", normalBeatSensitivity)
             }
+            // Resume slideshow if paused (Met Museum)
+            if let mm = engine as? MetMuseumEngine {
+                mm.setAudioActive(true)
+            }
         } else {
             dataLock.withLock {
                 for i in 0..<localPCM.count {
@@ -708,6 +748,10 @@ class VisualizationGLView: NSOpenGLView {
             if let pm = engine as? ProjectMWrapper {
                 pm.beatSensitivity = idleBeatSensitivity
                 NSLog("VisualizationGLView: Audio idle, beat sensitivity = %.2f", idleBeatSensitivity)
+            }
+            // Pause slideshow if configured (Met Museum)
+            if let mm = engine as? MetMuseumEngine {
+                mm.setAudioActive(false)
             }
         }
     }
@@ -1231,6 +1275,14 @@ class VisualizationGLView: NSOpenGLView {
         defer { engineLock.unlock() }
         guard let t = engine as? TripexEngine else { return }
         body(t)
+    }
+
+    /// Accessor for Met Museum departments state (used by menu builder)
+    func metMuseumDepartmentsState() -> MetMuseumEngine.DepartmentsState? {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let mm = engine as? MetMuseumEngine else { return nil }
+        return mm.departmentsState
     }
 
     // MARK: - Geiss Configuration (UserDefaults persistence)
