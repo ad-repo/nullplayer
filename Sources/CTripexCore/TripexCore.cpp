@@ -208,6 +208,8 @@ extern "C" const char* TripexCore_lastError(TripexCoreHandle* h) {
 }
 
 extern "C" const char* TripexCore_lastStartupError(void) {
+    static thread_local std::string startup_error_snapshot;
     std::lock_guard<std::mutex> lk(g_startup_error_lock);
-    return g_last_startup_error.c_str();
+    startup_error_snapshot = g_last_startup_error;
+    return startup_error_snapshot.c_str();
 }

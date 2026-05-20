@@ -100,6 +100,11 @@ void WaveOutAudioDevice::Read(void* read_data, size_t read_size)
 			packet_idx = 0;
 		}
 	}
+
+	if (read_size > 0)
+	{
+		memset(out, 0, read_size);
+	}
 }
 
 Error* WaveOutAudioDevice::WriteNextPackets()
