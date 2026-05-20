@@ -27,11 +27,11 @@ public:
 	void MoveX(int x);
 	void MoveY(int y);
 
-	void SetTopLeft(const Point<T>& p) const;
-	void SetTopRight(const Point<T>& p) const;
-	void SetBotLeft(const Point<T>& p) const;
-	void SetBotRight(const Point<T>& p) const;
-	void SetCenter(const Point<T>& p) const;
+	void SetTopLeft(const Point<T>& p);
+	void SetTopRight(const Point<T>& p);
+	void SetBotLeft(const Point<T>& p);
+	void SetBotRight(const Point<T>& p);
+	void SetCenter(const Point<T>& p);
 
 	Point<T> GetTopLeft() const;
 	Point<T> GetTopRight() const;

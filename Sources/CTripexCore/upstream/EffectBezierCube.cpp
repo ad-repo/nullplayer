@@ -80,8 +80,8 @@ public:
 		for (int i = 0; i < TWISTPLANES; i++)
 		{
 			plane_roll_speed[i] = (3 + (rand() * 10.0 / RAND_MAX)) * DEG_TO_RAD;
-			plane_pitch_speed[i] = (3 + (rand() / RAND_MAX)) * DEG_TO_RAD;
-			plane_yaw_speed[i] = (3 + (rand() / RAND_MAX)) * DEG_TO_RAD;
+			plane_pitch_speed[i] = (3 + (rand() * 10.0 / RAND_MAX)) * DEG_TO_RAD;
+			plane_yaw_speed[i] = (3 + (rand() * 10.0 / RAND_MAX)) * DEG_TO_RAD;
 
 			planes[i].flags.set(Actor::F_DRAW_TRANSPARENT);
 			planes[i].flags.set(Actor::F_DRAW_VERTEX_SPRITES);

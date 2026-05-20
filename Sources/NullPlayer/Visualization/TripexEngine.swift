@@ -38,9 +38,8 @@ final class TripexEngine: VisualizationEngine {
         self.height = max(1, height)
 
         guard let handle = TripexCore_create(Int32(self.width), Int32(self.height)) else {
-            // TripexCore_create logs failure detail via stderr; surface a short
-            // hint in Console.app as well.
-            NSLog("TripexEngine: TripexCore_create returned NULL (check stderr for Tripex::Startup error)")
+            let startupError = String(cString: TripexCore_lastStartupError())
+            NSLog("TripexEngine: TripexCore_create returned NULL: %@", startupError.isEmpty ? "unknown startup error" : startupError)
             return
         }
         self.core = handle

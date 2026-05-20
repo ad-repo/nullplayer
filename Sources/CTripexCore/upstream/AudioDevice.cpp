@@ -71,6 +71,7 @@ Error* WaveOutAudioDevice::Tick(float elapsed)
 
 void WaveOutAudioDevice::Read(void* read_data, size_t read_size)
 {
+	uint8* out = (uint8*)read_data;
 	int packet_idx = next_packet;
 	for (int idx = 0; idx < NUM_PACKETS; idx++)
 	{
@@ -85,9 +86,10 @@ void WaveOutAudioDevice::Read(void* read_data, size_t read_size)
 		if (packet_ofs < packet.buffer_size)
 		{
 			size_t packet_size = std::min(read_size, packet.buffer_size - packet_ofs);
-			memcpy(read_data, packet.buffer.get() + packet_ofs, packet_size);
+			memcpy(out, packet.buffer.get() + packet_ofs, packet_size);
 
 			read_pos += packet_size;
+			out += packet_size;
 			read_size -= packet_size;
 
 			if (read_size == 0) break;

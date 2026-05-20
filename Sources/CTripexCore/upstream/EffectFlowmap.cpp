@@ -7,6 +7,7 @@
 #include "Canvas.h"
 #include "Texture.h"
 #include "ColorHsv.h"
+#include <memory>
 #include <time.h>
 //#include <mmsystem.h>
 
@@ -86,7 +87,7 @@ public:
 	unsigned int tflowmap;
 	float fMagnify;
 	bool fOddFrame;
-	Canvas* pCanvas;//(false, nFlowmapW, nFlowmapH);
+	std::unique_ptr<Canvas> pCanvas;//(false, nFlowmapW, nFlowmapH);
 	ColorRgb srccolour[256];
 	ColorRgb dstcolour[256];
 	double fadecolour;
@@ -189,7 +190,7 @@ public:
 
 		width = nFlowmapW * 256;
 		height = nFlowmapH * 256;
-		pCanvas = new Canvas(width, height);
+		pCanvas = std::make_unique<Canvas>(width, height);
 		//		pc.Create(false, nFlowmapW, nFlowmapH);
 
 		bf1.resize(width * height);

@@ -138,7 +138,7 @@ public:
 		return nullptr;
 	}
 
-	bool CanRender(double elapsed)
+	bool CanRenderImpl(float elapsed) override
 	{
 		return ((elapsed * 1.3) + accum) >= 1;
 	}

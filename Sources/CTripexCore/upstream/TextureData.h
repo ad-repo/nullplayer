@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Platform.h"
+
 extern const uint32 tex_raw_gui[ ];
 extern const uint32 tex_raw_font[ ];
 extern const uint32 tex_blank[ ];

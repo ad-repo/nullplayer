@@ -264,6 +264,7 @@ public:
 		move_speed = 1.0f + (rand() * 4.0f / RAND_MAX);
 
 		texture = params.texture_library.Find(background_texture_class);
+		current_bumpmap = nullptr;
 		if (texture != nullptr)
 		{
 			std::map<Texture*, std::unique_ptr<uint16[]>>::iterator it = texture_to_bumpmap.find(texture);

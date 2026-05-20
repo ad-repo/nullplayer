@@ -47,6 +47,7 @@ LRESULT WndProc(HWND hWnd, uint32 nMsg, WPARAM wParam, LPARAM lParam)
 		{
 			AppState* app = new AppState();
 			SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)app);
+			app->last_tick = GetTickCount64();
 
 			app->renderer = std::make_shared<RendererDirect3d>();
 			app->audio_device.reset();

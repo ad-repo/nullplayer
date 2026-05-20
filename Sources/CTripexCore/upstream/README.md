@@ -1,7 +1,7 @@
 # Tripex
 
 <p align="center">
-  <img src="tripex.jpg" />
+  <img src="tripex.jpg" alt="Tripex visualization screenshot" />
 </p>
 
 ## Requirements
@@ -41,7 +41,7 @@ out in the same source files as a sort of "backup" in case I changed my mind.
 premature optimization. I thought I was being clever writing things in certain
 ways, while having a huge blind spot for others.
 * I had certain quirks of style that I was very attached to, and really went out
-of my way to follow them. I still do that to a degree, I'm embarrased to say,
+of my way to follow them. I still do that to a degree, I'm embarrassed to say,
 but at least I'm much more wary of how counter-productive that sort of dogma can
 be.
 

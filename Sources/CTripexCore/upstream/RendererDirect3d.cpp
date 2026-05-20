@@ -3,6 +3,7 @@
 #include <d3dx9.h>
 #include "Texture.h"
 #include "error.h"
+#include <algorithm>
 #include <memory>
 #include "ComPtr.h"
 
@@ -430,9 +431,11 @@ Error* RendererDirect3d::UploadTexture(IDirect3DTexture9* d3d_texture, int width
 			const uint8* input_data = (const uint8*)data;
 			uint8* output_data = (uint8*)locked_rect.pBits;
 
-			for (int row = 0; row < 256; row++)
+			uint32 rows = std::min(surface_desc.Height, (uint32)height);
+			uint32 row_bytes = std::min(surface_desc.Width, (uint32)width);
+			for (uint32 row = 0; row < rows; row++)
 			{
-				memcpy(output_data, input_data, 256);
+				memcpy(output_data, input_data, row_bytes);
 				output_data += locked_rect.Pitch;
 				input_data += data_stride;
 			}

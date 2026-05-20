@@ -14,6 +14,9 @@
 #include <unordered_map>
 #include <cstdio>
 
+static std::mutex g_startup_error_lock;
+static std::string g_last_startup_error;
+
 struct TripexCoreHandle {
     std::mutex                       lock;
     std::shared_ptr<RendererOpenGL>  renderer;
@@ -30,6 +33,10 @@ static void setError(TripexCoreHandle* h, Error* err) {
 }
 
 extern "C" TripexCoreHandle* TripexCore_create(int width, int height) {
+    {
+        std::lock_guard<std::mutex> lk(g_startup_error_lock);
+        g_last_startup_error.clear();
+    }
     auto* h = new TripexCoreHandle();
     h->renderer = std::make_shared<RendererOpenGL>(width, height);
     h->audio    = std::make_shared<HostAudioSource>();
@@ -38,6 +45,10 @@ extern "C" TripexCoreHandle* TripexCore_create(int width, int height) {
     if (err != nullptr) {
         std::string desc = err->GetDescription();
         delete err;
+        {
+            std::lock_guard<std::mutex> lk(g_startup_error_lock);
+            g_last_startup_error = desc;
+        }
         fprintf(stderr, "[Tripex] Startup failed: %s\n", desc.c_str());
         delete h;
         return nullptr;
@@ -194,4 +205,9 @@ extern "C" const char* TripexCore_lastError(TripexCoreHandle* h) {
     if (!h) return "";
     std::lock_guard<std::mutex> lk(h->lock);
     return h->last_error.c_str();
+}
+
+extern "C" const char* TripexCore_lastStartupError(void) {
+    std::lock_guard<std::mutex> lk(g_startup_error_lock);
+    return g_last_startup_error.c_str();
 }

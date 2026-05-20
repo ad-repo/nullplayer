@@ -1,6 +1,7 @@
 #include "AudioSource.h"
 #include <mmeapi.h>
 #include <assert.h>
+#include <algorithm>
 
 AudioSource::~AudioSource()
 {
@@ -32,6 +33,12 @@ MemoryAudioSource::~MemoryAudioSource()
 
 void MemoryAudioSource::Read(void* read_data, size_t read_size)
 {
+	if (data_len == 0)
+	{
+		memset(read_data, 0, read_size);
+		return;
+	}
+
 	for (;;)
 	{
 		size_t chunk_size = std::min(data_len - data_pos, read_size);
@@ -61,9 +68,18 @@ Error* MemoryAudioSource::CreateFromWavFile(const char* path, std::unique_ptr<Me
 
 	fseek(file, 0, SEEK_END);
 	long length = ftell(file);
+	if (length < 12)
+	{
+		fclose(file);
+		return new Error("WAV file too small");
+	}
 	fseek(file, 0, SEEK_SET);
 	std::unique_ptr<uint8[]> wav_file_data = std::make_unique<uint8[]>(length);
-	fread(wav_file_data.get(), 1, length, file);
+	if (fread(wav_file_data.get(), 1, length, file) != (size_t)length)
+	{
+		fclose(file);
+		return new Error("Unable to read WAV file");
+	}
 	fclose(file);
 
 	// Parse the WAV file structure
@@ -83,14 +99,23 @@ Error* MemoryAudioSource::CreateFromWavFile(const char* path, std::unique_ptr<Me
 	const uint8* source_data = nullptr;
 	uint32 source_data_len = 0;
 
-	for (long pos = 12; pos < length; )
+	for (long pos = 12; pos + 8 <= length; )
 	{
 		const uint8* chunk_header = wav_header + pos;
 		uint32 chunk_len = *((const uint32*)(chunk_header + 4));
+		long chunk_data_pos = pos + 8;
+		if (chunk_len > (uint32)(length - chunk_data_pos))
+		{
+			return new Error("Invalid WAV chunk length");
+		}
 
 		const uint8* chunk_data = chunk_header + 8;
 		if (memcmp(chunk_header, "fmt ", 4) == 0)
 		{
+			if (chunk_len < 16)
+			{
+				return new Error("Invalid fmt chunk");
+			}
 			const WAVEFORMATEX* format = (const WAVEFORMATEX*)chunk_data;
 			if (format->wFormatTag != WAVE_FORMAT_PCM)
 			{
@@ -107,10 +132,10 @@ Error* MemoryAudioSource::CreateFromWavFile(const char* path, std::unique_ptr<Me
 			source_data_len = chunk_len;
 		}
 
-		pos += 8 + chunk_len;
+		pos += 8 + chunk_len + (chunk_len & 1);
 	}
 
-	if (num_channels == 0 || source_data == nullptr)
+	if (num_channels == 0 || sample_rate <= 0 || source_data == nullptr)
 	{
 		return new Error("Missing headers from WAV file");
 	}
@@ -145,12 +170,22 @@ template<> struct MemoryAudioSource::Resample<int16>
 
 template<typename T> std::unique_ptr<MemoryAudioSource> MemoryAudioSource::ResampleData(const void* input_data, size_t input_length, int num_channels, int sample_rate)
 {
+	if (sample_rate <= 0 || num_channels <= 0)
+	{
+		return std::make_unique<MemoryAudioSource>(std::shared_ptr<uint8[]>(new uint8[0]), 0);
+	}
+
 	size_t input_block_size = num_channels * sizeof(T);
 	size_t input_block_count = input_length / input_block_size;
+	if (input_block_count == 0)
+	{
+		return std::make_unique<MemoryAudioSource>(std::shared_ptr<uint8[]>(new uint8[0]), 0);
+	}
 
 	size_t r_channel_offset = (num_channels > 1) ? 1 : 0;
 
-	size_t output_block_count = (input_block_count * SAMPLE_RATE) / sample_rate;
+	size_t output_block_count = (size_t)((double)input_block_count * SAMPLE_RATE / sample_rate);
+	if (output_block_count == 0) output_block_count = 1;
 
 	size_t buffer_len = output_block_count * NUM_CHANNELS * sizeof(int16);
 	std::unique_ptr<uint8[]> buffer = std::make_unique<uint8[]>(buffer_len);
@@ -158,30 +193,21 @@ template<typename T> std::unique_ptr<MemoryAudioSource> MemoryAudioSource::Resam
 	const T* input_samples = (const T*)input_data;
 	int16* output_samples = (int16*)buffer.get();
 
-	const T* input_block = input_samples;
-
-	size_t block_remainder = 0;
-	float block_t_mult = 1.0f / output_block_count;
-
 	for (size_t idx = 0; idx < output_block_count; idx++)
 	{
-		float block_t = block_remainder * block_t_mult;
+		double input_pos = (double)idx * sample_rate / SAMPLE_RATE;
+		size_t input_block_idx = std::min((size_t)input_pos, input_block_count - 1);
+		size_t next_block_idx = std::min(input_block_idx + 1, input_block_count - 1);
+		float block_t = (float)(input_pos - input_block_idx);
 
-		const T* input_l = input_block;
-		*(output_samples++) = Resample<T>::GetValue(*input_l + (*(input_l + num_channels) - *input_l) * block_t);
+		const T* input_l = input_samples + (input_block_idx * num_channels);
+		const T* next_l = input_samples + (next_block_idx * num_channels);
+		*(output_samples++) = Resample<T>::GetValue(*input_l + (*next_l - *input_l) * block_t);
 
-		const T* input_r = input_block + r_channel_offset;
-		*(output_samples++) = Resample<T>::GetValue(*input_r + (*(input_r + num_channels) - *input_r) * block_t);
-
-		block_remainder += input_block_count;
-		while (block_remainder >= output_block_count)
-		{
-			input_block += num_channels;
-			block_remainder -= output_block_count;
-		}
+		const T* input_r = input_l + r_channel_offset;
+		const T* next_r = next_l + r_channel_offset;
+		*(output_samples++) = Resample<T>::GetValue(*input_r + (*next_r - *input_r) * block_t);
 	}
 
 	return std::make_unique<MemoryAudioSource>(std::move(buffer), buffer_len);
 }
-
-

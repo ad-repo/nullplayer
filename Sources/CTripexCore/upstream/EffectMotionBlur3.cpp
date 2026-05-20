@@ -16,7 +16,6 @@ public:
 
 	Camera camera;
 	Actor objects[9];
-	Actor obj;
 
 	float change = 0.0f;
 	float shown;
@@ -48,7 +47,6 @@ public:
 		next_effect = -1;
 		pos = 0;
 
-		obj.CreateTetrahedron(80.0f);
 		current_effect = rand() % 5;
 
 		camera.position.z = -80;//110;
@@ -124,11 +122,6 @@ public:
 		av_time += params.elapsed;
 
 		cam.position.z = -80;
-
-		obj.roll += params.elapsed * 3.14159 / 180.0f;
-		obj.pitch += params.elapsed * 2.0f * 3.14159 / 180.0f;
-		obj.yaw += params.elapsed * 3.0f * 3.14159 / 180.0f;
-		obj.Calculate(params.renderer, &cam, params.elapsed);
 
 		if (av_total > 6 || reset)
 		{

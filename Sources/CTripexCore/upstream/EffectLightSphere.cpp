@@ -166,11 +166,10 @@ public:
 		return nullptr;
 	}
 
-	bool CanRender(double dElapsed)
+	bool CanRenderImpl(float dElapsed) override
 	{
 		return (dElapsed > 0.2);
 	}
 };
 
 EXPORT_EFFECT(LightSphere, EffectLightSphere)
-

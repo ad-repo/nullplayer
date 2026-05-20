@@ -99,27 +99,27 @@ template<class T> inline void Rect<T>::MoveY(int nY)
 	bottom += nY;
 }
 
-template<class T> inline void Rect<T>::SetTopLeft(const Point<T>& p) const
+template<class T> inline void Rect<T>::SetTopLeft(const Point<T>& p)
 {
 	operator+=(Point<T>(p) - GetTopLeft());
 }
 
-template<class T> inline void Rect<T>::SetTopRight(const Point<T>& p) const
+template<class T> inline void Rect<T>::SetTopRight(const Point<T>& p)
 {
 	operator+=(Point<T>(p) - GetTopRight());
 }
 
-template<class T> inline void Rect<T>::SetBotLeft(const Point<T>& p) const
+template<class T> inline void Rect<T>::SetBotLeft(const Point<T>& p)
 {
 	operator+=(Point<T>(p) - GetBotLeft());
 }
 
-template<class T> inline void Rect<T>::SetBotRight(const Point<T>& p) const
+template<class T> inline void Rect<T>::SetBotRight(const Point<T>& p)
 {
 	operator+=(Point<T>(p) - GetBotRight());
 }
 
-template<class T> inline void Rect<T>::SetCenter(const Point<T>& p) const
+template<class T> inline void Rect<T>::SetCenter(const Point<T>& p)
 {
 	operator+=(Point<T>(p) - GetCenter());
 }

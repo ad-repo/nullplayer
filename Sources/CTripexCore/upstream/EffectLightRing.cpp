@@ -130,7 +130,7 @@ public:
 		return nullptr;
 	}
 
-	bool CanRender(double elapsed)
+	bool CanRenderImpl(float elapsed) override
 	{
 		return (elapsed > 0.1);//1.0);
 	}

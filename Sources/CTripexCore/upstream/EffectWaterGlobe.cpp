@@ -98,7 +98,7 @@ private:
 			if(angle > 360.0f)
 			{
 				angle = 0.0f;
-				pos = rand() * (int)vertices.size() / RAND_MAX;
+				if(!vertices.empty()) pos = rand() % (int)vertices.size();
 				size = average * 0.5f;
 			}
 			angle += 20.0f;//= 3.14159 / 180.0;
@@ -110,7 +110,7 @@ private:
 				{
 					accel += positions[adjacent[i][j]];
 				}
-				accel /= j;
+				if(j > 0) accel /= j;
 				velocities[i] += accel - positions[i];
 			}
 			for(int i = 0; i < vertices.size(); i++)

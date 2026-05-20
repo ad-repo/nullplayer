@@ -52,7 +52,6 @@ public:
 		{
 			source_ang[i] = rand() * (3.14159 * 2.0) / RAND_MAX;
 			source_speed[i] = rand() * (2.0 * 3.14159 / 180.0) / RAND_MAX;
-			source_height[i] = 35 - (rand() * 70.0 / RAND_MAX);
 			source_radius[i] = 100 + (rand() * 60.0 / RAND_MAX);
 			source_height[i] = -10.0 + (rand() * 20.0 / RAND_MAX);
 		}

@@ -104,6 +104,10 @@ Error* VertexGrid::Render(Renderer& renderer, const RenderState& render_state)
 {
 	int new_scr_width = renderer.GetWidth();
 	int new_scr_height = renderer.GetHeight();
+	if(new_scr_width <= 0 || new_scr_height <= 0)
+	{
+		return nullptr;
+	}
 	if(scr_width != new_scr_width || scr_height != new_scr_height)
 	{
 		scr_width = new_scr_width;
@@ -138,6 +142,12 @@ Error* VertexGrid::Render(Renderer& renderer, const RenderState& render_state)
 				start_x = x;
 				pos_x = pfX[x] / (pfX[x] - pfX[x - 1]);
 			}
+		}
+		if(start_x < 1 || start_y < 1)
+		{
+			faces.clear();
+			update_edges = false;
+			return nullptr;
 		}
 		for(int x = 0; x <= width; x++)
 		{

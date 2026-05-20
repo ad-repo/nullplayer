@@ -16,8 +16,8 @@ extern "C" {
 
 typedef struct TripexCoreHandle TripexCoreHandle;
 
-// Lifecycle. _create returns NULL on Tripex::Startup() failure; the caller
-// can then read TripexCore_lastError() for diagnostics.
+// Lifecycle. _create returns NULL on Tripex::Startup() failure; callers can
+// read TripexCore_lastStartupError() for diagnostics in that path.
 TripexCoreHandle* TripexCore_create(int width, int height);
 void              TripexCore_destroy(TripexCoreHandle* handle);
 void              TripexCore_resize(TripexCoreHandle* handle, int width, int height);
@@ -65,6 +65,10 @@ int               TripexCore_getOption(TripexCoreHandle* handle, const char* key
 // Exported as part of the public C ABI; Swift currently reads errors via
 // _create returning NULL but C callers can poll this directly.
 const char*       TripexCore_lastError(TripexCoreHandle* handle);
+
+// Startup error description from the most recent TripexCore_create failure.
+// Returns empty string when no startup error is pending.
+const char*       TripexCore_lastStartupError(void);
 
 #ifdef __cplusplus
 } // extern "C"
