@@ -1184,15 +1184,6 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
         }
     }
 
-    @objc func toggleMetMuseumPauseOnAudioPause(_ sender: NSMenuItem) {
-        if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
-            var config = engine.getConfig()
-            config.pauseOnAudioPause = !config.pauseOnAudioPause
-            UserDefaults.standard.set(config.pauseOnAudioPause, forKey: MetMuseumEngine.DefaultsKey.pauseOnAudioPause)
-            engine.setConfig(config)
-        }
-    }
-
     @objc func toggleMetMuseumShowAttribution(_ sender: NSMenuItem) {
         if let engine = visualizationGLView?.currentEngine as? MetMuseumEngine {
             var config = engine.getConfig()

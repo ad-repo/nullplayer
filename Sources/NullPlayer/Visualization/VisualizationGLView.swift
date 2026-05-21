@@ -385,10 +385,12 @@ class VisualizationGLView: NSOpenGLView {
                 }
                 config.audioReactiveEffects = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.audioReactive)
                 config.beatTriggeredChanges = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.beatTriggered)
-                config.pauseOnAudioPause = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.pauseOnAudioPause)
                 config.showAttribution = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.showAttribution)
 
                 metMuseum.setConfig(config)
+                // Sync audio state — engine no longer auto-starts its slideshow.
+                let isPlaying = WindowManager.shared.audioEngine.state == .playing
+                metMuseum.setAudioActive(isPlaying)
                 return metMuseum
             } else {
                 NSLog("VisualizationGLView: Met Museum engine not available")

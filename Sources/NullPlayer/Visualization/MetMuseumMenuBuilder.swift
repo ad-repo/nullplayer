@@ -180,15 +180,6 @@ final class MetMuseumMenuBuilder {
         beatTriggeredItem.state = beatTriggeredEnabled ? .on : .off
         menu.addItem(beatTriggeredItem)
 
-        // Pause Slideshow When Audio Paused toggle
-        let pauseOnAudioPauseEnabled = config?.pauseOnAudioPause ?? false
-        let pauseOnAudioItem = NSMenuItem(title: "Pause Slideshow When Audio Paused",
-                                         action: #selector(MetMuseumMenuTarget.toggleMetMuseumPauseOnAudioPause(_:)),
-                                         keyEquivalent: "")
-        pauseOnAudioItem.target = target
-        pauseOnAudioItem.state = pauseOnAudioPauseEnabled ? .on : .off
-        menu.addItem(pauseOnAudioItem)
-
         // Show Artist & Title toggle
         let showAttributionEnabled = config?.showAttribution ?? false
         let attributionItem = NSMenuItem(title: "Show Artist & Title",
@@ -241,7 +232,6 @@ extension MetMuseumEngine.AspectMode {
     func setMetMuseumAspectMode(_ sender: NSMenuItem)
     func toggleMetMuseumAudioReactive(_ sender: NSMenuItem)
     func toggleMetMuseumBeatTriggered(_ sender: NSMenuItem)
-    func toggleMetMuseumPauseOnAudioPause(_ sender: NSMenuItem)
     func toggleMetMuseumShowAttribution(_ sender: NSMenuItem)
     func clearMetMuseumCache(_ sender: NSMenuItem)
 }

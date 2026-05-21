@@ -24,7 +24,6 @@ final class MetMuseumEngine: VisualizationEngine {
         var audioReactiveEffects: Bool = false
         var beatTriggeredChanges: Bool = false
         var aspectMode: AspectMode = .fit
-        var pauseOnAudioPause: Bool = false
         var showAttribution: Bool = false
     }
 
@@ -176,8 +175,10 @@ final class MetMuseumEngine: VisualizationEngine {
             }
         }
 
-        // Start slideshow
-        startSlideshow()
+        // Slideshow is gated on audio state — VisualizationGLView's engine
+        // factory calls setAudioActive() after creating us, which starts the
+        // slideshow if audio is playing. Auto-starting here would race that
+        // call and leave the slideshow running even when audio is stopped.
     }
 
     deinit {
@@ -422,10 +423,10 @@ final class MetMuseumEngine: VisualizationEngine {
         coreLock.lock()
         defer { coreLock.unlock() }
 
-        if !active && config.pauseOnAudioPause {
+        if !active {
             slideshowTask?.cancel()
             slideshowTask = nil
-        } else if active && slideshowTask == nil {
+        } else if slideshowTask == nil {
             startSlideshow()
         }
     }
@@ -613,14 +614,43 @@ final class MetMuseumEngine: VisualizationEngine {
         let image = NSImage(data: imageData)
         guard let image = image else { throw MetMuseumError.noImageURL }
 
+        // If the slideshow was cancelled while we were fetching (e.g. audio
+        // stopped), drop the image instead of pushing it to the GPU.
+        try Task.checkCancellation()
+
         coreLock.lock()
         let attribution = "\(objectInfo.title) - \(objectInfo.artistDisplayName ?? "Unknown") (\(objectInfo.objectDate ?? ""))"
         currentObjectID = objectInfo.objectID
         currentAttribution = attribution
-        nextImage = image
-        isTransitioning = true
-        transitionStartTime = Date()
-        transitionProgress = 0.0
+
+        // Skip the transition effect when the new image's aspect ratio differs
+        // from the current image's — the shader samples both textures with a
+        // single aspect uniform, so a mid-transition mismatch visibly stretches
+        // one of the two images. Hard-cutting looks cleaner than a stretched
+        // crossfade. Threshold is relative (>5%) so near-matches still animate.
+        let newW = Double(image.size.width)
+        let newH = Double(image.size.height)
+        let newAspect = newH > 0 ? newW / newH : 1.0
+        let curAspect = (currentImageWidth > 0 && currentImageHeight > 0)
+            ? Double(currentImageWidth) / Double(currentImageHeight)
+            : newAspect
+        let aspectMismatch = currentImage != nil &&
+            abs(newAspect - curAspect) / max(newAspect, curAspect) > 0.05
+
+        if aspectMismatch {
+            // Hard cut: route the upload straight to currentTexture and skip
+            // the animation. uploadImage targets currentTexture when
+            // !isTransitioning (see renderFrame), so clear the flag first.
+            isTransitioning = false
+            nextImage = nil
+            transitionProgress = 0.0
+            currentImage = image
+        } else {
+            nextImage = image
+            isTransitioning = true
+            transitionStartTime = Date()
+            transitionProgress = 0.0
+        }
         imageChangeTime = Date()
         pendingUploads.append((imageData, objectInfo.objectID))
         coreLock.unlock()
@@ -1047,7 +1077,6 @@ extension MetMuseumEngine {
         static let audioReactive = "metMuseumAudioReactive"
         static let beatTriggered = "metMuseumBeatTriggered"
         static let aspectMode = "metMuseumAspectMode"
-        static let pauseOnAudioPause = "metMuseumPauseOnAudioPause"
         static let showAttribution = "metMuseumShowAttribution"
     }
 }
