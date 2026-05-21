@@ -33,7 +33,12 @@ actor MetMuseumClient {
 
     private let urlSession: URLSession
     private let semaphore: AsyncSemaphore
-    private let maxConcurrent: Int = 5
+    // Met collection API is restricted; published guidance is 80 req/s but the
+    // edge throttles much more aggressively in practice. Keep this small.
+    private let maxConcurrent: Int = 2
+    // Minimum spacing between requests serialised through the same client.
+    private let minRequestSpacing: TimeInterval = 0.25
+    private var lastRequestTime: Date = .distantPast
 
     // MARK: - Timeouts
 
@@ -56,6 +61,12 @@ actor MetMuseumClient {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 60.0
         config.timeoutIntervalForResource = 600.0
+        // Identify ourselves; the Met's CDN throttles requests with no/default
+        // User-Agent and frequently returns 403 to them.
+        config.httpAdditionalHeaders = [
+            "User-Agent": "NullPlayer/1.0 (Met Museum visualization; +https://github.com/billytimmy666/nullplayer)",
+            "Accept": "application/json, image/*"
+        ]
         self.urlSession = URLSession(configuration: config)
         self.semaphore = AsyncSemaphore(value: maxConcurrent)
     }
@@ -75,9 +86,11 @@ actor MetMuseumClient {
 
             let (data, response) = try await urlSession.data(for: request)
 
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode) else {
-                throw NetworkError.httpError
+            let httpResponse = response as? HTTPURLResponse
+            let status = httpResponse?.statusCode ?? -1
+            guard (200..<300).contains(status) else {
+                let retryAfter = Self.parseRetryAfter(httpResponse?.value(forHTTPHeaderField: "Retry-After"))
+                throw NetworkError.httpError(status: status, url: urlString, retryAfter: retryAfter)
             }
 
             struct DepartmentsResponse: Codable {
@@ -107,9 +120,11 @@ actor MetMuseumClient {
 
             let (data, response) = try await urlSession.data(for: request)
 
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode) else {
-                throw NetworkError.httpError
+            let httpResponse = response as? HTTPURLResponse
+            let status = httpResponse?.statusCode ?? -1
+            guard (200..<300).contains(status) else {
+                let retryAfter = Self.parseRetryAfter(httpResponse?.value(forHTTPHeaderField: "Retry-After"))
+                throw NetworkError.httpError(status: status, url: urlString, retryAfter: retryAfter)
             }
 
             let decoder = JSONDecoder()
@@ -132,9 +147,11 @@ actor MetMuseumClient {
 
             let (data, response) = try await urlSession.data(for: request)
 
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode) else {
-                throw NetworkError.httpError
+            let httpResponse = response as? HTTPURLResponse
+            let status = httpResponse?.statusCode ?? -1
+            guard (200..<300).contains(status) else {
+                let retryAfter = Self.parseRetryAfter(httpResponse?.value(forHTTPHeaderField: "Retry-After"))
+                throw NetworkError.httpError(status: status, url: urlString, retryAfter: retryAfter)
             }
 
             let decoder = JSONDecoder()
@@ -157,18 +174,30 @@ actor MetMuseumClient {
 
             let (data, response) = try await urlSession.data(for: request)
 
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode) else {
-                throw NetworkError.httpError
+            let httpResponse = response as? HTTPURLResponse
+            let status = httpResponse?.statusCode ?? -1
+            guard (200..<300).contains(status) else {
+                let retryAfter = Self.parseRetryAfter(httpResponse?.value(forHTTPHeaderField: "Retry-After"))
+                throw NetworkError.httpError(status: status, url: url.absoluteString, retryAfter: retryAfter)
             }
 
             return data
         }
     }
 
-    /// Helper to acquire permit, run closure, then release
+    /// Helper to acquire permit, enforce minimum request spacing, run closure, then release
     private func withPermit<T>(_ body: () async throws -> T) async rethrows -> T {
         await semaphore.acquire()
+        // Enforce minimum spacing between requests to stay under the API's
+        // throttle. Without this, two concurrent permits can fire back-to-back
+        // and trigger 429s under load.
+        let now = Date()
+        let delta = now.timeIntervalSince(lastRequestTime)
+        if delta < minRequestSpacing {
+            let wait = minRequestSpacing - delta
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+        }
+        lastRequestTime = Date()
         do {
             let result = try await body()
             await semaphore.release()
@@ -179,11 +208,30 @@ actor MetMuseumClient {
         }
     }
 
+    /// Parse a Retry-After header value (RFC 7231 — either a delta-seconds
+    /// integer or an HTTP-date). Returns seconds to wait, or nil if missing/malformed.
+    private static func parseRetryAfter(_ header: String?) -> TimeInterval? {
+        guard let header = header?.trimmingCharacters(in: .whitespaces), !header.isEmpty else {
+            return nil
+        }
+        if let seconds = TimeInterval(header) {
+            return max(0, seconds)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        if let date = formatter.date(from: header) {
+            return max(0, date.timeIntervalSinceNow)
+        }
+        return nil
+    }
+
     // MARK: - Error Types
 
     enum NetworkError: LocalizedError {
         case invalidURL
-        case httpError
+        case httpError(status: Int, url: String, retryAfter: TimeInterval?)
         case notPublicDomain
         case invalidImage
         case decodingError
@@ -192,8 +240,11 @@ actor MetMuseumClient {
             switch self {
             case .invalidURL:
                 return "Invalid URL constructed"
-            case .httpError:
-                return "HTTP request failed"
+            case .httpError(let status, let url, let retryAfter):
+                if let r = retryAfter {
+                    return "HTTP \(status) for \(url) (retry-after \(Int(r))s)"
+                }
+                return "HTTP \(status) for \(url)"
             case .notPublicDomain:
                 return "Object is not public domain"
             case .invalidImage:
@@ -201,6 +252,21 @@ actor MetMuseumClient {
             case .decodingError:
                 return "Failed to decode JSON response"
             }
+        }
+
+        /// True for transient errors (rate limit, server unavailable) — callers
+        /// should back off rather than retry quickly. The Met's CDN returns 403
+        /// for rate-limited clients (not 429), so 403 is treated as a throttle here.
+        var isThrottle: Bool {
+            if case .httpError(let status, _, _) = self {
+                return status == 403 || status == 429 || status == 503
+            }
+            return false
+        }
+
+        var retryAfter: TimeInterval? {
+            if case .httpError(_, _, let r) = self { return r }
+            return nil
         }
     }
 }

@@ -68,6 +68,7 @@ final class MetMuseumEngine: VisualizationEngine {
     private var smoothedEnergy: Float = 0.0
     private let energyAlpha: Float = 0.15
     private var pendingBeatAdvance = false
+    private var fetchInFlight = false
 
     // Transition state
     private var transitionProgress: Float = 0.0
@@ -95,10 +96,18 @@ final class MetMuseumEngine: VisualizationEngine {
     private var energyUniform: GLint = -1
     private var audioReactiveUniform: GLint = -1
     private var attributionAlphaUniform: GLint = -1
+    private var attributionSizeUniform: GLint = -1
     private var imageStartTimeUniform: GLint = -1
+
+    // Actual attribution texture size, in pixels, for shader positioning
+    private var attributionTextureWidth: Int = 0
+    private var attributionTextureHeight: Int = 0
 
     // Pending upload queue
     private var pendingUploads: [(data: Data, objectID: Int)] = []
+    private var pendingAttributionUpload: (cgImage: CGImage, width: Int, height: Int)?
+    private var lastManualSkipTime: Date = .distantPast
+    private let manualSkipMinInterval: TimeInterval = 0.5
 
     // Image change tracking (for attribution fade)
     private var imageChangeTime: Date = Date()
@@ -114,7 +123,23 @@ final class MetMuseumEngine: VisualizationEngine {
         case loaded([MetDepartment])
         case failed
     }
-    private(set) var departmentsState: DepartmentsState = .loading
+    private var rawDepartmentsState: DepartmentsState = .loading
+    // Departments that returned no public-domain artwork; removed from the
+    // visible list and skipped by the slideshow.
+    private var excludedDepartmentIDs: Set<Int> = []
+
+    /// Departments with empty (no public-domain) entries filtered out.
+    var departmentsState: DepartmentsState {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        switch rawDepartmentsState {
+        case .loading, .failed:
+            return rawDepartmentsState
+        case .loaded(let depts):
+            let filtered = depts.filter { !excludedDepartmentIDs.contains($0.id) }
+            return .loaded(filtered)
+        }
+    }
 
     // Network retry state
     private var retryTaskActive = false
@@ -141,11 +166,11 @@ final class MetMuseumEngine: VisualizationEngine {
             do {
                 let depts = try await client.fetchDepartments()
                 coreLock.lock()
-                self.departmentsState = .loaded(depts)
+                self.rawDepartmentsState = .loaded(depts)
                 coreLock.unlock()
             } catch {
                 coreLock.lock()
-                self.departmentsState = .failed
+                self.rawDepartmentsState = .failed
                 coreLock.unlock()
                 NSLog("MetMuseumEngine: Failed to fetch departments: %@", error.localizedDescription)
             }
@@ -233,8 +258,25 @@ final class MetMuseumEngine: VisualizationEngine {
         }
         pendingUploads.removeAll()
 
+        // Process pending attribution texture upload on the GL thread
+        if let pending = pendingAttributionUpload {
+            pendingAttributionUpload = nil
+            if attributionTexture == 0 {
+                glGenTextures(1, &attributionTexture)
+                glBindTexture(GLenum(GL_TEXTURE_2D), attributionTexture)
+                glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR)
+                glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
+                glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE)
+                glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE)
+                glBindTexture(GLenum(GL_TEXTURE_2D), 0)
+            }
+            uploadCGImage(pending.cgImage, to: attributionTexture, width: pending.width, height: pending.height)
+            attributionTextureWidth = pending.cgImage.width
+            attributionTextureHeight = pending.cgImage.height
+        }
+
         // Advance on beat if flagged
-        if shouldAdvanceOnBeat && !isTransitioning {
+        if shouldAdvanceOnBeat && !isTransitioning && !fetchInFlight {
             advanceSlideshowImmediate()
         }
 
@@ -312,7 +354,16 @@ final class MetMuseumEngine: VisualizationEngine {
         } else {
             attributionAlpha = 0.0
         }
-        glUniform1f(attributionAlphaUniform, config.showAttribution ? attributionAlpha : 0.0)
+        // Only show the overlay when a real attribution texture is bound. Without
+        // this guard the shader samples an unbound texture (garbage) or smears
+        // the dark background of the previous overlay across a hard-coded rect.
+        let overlayActive = config.showAttribution && attributionTexture != 0 && attributionTextureWidth > 0 && attributionTextureHeight > 0
+        glUniform1f(attributionAlphaUniform, overlayActive ? attributionAlpha : 0.0)
+        if overlayActive {
+            glUniform2f(attributionSizeUniform, Float(attributionTextureWidth), Float(attributionTextureHeight))
+        } else {
+            glUniform2f(attributionSizeUniform, 0.0, 0.0)
+        }
 
         glBindVertexArray(vao)
         glDrawArrays(GLenum(GL_TRIANGLE_STRIP), 0, 4)
@@ -351,10 +402,19 @@ final class MetMuseumEngine: VisualizationEngine {
     }
 
     /// Immediately advance to a new random artwork. Safe to call from any thread.
+    /// Rate-limited so rapid key-mashing doesn't flood the Met API (which throttles).
     func skipToNextArtwork() {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard isAvailable else { return }
+        // Drop the request if a fetch is already underway — prevents key-mashing
+        // from cancelling and re-issuing requests in a tight loop.
+        if fetchInFlight { return }
+        let now = Date()
+        if now.timeIntervalSince(lastManualSkipTime) < manualSkipMinInterval {
+            return
+        }
+        lastManualSkipTime = now
         advanceSlideshowImmediate()
     }
 
@@ -374,20 +434,35 @@ final class MetMuseumEngine: VisualizationEngine {
 
     private func startSlideshow() {
         slideshowTask?.cancel()
-        slideshowTask = Task {
+        // Task.detached so the slideshow loop is not born cancelled when
+        // started from inside another task (e.g. advanceSlideshowImmediate).
+        slideshowTask = Task.detached { [weak self] in
+            guard let self else { return }
             while !Task.isCancelled {
                 do {
-                    try await fetchAndDisplayRandomArtwork()
-                    try await Task.sleep(nanoseconds: UInt64(config.intervalSeconds * 1_000_000_000))
+                    try await self.fetchAndDisplayRandomArtwork()
+                    try await Task.sleep(nanoseconds: UInt64(self.getConfig().intervalSeconds * 1_000_000_000))
+                } catch is CancellationError {
+                    return
                 } catch {
                     NSLog("MetMuseumEngine slideshow error: %@", error.localizedDescription)
-                    // Exponential backoff retry: 1s, 2s, 4s. After exhausting, retry every 30s
+                    // For throttle errors honour Retry-After (or use a long
+                    // default) instead of hammering the API on the 1/2/4s ladder.
+                    let throttle = (error as? MetMuseumClient.NetworkError)?.isThrottle == true
+                    let retryAfter = (error as? MetMuseumClient.NetworkError)?.retryAfter
+                    let retryDelays: [Double]
+                    if throttle {
+                        let base = max(10.0, retryAfter ?? 30.0)
+                        retryDelays = [base, base * 2, base * 4]
+                    } else {
+                        retryDelays = [1.0, 2.0, 4.0]
+                    }
                     var success = false
-                    for retryDelay in [1.0, 2.0, 4.0] {
+                    for retryDelay in retryDelays {
                         if Task.isCancelled { break }
                         try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
                         do {
-                            try await fetchAndDisplayRandomArtwork()
+                            try await self.fetchAndDisplayRandomArtwork()
                             success = true
                             break
                         } catch {
@@ -401,7 +476,7 @@ final class MetMuseumEngine: VisualizationEngine {
                             try? await Task.sleep(nanoseconds: 30_000_000_000)
                             if Task.isCancelled { break }
                             do {
-                                try await fetchAndDisplayRandomArtwork()
+                                try await self.fetchAndDisplayRandomArtwork()
                                 // Success, resume normal loop
                                 break
                             } catch {
@@ -414,45 +489,115 @@ final class MetMuseumEngine: VisualizationEngine {
         }
     }
 
+    /// Mark the currently-selected department as having no public-domain
+    /// artwork (we just exhausted the random-attempt loop). Switch the active
+    /// department to any remaining one, or to "all departments" if there's
+    /// nothing else to fall back to.
+    private func excludeCurrentDepartmentAndPickAnother() {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let currentID = config.departmentID else {
+            // Already searching across all departments — nothing to exclude.
+            return
+        }
+        excludedDepartmentIDs.insert(currentID)
+        NSLog("MetMuseumEngine: department %d has no public-domain artwork; removing from list", currentID)
+
+        let remaining: [MetDepartment]
+        if case .loaded(let depts) = rawDepartmentsState {
+            remaining = depts.filter { !excludedDepartmentIDs.contains($0.id) }
+        } else {
+            remaining = []
+        }
+        let nextID = remaining.randomElement()?.id
+        // nil here means "all departments" — a safe fallback.
+        config.departmentID = nextID
+        let key = MetMuseumEngine.DefaultsKey.departmentID
+        if let nextID = nextID {
+            UserDefaults.standard.set(nextID, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
     private func advanceSlideshowImmediate() {
         // Called from renderFrame under coreLock; trigger next fetch
-        // without waiting for the interval timer
+        // without waiting for the interval timer.
+        // Task.detached so the child task does not inherit cancellation
+        // from the parent context (see CLAUDE.md: regular Task { } inherits
+        // cancellation and would self-cancel when startSlideshow() runs below).
         slideshowTask?.cancel()
-        slideshowTask = Task {
+        slideshowTask = Task.detached { [weak self] in
+            guard let self else { return }
             do {
-                try await fetchAndDisplayRandomArtwork()
+                try await self.fetchAndDisplayRandomArtwork()
+            } catch is CancellationError {
+                return
             } catch {
                 NSLog("MetMuseumEngine beat-triggered advance error: %@", error.localizedDescription)
             }
-            // Resume normal slideshow
-            startSlideshow()
+            self.startSlideshow()
         }
     }
 
     private func fetchAndDisplayRandomArtwork() async throws {
+        coreLock.lock()
+        if fetchInFlight {
+            coreLock.unlock()
+            return
+        }
+        fetchInFlight = true
+        coreLock.unlock()
+        defer {
+            coreLock.lock()
+            fetchInFlight = false
+            coreLock.unlock()
+        }
+
         // Fetch list of object IDs for the department
         let objectIDs = try await client.fetchObjectIDs(departmentID: config.departmentID)
         guard !objectIDs.isEmpty else {
             throw MetMuseumError.noArtworkFound
         }
 
-        // Try random objects until we find a public-domain one with an image
-        let maxAttempts = min(20, objectIDs.count)
+        // Try random objects until we find a public-domain one with an image.
+        // Per-object errors (404, transient 403 throttle) don't kill the loop —
+        // they just count as a miss so we can keep looking. Throttle errors
+        // are re-thrown so the slideshow's outer backoff can wait properly.
+        let maxAttempts = min(40, objectIDs.count)
         var attempts = 0
         var selectedObject: MetObject?
+        var lastThrottleError: Error?
 
         while attempts < maxAttempts {
             let randomID = objectIDs.randomElement() ?? objectIDs.first!
             attempts += 1
 
-            if let obj = try await client.fetchObject(id: randomID) {
-                selectedObject = obj
+            do {
+                if let obj = try await client.fetchObject(id: randomID) {
+                    selectedObject = obj
+                    break
+                }
+            } catch let error as MetMuseumClient.NetworkError where error.isThrottle {
+                // Remember and bail out so the outer loop can back off.
+                lastThrottleError = error
                 break
+            } catch {
+                // Per-object miss (404, decode error, transient). Skip and try another.
+                continue
             }
-            // fetchObject returns nil for non-public-domain or missing image; continue loop
+        }
+
+        if let throttleError = lastThrottleError, selectedObject == nil {
+            throw throttleError
         }
 
         guard let objectInfo = selectedObject else {
+            // Exhausted attempts without finding a public-domain piece. Mark
+            // this department as empty so the menu hides it and the slideshow
+            // doesn't keep retrying it. Pick a different department for the
+            // next attempt.
+            excludeCurrentDepartmentAndPickAnother()
             throw MetMuseumError.noArtworkFound
         }
 
@@ -480,9 +625,11 @@ final class MetMuseumEngine: VisualizationEngine {
         pendingUploads.append((imageData, objectInfo.objectID))
         coreLock.unlock()
 
-        // Create attribution texture if needed
+        // Queue attribution texture upload (runs on GL thread in renderFrame).
+        // GL calls must happen on the render thread with the active context;
+        // calling glBindTexture from this async Task crashes (KERN_INVALID_ADDRESS).
         if config.showAttribution {
-            createAttributionTexture(from: attribution)
+            queueAttributionTexture(from: attribution)
         }
     }
 
@@ -516,6 +663,7 @@ final class MetMuseumEngine: VisualizationEngine {
         uniform float u_imageElapsed;
         uniform sampler2D u_attribution;
         uniform float u_attributionAlpha;
+        uniform vec2 u_attributionSize;  // attribution texture size in px, (0,0) => disabled
 
         vec3 rgb2hsv(vec3 rgb) {
             vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
@@ -616,13 +764,19 @@ final class MetMuseumEngine: VisualizationEngine {
                 result.rgb = hsv2rgb(hsv);
             }
 
-            // Composite attribution overlay at bottom-left if enabled
-            if (u_attributionAlpha > 0.0) {
-                // Attribution appears at bottom-left
-                vec2 attrUV = gl_FragCoord.xy / vec2(1920.0, 1080.0);  // Approximate viewport
-                attrUV.y = 1.0 - attrUV.y;  // Flip Y for bottom-left positioning
-                if (attrUV.x < 0.4 && attrUV.y < 0.15) {
-                    // Sample attribution texture with adjusted UVs
+            // Composite attribution overlay anchored at bottom-left of the viewport,
+            // sampling only inside the overlay's actual pixel rect so we don't
+            // smear the edge texel across the screen via CLAMP_TO_EDGE.
+            if (u_attributionAlpha > 0.0 && u_attributionSize.x > 0.0 && u_attributionSize.y > 0.0) {
+                // gl_FragCoord origin is bottom-left in GL; place the overlay
+                // with an 8px margin from the bottom-left corner.
+                vec2 margin = vec2(8.0, 8.0);
+                vec2 pxFromCorner = gl_FragCoord.xy - margin;
+                if (pxFromCorner.x >= 0.0 && pxFromCorner.x < u_attributionSize.x &&
+                    pxFromCorner.y >= 0.0 && pxFromCorner.y < u_attributionSize.y) {
+                    // Texture was uploaded with top-left origin; flip Y for sampling.
+                    vec2 attrUV = vec2(pxFromCorner.x / u_attributionSize.x,
+                                       1.0 - pxFromCorner.y / u_attributionSize.y);
                     vec4 attrSample = texture(u_attribution, attrUV);
                     result.rgb = mix(result.rgb, attrSample.rgb, attrSample.a * u_attributionAlpha);
                 }
@@ -647,6 +801,7 @@ final class MetMuseumEngine: VisualizationEngine {
         audioReactiveUniform = glGetUniformLocation(program, "u_audioReactive")
         attributionTexUniform = glGetUniformLocation(program, "u_attribution")
         attributionAlphaUniform = glGetUniformLocation(program, "u_attributionAlpha")
+        attributionSizeUniform = glGetUniformLocation(program, "u_attributionSize")
         imageStartTimeUniform = glGetUniformLocation(program, "u_imageElapsed")
 
         // Setup VAO/VBO (fullscreen quad)
@@ -725,8 +880,9 @@ final class MetMuseumEngine: VisualizationEngine {
         }
     }
 
-    private func createAttributionTexture(from attribution: String) {
-        // Render attribution text to an NSImage, then upload as texture
+    private func queueAttributionTexture(from attribution: String) {
+        // Render attribution text to a CGImage; the actual GL upload is deferred
+        // to renderFrame so it runs on the GL thread with the active context.
         let attr: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 14),
             .foregroundColor: NSColor.white
@@ -738,20 +894,21 @@ final class MetMuseumEngine: VisualizationEngine {
 
         let image = NSImage(size: imgSize)
         image.lockFocus()
-        // Dark semi-transparent background
         NSColor(red: 0, green: 0, blue: 0, alpha: 0.6).setFill()
         NSBezierPath(rect: NSMakeRect(0, 0, imgSize.width, imgSize.height)).fill()
-        // Draw drop shadow by drawing text twice offset
         NSColor(red: 0, green: 0, blue: 0, alpha: 0.3).set()
         attrString.draw(at: NSMakePoint(padding + 1, padding - 1))
-        // Draw text
         attrString.draw(at: NSMakePoint(padding, padding))
         image.unlockFocus()
 
-        if let tiffData = image.tiffRepresentation,
-           let cgImage = NSBitmapImageRep(data: tiffData)?.cgImage {
-            uploadCGImage(cgImage, to: attributionTexture, width: Int(imgSize.width), height: Int(imgSize.height))
+        guard let tiffData = image.tiffRepresentation,
+              let cgImage = NSBitmapImageRep(data: tiffData)?.cgImage else {
+            return
         }
+
+        coreLock.lock()
+        pendingAttributionUpload = (cgImage, Int(imgSize.width), Int(imgSize.height))
+        coreLock.unlock()
     }
 
     private func uploadImage(data: Data, to textureID: GLuint) {
@@ -762,10 +919,10 @@ final class MetMuseumEngine: VisualizationEngine {
             return
         }
 
-        uploadCGImage(cgImage, to: textureID, width: Int(image.size.width), height: Int(image.size.height))
+        uploadCGImage(cgImage, to: textureID, width: Int(image.size.width), height: Int(image.size.height), updateImageDims: true)
     }
 
-    private func uploadCGImage(_ cgImage: CGImage, to textureID: GLuint, width: Int, height: Int) {
+    private func uploadCGImage(_ cgImage: CGImage, to textureID: GLuint, width: Int, height: Int, updateImageDims: Bool = false) {
         let w = cgImage.width
         let h = cgImage.height
 
@@ -797,13 +954,16 @@ final class MetMuseumEngine: VisualizationEngine {
                      GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), pixelData)
         glBindTexture(GLenum(GL_TEXTURE_2D), 0)
 
-        // Update tracked dimensions for aspect ratio uniforms
-        coreLock.lock()
-        currentImageWidth = w
-        currentImageHeight = h
-        imageStartTime = Date()
-        coreLock.unlock()
-
+        // Only update artwork aspect ratio for the artwork texture upload.
+        // Attribution and placeholder uploads must not clobber these or the
+        // shader stretches the artwork to the overlay's dimensions.
+        if updateImageDims {
+            coreLock.lock()
+            currentImageWidth = w
+            currentImageHeight = h
+            imageStartTime = Date()
+            coreLock.unlock()
+        }
     }
 
     private func compileShader(type: GLenum, source: String) -> GLuint? {
