@@ -62,10 +62,10 @@ class VisualizationGLView: NSOpenGLView {
     private var isAudioActive = false
     
     /// Normal beat sensitivity (restored when audio starts)
-    /// User-configurable via context menu, persisted in UserDefaults
+    /// User-configurable via context menu, persisted per-engine in UserDefaults
     private(set) var normalBeatSensitivity: Float = 1.0 {
         didSet {
-            UserDefaults.standard.set(normalBeatSensitivity, forKey: "projectMBeatSensitivity")
+            UserDefaults.standard.set(normalBeatSensitivity, forKey: Self.beatSensKey(for: currentEngineType))
         }
     }
     
@@ -118,7 +118,7 @@ class VisualizationGLView: NSOpenGLView {
     /// Saved to UserDefaults for persistence
     private(set) var isLowPowerMode: Bool = true {
         didSet {
-            UserDefaults.standard.set(isLowPowerMode, forKey: "projectMLowPowerMode")
+            UserDefaults.standard.set(isLowPowerMode, forKey: Self.lowPowerKey(for: currentEngineType))
         }
     }
     
@@ -127,7 +127,59 @@ class VisualizationGLView: NSOpenGLView {
     /// Range: 0.5 to 3.0, default 1.0 (unity gain)
     private(set) var pcmGain: Float = 1.0 {
         didSet {
-            UserDefaults.standard.set(pcmGain, forKey: "projectMPCMGain")
+            UserDefaults.standard.set(pcmGain, forKey: Self.pcmGainKey(for: currentEngineType))
+        }
+    }
+
+    // MARK: - Per-engine scoped preference keys
+
+    private static func pcmGainKey(for t: VisualizationType) -> String { "viz.\(t.rawValue).pcmGain" }
+    private static func lowPowerKey(for t: VisualizationType) -> String { "viz.\(t.rawValue).lowPowerMode" }
+    private static func beatSensKey(for t: VisualizationType) -> String { "viz.\(t.rawValue).beatSensitivity" }
+
+    private static let legacyMigrationFlagKey = "viz.legacyMigrationV1"
+
+    /// Copy legacy global `projectM*` keys into the scoped `viz.projectM.*` slots once,
+    /// so existing ProjectM users keep their settings after the per-engine split.
+    private static func migrateLegacyProjectMKeysIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: legacyMigrationFlagKey) else { return }
+
+        let pairs: [(legacy: String, scoped: String)] = [
+            ("projectMPCMGain", pcmGainKey(for: .projectM)),
+            ("projectMLowPowerMode", lowPowerKey(for: .projectM)),
+            ("projectMBeatSensitivity", beatSensKey(for: .projectM)),
+        ]
+        for (legacy, scoped) in pairs {
+            if defaults.object(forKey: scoped) == nil,
+               let legacyValue = defaults.object(forKey: legacy) {
+                defaults.set(legacyValue, forKey: scoped)
+            }
+        }
+        defaults.set(true, forKey: legacyMigrationFlagKey)
+    }
+
+    /// Load the three per-engine scoped settings into the live properties.
+    /// Falls back to defaults (lowPower=true, pcmGain=1.0, beatSensitivity=1.0) when absent.
+    private func loadScopedSettings(for type: VisualizationType) {
+        let defaults = UserDefaults.standard
+
+        if defaults.object(forKey: Self.lowPowerKey(for: type)) != nil {
+            isLowPowerMode = defaults.bool(forKey: Self.lowPowerKey(for: type))
+        } else {
+            isLowPowerMode = true
+        }
+
+        if defaults.object(forKey: Self.pcmGainKey(for: type)) != nil {
+            pcmGain = defaults.float(forKey: Self.pcmGainKey(for: type))
+        } else {
+            pcmGain = 1.0
+        }
+
+        if defaults.object(forKey: Self.beatSensKey(for: type)) != nil {
+            normalBeatSensitivity = defaults.float(forKey: Self.beatSensKey(for: type))
+        } else {
+            normalBeatSensitivity = 1.0
         }
     }
     
@@ -162,21 +214,12 @@ class VisualizationGLView: NSOpenGLView {
            let type = VisualizationType(rawValue: savedType) {
             currentEngineType = type
         }
-        
-        // Load saved performance mode preference (defaults to low power / 30fps)
-        if UserDefaults.standard.object(forKey: "projectMLowPowerMode") != nil {
-            isLowPowerMode = UserDefaults.standard.bool(forKey: "projectMLowPowerMode")
-        }
-        
-        // Load saved PCM gain preference (defaults to 1.0 / unity gain)
-        if UserDefaults.standard.object(forKey: "projectMPCMGain") != nil {
-            pcmGain = UserDefaults.standard.float(forKey: "projectMPCMGain")
-        }
-        
-        // Load saved beat sensitivity preference (defaults to 1.0 / normal)
-        if UserDefaults.standard.object(forKey: "projectMBeatSensitivity") != nil {
-            normalBeatSensitivity = UserDefaults.standard.float(forKey: "projectMBeatSensitivity")
-        }
+
+        // Migrate legacy global ProjectM keys into per-engine scoped keys (one-shot)
+        Self.migrateLegacyProjectMKeysIfNeeded()
+
+        // Load per-engine scoped settings (low power, PCM gain, beat sensitivity)
+        loadScopedSettings(for: currentEngineType)
 
         // Load saved Geiss configuration preferences
         loadGeissConfigFromDefaults()
@@ -200,20 +243,11 @@ class VisualizationGLView: NSOpenGLView {
             currentEngineType = type
         }
 
-        // Load saved performance mode preference (defaults to low power / 30fps)
-        if UserDefaults.standard.object(forKey: "projectMLowPowerMode") != nil {
-            isLowPowerMode = UserDefaults.standard.bool(forKey: "projectMLowPowerMode")
-        }
+        // Migrate legacy global ProjectM keys into per-engine scoped keys (one-shot)
+        Self.migrateLegacyProjectMKeysIfNeeded()
 
-        // Load saved PCM gain preference (defaults to 1.0 / unity gain)
-        if UserDefaults.standard.object(forKey: "projectMPCMGain") != nil {
-            pcmGain = UserDefaults.standard.float(forKey: "projectMPCMGain")
-        }
-
-        // Load saved beat sensitivity preference (defaults to 1.0 / normal)
-        if UserDefaults.standard.object(forKey: "projectMBeatSensitivity") != nil {
-            normalBeatSensitivity = UserDefaults.standard.float(forKey: "projectMBeatSensitivity")
-        }
+        // Load per-engine scoped settings (low power, PCM gain, beat sensitivity)
+        loadScopedSettings(for: currentEngineType)
 
         // Load saved Geiss configuration preferences
         loadGeissConfigFromDefaults()
@@ -444,6 +478,10 @@ class VisualizationGLView: NSOpenGLView {
 
         // Save preference
         UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
+
+        // Repopulate per-engine scoped settings (low power, PCM gain, beat sensitivity)
+        // from the new engine's stored values, falling back to defaults on first use.
+        loadScopedSettings(for: type)
 
         // Mark engine for reinitialization on next render
         engineNeedsSetup = true
