@@ -1012,7 +1012,7 @@ class ModernLibraryBrowserView: NSView {
         let sortText = "Sort"
         let sortAttrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: skin.applyTextOpacity(to: browseMode.isHistoryMode ? skin.textDimColor.withAlphaComponent(0.45) : skin.textDimColor)
+            .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
         ]
         let sortSize = sortText.size(withAttributes: sortAttrs)
         let sortWidth = sortSize.width + 16
@@ -1090,12 +1090,9 @@ class ModernLibraryBrowserView: NSView {
 
     private func drawInlineTabBarLabel(label: String, rect: NSRect,
                                        font: NSFont, skin: ModernSkin, context: CGContext) {
-        let color = browseMode.isHistoryMode
-            ? skin.textDimColor.withAlphaComponent(0.45)
-            : skin.textDimColor
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: skin.applyTextOpacity(to: color)
+            .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
         ]
         let textSize = label.size(withAttributes: attrs)
         let textOrigin = NSPoint(x: rect.midX - textSize.width / 2,
@@ -1157,7 +1154,7 @@ class ModernLibraryBrowserView: NSView {
         let artBtnHeight: CGFloat = Layout.serverBarHeight - 6 * m
         var artX = refreshX - artBtnWidth - 12 * m
         
-        if !browseMode.isHistoryMode, currentArtwork != nil {
+        if currentArtwork != nil {
             let artBtnRect = NSRect(x: artX, y: barRect.minY + 3 * m, width: artBtnWidth, height: artBtnHeight)
             drawToggleTab(label: artText, isActive: isArtOnlyMode, rect: artBtnRect,
                           font: font, skin: skin, context: context)
@@ -1167,7 +1164,7 @@ class ModernLibraryBrowserView: NSView {
         
         // VIS button (only in art-only mode, modern boxed toggle style)
         var visEndX = artX
-        if !browseMode.isHistoryMode && isArtOnlyMode && currentArtwork != nil {
+        if isArtOnlyMode && currentArtwork != nil {
             let visText = "VIS"
             let visTextWidth = visText.size(withAttributes: prefixAttrs).width
             let visBtnWidth = visTextWidth + 16 * m
@@ -1179,8 +1176,7 @@ class ModernLibraryBrowserView: NSView {
         }
         
         // Star rating (art-only mode with a track playing)
-        if !browseMode.isHistoryMode,
-           isArtOnlyMode,
+        if isArtOnlyMode,
            let currentTrack = WindowManager.shared.audioEngine.currentTrack,
            currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
             let starSize: CGFloat = 14 * m
@@ -1221,8 +1217,8 @@ class ModernLibraryBrowserView: NSView {
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
 
-            // Item count (only in list mode, not art-only, not history mode)
-            if !isArtOnlyMode && !browseMode.isHistoryMode {
+            // Item count (only in list mode)
+            if !isArtOnlyMode {
                 let totalCount: Int
                 if browseMode == .artists {
                     totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
@@ -1291,8 +1287,8 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
                 
-                // Item count (only in list mode, not art-only, not history mode)
-                if !isArtOnlyMode && !browseMode.isHistoryMode {
+                // Item count (only in list mode)
+                if !isArtOnlyMode {
                     let itemCount: Int
                     if manager.currentLibrary?.type == "artist" {
                         itemCount = cachedArtists.count
@@ -1343,8 +1339,8 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
-                // Item count (only in list mode, not art-only, not history mode)
-                if !isArtOnlyMode && !browseMode.isHistoryMode {
+                // Item count (only in list mode)
+                if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
@@ -1387,8 +1383,8 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
-                // Item count (only in list mode, not art-only, not history mode)
-                if !isArtOnlyMode && !browseMode.isHistoryMode {
+                // Item count (only in list mode)
+                if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
@@ -1431,8 +1427,8 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
-                // Item count (only in list mode, not art-only, not history mode)
-                if !isArtOnlyMode && !browseMode.isHistoryMode {
+                // Item count (only in list mode)
+                if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
@@ -1454,8 +1450,8 @@ class ModernLibraryBrowserView: NSView {
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
             
-            // Item count (only in list mode, not art-only, not history mode)
-            if !isArtOnlyMode && !browseMode.isHistoryMode {
+            // Item count (only in list mode)
+            if !isArtOnlyMode {
                 let countText = "\(displayItems.count) stations"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
@@ -2792,7 +2788,6 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestSortIndicator(at point: NSPoint) -> Bool {
-        guard !browseMode.isHistoryMode else { return false }
         let tabBarTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return false }
@@ -3578,12 +3573,12 @@ class ModernLibraryBrowserView: NSView {
         let artBtnWidth = artTextWidth + 16 * m
         let artZoneStart = refreshZoneStart - 12 * m - artBtnWidth
         let artZoneEnd = artZoneStart + artBtnWidth
-        if !browseMode.isHistoryMode, currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
+        if currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
             isArtOnlyMode.toggle(); return
         }
         
         // VIS button - match drawn button positions
-        if !browseMode.isHistoryMode && isArtOnlyMode && currentArtwork != nil {
+        if isArtOnlyMode && currentArtwork != nil {
             let visTextWidth = "VIS".size(withAttributes: fontAttrs).width
             let visBtnWidth = visTextWidth + 16 * m
             let visZoneStart = artZoneStart - 8 * m - visBtnWidth
@@ -3592,7 +3587,7 @@ class ModernLibraryBrowserView: NSView {
         }
         
         // RATE button click (star area in art-only mode)
-        if !browseMode.isHistoryMode && !rateButtonRect.isEmpty {
+        if !rateButtonRect.isEmpty {
             let rateRelativeStart = rateButtonRect.minX - barRect.minX
             let rateRelativeEnd = rateButtonRect.maxX - barRect.minX
             if relativeX >= rateRelativeStart && relativeX <= rateRelativeEnd {
