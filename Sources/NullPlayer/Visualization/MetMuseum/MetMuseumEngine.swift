@@ -56,6 +56,7 @@ final class MetMuseumEngine: VisualizationEngine {
     private var currentImage: NSImage?
     private var currentAttribution: String = ""
     private var slideshowTask: Task<Void, Never>?
+    private var audioActive: Bool = false
 
     // Audio analysis
     private let rmsWindowSize = 512
@@ -112,8 +113,8 @@ final class MetMuseumEngine: VisualizationEngine {
     private var imageChangeTime: Date = Date()
 
     // Image dimensions for aspect ratio handling
-    private var currentImageWidth: Int = 0
-    private var currentImageHeight: Int = 0
+    private var currentImageWidth: Int = 256
+    private var currentImageHeight: Int = 256
     private var imageStartTime: Date = Date()
 
     // Department state (loaded at init)
@@ -383,11 +384,13 @@ final class MetMuseumEngine: VisualizationEngine {
         let oldDepartment = config.departmentID
         config = newConfig
 
-        // If department changed, restart slideshow
+        // If department changed, restart slideshow only while audio is active.
         if oldDepartment != newConfig.departmentID {
             slideshowTask?.cancel()
             slideshowTask = nil
-            startSlideshow()
+            if audioActive {
+                startSlideshow()
+            }
         }
     }
 
@@ -408,6 +411,7 @@ final class MetMuseumEngine: VisualizationEngine {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard isAvailable else { return }
+        guard audioActive else { return }
         // Drop the request if a fetch is already underway — prevents key-mashing
         // from cancelling and re-issuing requests in a tight loop.
         if fetchInFlight { return }
@@ -423,6 +427,7 @@ final class MetMuseumEngine: VisualizationEngine {
         coreLock.lock()
         defer { coreLock.unlock() }
 
+        audioActive = active
         if !active {
             slideshowTask?.cancel()
             slideshowTask = nil
@@ -434,6 +439,15 @@ final class MetMuseumEngine: VisualizationEngine {
     // MARK: - Slideshow Management
 
     private func startSlideshow() {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+
+        guard isAvailable, audioActive else {
+            slideshowTask?.cancel()
+            slideshowTask = nil
+            return
+        }
+
         slideshowTask?.cancel()
         // Task.detached so the slideshow loop is not born cancelled when
         // started from inside another task (e.g. advanceSlideshowImmediate).
@@ -494,10 +508,10 @@ final class MetMuseumEngine: VisualizationEngine {
     /// artwork (we just exhausted the random-attempt loop). Switch the active
     /// department to any remaining one, or to "all departments" if there's
     /// nothing else to fall back to.
-    private func excludeCurrentDepartmentAndPickAnother() {
+    private func excludeDepartmentAndPickAnother(_ departmentID: Int?) {
         coreLock.lock()
         defer { coreLock.unlock() }
-        guard let currentID = config.departmentID else {
+        guard let currentID = departmentID else {
             // Already searching across all departments — nothing to exclude.
             return
         }
@@ -511,13 +525,16 @@ final class MetMuseumEngine: VisualizationEngine {
             remaining = []
         }
         let nextID = remaining.randomElement()?.id
-        // nil here means "all departments" — a safe fallback.
-        config.departmentID = nextID
-        let key = MetMuseumEngine.DefaultsKey.departmentID
-        if let nextID = nextID {
-            UserDefaults.standard.set(nextID, forKey: key)
-        } else {
-            UserDefaults.standard.removeObject(forKey: key)
+        // nil here means "all departments" — a safe fallback. Only overwrite
+        // the live selection if the user has not already picked another department.
+        if config.departmentID == currentID {
+            config.departmentID = nextID
+            let key = MetMuseumEngine.DefaultsKey.departmentID
+            if let nextID = nextID {
+                UserDefaults.standard.set(nextID, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
         }
     }
 
@@ -527,6 +544,7 @@ final class MetMuseumEngine: VisualizationEngine {
         // Task.detached so the child task does not inherit cancellation
         // from the parent context (see CLAUDE.md: regular Task { } inherits
         // cancellation and would self-cancel when startSlideshow() runs below).
+        guard isAvailable, audioActive else { return }
         slideshowTask?.cancel()
         slideshowTask = Task.detached { [weak self] in
             guard let self else { return }
@@ -537,17 +555,24 @@ final class MetMuseumEngine: VisualizationEngine {
             } catch {
                 NSLog("MetMuseumEngine beat-triggered advance error: %@", error.localizedDescription)
             }
+            do {
+                try Task.checkCancellation()
+            } catch {
+                return
+            }
             self.startSlideshow()
         }
     }
 
     private func fetchAndDisplayRandomArtwork() async throws {
+        let configSnapshot: Config
         coreLock.lock()
         if fetchInFlight {
             coreLock.unlock()
             return
         }
         fetchInFlight = true
+        configSnapshot = config
         coreLock.unlock()
         defer {
             coreLock.lock()
@@ -556,7 +581,7 @@ final class MetMuseumEngine: VisualizationEngine {
         }
 
         // Fetch list of object IDs for the department
-        let objectIDs = try await client.fetchObjectIDs(departmentID: config.departmentID)
+        let objectIDs = try await client.fetchObjectIDs(departmentID: configSnapshot.departmentID)
         guard !objectIDs.isEmpty else {
             throw MetMuseumError.noArtworkFound
         }
@@ -593,12 +618,14 @@ final class MetMuseumEngine: VisualizationEngine {
             throw throttleError
         }
 
+        try Task.checkCancellation()
+
         guard let objectInfo = selectedObject else {
             // Exhausted attempts without finding a public-domain piece. Mark
             // this department as empty so the menu hides it and the slideshow
             // doesn't keep retrying it. Pick a different department for the
             // next attempt.
-            excludeCurrentDepartmentAndPickAnother()
+            excludeDepartmentAndPickAnother(configSnapshot.departmentID)
             throw MetMuseumError.noArtworkFound
         }
 
@@ -607,7 +634,10 @@ final class MetMuseumEngine: VisualizationEngine {
         if let cachedData = imageCache.cachedImageData(for: objectInfo.objectID) {
             imageData = cachedData
         } else {
-            imageData = try await client.downloadImage(url: URL(string: objectInfo.primaryImage)!)
+            guard let imageURL = URL(string: objectInfo.primaryImage) else {
+                throw MetMuseumError.noImageURL
+            }
+            imageData = try await client.downloadImage(url: imageURL)
             imageCache.store(imageData, for: objectInfo.objectID)
         }
 
@@ -658,7 +688,7 @@ final class MetMuseumEngine: VisualizationEngine {
         // Queue attribution texture upload (runs on GL thread in renderFrame).
         // GL calls must happen on the render thread with the active context;
         // calling glBindTexture from this async Task crashes (KERN_INVALID_ADDRESS).
-        if config.showAttribution {
+        if getConfig().showAttribution {
             queueAttributionTexture(from: attribution)
         }
     }
