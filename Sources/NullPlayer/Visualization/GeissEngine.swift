@@ -401,7 +401,8 @@ final class GeissEngine: VisualizationEngine {
             glGetShaderiv(shader, GLenum(GL_INFO_LOG_LENGTH), &logLen)
             var log = [GLchar](repeating: 0, count: Int(max(logLen, 1)))
             glGetShaderInfoLog(shader, GLsizei(log.count), nil, &log)
-            NSLog("GeissEngine: shader compile failed: %s", log)
+            let msg = String(cString: log)
+            NSLog("GeissEngine: shader compile failed: %@", msg)
             glDeleteShader(shader)
             return nil
         }
@@ -427,7 +428,8 @@ final class GeissEngine: VisualizationEngine {
             glGetProgramiv(prog, GLenum(GL_INFO_LOG_LENGTH), &logLen)
             var log = [GLchar](repeating: 0, count: Int(max(logLen, 1)))
             glGetProgramInfoLog(prog, GLsizei(log.count), nil, &log)
-            NSLog("GeissEngine: program link failed: %s", log)
+            let msg = String(cString: log)
+            NSLog("GeissEngine: program link failed: %@", msg)
             glDeleteProgram(prog)
             return nil
         }
