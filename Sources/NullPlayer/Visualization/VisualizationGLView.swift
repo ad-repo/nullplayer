@@ -417,9 +417,15 @@ class VisualizationGLView: NSOpenGLView {
                    let aspect = MetMuseumEngine.AspectMode(rawValue: aspectStr) {
                     config.aspectMode = aspect
                 }
-                config.audioReactiveEffects = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.audioReactive)
-                config.beatTriggeredChanges = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.beatTriggered)
-                config.showAttribution = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.showAttribution)
+                if UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.audioReactive) != nil {
+                    config.audioReactiveEffects = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.audioReactive)
+                }
+                if UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.beatTriggered) != nil {
+                    config.beatTriggeredChanges = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.beatTriggered)
+                }
+                if UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.showAttribution) != nil {
+                    config.showAttribution = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.showAttribution)
+                }
 
                 metMuseum.setConfig(config)
                 // Sync audio state — engine no longer auto-starts its slideshow.

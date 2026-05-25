@@ -186,7 +186,7 @@ actor MetMuseumClient {
     }
 
     /// Helper to acquire permit, enforce minimum request spacing, run closure, then release
-    private func withPermit<T>(_ body: () async throws -> T) async rethrows -> T {
+    private func withPermit<T>(_ body: () async throws -> T) async throws -> T {
         await semaphore.acquire()
         // Enforce minimum spacing between requests to stay under the API's
         // throttle. Without this, two concurrent permits can fire back-to-back
@@ -195,7 +195,12 @@ actor MetMuseumClient {
         let delta = now.timeIntervalSince(lastRequestTime)
         if delta < minRequestSpacing {
             let wait = minRequestSpacing - delta
-            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            do {
+                try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            } catch {
+                await semaphore.release()
+                throw error
+            }
         }
         lastRequestTime = Date()
         do {
