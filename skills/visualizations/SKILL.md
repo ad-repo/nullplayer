@@ -137,7 +137,7 @@ All effects use Core Image filters for GPU acceleration and respond to audio lev
 
 ## ProjectM/MilkDrop Visualizer
 
-Renders classic MilkDrop presets using OpenGL. Window has two implementations (classic/modern UI modes) both embedding `VisualizationGLView` for rendering. The same window can switch between the ProjectM and Geiss engines from the right-click **Visualization Engine** submenu.
+Renders classic MilkDrop presets using OpenGL. Window has two implementations (classic/modern UI modes) both embedding `VisualizationGLView` for rendering. The same window hosts the ProjectM, Geiss, Tripex, and Met Museum engines, switchable from the right-click **Visualization Engine** submenu.
 
 ### What is ProjectM/MilkDrop?
 
@@ -260,6 +260,37 @@ All lever state is persisted to UserDefaults under the `geiss.*` namespace (`gei
 - **Persistence**: The active engine is stored in UserDefaults as `visualizationEngineType` and in AppState v2 as the optional raw string field `visualizationEngineType`. Missing or unknown values default to ProjectM.
 - **Licensing**: Geiss is credited in the About window and its BSD-3-Clause license is bundled as `ThirdPartyLicenses/GEISS_LICENSE.txt`.
 
+## Tripex Visualizer
+
+Tripex is a ProjectM-peer engine in the visualization window. It ports Ben Marsh's MIT-licensed Direct3D9 visualizer to NullPlayer's OpenGL visualization host, selected from the same right-click **Visualization Engine** submenu as ProjectM/Geiss/Met Museum.
+
+### Controls
+
+**Keyboard Shortcuts** (wired in both `ProjectMView` and `ModernProjectMView`):
+- **→ / ←**: Next/previous effect
+- **R**: Random effect
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+
+**Context Menu** (built by `TripexMenuBuilder`, shared between classic and modern UI):
+- Current effect label
+- Next / Previous / Random / Randomize Effect Settings
+- **Hold Current Effect** toggle
+- **Auto-Cycle** / **Auto-Random** toggles plus **Cycle Interval** submenu
+- **Intensity** submenu (`0.25x` through `4.0x`)
+- **Show Audio Info** and **Show Help Overlay** actions
+- **Effects** submenu
+- Visualization Engine
+- Audio Sensitivity
+- Fullscreen
+
+### Technical Details
+
+- **Core**: `CTripexCore` vendors the upstream Tripex source and replaces the Direct3D9 renderer with `RendererOpenGL`.
+- **Audio Input**: `TripexEngine.addPCMMono` converts NullPlayer's float mono PCM to interleaved int16 stereo for the upstream audio reader.
+- **Persistence**: Tripex state uses the `tripex.*` UserDefaults namespace for last effect, cycle mode, cycle interval, and intensity.
+- **Licensing**: Tripex is MIT-licensed; the upstream license is retained under `Sources/CTripexCore/upstream/LICENSE` and bundled in `ThirdPartyLicenses/TRIPEX_LICENSE.txt`.
+
 ## Met Museum Art Visualization
 
 A ProjectM-peer engine that displays a slideshow of public-domain artwork from the Metropolitan Museum of Art's Open Access collection (api.collection.metmuseum.org). Selected from the same right-click **Visualization Engine** submenu as ProjectM/Geiss/Tripex, and reuses the same fullscreen, frame-rate, window docking, and engine-switch lifecycle.
@@ -267,23 +298,23 @@ A ProjectM-peer engine that displays a slideshow of public-domain artwork from t
 ### Controls
 
 **Keyboard Shortcuts** (wired in both `ProjectMView` and `ModernProjectMView`):
-- **→ / Space**: Next artwork
-- **←**: Previous artwork (history-backed)
-- **R**: Random artwork
+- **→ / ←**: Advance to another artwork
+- **R**: Advance to another random artwork
 - **F**: Toggle fullscreen
 - **Escape**: Exit fullscreen
 
 **Context Menu** (built by `MetMuseumMenuBuilder`, shared between classic and modern UI):
-- Next / Previous / Random Artwork
 - **Department** submenu — filters by Met department (departments with no public-domain images are auto-excluded after exhaustion)
-- **Interval** submenu — slideshow advance interval
+- **Slideshow Interval** submenu
 - **Transition** submenu — Crossfade / Ken Burns / Beat Cut / Slide
 - **Transition Duration** submenu
-- **Aspect** submenu — Fit / Fill / Stretch
-- **Audio-Reactive Effects** toggle (subtle zoom/pan reacting to PCM levels)
+- **Aspect Ratio** submenu — Fit / Fill / Stretch
+- **Audio-Modulated Effects** toggle (subtle zoom/pan reacting to PCM levels)
 - **Beat-Triggered Changes** toggle (advance on detected beats instead of fixed interval)
-- **Show Attribution** toggle (title / artist / date overlay)
+- **Show Artist & Title** toggle
+- **Clear Image Cache** action
 - Visualization Engine
+- Audio Sensitivity
 - Fullscreen
 
 ### Persistence
@@ -302,7 +333,7 @@ When restoring config from UserDefaults in `VisualizationGLView`, Bool keys must
 - **Empty-Department Handling**: When a department exhausts its public-domain pool without a match, it's added to an exclusion set, the menu hides it, and the slideshow auto-picks a different department.
 - **Audio Hook**: Engine is `setAudioActive`-driven; the slideshow pauses when playback stops. Beat-triggered mode listens to `bpmUpdated` notifications; audio-reactive mode samples PCM levels each frame for zoom/pan modulation.
 - **Per-Engine Scoped Prefs**: Visualization preferences are scoped per engine — Met Museum's preferences do not collide with ProjectM/Geiss/Tripex (see commit 40c8a5c).
-- **Licensing**: Met Museum Open Access content is CC0; attribution is shown via the in-engine overlay when **Show Attribution** is on.
+- **Licensing**: Met Museum Open Access content is CC0; attribution is shown via the in-engine overlay when **Show Artist & Title** is on.
 
 ## Spectrum Analyzer Window
 
@@ -495,13 +526,13 @@ Controls how quickly bars fall:
 
 ## Comparison
 
-| Feature | Album Art | ProjectM/MilkDrop | Geiss | Met Museum | Spectrum Analyzer |
-|---------|-----------|-------------------|-------|------------|-------------------|
-| **Visual Style** | Transformed artwork | Procedural graphics | Indexed framebuffer + palette effects | Public-domain Met artwork slideshow | Frequency bars/vis_classic/Fire/JWST/Lightning/Matrix/Snow/EKG |
-| **Effect Count** | 30 built-in | 100s of presets | 25 modes | N/A (real artwork) | 10 modes |
-| **Customization** | Intensity adjustment | Full preset ecosystem | Effect selection | Department / interval / transition / aspect | Mode + decay + style presets |
-| **GPU Tech** | Core Image (Metal) | OpenGL shaders | OpenGL palette LUT | OpenGL textured quad | Metal shaders + compute |
-| **Audio Response** | Spectrum bands | PCM waveform + beats | PCM waveform + 256-bin host spectrum | Optional audio-reactive zoom/pan, beat-triggered advance | 75-band spectrum / energy-driven |
+| Feature | Album Art | ProjectM/MilkDrop | Geiss | Tripex | Met Museum | Spectrum Analyzer |
+|---------|-----------|-------------------|-------|--------|------------|-------------------|
+| **Visual Style** | Transformed artwork | Procedural graphics | Indexed framebuffer + palette effects | 3D Winamp-era effects | Public-domain Met artwork slideshow | Frequency bars/vis_classic/Fire/JWST/Lightning/Matrix/Snow/EKG |
+| **Effect Count** | 30 built-in | 100s of presets | 25 modes | Upstream effect set | N/A (real artwork) | 10 modes |
+| **Customization** | Intensity adjustment | Full preset ecosystem | Effect selection | Effect selection / cycle / intensity | Department / interval / transition / aspect | Mode + decay + style presets |
+| **GPU Tech** | Core Image (Metal) | OpenGL shaders | OpenGL palette LUT | OpenGL geometry renderer | OpenGL textured quad | Metal shaders + compute |
+| **Audio Response** | Spectrum bands | PCM waveform + beats | PCM waveform + 256-bin host spectrum | PCM-driven internal FFT/effects | Optional audio-reactive zoom/pan, beat-triggered advance | 75-band spectrum / energy-driven |
 
 ### When to Use Each
 
@@ -520,6 +551,11 @@ Controls how quickly bars fall:
 - Classic Geiss effect look
 - Lower-level indexed/palette effects
 - Audio-reactive waveform and spectrum visuals without MilkDrop presets
+
+**Tripex:**
+- Winamp-era 3D visualizer effects
+- Effect cycling with hold, randomize, intensity, and overlay controls
+- Procedural visuals without ProjectM preset files
 
 **Met Museum:**
 - Calm, gallery-style slideshow of real artwork instead of procedural graphics
@@ -556,6 +592,9 @@ Controls how quickly bars fall:
 - `Visualization/ProjectMWrapper.swift` - ProjectM library wrapper
 - `Visualization/GeissEngine.swift` - Geiss OpenGL indexed-framebuffer renderer
 - `Sources/CGeissCore/` - Geiss C++ port and C ABI
+- `Visualization/TripexEngine.swift` - Tripex OpenGL engine wrapper
+- `Visualization/TripexMenuBuilder.swift` - Tripex context menu builder
+- `Sources/CTripexCore/` - Tripex C++ port and C ABI
 - `Visualization/MetMuseum/MetMuseumEngine.swift` - Met Museum slideshow + OpenGL renderer
 - `Visualization/MetMuseum/MetMuseumClient.swift` - Met collection API client (throttled, cancellable)
 - `Visualization/MetMuseum/MetMuseumImageCache.swift` - On-disk image cache

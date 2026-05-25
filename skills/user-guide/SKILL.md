@@ -23,7 +23,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Equalizer** | Classic 10-band EQ or modern 21-band EQ with presets | EQ button or context menu |
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
-| **ProjectM** | Real-time audio visualizations | Menu button or context menu |
+| **ProjectM** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art | Menu button or context menu |
 
 In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab is also available in the classic library browser. The Data tab shows:
 - **Play Time** summary (day/week/month/year/all-time)
@@ -310,6 +310,19 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **F**: Toggle fullscreen
 - **Escape**: Exit fullscreen
 - All other levers (sensitivity, gamma, locks, auto-switch, palette randomize, etc.) are right-click context-menu only — see the Visualizations section above.
+
+### Tripex
+- **→ / ←**: Next / Previous effect
+- **R**: Random effect
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- Hold, auto-cycle, auto-random, intensity, audio info, help overlay, and effect selection are right-click context-menu only.
+
+### Met Museum Art
+- **→ / ← / R**: Advance to another artwork
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- Department, slideshow interval, transition, aspect ratio, audio-modulated effects, beat-triggered changes, attribution, and cache clearing are right-click context-menu only.
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

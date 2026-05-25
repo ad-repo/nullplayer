@@ -1,8 +1,8 @@
 # CTripexCore Port Notes
 
 Port of [ben-marsh/tripex](https://github.com/ben-marsh/tripex) (Winamp-era
-D3D9 3D visualizer, ~25 effects) into NullPlayer as a third Visualization
-Engine alongside ProjectM and Geiss. Executed per the 8-chunk plan in
+D3D9 3D visualizer, ~25 effects) into NullPlayer as a Visualization
+Engine alongside ProjectM, Geiss, and Met Museum. Executed per the 8-chunk plan in
 `/Users/ad/.claude/plans/review-this-plan-prancy-sonnet.md`.
 
 ## Status
