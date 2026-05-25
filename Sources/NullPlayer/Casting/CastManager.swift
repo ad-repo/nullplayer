@@ -613,14 +613,16 @@ class CastManager {
         if discoveryRefreshTimer == nil {
             discoveryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
-                // Avoid discovery restart bursts during local playback, which can
-                // compete with high-throughput SMB/NAS reads on weaker WiFi links.
+                // Avoid discovery restart bursts during active playback, which can
+                // compete with high-throughput SMB/NAS reads or streaming on weaker WiFi links.
                 let engine = self.resolvedAudioEngine
-                let suppressForLocalRead = engine.state == .playing
-                    && !engine.isCastingActive
-                    && !RadioManager.shared.isActive
-                if suppressForLocalRead {
-                    NSLog("CastManager: Skipping discovery refresh - local audio is playing")
+                if let skipReason = Self.discoveryRefreshSkipReason(
+                    playbackState: engine.state,
+                    isCastingActive: engine.isCastingActive,
+                    isRadioActive: RadioManager.shared.isActive,
+                    currentTrack: engine.currentTrack
+                ) {
+                    NSLog("CastManager: Skipping discovery refresh - %@", skipReason)
                     return
                 }
                 self.refreshDevices()
@@ -650,6 +652,30 @@ class CastManager {
         discoveryIdleTimer?.invalidate()
         discoveryIdleTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in
             self?.stopDiscovery()
+        }
+    }
+
+    static func discoveryRefreshSkipReason(playbackState: PlaybackState,
+                                           isCastingActive: Bool,
+                                           isRadioActive: Bool,
+                                           currentTrack: Track?) -> String? {
+        guard playbackState == .playing,
+              !isCastingActive,
+              !isRadioActive else {
+            return nil
+        }
+
+        guard let currentTrack else {
+            return "audio is playing"
+        }
+
+        switch currentTrack.playHistorySource {
+        case .local:
+            return "local audio is playing"
+        case .radio:
+            return "radio stream is playing"
+        case .plex, .subsonic, .jellyfin, .emby:
+            return "\(currentTrack.playHistorySource.displayName) streaming audio is playing"
         }
     }
     
