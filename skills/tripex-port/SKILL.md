@@ -5,7 +5,7 @@ description: Implementation reference for NullPlayer's Tripex visualization engi
 
 # Tripex Port Guide
 
-Tripex is a third visualization engine in NullPlayer's modern visualizer window, switchable from the right-click **Visualization Engine** submenu alongside ProjectM and Geiss. It is a port of the MIT-licensed upstream at `https://github.com/ben-marsh/tripex` (vendored verbatim into `Sources/CTripexCore/upstream/`).
+Tripex is a visualization engine in NullPlayer's modern visualizer window, switchable from the right-click **Visualization Engine** submenu alongside ProjectM, Geiss, and Met Museum. It is a port of the MIT-licensed upstream at `https://github.com/ben-marsh/tripex` (vendored verbatim into `Sources/CTripexCore/upstream/`).
 
 Architecturally simpler than the Geiss port: Tripex already has a clean `Renderer` abstract base in upstream, so the port substitutes one concrete subclass (`RendererOpenGL`) for the Direct3D 9 implementation that ships upstream. There is no asm to translate (Geiss had 30+ blocks), no Winamp 2 SDK stub, and no DirectDraw indexed-framebuffer plumbing — the renderer pushes geometry through a small GLSL 150 shader pair.
 

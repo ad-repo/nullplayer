@@ -4,7 +4,7 @@
 
 ### New Features
 
-- **Met Museum Art visualization** — a new ProjectM-peer engine in the visualization window displays a slideshow of public-domain artwork from the Metropolitan Museum of Art's Open Access collection. Right-click and keyboard hotkeys (→ / Space next, ← previous, R random, F fullscreen) work in both classic and modern UI. The context menu exposes Department filtering, slideshow interval, transition style (Crossfade / Ken Burns / Beat Cut / Slide), transition duration, aspect mode (Fit / Fill / Stretch), Audio-Reactive Effects, Beat-Triggered Changes, and Show Attribution. Downloaded images are persisted to an on-disk cache and the Met API client throttles requests to stay under the public-API rate limit.
+- **Met Museum Art visualization** — a new ProjectM-peer engine in the visualization window displays a slideshow of public-domain artwork from the Metropolitan Museum of Art's Open Access collection. Right-click and keyboard hotkeys (→ / ← advance, R random, F fullscreen) work in both classic and modern UI. The context menu exposes Department filtering, slideshow interval, transition style (Crossfade / Ken Burns / Beat Cut / Slide), transition duration, aspect ratio (Fit / Fill / Stretch), Audio-Modulated Effects, Beat-Triggered Changes, Show Artist & Title, and image-cache clearing. Downloaded images are persisted to an on-disk cache and the Met API client throttles requests to stay under the public-API rate limit.
 - **Tripex visualization** — the ben-marsh/tripex Direct3D9 visualization is ported to OpenGL and integrated as another ProjectM-peer engine, selectable from the **Visualization Engine** submenu in both classic and modern UI. Audio is fed through a shared ring buffer; the engine port and renderer details are documented in the new `tripex-port` skill.
 
 ### Improvements
@@ -252,7 +252,7 @@
 
 ### Documentation
 
-- **Playback follow-up report** — added `docs/playback-state-followups.md` to capture the remaining architectural issues around playback clocks, restore semantics, and testability that are intentionally out of scope for the conservative fix.
+- **Playback follow-up report** — captured the remaining architectural issues around playback clocks, restore semantics, and testability that are intentionally out of scope for the conservative fix.
 
 ## 0.18.0
 

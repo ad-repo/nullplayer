@@ -27,7 +27,8 @@
 - Navidrome/Subsonic server integration with scrobbling support
 - Local media library with metadata parsing, editing, library management
 - ProjectM visualizations with 100 included. Users can download more
-- Geiss visualization — port of Ryan Geiss's classic Winamp visualization with runtime controls for sensitivity, gamma, beat detection, palette lock, auto-switch, and more
+- Geiss and Tripex visualizations — ports of classic Winamp-era visualizers with native macOS/OpenGL rendering and runtime controls
+- Met Museum Art visualization — public-domain artwork slideshow with department filters, transitions, and optional audio-reactive effects
 - Sonic similarity radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
 - Plex radio track history with configurable exclusion rules. Stop the same songs from being added to your Plex radio stations
 - Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.
@@ -292,3 +293,4 @@ This project is open source and uses the following licensed components:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
 - **libprojectM** (LGPL-2.1) - ProjectM visualizations
+- **Tripex** (MIT) - Winamp-era visualization port by Ben Marsh
