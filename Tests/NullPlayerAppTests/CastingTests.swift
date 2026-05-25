@@ -62,6 +62,54 @@ final class CastingTests: XCTestCase {
         XCTAssertEqual(CastManager.shared.preferredVideoCastDeviceID, videoDevice.id)
     }
 
+    func testDiscoveryRefreshSkipReasonLabelsLocalPlayback() {
+        let track = Track(url: URL(fileURLWithPath: "/tmp/local.flac"), title: "Local")
+
+        let reason = CastManager.discoveryRefreshSkipReason(
+            playbackState: .playing,
+            isCastingActive: false,
+            isRadioActive: false,
+            currentTrack: track
+        )
+
+        XCTAssertEqual(reason, "local audio is playing")
+    }
+
+    func testDiscoveryRefreshSkipReasonLabelsStreamingPlayback() {
+        let track = Track(
+            url: URL(string: "https://plex.example.test/library/parts/1/file.flac")!,
+            title: "Plex Stream",
+            plexRatingKey: "123",
+            plexServerId: "server"
+        )
+
+        let reason = CastManager.discoveryRefreshSkipReason(
+            playbackState: .playing,
+            isCastingActive: false,
+            isRadioActive: false,
+            currentTrack: track
+        )
+
+        XCTAssertEqual(reason, "Plex streaming audio is playing")
+    }
+
+    func testDiscoveryRefreshSkipReasonDoesNotSuppressCastingOrRadio() {
+        let track = Track(url: URL(fileURLWithPath: "/tmp/local.flac"), title: "Local")
+
+        XCTAssertNil(CastManager.discoveryRefreshSkipReason(
+            playbackState: .playing,
+            isCastingActive: true,
+            isRadioActive: false,
+            currentTrack: track
+        ))
+        XCTAssertNil(CastManager.discoveryRefreshSkipReason(
+            playbackState: .playing,
+            isCastingActive: false,
+            isRadioActive: true,
+            currentTrack: track
+        ))
+    }
+
     func testSetPreferredVideoCastDevicePostsSessionDidChangeNotification() {
         let expectation = expectation(description: "sessionDidChange posted")
         let observer = NotificationCenter.default.addObserver(
