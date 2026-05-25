@@ -1,14 +1,26 @@
 # Changelog
 
-## 0.22.1
+## 0.23.0
+
+### New Features
+
+- **Met Museum Art visualization** — a new ProjectM-peer engine in the visualization window displays a slideshow of public-domain artwork from the Metropolitan Museum of Art's Open Access collection. Right-click and keyboard hotkeys (→ / Space next, ← previous, R random, F fullscreen) work in both classic and modern UI. The context menu exposes Department filtering, slideshow interval, transition style (Crossfade / Ken Burns / Beat Cut / Slide), transition duration, aspect mode (Fit / Fill / Stretch), Audio-Reactive Effects, Beat-Triggered Changes, and Show Attribution. Downloaded images are persisted to an on-disk cache and the Met API client throttles requests to stay under the public-API rate limit.
+- **Tripex visualization** — the ben-marsh/tripex Direct3D9 visualization is ported to OpenGL and integrated as another ProjectM-peer engine, selectable from the **Visualization Engine** submenu in both classic and modern UI. Audio is fed through a shared ring buffer; the engine port and renderer details are documented in the new `tripex-port` skill.
 
 ### Improvements
 
 - **Library browser columns are configurable across UI modes** — classic and modern library browsers now share the same Artist, Album, and Track column inventories, with sectioned right-click header menus for Artists and Albums. Classic column visibility persists separately from Modern, and the Title column remains locked on.
+- **Per-engine visualization preferences** — preferences for ProjectM, Geiss, Tripex, and Met Museum no longer share UserDefaults keys, so switching engines preserves each one's independent settings (active preset/effect/department, transition, aspect, audio-reactivity, etc.).
+- **Data tab — artist track drill-down** — selecting an artist in the Data tab now shows that artist's individual tracks with play counts and listen time. Track details are cleared before each stats refresh to prevent stale entries from a previous selection bleeding through.
+- **Data tab — unknown genres preserved** — tracks with missing or unknown genre metadata are now kept visible in the Data tab breakdown instead of being filtered out, with a reconcile tooltip explaining how unknown entries are grouped.
+- **Data tab — sparse sections collapsed** — list sections in the Data tab now collapse when they contain few entries, keeping the overview compact when a category has little data.
+- **Library source menu — local and radio separated** — the library source picker now lists local-library and internet-radio entries in distinct sections with a separator between them, matching the way casting and source contexts handle the two origins.
+- **Sonos cast preserved on source switch** — switching between library sources (local, Plex, Subsonic, Jellyfin, Emby, radio) no longer tears down an active Sonos cast session. The cast keeps streaming the current track and picks up the next track from the newly selected source.
 
 ### Bug Fixes
 
 - **Audio route-change exception guarded** — `AVAudioEngine` graph reconnects now catch Objective-C exceptions raised by `AVAudioEngine.connect(_:to:format:)` during route churn. A failed reconnect is deferred and retried through the existing audio graph recovery path instead of aborting the app.
+- **Sonos network-change recovery** — Sonos casts now survive Wi-Fi network/interface changes. `UPnPManager` watches the active network interface and, when it changes, refreshes the embedded media server's bind address and re-resolves Sonos devices on the new network instead of leaving the cast pointed at a dead address.
 
 ## 0.22.0
 

@@ -62,10 +62,10 @@ class VisualizationGLView: NSOpenGLView {
     private var isAudioActive = false
     
     /// Normal beat sensitivity (restored when audio starts)
-    /// User-configurable via context menu, persisted in UserDefaults
+    /// User-configurable via context menu, persisted per-engine in UserDefaults
     private(set) var normalBeatSensitivity: Float = 1.0 {
         didSet {
-            UserDefaults.standard.set(normalBeatSensitivity, forKey: "projectMBeatSensitivity")
+            UserDefaults.standard.set(normalBeatSensitivity, forKey: Self.beatSensKey(for: currentEngineType))
         }
     }
     
@@ -118,7 +118,7 @@ class VisualizationGLView: NSOpenGLView {
     /// Saved to UserDefaults for persistence
     private(set) var isLowPowerMode: Bool = true {
         didSet {
-            UserDefaults.standard.set(isLowPowerMode, forKey: "projectMLowPowerMode")
+            UserDefaults.standard.set(isLowPowerMode, forKey: Self.lowPowerKey(for: currentEngineType))
         }
     }
     
@@ -127,7 +127,59 @@ class VisualizationGLView: NSOpenGLView {
     /// Range: 0.5 to 3.0, default 1.0 (unity gain)
     private(set) var pcmGain: Float = 1.0 {
         didSet {
-            UserDefaults.standard.set(pcmGain, forKey: "projectMPCMGain")
+            UserDefaults.standard.set(pcmGain, forKey: Self.pcmGainKey(for: currentEngineType))
+        }
+    }
+
+    // MARK: - Per-engine scoped preference keys
+
+    private static func pcmGainKey(for t: VisualizationType) -> String { "viz.\(t.rawValue).pcmGain" }
+    private static func lowPowerKey(for t: VisualizationType) -> String { "viz.\(t.rawValue).lowPowerMode" }
+    private static func beatSensKey(for t: VisualizationType) -> String { "viz.\(t.rawValue).beatSensitivity" }
+
+    private static let legacyMigrationFlagKey = "viz.legacyMigrationV1"
+
+    /// Copy legacy global `projectM*` keys into the scoped `viz.projectM.*` slots once,
+    /// so existing ProjectM users keep their settings after the per-engine split.
+    private static func migrateLegacyProjectMKeysIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: legacyMigrationFlagKey) else { return }
+
+        let pairs: [(legacy: String, scoped: String)] = [
+            ("projectMPCMGain", pcmGainKey(for: .projectM)),
+            ("projectMLowPowerMode", lowPowerKey(for: .projectM)),
+            ("projectMBeatSensitivity", beatSensKey(for: .projectM)),
+        ]
+        for (legacy, scoped) in pairs {
+            if defaults.object(forKey: scoped) == nil,
+               let legacyValue = defaults.object(forKey: legacy) {
+                defaults.set(legacyValue, forKey: scoped)
+            }
+        }
+        defaults.set(true, forKey: legacyMigrationFlagKey)
+    }
+
+    /// Load the three per-engine scoped settings into the live properties.
+    /// Falls back to defaults (lowPower=true, pcmGain=1.0, beatSensitivity=1.0) when absent.
+    private func loadScopedSettings(for type: VisualizationType) {
+        let defaults = UserDefaults.standard
+
+        if defaults.object(forKey: Self.lowPowerKey(for: type)) != nil {
+            isLowPowerMode = defaults.bool(forKey: Self.lowPowerKey(for: type))
+        } else {
+            isLowPowerMode = true
+        }
+
+        if defaults.object(forKey: Self.pcmGainKey(for: type)) != nil {
+            pcmGain = defaults.float(forKey: Self.pcmGainKey(for: type))
+        } else {
+            pcmGain = 1.0
+        }
+
+        if defaults.object(forKey: Self.beatSensKey(for: type)) != nil {
+            normalBeatSensitivity = defaults.float(forKey: Self.beatSensKey(for: type))
+        } else {
+            normalBeatSensitivity = 1.0
         }
     }
     
@@ -162,21 +214,12 @@ class VisualizationGLView: NSOpenGLView {
            let type = VisualizationType(rawValue: savedType) {
             currentEngineType = type
         }
-        
-        // Load saved performance mode preference (defaults to low power / 30fps)
-        if UserDefaults.standard.object(forKey: "projectMLowPowerMode") != nil {
-            isLowPowerMode = UserDefaults.standard.bool(forKey: "projectMLowPowerMode")
-        }
-        
-        // Load saved PCM gain preference (defaults to 1.0 / unity gain)
-        if UserDefaults.standard.object(forKey: "projectMPCMGain") != nil {
-            pcmGain = UserDefaults.standard.float(forKey: "projectMPCMGain")
-        }
-        
-        // Load saved beat sensitivity preference (defaults to 1.0 / normal)
-        if UserDefaults.standard.object(forKey: "projectMBeatSensitivity") != nil {
-            normalBeatSensitivity = UserDefaults.standard.float(forKey: "projectMBeatSensitivity")
-        }
+
+        // Migrate legacy global ProjectM keys into per-engine scoped keys (one-shot)
+        Self.migrateLegacyProjectMKeysIfNeeded()
+
+        // Load per-engine scoped settings (low power, PCM gain, beat sensitivity)
+        loadScopedSettings(for: currentEngineType)
 
         // Load saved Geiss configuration preferences
         loadGeissConfigFromDefaults()
@@ -200,20 +243,11 @@ class VisualizationGLView: NSOpenGLView {
             currentEngineType = type
         }
 
-        // Load saved performance mode preference (defaults to low power / 30fps)
-        if UserDefaults.standard.object(forKey: "projectMLowPowerMode") != nil {
-            isLowPowerMode = UserDefaults.standard.bool(forKey: "projectMLowPowerMode")
-        }
+        // Migrate legacy global ProjectM keys into per-engine scoped keys (one-shot)
+        Self.migrateLegacyProjectMKeysIfNeeded()
 
-        // Load saved PCM gain preference (defaults to 1.0 / unity gain)
-        if UserDefaults.standard.object(forKey: "projectMPCMGain") != nil {
-            pcmGain = UserDefaults.standard.float(forKey: "projectMPCMGain")
-        }
-
-        // Load saved beat sensitivity preference (defaults to 1.0 / normal)
-        if UserDefaults.standard.object(forKey: "projectMBeatSensitivity") != nil {
-            normalBeatSensitivity = UserDefaults.standard.float(forKey: "projectMBeatSensitivity")
-        }
+        // Load per-engine scoped settings (low power, PCM gain, beat sensitivity)
+        loadScopedSettings(for: currentEngineType)
 
         // Load saved Geiss configuration preferences
         loadGeissConfigFromDefaults()
@@ -358,6 +392,50 @@ class VisualizationGLView: NSOpenGLView {
                 NSLog("VisualizationGLView: Tripex engine not available")
                 return nil
             }
+
+        case .metMuseum:
+            let metMuseum = MetMuseumEngine(width: width, height: height)
+            if metMuseum.isAvailable {
+                NSLog("VisualizationGLView: Met Museum engine initialized")
+                // Restore persisted configuration
+                var config = metMuseum.getConfig()
+
+                if let deptID = UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.departmentID) as? Int {
+                    config.departmentID = (deptID == -1) ? nil : deptID
+                }
+                if let interval = UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.intervalSeconds) as? Double {
+                    config.intervalSeconds = interval
+                }
+                if let modeStr = UserDefaults.standard.string(forKey: MetMuseumEngine.DefaultsKey.transitionMode),
+                   let mode = MetMuseumEngine.TransitionMode(rawValue: modeStr) {
+                    config.transitionMode = mode
+                }
+                if let duration = UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.transitionDuration) as? Double {
+                    config.transitionDurationSeconds = duration
+                }
+                if let aspectStr = UserDefaults.standard.string(forKey: MetMuseumEngine.DefaultsKey.aspectMode),
+                   let aspect = MetMuseumEngine.AspectMode(rawValue: aspectStr) {
+                    config.aspectMode = aspect
+                }
+                if UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.audioReactive) != nil {
+                    config.audioReactiveEffects = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.audioReactive)
+                }
+                if UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.beatTriggered) != nil {
+                    config.beatTriggeredChanges = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.beatTriggered)
+                }
+                if UserDefaults.standard.object(forKey: MetMuseumEngine.DefaultsKey.showAttribution) != nil {
+                    config.showAttribution = UserDefaults.standard.bool(forKey: MetMuseumEngine.DefaultsKey.showAttribution)
+                }
+
+                metMuseum.setConfig(config)
+                // Sync audio state — engine no longer auto-starts its slideshow.
+                let isPlaying = WindowManager.shared.audioEngine.state == .playing
+                metMuseum.setAudioActive(isPlaying)
+                return metMuseum
+            } else {
+                NSLog("VisualizationGLView: Met Museum engine not available")
+                return nil
+            }
         }
     }
 
@@ -406,6 +484,10 @@ class VisualizationGLView: NSOpenGLView {
 
         // Save preference
         UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
+
+        // Repopulate per-engine scoped settings (low power, PCM gain, beat sensitivity)
+        // from the new engine's stored values, falling back to defaults on first use.
+        loadScopedSettings(for: type)
 
         // Mark engine for reinitialization on next render
         engineNeedsSetup = true
@@ -523,7 +605,6 @@ class VisualizationGLView: NSOpenGLView {
         
         CVDisplayLinkStart(displayLink)
         isRendering = true
-        NSLog("VisualizationGLView: Started rendering")
     }
     
     func stopRendering() {
@@ -541,8 +622,6 @@ class VisualizationGLView: NSOpenGLView {
             contextRef.release()
             displayLinkContextRef = nil
         }
-        
-        NSLog("VisualizationGLView: Stopped rendering")
     }
 
     func resumeRenderingAfterWindowTransition() {
@@ -694,6 +773,10 @@ class VisualizationGLView: NSOpenGLView {
                 pm.beatSensitivity = normalBeatSensitivity
                 NSLog("VisualizationGLView: Audio active, beat sensitivity = %.2f", normalBeatSensitivity)
             }
+            // Resume slideshow if paused (Met Museum)
+            if let mm = engine as? MetMuseumEngine {
+                mm.setAudioActive(true)
+            }
         } else {
             dataLock.withLock {
                 for i in 0..<localPCM.count {
@@ -708,6 +791,10 @@ class VisualizationGLView: NSOpenGLView {
             if let pm = engine as? ProjectMWrapper {
                 pm.beatSensitivity = idleBeatSensitivity
                 NSLog("VisualizationGLView: Audio idle, beat sensitivity = %.2f", idleBeatSensitivity)
+            }
+            // Pause slideshow if configured (Met Museum)
+            if let mm = engine as? MetMuseumEngine {
+                mm.setAudioActive(false)
             }
         }
     }
@@ -1231,6 +1318,22 @@ class VisualizationGLView: NSOpenGLView {
         defer { engineLock.unlock() }
         guard let t = engine as? TripexEngine else { return }
         body(t)
+    }
+
+    /// Skip immediately to a new random artwork (Met Museum).
+    func nextMetMuseumArtwork() {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let mm = engine as? MetMuseumEngine else { return }
+        mm.skipToNextArtwork()
+    }
+
+    /// Accessor for Met Museum departments state (used by menu builder)
+    func metMuseumDepartmentsState() -> MetMuseumEngine.DepartmentsState? {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let mm = engine as? MetMuseumEngine else { return nil }
+        return mm.departmentsState
     }
 
     // MARK: - Geiss Configuration (UserDefaults persistence)
