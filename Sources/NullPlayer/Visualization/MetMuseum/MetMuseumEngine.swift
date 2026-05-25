@@ -24,7 +24,7 @@ final class MetMuseumEngine: VisualizationEngine {
         var audioReactiveEffects: Bool = false
         var beatTriggeredChanges: Bool = false
         var aspectMode: AspectMode = .fit
-        var showAttribution: Bool = false
+        var showAttribution: Bool = true
     }
 
     enum TransitionMode: String, CaseIterable, Codable {
@@ -305,7 +305,7 @@ final class MetMuseumEngine: VisualizationEngine {
 
         // Render
         glViewport(0, 0, GLsizei(width), GLsizei(height))
-        glClearColor(0.1, 0.1, 0.1, 1)
+        glClearColor(0.0, 0.0, 0.0, 1)
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
 
         guard currentImage != nil || placeholderTexture != 0 else { return }
@@ -905,7 +905,7 @@ final class MetMuseumEngine: VisualizationEngine {
         }
         glBindTexture(GLenum(GL_TEXTURE_2D), 0)
 
-        // Create placeholder texture
+        // Create black loading texture
         createPlaceholderTexture()
 
         return true
@@ -924,14 +924,8 @@ final class MetMuseumEngine: VisualizationEngine {
     private func createPlaceholderTexture() {
         let placeholder = NSImage(size: NSMakeSize(256, 256))
         placeholder.lockFocus()
-        NSColor.darkGray.setFill()
+        NSColor.black.setFill()
         NSBezierPath(rect: NSMakeRect(0, 0, 256, 256)).fill()
-        let attr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 16),
-            .foregroundColor: NSColor.lightGray
-        ]
-        let str = NSAttributedString(string: "Met Museum\nunavailable", attributes: attr)
-        str.draw(at: NSMakePoint(30, 110))
         placeholder.unlockFocus()
 
         if let tiffData = placeholder.tiffRepresentation,

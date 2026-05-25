@@ -1481,7 +1481,7 @@ class PlexBrowserView: NSView {
     
     /// Toggle visualization mode
     func toggleVisualization() {
-        guard !browseMode.isHistoryMode, isArtOnlyMode, currentArtwork != nil else { return }
+        guard isArtOnlyMode, currentArtwork != nil else { return }
         isVisualizingArt.toggle()
     }
     
@@ -2209,7 +2209,7 @@ class PlexBrowserView: NSView {
             let visWidth = CGFloat(visText.count) * scaledCharWidth
             var visX = artX - visWidth - artModeVisSpacing
             
-            if !browseMode.isHistoryMode && currentArtwork != nil {
+            if currentArtwork != nil {
                 if isArtOnlyMode {
                     drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                     // Show VIS button in art-only mode (white when active, green when inactive)
@@ -2229,8 +2229,7 @@ class PlexBrowserView: NSView {
             }
             
             // Star rating (art-only mode) or item count (list mode)
-            if !browseMode.isHistoryMode,
-               isArtOnlyMode,
+            if isArtOnlyMode,
                let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                canRateTrack(currentTrack) {
                 let starSize: CGFloat = 12
@@ -2372,7 +2371,7 @@ class PlexBrowserView: NSView {
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - artModeVisSpacing
                 
-                if !browseMode.isHistoryMode && currentArtwork != nil {
+                if currentArtwork != nil {
                     if isArtOnlyMode {
                         drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                         // Show VIS button in art-only mode (white when active, green when inactive)
@@ -2392,8 +2391,7 @@ class PlexBrowserView: NSView {
                 }
                 
                 // Star rating (art-only mode) or item count (list mode)
-                if !browseMode.isHistoryMode,
-                   isArtOnlyMode,
+                if isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                    canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
@@ -2518,7 +2516,7 @@ class PlexBrowserView: NSView {
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - 16
                 
-                if !browseMode.isHistoryMode && currentArtwork != nil {
+                if currentArtwork != nil {
                     if isArtOnlyMode {
                         drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                         if isVisualizingArt {
@@ -2536,8 +2534,7 @@ class PlexBrowserView: NSView {
                 }
                 
                 // Star rating (art-only mode) or item count (list mode)
-                if !browseMode.isHistoryMode,
-                   isArtOnlyMode,
+                if isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                    canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
@@ -2637,7 +2634,7 @@ class PlexBrowserView: NSView {
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - 16
                 
-                if !browseMode.isHistoryMode && currentArtwork != nil {
+                if currentArtwork != nil {
                     if isArtOnlyMode {
                         drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                         if isVisualizingArt {
@@ -2654,8 +2651,7 @@ class PlexBrowserView: NSView {
                     visX = artX
                 }
                 
-                if !browseMode.isHistoryMode,
-                   isArtOnlyMode,
+                if isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                    canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
@@ -2750,7 +2746,7 @@ class PlexBrowserView: NSView {
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - 16
 
-                if !browseMode.isHistoryMode && currentArtwork != nil {
+                if currentArtwork != nil {
                     if isArtOnlyMode {
                         drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                         if isVisualizingArt {
@@ -2767,8 +2763,7 @@ class PlexBrowserView: NSView {
                     visX = artX
                 }
 
-                if !browseMode.isHistoryMode,
-                   isArtOnlyMode,
+                if isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                    canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
@@ -2903,7 +2898,7 @@ class PlexBrowserView: NSView {
         
         // Calculate sort indicator width (on the right)
         let sortText = "Sort"
-        let sortWidth = browseMode.isHistoryMode ? 0 : CGFloat(sortText.count) * scaledCharWidth + 8
+        let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
         let tabLeftInset = tabItemHorizontalEdgePadding
         let tabRightInset = tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
         let tabsStartX = tabBarRect.minX + tabLeftInset
@@ -2932,14 +2927,12 @@ class PlexBrowserView: NSView {
             }
         }
         
-        if !browseMode.isHistoryMode {
-            // Draw sort indicator on the right
-            let rawSortX = tabBarRect.maxX - tabRightInset - sortWidth + 4
-            let rawSortY = tabBarY + (Layout.tabBarHeight - scaledCharHeight) / 2
-            let sortX = shouldRound ? round(rawSortX) : rawSortX
-            let sortY = shouldRound ? round(rawSortY) : rawSortY
-            drawScaledSkinText(sortText, at: NSPoint(x: sortX, y: sortY), scale: textScale, renderer: renderer, in: context)
-        }
+        // Draw sort indicator on the right
+        let rawSortX = tabBarRect.maxX - tabRightInset - sortWidth + 4
+        let rawSortY = tabBarY + (Layout.tabBarHeight - scaledCharHeight) / 2
+        let sortX = shouldRound ? round(rawSortX) : rawSortX
+        let sortY = shouldRound ? round(rawSortY) : rawSortY
+        drawScaledSkinText(sortText, at: NSPoint(x: sortX, y: sortY), scale: textScale, renderer: renderer, in: context)
     }
     
     private func drawSearchBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
@@ -6722,7 +6715,7 @@ class PlexBrowserView: NSView {
         let textScale: CGFloat = 1.5
         let scaledCharWidth = charWidth * textScale
         let sortText = "Sort"
-        let sortWidth = browseMode.isHistoryMode ? 0 : CGFloat(sortText.count) * scaledCharWidth + 8
+        let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
         let tabLeftInset = tabItemHorizontalEdgePadding
         let tabRightInset = tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
 
@@ -6740,7 +6733,6 @@ class PlexBrowserView: NSView {
     
     /// Check if point is in sort indicator area
     private func hitTestSortIndicator(at skinPoint: NSPoint) -> Bool {
-        guard !browseMode.isHistoryMode else { return false }
         let tabY = Layout.titleBarHeight + Layout.serverBarHeight
         guard skinPoint.y >= tabY && skinPoint.y < tabY + Layout.tabBarHeight else { return false }
         
@@ -7677,13 +7669,13 @@ class PlexBrowserView: NSView {
         if relativeX >= refreshZoneStart {
             // Refresh icon click
             handleRefreshClick()
-        } else if !browseMode.isHistoryMode && currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
+        } else if currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
             // ART toggle click (only if artwork available)
             isArtOnlyMode.toggle()
-        } else if !browseMode.isHistoryMode && isArtOnlyMode && currentArtwork != nil && relativeX >= visZoneStart && relativeX <= visZoneEnd {
+        } else if isArtOnlyMode && currentArtwork != nil && relativeX >= visZoneStart && relativeX <= visZoneEnd {
             // VIS button click (only in art-only mode with artwork)
             toggleVisualization()
-        } else if !browseMode.isHistoryMode && !rateButtonRect.isEmpty {
+        } else if !rateButtonRect.isEmpty {
             let rateRelativeStart = rateButtonRect.minX - Layout.leftBorder
             let rateRelativeEnd = rateButtonRect.maxX - Layout.leftBorder
             if relativeX >= rateRelativeStart && relativeX <= rateRelativeEnd {

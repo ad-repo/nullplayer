@@ -181,7 +181,7 @@ final class MetMuseumMenuBuilder {
         menu.addItem(beatTriggeredItem)
 
         // Show Artist & Title toggle
-        let showAttributionEnabled = config?.showAttribution ?? false
+        let showAttributionEnabled = config?.showAttribution ?? true
         let attributionItem = NSMenuItem(title: "Show Artist & Title",
                                         action: #selector(MetMuseumMenuTarget.toggleMetMuseumShowAttribution(_:)),
                                         keyEquivalent: "")
