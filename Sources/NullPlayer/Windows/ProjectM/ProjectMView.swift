@@ -784,6 +784,10 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
+        buildVisualizationMenu()
+    }
+
+    func buildVisualizationMenu() -> NSMenu {
         let menu = NSMenu()
         
         let currentEngineType = visualizationGLView?.currentEngineType ?? .projectM

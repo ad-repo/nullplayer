@@ -2,6 +2,7 @@ import AppKit
 
 /// Visualization mode for the main window's built-in visualization area
 enum MainWindowVisMode: String, CaseIterable {
+    case none = "None"               // No main-window visualization; leaves skin artwork visible
     case spectrum = "Spectrum"       // Classic 19-bar spectrum analyzer (CGContext)
     case visClassicExact = "vis_classic" // Exact vis_classic port (CPU frame in Metal overlay)
     case fire = "Fire"               // GPU flame simulation (Metal overlay)
@@ -15,12 +16,13 @@ enum MainWindowVisMode: String, CaseIterable {
     
     var displayName: String {
         switch self {
+        case .none: return "Off"
         case .spectrum: return SpectrumQualityMode.classic.displayName
         default: return rawValue
         }
     }
 
-    /// Shared user-facing order for visualization mode menus and click cycling.
+    /// Shared user-facing order for visualization click cycling.
     static let visualizationOrder: [MainWindowVisMode] = SpectrumQualityMode.visualizationOrder.compactMap { qualityMode in
         switch qualityMode {
         case .classic: return .spectrum
@@ -35,14 +37,17 @@ enum MainWindowVisMode: String, CaseIterable {
         case .visClassicExact: return .visClassicExact
         }
     }
+
+    /// User-facing menu order, including the Winamp-compatible blank display mode.
+    static let menuOrder: [MainWindowVisMode] = [.none] + visualizationOrder
     
-    /// Whether this mode uses the Metal overlay (all modes except spectrum)
-    var usesMetal: Bool { self != .spectrum }
+    /// Whether this mode uses the Metal overlay.
+    var usesMetal: Bool { spectrumQualityMode != nil }
     
     /// Map to the corresponding SpectrumQualityMode for the Metal overlay
     var spectrumQualityMode: SpectrumQualityMode? {
         switch self {
-        case .spectrum: return nil
+        case .none, .spectrum: return nil
         case .visClassicExact: return .visClassicExact
         case .fire: return .flame
         case .enhanced: return .enhanced

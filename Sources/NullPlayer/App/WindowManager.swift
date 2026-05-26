@@ -1824,6 +1824,11 @@ class WindowManager {
     func reloadVisualizationPresets() {
         projectMWindowController?.reloadPresets()
     }
+
+    /// Build the visualization window's full controls menu when the window has been created.
+    func buildVisualizationMenu() -> NSMenu? {
+        projectMWindowController?.buildVisualizationMenu()
+    }
     
     /// Select a visualization preset by index
     func selectVisualizationPreset(at index: Int) {

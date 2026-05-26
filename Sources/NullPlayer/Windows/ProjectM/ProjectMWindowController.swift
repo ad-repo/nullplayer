@@ -342,6 +342,10 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     var presetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
         return projectMView.visualizationGLView?.presetsInfo ?? (0, 0, nil)
     }
+
+    func buildVisualizationMenu() -> NSMenu {
+        projectMView.buildVisualizationMenu()
+    }
 }
 
 // MARK: - NSWindowDelegate

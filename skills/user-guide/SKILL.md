@@ -247,7 +247,7 @@ Accessible via **Playback > Sleep Timer** (or the right-click context menu).
 ## Visualizations
 
 ### Main Window GPU Modes
-Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (double-click to cycle)
+Off, Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow, EKG. Double-click cycles visual modes; choose Off from Visuals > Spectrum Analyzer > Main Window > Mode.
 
 ### Album Art Visualizer
 30 effects transforming album artwork based on audio
