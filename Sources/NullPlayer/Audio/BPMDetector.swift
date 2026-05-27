@@ -133,7 +133,7 @@ class BPMDetector {
             
             let bpm = aubio_tempo_get_bpm(tempoObj)
             let confidence = aubio_tempo_get_confidence(tempoObj)
-            
+
             if bpm > 0 && confidence >= minConfidence {
                 recentReadings[readingIndex % maxBPMReadings] = bpm
                 readingIndex += 1

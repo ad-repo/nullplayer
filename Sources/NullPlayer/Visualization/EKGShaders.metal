@@ -1,27 +1,40 @@
 // =============================================================================
-// EKG SHADERS - Beat-Synced Electrocardiogram Visualizer
+// EKG SHADERS - Peak-Driven Electrocardiogram Visualizer
 // =============================================================================
-// Persistent ECG monitor. BPM controls the cardiac clock, raw PCM amplitude
-// controls newly drawn peak height, and the already-drawn trace is preserved in
-// a ping-pong texture so historical line segments do not refresh or rescale.
-// This mode intentionally ignores frequency energy.
+// Persistent ECG monitor. Detected audio peaks fire QRS complexes at the scan
+// head; raw PCM amplitude controls peak height. The already-drawn trace is
+// preserved in a ping-pong texture so historical line segments do not refresh
+// or rescale. This mode intentionally ignores frequency energy and BPM.
 // =============================================================================
 
 #include <metal_stdlib>
 using namespace metal;
 
+constant int EKG_MAX_BEATS = 8;
+
 struct EKGParams {
     float2 viewportSize;
     float time;
-    float bpm;
-    float beatPhase;
     float amplitudeLevel;
     float noiseLevel;
     float scrollDelta;
     float brightnessBoost;
     int colorScheme;
-    float2 padding;
+    int beatCount;
+    float pad0;
+    float pad1;
+    float pad2;
+    float4 beatTimes[2];   // 8 beat timestamps (in localTime seconds); unused slots = -1000
+    float4 beatAmps[2];    // matching amplitude captured at each beat (0..1)
 };
+
+inline float ekg_beat_time(constant EKGParams& params, int i) {
+    return params.beatTimes[i >> 2][i & 3];
+}
+
+inline float ekg_beat_amp(constant EKGParams& params, int i) {
+    return params.beatAmps[i >> 2][i & 3];
+}
 
 constant float EKG_SCREEN_SECONDS = 5.6;
 constant float EKG_SCAN_HEAD_X = 0.965;
@@ -108,23 +121,46 @@ float ekg_wave_for_beat(float t, float beatTime, float beatIndex) {
 }
 
 float ekg_waveform_at_time(float t, constant EKGParams& params) {
-    float bpm = clamp(params.bpm, 40.0, 100.0);
-    float interval = 60.0 / bpm;
-    float beatCursor = floor(t / interval);
-    float loudness = mix(0.70, 1.42, smoothstep(0.02, 0.92, params.amplitudeLevel));
     float wave = 0.0;
 
-    for (int i = -1; i <= 1; i++) {
-        float beatIndex = beatCursor + float(i);
-        wave += ekg_wave_for_beat(t, beatIndex * interval, beatIndex);
+    int beatCount = min(params.beatCount, EKG_MAX_BEATS);
+    for (int i = 0; i < beatCount; i++) {
+        float bt = ekg_beat_time(params, i);
+        if (bt < -500.0) continue;
+        if (abs(t - bt) > 0.65) continue;   // QRS+T fits comfortably in ~0.6s
+        // Per-beat amplitude: locked in when the onset fired so each QRS keeps the
+        // height of its own peak. Oscilloscope-style mapping — fourth-root pulls the
+        // bottom end way up so the faintest blip is still visible, then a wide
+        // remap pushes loud peaks well above unity for dramatic spikes. Net effect:
+        // ~6× dynamic range between barely-audible and full-scale, with smooth
+        // gradation across the whole curve.
+        float a = clamp(ekg_beat_amp(params, i), 0.0, 1.0);
+        // sqrt curve: faint peaks get a healthy visibility boost (a=0.01 → 0.10,
+        // a=0.1 → 0.32, a=0.5 → 0.71, a=1 → 1) so there's a smooth gradient from
+        // tiny blip to towering kick across the whole input range, not clumped.
+        float perceptual = sqrt(a);
+        float beatLoudness = mix(0.08, 3.40, perceptual);
+        wave += ekg_wave_for_beat(t, bt, float(i)) * beatLoudness;
     }
 
     float nerve = (ekg_noise(float2(t * 19.0, params.time * 2.0)) - 0.5) * params.noiseLevel * 0.020;
-    return wave * loudness + nerve;
+    return wave + nerve;
+}
+
+// Returns absolute distance (seconds) from t to the nearest stored beat time,
+// or a large sentinel value when no beats are stored within range.
+float ekg_distance_to_nearest_beat(float t, constant EKGParams& params) {
+    float best = 100.0;
+    int beatCount = min(params.beatCount, EKG_MAX_BEATS);
+    for (int i = 0; i < beatCount; i++) {
+        float bt = ekg_beat_time(params, i);
+        if (bt < -500.0) continue;
+        best = min(best, abs(t - bt));
+    }
+    return best;
 }
 
 float ekg_trace_y_for_time(float sampleTime, constant EKGParams& params) {
-    float bpmNorm = clamp((params.bpm - 40.0) / 60.0, 0.0, 1.0);
     float tempoBreath = sin(sampleTime * 0.115 * 6.2831853);
 
     float baseline = 0.365;
@@ -132,8 +168,12 @@ float ekg_trace_y_for_time(float sampleTime, constant EKGParams& params) {
     baseline += sin(sampleTime * 0.050 * 6.2831853) * 0.008;
     baseline += sin(sampleTime * 0.33 * 6.2831853) * 0.003;
 
-    float amp = 0.305 + bpmNorm * 0.015;
-    return clamp(baseline + ekg_waveform_at_time(sampleTime, params) * amp, 0.055, 0.945);
+    // Lower per-sample deflection multiplier paired with the wider beatLoudness
+    // range in ekg_waveform_at_time gives oscilloscope-style headroom: faint blips
+    // stay near baseline, loud peaks travel almost the full screen height before
+    // clipping. Clamp uses the very edges of the trace area.
+    float amp = 0.205;
+    return clamp(baseline + ekg_waveform_at_time(sampleTime, params) * amp, 0.020, 0.980);
 }
 
 float ekg_sample_time_for_x(float x, constant EKGParams& params) {
@@ -193,8 +233,8 @@ fragment float4 ekg_update_fragment(
         minD = min(minD, distance_segment(p, float2(x0 * aspect, y0), float2(x1 * aspect, y1)));
     }
 
-    float phaseDistance = min(params.beatPhase, 1.0 - params.beatPhase);
-    float qrsFlash = exp(-pow(phaseDistance / 0.055, 2.0));
+    float headBeatDistance = ekg_distance_to_nearest_beat(params.time, params);
+    float qrsFlash = exp(-pow(headBeatDistance / 0.055, 2.0));
     float livePulse = clamp(qrsFlash * 1.10, 0.0, 1.25);
     float lineWidth = (1.05 + livePulse * 0.62) / max(minDim, 1.0);
     float aa = 1.35 / max(minDim, 1.0);
@@ -249,8 +289,8 @@ fragment float4 ekg_composite_fragment(
     color += trace.rgb;
 
     float minDim = min(params.viewportSize.x, params.viewportSize.y);
-    float phaseDistance = min(params.beatPhase, 1.0 - params.beatPhase);
-    float qrsFlash = exp(-pow(phaseDistance / 0.055, 2.0));
+    float headBeatDistance = ekg_distance_to_nearest_beat(params.time, params);
+    float qrsFlash = exp(-pow(headBeatDistance / 0.055, 2.0));
     float livePulse = clamp(qrsFlash * 1.10, 0.0, 1.25);
 
     float scanX = EKG_SCAN_HEAD_X;

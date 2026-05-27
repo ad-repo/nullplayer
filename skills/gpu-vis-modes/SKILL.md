@@ -94,33 +94,32 @@ Shader file: `Visualization/SnowShaders.metal`
 
 ## EKG Mode
 
-Realistic electrocardiogram monitor visualization.
+Oscilloscope-style electrocardiogram monitor — pure peak-driven, no BPM or tempo clock.
 
 **Visual Elements**:
 - Procedural P-QRS-T ECG waveform with smooth antialiasing
 - Medical monitor grid with fine and major subdivisions
-- Green phosphor trace, glow, scan head, scanlines, vignette, analog monitor noise
-- QRS timing pulses from the BPM clock
-- R-peaks placed on a fixed seconds-wide monitor timebase, so faster BPM = closer peak spacing
-- Peak height follows smoothed raw PCM amplitude (no frequency energy used)
+- Phosphor trace, glow, scan head, scanlines, vignette, analog monitor noise
+- Each detected audio peak fires one QRS complex at the scan head; flat baseline between peaks
+- Per-beat amplitude (the prominence of the detected peak) drives that specific QRS's height — quiet peaks read as small blips, loud peaks tower
 - Persistent ping-pong trace texture preserves already-drawn history; only the scan-head region is redrawn
-- Larger vertical scale and lower baseline use more of the monitor area
+- Wide vertical clamp `[0.020, 0.980]` plus loudness range `mix(0.08, 3.40, sqrt(amp))` gives oscilloscope-like headroom
 - Selectable styles: Clinical, Cyan, Amber, Neon, Crimson, Ice
-- Subtle per-beat procedural variance keeps the trace alive without fighting amplitude response
 
 **Audio Reactivity**:
-- Detected BPM drives the cardiac clock when available, folded into a 40–100 BPM display range
-- Fast tempos are halved until they fit; unusually slow readings are doubled
-- Smoothed raw PCM amplitude controls QRS/R-peak height
-- **No spectrum or frequency-band energy is sampled in this mode**
-- Defaults to 80 BPM when no confident BPM has been detected yet
+- Pure peak detector driven directly from `.audioPCMDataUpdated`. **Does not use BPM, aubio tempo, or spectrum energy.**
+- Detection runs on *raw RMS* per PCM frame (NOT the perceptual `level` formula, which saturates at 1.0 on compressed audio and would pin the input flat)
+- State machine: tracks rising peak and running valley between bumps. On a rising-to-falling transition, fires a beat with `amplitude = (peak − valley) × 2.5` clamped to `[0,1]`
+- Peak-prominence gate (`> 0.004`) replaces ratio-vs-envelope gating — works at any volume including brick-walled material where absolute peak is pinned at 1.0
+- 50 ms refractory (~20 Hz max trigger rate); shared 8-slot ring buffer of `(timestamp, amplitude)` feeds the shader
+- Shader sums QRS gaussians around stored beat timestamps; scan-head glow / noise modulation tracks the perceptual `level` for separate scan-head pulse feel
 - EKG Style appears in the spectrum window context menu and the main-window Visuals menu when EKG is active
 
 **Technical**: Two-pass Metal path:
 1. update pass — scrolls/preserves the persistent trace texture and draws only the scan-head band
 2. composite pass — renders the monitor grid, glow, and stored trace
 
-Uses `.bpmUpdated` notifications for timing and `.audioPCMDataUpdated` for raw-amplitude scaling. 60 FPS.
+`EKGParams` packs up to 8 beat timestamps (`beatTimes[2]` float4 array) and matching amplitudes (`beatAmps[2]`). Unused slots use sentinel `-1000`. Shared static ring buffer in `SpectrumAnalyzerView` (`ekgBeatTimeRing` / `ekgBeatAmpRing`) is written from the audio tap thread via `ekgRecordBeat` under `ekgBeatRingLock`. 60 FPS.
 
 Shader file: `Visualization/EKGShaders.metal`
 
