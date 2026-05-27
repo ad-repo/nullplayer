@@ -40,14 +40,6 @@ class SpectrumView: NSView {
         SkinElements.SpectrumWindow.Layout.self
     }
 
-    private var playlistChromeScale: CGFloat {
-        if let mainWindow = WindowManager.shared.mainWindowController?.window,
-           mainWindow.frame.width > 0 {
-            return mainWindow.frame.width / Skin.baseMainSize.width
-        }
-        return Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier
-    }
-    
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -186,7 +178,7 @@ class SpectrumView: NSView {
         // Draw window chrome with "NULLPLAYER ANALYZER" title
         renderer.drawSpectrumAnalyzerWindow(in: context, bounds: bounds, isActive: isActive,
                                             pressedButton: pressedButton, isShadeMode: isShadeMode,
-                                            controlScale: playlistChromeScale)
+                                            controlScale: WindowManager.shared.playlistChromeScale)
         
         context.restoreGState()
 

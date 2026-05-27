@@ -7,14 +7,6 @@ class WaveformView: BaseWaveformView {
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
 
-    private var playlistChromeScale: CGFloat {
-        if let mainWindow = WindowManager.shared.mainWindowController?.window,
-           mainWindow.frame.width > 0 {
-            return mainWindow.frame.width / Skin.baseMainSize.width
-        }
-        return Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier
-    }
-
     override var waveformRect: NSRect {
         let titleHeight = SkinElements.WaveformWindow.Layout.titleBarHeight
         let leftBorder = SkinElements.WaveformWindow.Layout.leftBorder
@@ -108,7 +100,7 @@ class WaveformView: BaseWaveformView {
             isActive: isActive,
             pressedButton: pressedClose ? .close : nil,
             isShadeMode: false,
-            controlScale: playlistChromeScale
+            controlScale: WindowManager.shared.playlistChromeScale
         )
         context.restoreGState()
 
