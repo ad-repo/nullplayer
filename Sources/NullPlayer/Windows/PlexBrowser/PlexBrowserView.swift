@@ -1828,6 +1828,14 @@ class PlexBrowserView: NSView {
         }
     }
 
+    private var playlistChromeScale: CGFloat {
+        if let mainWindow = WindowManager.shared.mainWindowController?.window,
+           mainWindow.frame.width > 0 {
+            return mainWindow.frame.width / Skin.baseMainSize.width
+        }
+        return Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier
+    }
+
     private func currentPlaylistColors() -> PlaylistColors {
         let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
         return skin.playlistColors
@@ -1983,7 +1991,8 @@ class PlexBrowserView: NSView {
             if dirtyRect.minY >= serverBarMinY {
                 let scrollPosition = calculateScrollPosition()
                 renderer.drawPlexBrowserWindow(in: context, bounds: drawBounds, isActive: isActive,
-                                               pressedButton: pressedButton, scrollPosition: scrollPosition)
+                                               pressedButton: pressedButton, scrollPosition: scrollPosition,
+                                               controlScale: playlistChromeScale)
                 drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             } else {
                 // Calculate scroll position for scrollbar (0-1)
@@ -1991,7 +2000,8 @@ class PlexBrowserView: NSView {
 
                 // Draw window frame using skin sprites
                 renderer.drawPlexBrowserWindow(in: context, bounds: drawBounds, isActive: isActive,
-                                               pressedButton: pressedButton, scrollPosition: scrollPosition)
+                                               pressedButton: pressedButton, scrollPosition: scrollPosition,
+                                               controlScale: playlistChromeScale)
 
                 // Draw server/library selector bar
                 drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)

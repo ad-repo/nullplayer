@@ -81,6 +81,14 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
     private var Layout: SkinElements.ProjectM.Layout.Type {
         SkinElements.ProjectM.Layout.self
     }
+
+    private var playlistChromeScale: CGFloat {
+        if let mainWindow = WindowManager.shared.mainWindowController?.window,
+           mainWindow.frame.width > 0 {
+            return mainWindow.frame.width / Skin.baseMainSize.width
+        }
+        return Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier
+    }
     
     // MARK: - Initialization
     
@@ -268,7 +276,8 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
         
         // Draw window chrome at actual window bounds (no scaling - chrome tiles to fill)
         renderer.drawProjectMWindow(in: context, bounds: bounds, isActive: isActive,
-                                    pressedButton: pressedButton, isShadeMode: isShadeMode)
+                                    pressedButton: pressedButton, isShadeMode: isShadeMode,
+                                    controlScale: playlistChromeScale)
         
         context.restoreGState()
 
