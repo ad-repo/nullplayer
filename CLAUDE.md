@@ -22,7 +22,14 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations
 - **sonos-casting**, **chromecast-casting**: Casting protocols and debugging
 - **radio-streaming**: Internet radio + library radio support
-- **visualizations**: Album art, ProjectM, spectrum modes, Metal gotchas
+- **visualizations**: Index/router across all visualization sub-skills (comparison table, when-to-use)
+- **main-window-visualization**: Main window's 76×16 vis area — modes, switching, settings
+- **spectrum-analyzer-window**: Dedicated 84-bar spectrum window — docking, geometry, analyzer curve, vis_classic waveform demand
+- **gpu-vis-modes**: Per-mode shader internals (Fire/JWST/Lightning/Matrix/Snow/EKG) shared by both windows
+- **album-art-visualizer**: Library Browser ART-mode Core Image effects
+- **projectm-milkdrop**: ProjectM/MilkDrop preset engine + drag-suspend behavior
+- **met-museum-visualizer**: Met Museum slideshow engine, API client, image cache
+- **metal-gotchas**: Command encoder ordering, render-to-texture y-flip, spectrum coalescing
 - **geiss-port**: Geiss Winamp-visualization port — architecture, ABI, configuration levers
 - **tripex-port**: Tripex (ben-marsh/tripex) D3D9→OpenGL port — architecture, C ABI, RendererOpenGL, audio ring buffer
 - **testing**: UI testing workflows
