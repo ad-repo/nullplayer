@@ -44,6 +44,7 @@ Mode-specific:
 ## Implementation
 
 - **Overlay**: `SpectrumAnalyzerView` with `isEmbedded = true` as a subview of the main window
+- **Embedded EKG sharpness**: EKG history scrolling accumulates fractional motion and shifts the persistent trace texture by whole physical pixels when `isEmbedded = true`. This prevents repeated bilinear resampling from blurring the tiny 76×16 in-skin trace while keeping average scan speed and beat timing unchanged.
 - **vis_classic core**: CPU frame generation via `VisClassicBridge` + `CVisClassicCore`, uploaded to a Metal texture
 - **Positioning**: Winamp coordinates → macOS view coordinates
 - **Lifecycle**: Created lazily on first GPU mode activation

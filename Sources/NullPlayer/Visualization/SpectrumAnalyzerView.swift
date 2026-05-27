@@ -803,6 +803,7 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var ekgTargetAmplitudeLevel: Float = 0.5
     nonisolated(unsafe) private var ekgNoiseLevel: Float = 0.04
     nonisolated(unsafe) private var ekgLastRenderTime: Float = 0
+    nonisolated(unsafe) private var ekgEmbeddedScrollPixelCarry: Float = 0
     nonisolated(unsafe) private var renderEKGStyle: EKGStyle = .clinical
 
     // vis_classic waveform state (latest 576-sample stereo frame)
@@ -2704,6 +2705,7 @@ class SpectrumAnalyzerView: NSView {
             inFlightSemaphore.signal(); return
         }
 
+        let quantizeEKGScrollToPixels = isEmbedded
         let state = dataLock.withLock { () -> (
             time: Float,
             amplitude: Float,
@@ -2720,6 +2722,21 @@ class SpectrumAnalyzerView: NSView {
             animationTime = localTime
             let frameDelta = ekgLastRenderTime > 0 ? min(max(localTime - ekgLastRenderTime, 1.0 / 120.0), 1.0 / 20.0) : 1.0 / 60.0
             ekgLastRenderTime = localTime
+            let idealScrollDelta = frameDelta / EKG_SCREEN_SECONDS * EKG_SCAN_HEAD_X
+            let scrollDelta: Float
+            if quantizeEKGScrollToPixels {
+                // The main-window EKG drawable is tiny; repeatedly sampling the
+                // history texture at fractional-pixel offsets makes the preserved
+                // trace visibly soften. Keep fractional movement as carry and
+                // shift history only by whole physical pixels.
+                let drawableWidth = Float(max(drawable.texture.width, 1))
+                ekgEmbeddedScrollPixelCarry += idealScrollDelta * drawableWidth
+                let wholePixels = floor(ekgEmbeddedScrollPixelCarry)
+                ekgEmbeddedScrollPixelCarry -= wholePixels
+                scrollDelta = wholePixels / drawableWidth
+            } else {
+                scrollDelta = idealScrollDelta
+            }
 
             ekgTargetAmplitudeLevel = Self.ekgSharedAmplitudeTarget
 
@@ -2741,7 +2758,7 @@ class SpectrumAnalyzerView: NSView {
             return (
                 time: localTime,
                 amplitude: ekgAmplitudeLevel,
-                scrollDelta: frameDelta / EKG_SCREEN_SECONDS * EKG_SCAN_HEAD_X,
+                scrollDelta: scrollDelta,
                 noise: ekgNoiseLevel,
                 style: renderEKGStyle,
                 beats0: snap.times0,
@@ -2841,6 +2858,7 @@ class SpectrumAnalyzerView: NSView {
             ekgTraceLastDrawableSize = size
             ekgTraceSourceIsA = true
             ekgTraceNeedsClear = true
+            ekgEmbeddedScrollPixelCarry = 0
         }
 
         guard let a = ekgTraceTextureA, let b = ekgTraceTextureB else { return nil }
@@ -3682,6 +3700,7 @@ class SpectrumAnalyzerView: NSView {
             ekgTargetAmplitudeLevel = 0.5
             ekgNoiseLevel = 0.04
             ekgLastRenderTime = 0
+            ekgEmbeddedScrollPixelCarry = 0
             ekgTraceNeedsClear = true
             Self.ekgResetBeats()
             Self.ekgSharedAmplitudeTarget = 0.5
