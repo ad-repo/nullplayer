@@ -119,7 +119,7 @@ Oscilloscope-style electrocardiogram monitor — pure peak-driven, no BPM or tem
 1. update pass — scrolls/preserves the persistent trace texture and draws only the scan-head band
 2. composite pass — renders the monitor grid, glow, and stored trace
 
-`EKGParams` packs up to 8 beat timestamps (`beatTimes[2]` float4 array) and matching amplitudes (`beatAmps[2]`). Unused slots use sentinel `-1000`. Shared static ring buffer in `SpectrumAnalyzerView` (`ekgBeatTimeRing` / `ekgBeatAmpRing`) is written from the audio tap thread via `ekgRecordBeat` under `ekgBeatRingLock`. 60 FPS.
+`EKGParams` packs up to 8 beat timestamps (`beatTimes[2]` float4 array) and matching amplitudes (`beatAmps[2]`). Unused slots use sentinel `-1000`. Shared static ring buffer in `SpectrumAnalyzerView` (`ekgBeatTimeRing` / `ekgBeatAmpRing`) is written from the audio tap thread via `ekgRecordBeat` under `ekgBeatRingLock`. Embedded main-window EKG rendering quantizes persistent trace scroll to whole drawable pixels with a fractional carry accumulator, avoiding blur from repeatedly sampling the history texture at subpixel offsets in the 76×16 skin display. The standalone spectrum window keeps fractional scroll because its larger drawable does not show the same softness. 60 FPS.
 
 Shader file: `Visualization/EKGShaders.metal`
 
