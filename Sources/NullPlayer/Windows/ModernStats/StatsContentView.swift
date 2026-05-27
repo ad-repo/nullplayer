@@ -161,6 +161,15 @@ struct StatsOverviewView: View {
                 )
                 .frame(height: 240)
 
+                if let selectedGenre = agent.filter.selectedGenre {
+                    GenreArtistDetailView(
+                        genreName: selectedGenre,
+                        rows: agent.genreArtists,
+                        skinTextColor: skinTextColor,
+                        onClear: { agent.selectGenre(nil) }
+                    )
+                }
+
                 SourceChartView(
                     rows: agent.sourceBreakdown,
                     selected: Binding(
@@ -314,6 +323,116 @@ private struct ArtistTrackRowView: View {
                 .foregroundColor(skinTextColor.opacity(0.75))
                 .monospacedDigit()
                 .frame(width: 78, alignment: .trailing)
+        }
+        .frame(height: 34)
+    }
+}
+
+struct GenreArtistDetailView: View {
+    let genreName: String
+    let rows: [TopDimensionRow]
+    var skinTextColor: Color = .primary
+    let onClear: () -> Void
+
+    private var listHeight: CGFloat {
+        let headerHeight: CGFloat = 22
+        let rowHeight: CGFloat = 34
+        let emptyHeight: CGFloat = 44
+        guard !rows.isEmpty else { return emptyHeight }
+        return min(260, headerHeight + CGFloat(rows.count) * rowHeight)
+    }
+
+    private var artistCountLabel: String {
+        rows.count == 1 ? "1 artist" : "\(rows.count) artists"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("Artists in \(genreName)")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(skinTextColor)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(artistCountLabel)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Button(action: onClear) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear genre filter")
+            }
+
+            if rows.isEmpty {
+                Text("No artists recorded for this genre.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: listHeight, alignment: .center)
+            } else {
+                VStack(spacing: 0) {
+                    GenreArtistHeaderRow(skinTextColor: skinTextColor)
+                    Divider()
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                                GenreArtistRowView(row: row, skinTextColor: skinTextColor)
+                                if index < rows.count - 1 {
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(height: listHeight)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct GenreArtistHeaderRow: View {
+    var skinTextColor: Color = .primary
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Artist")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Plays")
+                .frame(width: 42, alignment: .trailing)
+            Text("Time")
+                .frame(width: 64, alignment: .trailing)
+        }
+        .font(.caption2)
+        .foregroundColor(skinTextColor.opacity(0.65))
+        .frame(height: 22)
+    }
+}
+
+private struct GenreArtistRowView: View {
+    let row: TopDimensionRow
+    var skinTextColor: Color = .primary
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(row.displayName)
+                .font(.caption)
+                .foregroundColor(skinTextColor)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("\(row.playCount)")
+                .font(.caption2)
+                .foregroundColor(skinTextColor.opacity(0.75))
+                .monospacedDigit()
+                .frame(width: 42, alignment: .trailing)
+            Text(formatStatsPlayTime(row.totalMinutes * 60))
+                .font(.caption2)
+                .foregroundColor(skinTextColor.opacity(0.75))
+                .monospacedDigit()
+                .frame(width: 64, alignment: .trailing)
         }
         .frame(height: 34)
     }
