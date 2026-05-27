@@ -39,7 +39,7 @@ Participates in the docking system with Main, EQ, and Playlist:
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks (8 color schemes) |
 | **Matrix** | Falling digital rain with procedural glyphs (5 color schemes, 2 intensity presets) |
 | **Snow** | Layered procedural snowfall with spectrum-shaped density, gusting drift, soft atmospheric haze |
-| **EKG** | Beat-synced ECG monitor with phosphor trace, medical grid, scan glow, BPM-driven QRS pulses, PCM-driven peak height |
+| **EKG** | Oscilloscope-style ECG monitor with phosphor trace, medical grid, scan glow; pure peak detector — each audio onset fires one QRS, height = peak prominence |
 | **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible INI behavior |
 
 ## Switching Modes

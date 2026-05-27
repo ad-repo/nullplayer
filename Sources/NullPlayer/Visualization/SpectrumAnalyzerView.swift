@@ -282,18 +282,25 @@ struct SnowParams {
     var brightnessBoost: Float = 1.0 // 4 bytes (offset 44) → total 48
 }
 
-/// Parameters for EKG Metal shaders (must match Metal EKGParams struct)
+/// Parameters for EKG Metal shaders (must match Metal EKGParams struct).
+/// Peak-driven: `beatTimes0`/`beatTimes1` carry up to 8 recent audio-onset timestamps
+/// in localTime seconds; unused slots are -1000.
 struct EKGParams {
     var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
     var time: Float                  // 4 bytes (offset 8)
-    var bpm: Float                   // 4 bytes (offset 12)
-    var beatPhase: Float             // 4 bytes (offset 16)
-    var amplitudeLevel: Float        // 4 bytes (offset 20)
-    var noiseLevel: Float            // 4 bytes (offset 24)
-    var scrollDelta: Float           // 4 bytes (offset 28)
-    var brightnessBoost: Float = 1.0 // 4 bytes (offset 32)
-    var colorScheme: Int32 = 0       // 4 bytes (offset 36)
-    var _padding: SIMD2<Float> = .zero // 8 bytes (offset 40), total 48
+    var amplitudeLevel: Float        // 4 bytes (offset 12)
+    var noiseLevel: Float            // 4 bytes (offset 16)
+    var scrollDelta: Float           // 4 bytes (offset 20)
+    var brightnessBoost: Float = 1.0 // 4 bytes (offset 24)
+    var colorScheme: Int32 = 0       // 4 bytes (offset 28)
+    var beatCount: Int32 = 0         // 4 bytes (offset 32)
+    var pad0: Float = 0              // 4 bytes (offset 36)
+    var pad1: Float = 0              // 4 bytes (offset 40)
+    var pad2: Float = 0              // 4 bytes (offset 44) → 48 (float4-aligned)
+    var beatTimes0: SIMD4<Float> = .init(repeating: -1000)  // 16 bytes (offset 48)
+    var beatTimes1: SIMD4<Float> = .init(repeating: -1000)  // 16 bytes (offset 64)
+    var beatAmps0: SIMD4<Float> = .init(repeating: 1)       // 16 bytes (offset 80)
+    var beatAmps1: SIMD4<Float> = .init(repeating: 1)       // 16 bytes (offset 96) → total 112
 }
 
 /// Decay mode controlling how quickly bars fall
@@ -374,10 +381,54 @@ private let spectrumAnalyzerEKGSharedClockStart = CACurrentMediaTime()
 private let EKG_SCREEN_SECONDS: Float = 5.6   // seconds of trace history visible on screen (matches Metal constant)
 private let EKG_SCAN_HEAD_X: Float = 0.965    // normalized x position of the scan head (matches Metal constant)
 
+/// Maximum number of beat timestamps the EKG shader can consume per frame.
+/// Matches `EKG_MAX_BEATS` in EKGShaders.metal.
+private let EKG_MAX_BEATS = 8
+
 /// Metal-based spectrum analyzer visualization view
 class SpectrumAnalyzerView: NSView {
-    nonisolated(unsafe) private static var ekgSharedBPM: Float = 0
     nonisolated(unsafe) private static var ekgSharedAmplitudeTarget: Float = 0.5
+
+    // Peak-driven EKG: parallel ring buffers of (timestamp, amplitude) for the last 8 detected
+    // beats. Each entry locks in the PCM amplitude observed at the moment the onset fired so
+    // the QRS height in the trace reflects how loud that specific peak was, not the live level.
+    nonisolated(unsafe) private static var ekgBeatTimeRing: [Float] = Array(repeating: -1000, count: 8)
+    nonisolated(unsafe) private static var ekgBeatAmpRing: [Float] = Array(repeating: 1, count: 8)
+    nonisolated(unsafe) private static var ekgBeatRingHead: Int = 0
+    private static let ekgBeatRingLock = NSLock()
+
+    static func ekgRecordBeat(at localTime: Float, amplitude: Float) {
+        ekgBeatRingLock.lock()
+        ekgBeatTimeRing[ekgBeatRingHead] = localTime
+        ekgBeatAmpRing[ekgBeatRingHead] = amplitude
+        ekgBeatRingHead = (ekgBeatRingHead + 1) % ekgBeatTimeRing.count
+        ekgBeatRingLock.unlock()
+    }
+
+    static func ekgSnapshotBeats() -> (times0: SIMD4<Float>, times1: SIMD4<Float>,
+                                       amps0: SIMD4<Float>, amps1: SIMD4<Float>, count: Int32) {
+        ekgBeatRingLock.lock()
+        let t = ekgBeatTimeRing
+        let a = ekgBeatAmpRing
+        ekgBeatRingLock.unlock()
+        return (
+            times0: SIMD4<Float>(t[0], t[1], t[2], t[3]),
+            times1: SIMD4<Float>(t[4], t[5], t[6], t[7]),
+            amps0:  SIMD4<Float>(a[0], a[1], a[2], a[3]),
+            amps1:  SIMD4<Float>(a[4], a[5], a[6], a[7]),
+            count: Int32(t.count)
+        )
+    }
+
+    static func ekgResetBeats() {
+        ekgBeatRingLock.lock()
+        for i in 0..<ekgBeatTimeRing.count {
+            ekgBeatTimeRing[i] = -1000
+            ekgBeatAmpRing[i] = 1
+        }
+        ekgBeatRingHead = 0
+        ekgBeatRingLock.unlock()
+    }
 
     private let waveformConsumerID = "visClassicWaveform.\(UUID().uuidString)"
 
@@ -748,11 +799,9 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var snowDensity: Float = 0.2
 
     // EKG mode state
-    nonisolated(unsafe) private var ekgBeatPhase: Float = 0
     nonisolated(unsafe) private var ekgAmplitudeLevel: Float = 0.5
     nonisolated(unsafe) private var ekgTargetAmplitudeLevel: Float = 0.5
     nonisolated(unsafe) private var ekgNoiseLevel: Float = 0.04
-    nonisolated(unsafe) private var ekgCurrentBPM: Float = 0
     nonisolated(unsafe) private var ekgLastRenderTime: Float = 0
     nonisolated(unsafe) private var renderEKGStyle: EKGStyle = .clinical
 
@@ -911,9 +960,10 @@ class SpectrumAnalyzerView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(handlePlaybackStateChange),
                                                name: .audioPlaybackStateChanged, object: nil)
 
-        // Observe BPM detection updates for EKG mode's cardiac timing.
-        NotificationCenter.default.addObserver(self, selector: #selector(handleBPMUpdate(_:)),
-                                               name: .bpmUpdated, object: nil)
+        // EKG is now a pure peak detector driven directly from PCM updates
+        // (see handlePCMAmplitudeUpdate). aubio tempo ticks are intentionally
+        // ignored — they're predicted beats, not raw transients, and arrive
+        // with too much latency for an oscilloscope-style trace.
 
         // Observe raw PCM amplitude for EKG peak height. This intentionally avoids frequency-band energy.
         NotificationCenter.default.addObserver(self, selector: #selector(handlePCMAmplitudeUpdate(_:)),
@@ -1132,26 +1182,6 @@ class SpectrumAnalyzerView: NSView {
         }
     }
 
-    @objc private func handleBPMUpdate(_ notification: Notification) {
-        guard let bpm = notification.userInfo?["bpm"] as? Int else { return }
-        let foldedBPM = bpm > 0 ? Self.foldEKGBPM(Float(bpm)) : 0
-        Self.ekgSharedBPM = foldedBPM
-        dataLock.withLock {
-            ekgCurrentBPM = foldedBPM
-        }
-    }
-
-    private static func foldEKGBPM(_ bpm: Float) -> Float {
-        var folded = bpm
-        while folded > 100.0 {
-            folded *= 0.5
-        }
-        while folded > 0.0 && folded < 40.0 {
-            folded *= 2.0
-        }
-        return min(max(folded, 40.0), 100.0)
-    }
-
     @objc private func handlePCMAmplitudeUpdate(_ notification: Notification) {
         guard let pcm = notification.userInfo?["pcm"] as? [Float], !pcm.isEmpty else { return }
 
@@ -1164,11 +1194,94 @@ class SpectrumAnalyzerView: NSView {
         }
 
         let rms = sqrt(sumSquares / Float(pcm.count))
+
+        // Perceptual level used to modulate trace noise / scan-head glow — fine for
+        // it to saturate at 1.0 in loud material.
         let level = min(max(pow(min(max(rms * 7.0 + peak * 0.45, 0.0), 1.0), 0.58), 0.0), 1.0)
         Self.ekgSharedAmplitudeTarget = level
         dataLock.withLock {
             ekgTargetAmplitudeLevel = level
         }
+
+        // Peak detection runs on the *raw* RMS signal directly — NOT the perceptual
+        // `level`. The perceptual mapping deliberately saturates at 1.0 (peak * 0.45
+        // + rms * 7 easily exceeds 1.0 in loud material), which would pin the
+        // detection input flat and produce zero local maxima for the state machine.
+        // RMS itself caps at ~0.707 even at digital full-scale, never clips, and
+        // varies cleanly with energy regardless of how brick-walled the source is.
+        Self.ekgPeakDetect(currentLevel: rms)
+    }
+
+    /// localTime of the most recent QRS we fired; suppresses double-triggers.
+    nonisolated(unsafe) private static var ekgLastBeatLocalTime: Float = -1000
+    /// Local-maximum tracking state.
+    nonisolated(unsafe) private static var ekgRising: Bool = false
+    nonisolated(unsafe) private static var ekgRisingPeak: Float = 0
+    nonisolated(unsafe) private static var ekgValleyLevel: Float = 0
+    nonisolated(unsafe) private static var ekgPrevLevel: Float = 0
+
+    private static let ekgMinBeatInterval: Float = 0.050     // refractory ~20 Hz max trigger
+    private static let ekgSilenceFloor: Float = 0.002        // floor of "absolute silence"
+    // Minimum *peak prominence* (peak height above the most recent valley) for a
+    // local max to count. This works at any volume — including brick-walled
+    // compressed audio where peaks and envelope both pin to ~1.0 — because it
+    // measures the rise of *this* bump, not where it sits in absolute terms.
+    private static let ekgMinProminence: Float = 0.004
+
+    /// Detect QRS triggers by finding *local maxima* in the PCM amplitude stream
+    /// with a peak-prominence gate.
+    ///
+    /// Each call walks one frame of a rising/falling state machine, tracking both
+    /// the current rising peak and the most recent valley. When the signal turns
+    /// from rising to falling, the previous frame is the local maximum: if its
+    /// prominence over the valley exceeds `ekgMinProminence`, we fire a beat
+    /// using `peak - valley` as the captured amplitude. Prominence-based gating
+    /// (rather than ratio-vs-envelope) is robust against fully-saturated /
+    /// brick-walled audio where the level pins to 1.0 and ratio gates become
+    /// mathematically impossible.
+    ///
+    /// Captured amplitude is the prominence itself — for uncompressed music this
+    /// matches the perceived peak height, and for compressed audio it surfaces the
+    /// small but real bump-to-bump variation that's the only thing left.
+    static func ekgPeakDetect(currentLevel level: Float) {
+        let localTime = Float(CACurrentMediaTime() - spectrumAnalyzerEKGSharedClockStart)
+        let elapsed = localTime - ekgLastBeatLocalTime
+
+        // Track the running valley between peaks.
+        if level < ekgValleyLevel {
+            ekgValleyLevel = level
+        }
+
+        if level > ekgPrevLevel {
+            // Rising side of a bump — keep climbing, track the max we see.
+            ekgRising = true
+            if level > ekgRisingPeak {
+                ekgRisingPeak = level
+            }
+        } else if level < ekgPrevLevel, ekgRising {
+            // Turning point: previous frame was the local maximum.
+            ekgRising = false
+            let peak = ekgRisingPeak
+            let prominence = max(peak - ekgValleyLevel, 0)
+
+            if prominence > ekgMinProminence,
+               peak > ekgSilenceFloor,
+               elapsed >= ekgMinBeatInterval {
+                // Detection runs on raw RMS, which caps at ~0.707 — even huge
+                // transients rarely produce prominence above ~0.4. Scale into [0,1]
+                // so the shader's loudness curve uses its full visual range.
+                let scaled = min(prominence * 2.5, 1.0)
+                ekgRecordBeat(at: localTime, amplitude: scaled)
+                ekgLastBeatLocalTime = localTime
+            }
+
+            // Reset peak/valley tracking from this turning point onward so the next
+            // bump is measured relative to a fresh local trough.
+            ekgRisingPeak = level
+            ekgValleyLevel = level
+        }
+
+        ekgPrevLevel = level
     }
     
     // MARK: - Metal Setup
@@ -2583,7 +2696,7 @@ class SpectrumAnalyzerView: NSView {
         cb.commit()
     }
 
-    /// Render EKG mode: BPM-clocked ECG trace with no frequency-energy input
+    /// Render EKG mode: peak-driven ECG trace with no frequency-energy input
     private func renderEKG(drawable: CAMetalDrawable) {
         guard let cb = commandQueue?.makeCommandBuffer(),
               let updatePL = ekgUpdatePipeline,
@@ -2593,28 +2706,33 @@ class SpectrumAnalyzerView: NSView {
 
         let state = dataLock.withLock { () -> (
             time: Float,
-            bpm: Float,
-            beatPhase: Float,
             amplitude: Float,
             scrollDelta: Float,
             noise: Float,
-            style: EKGStyle
+            style: EKGStyle,
+            beats0: SIMD4<Float>,
+            beats1: SIMD4<Float>,
+            amps0: SIMD4<Float>,
+            amps1: SIMD4<Float>,
+            beatCount: Int32
         ) in
             let localTime = Float(CACurrentMediaTime() - spectrumAnalyzerEKGSharedClockStart)
             animationTime = localTime
             let frameDelta = ekgLastRenderTime > 0 ? min(max(localTime - ekgLastRenderTime, 1.0 / 120.0), 1.0 / 20.0) : 1.0 / 60.0
             ekgLastRenderTime = localTime
 
-            ekgCurrentBPM = Self.ekgSharedBPM
             ekgTargetAmplitudeLevel = Self.ekgSharedAmplitudeTarget
 
-            let detectedBPM = ekgCurrentBPM > 0 ? ekgCurrentBPM : 80.0
-            let tempoHz = detectedBPM / 60.0
-            let beatClock = localTime * tempoHz
-            ekgBeatPhase = beatClock - floor(beatClock)
+            let snap = Self.ekgSnapshotBeats()
 
-            let phaseDistance = min(ekgBeatPhase, 1.0 - ekgBeatPhase)
-            let qrsPulse = exp(-pow(phaseDistance / 0.075, 2.0))
+            // Find nearest beat distance for the boost/noise-modulation tied to QRS flashes.
+            var nearest: Float = 100
+            for slot in [snap.times0.x, snap.times0.y, snap.times0.z, snap.times0.w,
+                         snap.times1.x, snap.times1.y, snap.times1.z, snap.times1.w] {
+                guard slot > -500 else { continue }
+                nearest = min(nearest, abs(localTime - slot))
+            }
+            let qrsPulse = exp(-pow(nearest / 0.075, 2.0))
             let targetNoise = 0.025 + qrsPulse * 0.025
             ekgNoiseLevel += (targetNoise - ekgNoiseLevel) * 0.12
             let amplitudeRate: Float = ekgTargetAmplitudeLevel > ekgAmplitudeLevel ? 0.28 : 0.075
@@ -2622,12 +2740,15 @@ class SpectrumAnalyzerView: NSView {
 
             return (
                 time: localTime,
-                bpm: detectedBPM,
-                beatPhase: ekgBeatPhase,
                 amplitude: ekgAmplitudeLevel,
                 scrollDelta: frameDelta / EKG_SCREEN_SECONDS * EKG_SCAN_HEAD_X,
                 noise: ekgNoiseLevel,
-                style: renderEKGStyle
+                style: renderEKGStyle,
+                beats0: snap.times0,
+                beats1: snap.times1,
+                amps0: snap.amps0,
+                amps1: snap.amps1,
+                beatCount: snap.count
             )
         }
 
@@ -2644,13 +2765,16 @@ class SpectrumAnalyzerView: NSView {
             p.pointee = EKGParams(
                 viewportSize: viewport,
                 time: state.time,
-                bpm: state.bpm,
-                beatPhase: state.beatPhase,
                 amplitudeLevel: state.amplitude,
                 noiseLevel: state.noise,
                 scrollDelta: state.scrollDelta,
                 brightnessBoost: brightnessBoost,
-                colorScheme: state.style.colorScheme
+                colorScheme: state.style.colorScheme,
+                beatCount: state.beatCount,
+                beatTimes0: state.beats0,
+                beatTimes1: state.beats1,
+                beatAmps0: state.amps0,
+                beatAmps1: state.amps1
             )
         }
 
@@ -3554,12 +3678,18 @@ class SpectrumAnalyzerView: NSView {
             visClassicWaveLeft = Array(repeating: 128, count: 576)
             visClassicWaveRight = Array(repeating: 128, count: 576)
 
-            ekgBeatPhase = 0
             ekgAmplitudeLevel = 0.5
             ekgTargetAmplitudeLevel = 0.5
             ekgNoiseLevel = 0.04
             ekgLastRenderTime = 0
             ekgTraceNeedsClear = true
+            Self.ekgResetBeats()
+            Self.ekgSharedAmplitudeTarget = 0.5
+            Self.ekgLastBeatLocalTime = -1000
+            Self.ekgRising = false
+            Self.ekgRisingPeak = 0
+            Self.ekgValleyLevel = 0
+            Self.ekgPrevLevel = 0
         }
         NSLog("SpectrumAnalyzerView: State reset")
     }

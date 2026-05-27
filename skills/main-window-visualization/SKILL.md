@@ -20,7 +20,7 @@ The main window's built-in visualization area (76×16 pixels in Winamp coordinat
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks |
 | **Matrix** | Falling digital rain with procedural glyphs mapped to spectrum bands |
 | **Snow** | Audio-reactive snowfall with flurry-to-blizzard intensity and bass-driven wind gusts |
-| **EKG** | Realistic high-resolution ECG monitor trace synchronized to detected BPM and waveform amplitude |
+| **EKG** | Oscilloscope-style ECG monitor; each detected audio peak fires one QRS, height scales with peak prominence (no BPM clock) |
 | **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible rendering (see [vis-classic-guide](../vis-classic-guide/SKILL.md)) |
 
 ## Switching Modes
