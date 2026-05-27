@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- **Classic secondary window chrome refined** — playlist-style windows now share the playlist close-widget artwork and scale, with matching companion circle controls and the small title bar line gap on Spectrum, Waveform, ProjectM, and classic browser chrome while leaving Main and EQ unchanged.
+- **Windows menu coverage** — all primary toggleable app windows are now discoverable from the top-level Windows menu, including the standalone Spectrum Analyzer and the Video Player when a video window exists.
+- **Visualizations menu parity** — the top-level Visuals > Visualizations menu now exposes the visualization window toggle, engine selection before the window is opened, and the live visualization window controls once available, matching the functionality previously only reachable from the visualization window context menu.
+- **Visualizations menu cleanup** — projectM-only preset count, preset-folder, rescan, and bundled-preset Finder actions have been removed from the generic Visualizations menu.
+- **Main-window spectrum can be disabled** — Visuals > Spectrum Analyzer > Main Window > Mode now includes **Off**, matching Winamp's blank main-display option so compatible skins can show their prepared artwork without an analyzer overlay.
+
 ## 0.23.0
 
 ### New Features

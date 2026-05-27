@@ -39,7 +39,7 @@ class SpectrumView: NSView {
     private var Layout: SkinElements.SpectrumWindow.Layout.Type {
         SkinElements.SpectrumWindow.Layout.self
     }
-    
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -177,7 +177,8 @@ class SpectrumView: NSView {
         
         // Draw window chrome with "NULLPLAYER ANALYZER" title
         renderer.drawSpectrumAnalyzerWindow(in: context, bounds: bounds, isActive: isActive,
-                                            pressedButton: pressedButton, isShadeMode: isShadeMode)
+                                            pressedButton: pressedButton, isShadeMode: isShadeMode,
+                                            controlScale: WindowManager.shared.playlistChromeScale)
         
         context.restoreGState()
 

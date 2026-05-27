@@ -11,12 +11,13 @@ Related but separate from the visualization stack is the standalone waveform win
 
 ## Main Window Visualization
 
-The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports ten rendering modes.
+The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports eleven display modes.
 
 ### Modes
 
 | Mode | Description |
 |------|-------------|
+| **Off** | No main-window visualization; leaves the skin's prepared display artwork visible |
 | **Classic** | Low-fi 19-bar spectrum analyzer with skin colors and cropped analyzer sub curve (default; persisted internally as `Spectrum`) |
 | **Enhanced** | Compact professional LED analyzer with cropped sub range, clean peak caps, and restrained meter colors |
 | **Ultra** | Dense professional spectrum analyzer with cropped sub range, fast decay, clean peak caps, and restrained meter colors |
@@ -31,7 +32,7 @@ The main window's built-in visualization area (76x16 pixels in Winamp coordinate
 ### Switching Modes
 
 - **Double-click** the visualization area to cycle through modes
-- **Right-click** → Spectrum Analyzer → Main Window → Mode to select specific mode
+- **Right-click** → Spectrum Analyzer → Main Window → Mode to select a specific mode, including **Off**
 - Setting persisted: `mainWindowVisMode` (UserDefaults)
 
 ### Settings
@@ -52,7 +53,7 @@ Mode-specific:
 - **vis_classic Core**: CPU frame generation via `VisClassicBridge` + `CVisClassicCore`, uploaded to a Metal texture
 - **Positioning**: Converted from Winamp coordinates to macOS view coordinates
 - **Lifecycle**: Created lazily on first GPU mode activation
-- **CPU Efficiency**: Display link pauses when window is minimized/occluded or in Spectrum mode
+- **CPU Efficiency**: Display link pauses when window is minimized/occluded, in Spectrum mode, or in Off mode
 
 ## Album Art Visualizer
 

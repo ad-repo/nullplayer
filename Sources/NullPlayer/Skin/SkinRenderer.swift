@@ -1480,22 +1480,78 @@ class SkinRenderer {
     enum ProjectMButtonType {
         case close, shade
     }
+
+    private func drawPlaylistTitleBarControls(from pleditImage: NSImage,
+                                              in context: CGContext,
+                                              bounds: NSRect,
+                                              titleHeight: CGFloat,
+                                              isActive: Bool,
+                                              controlScale: CGFloat = 1.0,
+                                              showsShade: Bool,
+                                              closePressed: Bool,
+                                              shadePressed: Bool) {
+        let scale = max(1.0, controlScale)
+        let buttonSize = 9 * scale
+        let buttonY = min(3 * scale, max(0, (titleHeight - buttonSize) / 2))
+        let closeRect = NSRect(
+            x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset * scale,
+            y: buttonY,
+            width: buttonSize,
+            height: buttonSize
+        )
+        let inactiveYOffset: CGFloat = isActive ? 0 : 21
+        let closeSource = NSRect(x: 167, y: 3 + inactiveYOffset, width: 9, height: 9)
+        drawSprite(from: pleditImage, sourceRect: closeSource, to: closeRect, in: context)
+
+        if showsShade {
+            let shadeRect = NSRect(
+                x: bounds.width - SkinElements.Playlist.TitleBarButtons.shadeOffset * scale,
+                y: buttonY,
+                width: buttonSize,
+                height: buttonSize
+            )
+            let gapWidth = 4 * scale
+            let gapSource = NSRect(x: 153, y: inactiveYOffset, width: 4, height: 20)
+            let gapRect = NSRect(
+                x: shadeRect.minX - gapWidth,
+                y: 0,
+                width: gapWidth,
+                height: titleHeight
+            )
+            drawSprite(from: pleditImage, sourceRect: gapSource, to: gapRect, in: context)
+
+            let shadeSource = NSRect(x: 158, y: 3 + inactiveYOffset, width: 9, height: 9)
+            drawSprite(from: pleditImage, sourceRect: shadeSource, to: shadeRect, in: context)
+
+            if shadePressed {
+                NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+                context.fill(shadeRect)
+            }
+        }
+
+        if closePressed {
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(closeRect)
+        }
+    }
     
     /// Draw the complete ProjectM window chrome (title bar, borders)
     /// The visualization area itself is handled by the OpenGL view
     func drawProjectMWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
-                            pressedButton: ProjectMButtonType?, isShadeMode: Bool) {
+                            pressedButton: ProjectMButtonType?, isShadeMode: Bool,
+                            controlScale: CGFloat = 1.0) {
         if isShadeMode {
             drawProjectMShade(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
         } else {
-            drawProjectMNormal(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+            drawProjectMNormal(in: context, bounds: bounds, isActive: isActive,
+                               pressedButton: pressedButton, controlScale: controlScale)
         }
     }
     
     /// Draw normal mode ProjectM window chrome
     /// Uses PLEDIT.BMP title bar sprites (same style as playlist) with "PROJECTM" text
     private func drawProjectMNormal(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                    pressedButton: ProjectMButtonType?) {
+                                    pressedButton: ProjectMButtonType?, controlScale: CGFloat) {
         // Fill background with black for visualization area
         NSColor.black.setFill()
         context.fill(bounds)
@@ -1510,11 +1566,13 @@ class SkinRenderer {
         drawPlaylistStyleBottomBorder(in: context, bounds: bounds, bottomHeight: bottomHeight)
 
         // Draw title bar using PLEDIT.BMP sprites (without custom text)
-        drawProjectMTitleBarFromPledit(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        drawProjectMTitleBarFromPledit(in: context, bounds: bounds, isActive: isActive,
+                                       pressedButton: pressedButton, controlScale: controlScale)
     }
     
     /// Draw ProjectM title bar using PLEDIT.BMP sprites (without custom text)
-    private func drawProjectMTitleBarFromPledit(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: ProjectMButtonType?) {
+    private func drawProjectMTitleBarFromPledit(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                                pressedButton: ProjectMButtonType?, controlScale: CGFloat) {
         guard let pleditImage = skin.pledit else {
             drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive)
             return
@@ -1556,24 +1614,14 @@ class SkinRenderer {
             x += tileWidth
         }
 
-        // Re-draw the close icon (baked into rightCorner) on top of the mirrored corner.
-        let closeIconYOffset: CGFloat = isActive ? 0 : 21
-        let closeBtnSource = NSRect(x: 167, y: 3 + closeIconYOffset, width: 9, height: 9)
-        drawSprite(from: pleditImage, sourceRect: closeBtnSource,
-                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
-                             y: 3, width: 9, height: 9), in: context)
+        drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
+                                     titleHeight: titleHeight, isActive: isActive,
+                                     controlScale: controlScale, showsShade: true,
+                                     closePressed: pressedButton == .close, shadePressed: pressedButton == .shade)
 
         _ = rightCorner
 
         // Note: Custom text removed - let the skin's title bar show through
-
-        // Draw close button pressed state if needed
-        if pressedButton == .close {
-            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
-                                   y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(closeRect)
-        }
     }
 
     /// Draw "PROJECTM" text using GenFont from gen.png
@@ -1677,17 +1725,19 @@ class SkinRenderer {
     /// Draw spectrum analyzer window chrome
     /// Uses same style as ProjectM window but with "SPECTRUM ANALYZER" title
     func drawSpectrumAnalyzerWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                    pressedButton: ProjectMButtonType?, isShadeMode: Bool) {
+                                    pressedButton: ProjectMButtonType?, isShadeMode: Bool,
+                                    controlScale: CGFloat = 1.0) {
         if isShadeMode {
             drawSpectrumAnalyzerShade(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
         } else {
-            drawSpectrumAnalyzerNormal(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+            drawSpectrumAnalyzerNormal(in: context, bounds: bounds, isActive: isActive,
+                                       pressedButton: pressedButton, controlScale: controlScale)
         }
     }
     
     /// Draw normal mode spectrum analyzer window chrome
     private func drawSpectrumAnalyzerNormal(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                            pressedButton: ProjectMButtonType?) {
+                                            pressedButton: ProjectMButtonType?, controlScale: CGFloat) {
         // Fill background with black for visualization area
         NSColor.black.setFill()
         context.fill(bounds)
@@ -1702,11 +1752,13 @@ class SkinRenderer {
         drawPlaylistStyleBottomBorder(in: context, bounds: bounds, bottomHeight: bottomHeight)
 
         // Draw title bar using PLEDIT.BMP sprites (without custom text)
-        drawSpectrumAnalyzerTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        drawSpectrumAnalyzerTitleBar(in: context, bounds: bounds, isActive: isActive,
+                                     pressedButton: pressedButton, controlScale: controlScale)
     }
     
     /// Draw spectrum analyzer title bar using PLEDIT.BMP sprites (without custom text)
-    private func drawSpectrumAnalyzerTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: ProjectMButtonType?) {
+    private func drawSpectrumAnalyzerTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                              pressedButton: ProjectMButtonType?, controlScale: CGFloat) {
         guard let pleditImage = skin.pledit else {
             drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive)
             return
@@ -1750,24 +1802,14 @@ class SkinRenderer {
             x += tileWidth
         }
 
-        // Re-draw the close icon (baked into rightCorner) on top of the mirrored corner.
-        let closeIconYOffset: CGFloat = isActive ? 0 : 21
-        let closeBtnSource = NSRect(x: 167, y: 3 + closeIconYOffset, width: 9, height: 9)
-        drawSprite(from: pleditImage, sourceRect: closeBtnSource,
-                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
-                             y: 3, width: 9, height: 9), in: context)
+        drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
+                                     titleHeight: titleHeight, isActive: isActive,
+                                     controlScale: controlScale, showsShade: true,
+                                     closePressed: pressedButton == .close, shadePressed: pressedButton == .shade)
 
         _ = rightCorner  // original sprite no longer drawn; reference kept above for parity
 
         // Note: Custom text removed - let the skin's title bar show through
-
-        // Draw close button pressed state if needed
-        if pressedButton == .close {
-            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
-                                   y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(closeRect)
-        }
     }
 
     /// Draw "NULLPLAYER ANALYZER" text using GenFont from gen.png
@@ -2458,17 +2500,14 @@ class SkinRenderer {
         let leftCorner: NSRect
         let titleSprite: NSRect
         let tileSprite: NSRect
-        let rightCorner: NSRect
         if isActive {
             leftCorner = SkinElements.Playlist.TitleBarActive.leftCorner
             titleSprite = SkinElements.Playlist.TitleBarActive.title
             tileSprite = SkinElements.Playlist.TitleBarActive.tile
-            rightCorner = SkinElements.Playlist.TitleBarActive.rightCorner
         } else {
             leftCorner = SkinElements.Playlist.TitleBarInactive.leftCorner
             titleSprite = SkinElements.Playlist.TitleBarInactive.title
             tileSprite = SkinElements.Playlist.TitleBarInactive.tile
-            rightCorner = SkinElements.Playlist.TitleBarInactive.rightCorner
         }
         
         // On non-Retina, fill background first to prevent seam gaps
@@ -2537,34 +2576,11 @@ class SkinRenderer {
         drawSprite(from: pleditImage, sourceRect: leftCorner, to: rightMirrorRect, in: context)
         context.restoreGState()
 
-        // The close + shade button icons were baked into rightCorner; re-draw just those
-        // icons on top of the mirrored corner so the user-facing buttons are preserved.
-        let buttonInactiveYOffset: CGFloat = isActive ? 0 : 21
-        let closeBtnSource = NSRect(x: 167, y: 3 + buttonInactiveYOffset, width: 9, height: 9)
-        let shadeBtnSource = NSRect(x: 158, y: 3 + buttonInactiveYOffset, width: 9, height: 9)
-        drawSprite(from: pleditImage, sourceRect: closeBtnSource,
-                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
-                             y: 3, width: 9, height: 9), in: context)
-        drawSprite(from: pleditImage, sourceRect: shadeBtnSource,
-                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.shadeOffset,
-                             y: 3, width: 9, height: 9), in: context)
-        
-        // Draw window control button pressed states if needed
-        if pressedButton == .close {
-            // Close button highlight - drawn over the right corner
-            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset, 
-                                   y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(closeRect)
-        }
-        
-        if pressedButton == .shade {
-            // Shade button highlight
-            let shadeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.shadeOffset, 
-                                   y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(shadeRect)
-        }
+        drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
+                                     titleHeight: titleHeight, isActive: isActive,
+                                     showsShade: true,
+                                     closePressed: pressedButton == .close,
+                                     shadePressed: pressedButton == .shade)
     }
     
     /// Build a horizontally-tileable bottom-border tile by rotating the playlist `leftSideTile`
@@ -2794,7 +2810,8 @@ class SkinRenderer {
     /// Draw the complete Plex browser window using skin sprites
     /// Uses playlist sprites for frame/chrome with custom content areas
     func drawPlexBrowserWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
-                               pressedButton: PlexBrowserButtonType?, scrollPosition: CGFloat) {
+                               pressedButton: PlexBrowserButtonType?, scrollPosition: CGFloat,
+                               controlScale: CGFloat = 1.0) {
         let layout = SkinElements.PlexBrowser.Layout.self
         let titleHeight = layout.titleBarHeight  // 20px
         let leftBorder = layout.leftBorder
@@ -2825,16 +2842,20 @@ class SkinRenderer {
         drawPlexBrowserStatusBar(in: context, bounds: bounds)
         
         // Draw title bar (without custom text)
-        drawPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        drawPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive,
+                                pressedButton: pressedButton, controlScale: controlScale)
         
         // Scrollbar removed - users scroll with trackpad/wheel
     }
     
     /// Draw Plex browser title bar with skin sprites.
     /// Prefer the custom library chrome when present so the title bar matches the side/bottom borders.
-    func drawPlexBrowserTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
+    func drawPlexBrowserTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                 pressedButton: PlexBrowserButtonType?, controlScale: CGFloat = 1.0) {
         if let libraryImage = skin.libraryWindowImage {
-            drawLibraryWindowTitleBar(from: libraryImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+            drawLibraryWindowTitleBar(from: libraryImage, in: context, bounds: bounds,
+                                      isActive: isActive, pressedButton: pressedButton,
+                                      controlScale: controlScale)
             return
         }
 
@@ -2845,12 +2866,16 @@ class SkinRenderer {
         }
         
         // Draw PLEDIT-based title bar
-        drawPlexBrowserTitleBarFromPledit(pleditImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        drawPlexBrowserTitleBarFromPledit(pleditImage, in: context, bounds: bounds,
+                                          isActive: isActive, pressedButton: pressedButton,
+                                          controlScale: controlScale)
     }
     
     /// Draw Plex browser title bar using PLEDIT.BMP sprites
     /// Draw Plex browser title bar using PLEDIT.BMP sprites (same approach as ProjectM)
-    private func drawPlexBrowserTitleBarFromPledit(_ pleditImage: NSImage, in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
+    private func drawPlexBrowserTitleBarFromPledit(_ pleditImage: NSImage, in context: CGContext, bounds: NSRect,
+                                                   isActive: Bool, pressedButton: PlexBrowserButtonType?,
+                                                   controlScale: CGFloat) {
         let titleHeight = SkinElements.Playlist.titleHeight
         let leftCornerWidth: CGFloat = 25
         let rightCornerWidth: CGFloat = 25
@@ -2887,38 +2912,21 @@ class SkinRenderer {
             x += tileWidth
         }
 
-        // Re-draw the close + shade icons (baked into rightCorner) on top of mirrored corner.
-        let closeIconYOffset: CGFloat = isActive ? 0 : 21
-        let closeBtnSource = NSRect(x: 167, y: 3 + closeIconYOffset, width: 9, height: 9)
-        let shadeBtnSource = NSRect(x: 158, y: 3 + closeIconYOffset, width: 9, height: 9)
-        drawSprite(from: pleditImage, sourceRect: closeBtnSource,
-                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
-                             y: 3, width: 9, height: 9), in: context)
-        drawSprite(from: pleditImage, sourceRect: shadeBtnSource,
-                  to: NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.shadeOffset,
-                             y: 3, width: 9, height: 9), in: context)
+        drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
+                                     titleHeight: titleHeight, isActive: isActive,
+                                     controlScale: controlScale, showsShade: true,
+                                     closePressed: pressedButton == .close,
+                                     shadePressed: pressedButton == .shade)
 
         _ = rightCorner
 
         // Note: Custom text removed - let the skin's title bar show through
-
-        if pressedButton == .close {
-            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
-                                   y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(closeRect)
-        }
-        
-        if pressedButton == .shade {
-            let shadeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.shadeOffset,
-                                   y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(shadeRect)
-        }
     }
     
     /// Draw title bar using library-window.png sprites
-    private func drawLibraryWindowTitleBar(from image: NSImage, in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
+    private func drawLibraryWindowTitleBar(from image: NSImage, in context: CGContext, bounds: NSRect,
+                                           isActive: Bool, pressedButton: PlexBrowserButtonType?,
+                                           controlScale: CGFloat) {
         let layout = SkinElements.LibraryWindow.TitleBar.self
         let titleHeight = SkinElements.PlexBrowser.Layout.titleBarHeight
         let leftCornerWidth: CGFloat = 25
@@ -2954,18 +2962,23 @@ class SkinRenderer {
         // Draw "NULLPLAYER LIBRARY" text using GenFont with proper active/inactive colors
         drawLibraryTitleText(in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
         
-        // Draw window control buttons using skin titlebar sprites (same style as main window)
-        let closeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9, 
-                               y: 4, width: 9, height: 9)
-        let shadeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.shadeOffset - 9, 
-                               y: 4, width: 9, height: 9)
-        
-        let closeState: ButtonState = (pressedButton == .close) ? .pressed : .normal
-        let shadeState: ButtonState = (pressedButton == .shade) ? .pressed : .normal
-        
         drawLibraryWindowTitleSideRails(from: image, in: context, bounds: bounds, titleHeight: titleHeight)
-        drawButton(.close, state: closeState, at: closeRect, in: context)
-        drawButton(.shade, state: shadeState, at: shadeRect, in: context)
+        if let pleditImage = skin.pledit {
+            drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
+                                         titleHeight: titleHeight, isActive: isActive,
+                                         controlScale: controlScale, showsShade: true,
+                                         closePressed: pressedButton == .close,
+                                         shadePressed: pressedButton == .shade)
+        } else {
+            let closeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9,
+                                   y: 4, width: 9, height: 9)
+            let shadeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.shadeOffset - 9,
+                                   y: 4, width: 9, height: 9)
+            let closeState: ButtonState = (pressedButton == .close) ? .pressed : .normal
+            let shadeState: ButtonState = (pressedButton == .shade) ? .pressed : .normal
+            drawButton(.close, state: closeState, at: closeRect, in: context)
+            drawButton(.shade, state: shadeState, at: shadeRect, in: context)
+        }
     }
 
     /// Restore matching outer side rails over the title-bar sprite so the border is continuous at the top.

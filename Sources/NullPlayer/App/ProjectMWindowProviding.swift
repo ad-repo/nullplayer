@@ -71,4 +71,7 @@ protocol ProjectMWindowProviding: AnyObject {
     
     /// Get information about loaded presets
     var presetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) { get }
+
+    /// Build the visualization window's full controls menu for use outside the view context menu.
+    func buildVisualizationMenu() -> NSMenu
 }

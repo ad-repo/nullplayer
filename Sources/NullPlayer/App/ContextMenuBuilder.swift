@@ -98,6 +98,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
+        menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum)))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         if wm.isRunningModernUI {
@@ -105,6 +106,9 @@ class ContextMenuBuilder {
                                          action: #selector(MenuActions.toggleLibraryHistory)))
         }
         menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
+        menu.addItem(buildWindowItem("Video Player", visible: wm.isVideoPlayerVisible,
+                                     action: #selector(MenuActions.toggleVideoPlayer),
+                                     enabled: wm.currentVideoPlayerController != nil))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
 
         menu.addItem(NSMenuItem.separator())
@@ -335,10 +339,11 @@ class ContextMenuBuilder {
     
     // MARK: - Window Toggle Items
     
-    private static func buildWindowItem(_ title: String, visible: Bool, action: Selector) -> NSMenuItem {
+    private static func buildWindowItem(_ title: String, visible: Bool, action: Selector, enabled: Bool = true) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = MenuActions.shared
         item.state = visible ? .on : .off
+        item.isEnabled = enabled
         return item
     }
 
@@ -503,59 +508,44 @@ class ContextMenuBuilder {
         visMenu.autoenablesItems = false
         
         let wm = WindowManager.shared
-        
-        // Show preset count (can be determined without window open)
-        let counts = ProjectMWrapper.staticPresetCounts
-        let totalPresets = counts.bundled + counts.custom
-        
-        if totalPresets > 0 {
-            let infoText: String
-            if counts.custom > 0 {
-                infoText = "\(totalPresets) presets (\(counts.bundled) bundled, \(counts.custom) custom)"
-            } else {
-                infoText = "\(totalPresets) presets (bundled)"
-            }
-            
-            let infoItem = NSMenuItem(title: infoText, action: nil, keyEquivalent: "")
-            visMenu.addItem(infoItem)
-            visMenu.addItem(NSMenuItem.separator())
-        } else if wm.isProjectMVisible && !wm.isProjectMAvailable {
-            // Only show error if window is open but projectM failed to initialize
-            let unavailableItem = NSMenuItem(title: "projectM not available", action: nil, keyEquivalent: "")
-            visMenu.addItem(unavailableItem)
-            visMenu.addItem(NSMenuItem.separator())
-        }
-        
-        // Add Presets Folder...
-        let addFolderItem = NSMenuItem(title: "Add Presets Folder...", action: #selector(MenuActions.addVisualizationsFolder), keyEquivalent: "")
-        addFolderItem.target = MenuActions.shared
-        visMenu.addItem(addFolderItem)
-        
-        // Show Presets Folder (only if custom folder is set)
-        if ProjectMWrapper.hasCustomPresetsFolder {
-            let showFolderItem = NSMenuItem(title: "Show Custom Presets Folder", action: #selector(MenuActions.showVisualizationsFolder), keyEquivalent: "")
-            showFolderItem.target = MenuActions.shared
-            visMenu.addItem(showFolderItem)
-            
-            // Remove Custom Folder
-            let removeFolderItem = NSMenuItem(title: "Remove Custom Folder", action: #selector(MenuActions.removeVisualizationsFolder), keyEquivalent: "")
-            removeFolderItem.target = MenuActions.shared
-            visMenu.addItem(removeFolderItem)
-        }
-        
-        // Rescan Presets
-        let rescanItem = NSMenuItem(title: "Rescan Presets", action: #selector(MenuActions.rescanVisualizations), keyEquivalent: "")
-        rescanItem.target = MenuActions.shared
-        visMenu.addItem(rescanItem)
-        
+
+        let windowItem = NSMenuItem(title: wm.isProjectMVisible ? "Hide Visualization Window" : "Show Visualization Window",
+                                    action: #selector(MenuActions.toggleProjectM),
+                                    keyEquivalent: "")
+        windowItem.target = MenuActions.shared
+        windowItem.state = wm.isProjectMVisible ? .on : .off
+        visMenu.addItem(windowItem)
         visMenu.addItem(NSMenuItem.separator())
-        
-        // Show Bundled Presets in Finder
-        let showBundledItem = NSMenuItem(title: "Show Bundled Presets", action: #selector(MenuActions.showBundledPresets), keyEquivalent: "")
-        showBundledItem.target = MenuActions.shared
-        visMenu.addItem(showBundledItem)
-        
+
+        if let liveMenu = wm.buildVisualizationMenu() {
+            moveMenuItems(from: liveMenu, to: visMenu)
+            visMenu.addItem(NSMenuItem.separator())
+        } else {
+            visMenu.addItem(buildVisualizationEngineMenuItem())
+            visMenu.addItem(NSMenuItem.separator())
+        }
+
         return visMenu
+    }
+
+    private static func buildVisualizationEngineMenuItem() -> NSMenuItem {
+        let engineMenu = NSMenu()
+        engineMenu.autoenablesItems = false
+        let currentEngineType = WindowManager.shared.visualizationEngineType
+
+        for engineType in VisualizationType.allCases {
+            let item = NSMenuItem(title: engineType.displayName,
+                                  action: #selector(MenuActions.switchVisualizationEngine(_:)),
+                                  keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = engineType
+            item.state = currentEngineType == engineType ? .on : .off
+            engineMenu.addItem(item)
+        }
+
+        let engineItem = NSMenuItem(title: "Visualization Engine", action: nil, keyEquivalent: "")
+        engineItem.submenu = engineMenu
+        return engineItem
     }
     
     // MARK: - Options Submenu
@@ -942,7 +932,7 @@ class ContextMenuBuilder {
         let modeMenu = NSMenu()
         modeMenu.autoenablesItems = false
         
-        for mode in MainWindowVisMode.visualizationOrder {
+        for mode in MainWindowVisMode.menuOrder {
             let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setMainVisMode(_:)), keyEquivalent: "")
             item.target = MenuActions.shared
             item.representedObject = mode
@@ -956,6 +946,8 @@ class ContextMenuBuilder {
         }
         modeItem.submenu = modeMenu
         visMenu.addItem(modeItem)
+
+        guard currentMode != .none else { return visMenu }
         
         // Responsiveness submenu
         let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
@@ -2762,6 +2754,11 @@ class MenuActions: NSObject {
     @objc func toggleProjectM() {
         WindowManager.shared.toggleProjectM()
     }
+
+    @objc func switchVisualizationEngine(_ sender: NSMenuItem) {
+        guard let type = sender.representedObject as? VisualizationType else { return }
+        WindowManager.shared.switchVisualizationEngine(to: type)
+    }
     
     @objc func toggleSpectrum() {
         WindowManager.shared.toggleSpectrum()
@@ -2769,6 +2766,10 @@ class MenuActions: NSObject {
 
     @objc func toggleWaveform() {
         WindowManager.shared.toggleWaveform()
+    }
+
+    @objc func toggleVideoPlayer() {
+        WindowManager.shared.toggleVideoPlayer()
     }
     
     @objc func toggleDebugConsole() {

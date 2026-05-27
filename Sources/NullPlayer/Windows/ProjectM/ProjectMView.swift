@@ -81,7 +81,7 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
     private var Layout: SkinElements.ProjectM.Layout.Type {
         SkinElements.ProjectM.Layout.self
     }
-    
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -268,7 +268,8 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
         
         // Draw window chrome at actual window bounds (no scaling - chrome tiles to fill)
         renderer.drawProjectMWindow(in: context, bounds: bounds, isActive: isActive,
-                                    pressedButton: pressedButton, isShadeMode: isShadeMode)
+                                    pressedButton: pressedButton, isShadeMode: isShadeMode,
+                                    controlScale: WindowManager.shared.playlistChromeScale)
         
         context.restoreGState()
 
@@ -784,6 +785,10 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
+        buildVisualizationMenu()
+    }
+
+    func buildVisualizationMenu() -> NSMenu {
         let menu = NSMenu()
         
         let currentEngineType = visualizationGLView?.currentEngineType ?? .projectM

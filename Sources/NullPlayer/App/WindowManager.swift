@@ -149,6 +149,15 @@ class WindowManager {
     var classicScaleMultiplier: CGFloat {
         isDoubleSize ? 1.5 : 1.0
     }
+
+    /// Scale factor for playlist-style title-bar controls on classic secondary windows,
+    /// derived from the live main-window width so chrome stays in sync when the user resizes.
+    var playlistChromeScale: CGFloat {
+        if let mainWindow = mainWindowController?.window, mainWindow.frame.width > 0 {
+            return mainWindow.frame.width / Skin.baseMainSize.width
+        }
+        return Skin.scaleFactor * classicScaleMultiplier
+    }
     
     /// Always on top mode (floating window level)
     var isAlwaysOnTop: Bool = false {
@@ -1823,6 +1832,11 @@ class WindowManager {
     /// Reload all visualization presets from bundled and custom folders
     func reloadVisualizationPresets() {
         projectMWindowController?.reloadPresets()
+    }
+
+    /// Build the visualization window's full controls menu when the window has been created.
+    func buildVisualizationMenu() -> NSMenu? {
+        projectMWindowController?.buildVisualizationMenu()
     }
     
     /// Select a visualization preset by index
