@@ -1617,7 +1617,7 @@ class SkinRenderer {
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
                                      controlScale: controlScale, showsShade: true,
-                                     closePressed: pressedButton == .close, shadePressed: false)
+                                     closePressed: pressedButton == .close, shadePressed: pressedButton == .shade)
 
         _ = rightCorner
 
@@ -1805,7 +1805,7 @@ class SkinRenderer {
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
                                      controlScale: controlScale, showsShade: true,
-                                     closePressed: pressedButton == .close, shadePressed: false)
+                                     closePressed: pressedButton == .close, shadePressed: pressedButton == .shade)
 
         _ = rightCorner  // original sprite no longer drawn; reference kept above for parity
 
