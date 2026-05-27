@@ -120,6 +120,13 @@ final class PlayHistoryStore: Sendable {
         return try fetchTopRows(expression: resolvedArtistExpression, whereStr: whereStr, params: params, limit: 250)
     }
 
+    func fetchGenreArtists(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        guard filter.selectedGenre != nil else { return [] }
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'music'", to: &whereStr)
+        return try fetchTopRows(expression: resolvedArtistExpression, whereStr: whereStr, params: params, limit: 250)
+    }
+
     func fetchTopMovies(filter: StatsFilterState) throws -> [TopDimensionRow] {
         var (whereStr, params) = whereClause(for: filter)
         addCondition("COALESCE(pe.content_type, 'music') = 'movie'", to: &whereStr)
