@@ -52,7 +52,30 @@ Output:
 - `dist/NullPlayer.app` — Application bundle
 - `dist/NullPlayer-X.Y.dmg` — Distributable DMG with Applications symlink
 
-The script builds a release binary, creates the app bundle, copies VLCKit.framework and libprojectM-4.dylib, fixes rpaths, and creates a DMG.
+The script builds a release binary, creates the app bundle, copies VLCKit.framework and libprojectM-4.dylib, fixes rpaths, and creates a DMG. The final summary prints the DMG's SHA256 — copy this value into the Homebrew cask on each release.
+
+## Release flow (Homebrew cask)
+
+NullPlayer is distributed via a personal tap at `ad-repo/homebrew-nullplayer` (`Casks/nullplayer.rb`). For each release:
+
+1. Bump `CFBundleShortVersionString` (and `CFBundleVersion` if needed) in `Sources/NullPlayer/Resources/Info.plist`.
+2. Run `./scripts/build_dmg.sh`. Note the printed `SHA256`.
+3. Publish the DMG:
+   ```bash
+   gh release create vX.Y.Z dist/NullPlayer-X.Y.Z.dmg
+   ```
+4. In the `ad-repo/homebrew-nullplayer` repo, update `Casks/nullplayer.rb`:
+   - Bump `version "X.Y.Z"`.
+   - Replace `sha256 "..."` with the value from step 2.
+   - Commit and push.
+5. Verify locally:
+   ```bash
+   brew update
+   brew install --cask ad-repo/nullplayer/nullplayer
+   brew livecheck --cask ad-repo/nullplayer/nullplayer
+   ```
+
+The cask runs `xattr -cr` in `postflight` to clear the quarantine bit, because the DMG is currently ad-hoc signed only. Once Developer ID notarization is added to `build_dmg.sh`, that block can be removed.
 
 ## Versioning
 

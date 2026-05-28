@@ -15,6 +15,7 @@
 - **Visualizations menu parity** — the top-level Visuals > Visualizations menu now exposes the visualization window toggle, engine selection before the window is opened, and the live visualization window controls once available, matching the functionality previously only reachable from the visualization window context menu.
 - **Visualizations menu cleanup** — projectM-only preset count, preset-folder, rescan, and bundled-preset Finder actions have been removed from the generic Visualizations menu.
 - **Main-window spectrum can be disabled** — Visuals > Spectrum Analyzer > Main Window > Mode now includes **Off**, matching Winamp's blank main-display option so compatible skins can show their prepared artwork without an analyzer overlay.
+- **Homebrew cask install** — NullPlayer can now be installed via a personal tap: `brew install --cask ad-repo/nullplayer/nullplayer`. The cask strips the quarantine attribute on install (the app is still ad-hoc signed; Developer ID notarization is on the roadmap). `scripts/build_dmg.sh` now prints the final DMG SHA256 for the per-release cask bump, and `docs/development-workflow.md` documents the release flow.
 
 ## 0.23.0
 
