@@ -86,6 +86,7 @@ Main audio controller managing:
 - Volume normalization (optional, local files only)
 - Sweet Fades crossfade (both pipelines)
 - Reference Tuning pitch shift (both pipelines via a shared `PitchTuningController`; disabled while casting)
+- Playback Speed tempo control (`0.25×...4.0×`; local files and HTTP streams; disabled while casting)
 - Output device selection
 - Delegate notifications for UI updates
 - Separate consumer gating for FFT/spectrum work vs live waveform chunk generation
@@ -215,19 +216,25 @@ func setEQBand(_ band: Int, gain: Float) {
 }
 ```
 
-## Reference Tuning
+## Reference Tuning and Playback Speed
 
 Reference Tuning shifts playback pitch by a precise cents offset to retune content from one reference frequency to another (e.g. A=440 → A=432). It is implemented as a shared `PitchTuningController` (`Audio/PitchTuningController.swift`) that owns the local `AVAudioUnitTimePitch` node and creates one configured streaming pitch node per AudioStreaming player. This keeps the primary and Sweet Fades crossfade streaming graphs independent while driving all nodes from the same state.
+
+Playback Speed is also owned by `PitchTuningController`, but it is a tempo/time-stretch control, not a pitch shift. The supported user range is `0.25×...4.0×`; `1.0×` is normal speed. Pitch is preserved while tempo changes.
 
 ### Graph placement
 
 Local graph: `playerNode + crossfadePlayerNode → mixerNode → localPitchNode → eqNode → mainMixerNode`. Placing the pitch node **after** the mixer means a single node handles both the primary and crossfade players, and the spectrum tap on `mixerNode` keeps capturing pre-pitch (source) frequencies — the analyzer shows the source content's spectrum, not the shifted output. This is a deliberate trade-off; moving the tap onto `localPitchNode` would invert it.
 
-Streaming graph: each `StreamingAudioPlayer` receives its own node from `PitchTuningController.makeStreamingPitchNode()` and attaches it via `AudioStreaming.AudioPlayer.attach(node:)` after the EQ node. AudioStreaming's own private `rateNode` (also an `AVAudioUnitTimePitch`, used for `player.rate`) is bypassed while `player.rate == 1.0`, so this does not stack two active time-pitch units in normal playback. If variable-rate playback is ever added, both nodes would be active — at which point driving the library's `rateNode.pitch` directly may become preferable.
+Streaming graph: each `StreamingAudioPlayer` receives its own node from `PitchTuningController.makeStreamingPitchNode()` and attaches it via `AudioStreaming.AudioPlayer.attach(node:)` after the EQ node. These streaming pitch nodes only carry Reference Tuning cents: they always keep `node.rate = 1.0`. Streaming tempo is applied through AudioStreaming's own private `rateNode` via `StreamingAudioPlayer.rate` / `AudioPlayer.rate`. This avoids double-applying rate when Reference Tuning and Playback Speed are used together.
+
+When `AudioEngine.setPlaybackSpeed(_:)` changes the rate, it updates the controller, persists the preference, applies the rate to the active primary streaming player, and applies it to the crossfade streaming player if one exists. Newly-created streaming players must immediately inherit `tuningController.rate`.
 
 ### Math and clamp
 
 Cents offset = `1200 · log2(target / source)` (e.g. 440 → 432 ≈ −31.766 cents). `AVAudioUnitTimePitch.pitch` is in cents, ±2400. The controller clamps `appliedCents` to that range; the Custom… dialog validates input at entry time and rejects out-of-range frequencies rather than silently clamping.
+
+Playback Speed clamps via `PitchTuningController.minRate` / `maxRate` (`0.25...4.0`). Local file time display is wall-clock based, so local `currentTime` must multiply elapsed wall time by `playbackSpeed`; streaming time comes from AudioStreaming's own player progress.
 
 ### Persistence and overrides
 
@@ -236,12 +243,13 @@ UserDefaults keys (mirrors EQ/volume normalization pattern):
 - `referenceTuningEnabled: Bool`
 - `referenceTuningSourceHz: Double` (default 440)
 - `referenceTuningTargetHz: Double` (default 432)
+- `playbackSpeedRate: Float` (default 1.0; `UserDefaults.float(forKey:) == 0` means missing/default)
 
 CLI flags (`--tuning`, `--tuning-source`, `--tuning-offset-cents`) provide session-only overrides — they do not write back to UserDefaults, matching `--volume` and `--eq`.
 
 ### Casting
 
-Casting paths (Sonos / Chromecast / DLNA) hand the remote renderer a stream URL with no local AVFoundation graph to insert into, so Reference Tuning is intentionally unavailable while casting. The menu greys out with a "Not available while casting" tooltip; `engine.isAnyCastingActive` is the gate.
+Casting paths (Sonos / Chromecast / DLNA) hand the remote renderer a stream URL with no local AVFoundation graph to insert into, so Reference Tuning and Playback Speed are intentionally unavailable while casting. Their menus grey out with a "Not available while casting" tooltip; `engine.isAnyCastingActive` is the gate. The persisted speed remains stored and resumes for local/HTTP playback after casting ends.
 
 ## Spectrum Analyzer
 

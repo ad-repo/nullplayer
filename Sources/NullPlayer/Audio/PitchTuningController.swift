@@ -18,9 +18,12 @@ final class PitchTuningController {
     static let userDefaultsEnabledKey = "referenceTuningEnabled"
     static let userDefaultsSourceKey = "referenceTuningSourceHz"
     static let userDefaultsTargetKey = "referenceTuningTargetHz"
+    static let userDefaultsRateKey = "playbackSpeedRate"
 
     static let minCents: Double = -2400
     static let maxCents: Double = 2400
+    static let minRate: Float = 0.25
+    static let maxRate: Float = 4.0
 
     /// Attached to the main AVAudioEngine graph (local files).
     let localPitchNode = AVAudioUnitTimePitch()
@@ -41,6 +44,7 @@ final class PitchTuningController {
     private(set) var enabled: Bool = false
     private(set) var sourceReferenceHz: Double = 440
     private(set) var targetReferenceHz: Double = 432
+    private(set) var rate: Float = 1.0
 
     init() {
         apply()
@@ -69,10 +73,15 @@ final class PitchTuningController {
         apply()
     }
 
+    func setRate(_ value: Float) {
+        rate = Self.clampedRate(value)
+        apply()
+    }
+
     func makeStreamingPitchNode() -> AVAudioUnitTimePitch {
         let node = AVAudioUnitTimePitch()
         streamingPitchNodes.append(WeakPitchNode(node))
-        configure(node, cents: Float(appliedCents))
+        configureStreaming(node, cents: Float(appliedCents))
         pruneReleasedStreamingNodes()
         return node
     }
@@ -114,6 +123,9 @@ final class PitchTuningController {
         sourceReferenceHz = savedSource > 0 ? savedSource : 440
         let savedTarget = defaults.double(forKey: Self.userDefaultsTargetKey)
         targetReferenceHz = savedTarget > 0 ? savedTarget : 432
+        // UserDefaults.float(forKey:) returns 0 for missing keys, so 0 means "use default".
+        let savedRate = defaults.float(forKey: Self.userDefaultsRateKey)
+        rate = savedRate > 0 ? Self.clampedRate(savedRate) : 1.0
         apply()
     }
 
@@ -122,28 +134,39 @@ final class PitchTuningController {
         defaults.set(enabled, forKey: Self.userDefaultsEnabledKey)
         defaults.set(sourceReferenceHz, forKey: Self.userDefaultsSourceKey)
         defaults.set(targetReferenceHz, forKey: Self.userDefaultsTargetKey)
+        defaults.set(rate, forKey: Self.userDefaultsRateKey)
     }
 
     // MARK: - Apply
 
     private func apply() {
         let cents = Float(appliedCents)
-        configure(localPitchNode, cents: cents)
+        configureLocal(localPitchNode, cents: cents)
         pruneReleasedStreamingNodes()
         for entry in streamingPitchNodes {
             if let node = entry.node {
-                configure(node, cents: cents)
+                configureStreaming(node, cents: cents)
             }
         }
     }
 
-    private func configure(_ node: AVAudioUnitTimePitch, cents: Float) {
-        node.bypass = !enabled
+    private func configureLocal(_ node: AVAudioUnitTimePitch, cents: Float) {
+        node.pitch = cents
+        node.rate = rate
+        node.bypass = (!enabled || cents.isZero) && rate == 1.0
+    }
+
+    private func configureStreaming(_ node: AVAudioUnitTimePitch, cents: Float) {
         node.pitch = cents
         node.rate = 1.0
+        node.bypass = !enabled || cents.isZero
     }
 
     private func pruneReleasedStreamingNodes() {
         streamingPitchNodes.removeAll { $0.node == nil }
+    }
+
+    private static func clampedRate(_ value: Float) -> Float {
+        max(minRate, min(maxRate, value))
     }
 }

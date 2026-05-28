@@ -289,6 +289,53 @@ class ContextMenuBuilder {
         return menu
     }
 
+    /// Builds the Playback Speed submenu.
+    static func buildPlaybackSpeedMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let current = WindowManager.shared.audioEngine.playbackSpeed
+
+        func isCurrent(_ value: Float) -> Bool {
+            abs(current - value) < 0.001
+        }
+
+        func makeItem(_ title: String, _ action: Selector, isOn: Bool) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.state = isOn ? .on : .off
+            return item
+        }
+
+        let presets: [(title: String, value: Float, action: Selector)] = [
+            ("0.25×", 0.25, #selector(MenuActions.setPlaybackSpeedQuarter)),
+            ("0.5×", 0.5, #selector(MenuActions.setPlaybackSpeedHalf)),
+            ("0.75×", 0.75, #selector(MenuActions.setPlaybackSpeed075)),
+            ("1.0× (Normal)", 1.0, #selector(MenuActions.setPlaybackSpeedNormal)),
+            ("1.25×", 1.25, #selector(MenuActions.setPlaybackSpeed125)),
+            ("1.5×", 1.5, #selector(MenuActions.setPlaybackSpeed150)),
+            ("1.75×", 1.75, #selector(MenuActions.setPlaybackSpeed175)),
+            ("2.0×", 2.0, #selector(MenuActions.setPlaybackSpeedDouble)),
+            ("2.5×", 2.5, #selector(MenuActions.setPlaybackSpeed250)),
+            ("3.0×", 3.0, #selector(MenuActions.setPlaybackSpeed300)),
+            ("4.0×", 4.0, #selector(MenuActions.setPlaybackSpeed400))
+        ]
+
+        var matchesPreset = false
+        for preset in presets {
+            let isOn = isCurrent(preset.value)
+            matchesPreset = matchesPreset || isOn
+            menu.addItem(makeItem(preset.title, preset.action, isOn: isOn))
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        let customTitle = matchesPreset ? "Custom…" : String(format: "Custom… (%.2f×)", current)
+        menu.addItem(makeItem(customTitle, #selector(MenuActions.setPlaybackSpeedCustom), isOn: !matchesPreset))
+
+        return menu
+    }
+
     /// Builds the top-level "Visuals" menu content for the macOS menu bar.
     static func buildMenuBarVisualsMenu() -> NSMenu {
         let menu = NSMenu()
@@ -860,6 +907,15 @@ class ContextMenuBuilder {
             tuningRoot.toolTip = "Not available while casting"
         }
         optionsMenu.addItem(tuningRoot)
+
+        // Playback Speed submenu
+        let speedRoot = NSMenuItem(title: "Playback Speed", action: nil, keyEquivalent: "")
+        speedRoot.submenu = buildPlaybackSpeedMenu()
+        if engine.isAnyCastingActive {
+            speedRoot.isEnabled = false
+            speedRoot.toolTip = "Not available while casting"
+        }
+        optionsMenu.addItem(speedRoot)
 
         optionsMenu.addItem(NSMenuItem.separator())
 
@@ -3836,6 +3892,106 @@ class MenuActions: NSObject {
         }
 
         engine.setTuningPreset(.custom(source: source, target: target))
+    }
+
+    // MARK: - Playback Speed
+
+    @objc func setPlaybackSpeedQuarter() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(0.25)
+    }
+
+    @objc func setPlaybackSpeedHalf() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(0.5)
+    }
+
+    @objc func setPlaybackSpeed075() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(0.75)
+    }
+
+    @objc func setPlaybackSpeedNormal() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(1.0)
+    }
+
+    @objc func setPlaybackSpeed125() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(1.25)
+    }
+
+    @objc func setPlaybackSpeed150() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(1.5)
+    }
+
+    @objc func setPlaybackSpeed175() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(1.75)
+    }
+
+    @objc func setPlaybackSpeedDouble() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(2.0)
+    }
+
+    @objc func setPlaybackSpeed250() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(2.5)
+    }
+
+    @objc func setPlaybackSpeed300() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(3.0)
+    }
+
+    @objc func setPlaybackSpeed400() {
+        WindowManager.shared.audioEngine.setPlaybackSpeed(4.0)
+    }
+
+    @objc func setPlaybackSpeedCustom() {
+        let engine = WindowManager.shared.audioEngine
+
+        let alert = NSAlert()
+        alert.messageText = "Custom Playback Speed"
+        alert.informativeText = String(
+            format: "Enter a playback speed from %.2g× to %.2g×.",
+            PitchTuningController.minRate,
+            PitchTuningController.maxRate
+        )
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let label = NSTextField(labelWithString: "Speed:")
+        label.alignment = .right
+        label.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        let field = NSTextField(string: String(format: "%g", Double(engine.playbackSpeed)))
+        field.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        stack.addArrangedSubview(label)
+        stack.addArrangedSubview(field)
+
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 24))
+        stack.frame = accessory.bounds
+        stack.autoresizingMask = [.width, .height]
+        accessory.addSubview(stack)
+        alert.accessoryView = accessory
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        guard let speed = Float(field.stringValue),
+              speed.isFinite,
+              speed >= PitchTuningController.minRate,
+              speed <= PitchTuningController.maxRate else {
+            let err = NSAlert()
+            err.messageText = "Invalid playback speed"
+            err.informativeText = String(
+                format: "Playback speed must be a number from %.2g× to %.2g×.",
+                PitchTuningController.minRate,
+                PitchTuningController.maxRate
+            )
+            err.alertStyle = .warning
+            err.runModal()
+            return
+        }
+
+        engine.setPlaybackSpeed(speed)
     }
     
     @objc func toggleSweetFade() {

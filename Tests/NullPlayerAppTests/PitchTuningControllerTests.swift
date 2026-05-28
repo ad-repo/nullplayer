@@ -45,6 +45,42 @@ final class PitchTuningControllerTests: XCTestCase {
         XCTAssertEqual(c.currentPreset, .off)
     }
 
+    func testPlaybackRateClampsAndDrivesLocalPitchNode() {
+        let c = PitchTuningController()
+
+        c.setRate(1.5)
+        XCTAssertEqual(c.rate, 1.5, accuracy: 0.001)
+        XCTAssertEqual(c.localPitchNode.rate, 1.5, accuracy: 0.001)
+        XCTAssertFalse(c.localPitchNode.bypass)
+
+        c.setRate(8.0)
+        XCTAssertEqual(c.rate, 4.0, accuracy: 0.001)
+        XCTAssertEqual(c.localPitchNode.rate, 4.0, accuracy: 0.001)
+
+        c.setRate(0.1)
+        XCTAssertEqual(c.rate, 0.25, accuracy: 0.001)
+        XCTAssertEqual(c.localPitchNode.rate, 0.25, accuracy: 0.001)
+
+        c.setRate(1.0)
+        XCTAssertTrue(c.localPitchNode.bypass)
+    }
+
+    func testStreamingPitchNodeKeepsNeutralRateWhenPlaybackRateChanges() {
+        let c = PitchTuningController()
+        c.setRate(1.5)
+
+        let stream = c.makeStreamingPitchNode()
+        XCTAssertEqual(stream.rate, 1.0, accuracy: 0.001)
+        XCTAssertTrue(stream.bypass)
+
+        c.applyPreset(.hz432)
+        XCTAssertEqual(stream.rate, 1.0, accuracy: 0.001)
+        XCTAssertFalse(stream.bypass)
+
+        c.setRate(0.75)
+        XCTAssertEqual(stream.rate, 1.0, accuracy: 0.001)
+    }
+
     func testStreamingPitchNodesAreIndependentAndFollowControllerState() {
         let c = PitchTuningController()
         let first = c.makeStreamingPitchNode()
