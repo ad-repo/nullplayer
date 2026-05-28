@@ -178,7 +178,10 @@ class StreamingAudioPlayer {
     
     // MARK: - Initialization
     
-    init(eqConfiguration: EQConfiguration = .forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled"))) {
+    init(
+        eqConfiguration: EQConfiguration = .forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled")),
+        pitchNode: AVAudioUnitTimePitch? = nil
+    ) {
         self.eqConfiguration = eqConfiguration
 
         // Initialize cached normalization mode from UserDefaults
@@ -186,16 +189,23 @@ class StreamingAudioPlayer {
            let mode = SpectrumNormalizationMode(rawValue: saved) {
             spectrumNormalizationMode = mode
         }
-        
+
         // Create the player
         player = AudioPlayer()
-        
+
         // Create and configure the EQ
         eqNode = AVAudioUnitEQ(numberOfBands: eqConfiguration.bandCount)
         setupEQ()
-        
+
         // Attach EQ to the player's audio graph
         player.attach(node: eqNode)
+
+        // Attach the Reference Tuning pitch node (after EQ, before output) when provided.
+        // AudioStreaming's own private `rateNode` (AVAudioUnitTimePitch) is bypassed while
+        // player.rate == 1.0, so this does not stack two active time-pitch units in normal playback.
+        if let pitchNode {
+            player.attach(node: pitchNode)
+        }
         
         // Set up spectrum analysis
         setupSpectrumAnalyzer()

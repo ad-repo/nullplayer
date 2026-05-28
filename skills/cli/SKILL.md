@@ -161,6 +161,9 @@ Avoid vague phrasing like "CLI browser" when the real value is orchestration acr
 | `--sonos-rooms <rooms>` | string | Comma-separated Sonos room names for multi-room |
 | `--eq <preset>` | string | EQ preset name (case-insensitive; from `EQPreset.allPresets`) |
 | `--output <device>` | string | Audio output device name (case-insensitive) |
+| `--tuning <off\|Hz>` | string | Reference Tuning: `off`, or target reference frequency in Hz (e.g. `432`). Enables pitch shift for local playback only — not casting. Session-only override. |
+| `--tuning-source <Hz>` | string | Source reference frequency in Hz (default `440`). Used with `--tuning <Hz>`. |
+| `--tuning-offset-cents <n>` | float | Direct cents offset (±2400). Wins over `--tuning`/`--tuning-source`. Session-only. |
 
 ## Multi-Source / Multi-Output Framing
 

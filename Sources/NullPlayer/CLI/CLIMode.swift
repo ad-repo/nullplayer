@@ -57,6 +57,11 @@ struct CLIOptions {
     var eq: String?
     var output: String?
 
+    // Reference Tuning
+    var tuning: String?            // "432" | "440" | "off" | numeric Hz
+    var tuningSource: String?      // numeric Hz; default 440
+    var tuningOffsetCents: Double? // direct override in cents
+
     var isQueryMode: Bool {
         listSources || listLibraries || listArtists || listAlbums || listTracks ||
         listGenres || listPlaylists || listStations || listDevices ||
@@ -128,6 +133,14 @@ struct CLIOptions {
                     case "--sonos-rooms": opts.sonosRooms = value
                     case "--eq": opts.eq = value
                     case "--output": opts.output = value
+                    case "--tuning": opts.tuning = value
+                    case "--tuning-source": opts.tuningSource = value
+                    case "--tuning-offset-cents":
+                        guard let d = Double(value) else {
+                            fputs("Error: --tuning-offset-cents requires a number\n", stderr)
+                            exit(1)
+                        }
+                        opts.tuningOffsetCents = d
                     default:
                         fputs("Error: Unknown flag '\(arg)'\n", stderr)
                         exit(1)

@@ -85,6 +85,7 @@ Main audio controller managing:
 - Gapless playback (optional; local files and same-pipeline streaming)
 - Volume normalization (optional, local files only)
 - Sweet Fades crossfade (both pipelines)
+- Reference Tuning pitch shift (both pipelines via a shared `PitchTuningController`; disabled while casting)
 - Output device selection
 - Delegate notifications for UI updates
 - Separate consumer gating for FFT/spectrum work vs live waveform chunk generation
@@ -213,6 +214,34 @@ func setEQBand(_ band: Int, gain: Float) {
     streamingPlayer?.setEQBand(band, gain: clampedGain)  // Streaming pipeline
 }
 ```
+
+## Reference Tuning
+
+Reference Tuning shifts playback pitch by a precise cents offset to retune content from one reference frequency to another (e.g. A=440 → A=432). It is implemented as a shared `PitchTuningController` (`Audio/PitchTuningController.swift`) that owns two `AVAudioUnitTimePitch` nodes — one inserted into the local `AVAudioEngine` graph, one attached to the AudioStreaming graph — and drives both from the same state.
+
+### Graph placement
+
+Local graph: `playerNode + crossfadePlayerNode → mixerNode → localPitchNode → eqNode → mainMixerNode`. Placing the pitch node **after** the mixer means a single node handles both the primary and crossfade players, and the spectrum tap on `mixerNode` keeps capturing pre-pitch (source) frequencies — the analyzer shows the source content's spectrum, not the shifted output. This is a deliberate trade-off; moving the tap onto `localPitchNode` would invert it.
+
+Streaming graph: `streamingPitchNode` is attached via `AudioStreaming.AudioPlayer.attach(node:)` after the EQ node. AudioStreaming's own private `rateNode` (also an `AVAudioUnitTimePitch`, used for `player.rate`) is bypassed while `player.rate == 1.0`, so this does not stack two active time-pitch units in normal playback. If variable-rate playback is ever added, both nodes would be active — at which point driving the library's `rateNode.pitch` directly may become preferable.
+
+### Math and clamp
+
+Cents offset = `1200 · log2(target / source)` (e.g. 440 → 432 ≈ −31.766 cents). `AVAudioUnitTimePitch.pitch` is in cents, ±2400. The controller clamps `appliedCents` to that range; the Custom… dialog validates input at entry time and rejects out-of-range frequencies rather than silently clamping.
+
+### Persistence and overrides
+
+UserDefaults keys (mirrors EQ/volume normalization pattern):
+
+- `referenceTuningEnabled: Bool`
+- `referenceTuningSourceHz: Double` (default 440)
+- `referenceTuningTargetHz: Double` (default 432)
+
+CLI flags (`--tuning`, `--tuning-source`, `--tuning-offset-cents`) provide session-only overrides — they do not write back to UserDefaults, matching `--volume` and `--eq`.
+
+### Casting
+
+Casting paths (Sonos / Chromecast / DLNA) hand the remote renderer a stream URL with no local AVFoundation graph to insert into, so Reference Tuning is intentionally unavailable while casting. The menu greys out with a "Not available while casting" tooltip; `engine.isAnyCastingActive` is the gate.
 
 ## Spectrum Analyzer
 
