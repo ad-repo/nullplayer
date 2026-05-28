@@ -4103,7 +4103,7 @@ class AudioEngine {
         if streamingPlayer == nil {
             streamingPlayer = StreamingAudioPlayer(
                 eqConfiguration: activeEQConfiguration,
-                pitchNode: tuningController.streamingPitchNode
+                pitchNode: tuningController.makeStreamingPitchNode()
             )
             streamingPlayer?.delegate = self
             streamingPlayer?.spectrumNeeded = spectrumNeeded
@@ -4715,7 +4715,10 @@ class AudioEngine {
         // parameter objects pointing at invalid state, which crashes during EQ sync.
         crossfadeStreamingPlayer?.delegate = nil
         crossfadeStreamingPlayer?.stop()
-        crossfadeStreamingPlayer = StreamingAudioPlayer(eqConfiguration: activeEQConfiguration)
+        crossfadeStreamingPlayer = StreamingAudioPlayer(
+            eqConfiguration: activeEQConfiguration,
+            pitchNode: tuningController.makeStreamingPitchNode()
+        )
         // Note: We don't set delegate - we handle state internally during crossfade
         
         // Sync EQ settings to crossfade player

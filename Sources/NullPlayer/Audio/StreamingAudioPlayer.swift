@@ -31,6 +31,10 @@ class StreamingAudioPlayer {
 
     /// Equalizer attached to the player
     private let eqNode: AVAudioUnitEQ
+
+    /// Optional Reference Tuning pitch node. Retained here because AudioStreaming's
+    /// custom node list is private to its AudioPlayer.
+    private let pitchNode: AVAudioUnitTimePitch?
     
     /// Real-time BPM detector for tempo display
     let bpmDetector = BPMDetector()
@@ -183,6 +187,7 @@ class StreamingAudioPlayer {
         pitchNode: AVAudioUnitTimePitch? = nil
     ) {
         self.eqConfiguration = eqConfiguration
+        self.pitchNode = pitchNode
 
         // Initialize cached normalization mode from UserDefaults
         if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),

@@ -2,8 +2,8 @@ import AVFoundation
 import Foundation
 
 /// Owns the pitch-shift nodes used for the Reference Tuning feature and
-/// drives both the local AVAudioEngine graph and AudioStreaming's graph
-/// from a single cents offset.
+/// drives the local AVAudioEngine graph plus each AudioStreaming graph from
+/// a single cents offset.
 ///
 /// `AVAudioUnitTimePitch.pitch` is in cents, ±2400 max.
 final class PitchTuningController {
@@ -24,8 +24,19 @@ final class PitchTuningController {
 
     /// Attached to the main AVAudioEngine graph (local files).
     let localPitchNode = AVAudioUnitTimePitch()
-    /// Attached to AudioStreaming's graph (HTTP streaming).
-    let streamingPitchNode = AVAudioUnitTimePitch()
+
+    private final class WeakPitchNode {
+        weak var node: AVAudioUnitTimePitch?
+
+        init(_ node: AVAudioUnitTimePitch) {
+            self.node = node
+        }
+    }
+
+    /// AudioStreaming players each own a private AVAudioEngine, so every player
+    /// needs its own pitch node. Weak storage avoids keeping retired crossfade
+    /// players alive after their wrapper is released.
+    private var streamingPitchNodes: [WeakPitchNode] = []
 
     private(set) var enabled: Bool = false
     private(set) var sourceReferenceHz: Double = 440
@@ -56,6 +67,14 @@ final class PitchTuningController {
         sourceReferenceHz = source
         targetReferenceHz = target
         apply()
+    }
+
+    func makeStreamingPitchNode() -> AVAudioUnitTimePitch {
+        let node = AVAudioUnitTimePitch()
+        streamingPitchNodes.append(WeakPitchNode(node))
+        configure(node, cents: Float(appliedCents))
+        pruneReleasedStreamingNodes()
+        return node
     }
 
     func applyPreset(_ preset: Preset) {
@@ -109,10 +128,22 @@ final class PitchTuningController {
 
     private func apply() {
         let cents = Float(appliedCents)
-        for node in [localPitchNode, streamingPitchNode] {
-            node.bypass = !enabled
-            node.pitch = cents
-            node.rate = 1.0
+        configure(localPitchNode, cents: cents)
+        pruneReleasedStreamingNodes()
+        for entry in streamingPitchNodes {
+            if let node = entry.node {
+                configure(node, cents: cents)
+            }
         }
+    }
+
+    private func configure(_ node: AVAudioUnitTimePitch, cents: Float) {
+        node.bypass = !enabled
+        node.pitch = cents
+        node.rate = 1.0
+    }
+
+    private func pruneReleasedStreamingNodes() {
+        streamingPitchNodes.removeAll { $0.node == nil }
     }
 }

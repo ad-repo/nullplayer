@@ -44,4 +44,24 @@ final class PitchTuningControllerTests: XCTestCase {
         c.applyPreset(.off)
         XCTAssertEqual(c.currentPreset, .off)
     }
+
+    func testStreamingPitchNodesAreIndependentAndFollowControllerState() {
+        let c = PitchTuningController()
+        let first = c.makeStreamingPitchNode()
+
+        c.applyPreset(.hz432)
+        XCTAssertFalse(first.bypass)
+        XCTAssertEqual(first.pitch, Float(c.appliedCents), accuracy: 0.001)
+
+        let second = c.makeStreamingPitchNode()
+        XCTAssertFalse(first === second)
+        XCTAssertFalse(second.bypass)
+        XCTAssertEqual(second.pitch, Float(c.appliedCents), accuracy: 0.001)
+
+        c.applyPreset(.off)
+        XCTAssertTrue(first.bypass)
+        XCTAssertTrue(second.bypass)
+        XCTAssertEqual(first.pitch, 0, accuracy: 0.001)
+        XCTAssertEqual(second.pitch, 0, accuracy: 0.001)
+    }
 }

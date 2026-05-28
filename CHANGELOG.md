@@ -4,7 +4,7 @@
 
 ### New Features
 
-- **Reference Tuning** — Playback > Options > **Reference Tuning** can pitch-shift all local playback to a different reference frequency (e.g. retune A=440 content to A=432). Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog accepting source/target Hz are exposed in the menu; settings persist across launches. Applies to local files and HTTP streaming (Plex/Subsonic/Jellyfin/Emby/radio) through a shared `AVAudioUnitTimePitch` inserted after the mixer; the spectrum analyzer continues to display source (pre-pitch) frequencies. Not available while casting (Sonos / Chromecast / DLNA) because the remote renderer receives the stream URL directly with no local audio graph to insert the pitch shifter into. CLI flags `--tuning <off|Hz>`, `--tuning-source <Hz>`, and `--tuning-offset-cents <n>` provide session-only overrides.
+- **Reference Tuning** — Playback > Options > **Reference Tuning** can pitch-shift all local playback to a different reference frequency (e.g. retune A=440 content to A=432). Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog accepting source/target Hz are exposed in the menu; settings persist across launches. Applies to local files and HTTP streaming (Plex/Subsonic/Jellyfin/Emby/radio) via `AVAudioUnitTimePitch` nodes inserted into the active local or streaming graph; the spectrum analyzer continues to display source (pre-pitch) frequencies. Not available while casting (Sonos / Chromecast / DLNA) because the remote renderer receives the stream URL directly with no local audio graph to insert the pitch shifter into. CLI flags `--tuning <off|Hz>`, `--tuning-source <Hz>`, and `--tuning-offset-cents <n>` provide session-only overrides.
 
 ### Improvements
 

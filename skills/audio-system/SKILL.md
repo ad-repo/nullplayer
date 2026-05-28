@@ -217,13 +217,13 @@ func setEQBand(_ band: Int, gain: Float) {
 
 ## Reference Tuning
 
-Reference Tuning shifts playback pitch by a precise cents offset to retune content from one reference frequency to another (e.g. A=440 → A=432). It is implemented as a shared `PitchTuningController` (`Audio/PitchTuningController.swift`) that owns two `AVAudioUnitTimePitch` nodes — one inserted into the local `AVAudioEngine` graph, one attached to the AudioStreaming graph — and drives both from the same state.
+Reference Tuning shifts playback pitch by a precise cents offset to retune content from one reference frequency to another (e.g. A=440 → A=432). It is implemented as a shared `PitchTuningController` (`Audio/PitchTuningController.swift`) that owns the local `AVAudioUnitTimePitch` node and creates one configured streaming pitch node per AudioStreaming player. This keeps the primary and Sweet Fades crossfade streaming graphs independent while driving all nodes from the same state.
 
 ### Graph placement
 
 Local graph: `playerNode + crossfadePlayerNode → mixerNode → localPitchNode → eqNode → mainMixerNode`. Placing the pitch node **after** the mixer means a single node handles both the primary and crossfade players, and the spectrum tap on `mixerNode` keeps capturing pre-pitch (source) frequencies — the analyzer shows the source content's spectrum, not the shifted output. This is a deliberate trade-off; moving the tap onto `localPitchNode` would invert it.
 
-Streaming graph: `streamingPitchNode` is attached via `AudioStreaming.AudioPlayer.attach(node:)` after the EQ node. AudioStreaming's own private `rateNode` (also an `AVAudioUnitTimePitch`, used for `player.rate`) is bypassed while `player.rate == 1.0`, so this does not stack two active time-pitch units in normal playback. If variable-rate playback is ever added, both nodes would be active — at which point driving the library's `rateNode.pitch` directly may become preferable.
+Streaming graph: each `StreamingAudioPlayer` receives its own node from `PitchTuningController.makeStreamingPitchNode()` and attaches it via `AudioStreaming.AudioPlayer.attach(node:)` after the EQ node. AudioStreaming's own private `rateNode` (also an `AVAudioUnitTimePitch`, used for `player.rate`) is bypassed while `player.rate == 1.0`, so this does not stack two active time-pitch units in normal playback. If variable-rate playback is ever added, both nodes would be active — at which point driving the library's `rateNode.pitch` directly may become preferable.
 
 ### Math and clamp
 

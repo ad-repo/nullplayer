@@ -38,6 +38,7 @@
 - Original Spenctrum analysis visualization system
 - Album art visualization system with user selected effects
 - Modern mode with 21-band EQ implementation, Classic mode with standard 10-band EQ
+- Reference Tuning for pitch-shifting local playback and HTTP streams to a different reference frequency, with 432 Hz, 440 Hz, and custom source/target Hz options
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (KSPlayer/FFmpeg)
@@ -219,6 +220,7 @@ nullplayer --cli --source local --genre "Jazz" --repeat-all
 nullplayer --cli --station "KEXP" --source radio
 nullplayer --cli --source local --radio artist --artist "Björk"
 nullplayer --cli --source local --volume 80 --eq "Rock"
+nullplayer --cli --source plex --album "Kind of Blue" --tuning 432
 nullplayer --cli --source jellyfin --playlist "Late Night" --cast "Bedroom" --cast-type sonos
 nullplayer --cli --source local --album "Selected Ambient Works 85-92" --cast "Office TV" --cast-type dlna
 ```
@@ -239,6 +241,18 @@ During playback:
 - `m` toggles mute
 
 When casting is active, the same CLI volume control path is used for the cast target as well.
+
+### Reference Tuning
+
+Reference Tuning pitch-shifts local output to a selected reference frequency, such as retuning A=440 content to A=432. In the app, use **Playback > Options > Reference Tuning** for Off, 432 Hz, 440 Hz, or custom source/target Hz. It applies to local files and HTTP streams from Plex, Subsonic/Navidrome, Jellyfin, Emby, and internet radio. It is unavailable while casting because Sonos, Chromecast, and DLNA renderers receive the media URL directly.
+
+CLI overrides are session-only:
+
+```bash
+nullplayer --cli --source local --artist "Björk" --tuning 432
+nullplayer --cli --source plex --playlist "Focus" --tuning 432 --tuning-source 440
+nullplayer --cli --source radio --station "KEXP" --tuning-offset-cents -31.766
+```
 
 ### Keyboard controls (during playback)
 
