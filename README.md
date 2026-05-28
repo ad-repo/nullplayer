@@ -56,7 +56,15 @@
 
 ## Installation
 
-Download the latest DMG from [Releases](https://github.com/ad-repo/nullplayer/releases).
+    brew install --cask ad-repo/nullplayer/nullplayer
+
+Or download the latest DMG from [Releases](https://github.com/ad-repo/nullplayer/releases).
+
+The Homebrew cask strips the quarantine attribute on install because the app is currently ad-hoc signed (Apple Developer ID notarization is on the roadmap). `brew uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
+
+```bash
+security delete-generic-password -s com.nullplayer.app
+```
 
 Follow [r/NullPlayer](https://www.reddit.com/r/NullPlayer/) for release notifications. Report bugs on [GitHub Issues](https://github.com/ad-repo/nullplayer/issues) or the subreddit.
 
