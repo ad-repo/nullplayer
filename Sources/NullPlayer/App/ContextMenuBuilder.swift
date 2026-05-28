@@ -3804,17 +3804,25 @@ class MenuActions: NSObject {
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        guard let source = Double(sourceField.stringValue), source > 0,
-              let target = Double(targetField.stringValue), target > 0 else {
+        func showInvalidReferenceAlert(_ message: String = "Source and target must both be positive numbers in Hz.") {
             let err = NSAlert()
             err.messageText = "Invalid reference frequency"
-            err.informativeText = "Source and target must both be positive numbers in Hz."
+            err.informativeText = message
             err.alertStyle = .warning
             err.runModal()
+        }
+
+        guard let source = Double(sourceField.stringValue), source.isFinite, source > 0,
+              let target = Double(targetField.stringValue), target.isFinite, target > 0 else {
+            showInvalidReferenceAlert()
             return
         }
 
         let cents = 1200.0 * log2(target / source)
+        guard cents.isFinite else {
+            showInvalidReferenceAlert("Source and target must produce a finite cents value.")
+            return
+        }
         if cents < PitchTuningController.minCents || cents > PitchTuningController.maxCents {
             let err = NSAlert()
             err.messageText = "Reference tuning out of range"

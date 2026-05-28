@@ -40,14 +40,18 @@ class CLIPlayer: AudioEngineDelegate {
         // Reference Tuning (session-only — does not write back to UserDefaults).
         // Precedence: --tuning-offset-cents → --tuning off → --tuning <Hz> → persisted state.
         if let cents = options.tuningOffsetCents {
+            guard cents.isFinite else {
+                fputs("Error: --tuning-offset-cents must be a finite number\n", stderr)
+                exit(1)
+            }
             audioEngine.setTuningOffsetCents(cents, persist: false)
         } else if let tuning = options.tuning {
             if tuning.caseInsensitiveCompare("off") == .orderedSame {
                 audioEngine.setTuningEnabled(false, persist: false)
-            } else if let targetHz = Double(tuning), targetHz > 0 {
+            } else if let targetHz = Double(tuning), targetHz.isFinite, targetHz > 0 {
                 let sourceHz: Double
                 if let src = options.tuningSource {
-                    guard let parsed = Double(src), parsed > 0 else {
+                    guard let parsed = Double(src), parsed.isFinite, parsed > 0 else {
                         fputs("Error: --tuning-source requires a positive number (Hz)\n", stderr)
                         exit(1)
                     }
