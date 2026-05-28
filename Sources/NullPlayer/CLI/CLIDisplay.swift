@@ -167,6 +167,9 @@ class CLIDisplay {
             --volume <0-100>            Set volume
             --eq <preset>               Set EQ preset
             --output <device>           Set audio output device
+            --tuning <off|Hz>           Reference Tuning target Hz
+            --tuning-source <Hz>        Source reference Hz (default: 440)
+            --tuning-offset-cents <n>   Direct tuning offset in cents
             --cast <device>             Cast to device
             --cast-type <type>          Filter: sonos, chromecast, dlna
             --sonos-rooms <rooms>       Multi-room (comma-separated)

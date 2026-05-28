@@ -150,7 +150,11 @@ class AudioEngine {
     
     /// Mixer node to combine player nodes (class property for graph rebuilding)
     private let mixerNode = AVAudioMixerNode()
-    
+
+    /// Reference Tuning controller. Owns the pitch-shift nodes used in both the
+    /// local AVAudioEngine graph and the AudioStreaming graph.
+    let tuningController = PitchTuningController()
+
     /// Current audio file (for local files)
     private var audioFile: AVAudioFile?
     
@@ -1009,20 +1013,25 @@ class AudioEngine {
         engine.attach(crossfadePlayerNode)  // For Sweet Fades crossfade
         engine.attach(eqNode)
         engine.attach(mixerNode)  // Class property for graph rebuilding
-        
+        engine.attach(tuningController.localPitchNode)
+
         // Get the standard format from the mixer
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
-        
+
         // Signal flow: playerNode ─┐
-        //                          ├─► mixerNode ─► eqNode ─► output
+        //                          ├─► mixerNode ─► localPitchNode ─► eqNode ─► output
         //  crossfadePlayerNode ────┘
-        
+        //
+        // Pitch node sits AFTER the mixer so a single instance handles both player + crossfade,
+        // and the spectrum tap on mixerNode keeps capturing pre-pitch (source) frequencies.
+
         // Connect both players to the mixer
         engine.connect(playerNode, to: mixerNode, format: mixerFormat)
         engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
-        
-        // Connect mixer to EQ to output
-        engine.connect(mixerNode, to: eqNode, format: mixerFormat)
+
+        // Connect mixer → pitch → EQ → output
+        engine.connect(mixerNode, to: tuningController.localPitchNode, format: mixerFormat)
+        engine.connect(tuningController.localPitchNode, to: eqNode, format: mixerFormat)
         engine.connect(eqNode, to: engine.mainMixerNode, format: mixerFormat)
         
         // Player nodes stay at unity gain (1.0) - volume applied at mainMixerNode
@@ -1051,6 +1060,29 @@ class AudioEngine {
         // Load sweet fade duration with default of 5.0 seconds
         let savedDuration = UserDefaults.standard.double(forKey: "sweetFadeDuration")
         sweetFadeDuration = savedDuration > 0 ? savedDuration : 5.0
+        tuningController.loadFromDefaults()
+    }
+
+    // MARK: - Reference Tuning
+
+    /// Apply a Reference Tuning preset and persist it. Use `.off` to disable.
+    func setTuningPreset(_ preset: PitchTuningController.Preset, persist: Bool = true) {
+        tuningController.applyPreset(preset)
+        if persist { tuningController.saveToDefaults() }
+    }
+
+    /// Direct cents override (used by --tuning-offset-cents). Source defaults to 440.
+    /// Out-of-range cents are clamped by PitchTuningController.
+    func setTuningOffsetCents(_ cents: Double, persist: Bool = true) {
+        let source = 440.0
+        let target = source * pow(2.0, cents / 1200.0)
+        tuningController.applyPreset(.custom(source: source, target: target))
+        if persist { tuningController.saveToDefaults() }
+    }
+
+    func setTuningEnabled(_ enabled: Bool, persist: Bool = true) {
+        tuningController.setEnabled(enabled)
+        if persist { tuningController.saveToDefaults() }
     }
     
     // MARK: - Audio Configuration Change Handling
@@ -1154,9 +1186,15 @@ class AudioEngine {
     private func reconnectAudioGraph(format mixerFormat: AVAudioFormat) -> Bool {
         var exceptionError: NSError?
         let connected = NPObjCExceptionCatch({
+            // Re-attach the pitch node if a previous rebuild detached it
+            // (AVAudioEngine.attach is idempotent for already-attached nodes — checked via engine.attachedNodes).
+            if !self.engine.attachedNodes.contains(self.tuningController.localPitchNode) {
+                self.engine.attach(self.tuningController.localPitchNode)
+            }
             self.engine.connect(self.playerNode, to: self.mixerNode, format: mixerFormat)
             self.engine.connect(self.crossfadePlayerNode, to: self.mixerNode, format: mixerFormat)
-            self.engine.connect(self.mixerNode, to: self.eqNode, format: mixerFormat)
+            self.engine.connect(self.mixerNode, to: self.tuningController.localPitchNode, format: mixerFormat)
+            self.engine.connect(self.tuningController.localPitchNode, to: self.eqNode, format: mixerFormat)
             self.engine.connect(self.eqNode, to: self.engine.mainMixerNode, format: mixerFormat)
         }, &exceptionError)
 
@@ -1219,6 +1257,9 @@ class AudioEngine {
         engine.disconnectNodeOutput(playerNode)
         engine.disconnectNodeOutput(crossfadePlayerNode)
         engine.disconnectNodeOutput(mixerNode)
+        if engine.attachedNodes.contains(tuningController.localPitchNode) {
+            engine.disconnectNodeOutput(tuningController.localPitchNode)
+        }
         engine.disconnectNodeOutput(eqNode)
         
         // Reconnect all nodes with new format. AVAudioEngine raises NSException
@@ -4060,7 +4101,10 @@ class AudioEngine {
         
         // Create streaming player if needed
         if streamingPlayer == nil {
-            streamingPlayer = StreamingAudioPlayer(eqConfiguration: activeEQConfiguration)
+            streamingPlayer = StreamingAudioPlayer(
+                eqConfiguration: activeEQConfiguration,
+                pitchNode: tuningController.makeStreamingPitchNode()
+            )
             streamingPlayer?.delegate = self
             streamingPlayer?.spectrumNeeded = spectrumNeeded
             streamingPlayer?.waveformNeeded = waveformNeeded
@@ -4671,7 +4715,10 @@ class AudioEngine {
         // parameter objects pointing at invalid state, which crashes during EQ sync.
         crossfadeStreamingPlayer?.delegate = nil
         crossfadeStreamingPlayer?.stop()
-        crossfadeStreamingPlayer = StreamingAudioPlayer(eqConfiguration: activeEQConfiguration)
+        crossfadeStreamingPlayer = StreamingAudioPlayer(
+            eqConfiguration: activeEQConfiguration,
+            pitchNode: tuningController.makeStreamingPitchNode()
+        )
         // Note: We don't set delegate - we handle state internally during crossfade
         
         // Sync EQ settings to crossfade player

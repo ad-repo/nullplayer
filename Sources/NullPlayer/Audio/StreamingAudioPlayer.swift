@@ -31,6 +31,10 @@ class StreamingAudioPlayer {
 
     /// Equalizer attached to the player
     private let eqNode: AVAudioUnitEQ
+
+    /// Optional Reference Tuning pitch node. Retained here because AudioStreaming's
+    /// custom node list is private to its AudioPlayer.
+    private let pitchNode: AVAudioUnitTimePitch?
     
     /// Real-time BPM detector for tempo display
     let bpmDetector = BPMDetector()
@@ -178,24 +182,35 @@ class StreamingAudioPlayer {
     
     // MARK: - Initialization
     
-    init(eqConfiguration: EQConfiguration = .forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled"))) {
+    init(
+        eqConfiguration: EQConfiguration = .forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled")),
+        pitchNode: AVAudioUnitTimePitch? = nil
+    ) {
         self.eqConfiguration = eqConfiguration
+        self.pitchNode = pitchNode
 
         // Initialize cached normalization mode from UserDefaults
         if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
            let mode = SpectrumNormalizationMode(rawValue: saved) {
             spectrumNormalizationMode = mode
         }
-        
+
         // Create the player
         player = AudioPlayer()
-        
+
         // Create and configure the EQ
         eqNode = AVAudioUnitEQ(numberOfBands: eqConfiguration.bandCount)
         setupEQ()
-        
+
         // Attach EQ to the player's audio graph
         player.attach(node: eqNode)
+
+        // Attach the Reference Tuning pitch node (after EQ, before output) when provided.
+        // AudioStreaming's own private `rateNode` (AVAudioUnitTimePitch) is bypassed while
+        // player.rate == 1.0, so this does not stack two active time-pitch units in normal playback.
+        if let pitchNode {
+            player.attach(node: pitchNode)
+        }
         
         // Set up spectrum analysis
         setupSpectrumAnalyzer()

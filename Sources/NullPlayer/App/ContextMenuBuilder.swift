@@ -257,6 +257,38 @@ class ContextMenuBuilder {
         return menu
     }
 
+    /// Builds the Reference Tuning submenu.
+    static func buildReferenceTuningMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let engine = WindowManager.shared.audioEngine
+        let current = engine.tuningController.currentPreset
+
+        func makeItem(_ title: String, _ action: Selector, isOn: Bool) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.state = isOn ? .on : .off
+            return item
+        }
+
+        menu.addItem(makeItem("Off", #selector(MenuActions.setReferenceTuningOff), isOn: current == .off))
+        menu.addItem(makeItem("432 Hz", #selector(MenuActions.setReferenceTuning432), isOn: current == .hz432))
+        menu.addItem(makeItem("440 Hz", #selector(MenuActions.setReferenceTuning440), isOn: current == .hz440))
+
+        let isCustom: Bool = {
+            if case .custom = current { return true }
+            return false
+        }()
+        var customTitle = "Custom…"
+        if case .custom(let source, let target) = current {
+            customTitle = String(format: "Custom… (%.2f → %.2f Hz)", source, target)
+        }
+        menu.addItem(makeItem(customTitle, #selector(MenuActions.setReferenceTuningCustom), isOn: isCustom))
+
+        return menu
+    }
+
     /// Builds the top-level "Visuals" menu content for the macOS menu bar.
     static func buildMenuBarVisualsMenu() -> NSMenu {
         let menu = NSMenu()
@@ -819,9 +851,18 @@ class ContextMenuBuilder {
         normalizeItem.target = MenuActions.shared
         normalizeItem.state = engine.volumeNormalizationEnabled ? .on : .off
         optionsMenu.addItem(normalizeItem)
-        
+
+        // Reference Tuning submenu
+        let tuningRoot = NSMenuItem(title: "Reference Tuning", action: nil, keyEquivalent: "")
+        tuningRoot.submenu = buildReferenceTuningMenu()
+        if engine.isAnyCastingActive {
+            tuningRoot.isEnabled = false
+            tuningRoot.toolTip = "Not available while casting"
+        }
+        optionsMenu.addItem(tuningRoot)
+
         optionsMenu.addItem(NSMenuItem.separator())
-        
+
         // Sweet Fades (Crossfade) toggle
         let sweetFadeItem = NSMenuItem(title: "Sweet Fades (Crossfade)", action: #selector(MenuActions.toggleSweetFade), keyEquivalent: "")
         sweetFadeItem.target = MenuActions.shared
@@ -3702,6 +3743,99 @@ class MenuActions: NSObject {
     
     @objc func toggleVolumeNormalization() {
         WindowManager.shared.audioEngine.volumeNormalizationEnabled.toggle()
+    }
+
+    // MARK: - Reference Tuning
+
+    @objc func setReferenceTuningOff() {
+        WindowManager.shared.audioEngine.setTuningPreset(.off)
+    }
+
+    @objc func setReferenceTuning432() {
+        WindowManager.shared.audioEngine.setTuningPreset(.hz432)
+    }
+
+    @objc func setReferenceTuning440() {
+        WindowManager.shared.audioEngine.setTuningPreset(.hz440)
+    }
+
+    @objc func setReferenceTuningCustom() {
+        let engine = WindowManager.shared.audioEngine
+        let initialSource = engine.tuningController.sourceReferenceHz
+        let initialTarget = engine.tuningController.targetReferenceHz
+
+        let alert = NSAlert()
+        alert.messageText = "Custom Reference Tuning"
+        alert.informativeText = "Enter source and target reference frequencies in Hz. Pitch shift = 1200 × log₂(target / source) cents, limited to ±2400 cents."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        func row(label: String, value: Double) -> (NSStackView, NSTextField) {
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.spacing = 8
+            let lbl = NSTextField(labelWithString: label)
+            lbl.alignment = .right
+            lbl.widthAnchor.constraint(equalToConstant: 90).isActive = true
+            let field = NSTextField(string: String(format: "%g", value))
+            field.widthAnchor.constraint(equalToConstant: 100).isActive = true
+            row.addArrangedSubview(lbl)
+            row.addArrangedSubview(field)
+            return (row, field)
+        }
+
+        let (sourceRow, sourceField) = row(label: "Source Hz:", value: initialSource)
+        let (targetRow, targetField) = row(label: "Target Hz:", value: initialTarget)
+        stack.addArrangedSubview(sourceRow)
+        stack.addArrangedSubview(targetRow)
+
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 60))
+        stack.frame = accessory.bounds
+        stack.autoresizingMask = [.width, .height]
+        accessory.addSubview(stack)
+        alert.accessoryView = accessory
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        func showInvalidReferenceAlert(_ message: String = "Source and target must both be positive numbers in Hz.") {
+            let err = NSAlert()
+            err.messageText = "Invalid reference frequency"
+            err.informativeText = message
+            err.alertStyle = .warning
+            err.runModal()
+        }
+
+        guard let source = Double(sourceField.stringValue), source.isFinite, source > 0,
+              let target = Double(targetField.stringValue), target.isFinite, target > 0 else {
+            showInvalidReferenceAlert()
+            return
+        }
+
+        let cents = 1200.0 * log2(target / source)
+        guard cents.isFinite else {
+            showInvalidReferenceAlert("Source and target must produce a finite cents value.")
+            return
+        }
+        if cents < PitchTuningController.minCents || cents > PitchTuningController.maxCents {
+            let err = NSAlert()
+            err.messageText = "Reference tuning out of range"
+            err.informativeText = String(
+                format: "The requested shift is %.1f cents. Reference Tuning is limited to ±%.0f cents (about ±2 octaves).",
+                cents, PitchTuningController.maxCents
+            )
+            err.alertStyle = .warning
+            err.runModal()
+            return
+        }
+
+        engine.setTuningPreset(.custom(source: source, target: target))
     }
     
     @objc func toggleSweetFade() {

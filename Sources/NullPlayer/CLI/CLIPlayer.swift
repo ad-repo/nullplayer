@@ -37,6 +37,35 @@ class CLIPlayer: AudioEngineDelegate {
             audioEngine.volume = Float(max(0, min(100, vol))) / 100.0
         }
 
+        // Reference Tuning (session-only — does not write back to UserDefaults).
+        // Precedence: --tuning-offset-cents → --tuning off → --tuning <Hz> → persisted state.
+        if let cents = options.tuningOffsetCents {
+            guard cents.isFinite else {
+                fputs("Error: --tuning-offset-cents must be a finite number\n", stderr)
+                exit(1)
+            }
+            audioEngine.setTuningOffsetCents(cents, persist: false)
+        } else if let tuning = options.tuning {
+            if tuning.caseInsensitiveCompare("off") == .orderedSame {
+                audioEngine.setTuningEnabled(false, persist: false)
+            } else if let targetHz = Double(tuning), targetHz.isFinite, targetHz > 0 {
+                let sourceHz: Double
+                if let src = options.tuningSource {
+                    guard let parsed = Double(src), parsed.isFinite, parsed > 0 else {
+                        fputs("Error: --tuning-source requires a positive number (Hz)\n", stderr)
+                        exit(1)
+                    }
+                    sourceHz = parsed
+                } else {
+                    sourceHz = 440
+                }
+                audioEngine.setTuningPreset(.custom(source: sourceHz, target: targetHz), persist: false)
+            } else {
+                fputs("Error: --tuning requires 'off' or a positive number in Hz (e.g. 432)\n", stderr)
+                exit(1)
+            }
+        }
+
         // EQ
         if let eqName = options.eq {
             if let preset = EQPreset.allPresets.first(where: {
