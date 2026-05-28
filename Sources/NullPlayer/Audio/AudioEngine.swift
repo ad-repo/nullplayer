@@ -102,10 +102,11 @@ class AudioEngine {
     static func freezeLocalPlaybackClockForSleep(
         currentTime: TimeInterval,
         playbackStartDate: Date,
+        playbackRate: Float = 1.0,
         now: Date
     ) -> LocalPlaybackSleepClockState {
         LocalPlaybackSleepClockState(
-            currentTime: currentTime + now.timeIntervalSince(playbackStartDate),
+            currentTime: currentTime + now.timeIntervalSince(playbackStartDate) * TimeInterval(playbackRate),
             playbackStartDate: nil,
             suspendedForSleep: true
         )
@@ -972,6 +973,7 @@ class AudioEngine {
         let clockState = Self.freezeLocalPlaybackClockForSleep(
             currentTime: _currentTime,
             playbackStartDate: startDate,
+            playbackRate: playbackSpeed,
             now: Date()
         )
         _currentTime = clockState.currentTime
@@ -1083,6 +1085,29 @@ class AudioEngine {
     func setTuningEnabled(_ enabled: Bool, persist: Bool = true) {
         tuningController.setEnabled(enabled)
         if persist { tuningController.saveToDefaults() }
+    }
+
+    // MARK: - Playback Speed
+
+    var playbackSpeed: Float {
+        tuningController.rate
+    }
+
+    /// Apply tempo-preserving playback speed and persist it.
+    func setPlaybackSpeed(_ value: Float, persist: Bool = true) {
+        if !isStreamingPlayback, !isAnyCastingActive, state == .playing {
+            _currentTime = currentTime
+            lastReportedTime = _currentTime
+            playbackStartDate = Date()
+        }
+
+        tuningController.setRate(value)
+        if persist { tuningController.saveToDefaults() }
+
+        let rate = tuningController.rate
+        streamingPlayer?.rate = rate
+        crossfadeStreamingPlayer?.rate = rate
+        notifyPlaybackOptionsChanged()
     }
     
     // MARK: - Audio Configuration Change Handling
@@ -1960,9 +1985,8 @@ class AudioEngine {
     func pauseLocalOnly() {
         // Save current position before pausing
         let pausePosition = currentTime
-        if let startDate = playbackStartDate {
-            _currentTime += Date().timeIntervalSince(startDate)
-        }
+        _currentTime = pausePosition
+        lastReportedTime = pausePosition
         playbackStartDate = nil
         suspendedLocalPlaybackClockForSleep = false
         
@@ -2079,9 +2103,8 @@ class AudioEngine {
         
         // Save current position before stopping
         let currentPosition = currentTime
-        if let startDate = playbackStartDate {
-            _currentTime += Date().timeIntervalSince(startDate)
-        }
+        _currentTime = currentPosition
+        lastReportedTime = currentPosition
         playbackStartDate = nil
         suspendedLocalPlaybackClockForSleep = false
 
@@ -2495,7 +2518,7 @@ class AudioEngine {
             }
             
             let elapsed = Date().timeIntervalSince(startDate)
-            return _currentTime + elapsed
+            return _currentTime + elapsed * TimeInterval(playbackSpeed)
         }
     }
     
@@ -4105,6 +4128,7 @@ class AudioEngine {
                 eqConfiguration: activeEQConfiguration,
                 pitchNode: tuningController.makeStreamingPitchNode()
             )
+            streamingPlayer?.rate = tuningController.rate
             streamingPlayer?.delegate = self
             streamingPlayer?.spectrumNeeded = spectrumNeeded
             streamingPlayer?.waveformNeeded = waveformNeeded
@@ -4719,6 +4743,7 @@ class AudioEngine {
             eqConfiguration: activeEQConfiguration,
             pitchNode: tuningController.makeStreamingPitchNode()
         )
+        crossfadeStreamingPlayer?.rate = tuningController.rate
         // Note: We don't set delegate - we handle state internally during crossfade
         
         // Sync EQ settings to crossfade player
