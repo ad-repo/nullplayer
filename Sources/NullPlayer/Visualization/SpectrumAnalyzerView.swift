@@ -272,16 +272,14 @@ struct SnowParams {
     var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
     var time: Float                  // 4 bytes (offset 8)
     var bassEnergy: Float            // 4 bytes (offset 12)
-    var midEnergy: Float             // 4 bytes (offset 16)
-    var trebleEnergy: Float          // 4 bytes (offset 20)
-    var totalEnergy: Float           // 4 bytes (offset 24)
-    var beatIntensity: Float         // 4 bytes (offset 28)
-    var fallOffset: Float            // 4 bytes (offset 32)
-    var windPhase: Float             // 4 bytes (offset 36)
-    var density: Float               // 4 bytes (offset 40)
-    var brightnessBoost: Float = 1.0 // 4 bytes (offset 44)
-    var stormLevel: Float = 0        // 4 bytes (offset 48)
-    var gustImpulse: Float = 0       // 4 bytes (offset 52) → total 56
+    var trebleEnergy: Float          // 4 bytes (offset 16)
+    var totalEnergy: Float           // 4 bytes (offset 20)
+    var beatIntensity: Float         // 4 bytes (offset 24)
+    var fallOffset: Float            // 4 bytes (offset 28)
+    var windPhase: Float             // 4 bytes (offset 32)
+    var density: Float               // 4 bytes (offset 36)
+    var brightnessBoost: Float = 1.0 // 4 bytes (offset 40)
+    var stormLevel: Float = 0        // 4 bytes (offset 44) → total 48
 }
 
 /// Parameters for EKG Metal shaders (must match Metal EKGParams struct).
@@ -800,7 +798,6 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var snowWindPhase: Float = 0
     nonisolated(unsafe) private var snowDensity: Float = 0.2
     nonisolated(unsafe) private var snowStormLevel: Float = 0
-    nonisolated(unsafe) private var snowGustImpulse: Float = 0
     nonisolated(unsafe) private var snowCurrentBPM: Float = 0  // confident BPM from BPMDetector (0 until it converges)
     // Provisional BPM derived from transient intervals — gives Snow a moving target
     // immediately, before the real detector reaches 3 confident readings.
@@ -2631,7 +2628,6 @@ class SpectrumAnalyzerView: NSView {
         var localWindPhase: Float = 0
         var localDensity: Float = 0.05
         var localStormLevel: Float = 0
-        var localGustImpulse: Float = 0
 
         dataLock.withLock {
             animationTime += 1.0 / 60.0
@@ -2658,7 +2654,6 @@ class SpectrumAnalyzerView: NSView {
             let beatHit = bass > snowSmoothBass + 0.10 || treble > snowSmoothTreble + 0.12 || totalEnergy > snowDensity + 0.10
             if beatHit {
                 snowBeatIntensity = min(1.0, snowBeatIntensity + 0.42)
-                snowGustImpulse = min(1.0, snowGustImpulse + 0.55)
                 // Record the transient timestamp for the provisional BPM estimator.
                 // Reject beats < 0.25s after the previous (would imply >240 BPM noise).
                 if let last = snowBeatTimes.last, localTime - last < 0.25 {
@@ -2669,7 +2664,6 @@ class SpectrumAnalyzerView: NSView {
                 }
             }
             snowBeatIntensity *= 0.90
-            snowGustImpulse *= 0.88
 
             // Drop beat history that's gone stale (>4 seconds old) so a tempo change
             // (or a pause) doesn't pin the estimate to old intervals.
@@ -2745,19 +2739,6 @@ class SpectrumAnalyzerView: NSView {
             localWindPhase = snowWindPhase
             localDensity = snowDensity
             localStormLevel = snowStormLevel
-            localGustImpulse = snowGustImpulse
-        }
-        
-        var localSpectrum: [Float] = []
-        dataLock.withLock { localSpectrum = displaySpectrum }
-        if let buf = flameSpectrumBuffer {
-            let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
-            let bassAtten = bassAttenuation
-            for i in 0..<75 {
-                var val: Float = i < localSpectrum.count ? localSpectrum[i] : 0
-                if i < 16 { val *= bassAtten }
-                p[i] = val
-            }
         }
         
         let viewport = drawableViewportSize(drawable)
@@ -2768,7 +2749,6 @@ class SpectrumAnalyzerView: NSView {
                 viewportSize: viewport,
                 time: localTime,
                 bassEnergy: snowSmoothBass,
-                midEnergy: snowSmoothMid,
                 trebleEnergy: snowSmoothTreble,
                 totalEnergy: totalEnergy,
                 beatIntensity: snowBeatIntensity,
@@ -2776,8 +2756,7 @@ class SpectrumAnalyzerView: NSView {
                 windPhase: localWindPhase,
                 density: localDensity,
                 brightnessBoost: brightnessBoost,
-                stormLevel: localStormLevel,
-                gustImpulse: localGustImpulse
+                stormLevel: localStormLevel
             )
         }
         
@@ -2794,7 +2773,6 @@ class SpectrumAnalyzerView: NSView {
         if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
             enc.setRenderPipelineState(pl)
             enc.setFragmentBuffer(snowParamsBuffer, offset: 0, index: 0)
-            enc.setFragmentBuffer(flameSpectrumBuffer, offset: 0, index: 1)
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             enc.endEncoding()
         }

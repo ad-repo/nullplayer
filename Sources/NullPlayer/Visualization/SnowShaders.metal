@@ -3,9 +3,8 @@
 // =============================================================================
 // Layered snowfall rendered entirely in the fragment shader. Audio drives the
 // storm state: quiet passages produce light flurries, louder passages build
-// denser snowfall, faster descent, and stronger bass-driven gusting. Spectrum
-// energy also modulates local density across the screen for a believable,
-// frequency-shaped storm front.
+// denser snowfall, longer streaks, brighter exposure, and a whiteout sky.
+// Fall speed comes from BPM, not energy, and is driven on the CPU side.
 // =============================================================================
 
 #include <metal_stdlib>
@@ -15,7 +14,6 @@ struct SnowParams {
     float2 viewportSize;
     float time;
     float bassEnergy;
-    float midEnergy;
     float trebleEnergy;
     float totalEnergy;
     float beatIntensity;
@@ -24,7 +22,6 @@ struct SnowParams {
     float density;
     float brightnessBoost;
     float stormLevel;
-    float gustImpulse;
 };
 
 float snow_hash(float2 p) {
@@ -65,24 +62,6 @@ float snow_fbm(float2 p) {
     return value;
 }
 
-float sample_spectrum(float x, constant float* spectrum) {
-    float xf = clamp(x, 0.0, 1.0) * 74.0;
-    int i0 = int(floor(xf));
-    int i1 = min(i0 + 1, 74);
-    float t = xf - float(i0);
-    float base = mix(spectrum[i0], spectrum[i1], t);
-    
-    float spread = 0.0;
-    float weight = 0.0;
-    for (int i = -2; i <= 2; i++) {
-        int idx = clamp(i0 + i, 0, 74);
-        float w = 1.0 - abs(float(i)) * 0.22;
-        spread += spectrum[idx] * w;
-        weight += w;
-    }
-    return max(base, spread / max(weight, 0.001));
-}
-
 float snowflake_alpha(float2 delta, float radius, float blur, float stretch) {
     float2 q = float2(delta.x / max(stretch, 0.001), delta.y);
     float d = length(q);
@@ -107,8 +86,7 @@ vertex float4 snow_vertex(uint vertexID [[vertex_id]]) {
 
 fragment float4 snow_fragment(
     float4 position [[position]],
-    constant SnowParams& params [[buffer(0)]],
-    constant float* spectrum [[buffer(1)]]
+    constant SnowParams& params [[buffer(0)]]
 ) {
     float2 uv = position.xy / params.viewportSize;
     uv.y = 1.0 - uv.y;
