@@ -1206,7 +1206,6 @@ class SpectrumAnalyzerView: NSView {
                 snowSmoothedBPM = 0
             }
         }
-        NSLog("SpectrumAnalyzerView[Snow]: BPM updated to \(bpm)")
     }
 
     @objc private func handlePCMAmplitudeUpdate(_ notification: Notification) {
