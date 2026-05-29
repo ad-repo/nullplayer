@@ -1805,20 +1805,11 @@ class PlexBrowserView: NSView {
         isLoading = false
         stopLoadingAnimation()
         
-        // Sync browse mode with radio source while preserving global Data mode.
+        // Internet Radio only has radio/search content, but every library
+        // source supports the Radio tab. Preserve Radio across source changes.
         if !browseMode.isHistoryMode {
             if case .radio = currentSource {
-                // When switching to Internet Radio source, automatically switch to radio tab
                 browseMode = .radio
-            } else if browseMode == .radio, case .local = currentSource {
-                // When switching sources from radio tab, default back to artists for non-Plex.
-                browseMode = .artists
-            } else if browseMode == .radio, case .subsonic = currentSource {
-                browseMode = .artists
-            } else if browseMode == .radio, case .jellyfin = currentSource {
-                browseMode = .artists
-            } else if browseMode == .radio, case .emby = currentSource {
-                browseMode = .artists
             }
         }
         

@@ -19,6 +19,11 @@
 - **Main-window spectrum can be disabled** — Visuals > Spectrum Analyzer > Main Window > Mode now includes **Off**, matching Winamp's blank main-display option so compatible skins can show their prepared artwork without an analyzer overlay.
 - **Homebrew cask install** — NullPlayer can now be installed via a personal tap: `brew install --cask ad-repo/nullplayer/nullplayer`. The cask strips the quarantine attribute on install (the app is still ad-hoc signed; Developer ID notarization is on the roadmap). `scripts/build_dmg.sh` now prints the final DMG SHA256 for the per-release cask bump, and `docs/development-workflow.md` documents the release flow.
 
+### Bug Fixes
+
+- **Library source switching from Radio fixed** — selecting a different source while the Library Browser is on the Radio tab now keeps the Radio tab active and loads that source's library-radio view instead of forcing the browser back to Artists. Fixed in both classic and modern library browsers.
+- **Internet radio column sorting fixed** — radio station columns now sort correctly in both classic and modern library browsers, including rating-aware sorting without repeated rating-store lookups during comparisons.
+
 ## 0.23.0
 
 ### New Features

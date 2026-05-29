@@ -6721,9 +6721,10 @@ class ModernLibraryBrowserView: NSView {
         clearAllCachedData(); clearLocalCachedData()
         displayItems.removeAll(); selectedIndices.removeAll()
         scrollOffset = 0; errorMessage = nil; isLoading = false; stopLoadingAnimation()
-        if !browseMode.isHistoryMode {
-            if case .radio = currentSource { browseMode = .radio }
-            else if browseMode == .radio && !currentSource.isPlex { browseMode = .artists }
+        // Internet Radio only has radio/search content, but every library
+        // source supports the Radio tab. Preserve Radio across source changes.
+        if !browseMode.isHistoryMode, case .radio = currentSource {
+            browseMode = .radio
         }
         reloadData()
         startServerNameScroll()
