@@ -2633,6 +2633,10 @@ class ModernLibraryBrowserView: NSView {
         guard let sortColumn = ModernBrowserColumn.findColumn(id: sortColumnId) else {
             needsDisplay = true; return
         }
+
+        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: columnSortAscending) {
+            needsDisplay = true; return
+        }
         
         let hasNestedItems = displayItems.contains { $0.indentLevel > 0 }
         if hasNestedItems { needsDisplay = true; return }
@@ -2701,6 +2705,77 @@ class ModernLibraryBrowserView: NSView {
             displayItems[originalIndex] = sortableItems[sortedIndex]
         }
         needsDisplay = true
+    }
+
+    private func applyInternetRadioColumnSort(sortColumn: ModernBrowserColumn, ascending: Bool) -> Bool {
+        guard case .radio = currentSource,
+              ModernBrowserColumn.internetRadioColumns.contains(where: { $0.id == sortColumn.id }),
+              displayItems.contains(where: isInternetRadioItem) else {
+            return false
+        }
+
+        var index = 0
+        var didSort = false
+        while index < displayItems.count {
+            guard isInternetRadioItem(displayItems[index]) else {
+                index += 1
+                continue
+            }
+
+            let start = index
+            while index < displayItems.count, isInternetRadioItem(displayItems[index]) {
+                index += 1
+            }
+
+            let sorted = sortedInternetRadioItems(Array(displayItems[start..<index]), sortColumn: sortColumn, ascending: ascending)
+            displayItems.replaceSubrange(start..<index, with: sorted)
+            didSort = true
+        }
+        return didSort
+    }
+
+    private func sortedInternetRadioItems(_ items: [ModernDisplayItem], sortColumn: ModernBrowserColumn, ascending: Bool) -> [ModernDisplayItem] {
+        let ratingsByItemId = Dictionary(uniqueKeysWithValues: items.map { item in
+            (item.id, internetRadioRating(for: item))
+        })
+
+        return items.enumerated().sorted { lhs, rhs in
+            let comparison = compareInternetRadioItems(lhs.element, rhs.element, sortColumn: sortColumn, ratingsByItemId: ratingsByItemId)
+            if comparison == .orderedSame { return lhs.offset < rhs.offset }
+            return ascending ? comparison == .orderedAscending : comparison == .orderedDescending
+        }.map(\.element)
+    }
+
+    private func compareInternetRadioItems(
+        _ lhs: ModernDisplayItem,
+        _ rhs: ModernDisplayItem,
+        sortColumn: ModernBrowserColumn,
+        ratingsByItemId: [String: Int]
+    ) -> ComparisonResult {
+        switch sortColumn.id {
+        case "rating":
+            let lhsRating = internetRadioRating(for: lhs, ratingsByItemId: ratingsByItemId)
+            let rhsRating = internetRadioRating(for: rhs, ratingsByItemId: ratingsByItemId)
+            if lhsRating != rhsRating {
+                return lhsRating < rhsRating ? .orderedAscending : .orderedDescending
+            }
+            return LibraryTextSorter.compare(lhs.title, rhs.title, ignoreLeadingArticles: true)
+        case "genre":
+            let genreComparison = LibraryTextSorter.compare(lhs.columnValue(for: sortColumn), rhs.columnValue(for: sortColumn), ignoreLeadingArticles: true)
+            if genreComparison != .orderedSame { return genreComparison }
+            return LibraryTextSorter.compare(lhs.title, rhs.title, ignoreLeadingArticles: true)
+        default:
+            return LibraryTextSorter.compare(lhs.columnValue(for: sortColumn), rhs.columnValue(for: sortColumn), ignoreLeadingArticles: true)
+        }
+    }
+
+    private func internetRadioRating(for item: ModernDisplayItem) -> Int {
+        guard case .radioStation(let station) = item.type else { return 0 }
+        return RadioManager.shared.rating(for: station)
+    }
+
+    private func internetRadioRating(for item: ModernDisplayItem, ratingsByItemId: [String: Int]) -> Int {
+        ratingsByItemId[item.id] ?? 0
     }
     
     private func parseDuration(_ str: String) -> Int {
@@ -7884,6 +7959,7 @@ class ModernLibraryBrowserView: NSView {
         cachedRadioStations = RadioManager.shared.stations
         cachedRadioFolders = RadioManager.shared.internetRadioFolderDescriptors()
         buildRadioStationItems()
+        if columnSortId != nil { applyColumnSort() }
         needsDisplay = true
     }
 
@@ -7893,6 +7969,7 @@ class ModernLibraryBrowserView: NSView {
         stopLoadingAnimation()
         cachedRadioStations = RadioManager.shared.stations
         buildRadioSearchItems()
+        if columnSortId != nil { applyColumnSort() }
         needsDisplay = true
     }
 
@@ -9639,6 +9716,7 @@ class ModernLibraryBrowserView: NSView {
             default:
                 displayItems = []
             }
+            if columnSortId != nil { applyColumnSort() }
             needsDisplay = true
             return
         }

@@ -635,6 +635,11 @@ class PlexBrowserView: NSView {
             needsDisplay = true
             return
         }
+
+        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: columnSortAscending) {
+            needsDisplay = true
+            return
+        }
         
         // If there are any nested/expanded items (indentLevel > 0), skip column sorting
         // to avoid orphaning children from their parents. The build functions already
@@ -727,6 +732,79 @@ class PlexBrowserView: NSView {
         }
         
         needsDisplay = true
+    }
+
+    private func applyInternetRadioColumnSort(sortColumn: BrowserColumn, ascending: Bool) -> Bool {
+        guard case .radio = currentSource,
+              BrowserColumn.internetRadioColumns.contains(where: { $0.id == sortColumn.id }),
+              displayItems.contains(where: isInternetRadioItem) else {
+            return false
+        }
+
+        var index = 0
+        var didSort = false
+        while index < displayItems.count {
+            guard isInternetRadioItem(displayItems[index]) else {
+                index += 1
+                continue
+            }
+
+            let start = index
+            while index < displayItems.count, isInternetRadioItem(displayItems[index]) {
+                index += 1
+            }
+
+            let sorted = sortedInternetRadioItems(Array(displayItems[start..<index]), sortColumn: sortColumn, ascending: ascending)
+            displayItems.replaceSubrange(start..<index, with: sorted)
+            didSort = true
+        }
+        return didSort
+    }
+
+    private func sortedInternetRadioItems(_ items: [PlexDisplayItem], sortColumn: BrowserColumn, ascending: Bool) -> [PlexDisplayItem] {
+        let ratingsByItemId = Dictionary(uniqueKeysWithValues: items.map { item in
+            (item.id, internetRadioRating(for: item))
+        })
+
+        return items.enumerated().sorted { lhs, rhs in
+            let comparison = compareInternetRadioItems(lhs.element, rhs.element, sortColumn: sortColumn, ratingsByItemId: ratingsByItemId)
+            if comparison == .orderedSame {
+                return lhs.offset < rhs.offset
+            }
+            return ascending ? comparison == .orderedAscending : comparison == .orderedDescending
+        }.map(\.element)
+    }
+
+    private func compareInternetRadioItems(
+        _ lhs: PlexDisplayItem,
+        _ rhs: PlexDisplayItem,
+        sortColumn: BrowserColumn,
+        ratingsByItemId: [String: Int]
+    ) -> ComparisonResult {
+        switch sortColumn.id {
+        case "rating":
+            let lhsRating = internetRadioRating(for: lhs, ratingsByItemId: ratingsByItemId)
+            let rhsRating = internetRadioRating(for: rhs, ratingsByItemId: ratingsByItemId)
+            if lhsRating != rhsRating {
+                return lhsRating < rhsRating ? .orderedAscending : .orderedDescending
+            }
+            return LibraryTextSorter.compare(lhs.title, rhs.title, ignoreLeadingArticles: true)
+        case "genre":
+            let genreComparison = LibraryTextSorter.compare(lhs.columnValue(for: sortColumn), rhs.columnValue(for: sortColumn), ignoreLeadingArticles: true)
+            if genreComparison != .orderedSame { return genreComparison }
+            return LibraryTextSorter.compare(lhs.title, rhs.title, ignoreLeadingArticles: true)
+        default:
+            return LibraryTextSorter.compare(lhs.columnValue(for: sortColumn), rhs.columnValue(for: sortColumn), ignoreLeadingArticles: true)
+        }
+    }
+
+    private func internetRadioRating(for item: PlexDisplayItem) -> Int {
+        guard case .radioStation(let station) = item.type else { return 0 }
+        return RadioManager.shared.rating(for: station)
+    }
+
+    private func internetRadioRating(for item: PlexDisplayItem, ratingsByItemId: [String: Int]) -> Int {
+        ratingsByItemId[item.id] ?? 0
     }
     
     /// Parse duration string (e.g., "3:45" or "1:23:45") to seconds
@@ -13364,6 +13442,9 @@ class PlexBrowserView: NSView {
         
         // Build display items for radio stations
         buildRadioStationItems()
+        if columnSortId != nil {
+            applyColumnSort()
+        }
         
         needsDisplay = true
     }
@@ -13375,6 +13456,9 @@ class PlexBrowserView: NSView {
 
         cachedRadioStations = RadioManager.shared.stations
         buildRadioSearchItems()
+        if columnSortId != nil {
+            applyColumnSort()
+        }
 
         needsDisplay = true
     }
@@ -15352,6 +15436,9 @@ class PlexBrowserView: NSView {
                 buildRadioSearchItems()
             } else {
                 displayItems = []
+            }
+            if columnSortId != nil {
+                applyColumnSort()
             }
             needsDisplay = true
             return
