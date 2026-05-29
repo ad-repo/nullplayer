@@ -2733,6 +2733,11 @@ class SpectrumAnalyzerView: NSView {
 
             snowFallOffset += fallSpeed * (1.0 / 60.0)
             snowWindPhase += windSpeed * (1.0 / 60.0)
+            // Wrap accumulators so float32 precision in the shader's floor(field) doesn't
+            // collapse particle Y cells into stripes after long playback. 20.0 makes
+            // fall*rows integer for every layer (see SnowShaders.metal), so wrap is seamless.
+            if snowFallOffset >= 20.0 { snowFallOffset -= 20.0 }
+            if snowWindPhase >= 1024.0 { snowWindPhase -= 1024.0 }
 
             localFallOffset = snowFallOffset
             localWindPhase = snowWindPhase
