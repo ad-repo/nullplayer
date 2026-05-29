@@ -272,14 +272,14 @@ struct SnowParams {
     var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
     var time: Float                  // 4 bytes (offset 8)
     var bassEnergy: Float            // 4 bytes (offset 12)
-    var midEnergy: Float             // 4 bytes (offset 16)
-    var trebleEnergy: Float          // 4 bytes (offset 20)
-    var totalEnergy: Float           // 4 bytes (offset 24)
-    var beatIntensity: Float         // 4 bytes (offset 28)
-    var fallOffset: Float            // 4 bytes (offset 32)
-    var windPhase: Float             // 4 bytes (offset 36)
-    var density: Float               // 4 bytes (offset 40)
-    var brightnessBoost: Float = 1.0 // 4 bytes (offset 44) → total 48
+    var trebleEnergy: Float          // 4 bytes (offset 16)
+    var totalEnergy: Float           // 4 bytes (offset 20)
+    var beatIntensity: Float         // 4 bytes (offset 24)
+    var fallOffset: Float            // 4 bytes (offset 28)
+    var windPhase: Float             // 4 bytes (offset 32)
+    var density: Float               // 4 bytes (offset 36)
+    var brightnessBoost: Float = 1.0 // 4 bytes (offset 40)
+    var stormLevel: Float = 0        // 4 bytes (offset 44) → total 48
 }
 
 /// Parameters for EKG Metal shaders (must match Metal EKGParams struct).
@@ -797,6 +797,13 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var snowFallOffset: Float = 0
     nonisolated(unsafe) private var snowWindPhase: Float = 0
     nonisolated(unsafe) private var snowDensity: Float = 0.2
+    nonisolated(unsafe) private var snowStormLevel: Float = 0
+    nonisolated(unsafe) private var snowCurrentBPM: Float = 0  // confident BPM from BPMDetector (0 until it converges)
+    // Provisional BPM derived from transient intervals — gives Snow a moving target
+    // immediately, before the real detector reaches 3 confident readings.
+    nonisolated(unsafe) private var snowBeatTimes: [Float] = []
+    nonisolated(unsafe) private var snowEstimatedBPM: Float = 0
+    nonisolated(unsafe) private var snowSmoothedBPM: Float = 0
 
     // EKG mode state
     nonisolated(unsafe) private var ekgAmplitudeLevel: Float = 0.5
@@ -977,6 +984,10 @@ class SpectrumAnalyzerView: NSView {
         // Observe profile commands triggered from app/context menus
         NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
                                                name: .visClassicProfileCommand, object: nil)
+
+        // Observe BPM updates — Snow mode uses BPM as its sole fall-speed driver
+        NotificationCenter.default.addObserver(self, selector: #selector(handleBPMUpdate(_:)),
+                                               name: .bpmUpdated, object: nil)
         
         // Initialize cached normalization mode
         cachedIsAccurateNormalization = UserDefaults.standard.string(forKey: normalizationUserDefaultsKey) == SpectrumNormalizationMode.accurate.rawValue
@@ -1180,6 +1191,20 @@ class SpectrumAnalyzerView: NSView {
             clearFlameTextures()
             stopRendering()
             renderBlackFrame()
+        }
+    }
+
+    @objc private func handleBPMUpdate(_ notification: Notification) {
+        guard let bpm = notification.userInfo?["bpm"] as? Int else { return }
+        dataLock.withLock {
+            snowCurrentBPM = Float(bpm)
+            // BPMDetector posts 0 on reset (track change). Clear provisional state too
+            // so the next track starts fresh and the progressive estimator can re-narrow.
+            if bpm == 0 {
+                snowBeatTimes.removeAll(keepingCapacity: true)
+                snowEstimatedBPM = 0
+                snowSmoothedBPM = 0
+            }
         }
     }
 
@@ -2601,11 +2626,12 @@ class SpectrumAnalyzerView: NSView {
         var localFallOffset: Float = 0
         var localWindPhase: Float = 0
         var localDensity: Float = 0.05
-        
+        var localStormLevel: Float = 0
+
         dataLock.withLock {
             animationTime += 1.0 / 60.0
             localTime = animationTime
-            
+
             var bass: Float = 0
             var mid: Float = 0
             var treble: Float = 0
@@ -2618,41 +2644,100 @@ class SpectrumAnalyzerView: NSView {
                 treble /= 25.0
             }
             bass *= bassAttenuation
-            
+
             snowSmoothBass += (bass - snowSmoothBass) * (bass > snowSmoothBass ? 0.34 : 0.05)
             snowSmoothMid += (mid - snowSmoothMid) * (mid > snowSmoothMid ? 0.28 : 0.045)
             snowSmoothTreble += (treble - snowSmoothTreble) * (treble > snowSmoothTreble ? 0.32 : 0.05)
-            
+
             let totalEnergy = (snowSmoothBass + snowSmoothMid + snowSmoothTreble) / 3.0
-            if bass > snowSmoothBass + 0.10 || treble > snowSmoothTreble + 0.12 || totalEnergy > snowDensity + 0.10 {
+            let beatHit = bass > snowSmoothBass + 0.10 || treble > snowSmoothTreble + 0.12 || totalEnergy > snowDensity + 0.10
+            if beatHit {
                 snowBeatIntensity = min(1.0, snowBeatIntensity + 0.42)
+                // Record the transient timestamp for the provisional BPM estimator.
+                // Reject beats < 0.25s after the previous (would imply >240 BPM noise).
+                if let last = snowBeatTimes.last, localTime - last < 0.25 {
+                    // too soon — drop
+                } else {
+                    snowBeatTimes.append(localTime)
+                    if snowBeatTimes.count > 12 { snowBeatTimes.removeFirst(snowBeatTimes.count - 12) }
+                }
             }
             snowBeatIntensity *= 0.90
-            
-            let energyCurve = pow(min(1.0, totalEnergy), 1.55)
-            let targetDensity = min(1.0, 0.006 + energyCurve * 0.72 + snowSmoothTreble * 0.06)
-            snowDensity += (targetDensity - snowDensity) * (targetDensity > snowDensity ? 0.16 : 0.03)
-            let fallSpeed: Float = 0.014 + energyCurve * 0.42 + snowSmoothTreble * 0.05
-            let windSpeed: Float = 0.03 + snowSmoothBass * 0.09
-            
+
+            // Drop beat history that's gone stale (>4 seconds old) so a tempo change
+            // (or a pause) doesn't pin the estimate to old intervals.
+            while let first = snowBeatTimes.first, localTime - first > 4.0 {
+                snowBeatTimes.removeFirst()
+            }
+
+            // Progressive BPM estimate from beat intervals — narrows as more beats arrive.
+            // Require ≥4 beats (3 intervals) so a single weirdly-close pair doesn't peg
+            // the estimate. Use the 75th-percentile interval (longer beats, not 8th-note
+            // ghosts) to bias against double-time errors.
+            if snowBeatTimes.count >= 4 {
+                var intervals: [Float] = []
+                intervals.reserveCapacity(snowBeatTimes.count - 1)
+                for i in 1..<snowBeatTimes.count {
+                    intervals.append(snowBeatTimes[i] - snowBeatTimes[i - 1])
+                }
+                intervals.sort()
+                let p75Idx = min(intervals.count - 1, (intervals.count * 3) / 4)
+                let period = intervals[p75Idx]
+                if period > 0.001 {
+                    snowEstimatedBPM = 60.0 / period
+                }
+            }
+
+            // Steep curve: keeps quiet/moderate music as light flurries; only true
+            // sustained loudness pushes toward blizzard.
+            let energyCurve = pow(min(1.0, totalEnergy), 2.4)
+            let targetDensity = min(1.0, 0.004 + energyCurve * 0.55 + snowSmoothTreble * 0.03)
+            snowDensity += (targetDensity - snowDensity) * (targetDensity > snowDensity ? 0.14 : 0.03)
+
+            // stormLevel: master visual knob — slow attack/decay so effects breathe across
+            // phrases instead of pulsing with every transient.
+            let targetStorm = min(1.0, energyCurve * 0.85)
+            snowStormLevel += (targetStorm - snowStormLevel) * (targetStorm > snowStormLevel ? 0.035 : 0.015)
+
+            // Fall speed comes solely from BPM. Use BPMDetector's reading once it locks in;
+            // until then use the progressive transient-interval estimate. Crucially, we
+            // ALWAYS ease into the new value (no snap) so the snow starts slow and
+            // accelerates as confidence builds — never jolts to max speed on the first
+            // noisy estimate.
+            var rawBPM: Float
+            if snowCurrentBPM > 0 {
+                rawBPM = snowCurrentBPM
+            } else if snowEstimatedBPM > 0 {
+                rawBPM = snowEstimatedBPM
+            } else {
+                rawBPM = 0
+            }
+            // Octave fold: bias hard toward slower interpretations. Snow is a calm
+            // visual — half-time is almost always what you want, even if it's a fast
+            // song. Anything above 100 BPM gets halved until it falls in 50-100.
+            while rawBPM > 100 { rawBPM *= 0.5 }
+            if rawBPM > 0 {
+                // Slow attack (0.025/frame ≈ 1.5s to reach target) so even a confident
+                // reading takes a beat or two to actually push the flakes that fast.
+                snowSmoothedBPM += (rawBPM - snowSmoothedBPM) * 0.025
+            }
+            let bpm = max(0, min(100, snowSmoothedBPM))
+            let fallSpeed: Float
+            if bpm > 0 {
+                let n = max(0, min(1, (bpm - 40.0) / 60.0))   // 40 BPM → 0, 100 BPM → 1
+                fallSpeed = 0.05 + n * 1.45                    // range: 0.05 (slow) … 1.5 (fast)
+            } else {
+                fallSpeed = 0.05
+            }
+            let windSpeed: Float = 0.025 + snowSmoothBass * 0.08 + snowStormLevel * 0.06
+
             snowFallOffset += fallSpeed * (1.0 / 60.0)
             snowWindPhase += windSpeed * (1.0 / 60.0)
-            
+
             localFallOffset = snowFallOffset
             localWindPhase = snowWindPhase
             localDensity = snowDensity
-        }
-        
-        var localSpectrum: [Float] = []
-        dataLock.withLock { localSpectrum = displaySpectrum }
-        if let buf = flameSpectrumBuffer {
-            let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
-            let bassAtten = bassAttenuation
-            for i in 0..<75 {
-                var val: Float = i < localSpectrum.count ? localSpectrum[i] : 0
-                if i < 16 { val *= bassAtten }
-                p[i] = val
-            }
+            localStormLevel = snowStormLevel
         }
         
         let viewport = drawableViewportSize(drawable)
@@ -2663,14 +2748,14 @@ class SpectrumAnalyzerView: NSView {
                 viewportSize: viewport,
                 time: localTime,
                 bassEnergy: snowSmoothBass,
-                midEnergy: snowSmoothMid,
                 trebleEnergy: snowSmoothTreble,
                 totalEnergy: totalEnergy,
                 beatIntensity: snowBeatIntensity,
                 fallOffset: localFallOffset,
                 windPhase: localWindPhase,
                 density: localDensity,
-                brightnessBoost: brightnessBoost
+                brightnessBoost: brightnessBoost,
+                stormLevel: localStormLevel
             )
         }
         
@@ -2687,7 +2772,6 @@ class SpectrumAnalyzerView: NSView {
         if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
             enc.setRenderPipelineState(pl)
             enc.setFragmentBuffer(snowParamsBuffer, offset: 0, index: 0)
-            enc.setFragmentBuffer(flameSpectrumBuffer, offset: 0, index: 1)
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             enc.endEncoding()
         }
