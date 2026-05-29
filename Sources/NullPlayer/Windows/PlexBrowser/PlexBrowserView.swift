@@ -762,8 +762,12 @@ class PlexBrowserView: NSView {
     }
 
     private func sortedInternetRadioItems(_ items: [PlexDisplayItem], sortColumn: BrowserColumn, ascending: Bool) -> [PlexDisplayItem] {
-        items.enumerated().sorted { lhs, rhs in
-            let comparison = compareInternetRadioItems(lhs.element, rhs.element, sortColumn: sortColumn)
+        let ratingsByItemId = Dictionary(uniqueKeysWithValues: items.map { item in
+            (item.id, internetRadioRating(for: item))
+        })
+
+        return items.enumerated().sorted { lhs, rhs in
+            let comparison = compareInternetRadioItems(lhs.element, rhs.element, sortColumn: sortColumn, ratingsByItemId: ratingsByItemId)
             if comparison == .orderedSame {
                 return lhs.offset < rhs.offset
             }
@@ -771,11 +775,16 @@ class PlexBrowserView: NSView {
         }.map(\.element)
     }
 
-    private func compareInternetRadioItems(_ lhs: PlexDisplayItem, _ rhs: PlexDisplayItem, sortColumn: BrowserColumn) -> ComparisonResult {
+    private func compareInternetRadioItems(
+        _ lhs: PlexDisplayItem,
+        _ rhs: PlexDisplayItem,
+        sortColumn: BrowserColumn,
+        ratingsByItemId: [String: Int]
+    ) -> ComparisonResult {
         switch sortColumn.id {
         case "rating":
-            let lhsRating = internetRadioRating(for: lhs)
-            let rhsRating = internetRadioRating(for: rhs)
+            let lhsRating = internetRadioRating(for: lhs, ratingsByItemId: ratingsByItemId)
+            let rhsRating = internetRadioRating(for: rhs, ratingsByItemId: ratingsByItemId)
             if lhsRating != rhsRating {
                 return lhsRating < rhsRating ? .orderedAscending : .orderedDescending
             }
@@ -792,6 +801,10 @@ class PlexBrowserView: NSView {
     private func internetRadioRating(for item: PlexDisplayItem) -> Int {
         guard case .radioStation(let station) = item.type else { return 0 }
         return RadioManager.shared.rating(for: station)
+    }
+
+    private func internetRadioRating(for item: PlexDisplayItem, ratingsByItemId: [String: Int]) -> Int {
+        ratingsByItemId[item.id] ?? 0
     }
     
     /// Parse duration string (e.g., "3:45" or "1:23:45") to seconds

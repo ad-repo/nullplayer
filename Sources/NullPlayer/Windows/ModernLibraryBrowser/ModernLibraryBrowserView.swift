@@ -2735,18 +2735,27 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func sortedInternetRadioItems(_ items: [ModernDisplayItem], sortColumn: ModernBrowserColumn, ascending: Bool) -> [ModernDisplayItem] {
-        items.enumerated().sorted { lhs, rhs in
-            let comparison = compareInternetRadioItems(lhs.element, rhs.element, sortColumn: sortColumn)
+        let ratingsByItemId = Dictionary(uniqueKeysWithValues: items.map { item in
+            (item.id, internetRadioRating(for: item))
+        })
+
+        return items.enumerated().sorted { lhs, rhs in
+            let comparison = compareInternetRadioItems(lhs.element, rhs.element, sortColumn: sortColumn, ratingsByItemId: ratingsByItemId)
             if comparison == .orderedSame { return lhs.offset < rhs.offset }
             return ascending ? comparison == .orderedAscending : comparison == .orderedDescending
         }.map(\.element)
     }
 
-    private func compareInternetRadioItems(_ lhs: ModernDisplayItem, _ rhs: ModernDisplayItem, sortColumn: ModernBrowserColumn) -> ComparisonResult {
+    private func compareInternetRadioItems(
+        _ lhs: ModernDisplayItem,
+        _ rhs: ModernDisplayItem,
+        sortColumn: ModernBrowserColumn,
+        ratingsByItemId: [String: Int]
+    ) -> ComparisonResult {
         switch sortColumn.id {
         case "rating":
-            let lhsRating = internetRadioRating(for: lhs)
-            let rhsRating = internetRadioRating(for: rhs)
+            let lhsRating = internetRadioRating(for: lhs, ratingsByItemId: ratingsByItemId)
+            let rhsRating = internetRadioRating(for: rhs, ratingsByItemId: ratingsByItemId)
             if lhsRating != rhsRating {
                 return lhsRating < rhsRating ? .orderedAscending : .orderedDescending
             }
@@ -2763,6 +2772,10 @@ class ModernLibraryBrowserView: NSView {
     private func internetRadioRating(for item: ModernDisplayItem) -> Int {
         guard case .radioStation(let station) = item.type else { return 0 }
         return RadioManager.shared.rating(for: station)
+    }
+
+    private func internetRadioRating(for item: ModernDisplayItem, ratingsByItemId: [String: Int]) -> Int {
+        ratingsByItemId[item.id] ?? 0
     }
     
     private func parseDuration(_ str: String) -> Int {
