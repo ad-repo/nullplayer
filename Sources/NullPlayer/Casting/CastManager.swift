@@ -1977,9 +1977,25 @@ class CastManager {
         // Skip MainActor state cleanup - app is terminating anyway
     }
     
-    /// Handle stop button — always ends the cast session for all device types
-    func handleStopForActiveDevice() async {
+    /// Soft-stop policy for end-of-playlist and the Stop button.
+    /// Sonos stops playback but keeps the session active so the next track can reuse the same target.
+    /// Chromecast and non-Sonos UPnP/DLNA preserve the existing full-disconnect behavior.
+    func softStopForActiveDevice() async {
+        if upnpManager.activeSession?.device.type == .sonos {
+            do {
+                try await stopPlayback()
+            } catch {
+                NSLog("CastManager.softStopForActiveDevice: stopPlayback failed: %@", error.localizedDescription)
+            }
+            return
+        }
+
         await stopCasting()
+    }
+
+    /// Handle stop button using the active device's soft-stop policy.
+    func handleStopForActiveDevice() async {
+        await softStopForActiveDevice()
     }
     
     /// Stop playback on the cast device but keep the session active

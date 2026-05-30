@@ -21,6 +21,7 @@
 
 ### Bug Fixes
 
+- **Sonos cast session preserved on Stop and end-of-playlist** — pressing the player Stop button or reaching the end of a playlist now sends Stop to Sonos without disconnecting the active Sonos target or ungrouping rooms, so the next compatible track can resume on the same speaker/group. Chromecast and non-Sonos DLNA still use the existing full-disconnect behavior.
 - **Library source switching from Radio fixed** — selecting a different source while the Library Browser is on the Radio tab now keeps the Radio tab active and loads that source's library-radio view instead of forcing the browser back to Artists. Fixed in both classic and modern library browsers.
 - **Internet radio column sorting fixed** — radio station columns now sort correctly in both classic and modern library browsers, including rating-aware sorting without repeated rating-store lookups during comparisons.
 

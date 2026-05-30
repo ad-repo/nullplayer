@@ -2023,7 +2023,7 @@ class AudioEngine {
             RadioManager.shared.stop()
         }
         
-        // If casting is active (or in .loaded pre-cast phase), end the cast session
+        // If casting is active (or in .loaded pre-cast phase), apply the active device's stop policy.
         let castSession = CastManager.shared.activeSession
         NSLog("AudioEngine.stop(): isCastingActive=%d, activeSession=%@, currentCast=%@",
               isCastingActive ? 1 : 0,
@@ -2998,7 +2998,7 @@ class AudioEngine {
                 }
                 if !foundCompatibleTrack {
                     Task {
-                        await CastManager.shared.stopCasting()
+                        await CastManager.shared.softStopForActiveDevice()
                         await MainActor.run { self.isAdvancingCastTrack = false }
                     }
                     return
@@ -3048,7 +3048,7 @@ class AudioEngine {
                 }
                 if !foundCompatibleTrack {
                     Task {
-                        await CastManager.shared.stopCasting()
+                        await CastManager.shared.softStopForActiveDevice()
                         await MainActor.run { self.isAdvancingCastTrack = false }
                     }
                     return
@@ -3092,7 +3092,7 @@ class AudioEngine {
                 }
                 guard currentIndex < playlist.count else {
                     Task {
-                        await CastManager.shared.stopCasting()
+                        await CastManager.shared.softStopForActiveDevice()
                         await MainActor.run { self.isAdvancingCastTrack = false }
                     }
                     return
@@ -3124,9 +3124,9 @@ class AudioEngine {
                     await MainActor.run { self.isAdvancingCastTrack = false }
                 }
             } else {
-                // End of playlist - stop casting
+                // End of playlist - apply the active device's stop policy.
                 Task {
-                    await CastManager.shared.stopCasting()
+                    await CastManager.shared.softStopForActiveDevice()
                     await MainActor.run { self.isAdvancingCastTrack = false }
                 }
             }
