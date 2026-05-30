@@ -1981,7 +1981,7 @@ class CastManager {
     /// Sonos stops playback but keeps the session active so the next track can reuse the same target.
     /// Chromecast and non-Sonos UPnP/DLNA preserve the existing full-disconnect behavior.
     func softStopForActiveDevice() async {
-        if upnpManager.activeSession?.device.type == .sonos {
+        if activeSession?.device.type == .sonos {
             do {
                 try await stopPlayback()
             } catch {
