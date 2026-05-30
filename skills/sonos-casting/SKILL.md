@@ -14,7 +14,7 @@ This guide covers Sonos speaker discovery, casting, and multi-room grouping in N
    - Top menu bar → **Output → Sonos**
 2. Check the rooms you want to cast to (checkboxes stay open for multi-select)
 3. Click **🟢 Start Casting** to begin playback
-4. Click **🔴 Stop Casting** to end the session
+4. Click **🔴 Stop Casting** from the Sonos menu to fully end the cast session
 
 ## Discovery Methods
 
@@ -145,7 +145,12 @@ While casting is active:
 
 ### Stopping a Cast
 
-Click **🔴 Stop Casting** to:
+There are two intentional stop paths:
+
+- **Player Stop button / end-of-playlist**: sends `Stop` to Sonos but keeps `upnpManager.activeSession`, selected rooms, group membership, and LocalMediaServer registrations intact. The next compatible track reuses the same Sonos target without re-selecting rooms. This path is `AudioEngine.stop()` or `castTrackDidFinish()` → `CastManager.softStopForActiveDevice()` → `stopPlayback()`.
+- **Sonos menu 🔴 Stop Casting**: fully tears down the cast session via `CastManager.stopCasting()`.
+
+Click **🔴 Stop Casting** to fully disconnect:
 - Ungroup all member rooms (each becomes standalone)
 - Stop playback on the coordinator
 - Clear all room selections
@@ -422,8 +427,10 @@ If you see "Sonos rejected the command":
 - At Sonos cast start, `activeSession.position = startPosition` and `activeSession.playbackStartDate = Date()` must both be set immediately (Sonos has no status updates to set them later).
 - Each PLAYING poll must update both fields. Check `CastManager: Sonos poll — state=PLAYING` logs.
 
-### Stop Button Doesn't End Cast
-- `handleStopForActiveDevice` must call `await stopCasting()` for all device types. If it only calls `stopPlayback()`, the session stays alive.
+### Player Stop Keeps Session Alive
+- This is expected for Sonos when using the player Stop button: `handleStopForActiveDevice()` calls `softStopForActiveDevice()`, which stops Sonos playback but leaves the session active.
+- Use the Sonos menu **🔴 Stop Casting** action when a full disconnect is required.
+- Chromecast and non-Sonos DLNA should still route through `stopCasting()` from `softStopForActiveDevice()`.
 
 ### Casting Stops Unexpectedly
 1. Check if Sonos speaker went to sleep (idle timeout)
