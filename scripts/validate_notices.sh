@@ -2,11 +2,13 @@
 # Validate that third-party license notices ship inside the app bundle and that
 # every bundled framework / dylib is covered by the notices manifest.
 #
-# Two-way check:
+# Checks:
 #   1. Forward  — every component in scripts/third_party_components.tsv has its
 #      required license text present under the app's Resources/ directory, and
-#      the aggregated ThirdPartyNotices.txt is present and non-empty.
-#   2. Reverse  — every real framework/dylib in Contents/Frameworks matches at
+#      the aggregated ThirdPartyNotices.txt is present, non-empty, and current.
+#   2. Package  — every Package.resolved pin has a manifest entry whose key
+#      matches the package identity.
+#   3. Reverse  — every real framework/dylib in Contents/Frameworks matches at
 #      least one manifest bundle_glob (i.e. no bundled binary ships without a
 #      notice).
 #
@@ -42,10 +44,12 @@ errors=0
 
 # Collect bundle globs as we go, for the reverse check.
 globs=()
+manifest_keys=()
 
 # --- Forward check: every manifest notice ships --------------------------------
 while IFS=$'\t' read -r key name spdx copyright url version license_text bundle_glob; do
     [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
+    manifest_keys+=("$key")
 
     if [[ -f "$RESOURCES_DIR/$license_text" ]]; then
         log_ok "Notice present: $name ($license_text)"
@@ -57,6 +61,38 @@ while IFS=$'\t' read -r key name spdx copyright url version license_text bundle_
     [[ "$bundle_glob" != "-" ]] && globs+=("$bundle_glob")
 done < "$MANIFEST"
 
+has_manifest_key() {
+    local wanted="$1"
+    local manifest_key
+    for manifest_key in "${manifest_keys[@]}"; do
+        if [[ "$manifest_key" == "$wanted" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# --- Package.resolved pins must be represented in the manifest -----------------
+PACKAGE_RESOLVED="$REPO_ROOT/Package.resolved"
+if [[ -f "$PACKAGE_RESOLVED" ]]; then
+    while IFS= read -r identity; do
+        [[ -n "$identity" ]] || continue
+        if has_manifest_key "$identity"; then
+            log_ok "Package pin covered: $identity"
+        else
+            log_err "Package.resolved pin has NO notice in manifest: $identity"
+            log_err "Add a scripts/third_party_components.tsv row whose key is '$identity'."
+            errors=$((errors + 1))
+        fi
+    done < <(
+        plutil -extract pins json -o - "$PACKAGE_RESOLVED" \
+            | grep -o '"identity":"[^"]*"' \
+            | sed 's/"identity":"//; s/"$//'
+    )
+else
+    log_warn "Package.resolved not found ($PACKAGE_RESOLVED) — skipping package pin coverage check"
+fi
+
 # --- Aggregated artifact must ship and be non-empty ----------------------------
 NOTICES_TXT="$RESOURCES_DIR/ThirdPartyLicenses/ThirdPartyNotices.txt"
 if [[ -s "$NOTICES_TXT" ]]; then
@@ -65,6 +101,22 @@ else
     log_err "Missing or empty aggregated notices: $NOTICES_TXT"
     log_err "Run scripts/generate_third_party_notices.sh and commit the result."
     errors=$((errors + 1))
+fi
+
+# The aggregate is generated from the manifest, so non-empty is not enough: a
+# dependency bump or license edit must fail validation until the generated file
+# is refreshed.
+if [[ -s "$NOTICES_TXT" ]]; then
+    expected_notices="$(mktemp)"
+    "$REPO_ROOT/scripts/generate_third_party_notices.sh" --output "$expected_notices" >/dev/null
+    if cmp -s "$expected_notices" "$NOTICES_TXT"; then
+        log_ok "Aggregated notices are current"
+    else
+        log_err "Aggregated notices are stale: $NOTICES_TXT"
+        log_err "Run scripts/generate_third_party_notices.sh and commit the result."
+        errors=$((errors + 1))
+    fi
+    rm -f "$expected_notices"
 fi
 
 # --- Reverse check: every bundled framework/dylib is covered -------------------

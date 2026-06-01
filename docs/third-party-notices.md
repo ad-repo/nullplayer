@@ -9,11 +9,11 @@ and how to keep it correct when dependencies change.
 
 | File | Role |
 |------|------|
-| `scripts/third_party_components.tsv` | **Source of truth.** One tab-separated row per component: `key`, `name`, `spdx`, `copyright`, `source_url`, `version`, `license_text`, `bundle_glob`. |
+| `scripts/third_party_components.tsv` | **Source of truth.** One tab-separated row per component: `key`, `name`, `spdx`, `copyright`, `source_url`, `version`, `license_text`, `bundle_glob`. For SPM packages, `key` must match the `Package.resolved` identity. |
 | `Sources/NullPlayer/Resources/ThirdPartyLicenses/` | The shipped license texts. Shared bodies (GPL-3.0, LGPL-2.1, Apache-2.0) live in `licenses/`; per-component permissive texts sit at the top level. |
 | `Sources/NullPlayer/Resources/ThirdPartyLicenses/ThirdPartyNotices.txt` | **Generated** aggregate of every notice (attribution header + full license text). Committed to the repo and bundled into the app. |
 | `scripts/generate_third_party_notices.sh` | Regenerates `ThirdPartyNotices.txt` from the manifest. |
-| `scripts/validate_notices.sh` | Fails if any manifest notice is missing from the app bundle, or any bundled framework/dylib has no manifest entry. |
+| `scripts/validate_notices.sh` | Fails if any manifest notice is missing from the app bundle, the aggregate is stale, any `Package.resolved` pin has no manifest entry, or any bundled framework/dylib has no manifest entry. |
 
 The whole `Resources/` tree is copied into the app bundle by SPM, so every file
 under `ThirdPartyLicenses/` ends up at `Contents/Resources/ThirdPartyLicenses/`.
@@ -25,6 +25,10 @@ under `ThirdPartyLicenses/` ends up at `Contents/Resources/ThirdPartyLicenses/`.
   built app). Multiple components may point at the same shared file (e.g. all
   LGPL-2.1 components share `ThirdPartyLicenses/licenses/LGPL-2.1.txt`); the
   per-component attribution still comes from the manifest row.
+- **key** — stable component id. For any dependency listed in `Package.resolved`,
+  use the package identity exactly (for example `sqlite.swift` or
+  `ogg-binary-xcframework`) so validation can detect unacknowledged Swift
+  package pins.
 - **bundle_glob** — basename glob matched against the real files in
   `Contents/Frameworks` (e.g. `libaubio*.dylib`, `VLCKit.framework`). Use `-`
   for components compiled into the `NullPlayer` binary with no standalone
@@ -38,6 +42,8 @@ under `ThirdPartyLicenses/` ends up at `Contents/Resources/ThirdPartyLicenses/`.
 
 - a component in the manifest is missing its `license_text` in the bundle, or
 - `ThirdPartyNotices.txt` is missing/empty, or
+- `ThirdPartyNotices.txt` does not match freshly generated output, or
+- a `Package.resolved` pin is not covered by a manifest row, or
 - a bundled framework/dylib is not covered by any manifest `bundle_glob`.
 
 The same script is what a future Mac App Store build should invoke for notice
@@ -56,7 +62,7 @@ validation.
 2. **A new SPM source dependency is added** (compiled into the binary):
    - Read its `LICENSE` from `.build/checkouts/<dep>/`, add the text under
      `Resources/ThirdPartyLicenses/`, and add a manifest row with `bundle_glob`
-     set to `-`.
+     set to `-` and `key` set to the `Package.resolved` identity.
 
 3. **A dependency version bumps:** update the `version` (and `copyright`/SPDX if
    the upstream license changed) in the manifest.

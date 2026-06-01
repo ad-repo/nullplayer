@@ -8,7 +8,9 @@
 # Run this whenever the manifest or any bundled dependency changes, then commit
 # the regenerated ThirdPartyNotices.txt. See docs/third-party-notices.md.
 #
-# Usage: ./scripts/generate_third_party_notices.sh
+# Usage:
+#   ./scripts/generate_third_party_notices.sh
+#   ./scripts/generate_third_party_notices.sh --output /tmp/ThirdPartyNotices.txt
 
 set -eo pipefail
 
@@ -18,6 +20,23 @@ REPO_ROOT=$(pwd)
 MANIFEST="$REPO_ROOT/scripts/third_party_components.tsv"
 RES_DIR="$REPO_ROOT/Sources/NullPlayer/Resources"
 OUT="$RES_DIR/ThirdPartyLicenses/ThirdPartyNotices.txt"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --output)
+            OUT="${2:-}"
+            if [[ -z "$OUT" ]]; then
+                echo "✗ --output requires a path" >&2
+                exit 2
+            fi
+            shift 2
+            ;;
+        *)
+            echo "✗ Unknown argument: $1" >&2
+            exit 2
+            ;;
+    esac
+done
 
 if [[ ! -f "$MANIFEST" ]]; then
     echo "✗ Manifest not found: $MANIFEST" >&2
@@ -78,5 +97,6 @@ if [[ "$missing" -gt 0 ]]; then
     exit 1
 fi
 
+mkdir -p "$(dirname "$OUT")"
 mv "$tmp" "$OUT"
 echo "✓ Wrote $OUT ($count components)"
