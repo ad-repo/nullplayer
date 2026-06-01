@@ -1,0 +1,47 @@
+# NullPlayer third-party components manifest (source of truth for bundled notices)
+# Tab-separated. Columns:
+#   key   name   spdx   copyright   source_url   version   license_text   bundle_glob
+# - license_text: path to the required license text, relative to the app's
+#   Resources/ directory (these files are shipped inside the app bundle).
+# - bundle_glob: basename glob for the corresponding artifact in
+#   Contents/Frameworks (validate_notices.sh requires every bundled framework
+#   /dylib to match one entry). Use "-" for components compiled into the
+#   NullPlayer binary (no standalone bundled artifact).
+# Regenerate ThirdPartyNotices.txt after editing: scripts/generate_third_party_notices.sh
+# See docs/third-party-notices.md for the refresh process.
+#
+# === SPM dependencies compiled into the NullPlayer binary ===
+ksplayer	KSPlayer	GPL-3.0-or-later	Copyright (c) kingslay and the KSPlayer contributors	https://github.com/kingslay/KSPlayer	main @ a7cddd8	ThirdPartyLicenses/licenses/GPL-3.0.txt	-
+ffmpegkit	FFmpegKit	GPL-3.0-or-later	Copyright (c) 2018-2023 Taner Sener; kingslay fork	https://github.com/kingslay/FFmpegKit	6.1.3	ThirdPartyLicenses/licenses/GPL-3.0.txt	-
+ffmpeg	FFmpeg	LGPL-2.1-or-later	Copyright (c) 2000-2024 the FFmpeg developers	https://ffmpeg.org	6.1.x (via FFmpegKit)	ThirdPartyLicenses/licenses/LGPL-2.1.txt	-
+sqlite-swift	SQLite.swift	MIT	Copyright (c) 2014-2015 Stephen Celis	https://github.com/stephencelis/SQLite.swift	0.15.4	ThirdPartyLicenses/SQLiteSwift_LICENSE.txt	-
+swift-toolchain-sqlite	swift-toolchain-sqlite	Apache-2.0	Copyright Apple Inc. and the Swift project authors	https://github.com/swiftlang/swift-toolchain-sqlite	1.0.4	ThirdPartyLicenses/licenses/Apache-2.0.txt	-
+sqlite	SQLite	blessing (public domain)	D. Richard Hipp and the SQLite authors	https://www.sqlite.org	bundled via swift-toolchain-sqlite	ThirdPartyLicenses/SQLite_PublicDomain.txt	-
+zipfoundation	ZIPFoundation	MIT	Copyright (c) 2017-2025 Thomas Zoechling	https://github.com/weichsel/ZIPFoundation	0.9.20	ThirdPartyLicenses/ZIPFoundation_LICENSE.txt	-
+audiostreaming	AudioStreaming	MIT	Copyright (c) 2020 Dimitris C.; (c) 2012-2014 Thong Nguyen	https://github.com/dimitris-c/AudioStreaming	1.4.4	ThirdPartyLicenses/AudioStreaming_LICENSE.txt	-
+flyingfox	FlyingFox	MIT	Copyright (c) 2022 Simon Whitty	https://github.com/swhitty/FlyingFox	0.26.2	ThirdPartyLicenses/FlyingFox_LICENSE.txt	-
+#
+# === Bundled binary frameworks / dylibs (Contents/Frameworks) ===
+vlckit	VLCKit (libVLC)	LGPL-2.1-or-later	Copyright (c) VideoLAN and the VLCKit authors	https://code.videolan.org/videolan/VLCKit	libVLC 3.0.12.1	ThirdPartyLicenses/licenses/LGPL-2.1.txt	VLCKit.framework
+libprojectm	libprojectM	LGPL-2.1-or-later	Copyright (c) 2003-2024 the projectM Team	https://github.com/projectM-visualizer/projectm	4.1.6	ThirdPartyLicenses/licenses/LGPL-2.1.txt	libprojectM*.dylib
+aubio	aubio	GPL-3.0-or-later	Copyright (c) 2003-2014 Paul Brossier	https://github.com/aubio/aubio	0.4.9	ThirdPartyLicenses/licenses/GPL-3.0.txt	libaubio*.dylib
+libsndfile	libsndfile	LGPL-2.1-or-later	Copyright (c) 1999-2016 Erik de Castro Lopo	https://github.com/libsndfile/libsndfile	1.2.2	ThirdPartyLicenses/licenses/LGPL-2.1.txt	libsndfile*.dylib
+flac	FLAC	BSD-3-Clause	Copyright (c) 2000-2009 Josh Coalson; (c) 2011-2025 Xiph.Org Foundation	https://xiph.org/flac/	1.5.0	ThirdPartyLicenses/FLAC_LICENSE.txt	libFLAC*.dylib
+libogg	libogg	BSD-3-Clause	Copyright (c) 2002 Xiph.Org Foundation	https://xiph.org/ogg/	1.3.6	ThirdPartyLicenses/libogg_LICENSE.txt	libogg*.dylib
+libvorbis	libvorbis	BSD-3-Clause	Copyright (c) 2002-2020 Xiph.Org Foundation	https://xiph.org/vorbis/	1.3.7	ThirdPartyLicenses/libvorbis_LICENSE.txt	libvorbis*.dylib
+opus	Opus	BSD-3-Clause	Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, et al.	https://opus-codec.org	1.6.1	ThirdPartyLicenses/opus_LICENSE.txt	libopus*.dylib
+lame	LAME	LGPL-2.0-or-later	Copyright (c) 1998-2017 The LAME developers	https://lame.sourceforge.io	3.100	ThirdPartyLicenses/licenses/LGPL-2.1.txt	libmp3lame*.dylib
+mpg123	mpg123	LGPL-2.1-only	Copyright (c) 1995-2020 Michael Hipp and others	https://mpg123.org	1.33.4	ThirdPartyLicenses/licenses/LGPL-2.1.txt	libmpg123*.dylib
+ogg-xcframework	ogg.xcframework	BSD-3-Clause	Copyright (c) 2002 Xiph.Org Foundation	https://github.com/sbooth/ogg-binary-xcframework	0.1.2	ThirdPartyLicenses/libogg_LICENSE.txt	ogg.framework
+vorbis-xcframework	vorbis.xcframework	BSD-3-Clause	Copyright (c) 2002-2020 Xiph.Org Foundation	https://github.com/sbooth/vorbis-binary-xcframework	0.1.2	ThirdPartyLicenses/libvorbis_LICENSE.txt	vorbis.framework
+#
+# === Native visualization ports compiled into the NullPlayer binary ===
+vis_classic	vis_classic (Winamp AVS classic)	MIT	Copyright (c) 1998-2018 Mike Lynch; (c) 2018 WACUP	https://github.com/WACUP/vis_classic	bundled source	vis_classic/LICENSE.txt	-
+geiss	Geiss	BSD-3-Clause	Copyright (c) 1998-2022 Ryan Geiss	https://www.geisswerks.com/about_geiss.html	bundled source	ThirdPartyLicenses/GEISS_LICENSE.txt	-
+tripex	Tripex	MIT	Copyright (c) 2025 Ben Marsh	https://github.com/ben-marsh/tripex	bundled source	ThirdPartyLicenses/TRIPEX_LICENSE.txt	-
+fft-nullsoft	Nullsoft FFT	BSD-3-Clause	Copyright 2005-2013 Nullsoft, Inc.	https://github.com/WACUP/vis_classic	bundled source	ThirdPartyLicenses/FFTNullsoft_LICENSE.txt	-
+#
+# === Fonts and bundled assets ===
+departuremono	Departure Mono	OFL-1.1	Copyright (c) 2024 Helena Zhang	https://departuremono.com	1.422	Fonts/DepartureMono-LICENSE.txt	-
+milkdrop-presets	MilkDrop / projectM presets	community (see notice)	Various MilkDrop / projectM preset authors	https://github.com/projectM-visualizer/presets-cream-of-the-crop	bundled assets	ThirdPartyLicenses/MilkDropPresets_NOTICE.txt	-
+bundled-skins	Bundled skins and visual assets	project-original	NullPlayer project	https://github.com/ad-repo/nullplayer	bundled assets	ThirdPartyLicenses/BundledSkins_NOTICE.txt	-

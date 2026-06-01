@@ -309,8 +309,41 @@ The bundled default skin ("NeonWave") is fully programmatic -- zero image assets
 
 ## License
 
-This project is open source and uses the following licensed components:
+This project is open source. Because it bundles GPL-licensed components
+(KSPlayer, FFmpegKit, and aubio), the combined application is distributed under
+the terms of the **GNU GPL v3.0 or later**.
 
-- **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
-- **libprojectM** (LGPL-2.1) - ProjectM visualizations
-- **Tripex** (MIT) - Winamp-era visualization port by Ben Marsh
+The full text of every third-party notice ships inside the app bundle at
+`Contents/Resources/ThirdPartyLicenses/` (aggregated in `ThirdPartyNotices.txt`,
+with the individual license texts alongside it). `scripts/build_dmg.sh` runs
+`scripts/validate_notices.sh` to fail the release if any bundled dependency is
+missing its notice. See [docs/third-party-notices.md](docs/third-party-notices.md)
+for the refresh process and `scripts/third_party_components.tsv` for the
+authoritative component/version/license list.
+
+Bundled third-party components:
+
+**Swift packages (compiled into the binary)**
+- **KSPlayer** (GPL-3.0) — video playback
+- **FFmpegKit / FFmpeg** (GPL-3.0 fork / FFmpeg LGPL-2.1+) — codec backend
+- **SQLite.swift** (MIT) + **swift-toolchain-sqlite** (Apache-2.0) / **SQLite** (public domain) — media library
+- **ZIPFoundation** (MIT) — `.wsz`/`.nps` extraction
+- **AudioStreaming** (MIT) — streaming audio engine
+- **FlyingFox** (MIT) — local HTTP server for casting
+
+**Bundled frameworks / dynamic libraries**
+- **VLCKit / libVLC** (LGPL-2.1+) — video casting/playback
+- **libprojectM** (LGPL-2.1) — ProjectM/MilkDrop visualizations
+- **aubio** (GPL-3.0) — BPM/tempo detection
+- **libsndfile** (LGPL-2.1), **FLAC** (BSD-3), **libogg** (BSD-3), **libvorbis** (BSD-3), **Opus** (BSD-3), **LAME** (LGPL-2.0+), **mpg123** (LGPL-2.1) — audio codecs
+
+**Native visualization ports (compiled into the binary)**
+- **vis_classic** (MIT) — Winamp AVS classic port
+- **Geiss** (BSD-3) — Geiss visualization port
+- **Tripex** (MIT) — Winamp-era visualization port by Ben Marsh
+- **Nullsoft FFT** (BSD-3) — spectrum analysis
+
+**Fonts & assets**
+- **Departure Mono** (SIL OFL-1.1) — bundled font
+- **MilkDrop / projectM presets** — community-authored (attribution in preset filenames)
+- **Bundled skins** — original NullPlayer assets
