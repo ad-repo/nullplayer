@@ -76,11 +76,9 @@ codesign --verify --deep --strict dist/NullPlayer.app
 # Check installer signature
 pkgutil --check-signature dist/NullPlayer-X.Y.Z.pkg
 
-# Expand package to confirm structure (no CLI scripts included)
-mkdir /tmp/mas_check
-pkgutil --expand dist/NullPlayer-X.Y.Z.pkg /tmp/mas_check
-ls -la /tmp/mas_check/NullPlayer.app/Contents/MacOS/
-# Should contain ONLY: NullPlayer executable (no nullplayer, install_cli_launcher.sh, etc.)
+# Confirm package payload structure (no CLI scripts included)
+pkgutil --payload-files dist/NullPlayer-X.Y.Z.pkg | grep "NullPlayer.app/Contents/MacOS/"
+# Should list ONLY the NullPlayer executable under Contents/MacOS
 ```
 
 ## Submission
@@ -95,16 +93,15 @@ ls -la /tmp/mas_check/NullPlayer.app/Contents/MacOS/
 ### Option 2: Command Line
 
 ```bash
-# Using altool (deprecated but still works)
+# Using altool
 xcrun altool --upload-app --type macos \
   --file dist/NullPlayer-X.Y.Z.pkg \
   --bundle-id com.nullplayer.app \
   --username "your-email@example.com" \
   --password "@keychain:AC_PASSWORD"
-
-# Or using notarytool (macOS 12+, newer recommended method)
-xcrun notarytool submit --wait dist/NullPlayer-X.Y.Z.pkg
 ```
+
+`notarytool` is for Developer ID distribution outside the App Store. MAS builds are delivered to App Store Connect with Transporter or `altool`.
 
 ## Versioning Rules
 
@@ -117,7 +114,7 @@ Before building:
 4. **Each App Store upload MUST have higher CFBundleVersion than the previous submission**
 
 Example version progression:
-```
+```text
 First submission:   v0.24.0 / build 1
 Second submission:  v0.24.1 / build 2  (or v0.25.0 / build 5, etc.)
 Third submission:   v0.25.0 / build 6
@@ -137,7 +134,7 @@ Users cannot cast to generic smart TVs or devices without explicit Bonjour suppo
 
 ### Encryption Declaration
 
-The entitlements file sets `ITSAppUsesNonExemptEncryption=false` because NullPlayer uses only standard TLS for HTTPS — no custom encryption algorithms.
+`Sources/NullPlayer/Resources/Info.plist` sets `ITSAppUsesNonExemptEncryption=false` because NullPlayer uses only standard TLS for HTTPS — no custom encryption algorithms.
 
 ## Troubleshooting
 

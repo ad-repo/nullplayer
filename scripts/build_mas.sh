@@ -24,6 +24,13 @@ log_success() { echo -e "${GREEN}✓${NC} $1"; }
 log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 log_error() { echo -e "${RED}✗${NC} $1" >&2; }
 
+identity_team_id() {
+    local identity="$1"
+    if [[ "$identity" =~ \(([A-Z0-9]+)\)$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+    fi
+}
+
 # Change to repo root
 cd "$(dirname "$0")/.."
 REPO_ROOT=$(pwd)
@@ -86,17 +93,61 @@ if [[ ! -f "$MAS_PROVISION_PROFILE" ]]; then
     exit 1
 fi
 
+PROFILE_PLIST=$(mktemp "${TMPDIR:-/tmp}/nullplayer_mas_profile.XXXXXX")
+cleanup() {
+    rm -f "$PROFILE_PLIST"
+}
+trap cleanup EXIT
+
 log_success "MAS_APP_IDENTITY set"
 log_success "MAS_INSTALLER_IDENTITY set"
 log_success "MAS_PROVISION_PROFILE found: $(basename "$MAS_PROVISION_PROFILE")"
 
-# Attempt to surface profile expiry (best-effort, non-fatal)
+# Validate provisioning profile before doing expensive bundle assembly.
 log_info "Checking provisioning profile validity..."
-if security cms -D -i "$MAS_PROVISION_PROFILE" 2>/dev/null | grep -q "ExpirationDate"; then
-    log_success "Provisioning profile is valid"
-else
-    log_warning "Could not verify provisioning profile expiry"
+if ! security cms -D -i "$MAS_PROVISION_PROFILE" > "$PROFILE_PLIST"; then
+    log_error "Could not decode provisioning profile: $MAS_PROVISION_PROFILE"
+    exit 1
 fi
+
+EXPIRATION_DATE=$(plutil -extract ExpirationDate raw -o - "$PROFILE_PLIST" 2>/dev/null || true)
+EXPIRATION_EPOCH=""
+if [[ -n "$EXPIRATION_DATE" ]]; then
+    EXPIRATION_EPOCH=$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$EXPIRATION_DATE" "+%s" 2>/dev/null || true)
+fi
+if [[ -z "$EXPIRATION_EPOCH" ]]; then
+    log_error "Could not read provisioning profile ExpirationDate"
+    exit 1
+fi
+if (( EXPIRATION_EPOCH <= $(date -u "+%s") )); then
+    log_error "Provisioning profile is expired: $EXPIRATION_DATE"
+    exit 1
+fi
+
+PROFILE_TEAM=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$PROFILE_PLIST" 2>/dev/null || true)
+APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.application-identifier" "$PROFILE_PLIST" 2>/dev/null || true)
+APP_TEAM=$(identity_team_id "$MAS_APP_IDENTITY")
+INSTALLER_TEAM=$(identity_team_id "$MAS_INSTALLER_IDENTITY")
+EXPECTED_APP_IDENTIFIER="$PROFILE_TEAM.$BUNDLE_ID"
+
+if [[ -z "$PROFILE_TEAM" || -z "$APP_IDENTIFIER" ]]; then
+    log_error "Provisioning profile is missing TeamIdentifier or application identifier"
+    exit 1
+fi
+if [[ "$APP_IDENTIFIER" != "$EXPECTED_APP_IDENTIFIER" ]]; then
+    log_error "Provisioning profile app identifier mismatch: expected $EXPECTED_APP_IDENTIFIER, found $APP_IDENTIFIER"
+    exit 1
+fi
+if [[ -n "$APP_TEAM" && "$APP_TEAM" != "$PROFILE_TEAM" ]]; then
+    log_error "Application signing identity team ($APP_TEAM) does not match profile team ($PROFILE_TEAM)"
+    exit 1
+fi
+if [[ -n "$INSTALLER_TEAM" && "$INSTALLER_TEAM" != "$PROFILE_TEAM" ]]; then
+    log_error "Installer signing identity team ($INSTALLER_TEAM) does not match profile team ($PROFILE_TEAM)"
+    exit 1
+fi
+
+log_success "Provisioning profile is valid for $APP_IDENTIFIER and expires $EXPIRATION_DATE"
 
 # Source the app assembly helper
 source "$(dirname "$0")/lib/assemble_app.sh"
@@ -115,14 +166,14 @@ log_info "Code signing frameworks and dylibs..."
 for framework in "$FRAMEWORKS_DIR"/*.framework; do
     if [[ -d "$framework" ]]; then
         log_info "  Signing framework: $(basename "$framework")"
-        codesign --force --sign "$MAS_APP_IDENTITY" --timestamp "$framework" 2>/dev/null || true
+        codesign --force --sign "$MAS_APP_IDENTITY" --timestamp "$framework"
     fi
 done
 
 for dylib in "$FRAMEWORKS_DIR"/*.dylib; do
     if [[ -f "$dylib" && ! -L "$dylib" ]]; then
         log_info "  Signing dylib: $(basename "$dylib")"
-        codesign --force --sign "$MAS_APP_IDENTITY" --timestamp "$dylib" 2>/dev/null || true
+        codesign --force --sign "$MAS_APP_IDENTITY" --timestamp "$dylib"
     fi
 done
 
@@ -130,6 +181,10 @@ done
 log_info "Code signing app bundle with entitlements..."
 codesign --force --sign "$MAS_APP_IDENTITY" --timestamp --entitlements "$REPO_ROOT/Sources/NullPlayer/Resources/NullPlayer.entitlements" "$APP_BUNDLE"
 log_success "Code signing complete"
+
+log_info "Verifying code signature..."
+codesign --verify --deep --strict "$APP_BUNDLE"
+log_success "Code signature verified"
 
 # Create the installer package
 log_info "Creating installer package..."
@@ -158,7 +213,7 @@ echo ""
 log_info "Upload via:"
 echo "  - Transporter.app (recommended)"
 echo "  - xcrun altool --upload-app --type macos --file \"$PKG_PATH\" --bundle-id \"$BUNDLE_ID\""
-echo "  - xcrun notarytool submit --wait \"$PKG_PATH\""
+echo "  (MAS builds are uploaded to App Store Connect, not notarized with notarytool.)"
 echo ""
 log_warning "Important: CFBundleVersion ($BUILD_NUMBER) must increase on each submission"
 log_warning "Note: Update Info.plist and rebuild to increment version"
