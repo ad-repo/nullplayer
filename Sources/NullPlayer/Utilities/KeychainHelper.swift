@@ -309,21 +309,13 @@ class KeychainHelper {
     private func setDataKeychain(_ data: Data, forKey key: String) -> Bool {
         deleteKeychain(forKey: key)
 
-        // Permissive ACL: any app can access without a prompt.
-        // Required because ad-hoc code signatures change on every rebuild —
-        // a strict ACL would prompt users on every app update.
-        var access: SecAccess?
-        SecAccessCreate("NullPlayer" as CFString, nil, &access)
-
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
             kSecAttrAccount as String: key,
             kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
-        if let access = access {
-            query[kSecAttrAccess as String] = access
-        }
 
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
