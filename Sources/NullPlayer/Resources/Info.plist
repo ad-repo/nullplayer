@@ -22,7 +22,11 @@
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
-    
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+
     <!-- Local Network Access -->
     <key>NSLocalNetworkUsageDescription</key>
     <string>NullPlayer needs access to your local network to discover and cast audio to Chromecast, Sonos, and DLNA devices.</string>
@@ -36,6 +40,8 @@
         <string>_airplay._tcp</string>
         <!-- RAOP (Remote Audio Output Protocol) -->
         <string>_raop._tcp</string>
+        <!-- Sonos devices -->
+        <string>_sonos._tcp</string>
     </array>
     
     <!-- App Transport Security for local network communication -->

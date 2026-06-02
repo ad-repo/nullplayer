@@ -6,6 +6,7 @@
 ./scripts/bootstrap.sh      # Download frameworks (first time)
 ./scripts/kill_build_run.sh # Build and run
 ./scripts/build_dmg.sh      # Build distributable DMG
+./scripts/build_mas.sh      # Build signed Mac App Store .pkg (needs MAS_* env vars)
 swift test                  # Run unit tests
 ```
 

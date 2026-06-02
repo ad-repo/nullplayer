@@ -43,6 +43,8 @@ The terminal file shows `exit_code: 0` after the build script completes, but new
 
 ## Distribution
 
+### DMG (Direct Download)
+
 ```bash
 ./scripts/build_dmg.sh           # Full release build + DMG
 ./scripts/build_dmg.sh --skip-build  # Use existing release build
@@ -53,6 +55,19 @@ Output:
 - `dist/NullPlayer-X.Y.dmg` — Distributable DMG with Applications symlink
 
 The script builds a release binary, creates the app bundle, copies VLCKit.framework and libprojectM-4.dylib, fixes rpaths, and creates a DMG. The final summary prints the DMG's SHA256 — copy this value into the Homebrew cask on each release.
+
+### Mac App Store
+
+```bash
+./scripts/build_mas.sh           # Full release build + signed installer package
+./scripts/build_mas.sh --skip-build  # Use existing release build
+```
+
+Output:
+- `dist/NullPlayer.app` — Signed application bundle
+- `dist/NullPlayer-X.Y.Z.pkg` — Installer package for App Store submission
+
+Requires environment variables (`MAS_APP_IDENTITY`, `MAS_INSTALLER_IDENTITY`, `MAS_PROVISION_PROFILE`). See `docs/mas-build-guide.md` for detailed setup and submission instructions.
 
 ## Release flow (Homebrew cask)
 
