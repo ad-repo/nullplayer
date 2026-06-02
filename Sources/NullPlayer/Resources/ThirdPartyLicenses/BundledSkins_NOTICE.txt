@@ -1,0 +1,16 @@
+Bundled Skins and Visual Assets
+
+The modern skins bundled with NullPlayer (ArcticMinimal, BananaParty,
+BloodGlass, Bubblegum Retro, EmeraldForge, ForgedTitanium, HyperPopPrism,
+IndustrialSignal, NeonWave, Sakura Minimal, SeaGlass, Skulls, SmoothGlass)
+are original assets created for NullPlayer and are distributed under the
+NullPlayer project license.
+
+The bundled classic skin "NullPlayer-Silver.wsz" uses the Winamp 2.x classic
+skin format. The classic skin format and sprite layout originate from the
+Winamp skinning specification; the bundled skin's artwork is an original work
+produced for NullPlayer.
+
+No third-party copyrighted skin artwork is redistributed without permission.
+If you believe a bundled asset infringes your rights, please open an issue on
+the project repository so it can be removed or re-attributed.

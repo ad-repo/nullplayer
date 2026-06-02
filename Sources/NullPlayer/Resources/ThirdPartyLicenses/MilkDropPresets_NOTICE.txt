@@ -1,0 +1,18 @@
+Bundled MilkDrop / projectM Presets
+
+NullPlayer bundles a curated set of MilkDrop-format (.milk) visualization
+presets that are rendered by the projectM engine. These presets are community
+works originally authored for Winamp's MilkDrop and for projectM, and are
+distributed as part of the widely circulated MilkDrop / projectM preset
+collections (e.g. the "Cream of the Crop" packs).
+
+Attribution: each preset embeds its author(s) in the file name (for example
+"amandio c - ...", "Geiss - ...", "Adam - ..."). The original preset authors
+retain credit for their work. Presets are shared freely by the MilkDrop /
+projectM community for use with compatible visualizers.
+
+The projectM preset collections are distributed by the projectM project:
+https://github.com/projectM-visualizer/presets-cream-of-the-crop
+
+No preset author endorses NullPlayer. Presets are included for interoperability
+with the projectM rendering engine bundled with this application.

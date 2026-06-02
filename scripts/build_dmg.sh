@@ -18,20 +18,6 @@ log_info() { echo -e "${BLUE}ℹ${NC} $1"; }
 log_success() { echo -e "${GREEN}✓${NC} $1"; }
 log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 log_error() { echo -e "${RED}✗${NC} $1" >&2; }
-require_notice_file() {
-    local notice_name="$1"
-    shift
-    local candidate
-    for candidate in "$@"; do
-        if [[ -f "$RESOURCES_DIR/$candidate" ]]; then
-            log_success "Required notice found: $notice_name ($candidate)"
-            return 0
-        fi
-    done
-    log_error "Missing required notice: $notice_name"
-    log_error "Checked locations under app resources: $*"
-    exit 1
-}
 
 # Change to repo root
 cd "$(dirname "$0")/.."
@@ -187,17 +173,12 @@ log_success "Metal shaders copied"
 # Also copy Info.plist from source
 cp "$REPO_ROOT/Sources/NullPlayer/Resources/Info.plist" "$CONTENTS_DIR/"
 
-# Step 6b: Validate required third-party notices are present in the app bundle
+# Step 6b: Validate third-party notices for every bundled dependency.
+# Forward: every component in scripts/third_party_components.tsv ships its
+# license text. Reverse: every framework/dylib in Contents/Frameworks is
+# covered by a manifest entry. Fails the build on any gap.
 log_info "Validating bundled third-party notices..."
-require_notice_file "vis_classic MIT notice" \
-    "vis_classic/LICENSE.txt" \
-    "Resources/vis_classic/LICENSE.txt"
-require_notice_file "Nullsoft FFT notice" \
-    "ThirdPartyLicenses/FFTNullsoft_LICENSE.txt" \
-    "Resources/ThirdPartyLicenses/FFTNullsoft_LICENSE.txt"
-require_notice_file "Geiss BSD-3-Clause notice" \
-    "ThirdPartyLicenses/GEISS_LICENSE.txt" \
-    "Resources/ThirdPartyLicenses/GEISS_LICENSE.txt"
+"$REPO_ROOT/scripts/validate_notices.sh" "$RESOURCES_DIR" "$FRAMEWORKS_DIR"
 
 # Step 7: Create app icon from AppIcon.png
 APP_ICON_PNG="$REPO_ROOT/Sources/NullPlayer/Resources/AppIcon.png"
