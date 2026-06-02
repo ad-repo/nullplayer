@@ -12,6 +12,7 @@ assemble_app() {
     local MACOS_DIR="$CONTENTS_DIR/MacOS"
     local FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
     local RESOURCES_DIR="$CONTENTS_DIR/Resources"
+    local HOMEBREW_REF_PATTERN='^(/opt/homebrew|/usr/local)/'
 
     # Step 1: Check frameworks exist
     log_info "Checking required frameworks..."
@@ -63,7 +64,7 @@ assemble_app() {
         bundle_homebrew_deps() {
             local binary="$1"
             local deps
-            deps=$(otool -L "$binary" 2>/dev/null | awk '{print $1}' | grep '^/opt/homebrew/')
+            deps=$(otool -L "$binary" 2>/dev/null | awk '{print $1}' | grep -E "$HOMEBREW_REF_PATTERN" || true)
             for dep in $deps; do
                 local dep_name
                 dep_name=$(basename "$dep")
@@ -191,21 +192,26 @@ assemble_app() {
 
     # Fix libaubio reference in executable
     if [[ -f "$FRAMEWORKS_DIR/libaubio.5.dylib" ]]; then
-        install_name_tool -change "/opt/homebrew/opt/aubio/lib/libaubio.5.dylib" "@executable_path/../Frameworks/libaubio.5.dylib" "$MACOS_DIR/NullPlayer" 2>/dev/null || true
-        install_name_tool -change "/opt/homebrew/lib/libaubio.5.dylib" "@executable_path/../Frameworks/libaubio.5.dylib" "$MACOS_DIR/NullPlayer" 2>/dev/null || true
+        for aubio_ref in \
+            "/opt/homebrew/opt/aubio/lib/libaubio.5.dylib" \
+            "/opt/homebrew/lib/libaubio.5.dylib" \
+            "/usr/local/opt/aubio/lib/libaubio.5.dylib" \
+            "/usr/local/lib/libaubio.5.dylib"; do
+            install_name_tool -change "$aubio_ref" "@executable_path/../Frameworks/libaubio.5.dylib" "$MACOS_DIR/NullPlayer" 2>/dev/null || true
+        done
         install_name_tool -id "@executable_path/../Frameworks/libaubio.5.dylib" "$FRAMEWORKS_DIR/libaubio.5.dylib" 2>/dev/null || true
     fi
 
     # Fix ALL Homebrew references in ALL bundled dylibs (transitive dependency chain)
-    # This rewrites /opt/homebrew/... paths to @executable_path/../Frameworks/... in every dylib
+    # This rewrites Homebrew paths to @executable_path/../Frameworks/... in every dylib.
     log_info "Fixing Homebrew references in bundled dylibs..."
     for dylib in "$FRAMEWORKS_DIR/"*.dylib; do
         if [[ -f "$dylib" && ! -L "$dylib" ]]; then
             local_name=$(basename "$dylib")
             # Update the dylib's own install name
             install_name_tool -id "@executable_path/../Frameworks/$local_name" "$dylib" 2>/dev/null || true
-            # Find and rewrite all /opt/homebrew references
-            homebrew_refs=$(otool -L "$dylib" 2>/dev/null | awk '{print $1}' | grep '^/opt/homebrew/' || true)
+            # Find and rewrite all Homebrew references
+            homebrew_refs=$(otool -L "$dylib" 2>/dev/null | awk '{print $1}' | grep -E "$HOMEBREW_REF_PATTERN" || true)
             for ref in $homebrew_refs; do
                 ref_name=$(basename "$ref")
                 install_name_tool -change "$ref" "@executable_path/../Frameworks/$ref_name" "$dylib" 2>/dev/null || true
@@ -213,7 +219,7 @@ assemble_app() {
         fi
     done
     # Also fix Homebrew references in the main executable
-    homebrew_refs=$(otool -L "$MACOS_DIR/NullPlayer" 2>/dev/null | awk '{print $1}' | grep '^/opt/homebrew/' || true)
+    homebrew_refs=$(otool -L "$MACOS_DIR/NullPlayer" 2>/dev/null | awk '{print $1}' | grep -E "$HOMEBREW_REF_PATTERN" || true)
     for ref in $homebrew_refs; do
         ref_name=$(basename "$ref")
         install_name_tool -change "$ref" "@executable_path/../Frameworks/$ref_name" "$MACOS_DIR/NullPlayer" 2>/dev/null || true
