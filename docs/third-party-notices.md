@@ -44,6 +44,7 @@ under `ThirdPartyLicenses/` ends up at `Contents/Resources/ThirdPartyLicenses/`.
 - `ThirdPartyNotices.txt` is missing/empty, or
 - `ThirdPartyNotices.txt` does not match freshly generated output, or
 - a `Package.resolved` pin is not covered by a manifest row, or
+- the `Contents/Frameworks` directory is missing, or
 - a bundled framework/dylib is not covered by any manifest `bundle_glob`.
 
 The same script is what a future Mac App Store build should invoke for notice

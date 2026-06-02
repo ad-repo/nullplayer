@@ -151,7 +151,9 @@ if [[ -d "$FRAMEWORKS_DIR" ]]; then
         fi
     done
 else
-    log_warn "Frameworks dir not found ($FRAMEWORKS_DIR) — skipping reverse coverage check"
+    log_err "Frameworks dir not found: $FRAMEWORKS_DIR"
+    log_err "Cannot validate bundled binary notice coverage."
+    errors=$((errors + 1))
 fi
 
 echo ""
