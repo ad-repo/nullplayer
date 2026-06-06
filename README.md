@@ -16,9 +16,7 @@
 
 
 ## Features
-
-- First-class headless CLI for terminal workflows and automation pipelines
-- Scriptable media control across multiple sources and playback targets
+s
 - Library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
 - Plex Media Server integration with PIN-based authentication
 - Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
@@ -29,7 +27,6 @@
 - ProjectM visualizations with 100 included. Users can download more
 - Geiss and Tripex visualizations — ports of classic Winamp-era visualizers with native macOS/OpenGL rendering and runtime controls
 - Met Museum Art visualization — public-domain artwork slideshow with department filters, transitions, and optional audio-reactive effects
-- Sonic similarity radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
 - Plex radio track history with configurable exclusion rules. Stop the same songs from being added to your Plex radio stations
 - Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
