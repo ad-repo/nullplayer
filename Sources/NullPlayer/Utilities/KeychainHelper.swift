@@ -309,21 +309,13 @@ class KeychainHelper {
     private func setDataKeychain(_ data: Data, forKey key: String) -> Bool {
         deleteKeychain(forKey: key)
 
-        // Permissive ACL: any app can access without a prompt.
-        // Required because ad-hoc code signatures change on every rebuild —
-        // a strict ACL would prompt users on every app update.
-        var access: SecAccess?
-        SecAccessCreate("NullPlayer" as CFString, nil, &access)
-
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
             kSecAttrAccount as String: key,
             kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
-        if let access = access {
-            query[kSecAttrAccess as String] = access
-        }
 
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
@@ -335,13 +327,33 @@ class KeychainHelper {
             kSecAttrService as String: Keys.service,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
+            kSecReturnAttributes as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
+        guard status == errSecSuccess,
+              let item = result as? [String: Any],
+              let data = item[kSecValueData as String] as? Data else { return nil }
+
+        // One-time, lazy migration: harden the accessibility class of items that
+        // predate kSecAttrAccessibleWhenUnlockedThisDeviceOnly. Each known key is
+        // upgraded the first time it is read.
+        if item[kSecAttrAccessible as String] as? String
+            != (kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String) {
+            let updateQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: Keys.service,
+                kSecAttrAccount as String: key,
+            ]
+            let attributesToUpdate: [String: Any] = [
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            ]
+            SecItemUpdate(updateQuery as CFDictionary, attributesToUpdate as CFDictionary)
+        }
+
+        return data
     }
 
     private func deleteKeychain(forKey key: String) {

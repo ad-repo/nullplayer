@@ -6,7 +6,7 @@ NullPlayer is submitted to the Mac App Store (MAS) with full feature parity to t
 
 **MAS feature set = DMG feature set MINUS headless CLI mode.** Rationale:
 - The in-bundle `--cli` flag invokes a `.accessory` activation policy (no Dock icon, no menu bar) — not a primary app experience suitable for App Store distribution.
-- The three CLI installer scripts (`scripts/nullplayer`, `scripts/install_cli_launcher.sh`, `scripts/Install NullPlayer CLI.command`, copied to DMG at `scripts/build_dmg.sh:305-312`) write to `/usr/local/bin`, which is prohibited under App Sandbox. They are bundled only in the direct-download DMG.
+- The three CLI installer scripts (`scripts/nullplayer`, `scripts/install_cli_launcher.sh`, `scripts/Install NullPlayer CLI.command`, copied to DMG at `scripts/build_dmg.sh:324-327`) write to `/usr/local/bin`, which is prohibited under App Sandbox. They are bundled only in the direct-download DMG.
 - All other features — including casting, media-server integration, visualizations, and local playback — remain in MAS.
 
 ## Feature Matrix
@@ -50,7 +50,7 @@ NullPlayer is submitted to the Mac App Store (MAS) with full feature parity to t
 | Modern UI (alternate renderer) | ✓ | ✓ | — | `Windows/ModernMainWindow/` |
 | **CLI Mode** | ✓ | **✗** | Sandbox + `/usr/local/bin` | See Exclusions |
 | Headless `--cli` flag playback | ✓ | **✗** | — | `App/main.swift:9-14`, `CLI/CLIMode.swift` |
-| CLI installer scripts | ✓ | **✗** | `/usr/local/bin` write | `scripts/build_dmg.sh:305-312` |
+| CLI installer scripts | ✓ | **✗** | `/usr/local/bin` write | `scripts/build_dmg.sh:324-327` |
 
 ## Excluded from MAS (Direct-Download Only)
 
@@ -61,7 +61,7 @@ NullPlayer is submitted to the Mac App Store (MAS) with full feature parity to t
 
 ### CLI Installer Scripts
 - **What:** Three shell scripts bundled in DMG only (`scripts/nullplayer`, `scripts/install_cli_launcher.sh`, `scripts/Install NullPlayer CLI.command`).
-- **Where:** Copied to DMG staging at `scripts/build_dmg.sh:305-312`.
+- **Where:** Copied to DMG staging at `scripts/build_dmg.sh:324-327`.
 - **Why excluded:** App Sandbox prohibits writing to `/usr/local/bin`. The MAS packaging must not execute this portion of `build_dmg.sh`.
 
 ## App Store Metadata Mapping
@@ -86,14 +86,14 @@ Every claim in the App Store listing must map to an Included feature in the matr
 
 NullPlayer bundles an embedded HTTP server (`Casting/LocalMediaServer.swift`) that:
 - Binds to `0.0.0.0:8765` to serve local audio files to UPnP, Chromecast, Sonos, and DLNA cast devices.
-- Is **not accessible from the internet** — restricted to the local network via Bonjour service discovery and device-specific URLs.
+- Is intended for local-network clients only: the server listens on local interfaces and returns LAN URLs (`http://192.168.x.x:8765/...`) with opaque per-item tokens. Bonjour/device discovery helps find cast targets, but it is not an access-control mechanism.
 - Serves two types of content:
   1. **Local files** (registered via token): Users select files locally; the server returns HTTP URLs for cast devices to fetch directly. Supports HTTP Range requests for seeking.
   2. **Proxied remote streams**: Media servers (Jellyfin, Emby, Subsonic) return stream URLs without file extensions. The server proxies these streams under a token so Sonos (which requires recognizable MIME types) can play them. The app still owns the server credential and stream lifecycle.
 - **Why necessary:** Cast protocols (UPnP/DLNA, Chromecast) require HTTP-accessible media URLs. A local-network server is the only way to expose local files to cast devices on the LAN.
 - **User control:** Users explicitly select cast targets and files; no automatic broadcast or always-on listening.
 
-**Entitlements required:** `com.apple.security.app-sandbox`, `com.apple.security.network.server`, `com.apple.security.network.client`, `com.apple.security.network.local-outbound`.
+**Entitlements required:** `com.apple.security.app-sandbox`, `com.apple.security.network.server`, `com.apple.security.network.client`.
 
 ### Local Network Discovery and Bonjour
 
@@ -142,29 +142,31 @@ The following MAS-specific blockers remain before release:
    - `com.apple.security.files.user-selected.read-only` (for local library scan)
    - `com.apple.security.network.client` (for media server queries + internet radio)
    - `com.apple.security.network.server` (for casting HTTP server)
-   - `com.apple.security.network.local-outbound` (for Bonjour discovery)
    - Corresponding `SecurityScopedBookmark` implementation for persistent file access if needed.
 
-2. **Privacy Manifest** (`PrivacyInfo.xcprivacy`) — Document all API usage:
-   - `NSLocalNetworkUsageReason`: "Discover and cast to local devices"
-   - `NSBonjourUsageReason`: "Discover Chromecast, AirPlay, and DLNA devices"
-   - `NSFileAppsWithLocalNetworkUsageReason`: Keychain and Bonjour access (if required)
-   - AudioToolbox, AVFoundation, MediaPlayer usage for playback and Now Playing integration.
+2. **Info.plist local-network declarations** — Keep the local-network purpose string and Bonjour service list aligned with casting scope:
+   - `NSLocalNetworkUsageDescription` (why the app discovers and casts to local devices)
+   - `NSBonjourServices` entries for browsed service types such as `_googlecast._tcp`, `_airplay._tcp`, and `_raop._tcp`
 
-3. **Code Signing and Notarization** — Sign with Apple Developer certificate (not ad-hoc). The current DMG uses ad-hoc signing (`scripts/build_dmg.sh:269-287`); MAS requires:
+3. **Privacy Manifest** (`PrivacyInfo.xcprivacy`) — Include only Apple's supported privacy manifest keys. Do not add local-network or Bonjour purpose strings to the privacy manifest; those belong in `Info.plist`. For required-reason APIs, use `NSPrivacyAccessedAPITypes` entries with an API category and reason codes, for example:
+   - `NSPrivacyAccessedAPIType` = `NSPrivacyAccessedAPICategoryUserDefaults`, `NSPrivacyAccessedAPITypeReasons` = `CA92.1` for app-only preferences and saved state.
+   - `NSPrivacyAccessedAPIType` = `NSPrivacyAccessedAPICategoryFileTimestamp`, `NSPrivacyAccessedAPITypeReasons` = `3B52.1` for timestamps and metadata on user-selected media/library folders.
+   - Add data collection/tracking keys only if the final MAS build collects data as defined by Apple's privacy manifest schema.
+
+4. **Code Signing and App Store Connect Upload** — Sign with the MAS distribution identity (not ad-hoc). The current DMG uses ad-hoc signing (`scripts/build_dmg.sh:288-305`); MAS requires:
    - Provisioning profile (`com.nullplayer.app` MAS profile from App Store Connect).
    - `xcodebuild` with `-signingIdentity` and `-allowProvisioningUpdates`.
-   - Automatic notarization via Xcode or `xcrun altool` (required for distribution).
+   - Upload/validate with App Store Connect via Xcode, Transporter, or `xcrun altool`. Notarization is not a separate requirement for Mac App Store distribution. If a direct-distribution Developer ID artifact is notarized separately, use `xcrun notarytool submit --wait` or `xcrun notarytool wait`/`info`, then `xcrun stapler staple`; do not use `altool` for notarization.
 
-4. **MAS Build Script** — Create a separate MAS build that:
+5. **MAS Build Script** — Create a separate MAS build that:
    - Runs the standard SPM build with MAS entitlements.
    - Invokes `scripts/validate_notices.sh` for third-party notice compliance (see `docs/third-party-notices.md`).
-   - **Does NOT** execute the CLI installer copy step (`scripts/build_dmg.sh:305-312`).
-   - Uploads to App Store Connect via `xcrun altool` or the new App Store Connect API.
+   - **Does NOT** execute the CLI installer copy step (`scripts/build_dmg.sh:324-327`).
+   - Uploads to App Store Connect via Xcode, Transporter, or `xcrun altool`.
 
-5. **GPL-3.0 Risk Assessment** — Monitor Apple's response to KSPlayer/FFmpeg/aubio. If rejected, prioritize video stack removal or native codec replacement. Track in a follow-up issue.
+6. **GPL-3.0 Risk Assessment** — Monitor Apple's response to KSPlayer/FFmpeg/aubio. If rejected, prioritize video stack removal or native codec replacement. Track in a follow-up issue.
 
-Related issue: **#240** (third-party notices audit and validation) provides the foundational component licensing audit. The MAS entitlements and privacy manifest (items 1–2 above) depend on #240 being merged.
+Related issue: **#240** (third-party notices audit and validation) provides the foundational component licensing audit. The MAS entitlements, Info.plist declarations, and privacy manifest (items 1–3 above) depend on #240 being merged.
 
 ## Testing Checklist (Before Submission)
 
