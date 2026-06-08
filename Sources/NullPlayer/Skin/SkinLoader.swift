@@ -67,22 +67,11 @@ class SkinLoader {
         // Some skins extract to a subdirectory - detect and use it if present
         let skinDirectory = findSkinDirectory(in: directory)
         let fileIndex = buildCaseInsensitiveFileIndex(in: skinDirectory)
-        
-        // Check if we're on a non-Retina display
-        let isNonRetina = (NSScreen.main?.backingScaleFactor ?? 2.0) < 1.5
-        
+
         // Helper to load BMP with true case-insensitive filename matching
         func loadImage(_ name: String) -> NSImage? {
             guard let url = resolveFileURL(named: name, ext: "bmp", in: fileIndex) else { return nil }
-            if var image = loadBMP(from: url) {
-                // On non-Retina displays, convert blue-tinted pixels to grayscale
-                // to prevent blue line artifacts
-                if isNonRetina {
-                    image = processForNonRetina(image)
-                }
-                return image
-            }
-            return nil
+            return loadBMP(from: url)
         }
         
         // Load playlist colors
@@ -204,54 +193,6 @@ class SkinLoader {
             print("Failed to load BMP from \(url): \(error)")
             return nil
         }
-    }
-    
-    /// Process an image for non-Retina displays by converting blue-tinted pixels to grayscale.
-    /// This prevents blue line artifacts that appear on 1x displays due to sub-pixel rendering.
-    private func processForNonRetina(_ image: NSImage) -> NSImage {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData) else {
-            return image
-        }
-        
-        let width = bitmap.pixelsWide
-        let height = bitmap.pixelsHigh
-        
-        for y in 0..<height {
-            for x in 0..<width {
-                guard let color = bitmap.colorAt(x: x, y: y) else { continue }
-                
-                let r = Int(color.redComponent * 255)
-                let g = Int(color.greenComponent * 255)
-                let b = Int(color.blueComponent * 255)
-                
-                // Skip magenta transparency (255, 0, 255)
-                if r == 255 && g == 0 && b == 255 { continue }
-                
-                // Skip near-white/bright pixels
-                if r > 200 && g > 200 && b > 200 { continue }
-                
-                // Skip warm colors (red/yellow/orange dominant)
-                if r > b && g >= b { continue }
-                
-                // Skip green-dominant pixels (used for indicators like stereo, mono)
-                if g > r && g > b { continue }
-                
-                // This pixel has blue tint - convert to grayscale
-                if b > r && b > g {
-                    let gray = Int(Double(r) * 0.299 + Double(g) * 0.587 + Double(b) * 0.114)
-                    let newColor = NSColor(calibratedRed: CGFloat(gray)/255.0,
-                                           green: CGFloat(gray)/255.0,
-                                           blue: CGFloat(gray)/255.0,
-                                           alpha: color.alphaComponent)
-                    bitmap.setColor(newColor, atX: x, y: y)
-                }
-            }
-        }
-        
-        let newImage = NSImage(size: image.size)
-        newImage.addRepresentation(bitmap)
-        return newImage
     }
     
     private func loadPlaylistColors(from directory: URL) -> PlaylistColors {

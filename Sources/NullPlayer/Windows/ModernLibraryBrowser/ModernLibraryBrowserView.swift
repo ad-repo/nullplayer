@@ -775,8 +775,8 @@ class ModernLibraryBrowserView: NSView {
                                         headerTitle: "Library Data")
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.wantsLayer = true
-        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        hostingView.layer?.isOpaque = false
+        hostingView.layer?.backgroundColor = skin.backgroundColor.withAlphaComponent(1.0).cgColor
+        hostingView.layer?.isOpaque = true
         hostingView.appearance = skinAppearance(for: skin)
         hostingView.setAccessibilityIdentifier("modernLibraryBrowser.data")
         hostingView.setAccessibilityLabel("Library Data")
@@ -6443,6 +6443,7 @@ class ModernLibraryBrowserView: NSView {
                                                         skinTextColor: Color(skin.textColor),
                                                         headerTitle: "Library Data")
         historyHostingView?.appearance = skinAppearance(for: skin)
+        historyHostingView?.layer?.backgroundColor = skin.backgroundColor.withAlphaComponent(1.0).cgColor
         invalidateServerBarFontCache()
         updateCornerMask()
         updateEmbeddedSubviewFrames()

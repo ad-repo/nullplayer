@@ -35,42 +35,7 @@ Visible lines at tile boundaries occurred because:
 
 ## Working Solutions
 
-### 1. Runtime Image Processing in SkinLoader
-
-**Approach**: Process skin images at load time, converting blue-tinted pixels to grayscale only on non-Retina displays.
-
-**Implementation** in `SkinLoader.swift`:
-
-```swift
-private func loadSkin(from directory: URL) throws -> Skin {
-    // Check if we're on a non-Retina display
-    let isNonRetina = (NSScreen.main?.backingScaleFactor ?? 2.0) < 1.5
-    
-    func loadImage(_ name: String) -> NSImage? {
-        // ... load BMP ...
-        if var image = loadBMP(from: url) {
-            if isNonRetina {
-                image = processForNonRetina(image)
-            }
-            return image
-        }
-    }
-}
-
-private func processForNonRetina(_ image: NSImage) -> NSImage {
-    // Convert blue-tinted pixels to grayscale while preserving:
-    // - Magenta transparency (255, 0, 255)
-    // - Bright/white pixels
-    // - Warm colors (red/yellow/orange)
-    
-    for each pixel:
-        if b > r || b > g:  // Has blue tint
-            gray = luminance(r, g, b)
-            set pixel to (gray, gray, gray)
-}
-```
-
-### 2. Rounded Coordinates for Text/Scroll
+### 1. Rounded Coordinates for Text/Scroll
 
 Round pixel coordinates to integers on non-Retina displays to prevent sub-pixel positioning artifacts.
 
@@ -82,7 +47,7 @@ let roundedScrollOffset = backingScale < 1.5 ? round(scrollOffset) : scrollOffse
 
 **Why it works**: Prevents text "shimmering" during scroll.
 
-### 3. NSImage-Based Title Bar Rendering
+### 2. NSImage-Based Title Bar Rendering
 
 Use NSImage-based sprite drawing instead of CGImage with `interpolationQuality = .none`.
 
@@ -99,7 +64,7 @@ drawSprite(from: pleditImage, sourceRect: leftCorner,
 
 **Why it works**: NSImage-based drawing uses default interpolation which blends pixel edges smoothly.
 
-### 4. Playlist Window Tile Seam Fixes
+### 3. Playlist Window Tile Seam Fixes
 
 **Problem**: Vertical and horizontal line artifacts at tile boundaries on non-Retina displays.
 
@@ -164,7 +129,7 @@ while y >= contentTop - tileHeight {
 - Bottom-to-top tiling places partial tiles where they're less visible
 - Overlap ensures tiles blend together
 
-### 5. Targeted Redraw for Visualizer Animation
+### 4. Targeted Redraw for Visualizer Animation
 
 **Problem**: Album Art Visualizer running at 60fps caused title bar/menu items to shimmer on non-Retina displays when marking entire view for redraw.
 
@@ -186,7 +151,7 @@ self.setNeedsDisplay(contentRect)
 
 **Why it works**: Only the animated area gets redrawn, menu items remain stable.
 
-### 6. Targeted Redraw for Loading Animation
+### 5. Targeted Redraw for Loading Animation
 
 **Solution**: Apply the same targeted redraw approach to the loading spinner animation.
 
@@ -207,16 +172,15 @@ self.setNeedsDisplay(listRect)
 
 ## Files Changed
 
-1. **`Skin/SkinLoader.swift`** - Added `processForNonRetina()` for blue-to-grayscale conversion
-2. **`Skin/SkinRenderer.swift`** - NSImage rendering for title bars, playlist tile fixes
-3. **`Windows/PlexBrowser/PlexBrowserView.swift`** - Rounded coordinates, targeted redraws
-4. **`Windows/Playlist/PlaylistView.swift`** - Rounded scroll offset
+1. **`Skin/SkinRenderer.swift`** - NSImage rendering for title bars, playlist tile fixes
+2. **`Windows/PlexBrowser/PlexBrowserView.swift`** - Rounded coordinates, targeted redraws
+3. **`Windows/Playlist/PlaylistView.swift`** - Rounded scroll offset
 
 ## Key Learnings
 
 1. **Don't disable anti-aliasing** - It actually helps blend problematic pixels
 2. **Avoid modifying BMP files** - Format differences cause rendering issues
-3. **Runtime processing is safer** - Keeps original assets intact
+3. **Blanket color conversion is risky** - The blue-to-grayscale conversion (issue #256) was removed because it discolored legitimate blue tones across all classic skins on 1× displays. If blue-line artifacts resurface, address them via the anti-aliasing and rounded-coordinate strategies documented in sections 1–5 above, not by mangling pixel colors.
 4. **NSImage vs CGImage matters** - CGImage with `.none` makes edges harsh
 5. **Tile seams need multiple strategies** - Background fill, overlap, draw order
 6. **Non-Retina fixes must be conditional** - Always check `backingScaleFactor < 1.5`
