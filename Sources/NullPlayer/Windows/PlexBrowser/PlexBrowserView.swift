@@ -10451,7 +10451,7 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuPlayLocalPlaylist(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? PlexDisplayItem,
               case .localPlaylist(let p) = item.type else { return }
-        WindowManager.shared.audioEngine.playNow(parsePlaylistTracks(at: p.url))
+        playLocalPlaylist(p.url)
     }
 
     @objc private func contextMenuPlayPlaylistTrack(_ sender: NSMenuItem) {
@@ -13639,7 +13639,7 @@ class PlexBrowserView: NSView {
         case .search:
             buildLocalSearchItems()
         case .plists:
-            cachedLocalPlaylists = MediaLibrary.shared.playlistsSnapshot
+            refreshCachedLocalPlaylists()
             buildLocalPlaylistItems()
         case .movies:
             cachedLocalMovies = library.moviesSnapshot
@@ -14522,30 +14522,20 @@ class PlexBrowserView: NSView {
         }
     }
 
-    private func parsePlaylistTracks(at url: URL) -> [Track] {
-        var result: [Track] = []
-        let ext = url.pathExtension.lowercased()
+    private func refreshCachedLocalPlaylists() {
+        cachedLocalPlaylists = MediaLibrary.shared.playlistsSnapshot
+        let validKeys = Set(cachedLocalPlaylists.map { $0.url.path })
+        localPlaylistTracks = localPlaylistTracks.filter { validKeys.contains($0.key) }
+        expandedLocalPlaylists.formIntersection(validKeys)
+    }
 
-        let playlist: Playlist?
-        if ext == "m3u" || ext == "m3u8" {
-            playlist = try? Playlist.fromM3U(url: url)
-        } else if ext == "pls" {
-            playlist = try? Playlist.fromPLS(url: url)
-        } else {
-            return []
-        }
-
-        guard let playlist = playlist else { return [] }
-
-        for trackURL in playlist.trackURLs {
-            if let libTrack = MediaLibrary.shared.findTrack(byURL: trackURL) {
-                result.append(libTrack.toTrack())
-            } else {
-                result.append(Track(lightweightURL: trackURL))
+    private func playLocalPlaylist(_ url: URL) {
+        Task.detached {
+            let tracks = parsePlexLocalPlaylistTracks(at: url)
+            await MainActor.run {
+                WindowManager.shared.audioEngine.playNow(tracks)
             }
         }
-
-        return result
     }
 
     /// Format duration in seconds to mm:ss
@@ -15912,7 +15902,7 @@ class PlexBrowserView: NSView {
             case .search:
                 buildLocalSearchItems()
             case .plists:
-                cachedLocalPlaylists = MediaLibrary.shared.playlistsSnapshot
+                refreshCachedLocalPlaylists()
                 buildLocalPlaylistItems()
             case .movies:
                 cachedLocalMovies = MediaLibrary.shared.moviesSnapshot
@@ -16677,10 +16667,11 @@ class PlexBrowserView: NSView {
                 if localPlaylistTracks[key] == nil {
                     let url = p.url
                     Task.detached { [weak self] in
-                        let tracks = self?.parsePlaylistTracks(at: url) ?? []
-                        await MainActor.run {
-                            self?.localPlaylistTracks[key] = tracks
-                            self?.rebuildCurrentModeItems()
+                        let tracks = parsePlexLocalPlaylistTracks(at: url)
+                        await MainActor.run { [weak self] in
+                            guard let self else { return }
+                            self.localPlaylistTracks[key] = tracks
+                            self.rebuildCurrentModeItems()
                         }
                     }
                     return
@@ -16948,7 +16939,7 @@ class PlexBrowserView: NSView {
         case .localRadioStation(let radioType):
             playLocalRadioStation(radioType)
         case .localPlaylist(let p):
-            WindowManager.shared.audioEngine.playNow(parsePlaylistTracks(at: p.url))
+            playLocalPlaylist(p.url)
         case .localPlaylistTrack(let t):
             WindowManager.shared.audioEngine.playNow([t])
         }
@@ -18311,4 +18302,30 @@ extension PlexDisplayItem {
     private static func formatDate(_ date: Date) -> String {
         dateFormatter.string(from: date)
     }
+}
+
+private func parsePlexLocalPlaylistTracks(at url: URL) -> [Track] {
+    var result: [Track] = []
+    let ext = url.pathExtension.lowercased()
+
+    let playlist: Playlist?
+    if ext == "m3u" || ext == "m3u8" {
+        playlist = try? Playlist.fromM3U(url: url)
+    } else if ext == "pls" {
+        playlist = try? Playlist.fromPLS(url: url)
+    } else {
+        return []
+    }
+
+    guard let playlist = playlist else { return [] }
+
+    for trackURL in playlist.trackURLs {
+        if let libTrack = MediaLibrary.shared.findTrack(byURL: trackURL) {
+            result.append(libTrack.toTrack())
+        } else {
+            result.append(Track(lightweightURL: trackURL))
+        }
+    }
+
+    return result
 }

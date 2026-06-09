@@ -5567,7 +5567,7 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuPlayLocalPlaylist(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? ModernDisplayItem,
               case .localPlaylist(let p) = item.type else { return }
-        WindowManager.shared.audioEngine.playNow(parsePlaylistTracks(at: p.url))
+        playLocalPlaylist(p.url)
     }
     @objc private func contextMenuPlayPlaylistTrack(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? Track else { return }
@@ -8186,7 +8186,7 @@ class ModernLibraryBrowserView: NSView {
         case .search:
             buildLocalSearchItems()
         case .plists:
-            cachedLocalPlaylists = MediaLibrary.shared.playlistsSnapshot
+            refreshCachedLocalPlaylists()
             buildLocalPlaylistItems()
         case .movies:
             cachedLocalMovies = library.moviesSnapshot
@@ -9597,30 +9597,20 @@ class ModernLibraryBrowserView: NSView {
         }
     }
 
-    private func parsePlaylistTracks(at url: URL) -> [Track] {
-        var result: [Track] = []
-        let ext = url.pathExtension.lowercased()
+    private func refreshCachedLocalPlaylists() {
+        cachedLocalPlaylists = MediaLibrary.shared.playlistsSnapshot
+        let validKeys = Set(cachedLocalPlaylists.map { $0.url.path })
+        localPlaylistTracks = localPlaylistTracks.filter { validKeys.contains($0.key) }
+        expandedLocalPlaylists.formIntersection(validKeys)
+    }
 
-        let playlist: Playlist?
-        if ext == "m3u" || ext == "m3u8" {
-            playlist = try? Playlist.fromM3U(url: url)
-        } else if ext == "pls" {
-            playlist = try? Playlist.fromPLS(url: url)
-        } else {
-            return []
-        }
-
-        guard let playlist = playlist else { return [] }
-
-        for trackURL in playlist.trackURLs {
-            if let libTrack = MediaLibrary.shared.findTrack(byURL: trackURL) {
-                result.append(libTrack.toTrack())
-            } else {
-                result.append(Track(lightweightURL: trackURL))
+    private func playLocalPlaylist(_ url: URL) {
+        Task.detached {
+            let tracks = parseModernLocalPlaylistTracks(at: url)
+            await MainActor.run {
+                WindowManager.shared.audioEngine.playNow(tracks)
             }
         }
-
-        return result
     }
 
     // MARK: - Build Jellyfin Display Items
@@ -10137,7 +10127,7 @@ class ModernLibraryBrowserView: NSView {
             case .movies: buildLocalMovieItems()
             case .shows: buildLocalShowItems()
             case .plists:
-                cachedLocalPlaylists = MediaLibrary.shared.playlistsSnapshot
+                refreshCachedLocalPlaylists()
                 buildLocalPlaylistItems()
             case .radio, .history: displayItems = []
             }
@@ -10520,10 +10510,11 @@ class ModernLibraryBrowserView: NSView {
                 if localPlaylistTracks[key] == nil {
                     let url = p.url
                     Task.detached { [weak self] in
-                        let tracks = self?.parsePlaylistTracks(at: url) ?? []
-                        await MainActor.run {
-                            self?.localPlaylistTracks[key] = tracks
-                            self?.rebuildCurrentModeItems()
+                        let tracks = parseModernLocalPlaylistTracks(at: url)
+                        await MainActor.run { [weak self] in
+                            guard let self else { return }
+                            self.localPlaylistTracks[key] = tracks
+                            self.rebuildCurrentModeItems()
                         }
                     }
                     return
@@ -10930,10 +10921,36 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfinRadioStation(let r): playJellyfinRadioStation(r)
         case .embyRadioStation(let r): playEmbyRadioStation(r)
         case .localRadioStation(let r): playLocalRadioStation(r)
-        case .localPlaylist(let p): WindowManager.shared.audioEngine.playNow(parsePlaylistTracks(at: p.url))
+        case .localPlaylist(let p): playLocalPlaylist(p.url)
         case .localPlaylistTrack(let t): WindowManager.shared.audioEngine.playNow([t])
         }
     }
+}
+
+private func parseModernLocalPlaylistTracks(at url: URL) -> [Track] {
+    var result: [Track] = []
+    let ext = url.pathExtension.lowercased()
+
+    let playlist: Playlist?
+    if ext == "m3u" || ext == "m3u8" {
+        playlist = try? Playlist.fromM3U(url: url)
+    } else if ext == "pls" {
+        playlist = try? Playlist.fromPLS(url: url)
+    } else {
+        return []
+    }
+
+    guard let playlist = playlist else { return [] }
+
+    for trackURL in playlist.trackURLs {
+        if let libTrack = MediaLibrary.shared.findTrack(byURL: trackURL) {
+            result.append(libTrack.toTrack())
+        } else {
+            result.append(Track(lightweightURL: trackURL))
+        }
+    }
+
+    return result
 }
 
 // MARK: - Tags Panel Cleanup
