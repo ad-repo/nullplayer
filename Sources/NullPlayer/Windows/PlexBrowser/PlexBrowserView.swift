@@ -893,7 +893,7 @@ class PlexBrowserView: NSView {
     /// The in-flight Folders walk, cancelled when a newer rebuild starts (fast-click protection).
     private var localFolderBuildTask: Task<Void, Never>?
     private var localPlistsSlotShowsFolders: Bool {
-        get { UserDefaults.standard.bool(forKey: "ClassicLocalPlistsSlotShowsFolders") }
+        get { UserDefaults.standard.object(forKey: "ClassicLocalPlistsSlotShowsFolders") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "ClassicLocalPlistsSlotShowsFolders") }
     }
     private var effectivePlistsSlotMode: PlexBrowseMode {

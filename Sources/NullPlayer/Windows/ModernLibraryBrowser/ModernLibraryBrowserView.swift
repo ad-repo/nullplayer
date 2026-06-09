@@ -319,7 +319,7 @@ class ModernLibraryBrowserView: NSView {
 
     // Local Plists slot toggle state (switch between Plists and Folders)
     private var localPlistsSlotShowsFolders: Bool {
-        get { UserDefaults.standard.bool(forKey: "LocalPlistsSlotShowsFolders") }
+        get { UserDefaults.standard.object(forKey: "LocalPlistsSlotShowsFolders") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "LocalPlistsSlotShowsFolders") }
     }
 
