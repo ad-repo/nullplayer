@@ -2,6 +2,10 @@
 
 ## 0.26.0
 
+### New Features
+
+- **Local `.m3u`/`.pls` playlists in the Plists tab (#264)** — the local library browser's **Plists** tab now lists `.m3u`, `.m3u8`, and `.pls` playlist files found on disk, matching what the Plex/Subsonic/Jellyfin/Emby sources already show there (previously the tab was always empty for the local source). Playlist files are discovered during the normal library scan and their *locations* persisted in a small `library_playlists` table — the track contents are not stored, but parsed lazily the first time you expand a playlist. Expanding shows each entry as a row: entries that match a file already in your library carry its metadata and duration, while unmatched paths still appear and remain playable. Double-clicking a playlist row loads and plays the whole list; double-clicking a single entry plays just that track; the disclosure triangle expands as usual. Removing a playlist file from disk drops it from the tab on the next scan, while a transiently unreachable network folder leaves the list intact (the same offline-volume safety guard used for tracks). Implemented identically in both the modern and classic library browsers. Pairs with the earlier "browse by folder structure" work under the same "organize by what's actually on disk" philosophy.
+
 ### Bug Fixes
 
 - **Popup dialogs no longer hide behind always-on-top windows (#254)** — with **Always on Top** enabled, opening a popup dialog (e.g. *Add Radio Station*) appeared to do nothing: the dialog opened at the normal window level, *below* the main window which had been raised to the floating level, so it was completely obscured until the main window was dragged aside. These transient dialogs now open at the `.modalPanel` level so they always sit above the app's floating windows, matching the tag-editor and Plex link dialogs that already did this. Covers Add/Edit Radio Station, the Subsonic/Jellyfin/Emby link and server-list sheets, the watch-folder manager, and the auto-tag album candidate picker.
