@@ -14,7 +14,7 @@ NullPlayer is submitted to the Mac App Store (MAS) with full feature parity to t
 | Feature | DMG | MAS | Sandbox Impact | Evidence |
 |---------|-----|-----|-----------------|----------|
 | **Playback** | ✓ | ✓ | — | Local + streaming |
-| Audio formats (MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG) | ✓ | ✓ | — | `Info.plist` line 60–69 |
+| Audio formats (MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG) | ✓ | ✓ | — | `Sources/NullPlayer/Resources/Info.plist` document types |
 | Video formats (MKV, MP4, MOV, AVI, WebM, HEVC) | ✓ | ✓ | Requires file access | `Windows/VideoPlayer/VideoPlayerWindowController.swift` (KSPlayer/FFmpeg libraries) |
 | **Casting** | ✓ | ✓ | High | See Review Notes |
 | Chromecast | ✓ | ✓ | Local network + HTTP | `Casting/ChromecastManager.swift` |
@@ -97,7 +97,7 @@ NullPlayer bundles an embedded HTTP server (`Casting/LocalMediaServer.swift`) th
 
 ### Local Network Discovery and Bonjour
 
-The app uses `NSLocalNetworkUsageDescription` (`Info.plist:27-28`) and registers three Bonjour service types (`_googlecast._tcp`, `_airplay._tcp`, `_raop._tcp`) to discover cast devices on the local network. This is required for cast device enumeration and only happens after the user grants local network permission.
+The app uses `NSLocalNetworkUsageDescription` and registers Bonjour service types (`_googlecast._tcp`, `_airplay._tcp`, `_raop._tcp`, `_sonos._tcp`) to discover cast devices on the local network. This is required for cast device enumeration and only happens after the user grants local network permission.
 
 **User impact:** One system privacy prompt on first casting attempt. No background scanning.
 
@@ -109,14 +109,14 @@ The app stores media server credentials (Plex auth token, Jellyfin/Emby auth + s
 
 **User impact:** Standard Keychain unlock prompt on first access after login or when the Keychain is locked. No background credential sync.
 
-### Arbitrary Loads for Media (NSAllowsArbitraryLoadsForMedia)
+### Cleartext HTTP Streams (NSAllowsArbitraryLoads)
 
-`Info.plist:46-47` sets `NSAllowsArbitraryLoadsForMedia` to allow plain-HTTP media streams from:
-- Internet radio stations (Shoutcast/Icecast over HTTP).
+`Sources/NullPlayer/Resources/Info.plist` sets `NSAllowsArbitraryLoads` to allow plain-HTTP media streams from:
+- Internet radio stations (Shoutcast/Icecast over HTTP), including arbitrary user-supplied hosts and custom ports loaded through `URLSession` by the AudioStreaming library.
 - Media servers that serve streams over HTTP (not HTTPS).
 - The embedded local HTTP server (`http://192.168.x.x:8765`).
 
-**Justification:** Media servers (Jellyfin, Emby, Navidrome) in home/lab setups often use self-signed certs or plain HTTP. Users own these servers and consciously connect to them. Restricting to HTTPS would break legitimate use cases.
+**Justification:** Internet radio stations and user-owned media servers (Jellyfin, Emby, Navidrome) often use plain HTTP, self-signed certificates, or nonstandard stream ports. Users explicitly add these stations and servers. Restricting playback to HTTPS would break legitimate media-player use cases. `NSAllowsArbitraryLoadsForMedia` is not sufficient here because internet radio playback uses `URLSession`, not AVFoundation.
 
 ### GPL-3.0 Components (Flagged Risk)
 
@@ -146,7 +146,7 @@ The following MAS-specific blockers remain before release:
 
 2. **Info.plist local-network declarations** — Keep the local-network purpose string and Bonjour service list aligned with casting scope:
    - `NSLocalNetworkUsageDescription` (why the app discovers and casts to local devices)
-   - `NSBonjourServices` entries for browsed service types such as `_googlecast._tcp`, `_airplay._tcp`, and `_raop._tcp`
+   - `NSBonjourServices` entries for browsed service types such as `_googlecast._tcp`, `_airplay._tcp`, `_raop._tcp`, and `_sonos._tcp`
 
 3. **Privacy Manifest** (`PrivacyInfo.xcprivacy`) — Include only Apple's supported privacy manifest keys. Do not add local-network or Bonjour purpose strings to the privacy manifest; those belong in `Info.plist`. For required-reason APIs, use `NSPrivacyAccessedAPITypes` entries with an API category and reason codes, for example:
    - `NSPrivacyAccessedAPIType` = `NSPrivacyAccessedAPICategoryUserDefaults`, `NSPrivacyAccessedAPITypeReasons` = `CA92.1` for app-only preferences and saved state.

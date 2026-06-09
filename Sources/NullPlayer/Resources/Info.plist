@@ -15,7 +15,7 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.24.0</string>
+    <string>0.25.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
@@ -47,9 +47,14 @@
     <!-- App Transport Security for local network communication -->
     <key>NSAppTransportSecurity</key>
     <dict>
-        <key>NSAllowsLocalNetworking</key>
+        <!-- Internet radio plays cleartext-HTTP Icecast/SHOUTcast streams from
+             arbitrary user-supplied hosts via URLSession (AudioStreaming).
+             NSAllowsArbitraryLoadsForMedia does NOT cover this — that key only
+             exempts AVFoundation media loads, not URLSession — so http:// stations
+             were silently blocked by ATS (stuck buffering, never play). See #255. -->
+        <key>NSAllowsArbitraryLoads</key>
         <true/>
-        <key>NSAllowsArbitraryLoadsForMedia</key>
+        <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
     
