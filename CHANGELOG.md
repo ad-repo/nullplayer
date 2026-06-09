@@ -1,10 +1,26 @@
 # Changelog
 
-## 0.24.0
+## 0.25.0
 
 ### New Features
 
 - **Browse local library by folder structure** — the local library can now be browsed by its actual on-disk folder hierarchy instead of by Artist/Album/Playlist metadata. Rather than adding a ninth tab, the existing **Plists** tab slot doubles as a toggle: **double-click** it (local source only) to flip between *Plists* and *Folders*; single-click selects whichever the slot currently shows, and the choice persists across launches. The Folders view reflects what is actually on disk right now — including files that haven't been scanned into the library yet — read lazily one directory level at a time as folders are expanded; library metadata (title, duration) enriches a file row only when that file is in the database. Folders sort first, then files, case-insensitively; symlinked directories are skipped to avoid loops. Right-click a folder for Play / Play and Replace Queue / Play Next / Add to Queue / Show in Finder, which recursively collect every supported audio file beneath it. Filesystem enumeration and database lookups run off the main thread (with per-click cancellation and a loading spinner) so large network/NAS folders don't stall the UI. Implemented independently in both the modern and classic library browsers.
+
+### Improvements
+
+- **Keychain credentials hardened (#253)** — saved server credentials (Plex, Subsonic, Jellyfin, Emby) are now stored with the `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` accessibility class, so they are only readable while the Mac is unlocked and never sync off the device. The previous permissive per-item ACL has been removed. Entries written by earlier versions are upgraded automatically and lazily the first time each one is read.
+
+### Bug Fixes
+
+- **Non-Retina classic skin colors fixed (#256)** — removed the blanket blue→grayscale conversion in `SkinLoader.processForNonRetina()` that ran on 1× displays, converting every blue-dominant pixel to gray across all classic skin sprites and stripping legitimate blue tones from every skin. The conversion never ran on Retina, which had masked the bug.
+- **Non-Retina Data tab text/chart blur fixed (#257)** — the modern Library Browser "Data" tab hosting view is now opaque (`isOpaque = true` with an opaque skin background, kept in sync on skin change). A clear, non-opaque layer had disabled AppKit font smoothing, blurring text and charts on 1× displays; it now mirrors the classic PlexBrowser twin.
+- **Local library expand re-sort fixed (#262)** — with a column sort active, double-clicking an Artist or Album to expand it no longer reshuffles the top-level list. The list shown before expanding came from the in-memory column sort (`LibraryTextSorter`: diacritic-insensitive, numeric, leading-article-aware), but expanding a row rebuilt it from the store's SQLite `BINARY` collation order and skipped re-sorting once nested rows were present — so the order silently snapped to the raw store order, most visibly around names with special characters, mixed case, or leading articles. The local-library views in `ModernLibraryBrowserView` and `PlexBrowserView` now re-sort top-level groups (each leader plus its expanded children) with the same comparator, keeping visible order stable through expand/collapse.
+- **HTTP-only internet radio streams now play (#255)** — adding a station whose stream URL is plain `http://` (e.g. many Icecast/SHOUTcast servers on custom ports) silently failed to play: it sat buffering forever and never started. Internet radio plays through the AudioStreaming library, which fetches over `URLSession`, but the app's App Transport Security config only declared `NSAllowsArbitraryLoadsForMedia` — a key that exempts *AVFoundation* media loads, **not** `URLSession` — so cleartext connections were blocked by ATS. The reported "`.mp3` links work, others don't" pattern was a coincidence: the working stations happened to be `https://`, and the real distinction was scheme, not file extension or audio format. `Info.plist` now sets `NSAllowsArbitraryLoads` so http stations connect.
+
+## 0.24.0
+
+### New Features
+
 - **Reference Tuning** — Playback > Options > **Reference Tuning** can pitch-shift all local playback to a different reference frequency (e.g. retune A=440 content to A=432). Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog accepting source/target Hz are exposed in the menu; settings persist across launches. Applies to local files and HTTP streaming (Plex/Subsonic/Jellyfin/Emby/radio) via `AVAudioUnitTimePitch` nodes inserted into the active local or streaming graph; the spectrum analyzer continues to display source (pre-pitch) frequencies. Not available while casting (Sonos / Chromecast / DLNA) because the remote renderer receives the stream URL directly with no local audio graph to insert the pitch shifter into. CLI flags `--tuning <off|Hz>`, `--tuning-source <Hz>`, and `--tuning-offset-cents <n>` provide session-only overrides.
 - **Playback Speed** — Playback > Options > **Playback Speed** can adjust tempo from 0.25× to 4.0× while preserving pitch. Presets for 0.25×, 0.5×, 0.75×, 1.0×, 1.25×, 1.5×, 1.75×, 2.0×, 2.5×, 3.0×, 4.0×, plus a Custom… dialog are exposed in the menu; settings persist across launches. Applies to local files and HTTP streaming (Plex/Subsonic/Jellyfin/Emby/radio). Not available while casting (Sonos / Chromecast / DLNA) because the remote renderer receives the stream URL directly with no local audio graph to time-stretch.
 
@@ -22,12 +38,9 @@
 
 ### Bug Fixes
 
-- **Non-Retina classic skin colors fixed (#256)** — removed the blanket blue→grayscale conversion in `SkinLoader.processForNonRetina()` that ran on 1× displays, converting every blue-dominant pixel to gray across all classic skin sprites and stripping legitimate blue tones from every skin. The conversion never ran on Retina, which had masked the bug.
-- **Non-Retina Data tab text/chart blur fixed (#257)** — the modern Library Browser "Data" tab hosting view is now opaque (`isOpaque = true` with an opaque skin background, kept in sync on skin change). A clear, non-opaque layer had disabled AppKit font smoothing, blurring text and charts on 1× displays; it now mirrors the classic PlexBrowser twin.
 - **Sonos cast session preserved on Stop and end-of-playlist** — pressing the player Stop button or reaching the end of a playlist now sends Stop to Sonos without disconnecting the active Sonos target or ungrouping rooms, so the next compatible track can resume on the same speaker/group. Chromecast and non-Sonos DLNA still use the existing full-disconnect behavior.
 - **Library source switching from Radio fixed** — selecting a different source while the Library Browser is on the Radio tab now keeps the Radio tab active and loads that source's library-radio view instead of forcing the browser back to Artists. Fixed in both classic and modern library browsers.
 - **Internet radio column sorting fixed** — radio station columns now sort correctly in both classic and modern library browsers, including rating-aware sorting without repeated rating-store lookups during comparisons.
-- **Local library expand re-sort fixed (#262)** — with a column sort active, double-clicking an Artist or Album to expand it no longer reshuffles the top-level list. The list shown before expanding came from the in-memory column sort (`LibraryTextSorter`: diacritic-insensitive, numeric, leading-article-aware), but expanding a row rebuilt it from the store's SQLite `BINARY` collation order and skipped re-sorting once nested rows were present — so the order silently snapped to the raw store order, most visibly around names with special characters, mixed case, or leading articles. The local-library views in `ModernLibraryBrowserView` and `PlexBrowserView` now re-sort top-level groups (each leader plus its expanded children) with the same comparator, keeping visible order stable through expand/collapse.
 
 ## 0.23.0
 
