@@ -10285,18 +10285,18 @@ class PlexBrowserView: NSView {
             editEpisodeItem.representedObject = episode
             menu.addItem(editEpisodeItem)
 
-        case .localPlaylist(let playlist):
+        case .localPlaylist:
             let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayLocalPlaylist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
 
         case .localPlaylistTrack(let track):
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalTrack(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
-            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayAndReplaceTrack(_:)), keyEquivalent: "")
-            playReplaceItem.target = self; playReplaceItem.representedObject = item; menu.addItem(playReplaceItem)
-            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayNext(_:)), keyEquivalent: "")
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayPlaylistTrack(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = track; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayPlaylistTrackAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = track; menu.addItem(playReplaceItem)
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayPlaylistTrackNext(_:)), keyEquivalent: "")
             playNextItem.target = self; playNextItem.representedObject = track; menu.addItem(playNextItem)
-            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddToQueue(_:)), keyEquivalent: "")
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddPlaylistTrackToQueue(_:)), keyEquivalent: "")
             queueItem.target = self; queueItem.representedObject = track; menu.addItem(queueItem)
 
         case .header:
@@ -10454,6 +10454,11 @@ class PlexBrowserView: NSView {
         WindowManager.shared.audioEngine.playNow(parsePlaylistTracks(at: p.url))
     }
 
+    @objc private func contextMenuPlayPlaylistTrack(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? Track else { return }
+        WindowManager.shared.audioEngine.playNow([track])
+    }
+
     @objc private func contextMenuRateLocalAlbum(_ sender: NSMenuItem) {
         guard let albumId = sender.representedObject as? String else { return }
         let rating = sender.tag
@@ -10542,6 +10547,11 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuPlayLocalTrackAndReplace(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         WindowManager.shared.audioEngine.loadTracks([track.toTrack()])
+    }
+
+    @objc private func contextMenuPlayPlaylistTrackAndReplace(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? Track else { return }
+        WindowManager.shared.audioEngine.loadTracks([track])
     }
     
     @objc private func contextMenuPlayLocalAlbumAndReplace(_ sender: NSMenuItem) {
@@ -11154,6 +11164,19 @@ class PlexBrowserView: NSView {
         let engine = WindowManager.shared.audioEngine
         let wasEmpty = engine.playlist.isEmpty
         engine.appendTracks([track.toTrack()])
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+
+    @objc private func contextMenuPlayPlaylistTrackNext(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? Track else { return }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+    }
+
+    @objc private func contextMenuAddPlaylistTrackToQueue(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? Track else { return }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks([track])
         if wasEmpty { engine.playTrack(at: 0) }
     }
 

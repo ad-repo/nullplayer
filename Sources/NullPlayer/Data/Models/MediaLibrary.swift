@@ -766,7 +766,7 @@ class MediaLibrary {
         notifyChange()
     }
     
-    /// Clear all local media entries from the library (tracks, movies, episodes).
+    /// Clear all local media entries from the library (tracks, movies, episodes, playlists).
     /// Watch folders are preserved.
     func clearLibrary() {
         NSLog("MediaLibrary: Clearing entire library")
@@ -779,6 +779,8 @@ class MediaLibrary {
             moviesByPath.removeAll()
             episodes.removeAll()
             episodesByPath.removeAll()
+            playlists.removeAll()
+            playlistsByPath.removeAll()
             scanSignaturesByPath.removeAll()
         }
         ratingsQueue.sync {
@@ -1341,7 +1343,8 @@ class MediaLibrary {
                 let trackCount = self.tracks.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
                 let movieCount = self.movies.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
                 let episodeCount = self.episodes.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
-                return trackCount + movieCount + episodeCount
+                let playlistCount = self.playlists.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
+                return trackCount + movieCount + episodeCount + playlistCount
             }
             if discoveredPaths.isEmpty && existingCountInFolders > 0 {
                 NSLog("MediaLibrary: Scan returned 0 files but folders had %d existing entries — skipping cleanup (volume may be unreachable)", existingCountInFolders)
@@ -1416,7 +1419,7 @@ class MediaLibrary {
                 var playlistsToUpsert: [(playlist: LocalPlaylist, sig: FileScanSignature?)] = []
                 for file in discovery.playlistFiles {
                     let signature = self.signature(for: file)
-                    if let existing = self.playlistsByPath[file.path],
+                    if self.playlistsByPath[file.path] != nil,
                        self.scanSignaturesByPath[file.path] == signature {
                         skippedCount += 1
                         continue

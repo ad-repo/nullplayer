@@ -1126,6 +1126,17 @@ final class MediaLibraryStore {
         }
     }
 
+    func playlistCount() -> Int {
+        guard let db = db else { return 0 }
+        do {
+            let count = try db.scalar(playlistsTable.count)
+            return count
+        } catch {
+            NSLog("MediaLibraryStore: playlistCount failed: %@", error.localizedDescription)
+            return 0
+        }
+    }
+
     func searchTracks(query: String, limit: Int, offset: Int) -> [LibraryTrack] {
         guard let db = db else { return [] }
         let sql = """
