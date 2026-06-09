@@ -109,8 +109,9 @@ enum ModernBrowserSource: Equatable, Codable {
 // MARK: - Browse Mode
 
 enum ModernBrowseMode: Int, CaseIterable {
-    case artists = 0, albums = 1, folders = 2, plists = 3
+    case artists = 0, albums = 1, plists = 3
     case movies = 4, shows = 5, search = 6, radio = 7, history = 8
+    case folders = 9
 
     var title: String {
         switch self {
@@ -190,6 +191,9 @@ class ModernLibraryBrowserView: NSView {
     private var browseMode: ModernBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            if oldValue == .folders, browseMode != .folders {
+                cancelLocalFolderBuild()
+            }
             if browseMode.isHistoryMode {
                 isArtOnlyMode = false
                 if isRatingOverlayVisible {
@@ -324,6 +328,17 @@ class ModernLibraryBrowserView: NSView {
             return .folders
         }
         return .plists
+    }
+
+    private var isLocalSource: Bool {
+        if case .local = currentSource { return true }
+        return false
+    }
+
+    private func cancelLocalFolderBuild() {
+        localFolderBuildGeneration &+= 1
+        localFolderBuildTask?.cancel()
+        localFolderBuildTask = nil
     }
 
     // Cached data - Subsonic
@@ -3556,7 +3571,9 @@ class ModernLibraryBrowserView: NSView {
                 let nextIdx = shift
                     ? (currentIdx - 1 + allModes.count) % allModes.count
                     : (currentIdx + 1) % allModes.count
-                browseMode = allModes[nextIdx]; selectedIndices.removeAll(); scrollOffset = 0
+                let nextMode = allModes[nextIdx]
+                browseMode = nextMode == .plists ? effectivePlistsSlotMode : nextMode
+                selectedIndices.removeAll(); scrollOffset = 0
                 loadDataForCurrentMode()
             }
         case 49: // Space — search input when searching, otherwise play/pause
@@ -5954,7 +5971,7 @@ class ModernLibraryBrowserView: NSView {
         guard let item = sender.representedObject as? ModernDisplayItem,
               case .localFolder(let url, _) = item.type else { return }
         collectTracksFromFolder(url) { tracks in
-            WindowManager.shared.audioEngine.playNow(tracks)
+            WindowManager.shared.audioEngine.loadTracks(tracks)
         }
     }
 
@@ -6848,6 +6865,9 @@ class ModernLibraryBrowserView: NSView {
     
     private func onSourceChanged() {
         invalidateActiveLoads()
+        if browseMode == .folders && !isLocalSource {
+            browseMode = .plists
+        }
         clearAllCachedData(); clearLocalCachedData()
         displayItems.removeAll(); selectedIndices.removeAll()
         scrollOffset = 0; errorMessage = nil; isLoading = false; stopLoadingAnimation()
@@ -9337,11 +9357,15 @@ class ModernLibraryBrowserView: NSView {
             if Task.isCancelled { return }
             let builtItems = items
             await MainActor.run { [weak self] in
-                guard let self = self, self.localFolderBuildGeneration == gen else { return }
+                guard let self = self,
+                      self.localFolderBuildGeneration == gen,
+                      self.isLocalSource,
+                      self.browseMode == .folders else { return }
                 self.isLoading = false
                 self.stopLoadingAnimation()
                 self.displayItems = builtItems
                 self.needsDisplay = true
+                self.localFolderBuildTask = nil
             }
         }
     }

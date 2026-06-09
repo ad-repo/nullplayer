@@ -136,13 +136,13 @@ enum BrowserSource: Equatable, Codable {
 enum PlexBrowseMode: Int, CaseIterable {
     case artists = 0
     case albums = 1
-    case folders = 2
     case plists = 3
     case movies = 4
     case shows = 5
     case search = 6
     case radio = 7
     case history = 8
+    case folders = 9
 
     var title: String {
         switch self {
@@ -260,6 +260,9 @@ class PlexBrowserView: NSView {
     private var browseMode: PlexBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            if oldValue == .folders, browseMode != .folders {
+                cancelLocalFolderBuild()
+            }
             if browseMode.isHistoryMode {
                 isArtOnlyMode = false
                 if isRatingOverlayVisible {
@@ -896,6 +899,17 @@ class PlexBrowserView: NSView {
     private var effectivePlistsSlotMode: PlexBrowseMode {
         guard case .local = currentSource, localPlistsSlotShowsFolders else { return .plists }
         return .folders
+    }
+
+    private var isLocalSource: Bool {
+        if case .local = currentSource { return true }
+        return false
+    }
+
+    private func cancelLocalFolderBuild() {
+        localFolderBuildGeneration &+= 1
+        localFolderBuildTask?.cancel()
+        localFolderBuildTask = nil
     }
 
     /// Cached data - Video (Local)
@@ -1818,6 +1832,9 @@ class PlexBrowserView: NSView {
     
     private func onSourceChanged() {
         invalidateActiveLoads()
+        if browseMode == .folders && !isLocalSource {
+            browseMode = .plists
+        }
         // Clear all cached data for both sources
         clearAllCachedData()
         clearLocalCachedData()
@@ -11069,7 +11086,7 @@ class PlexBrowserView: NSView {
         guard let item = sender.representedObject as? PlexDisplayItem,
               case .localFolder(let url, _) = item.type else { return }
         collectTracksFromFolder(url) { tracks in
-            WindowManager.shared.audioEngine.playNow(tracks)
+            WindowManager.shared.audioEngine.loadTracks(tracks)
         }
     }
 
@@ -15570,11 +15587,15 @@ class PlexBrowserView: NSView {
             if Task.isCancelled { return }
             let builtItems = items
             await MainActor.run { [weak self] in
-                guard let self = self, self.localFolderBuildGeneration == gen else { return }
+                guard let self = self,
+                      self.localFolderBuildGeneration == gen,
+                      self.isLocalSource,
+                      self.browseMode == .folders else { return }
                 self.isLoading = false
                 self.stopLoadingAnimation()
                 self.displayItems = builtItems
                 self.needsDisplay = true
+                self.localFolderBuildTask = nil
             }
         }
     }
