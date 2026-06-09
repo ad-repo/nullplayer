@@ -2704,9 +2704,18 @@ class ModernLibraryBrowserView: NSView {
             needsDisplay = true; return
         }
         
+        // When rows are expanded, the build order comes from the store (SQLite BINARY
+        // collation), which diverges from the in-memory column sort (LibraryTextSorter:
+        // diacritic-insensitive, numeric, article-stripping) precisely around special
+        // characters / case / leading articles. Re-sort the top-level groups — each level-0
+        // leader plus its contiguous descendants — so expanding a row keeps the same
+        // top-level order instead of snapping back to the raw store order.
         let hasNestedItems = displayItems.contains { $0.indentLevel > 0 }
-        if hasNestedItems { needsDisplay = true; return }
-        
+        if hasNestedItems {
+            sortNestedGroupsByColumn(sortColumn: sortColumn)
+            return
+        }
+
         var sortableIndices: [Int] = []
         var sortableItems: [ModernDisplayItem] = []
         
@@ -2719,58 +2728,112 @@ class ModernLibraryBrowserView: NSView {
         
         guard !sortableItems.isEmpty else { needsDisplay = true; return }
         
-        let ascending = columnSortAscending
-        sortableItems.sort { a, b in
-            // Date columns: sort by raw date, not formatted string
-            if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" {
-                let aDate = a.columnDateValue(for: sortColumn) ?? .distantPast
-                let bDate = b.columnDateValue(for: sortColumn) ?? .distantPast
-                return ascending ? aDate < bDate : aDate > bDate
-            }
-            
-            let aVal = a.columnValue(for: sortColumn)
-            let bVal = b.columnValue(for: sortColumn)
-            
-            if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
-               sortColumn.id == "albums" || sortColumn.id == "discNum" {
-                let aNum = Int(aVal.components(separatedBy: "-").last ?? aVal) ?? 0
-                let bNum = Int(bVal.components(separatedBy: "-").last ?? bVal) ?? 0
-                return ascending ? aNum < bNum : aNum > bNum
-            }
-            if sortColumn.id == "channels" {
-                let aChannels = LibraryColumnVisibility.channelSortValue(aVal)
-                let bChannels = LibraryColumnVisibility.channelSortValue(bVal)
-                return ascending ? aChannels < bChannels : aChannels > bChannels
-            }
-            if sortColumn.id == "duration" {
-                let aSeconds = parseDuration(aVal)
-                let bSeconds = parseDuration(bVal)
-                return ascending ? aSeconds < bSeconds : aSeconds > bSeconds
-            }
-            if sortColumn.id == "bitrate" || sortColumn.id == "sampleRate" {
-                let cleaned = { (s: String) -> Double in
-                    let num = s.replacingOccurrences(of: "k", with: "")
-                    return Double(num) ?? 0
-                }
-                return ascending ? cleaned(aVal) < cleaned(bVal) : cleaned(aVal) > cleaned(bVal)
-            }
-            if sortColumn.id == "size" {
-                let aSize = parseSize(aVal)
-                let bSize = parseSize(bVal)
-                return ascending ? aSize < bSize : aSize > bSize
-            }
-            if sortColumn.id == "rating" {
-                let aStars = aVal.filter { $0 == "★" }.count
-                let bStars = bVal.filter { $0 == "★" }.count
-                return ascending ? aStars < bStars : aStars > bStars
-            }
-            return compareNameStrings(aVal, bVal, ascending: ascending)
-        }
-        
+        sortableItems = stableColumnSortedItems(sortableItems, sortColumn: sortColumn)
+
         for (sortedIndex, originalIndex) in sortableIndices.enumerated() {
             displayItems[originalIndex] = sortableItems[sortedIndex]
         }
         needsDisplay = true
+    }
+
+    /// Reorders the top-level groups in `displayItems` (a level-0 leader plus its contiguous
+    /// descendants) by the active column, keeping each group's internal order intact. Bails
+    /// to the build order if any top-level row is not sortable (e.g. a section header) or if a
+    /// nested row appears before any leader, since grouping would be ambiguous there.
+    private func sortNestedGroupsByColumn(sortColumn: ModernBrowserColumn) {
+        var groups: [[ModernDisplayItem]] = []
+        for item in displayItems {
+            if item.indentLevel == 0 {
+                guard columnsForItem(item) != nil else { needsDisplay = true; return }
+                groups.append([item])
+            } else if !groups.isEmpty {
+                groups[groups.count - 1].append(item)
+            } else {
+                needsDisplay = true
+                return
+            }
+        }
+
+        groups = stableColumnSortedGroups(groups, sortColumn: sortColumn)
+        displayItems = groups.flatMap { $0 }
+        needsDisplay = true
+    }
+
+    /// Sorts column-capable rows while preserving their current order for equal keys.
+    private func stableColumnSortedItems(_ items: [ModernDisplayItem], sortColumn: ModernBrowserColumn) -> [ModernDisplayItem] {
+        items.enumerated().sorted { lhs, rhs in
+            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+                return true
+            }
+            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+                return false
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    /// Sorts expanded row groups by leader while preserving current group order for equal keys.
+    private func stableColumnSortedGroups(_ groups: [[ModernDisplayItem]], sortColumn: ModernBrowserColumn) -> [[ModernDisplayItem]] {
+        groups.enumerated().sorted { lhs, rhs in
+            let leftLeader = lhs.element[0]
+            let rightLeader = rhs.element[0]
+            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+                return true
+            }
+            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+                return false
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    /// Ordering predicate shared by the flat and nested column-sort paths so both produce
+    /// an identical top-level order. `a` and `b` are level-0 rows.
+    private func columnSortAreInOrder(_ a: ModernDisplayItem, _ b: ModernDisplayItem, sortColumn: ModernBrowserColumn, ascending: Bool) -> Bool {
+        // Date columns: sort by raw date, not formatted string
+        if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" {
+            let aDate = a.columnDateValue(for: sortColumn) ?? .distantPast
+            let bDate = b.columnDateValue(for: sortColumn) ?? .distantPast
+            return ascending ? aDate < bDate : aDate > bDate
+        }
+
+        let aVal = a.columnValue(for: sortColumn)
+        let bVal = b.columnValue(for: sortColumn)
+
+        if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
+           sortColumn.id == "albums" || sortColumn.id == "discNum" {
+            let aNum = Int(aVal.components(separatedBy: "-").last ?? aVal) ?? 0
+            let bNum = Int(bVal.components(separatedBy: "-").last ?? bVal) ?? 0
+            return ascending ? aNum < bNum : aNum > bNum
+        }
+        if sortColumn.id == "channels" {
+            let aChannels = LibraryColumnVisibility.channelSortValue(aVal)
+            let bChannels = LibraryColumnVisibility.channelSortValue(bVal)
+            return ascending ? aChannels < bChannels : aChannels > bChannels
+        }
+        if sortColumn.id == "duration" {
+            let aSeconds = parseDuration(aVal)
+            let bSeconds = parseDuration(bVal)
+            return ascending ? aSeconds < bSeconds : aSeconds > bSeconds
+        }
+        if sortColumn.id == "bitrate" || sortColumn.id == "sampleRate" {
+            let cleaned = { (s: String) -> Double in
+                let num = s.replacingOccurrences(of: "k", with: "")
+                return Double(num) ?? 0
+            }
+            return ascending ? cleaned(aVal) < cleaned(bVal) : cleaned(aVal) > cleaned(bVal)
+        }
+        if sortColumn.id == "size" {
+            let aSize = parseSize(aVal)
+            let bSize = parseSize(bVal)
+            return ascending ? aSize < bSize : aSize > bSize
+        }
+        if sortColumn.id == "rating" {
+            let aStars = aVal.filter { $0 == "★" }.count
+            let bStars = bVal.filter { $0 == "★" }.count
+            return ascending ? aStars < bStars : aStars > bStars
+        }
+        return compareNameStrings(aVal, bVal, ascending: ascending)
     }
 
     private func applyInternetRadioColumnSort(sortColumn: ModernBrowserColumn, ascending: Bool) -> Bool {
