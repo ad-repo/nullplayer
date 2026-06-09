@@ -115,6 +115,7 @@ class EmbyLinkSheet: NSWindowController, NSWindowDelegate {
 
     func showDialog(completion: @escaping (EmbyServer?) -> Void) {
         completionHandler = completion
+        window?.level = .modalPanel  // Ensure dialog appears above always-on-top floating windows (issue #254)
         window?.center()
         showWindow(nil)
         window?.makeKey()
@@ -311,6 +312,7 @@ class EmbyServerListSheet: NSWindowController, NSWindowDelegate, NSTableViewData
 
     func showDialog(completion: @escaping (EmbyServer?) -> Void) {
         completionHandler = completion
+        window?.level = .modalPanel  // Ensure dialog appears above always-on-top floating windows (issue #254)
         window?.center()
         showWindow(nil)
         window?.makeKey()

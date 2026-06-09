@@ -97,6 +97,7 @@ class AddRadioStationSheet: NSWindowController, NSWindowDelegate {
     
     func showDialog(completion: @escaping (RadioStation?) -> Void) {
         completionHandler = completion
+        window?.level = .modalPanel  // Ensure dialog appears above always-on-top floating windows (issue #254)
         window?.center()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)

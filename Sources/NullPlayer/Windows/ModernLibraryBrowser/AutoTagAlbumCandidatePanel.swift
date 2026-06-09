@@ -39,6 +39,7 @@ final class AutoTagAlbumCandidatePanel: NSWindow, NSTableViewDataSource, NSTable
     }
 
     func runSelectionModal() -> AutoTagAlbumCandidate? {
+        level = .modalPanel  // Ensure dialog appears above always-on-top floating windows (issue #254)
         center()
         makeKeyAndOrderFront(nil)
         let response = NSApp.runModal(for: self)
