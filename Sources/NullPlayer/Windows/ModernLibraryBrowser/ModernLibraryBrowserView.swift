@@ -2728,7 +2728,7 @@ class ModernLibraryBrowserView: NSView {
         
         guard !sortableItems.isEmpty else { needsDisplay = true; return }
         
-        sortableItems.sort { columnSortAreInOrder($0, $1, sortColumn: sortColumn, ascending: columnSortAscending) }
+        sortableItems = stableColumnSortedItems(sortableItems, sortColumn: sortColumn)
 
         for (sortedIndex, originalIndex) in sortableIndices.enumerated() {
             displayItems[originalIndex] = sortableItems[sortedIndex]
@@ -2754,9 +2754,37 @@ class ModernLibraryBrowserView: NSView {
             }
         }
 
-        groups.sort { columnSortAreInOrder($0[0], $1[0], sortColumn: sortColumn, ascending: columnSortAscending) }
+        groups = stableColumnSortedGroups(groups, sortColumn: sortColumn)
         displayItems = groups.flatMap { $0 }
         needsDisplay = true
+    }
+
+    /// Sorts column-capable rows while preserving their current order for equal keys.
+    private func stableColumnSortedItems(_ items: [ModernDisplayItem], sortColumn: ModernBrowserColumn) -> [ModernDisplayItem] {
+        items.enumerated().sorted { lhs, rhs in
+            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+                return true
+            }
+            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+                return false
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    /// Sorts expanded row groups by leader while preserving current group order for equal keys.
+    private func stableColumnSortedGroups(_ groups: [[ModernDisplayItem]], sortColumn: ModernBrowserColumn) -> [[ModernDisplayItem]] {
+        groups.enumerated().sorted { lhs, rhs in
+            let leftLeader = lhs.element[0]
+            let rightLeader = rhs.element[0]
+            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+                return true
+            }
+            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+                return false
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
     }
 
     /// Ordering predicate shared by the flat and nested column-sort paths so both produce
