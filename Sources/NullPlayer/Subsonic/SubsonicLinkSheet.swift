@@ -115,6 +115,7 @@ class SubsonicLinkSheet: NSWindowController, NSWindowDelegate {
     
     func showDialog(completion: @escaping (SubsonicServer?) -> Void) {
         completionHandler = completion
+        window?.level = .modalPanel  // Ensure dialog appears above always-on-top floating windows (issue #254)
         window?.center()
         showWindow(nil)
         window?.makeKey()
@@ -314,6 +315,7 @@ class SubsonicServerListSheet: NSWindowController, NSWindowDelegate, NSTableView
     
     func showDialog(completion: @escaping (SubsonicServer?) -> Void) {
         completionHandler = completion
+        window?.level = .modalPanel  // Ensure dialog appears above always-on-top floating windows (issue #254)
         window?.center()
         showWindow(nil)
         window?.makeKey()

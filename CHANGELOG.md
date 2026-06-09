@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.26.0
+
+### Bug Fixes
+
+- **Popup dialogs no longer hide behind always-on-top windows (#254)** — with **Always on Top** enabled, opening a popup dialog (e.g. *Add Radio Station*) appeared to do nothing: the dialog opened at the normal window level, *below* the main window which had been raised to the floating level, so it was completely obscured until the main window was dragged aside. These transient dialogs now open at the `.modalPanel` level so they always sit above the app's floating windows, matching the tag-editor and Plex link dialogs that already did this. Covers Add/Edit Radio Station, the Subsonic/Jellyfin/Emby link and server-list sheets, the watch-folder manager, and the auto-tag album candidate picker.
+
 ## 0.25.0
 
 ### New Features

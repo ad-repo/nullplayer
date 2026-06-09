@@ -25,6 +25,7 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
         }
         let controller = WatchFolderManagerWindow(onLibraryChanged: onLibraryChanged)
         shared = controller
+        controller.window?.level = .modalPanel  // Ensure dialog appears above always-on-top floating windows (issue #254)
         controller.window?.center()
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
