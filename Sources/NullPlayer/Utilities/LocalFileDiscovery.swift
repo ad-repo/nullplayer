@@ -10,6 +10,7 @@ struct LocalDiscoveredMediaFile: Hashable {
 struct LocalFileDiscoveryResult {
     let audioFiles: [LocalDiscoveredMediaFile]
     let videoFiles: [LocalDiscoveredMediaFile]
+    let playlistFiles: [LocalDiscoveredMediaFile]
 
     var allURLs: [URL] {
         (audioFiles.map(\.url) + videoFiles.map(\.url))
@@ -63,6 +64,7 @@ enum LocalFileDiscovery {
         recursiveDirectories: Bool = true,
         includeVideo: Bool,
         includeLegacyWMA: Bool = false,
+        includePlaylists: Bool = false,
         audioBatchSize: Int = 500,
         onAudioBatch: ([LocalDiscoveredMediaFile]) -> Void
     ) -> LocalFileDiscoveryResult {
@@ -75,6 +77,7 @@ enum LocalFileDiscovery {
         var seenPaths = Set<String>()
         var allAudio: [LocalDiscoveredMediaFile] = []
         var allVideo: [LocalDiscoveredMediaFile] = []
+        var allPlaylists: [LocalDiscoveredMediaFile] = []
         var pendingAudio: [LocalDiscoveredMediaFile] = []
         // Time-based flushing: on slow volumes (NAS/SMB), file enumeration can take seconds per
         // directory. Without a time limit we might wait minutes before flushing the first batch.
@@ -87,7 +90,8 @@ enum LocalFileDiscovery {
             // isn't a supported media file before paying for a network stat call.
             let isAudio = isSupportedAudioFile(url, includeLegacyWMA: includeLegacyWMA)
             let isVideo = !isAudio && includeVideo && isSupportedVideoFile(url)
-            guard isAudio || isVideo else { return }
+            let isPlaylist = includePlaylists && !isAudio && !isVideo && isSupportedPlaylistFile(url)
+            guard isAudio || isVideo || isPlaylist else { return }
 
             let path = url.path
             guard seenPaths.insert(path).inserted else { return }
@@ -110,8 +114,10 @@ enum LocalFileDiscovery {
                     pendingAudio.removeAll(keepingCapacity: true)
                     lastFlushTime = now
                 }
-            } else {
+            } else if isVideo {
                 allVideo.append(file)
+            } else {
+                allPlaylists.append(file)
             }
         }
 
@@ -148,17 +154,19 @@ enum LocalFileDiscovery {
         if !pendingAudio.isEmpty {
             onAudioBatch(pendingAudio)
         }
-        return LocalFileDiscoveryResult(audioFiles: allAudio, videoFiles: allVideo)
+        return LocalFileDiscoveryResult(audioFiles: allAudio, videoFiles: allVideo, playlistFiles: allPlaylists)
     }
 
     static func discoverMedia(
         from inputURLs: [URL],
         recursiveDirectories: Bool = true,
         includeVideo: Bool,
-        includeLegacyWMA: Bool = false
+        includeLegacyWMA: Bool = false,
+        includePlaylists: Bool = false
     ) -> LocalFileDiscoveryResult {
         var audioFiles: [LocalDiscoveredMediaFile] = []
         var videoFiles: [LocalDiscoveredMediaFile] = []
+        var playlistFiles: [LocalDiscoveredMediaFile] = []
         var seenPaths = Set<String>()
 
         for inputURL in inputURLs {
@@ -167,13 +175,15 @@ enum LocalFileDiscovery {
                 recursiveDirectories: recursiveDirectories,
                 includeVideo: includeVideo,
                 includeLegacyWMA: includeLegacyWMA,
+                includePlaylists: includePlaylists,
                 seenPaths: &seenPaths,
                 audioFiles: &audioFiles,
-                videoFiles: &videoFiles
+                videoFiles: &videoFiles,
+                playlistFiles: &playlistFiles
             )
         }
 
-        return LocalFileDiscoveryResult(audioFiles: audioFiles, videoFiles: videoFiles)
+        return LocalFileDiscoveryResult(audioFiles: audioFiles, videoFiles: videoFiles, playlistFiles: playlistFiles)
     }
 
     static func discoverMediaURLsAsync(
@@ -201,9 +211,11 @@ enum LocalFileDiscovery {
         recursiveDirectories: Bool,
         includeVideo: Bool,
         includeLegacyWMA: Bool,
+        includePlaylists: Bool,
         seenPaths: inout Set<String>,
         audioFiles: inout [LocalDiscoveredMediaFile],
-        videoFiles: inout [LocalDiscoveredMediaFile]
+        videoFiles: inout [LocalDiscoveredMediaFile],
+        playlistFiles: inout [LocalDiscoveredMediaFile]
     ) {
         if isDirectory(url) {
             if recursiveDirectories {
@@ -211,18 +223,22 @@ enum LocalFileDiscovery {
                     in: url,
                     includeVideo: includeVideo,
                     includeLegacyWMA: includeLegacyWMA,
+                    includePlaylists: includePlaylists,
                     seenPaths: &seenPaths,
                     audioFiles: &audioFiles,
-                    videoFiles: &videoFiles
+                    videoFiles: &videoFiles,
+                    playlistFiles: &playlistFiles
                 )
             } else {
                 collectShallow(
                     in: url,
                     includeVideo: includeVideo,
                     includeLegacyWMA: includeLegacyWMA,
+                    includePlaylists: includePlaylists,
                     seenPaths: &seenPaths,
                     audioFiles: &audioFiles,
-                    videoFiles: &videoFiles
+                    videoFiles: &videoFiles,
+                    playlistFiles: &playlistFiles
                 )
             }
             return
@@ -232,9 +248,11 @@ enum LocalFileDiscovery {
             url: url,
             includeVideo: includeVideo,
             includeLegacyWMA: includeLegacyWMA,
+            includePlaylists: includePlaylists,
             seenPaths: &seenPaths,
             audioFiles: &audioFiles,
-            videoFiles: &videoFiles
+            videoFiles: &videoFiles,
+            playlistFiles: &playlistFiles
         )
     }
 
@@ -242,9 +260,11 @@ enum LocalFileDiscovery {
         in rootURL: URL,
         includeVideo: Bool,
         includeLegacyWMA: Bool,
+        includePlaylists: Bool,
         seenPaths: inout Set<String>,
         audioFiles: inout [LocalDiscoveredMediaFile],
-        videoFiles: inout [LocalDiscoveredMediaFile]
+        videoFiles: inout [LocalDiscoveredMediaFile],
+        playlistFiles: inout [LocalDiscoveredMediaFile]
     ) {
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
@@ -259,9 +279,11 @@ enum LocalFileDiscovery {
                 url: next,
                 includeVideo: includeVideo,
                 includeLegacyWMA: includeLegacyWMA,
+                includePlaylists: includePlaylists,
                 seenPaths: &seenPaths,
                 audioFiles: &audioFiles,
-                videoFiles: &videoFiles
+                videoFiles: &videoFiles,
+                playlistFiles: &playlistFiles
             )
         }
     }
@@ -270,9 +292,11 @@ enum LocalFileDiscovery {
         in rootURL: URL,
         includeVideo: Bool,
         includeLegacyWMA: Bool,
+        includePlaylists: Bool,
         seenPaths: inout Set<String>,
         audioFiles: inout [LocalDiscoveredMediaFile],
-        videoFiles: inout [LocalDiscoveredMediaFile]
+        videoFiles: inout [LocalDiscoveredMediaFile],
+        playlistFiles: inout [LocalDiscoveredMediaFile]
     ) {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: rootURL,
@@ -287,9 +311,11 @@ enum LocalFileDiscovery {
                 url: item,
                 includeVideo: includeVideo,
                 includeLegacyWMA: includeLegacyWMA,
+                includePlaylists: includePlaylists,
                 seenPaths: &seenPaths,
                 audioFiles: &audioFiles,
-                videoFiles: &videoFiles
+                videoFiles: &videoFiles,
+                playlistFiles: &playlistFiles
             )
         }
     }
@@ -298,15 +324,18 @@ enum LocalFileDiscovery {
         url: URL,
         includeVideo: Bool,
         includeLegacyWMA: Bool,
+        includePlaylists: Bool,
         seenPaths: inout Set<String>,
         audioFiles: inout [LocalDiscoveredMediaFile],
-        videoFiles: inout [LocalDiscoveredMediaFile]
+        videoFiles: inout [LocalDiscoveredMediaFile],
+        playlistFiles: inout [LocalDiscoveredMediaFile]
     ) {
         // Extension check first — free string op, no syscall. Avoids stat calls for
         // directories, album art, NFO files, and other non-media content.
         let isAudio = isSupportedAudioFile(url, includeLegacyWMA: includeLegacyWMA)
         let isVideo = !isAudio && includeVideo && isSupportedVideoFile(url)
-        guard isAudio || isVideo else { return }
+        let isPlaylist = includePlaylists && !isAudio && !isVideo && isSupportedPlaylistFile(url)
+        guard isAudio || isVideo || isPlaylist else { return }
 
         let path = url.path
         guard seenPaths.insert(path).inserted else { return }
@@ -323,8 +352,10 @@ enum LocalFileDiscovery {
 
         if isAudio {
             audioFiles.append(discovered)
-        } else {
+        } else if isVideo {
             videoFiles.append(discovered)
+        } else {
+            playlistFiles.append(discovered)
         }
     }
 }

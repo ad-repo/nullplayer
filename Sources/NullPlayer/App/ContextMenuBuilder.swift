@@ -5334,7 +5334,8 @@ class MenuActions: NSObject {
         let trackCount = store.trackCount()
         let movieCount = store.movieCount()
         let episodeCount = store.episodeCount()
-        let totalCount = trackCount + movieCount + episodeCount
+        let playlistCount = store.playlistCount()
+        let totalCount = trackCount + movieCount + episodeCount + playlistCount
 
         let targetCount: Int
         let targetLabel: String
@@ -5360,7 +5361,7 @@ class MenuActions: NSObject {
         case .all:
             targetCount = totalCount
             targetLabel = "local item\(targetCount == 1 ? "" : "s")"
-            informativeText = "This will remove \(targetCount) \(targetLabel) from your library (\(trackCount) tracks, \(movieCount) movies, \(episodeCount) episodes). Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
+            informativeText = "This will remove \(targetCount) \(targetLabel) from your library (\(trackCount) tracks, \(movieCount) movies, \(episodeCount) episodes, \(playlistCount) playlists). Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
             confirmTitle = "Clear Library"
         }
 
@@ -5375,7 +5376,7 @@ class MenuActions: NSObject {
             case .tv:
                 alert.informativeText = "No local TV episodes are currently in the library."
             case .all:
-                alert.informativeText = "No local tracks, movies, or episodes are currently in the library."
+                alert.informativeText = "No local tracks, movies, episodes, or playlists are currently in the library."
             }
             alert.alertStyle = .informational
             alert.runModal()

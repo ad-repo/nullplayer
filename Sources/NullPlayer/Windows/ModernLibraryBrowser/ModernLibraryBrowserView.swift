@@ -341,6 +341,11 @@ class ModernLibraryBrowserView: NSView {
         localFolderBuildTask = nil
     }
 
+    // Cached data - Local Playlists
+    private var expandedLocalPlaylists: Set<String> = []
+    private var localPlaylistTracks: [String: [Track]] = [:]
+    private var cachedLocalPlaylists: [LocalPlaylist] = []
+
     // Cached data - Subsonic
     private var cachedSubsonicArtists: [SubsonicArtist] = []
     private var cachedSubsonicAlbums: [SubsonicAlbum] = []
@@ -5092,6 +5097,18 @@ class ModernLibraryBrowserView: NSView {
         case .localRadioStation:
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalRadioStation(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
+        case .localPlaylist:
+            let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayLocalPlaylist(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
+        case .localPlaylistTrack(let track):
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayPlaylistTrack(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = track; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayPlaylistTrackAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = track; menu.addItem(playReplaceItem)
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayPlaylistTrackNext(_:)), keyEquivalent: "")
+            playNextItem.target = self; playNextItem.representedObject = track; menu.addItem(playNextItem)
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddPlaylistTrackToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self; queueItem.representedObject = track; menu.addItem(queueItem)
         case .header: return
         }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
@@ -5547,6 +5564,15 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuPlayLocalArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }; playLocalArtist(artist)
     }
+    @objc private func contextMenuPlayLocalPlaylist(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? ModernDisplayItem,
+              case .localPlaylist(let p) = item.type else { return }
+        playLocalPlaylist(p.url)
+    }
+    @objc private func contextMenuPlayPlaylistTrack(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? Track else { return }
+        WindowManager.shared.audioEngine.playNow([track])
+    }
     @objc private func contextMenuAddLocalTrackToPlaylist(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         WindowManager.shared.audioEngine.appendTracks([track.toTrack()])
@@ -5858,6 +5884,10 @@ class ModernLibraryBrowserView: NSView {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         WindowManager.shared.audioEngine.loadTracks([track.toTrack()])
     }
+    @objc private func contextMenuPlayPlaylistTrackAndReplace(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? Track else { return }
+        WindowManager.shared.audioEngine.loadTracks([track])
+    }
     @objc private func contextMenuPlayLocalAlbumAndReplace(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
         WindowManager.shared.audioEngine.loadTracks(resolvedTracksForLocalAlbum(album).map { $0.toTrack() })
@@ -6019,6 +6049,17 @@ class ModernLibraryBrowserView: NSView {
         let engine = WindowManager.shared.audioEngine
         let wasEmpty = engine.playlist.isEmpty
         engine.appendTracks([track.toTrack()])
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlayPlaylistTrackNext(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? Track else { return }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+    }
+    @objc private func contextMenuAddPlaylistTrackToQueue(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? Track else { return }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks([track])
         if wasEmpty { engine.playTrack(at: 0) }
     }
 
@@ -8144,7 +8185,9 @@ class ModernLibraryBrowserView: NSView {
             buildLocalFolderItems()
         case .search:
             buildLocalSearchItems()
-        case .plists: displayItems = []
+        case .plists:
+            refreshCachedLocalPlaylists()
+            buildLocalPlaylistItems()
         case .movies:
             cachedLocalMovies = library.moviesSnapshot
             buildLocalMovieItems()
@@ -9536,7 +9579,40 @@ class ModernLibraryBrowserView: NSView {
             }
         }
     }
-    
+
+    private func buildLocalPlaylistItems() {
+        displayItems.removeAll()
+        for playlist in cachedLocalPlaylists.sorted(by: { $0.title.lowercased() < $1.title.lowercased() }) {
+            let key = playlist.url.path
+            let expanded = expandedLocalPlaylists.contains(key)
+            let info = localPlaylistTracks[key].map { "\($0.count) tracks" }
+            displayItems.append(ModernDisplayItem(id: key, title: playlist.title, info: info, indentLevel: 0, hasChildren: true, type: .localPlaylist(playlist)))
+            if expanded, let tracks = localPlaylistTracks[key] {
+                for t in tracks {
+                    let duration = t.duration.map { Int($0) }
+                    let title = t.title ?? "Unknown"
+                    displayItems.append(ModernDisplayItem(id: "\(key)-\(t.url.absoluteString)", title: title, info: formatDuration(duration), indentLevel: 1, hasChildren: false, type: .localPlaylistTrack(t)))
+                }
+            }
+        }
+    }
+
+    private func refreshCachedLocalPlaylists() {
+        cachedLocalPlaylists = MediaLibrary.shared.playlistsSnapshot
+        let validKeys = Set(cachedLocalPlaylists.map { $0.url.path })
+        localPlaylistTracks = localPlaylistTracks.filter { validKeys.contains($0.key) }
+        expandedLocalPlaylists.formIntersection(validKeys)
+    }
+
+    private func playLocalPlaylist(_ url: URL) {
+        Task.detached {
+            let tracks = parseModernLocalPlaylistTracks(at: url)
+            await MainActor.run {
+                WindowManager.shared.audioEngine.playNow(tracks)
+            }
+        }
+    }
+
     // MARK: - Build Jellyfin Display Items
     
     private func buildJellyfinArtistItems() {
@@ -10050,7 +10126,10 @@ class ModernLibraryBrowserView: NSView {
             case .search: buildLocalSearchItems()
             case .movies: buildLocalMovieItems()
             case .shows: buildLocalShowItems()
-            case .plists, .radio, .history: displayItems = []
+            case .plists:
+                refreshCachedLocalPlaylists()
+                buildLocalPlaylistItems()
+            case .radio, .history: displayItems = []
             }
         } else if case .subsonic = currentSource {
             switch browseMode {
@@ -10125,6 +10204,7 @@ class ModernLibraryBrowserView: NSView {
         case .embySeason(let s): return expandedEmbySeasons.contains(s.id)
         case .plexPlaylist(let p): return expandedPlexPlaylists.contains(p.id)
         case .radioFolder(let folder): return expandedRadioFolders.contains(folder.id)
+        case .localPlaylist(let p): return expandedLocalPlaylists.contains(p.url.path)
         default: return false
         }
     }
@@ -10419,6 +10499,27 @@ class ModernLibraryBrowserView: NSView {
                 } else {
                     expandedRadioFolders.insert(folder.id)
                 }
+            }
+        case .localPlaylist(let p):
+            let key = p.url.path
+            if expandedLocalPlaylists.contains(key) {
+                expandedLocalPlaylists.remove(key)
+                rebuildCurrentModeItems()
+            } else {
+                expandedLocalPlaylists.insert(key)
+                if localPlaylistTracks[key] == nil {
+                    let url = p.url
+                    Task.detached { [weak self] in
+                        let tracks = parseModernLocalPlaylistTracks(at: url)
+                        await MainActor.run { [weak self] in
+                            guard let self else { return }
+                            self.localPlaylistTracks[key] = tracks
+                            self.rebuildCurrentModeItems()
+                        }
+                    }
+                    return
+                }
+                rebuildCurrentModeItems()
             }
         default: break
         }
@@ -10820,8 +10921,36 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfinRadioStation(let r): playJellyfinRadioStation(r)
         case .embyRadioStation(let r): playEmbyRadioStation(r)
         case .localRadioStation(let r): playLocalRadioStation(r)
+        case .localPlaylist(let p): playLocalPlaylist(p.url)
+        case .localPlaylistTrack(let t): WindowManager.shared.audioEngine.playNow([t])
         }
     }
+}
+
+private func parseModernLocalPlaylistTracks(at url: URL) -> [Track] {
+    var result: [Track] = []
+    let ext = url.pathExtension.lowercased()
+
+    let playlist: Playlist?
+    if ext == "m3u" || ext == "m3u8" {
+        playlist = try? Playlist.fromM3U(url: url)
+    } else if ext == "pls" {
+        playlist = try? Playlist.fromPLS(url: url)
+    } else {
+        return []
+    }
+
+    guard let playlist = playlist else { return [] }
+
+    for trackURL in playlist.trackURLs {
+        if let libTrack = MediaLibrary.shared.findTrack(byURL: trackURL) {
+            result.append(libTrack.toTrack())
+        } else {
+            result.append(Track(lightweightURL: trackURL))
+        }
+    }
+
+    return result
 }
 
 // MARK: - Tags Panel Cleanup
@@ -10887,6 +11016,8 @@ private struct ModernDisplayItem {
         case jellyfinRadioStation(JellyfinRadioType)
         case embyRadioStation(EmbyRadioType)
         case localRadioStation(LocalRadioType)
+        case localPlaylist(LocalPlaylist)
+        case localPlaylistTrack(Track)
 
         var isAlbumItem: Bool {
             switch self {

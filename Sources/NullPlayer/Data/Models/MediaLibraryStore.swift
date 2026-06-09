@@ -21,6 +21,7 @@ final class MediaLibraryStore {
     private let tracksTable     = Table("library_tracks")
     private let moviesTable     = Table("library_movies")
     private let episodesTable   = Table("library_episodes")
+    private let playlistsTable  = Table("library_playlists")
     private let watchFoldersTable = Table("library_watch_folders")
     private let albumRatingsTable = Table("library_album_ratings")
     private let artistRatingsTable = Table("library_artist_ratings")
@@ -204,6 +205,12 @@ final class MediaLibraryStore {
         if currentVersion == 6 {
             try migrateToV7(connection)
             try connection.run("PRAGMA user_version = 7")
+            currentVersion = 7
+        }
+        if currentVersion == 7 {
+            try migrateToV8(connection)
+            try connection.run("PRAGMA user_version = 8")
+            currentVersion = 8
         }
     }
 
@@ -281,6 +288,21 @@ final class MediaLibraryStore {
         if !hasColumn {
             try connection.execute("ALTER TABLE play_events ADD COLUMN output_device TEXT")
         }
+    }
+
+    private func migrateToV8(_ connection: Connection) throws {
+        try connection.execute("""
+            CREATE TABLE IF NOT EXISTS library_playlists (
+                id TEXT PRIMARY KEY,
+                url TEXT UNIQUE,
+                title TEXT,
+                file_size INTEGER,
+                date_added REAL,
+                scan_file_size INTEGER,
+                scan_mod_date REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_playlists_title ON library_playlists (title);
+            """)
     }
 
     private func addTrackColumnIfMissing(_ connection: Connection, name: String, sqlType: String) throws {
@@ -368,6 +390,18 @@ final class MediaLibraryStore {
             t.column(colScanModDate)
         })
         try connection.run("CREATE INDEX IF NOT EXISTS idx_episodes_show ON library_episodes (show_title, season_number)")
+
+        // library_playlists
+        try connection.run(playlistsTable.create(ifNotExists: true) { t in
+            t.column(colID, primaryKey: true)
+            t.column(colURL, unique: true)
+            t.column(colTitle)
+            t.column(colFileSize)
+            t.column(colDateAdded)
+            t.column(colScanFileSize)
+            t.column(colScanModDate)
+        })
+        try connection.run("CREATE INDEX IF NOT EXISTS idx_playlists_title ON library_playlists (title)")
 
         // library_watch_folders
         try connection.run(watchFoldersTable.create(ifNotExists: true) { t in
@@ -527,6 +561,22 @@ final class MediaLibraryStore {
             return result
         } catch {
             NSLog("MediaLibraryStore: allEpisodes failed: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func allPlaylists() -> [LocalPlaylist] {
+        guard let db = db else { return [] }
+        do {
+            var result: [LocalPlaylist] = []
+            for row in try db.prepare(playlistsTable) {
+                if let playlist = playlistFromRow(row) {
+                    result.append(playlist)
+                }
+            }
+            return result
+        } catch {
+            NSLog("MediaLibraryStore: allPlaylists failed: %@", error.localizedDescription)
             return []
         }
     }
@@ -1076,6 +1126,17 @@ final class MediaLibraryStore {
         }
     }
 
+    func playlistCount() -> Int {
+        guard let db = db else { return 0 }
+        do {
+            let count = try db.scalar(playlistsTable.count)
+            return count
+        } catch {
+            NSLog("MediaLibraryStore: playlistCount failed: %@", error.localizedDescription)
+            return 0
+        }
+    }
+
     func searchTracks(query: String, limit: Int, offset: Int) -> [LibraryTrack] {
         guard let db = db else { return [] }
         let sql = """
@@ -1472,6 +1533,19 @@ final class MediaLibraryStore {
         }
     }
 
+    func upsertPlaylists(_ items: [(playlist: LocalPlaylist, sig: FileScanSignature?)]) {
+        guard let db = db, !items.isEmpty else { return }
+        do {
+            try db.transaction {
+                for item in items {
+                    try self.upsertPlaylistInternal(item.playlist, sig: item.sig, connection: db)
+                }
+            }
+        } catch {
+            NSLog("MediaLibraryStore: upsertPlaylists batch failed: %@", error.localizedDescription)
+        }
+    }
+
     // MARK: - Clear Operations
 
     func deleteAllTracks() {
@@ -1505,6 +1579,18 @@ final class MediaLibraryStore {
         }
     }
 
+    func deletePlaylistsByPath(_ paths: [String]) {
+        guard let db = db, !paths.isEmpty else { return }
+        do {
+            for path in paths {
+                let urlString = URL(fileURLWithPath: path).absoluteString
+                try db.run(playlistsTable.filter(colURL == urlString || colURL == path).delete())
+            }
+        } catch {
+            NSLog("MediaLibraryStore: deletePlaylistsByPath failed: %@", error.localizedDescription)
+        }
+    }
+
     func deleteAllMedia() {
         guard let db = db else { return }
         do {
@@ -1512,6 +1598,7 @@ final class MediaLibraryStore {
                 try db.run(self.tracksTable.delete())
                 try db.run(self.moviesTable.delete())
                 try db.run(self.episodesTable.delete())
+                try db.run(self.playlistsTable.delete())
                 try db.run(self.albumRatingsTable.delete())
                 try db.run(self.artistRatingsTable.delete())
             }
@@ -1699,6 +1786,27 @@ final class MediaLibraryStore {
         ))
     }
 
+    private func upsertPlaylistInternal(_ playlist: LocalPlaylist, sig: FileScanSignature?, connection: Connection) throws -> Int64 {
+        // Look up existing row by URL to preserve its ID (natural key stability)
+        let urlString = playlist.url.absoluteString
+        var idToUse = playlist.id
+        if let existingRow = try connection.pluck(playlistsTable.filter(colURL == urlString)),
+           let existingUUID = UUID(uuidString: existingRow[colID]) {
+            idToUse = existingUUID
+        }
+
+        return try connection.run(playlistsTable.insert(
+            or: .replace,
+            colID <- idToUse.uuidString,
+            colURL <- urlString,
+            colTitle <- playlist.title,
+            colFileSize <- playlist.fileSize,
+            colDateAdded <- playlist.dateAdded.timeIntervalSince1970,
+            colScanFileSize <- sig?.fileSize,
+            colScanModDate <- sig?.contentModificationDate.map { $0.timeIntervalSince1970 }
+        ))
+    }
+
     // MARK: - URL parsing helper
 
     /// Parse a URL stored in the database, with a fallback for plain absolute paths
@@ -1786,6 +1894,22 @@ final class MediaLibraryStore {
             duration: row[colDuration],
             fileSize: row[colFileSize],
             dateAdded: Date(timeIntervalSince1970: row[colDateAdded])
+        )
+    }
+
+    private func playlistFromRow(_ row: Row) -> LocalPlaylist? {
+        guard let id = UUID(uuidString: row[colID]),
+              let url = Self.urlFromStoredString(row[colURL]) else { return nil }
+        let scanFileSize = row[colScanFileSize]
+        let scanModDateTs = row[colScanModDate]
+        return LocalPlaylist(
+            id: id,
+            url: url,
+            title: row[colTitle],
+            fileSize: row[colFileSize],
+            dateAdded: Date(timeIntervalSince1970: row[colDateAdded]),
+            scanFileSize: scanFileSize,
+            scanModDate: scanModDateTs.map { Date(timeIntervalSince1970: $0) }
         )
     }
 

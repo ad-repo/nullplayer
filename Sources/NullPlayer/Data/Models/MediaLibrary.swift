@@ -328,6 +328,31 @@ struct LocalVideo: Identifiable, Codable {
     }
 }
 
+/// Represents a local playlist file (.m3u, .pls, .m3u8) in the library
+struct LocalPlaylist: Identifiable, Codable, Hashable {
+    let id: UUID
+    let url: URL          // the .m3u/.pls file — stable natural key
+    var title: String     // url.deletingPathExtension().lastPathComponent
+    var fileSize: Int64
+    var dateAdded: Date
+    var scanFileSize: Int64?
+    var scanModDate: Date?
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: LocalPlaylist, rhs: LocalPlaylist) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.url == rhs.url &&
+        lhs.title == rhs.title &&
+        lhs.fileSize == rhs.fileSize &&
+        lhs.dateAdded == rhs.dateAdded &&
+        lhs.scanFileSize == rhs.scanFileSize &&
+        lhs.scanModDate == rhs.scanModDate
+    }
+}
+
 /// Represents a local TV episode in the library
 struct LocalEpisode: Identifiable, Codable {
     let id: UUID
@@ -466,9 +491,13 @@ class MediaLibrary {
     /// All local TV episodes (guarded by dataQueue)
     private var episodes: [LocalEpisode] = []
 
+    /// All local playlist files (.m3u/.pls/.m3u8) (guarded by dataQueue)
+    private var playlists: [LocalPlaylist] = []
+
     /// URL-path index for quick video lookup (guarded by dataQueue)
     private var moviesByPath: [String: LocalVideo] = [:]
     private var episodesByPath: [String: LocalEpisode] = [:]
+    private var playlistsByPath: [String: LocalPlaylist] = [:]
 
     /// Album and artist ratings keyed by id (guarded by ratingsQueue, NOT dataQueue)
     private var albumRatings: [String: Int] = [:]   // Key: album.id ("artist|album")
@@ -613,6 +642,12 @@ class MediaLibrary {
         dataQueue.sync { episodes }
     }
 
+    var playlistsSnapshot: [LocalPlaylist] {
+        dataQueue.sync {
+            playlists.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        }
+    }
+
     /// Returns all TV shows derived by grouping episodes by show title → season → episode number.
     func allShows() -> [LocalShow] {
         let snapshot = dataQueue.sync { episodes }
@@ -731,7 +766,7 @@ class MediaLibrary {
         notifyChange()
     }
     
-    /// Clear all local media entries from the library (tracks, movies, episodes).
+    /// Clear all local media entries from the library (tracks, movies, episodes, playlists).
     /// Watch folders are preserved.
     func clearLibrary() {
         NSLog("MediaLibrary: Clearing entire library")
@@ -744,6 +779,8 @@ class MediaLibrary {
             moviesByPath.removeAll()
             episodes.removeAll()
             episodesByPath.removeAll()
+            playlists.removeAll()
+            playlistsByPath.removeAll()
             scanSignaturesByPath.removeAll()
         }
         ratingsQueue.sync {
@@ -1238,6 +1275,7 @@ class MediaLibrary {
             var cleanedTrackPaths: [String] = []
             var cleanedMoviePaths: [String] = []
             var cleanedEpisodePaths: [String] = []
+            var cleanedPlaylistPaths: [String] = []
             var quickAddedTracks: [(track: LibraryTrack, sig: FileScanSignature?)] = []
             var discoveredPaths = Set<String>()
 
@@ -1248,6 +1286,7 @@ class MediaLibrary {
                 recursiveDirectories: recursiveDirectories,
                 includeVideo: includeVideo,
                 includeLegacyWMA: isLibraryScan,
+                includePlaylists: true,
                 audioBatchSize: 500
             ) { audioBatch in
                 if isLibraryScan, self.scanGeneration != generation { return }
@@ -1287,8 +1326,9 @@ class MediaLibrary {
                 }
             }
 
-            NSLog("MediaLibrary: Discovery complete — %d audio, %d video files found", discovery.audioFiles.count, discovery.videoFiles.count)
+            NSLog("MediaLibrary: Discovery complete — %d audio, %d video, %d playlist files found", discovery.audioFiles.count, discovery.videoFiles.count, discovery.playlistFiles.count)
             discoveredPaths.formUnion(discovery.videoFiles.map(\.path))
+            discoveredPaths.formUnion(discovery.playlistFiles.map(\.path))
             let cleanFolderPathSet = Set(cleanMissingFolderPaths)
             let cleanFolderPaths = Array(cleanFolderPathSet)
 
@@ -1303,7 +1343,8 @@ class MediaLibrary {
                 let trackCount = self.tracks.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
                 let movieCount = self.movies.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
                 let episodeCount = self.episodes.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
-                return trackCount + movieCount + episodeCount
+                let playlistCount = self.playlists.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
+                return trackCount + movieCount + episodeCount + playlistCount
             }
             if discoveredPaths.isEmpty && existingCountInFolders > 0 {
                 NSLog("MediaLibrary: Scan returned 0 files but folders had %d existing entries — skipping cleanup (volume may be unreachable)", existingCountInFolders)
@@ -1342,6 +1383,15 @@ class MediaLibrary {
                         didQuickMutate = true
                         return true
                     }
+                    self.playlists.removeAll { playlist in
+                        guard Self.isPath(playlist.url.path, insideAnyFolderPaths: cleanFolderPaths),
+                              !discoveredPaths.contains(playlist.url.path) else { return false }
+                        self.playlistsByPath.removeValue(forKey: playlist.url.path)
+                        self.scanSignaturesByPath.removeValue(forKey: playlist.url.path)
+                        cleanedPlaylistPaths.append(playlist.url.path)
+                        didQuickMutate = true
+                        return true
+                    }
                 }
 
                 for file in discovery.videoFiles {
@@ -1365,19 +1415,57 @@ class MediaLibrary {
                     self.scanSignaturesByPath[file.path] = signature
                     videoRescanTasks.append(file)
                 }
+
+                var playlistsToUpsert: [(playlist: LocalPlaylist, sig: FileScanSignature?)] = []
+                for file in discovery.playlistFiles {
+                    let signature = self.signature(for: file)
+                    if self.playlistsByPath[file.path] != nil,
+                       self.scanSignaturesByPath[file.path] == signature {
+                        skippedCount += 1
+                        continue
+                    }
+
+                    let playlist = self.playlistsByPath[file.path] ?? LocalPlaylist(
+                        id: UUID(),
+                        url: file.url,
+                        title: file.url.deletingPathExtension().lastPathComponent,
+                        fileSize: file.fileSize,
+                        dateAdded: Date()
+                    )
+                    let updatedPlaylist = LocalPlaylist(
+                        id: playlist.id,
+                        url: file.url,
+                        title: file.url.deletingPathExtension().lastPathComponent,
+                        fileSize: file.fileSize,
+                        dateAdded: playlist.dateAdded,
+                        scanFileSize: signature.fileSize,
+                        scanModDate: signature.contentModificationDate
+                    )
+                    self.playlistsByPath[file.path] = updatedPlaylist
+                    self.scanSignaturesByPath[file.path] = signature
+                    playlistsToUpsert.append((playlist: updatedPlaylist, sig: signature))
+                }
+
+                if !playlistsToUpsert.isEmpty {
+                    self.store.upsertPlaylists(playlistsToUpsert)
+                    self.playlists = Array(self.playlistsByPath.values)
+                    didQuickMutate = true
+                    self.notifyChangeCoalesced()
+                }
             }
 
             // Persist cleanup removals to DB and notify
-            if !cleanedTrackPaths.isEmpty || !cleanedMoviePaths.isEmpty || !cleanedEpisodePaths.isEmpty {
+            if !cleanedTrackPaths.isEmpty || !cleanedMoviePaths.isEmpty || !cleanedEpisodePaths.isEmpty || !cleanedPlaylistPaths.isEmpty {
                 for path in cleanedTrackPaths { self.store.deleteTrackByPath(path) }
                 for path in cleanedMoviePaths { self.store.deleteMovieByPath(path) }
                 for path in cleanedEpisodePaths { self.store.deleteEpisodeByPath(path) }
+                if !cleanedPlaylistPaths.isEmpty { self.store.deletePlaylistsByPath(cleanedPlaylistPaths) }
                 self.notifyChangeCoalesced()
             }
 
             if didQuickMutate {
-                NSLog("MediaLibrary: Quick pass — added %d tracks, removed %d tracks/%d movies/%d episodes",
-                      quickAddedTracks.count, cleanedTrackPaths.count, cleanedMoviePaths.count, cleanedEpisodePaths.count)
+                NSLog("MediaLibrary: Quick pass — added %d tracks, removed %d tracks/%d movies/%d episodes/%d playlists",
+                      quickAddedTracks.count, cleanedTrackPaths.count, cleanedMoviePaths.count, cleanedEpisodePaths.count, cleanedPlaylistPaths.count)
             }
 
             let totalDiscovered = max(discovery.audioFiles.count + discovery.videoFiles.count, 1)
@@ -1899,6 +1987,7 @@ class MediaLibrary {
         }
         let loadedMovies = store.allMovies()
         let loadedEpisodes = store.allEpisodes()
+        let loadedPlaylists = store.allPlaylists()
         let loadedWatchFolders = store.allWatchFolders()
         let loadedAlbumRatings = store.albumRatings()
         let loadedArtistRatings = store.artistRatings()
@@ -1914,6 +2003,7 @@ class MediaLibrary {
             watchFolders = normalizedWatchFolders
             movies = loadedMovies
             episodes = loadedEpisodes
+            playlists = loadedPlaylists
             scanSignaturesByPath = loadedSignatures
 
             // Rebuild indices
@@ -1923,8 +2013,10 @@ class MediaLibrary {
             for movie in movies { moviesByPath[movie.url.path] = movie }
             episodesByPath.removeAll()
             for episode in episodes { episodesByPath[episode.url.path] = episode }
+            playlistsByPath.removeAll()
+            for playlist in playlists { playlistsByPath[playlist.url.path] = playlist }
             scanSignaturesByPath = scanSignaturesByPath.filter { path, _ in
-                tracksByPath[path] != nil || moviesByPath[path] != nil || episodesByPath[path] != nil
+                tracksByPath[path] != nil || moviesByPath[path] != nil || episodesByPath[path] != nil || playlistsByPath[path] != nil
             }
         }
     }
