@@ -15568,11 +15568,12 @@ class PlexBrowserView: NSView {
             }
 
             if Task.isCancelled { return }
+            let builtItems = items
             await MainActor.run { [weak self] in
                 guard let self = self, self.localFolderBuildGeneration == gen else { return }
                 self.isLoading = false
                 self.stopLoadingAnimation()
-                self.displayItems = items
+                self.displayItems = builtItems
                 self.needsDisplay = true
             }
         }
@@ -15593,16 +15594,26 @@ class PlexBrowserView: NSView {
 
                 if let contents = try? FileManager.default.contentsOfDirectory(
                     at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                    var subdirectories: [URL] = []
+                    var audioFiles: [URL] = []
                     for item in contents {
                         var isDir: ObjCBool = false
                         if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir) {
                             if isDir.boolValue {
-                                walkDirectory(item, depth: depth + 1)
+                                if item.resolvingSymlinksInPath().path == item.path {
+                                    subdirectories.append(item)
+                                }
                             } else if LocalFileDiscovery.isSupportedAudioFile(item) {
-                                audioFileURLs.append(item)
+                                audioFiles.append(item)
                             }
                         }
                     }
+                    subdirectories.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
+                    audioFiles.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
+                    for subdirectory in subdirectories {
+                        walkDirectory(subdirectory, depth: depth + 1)
+                    }
+                    audioFileURLs.append(contentsOf: audioFiles)
                 }
             }
 
@@ -15618,7 +15629,8 @@ class PlexBrowserView: NSView {
                 }
             }
 
-            await MainActor.run { completion(tracks) }
+            let collectedTracks = tracks
+            await MainActor.run { completion(collectedTracks) }
         }
     }
 
