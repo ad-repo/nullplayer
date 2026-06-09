@@ -1187,6 +1187,43 @@ final class MediaLibraryStore {
         }
     }
 
+    /// Batched variant of `track(forURL:)`: resolves many file URLs to their library
+    /// rows in a single query per chunk (mirrors `albumsForArtistsBatch` / `artistsForURLs`).
+    /// Returns a dict keyed by the caller's input URL for every URL that has a library row;
+    /// un-scanned files are simply absent. Safe to call off the main thread — `MediaLibraryStore`
+    /// is a plain class, not `@MainActor`.
+    func tracks(forURLs urls: [URL]) -> [URL: LibraryTrack] {
+        guard let db = db, !urls.isEmpty else { return [:] }
+        // A row may be stored under either its absoluteString or its filesystem path
+        // (see `track(forURL:)`), so look up both forms and map each stored string back
+        // to the caller's URL.
+        var byString: [String: URL] = [:]
+        var lookupStrings: [String] = []
+        for url in urls {
+            byString[url.absoluteString] = url
+            byString[url.path] = url
+            lookupStrings.append(url.absoluteString)
+            lookupStrings.append(url.path)
+        }
+        var result: [URL: LibraryTrack] = [:]
+        // Chunk into 500 to avoid SQLite IN-clause limits (matches `artistsForURLs`).
+        let chunkSize = 500
+        for chunkStart in stride(from: 0, to: lookupStrings.count, by: chunkSize) {
+            let chunk = Array(lookupStrings[chunkStart..<min(chunkStart + chunkSize, lookupStrings.count)])
+            let query = tracksTable.filter(chunk.contains(colURL))
+            do {
+                for row in try db.prepare(query) {
+                    guard let track = trackFromRow(row),
+                          let callerURL = byString[row[colURL]] else { continue }
+                    result[callerURL] = track
+                }
+            } catch {
+                NSLog("MediaLibraryStore: tracks(forURLs:) failed: %@", error.localizedDescription)
+            }
+        }
+        return result
+    }
+
     func upsertMovie(_ movie: LocalVideo, sig: FileScanSignature?) {
         guard let db = db else { return }
         do {

@@ -142,11 +142,13 @@ enum PlexBrowseMode: Int, CaseIterable {
     case search = 6
     case radio = 7
     case history = 8
+    case folders = 9
 
     var title: String {
         switch self {
         case .artists: return "Artists"
         case .albums: return "Albums"
+        case .folders: return "Folders"
         case .plists: return "Plists"
         case .movies: return "Movies"
         case .shows: return "Shows"
@@ -161,7 +163,7 @@ enum PlexBrowseMode: Int, CaseIterable {
     }
 
     var isMusicMode: Bool {
-        self == .artists || self == .albums || self == .plists
+        self == .artists || self == .albums || self == .plists || self == .folders
     }
 
     var isRadioMode: Bool {
@@ -170,6 +172,12 @@ enum PlexBrowseMode: Int, CaseIterable {
 
     var isHistoryMode: Bool {
         self == .history
+    }
+
+    // .folders is excluded: it occupies the same tab slot as .plists and is reached
+    // only by toggling that slot (local source only), never as its own tab.
+    static var allCases: [PlexBrowseMode] {
+        [.artists, .albums, .plists, .movies, .shows, .search, .radio, .history]
     }
 }
 
@@ -252,6 +260,9 @@ class PlexBrowserView: NSView {
     private var browseMode: PlexBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            if oldValue == .folders, browseMode != .folders {
+                cancelLocalFolderBuild()
+            }
             if browseMode.isHistoryMode {
                 isArtOnlyMode = false
                 if isRatingOverlayVisible {
@@ -269,7 +280,12 @@ class PlexBrowserView: NSView {
         get { browseMode.rawValue }
         set {
             if let mode = PlexBrowseMode(rawValue: newValue) {
-                browseMode = mode
+                // If restoring .folders mode while non-local source, fall back to .plists
+                var actualMode = mode
+                if mode == .folders, case .local = currentSource {} else if mode == .folders {
+                    actualMode = .plists
+                }
+                browseMode = actualMode
                 selectedIndices.removeAll()
                 scrollOffset = 0
                 reloadData()
@@ -617,6 +633,7 @@ class PlexBrowserView: NSView {
                 expandedArtistNames.removeAll()
                 expandedLocalArtists.removeAll()
                 expandedLocalAlbums.removeAll()
+                expandedLocalFolders.removeAll()
                 expandedSubsonicArtists.removeAll()
                 expandedSubsonicAlbums.removeAll()
                 expandedSubsonicPlaylists.removeAll()
@@ -870,6 +887,30 @@ class PlexBrowserView: NSView {
     private var localAlbumLetterOffsets: [String: Int] = [:]
     private var expandedLocalArtists: Set<String> = []
     private var expandedLocalAlbums: Set<String> = []
+    private var expandedLocalFolders: Set<String> = []
+    /// Bumped on each Folders rebuild; an in-flight off-actor walk discards its result if stale.
+    private var localFolderBuildGeneration = 0
+    /// The in-flight Folders walk, cancelled when a newer rebuild starts (fast-click protection).
+    private var localFolderBuildTask: Task<Void, Never>?
+    private var localPlistsSlotShowsFolders: Bool {
+        get { UserDefaults.standard.object(forKey: "ClassicLocalPlistsSlotShowsFolders") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "ClassicLocalPlistsSlotShowsFolders") }
+    }
+    private var effectivePlistsSlotMode: PlexBrowseMode {
+        guard case .local = currentSource, localPlistsSlotShowsFolders else { return .plists }
+        return .folders
+    }
+
+    private var isLocalSource: Bool {
+        if case .local = currentSource { return true }
+        return false
+    }
+
+    private func cancelLocalFolderBuild() {
+        localFolderBuildGeneration &+= 1
+        localFolderBuildTask?.cancel()
+        localFolderBuildTask = nil
+    }
 
     /// Cached data - Video (Local)
     private var cachedLocalMovies: [LocalVideo] = []
@@ -1791,6 +1832,9 @@ class PlexBrowserView: NSView {
     
     private func onSourceChanged() {
         invalidateActiveLoads()
+        if browseMode == .folders && !isLocalSource {
+            browseMode = .plists
+        }
         // Clear all cached data for both sources
         clearAllCachedData()
         clearLocalCachedData()
@@ -1826,6 +1870,7 @@ class PlexBrowserView: NSView {
         cachedLocalMovies = []; cachedLocalShows = []
         expandedLocalArtists = []
         expandedLocalAlbums = []
+        expandedLocalFolders = []
         expandedLocalShows = []
         expandedLocalSeasons = []
     }
@@ -2981,20 +3026,31 @@ class PlexBrowserView: NSView {
         for (index, mode) in PlexBrowseMode.allCases.enumerated() {
             let tabRect = NSRect(x: tabsStartX + CGFloat(index) * tabWidth, y: tabBarY,
                                 width: tabWidth, height: Layout.tabBarHeight)
-            
-            let isSelected = mode == browseMode
-            
+
+            // Special handling for plists slot: show "Folders" if toggled (local source only),
+            // and highlight it when browseMode is .folders.
+            var label = mode.title
+            var isSelected = mode == browseMode
+            if mode == .plists {
+                if localPlistsSlotShowsFolders, case .local = currentSource {
+                    label = "Folders"
+                }
+                if browseMode == .folders, case .local = currentSource {
+                    isSelected = true
+                }
+            }
+
             if isSelected {
                 // Selected tab in WHITE skin text
-                drawScaledWhiteSkinTextCentered(mode.title, in: tabRect, scale: textScale, renderer: renderer, in: context)
+                drawScaledWhiteSkinTextCentered(label, in: tabRect, scale: textScale, renderer: renderer, in: context)
             } else {
                 // Unselected tabs in green skin text
-                let titleWidth = CGFloat(mode.title.count) * scaledCharWidth
+                let titleWidth = CGFloat(label.count) * scaledCharWidth
                 let rawTextX = tabRect.midX - titleWidth / 2
                 let rawTextY = tabRect.minY + (tabRect.height - scaledCharHeight) / 2
                 let textX = shouldRound ? round(rawTextX) : rawTextX
                 let textY = shouldRound ? round(rawTextY) : rawTextY
-                drawScaledSkinText(mode.title, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
+                drawScaledSkinText(label, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
             }
         }
         
@@ -3177,6 +3233,8 @@ class PlexBrowserView: NSView {
             }
         case .plists:
             message = "No playlists found"
+        case .folders:
+            message = "No folders found"
         case .search:
             message = searchQuery.isEmpty ? "Type to search" : "No results found"
         case .radio:
@@ -6536,6 +6594,10 @@ class PlexBrowserView: NSView {
                 // Video artwork is loaded during playback via AVAssetImageGenerator
                 break
 
+            case .localFolder:
+                // Folder rows have no artwork
+                break
+
             case .radioStation(let station):
                 let radioTrack = station.toTrack()
                 image = await self.loadRadioArtwork(for: radioTrack, station: station)
@@ -7635,7 +7697,18 @@ class PlexBrowserView: NSView {
         
         // Check tab bar
         if let newMode = hitTestTabBar(at: skinPoint) {
-            browseMode = newMode
+            // Special handling: double-click the .plists slot while local source toggles Folders
+            if event.clickCount == 2, newMode == .plists, case .local = currentSource {
+                localPlistsSlotShowsFolders.toggle()
+                browseMode = effectivePlistsSlotMode
+                selectedIndices.removeAll()
+                scrollOffset = 0
+                loadDataForCurrentMode()
+                window?.makeFirstResponder(self)
+                return
+            }
+            // Single-click selects whatever the slot currently shows
+            browseMode = (newMode == .plists) ? effectivePlistsSlotMode : newMode
             selectedIndices.removeAll()
             scrollOffset = 0
             loadDataForCurrentMode()
@@ -9634,7 +9707,35 @@ class PlexBrowserView: NSView {
             deleteItem.target = self
             deleteItem.representedObject = track
             menu.addItem(deleteItem)
-            
+
+        case .localFolder(let url, _):
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalFolder(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
+
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayLocalFolderAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = item
+            menu.addItem(playReplaceItem)
+
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayLocalFolderNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = item
+            menu.addItem(playNextItem)
+
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddLocalFolderToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = item
+            menu.addItem(queueItem)
+
+            menu.addItem(NSMenuItem.separator())
+
+            let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuRevealLocalFolderInFinder(_:)), keyEquivalent: "")
+            finderItem.target = self
+            finderItem.representedObject = url
+            menu.addItem(finderItem)
+
         case .localAlbum(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayLocalAlbum(_:)), keyEquivalent: "")
             playItem.target = self
@@ -10972,6 +11073,47 @@ class PlexBrowserView: NSView {
         engine.appendTracks([track.toTrack()])
         if wasEmpty { engine.playTrack(at: 0) }
     }
+
+    @objc private func contextMenuPlayLocalFolder(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .localFolder(let url, _) = item.type else { return }
+        collectTracksFromFolder(url) { tracks in
+            WindowManager.shared.audioEngine.playNow(tracks)
+        }
+    }
+
+    @objc private func contextMenuPlayLocalFolderAndReplace(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .localFolder(let url, _) = item.type else { return }
+        collectTracksFromFolder(url) { tracks in
+            WindowManager.shared.audioEngine.loadTracks(tracks)
+        }
+    }
+
+    @objc private func contextMenuPlayLocalFolderNext(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .localFolder(let url, _) = item.type else { return }
+        collectTracksFromFolder(url) { tracks in
+            WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks, startPlaybackIfEmpty: false)
+        }
+    }
+
+    @objc private func contextMenuAddLocalFolderToQueue(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .localFolder(let url, _) = item.type else { return }
+        collectTracksFromFolder(url) { tracks in
+            let engine = WindowManager.shared.audioEngine
+            let wasEmpty = engine.playlist.isEmpty
+            engine.appendTracks(tracks)
+            if wasEmpty { engine.playTrack(at: 0) }
+        }
+    }
+
+    @objc private func contextMenuRevealLocalFolderInFinder(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     @objc private func contextMenuPlaySubsonicSongNext(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? SubsonicSong,
               let track = SubsonicManager.shared.convertToTrack(song) else { return }
@@ -12776,7 +12918,7 @@ class PlexBrowserView: NSView {
                     }
                     self.buildShowItems()
                     
-                case .plists:
+                case .plists, .folders:
                     if self.cachedPlexPlaylists.isEmpty {
                         if !plexManager.cachedPlaylists.isEmpty {
                             self.cachedPlexPlaylists = plexManager.cachedPlaylists
@@ -13386,6 +13528,8 @@ class PlexBrowserView: NSView {
             localAlbumPageOffset = 0
             localAlbumTotal = store.albumCount()
             buildLocalAlbumItems()
+        case .folders:
+            buildLocalFolderItems()
         case .search:
             buildLocalSearchItems()
         case .plists:
@@ -14116,7 +14260,7 @@ class PlexBrowserView: NSView {
                 case .search:
                     self.displayItems = []
                     
-                case .plists:
+                case .plists, .folders:
                     if self.cachedSubsonicPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty {
                             self.cachedSubsonicPlaylists = manager.cachedPlaylists
@@ -14339,7 +14483,7 @@ class PlexBrowserView: NSView {
                     }
                     self.buildEmbyAlbumItems()
 
-                case .plists:
+                case .plists, .folders:
                     if self.cachedEmbyPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty {
                             self.cachedEmbyPlaylists = manager.cachedPlaylists
@@ -14470,7 +14614,7 @@ class PlexBrowserView: NSView {
                     }
                     self.buildJellyfinAlbumItems()
 
-                case .plists:
+                case .plists, .folders:
                     if self.cachedJellyfinPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty {
                             self.cachedJellyfinPlaylists = manager.cachedPlaylists
@@ -15352,6 +15496,165 @@ class PlexBrowserView: NSView {
         }
     }
     
+    /// Build the Folders view: one off-actor depth-first walk of every *expanded* directory,
+    /// then a single hop back to the main actor to assign `displayItems`. The generation guard
+    /// discards a walk whose result arrives after a newer rebuild (or a mode switch) started.
+    private func buildLocalFolderItems() {
+        localFolderBuildGeneration &+= 1
+        let gen = localFolderBuildGeneration
+
+        // Snapshot main-actor state before going off-actor (value types are Sendable)
+        let expandedSnapshot = expandedLocalFolders
+        let availableFolderURLs = MediaLibrary.shared.watchFolderSummaries()
+            .filter { $0.isAvailable }
+            .map { $0.url }
+
+        // Show the loading spinner (not the empty "No folders found" state) while the
+        // off-actor walk runs — matters for slow network/NAS watch folders.
+        displayItems.removeAll()
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+
+        // Cancel any walk still running from a previous (faster) click
+        localFolderBuildTask?.cancel()
+        localFolderBuildTask = Task.detached { [weak self] in
+            // Build the ordered item list entirely off the main actor (FS enumeration + DB query)
+            var items: [PlexDisplayItem] = []
+
+            func walk(_ url: URL, indent: Int) {
+                if Task.isCancelled { return }
+                var subdirectories: [(url: URL, name: String)] = []
+                var audioFiles: [URL] = []
+                if let contents = try? FileManager.default.contentsOfDirectory(
+                    at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                    for item in contents {
+                        var isDir: ObjCBool = false
+                        if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir) {
+                            if isDir.boolValue {
+                                // Skip symlinked dirs to prevent infinite recursion
+                                if item.resolvingSymlinksInPath().path == item.path {
+                                    subdirectories.append((url: item, name: item.lastPathComponent))
+                                }
+                            } else if LocalFileDiscovery.isSupportedAudioFile(item) {
+                                audioFiles.append(item)
+                            }
+                        }
+                    }
+                }
+                // Directories first, then files; both case-insensitive by name
+                subdirectories.sort { $0.name.lowercased() < $1.name.lowercased() }
+                audioFiles.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
+
+                for (subURL, subName) in subdirectories {
+                    items.append(PlexDisplayItem(
+                        id: subURL.path, title: subName, info: nil,
+                        indentLevel: indent, hasChildren: true,
+                        type: .localFolder(url: subURL, name: subName)))
+                    // Recurse in place so a child's contents follow it directly (correct tree order)
+                    if expandedSnapshot.contains(subURL.path) {
+                        walk(subURL, indent: indent + 1)
+                    }
+                }
+
+                let urlToTrackMap = MediaLibraryStore.shared.tracks(forURLs: audioFiles)
+                for fileURL in audioFiles {
+                    let track = urlToTrackMap[fileURL] ?? LibraryTrack(url: fileURL)
+                    items.append(PlexDisplayItem(
+                        id: track.id.uuidString, title: track.displayTitle,
+                        info: track.formattedDuration, indentLevel: indent, hasChildren: false,
+                        type: .localTrack(track)))
+                }
+            }
+
+            if availableFolderURLs.count > 1 {
+                // Multiple watch folders: each is a top-level node
+                for folderURL in availableFolderURLs {
+                    items.append(PlexDisplayItem(
+                        id: folderURL.path, title: folderURL.lastPathComponent, info: nil,
+                        indentLevel: 0, hasChildren: true,
+                        type: .localFolder(url: folderURL, name: folderURL.lastPathComponent)))
+                    if expandedSnapshot.contains(folderURL.path) {
+                        walk(folderURL, indent: 1)
+                    }
+                }
+            } else if let only = availableFolderURLs.first {
+                // Single watch folder: show its contents directly
+                walk(only, indent: 0)
+            }
+
+            if Task.isCancelled { return }
+            let builtItems = items
+            await MainActor.run { [weak self] in
+                guard let self = self,
+                      self.localFolderBuildGeneration == gen,
+                      self.isLocalSource,
+                      self.browseMode == .folders else { return }
+                self.isLoading = false
+                self.stopLoadingAnimation()
+                self.displayItems = builtItems
+                self.needsDisplay = true
+                self.localFolderBuildTask = nil
+            }
+        }
+    }
+
+    /// Recursively collect audio files from a directory and enrich with library metadata.
+    /// Runs entirely off the main actor, then invokes `completion` on the main actor.
+    private func collectTracksFromFolder(_ folderURL: URL, completion: @escaping ([Track]) -> Void) {
+        Task.detached {
+            var audioFileURLs: [URL] = []
+            var visitedPaths: Set<String> = []
+
+            func walkDirectory(_ url: URL, depth: Int = 0) {
+                guard depth < 100 else { return } // Prevent infinite recursion
+                let resolvedPath = url.resolvingSymlinksInPath().path
+                guard !visitedPaths.contains(resolvedPath) else { return }
+                visitedPaths.insert(resolvedPath)
+
+                if let contents = try? FileManager.default.contentsOfDirectory(
+                    at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                    var subdirectories: [URL] = []
+                    var audioFiles: [URL] = []
+                    for item in contents {
+                        var isDir: ObjCBool = false
+                        if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir) {
+                            if isDir.boolValue {
+                                if item.resolvingSymlinksInPath().path == item.path {
+                                    subdirectories.append(item)
+                                }
+                            } else if LocalFileDiscovery.isSupportedAudioFile(item) {
+                                audioFiles.append(item)
+                            }
+                        }
+                    }
+                    subdirectories.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
+                    audioFiles.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
+                    for subdirectory in subdirectories {
+                        walkDirectory(subdirectory, depth: depth + 1)
+                    }
+                    audioFileURLs.append(contentsOf: audioFiles)
+                }
+            }
+
+            walkDirectory(folderURL)
+
+            let urlToTrackMap = MediaLibraryStore.shared.tracks(forURLs: audioFileURLs)
+            var tracks: [Track] = []
+            for url in audioFileURLs {
+                if let libraryTrack = urlToTrackMap[url] {
+                    tracks.append(libraryTrack.toTrack())
+                } else {
+                    tracks.append(LibraryTrack(url: url).toTrack())
+                }
+            }
+
+            let collectedTracks = tracks
+            await MainActor.run { completion(collectedTracks) }
+        }
+    }
+
     private func buildLocalMovieItems() {
         displayItems = cachedLocalMovies.map { movie in
             let info = [movie.year.map { String($0) }, movie.formattedDuration]
@@ -15454,6 +15757,8 @@ class PlexBrowserView: NSView {
                 buildLocalArtistItems()
             case .albums:
                 buildLocalAlbumItems()
+            case .folders:
+                buildLocalFolderItems()
             case .search:
                 buildLocalSearchItems()
             case .plists:
@@ -15476,6 +15781,8 @@ class PlexBrowserView: NSView {
                 buildSubsonicArtistItems()
             case .albums:
                 buildSubsonicAlbumItems()
+            case .folders:
+                displayItems = []
             case .search:
                 displayItems = []
             case .plists:
@@ -15494,6 +15801,8 @@ class PlexBrowserView: NSView {
                 buildJellyfinArtistItems()
             case .albums:
                 buildJellyfinAlbumItems()
+            case .folders:
+                displayItems = []
             case .search:
                 displayItems = []
             case .plists:
@@ -15513,6 +15822,8 @@ class PlexBrowserView: NSView {
                 buildEmbyArtistItems()
             case .albums:
                 buildEmbyAlbumItems()
+            case .folders:
+                displayItems = []
             case .search:
                 displayItems = []
             case .plists:
@@ -15532,6 +15843,8 @@ class PlexBrowserView: NSView {
                 buildArtistItems()
             case .albums:
                 buildAlbumItems()
+            case .folders:
+                displayItems = []
             case .movies:
                 buildMovieItems()
             case .shows:
@@ -15574,6 +15887,8 @@ class PlexBrowserView: NSView {
             return expandedLocalArtists.contains(artist.id)
         case .localAlbum(let album):
             return expandedLocalAlbums.contains(album.id)
+        case .localFolder(let url, _):
+            return expandedLocalFolders.contains(url.path)
         case .localShow:
             return expandedLocalShows.contains(item.id)
         case .localSeason:
@@ -15770,6 +16085,15 @@ class PlexBrowserView: NSView {
                 expandedLocalAlbums.remove(album.id)
             } else {
                 expandedLocalAlbums.insert(album.id)
+            }
+            rebuildCurrentModeItems()
+
+        case .localFolder(let url, _):
+            let path = url.path
+            if expandedLocalFolders.contains(path) {
+                expandedLocalFolders.remove(path)
+            } else {
+                expandedLocalFolders.insert(path)
             }
             rebuildCurrentModeItems()
 
@@ -16351,6 +16675,9 @@ class PlexBrowserView: NSView {
             playLocalAlbum(album)
 
         case .localArtist:
+            toggleExpand(item)
+
+        case .localFolder:
             toggleExpand(item)
 
         case .localMovie(let movie):
@@ -17084,6 +17411,7 @@ private struct PlexDisplayItem {
         case localArtist(Artist)
         case localAlbum(Album)
         case localTrack(LibraryTrack)
+        case localFolder(url: URL, name: String)
         case localMovie(LocalVideo)
         case localShow(LocalShow)
         case localSeason(LocalSeason, showTitle: String)

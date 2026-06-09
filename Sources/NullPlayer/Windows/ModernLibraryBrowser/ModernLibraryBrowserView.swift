@@ -111,11 +111,13 @@ enum ModernBrowserSource: Equatable, Codable {
 enum ModernBrowseMode: Int, CaseIterable {
     case artists = 0, albums = 1, plists = 3
     case movies = 4, shows = 5, search = 6, radio = 7, history = 8
+    case folders = 9
 
     var title: String {
         switch self {
         case .artists: return "Artists"
         case .albums: return "Albums"
+        case .folders: return "Folders"
         case .plists: return "Plists"
         case .movies: return "Movies"
         case .shows: return "Shows"
@@ -125,9 +127,13 @@ enum ModernBrowseMode: Int, CaseIterable {
         }
     }
     var isVideoMode: Bool { self == .movies || self == .shows }
-    var isMusicMode: Bool { self == .artists || self == .albums || self == .plists }
+    var isMusicMode: Bool { self == .artists || self == .albums || self == .plists || self == .folders }
     var isRadioMode: Bool { self == .radio }
     var isHistoryMode: Bool { self == .history }
+
+    static var allCases: [ModernBrowseMode] {
+        [.artists, .albums, .plists, .movies, .shows, .search, .radio, .history]
+    }
 }
 
 // MARK: - Sort Option
@@ -185,6 +191,9 @@ class ModernLibraryBrowserView: NSView {
     private var browseMode: ModernBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            if oldValue == .folders, browseMode != .folders {
+                cancelLocalFolderBuild()
+            }
             if browseMode.isHistoryMode {
                 isArtOnlyMode = false
                 if isRatingOverlayVisible {
@@ -201,7 +210,16 @@ class ModernLibraryBrowserView: NSView {
         get { browseMode.rawValue }
         set {
             if let mode = ModernBrowseMode(rawValue: newValue) {
-                browseMode = mode
+                // If restoring .folders mode while non-local source, fall back to .plists
+                var actualMode = mode
+                if mode == .folders {
+                    if case .local = currentSource {
+                        actualMode = mode
+                    } else {
+                        actualMode = .plists
+                    }
+                }
+                browseMode = actualMode
                 selectedIndices.removeAll()
                 scrollOffset = 0
                 loadDataForCurrentMode()
@@ -257,6 +275,11 @@ class ModernLibraryBrowserView: NSView {
     private var expandedLocalAlbums: Set<String> = []
     private var expandedLocalShows: Set<String> = []
     private var expandedLocalSeasons: Set<String> = []
+    private var expandedLocalFolders: Set<String> = []
+    /// Bumped on each Folders rebuild; an in-flight off-actor walk discards its result if stale.
+    private var localFolderBuildGeneration = 0
+    /// The in-flight Folders walk, cancelled when a newer rebuild starts (fast-click protection).
+    private var localFolderBuildTask: Task<Void, Never>?
     private var expandedSubsonicArtists: Set<String> = []
     private var expandedSubsonicAlbums: Set<String> = []
     private var expandedSubsonicPlaylists: Set<String> = []
@@ -293,7 +316,31 @@ class ModernLibraryBrowserView: NSView {
     // Offline volume state (populated by loadLocalData)
     private var offlineWatchFolders: [WatchFolderSummary] = []
     private var offlineVolumePrefixes: Set<String> = []
-    
+
+    // Local Plists slot toggle state (switch between Plists and Folders)
+    private var localPlistsSlotShowsFolders: Bool {
+        get { UserDefaults.standard.object(forKey: "LocalPlistsSlotShowsFolders") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "LocalPlistsSlotShowsFolders") }
+    }
+
+    private var effectivePlistsSlotMode: ModernBrowseMode {
+        if case .local = currentSource, localPlistsSlotShowsFolders {
+            return .folders
+        }
+        return .plists
+    }
+
+    private var isLocalSource: Bool {
+        if case .local = currentSource { return true }
+        return false
+    }
+
+    private func cancelLocalFolderBuild() {
+        localFolderBuildGeneration &+= 1
+        localFolderBuildTask?.cancel()
+        localFolderBuildTask = nil
+    }
+
     // Cached data - Subsonic
     private var cachedSubsonicArtists: [SubsonicArtist] = []
     private var cachedSubsonicAlbums: [SubsonicAlbum] = []
@@ -1023,8 +1070,26 @@ class ModernLibraryBrowserView: NSView {
         for (index, mode) in ModernBrowseMode.allCases.enumerated() {
             let tabRect = NSRect(x: tabBarRect.minX + CGFloat(index) * tabWidth, y: tabBarY,
                                  width: tabWidth, height: Layout.tabBarHeight)
-            let isSelected = mode == browseMode
-            drawToggleTab(label: mode.title, isActive: isSelected, rect: tabRect.insetBy(dx: 2, dy: 2),
+            // Special handling for plists slot: show "Folders" if toggled, and highlight if browseMode is .folders
+            var label = mode.title
+            var isSelected = mode == browseMode
+            if mode == .plists {
+                if localPlistsSlotShowsFolders {
+                    if case .local = currentSource {
+                        label = "Folders"
+                    } else {
+                        label = "Plists"
+                    }
+                } else {
+                    label = "Plists"
+                }
+                if browseMode == .folders {
+                    if case .local = currentSource {
+                        isSelected = true
+                    }
+                }
+            }
+            drawToggleTab(label: label, isActive: isSelected, rect: tabRect.insetBy(dx: 2, dy: 2),
                           font: font, skin: skin, context: context)
         }
         
@@ -1966,6 +2031,7 @@ class ModernLibraryBrowserView: NSView {
             }
         case .movies: message = "No movies found"
         case .shows: message = "No TV shows found"
+        case .folders: message = "No folders found"
         case .plists: message = "No playlists found"
         case .search: message = searchQuery.isEmpty ? "Type and press ↵ to search" : "No results found"
         case .radio: message = "No radio stations found"
@@ -3141,8 +3207,20 @@ class ModernLibraryBrowserView: NSView {
         if hitTestSortIndicator(at: point) { showSortMenu(at: event.locationInWindow); return }
         
         // Tab bar (check before content area so tabs work in art-only/viz mode)
-        if let newMode = hitTestTabBar(at: point) {
-            browseMode = newMode; selectedIndices.removeAll(); scrollOffset = 0
+        if let tabMode = hitTestTabBar(at: point) {
+            // Special handling: double-click .plists slot while local source toggles Folders
+            if event.clickCount == 2 && tabMode == .plists {
+                if case .local = currentSource {
+                    localPlistsSlotShowsFolders.toggle()
+                    browseMode = effectivePlistsSlotMode
+                    selectedIndices.removeAll(); scrollOffset = 0
+                    loadDataForCurrentMode(); window?.makeFirstResponder(self)
+                    return
+                }
+            }
+            // Single-click selects whatever the slot currently shows (Plists or Folders)
+            browseMode = (tabMode == .plists) ? effectivePlistsSlotMode : tabMode
+            selectedIndices.removeAll(); scrollOffset = 0
             loadDataForCurrentMode(); window?.makeFirstResponder(self)
             return
         }
@@ -3393,10 +3471,11 @@ class ModernLibraryBrowserView: NSView {
                 ))
             }
             needsDisplay = true
-        default: break
+        case .folders, .plists, .movies, .shows, .search, .radio, .history:
+            break
         }
     }
-    
+
     // MARK: - Keyboard Events
     
     override func keyDown(with event: NSEvent) {
@@ -3485,12 +3564,16 @@ class ModernLibraryBrowserView: NSView {
             }
         case 48: // Tab — cycle browse tabs
             let allModes = ModernBrowseMode.allCases
-            if let currentIdx = allModes.firstIndex(of: browseMode) {
+            // Treat .folders as .plists for tab cycling (they occupy the same slot)
+            let effectiveMode = browseMode == .folders ? .plists : browseMode
+            if let currentIdx = allModes.firstIndex(of: effectiveMode) {
                 let shift = event.modifierFlags.contains(.shift)
                 let nextIdx = shift
                     ? (currentIdx - 1 + allModes.count) % allModes.count
                     : (currentIdx + 1) % allModes.count
-                browseMode = allModes[nextIdx]; selectedIndices.removeAll(); scrollOffset = 0
+                let nextMode = allModes[nextIdx]
+                browseMode = nextMode == .plists ? effectivePlistsSlotMode : nextMode
+                selectedIndices.removeAll(); scrollOffset = 0
                 loadDataForCurrentMode()
             }
         case 49: // Space — search input when searching, otherwise play/pause
@@ -4594,6 +4677,18 @@ class ModernLibraryBrowserView: NSView {
             menu.addItem(NSMenuItem.separator())
             let removeTrackItem = NSMenuItem(title: "Remove from Library", action: #selector(contextMenuRemoveLocalTrack(_:)), keyEquivalent: "")
             removeTrackItem.target = self; removeTrackItem.representedObject = track; menu.addItem(removeTrackItem)
+        case .localFolder(let url, _):
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalFolder(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayLocalFolderAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = item; menu.addItem(playReplaceItem)
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayLocalFolderNext(_:)), keyEquivalent: "")
+            playNextItem.target = self; playNextItem.representedObject = item; menu.addItem(playNextItem)
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddLocalFolderToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self; queueItem.representedObject = item; menu.addItem(queueItem)
+            menu.addItem(NSMenuItem.separator())
+            let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuRevealLocalFolderInFinder(_:)), keyEquivalent: "")
+            finderItem.target = self; finderItem.representedObject = url; menu.addItem(finderItem)
         case .localAlbum(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayLocalAlbum(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
@@ -5863,6 +5958,47 @@ class ModernLibraryBrowserView: NSView {
         engine.appendTracks([track.toTrack()])
         if wasEmpty { engine.playTrack(at: 0) }
     }
+
+    @objc private func contextMenuPlayLocalFolder(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? ModernDisplayItem,
+              case .localFolder(let url, _) = item.type else { return }
+        collectTracksFromFolder(url) { tracks in
+            WindowManager.shared.audioEngine.playNow(tracks)
+        }
+    }
+
+    @objc private func contextMenuPlayLocalFolderAndReplace(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? ModernDisplayItem,
+              case .localFolder(let url, _) = item.type else { return }
+        collectTracksFromFolder(url) { tracks in
+            WindowManager.shared.audioEngine.loadTracks(tracks)
+        }
+    }
+
+    @objc private func contextMenuPlayLocalFolderNext(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? ModernDisplayItem,
+              case .localFolder(let url, _) = item.type else { return }
+        collectTracksFromFolder(url) { tracks in
+            WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks, startPlaybackIfEmpty: false)
+        }
+    }
+
+    @objc private func contextMenuAddLocalFolderToQueue(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? ModernDisplayItem,
+              case .localFolder(let url, _) = item.type else { return }
+        collectTracksFromFolder(url) { tracks in
+            let engine = WindowManager.shared.audioEngine
+            let wasEmpty = engine.playlist.isEmpty
+            engine.appendTracks(tracks)
+            if wasEmpty { engine.playTrack(at: 0) }
+        }
+    }
+
+    @objc private func contextMenuRevealLocalFolderInFinder(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     @objc private func contextMenuPlaySubsonicSongNext(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? SubsonicSong,
               let track = SubsonicManager.shared.convertToTrack(song) else { return }
@@ -6185,6 +6321,10 @@ class ModernLibraryBrowserView: NSView {
             }
         case .localAlbum(let album):
             WindowManager.shared.audioEngine.insertTracksAfterCurrent(resolvedTracksForLocalAlbum(album).map { $0.toTrack() }, startPlaybackIfEmpty: false)
+        case .localFolder(let url, _):
+            collectTracksFromFolder(url) { tracks in
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks, startPlaybackIfEmpty: false)
+            }
         case .subsonicAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
@@ -6317,6 +6457,12 @@ class ModernLibraryBrowserView: NSView {
             }
         case .localAlbum(let album):
             engine.appendTracks(resolvedTracksForLocalAlbum(album).map { $0.toTrack() })
+        case .localFolder(let url, _):
+            collectTracksFromFolder(url) { tracks in
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(tracks)
+                if wasEmpty { engine.playTrack(at: 0) }
+            }
         case .subsonicAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
@@ -6719,6 +6865,9 @@ class ModernLibraryBrowserView: NSView {
     
     private func onSourceChanged() {
         invalidateActiveLoads()
+        if browseMode == .folders && !isLocalSource {
+            browseMode = .plists
+        }
         clearAllCachedData(); clearLocalCachedData()
         displayItems.removeAll(); selectedIndices.removeAll()
         scrollOffset = 0; errorMessage = nil; isLoading = false; stopLoadingAnimation()
@@ -6737,6 +6886,7 @@ class ModernLibraryBrowserView: NSView {
         cachedLocalMovies = []; cachedLocalShows = []
         expandedLocalArtists = []; expandedLocalAlbums = []
         expandedLocalShows = []; expandedLocalSeasons = []
+        expandedLocalFolders = []
     }
     
     private func clearAllCachedData() {
@@ -7927,6 +8077,8 @@ class ModernLibraryBrowserView: NSView {
             localAlbumPageOffset = 0
             localAlbumTotal = store.albumCount()
             buildLocalAlbumItems()
+        case .folders:
+            buildLocalFolderItems()
         case .search:
             buildLocalSearchItems()
         case .plists: displayItems = []
@@ -8105,7 +8257,7 @@ class ModernLibraryBrowserView: NSView {
                         }
                     }
                     self.buildShowItems()
-                case .plists:
+                case .plists, .folders:
                     if self.cachedPlexPlaylists.isEmpty {
                         if !pm.cachedPlaylists.isEmpty { self.cachedPlexPlaylists = pm.cachedPlaylists }
                         else {
@@ -8213,7 +8365,7 @@ class ModernLibraryBrowserView: NSView {
                         }
                     }
                     self.buildSubsonicAlbumItems()
-                case .plists:
+                case .plists, .folders:
                     if self.cachedSubsonicPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty { self.cachedSubsonicPlaylists = manager.cachedPlaylists }
                         else {
@@ -8324,7 +8476,7 @@ class ModernLibraryBrowserView: NSView {
                         }
                     }
                     self.buildJellyfinAlbumItems()
-                case .plists:
+                case .plists, .folders:
                     if self.cachedJellyfinPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty { self.cachedJellyfinPlaylists = manager.cachedPlaylists }
                         else {
@@ -8470,7 +8622,7 @@ class ModernLibraryBrowserView: NSView {
                         }
                     }
                     self.buildEmbyAlbumItems()
-                case .plists:
+                case .plists, .folders:
                     if self.cachedEmbyPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty { self.cachedEmbyPlaylists = manager.cachedPlaylists }
                         else {
@@ -9113,7 +9265,111 @@ class ModernLibraryBrowserView: NSView {
             }
         }
     }
-    
+
+    /// Build the Folders view: one off-actor depth-first walk of every *expanded* directory,
+    /// then a single hop back to the main actor to assign `displayItems`. The generation guard
+    /// discards a walk whose result arrives after a newer rebuild (or a mode switch) started.
+    private func buildLocalFolderItems() {
+        localFolderBuildGeneration &+= 1
+        let gen = localFolderBuildGeneration
+
+        // Snapshot main-actor state before going off-actor (value types are Sendable)
+        let expandedSnapshot = expandedLocalFolders
+        let availableFolderURLs = MediaLibrary.shared.watchFolderSummaries()
+            .filter { $0.isAvailable }
+            .map { $0.url }
+
+        // Show the loading spinner (not the empty "No folders found" state) while the
+        // off-actor walk runs — matters for slow network/NAS watch folders.
+        displayItems.removeAll()
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+
+        // Cancel any walk still running from a previous (faster) click
+        localFolderBuildTask?.cancel()
+        localFolderBuildTask = Task.detached { [weak self] in
+            // Build the ordered item list entirely off the main actor (FS enumeration + DB query)
+            var items: [ModernDisplayItem] = []
+
+            func walk(_ url: URL, indent: Int) {
+                if Task.isCancelled { return }
+                var subdirectories: [(url: URL, name: String)] = []
+                var audioFiles: [URL] = []
+                if let contents = try? FileManager.default.contentsOfDirectory(
+                    at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                    for item in contents {
+                        var isDir: ObjCBool = false
+                        if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir) {
+                            if isDir.boolValue {
+                                // Skip symlinked dirs to prevent infinite recursion
+                                if item.resolvingSymlinksInPath().path == item.path {
+                                    subdirectories.append((url: item, name: item.lastPathComponent))
+                                }
+                            } else if LocalFileDiscovery.isSupportedAudioFile(item) {
+                                audioFiles.append(item)
+                            }
+                        }
+                    }
+                }
+                // Directories first, then files; both case-insensitive by name
+                subdirectories.sort { $0.name.lowercased() < $1.name.lowercased() }
+                audioFiles.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
+
+                for (subURL, subName) in subdirectories {
+                    items.append(ModernDisplayItem(
+                        id: subURL.path, title: subName, info: nil,
+                        indentLevel: indent, hasChildren: true,
+                        type: .localFolder(url: subURL, name: subName)))
+                    // Recurse in place so a child's contents follow it directly (correct tree order)
+                    if expandedSnapshot.contains(subURL.path) {
+                        walk(subURL, indent: indent + 1)
+                    }
+                }
+
+                let urlToTrackMap = MediaLibraryStore.shared.tracks(forURLs: audioFiles)
+                for fileURL in audioFiles {
+                    let track = urlToTrackMap[fileURL] ?? LibraryTrack(url: fileURL)
+                    items.append(ModernDisplayItem(
+                        id: track.id.uuidString, title: track.title,
+                        info: track.formattedDuration, indentLevel: indent, hasChildren: false,
+                        type: .localTrack(track)))
+                }
+            }
+
+            if availableFolderURLs.count > 1 {
+                // Multiple watch folders: each is a top-level node
+                for folderURL in availableFolderURLs {
+                    items.append(ModernDisplayItem(
+                        id: folderURL.path, title: folderURL.lastPathComponent, info: nil,
+                        indentLevel: 0, hasChildren: true,
+                        type: .localFolder(url: folderURL, name: folderURL.lastPathComponent)))
+                    if expandedSnapshot.contains(folderURL.path) {
+                        walk(folderURL, indent: 1)
+                    }
+                }
+            } else if let only = availableFolderURLs.first {
+                // Single watch folder: show its contents directly
+                walk(only, indent: 0)
+            }
+
+            if Task.isCancelled { return }
+            let builtItems = items
+            await MainActor.run { [weak self] in
+                guard let self = self,
+                      self.localFolderBuildGeneration == gen,
+                      self.isLocalSource,
+                      self.browseMode == .folders else { return }
+                self.isLoading = false
+                self.stopLoadingAnimation()
+                self.displayItems = builtItems
+                self.needsDisplay = true
+                self.localFolderBuildTask = nil
+            }
+        }
+    }
+
     private func buildLocalSearchItems() {
         displayItems.removeAll()
         guard !searchQuery.isEmpty else { return }
@@ -9727,10 +9983,11 @@ class ModernLibraryBrowserView: NSView {
             switch browseMode {
             case .artists: buildLocalArtistItems()
             case .albums: buildLocalAlbumItems()
+            case .folders: buildLocalFolderItems()
             case .search: buildLocalSearchItems()
             case .movies: buildLocalMovieItems()
             case .shows: buildLocalShowItems()
-            default: displayItems = []
+            case .plists, .radio, .history: displayItems = []
             }
         } else if case .subsonic = currentSource {
             switch browseMode {
@@ -9764,6 +10021,7 @@ class ModernLibraryBrowserView: NSView {
             switch browseMode {
             case .artists: buildArtistItems()
             case .albums: buildAlbumItems()
+            case .folders: displayItems = []
             case .movies: buildMovieItems()
             case .shows: buildShowItems()
             case .plists: buildPlexPlaylistItems()
@@ -9786,6 +10044,7 @@ class ModernLibraryBrowserView: NSView {
         case .season: return expandedSeasons.contains(item.id)
         case .localArtist(let a): return expandedLocalArtists.contains(a.id)
         case .localAlbum(let a): return expandedLocalAlbums.contains(a.id)
+        case .localFolder(let url, _): return expandedLocalFolders.contains(url.path)
         case .localShow(let s): return expandedLocalShows.contains(s.id)
         case .localSeason(let s, let showTitle): return expandedLocalSeasons.contains("\(showTitle)|\(s.number)")
         case .subsonicArtist(let a): return expandedSubsonicArtists.contains(a.id)
@@ -9883,6 +10142,9 @@ class ModernLibraryBrowserView: NSView {
             if expandedLocalArtists.contains(a.id) { expandedLocalArtists.remove(a.id) } else { expandedLocalArtists.insert(a.id) }
         case .localAlbum(let a):
             if expandedLocalAlbums.contains(a.id) { expandedLocalAlbums.remove(a.id) } else { expandedLocalAlbums.insert(a.id) }
+        case .localFolder(let url, _):
+            let path = url.path
+            if expandedLocalFolders.contains(path) { expandedLocalFolders.remove(path) } else { expandedLocalFolders.insert(path) }
         case .localShow(let s):
             if expandedLocalShows.contains(s.id) { expandedLocalShows.remove(s.id) } else { expandedLocalShows.insert(s.id) }
         case .localSeason(let s, let showTitle):
@@ -10168,6 +10430,64 @@ class ModernLibraryBrowserView: NSView {
         return MediaLibraryStore.shared.tracksForAlbum(album.id)
     }
 
+    /// Recursively collect audio files from a directory and enrich with library metadata.
+    /// Runs entirely off the main actor, then invokes `completion` on the main actor.
+    private func collectTracksFromFolder(_ folderURL: URL, completion: @escaping ([Track]) -> Void) {
+        Task.detached {
+            var audioFileURLs: [URL] = []
+            var visitedPaths: Set<String> = []
+
+            func walkDirectory(_ url: URL, depth: Int = 0) {
+                guard depth < 100 else { return } // Prevent infinite recursion
+                let resolvedPath = url.resolvingSymlinksInPath().path
+                guard !visitedPaths.contains(resolvedPath) else { return }
+                visitedPaths.insert(resolvedPath)
+
+                if let contents = try? FileManager.default.contentsOfDirectory(
+                    at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                    var subdirectories: [URL] = []
+                    var audioFiles: [URL] = []
+                    for item in contents {
+                        var isDir: ObjCBool = false
+                        if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir) {
+                            if isDir.boolValue {
+                                if item.resolvingSymlinksInPath().path == item.path {
+                                    subdirectories.append(item)
+                                }
+                            } else if LocalFileDiscovery.isSupportedAudioFile(item) {
+                                audioFiles.append(item)
+                            }
+                        }
+                    }
+                    subdirectories.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
+                    audioFiles.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
+                    for subdirectory in subdirectories {
+                        walkDirectory(subdirectory, depth: depth + 1)
+                    }
+                    audioFileURLs.append(contentsOf: audioFiles)
+                }
+            }
+
+            walkDirectory(folderURL)
+
+            // Batch query library metadata for all audio files
+            let urlToTrackMap = MediaLibraryStore.shared.tracks(forURLs: audioFileURLs)
+
+            var tracks: [Track] = []
+            for url in audioFileURLs {
+                if let libraryTrack = urlToTrackMap[url] {
+                    tracks.append(libraryTrack.toTrack())
+                } else {
+                    // Create minimal synthesized track for files not in library
+                    tracks.append(LibraryTrack(url: url).toTrack())
+                }
+            }
+
+            let collectedTracks = tracks
+            await MainActor.run { completion(collectedTracks) }
+        }
+    }
+
     private func playLocalAlbum(_ album: Album) { WindowManager.shared.audioEngine.playNow(resolvedTracksForLocalAlbum(album).map { $0.toTrack() }) }
     private func playLocalArtist(_ artist: Artist) {
         // If albums are empty (stub from paginated view), load tracks from store
@@ -10401,6 +10721,7 @@ class ModernLibraryBrowserView: NSView {
         case .localTrack(let t): playLocalTrack(t)
         case .localAlbum(let a): playLocalAlbum(a)
         case .localArtist: toggleExpand(item)
+        case .localFolder: toggleExpand(item)
         case .localMovie(let m): WindowManager.shared.showVideoPlayer(url: m.url, title: m.title)
         case .localShow: toggleExpand(item)
         case .localSeason: toggleExpand(item)
@@ -10470,6 +10791,7 @@ private struct ModernDisplayItem {
         case localArtist(Artist)
         case localAlbum(Album)
         case localTrack(LibraryTrack)
+        case localFolder(url: URL, name: String)
         case localMovie(LocalVideo)
         case localShow(LocalShow)
         case localSeason(LocalSeason, showTitle: String)
