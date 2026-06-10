@@ -259,11 +259,30 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
         let row = tableView.selectedRow
         guard row >= 0 && row < summaries.count else { return }
         let summary = summaries[row]
-        let counts = MediaLibrary.shared.removalCountsForWatchFolder(summary.url)
-        guard confirmRemoval(of: summary.url, removalCounts: counts) else { return }
-        MediaLibrary.shared.removeWatchFolder(summary.url, removeEntries: true)
-        onLibraryChanged?()
-        reload()
+
+        // Both removalCountsForWatchFolder() and removeWatchFolder() block on
+        // dataQueue.sync (and the latter also performs a SQLite write). A running
+        // import scan can hold dataQueue for many seconds, so calling these on the
+        // main thread beachballs the app. Run them off-main; only the confirmation
+        // alert stays on main. (Same reasoning as reload() above.)
+        removeBtn?.isEnabled = false
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let counts = MediaLibrary.shared.removalCountsForWatchFolder(summary.url)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard self.confirmRemoval(of: summary.url, removalCounts: counts) else {
+                    self.updateButtonStates()
+                    return
+                }
+                DispatchQueue.global(qos: .userInitiated).async {
+                    MediaLibrary.shared.removeWatchFolder(summary.url, removeEntries: true)
+                    DispatchQueue.main.async {
+                        self.onLibraryChanged?()
+                        self.reload()
+                    }
+                }
+            }
+        }
     }
 
     @objc private func done() {

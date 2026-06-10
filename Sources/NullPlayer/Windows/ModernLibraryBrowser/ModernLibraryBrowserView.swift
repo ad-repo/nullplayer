@@ -9381,9 +9381,6 @@ class ModernLibraryBrowserView: NSView {
 
         // Snapshot main-actor state before going off-actor (value types are Sendable)
         let expandedSnapshot = expandedLocalFolders
-        let availableFolderURLs = MediaLibrary.shared.watchFolderSummaries()
-            .filter { $0.isAvailable }
-            .map { $0.url }
 
         // Show the loading spinner (not the empty "No folders found" state) while the
         // off-actor walk runs — matters for slow network/NAS watch folders.
@@ -9396,7 +9393,12 @@ class ModernLibraryBrowserView: NSView {
         // Cancel any walk still running from a previous (faster) click
         localFolderBuildTask?.cancel()
         localFolderBuildTask = Task.detached { [weak self] in
-            // Build the ordered item list entirely off the main actor (FS enumeration + DB query)
+            // Build the ordered item list entirely off the main actor (FS enumeration + DB query).
+            // watchFolderSummaries() blocks on dataQueue.sync (four full-array snapshots), which a
+            // running import scan can hold for seconds — compute it here, not on the main actor.
+            let availableFolderURLs = MediaLibrary.shared.watchFolderSummaries()
+                .filter { $0.isAvailable }
+                .map { $0.url }
             var items: [ModernDisplayItem] = []
 
             func walk(_ url: URL, indent: Int) {

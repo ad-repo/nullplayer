@@ -185,6 +185,9 @@ Each async open carries a load token (`deferredLocalTrackLoadToken` or `crossfad
 
 Reference pattern: `watchFolderSummaries()` in `MediaLibrary.swift`.
 
+### Never call `dataQueue.sync` library methods from the main thread
+`MediaLibrary` serializes all mutable state on a private `dataQueue`, and an import scan holds that queue for *many seconds* (it does `dataQueue.sync` per 500-file batch). Any main-thread call into a `dataQueue.sync` method therefore blocks the UI with a beachball whenever a scan is running — and scans run exactly when the user has just added/rescanned a folder. The expensive offenders: `watchFolderSummaries()` (four full-array snapshots), `removalCountsForWatchFolder()`, `removeWatchFolder()`, and the bare `tracksSnapshot`/`moviesSnapshot`/`episodesSnapshot` copies. Dispatch these to `DispatchQueue.global(qos: .userInitiated)` (or compute them inside an existing `Task.detached`) and hop back to main only for UI updates; keep blocking `NSAlert.runModal()` confirmations on main *between* the off-main phases, not wrapping them. Reference: `WatchFolderManagerWindow.removeSelected()` / `.reload()` and `buildLocalFolderItems()` in `ModernLibraryBrowserView`. **Still on the main thread (lower-frequency paths, not yet hardened — tracked in #271):** `loadLocalData()` in both browsers and `confirmAndRestoreLibrary()` in `ContextMenuBuilder`.
+
 ### Use `albumsForArtistsBatch` not per-artist queries in the display layer
 `albumsForArtist(_:)` does one SQL query per artist. In `buildLocalArtistItems()` on a 200-artist page this means 200 queries, each a full table scan without the expression index (before v2 schema). Always use `albumsForArtistsBatch(_:)`.
 
