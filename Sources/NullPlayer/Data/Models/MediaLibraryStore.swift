@@ -1483,12 +1483,56 @@ final class MediaLibraryStore {
 
     func deleteWatchFolder(_ path: String) {
         guard let db = db else { return }
-        let urlString = URL(fileURLWithPath: path).absoluteString
+        // Stored watch-folder URLs are *directory* URLs with a trailing slash
+        // (e.g. file:///Volumes/home/MUSIC/). Reconstruct that form explicitly with
+        // isDirectory: true so it matches even when the volume is offline — in that
+        // case URL(fileURLWithPath:) can't stat the path to infer the trailing slash
+        // and would otherwise produce a non-matching slash-less string, leaving the
+        // row (and the folder) undeletable.
+        let dirURLString  = URL(fileURLWithPath: path, isDirectory: true).absoluteString
+        let fileURLString = URL(fileURLWithPath: path, isDirectory: false).absoluteString
         do {
-            // Also try the path directly for already-stored absolute strings
-            try db.run(watchFoldersTable.filter(colURL == urlString).delete())
+            try db.run(watchFoldersTable.filter(
+                colURL == dirURLString || colURL == fileURLString || colURL == path
+            ).delete())
         } catch {
             NSLog("MediaLibraryStore: deleteWatchFolder failed: %@", error.localizedDescription)
+        }
+    }
+
+    /// Bulk-delete tracks/movies/episodes by file URL — used when removing a watch folder
+    /// with `removeEntries: true`. Matches both the stored absoluteString and the raw path,
+    /// chunked under SQLite's IN-clause limit, in a single transaction.
+    func deleteTracks(byURLs urls: [URL]) {
+        deleteRows(from: tracksTable, byURLs: urls, label: "deleteTracks(byURLs:)")
+    }
+
+    func deleteMovies(byURLs urls: [URL]) {
+        deleteRows(from: moviesTable, byURLs: urls, label: "deleteMovies(byURLs:)")
+    }
+
+    func deleteEpisodes(byURLs urls: [URL]) {
+        deleteRows(from: episodesTable, byURLs: urls, label: "deleteEpisodes(byURLs:)")
+    }
+
+    private func deleteRows(from table: Table, byURLs urls: [URL], label: String) {
+        guard let db = db, !urls.isEmpty else { return }
+        var lookupStrings: [String] = []
+        lookupStrings.reserveCapacity(urls.count * 2)
+        for url in urls {
+            lookupStrings.append(url.absoluteString)
+            lookupStrings.append(url.path)
+        }
+        let chunkSize = 500
+        do {
+            try db.transaction {
+                for chunkStart in stride(from: 0, to: lookupStrings.count, by: chunkSize) {
+                    let chunk = Array(lookupStrings[chunkStart..<min(chunkStart + chunkSize, lookupStrings.count)])
+                    try db.run(table.filter(chunk.contains(self.colURL)).delete())
+                }
+            }
+        } catch {
+            NSLog("MediaLibraryStore: %@ failed: %@", label, error.localizedDescription)
         }
     }
 

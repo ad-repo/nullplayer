@@ -1698,6 +1698,15 @@ class ContextMenuBuilder {
         clearAllItem.isEnabled = totalLocalItems > 0
         clearMenu.addItem(clearAllItem)
 
+        clearMenu.addItem(NSMenuItem.separator())
+
+        // Maintenance: remove entries whose files are no longer inside any watch folder
+        // (orphans left by older removals that deleted the folder but not its entries).
+        let cleanOrphansItem = NSMenuItem(title: "Remove Orphaned Entries...", action: #selector(MenuActions.removeOrphanedEntries), keyEquivalent: "")
+        cleanOrphansItem.target = MenuActions.shared
+        cleanOrphansItem.isEnabled = totalLocalItems > 0
+        clearMenu.addItem(cleanOrphansItem)
+
         clearItem.submenu = clearMenu
         libraryMenu.addItem(clearItem)
         
@@ -5415,7 +5424,48 @@ class MenuActions: NSObject {
             successAlert.runModal()
         }
     }
-    
+
+    /// Remove library entries whose files are no longer inside any watch folder. These
+    /// orphans are typically left behind by an older removal that deleted the folder but
+    /// not its entries (so they can't be cleared by removing a folder — none owns them).
+    @objc func removeOrphanedEntries() {
+        let counts = MediaLibrary.shared.orphanedEntryCounts()
+        let total = counts.tracks + counts.movies + counts.episodes + counts.playlists
+
+        guard total > 0 else {
+            let alert = NSAlert()
+            alert.messageText = "Nothing to Clean"
+            alert.informativeText = "Every library entry is inside a current watch folder. There are no orphaned entries to remove."
+            alert.alertStyle = .informational
+            alert.runModal()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Remove Orphaned Entries?"
+        alert.informativeText = "This will remove \(total) entr\(total == 1 ? "y" : "ies") whose files are no longer inside any watched folder (\(counts.tracks) tracks, \(counts.movies) movies, \(counts.episodes) episodes, \(counts.playlists) playlists). Files on disk will NOT be deleted.\n\nA backup will be created automatically before removing."
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "Remove Orphans")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            try MediaLibrary.shared.backupLibrary(customName: "pre_orphan_cleanup_auto_backup")
+        } catch {
+            NSLog("Failed to create pre-orphan-cleanup backup: %@", error.localizedDescription)
+        }
+
+        let removed = MediaLibrary.shared.removeOrphanedEntries()
+        let removedTotal = removed.tracks + removed.movies + removed.episodes + removed.playlists
+
+        let successAlert = NSAlert()
+        successAlert.messageText = "Library Updated"
+        successAlert.informativeText = "Removed \(removedTotal) orphaned entr\(removedTotal == 1 ? "y" : "ies"). A backup was saved automatically."
+        successAlert.alertStyle = .informational
+        successAlert.runModal()
+    }
+
     // MARK: - Visualizations
     
     @objc func addVisualizationsFolder() {
