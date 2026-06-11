@@ -5402,10 +5402,18 @@ class MenuActions: NSObject {
         alert.addButton(withTitle: "Cancel")
         
         if alert.runModal() == .alertFirstButtonReturn {
+            // Abort if the backup fails — proceeding would remove the rollback path
+            // while the success alert falsely claims a backup was saved.
             do {
                 try MediaLibrary.shared.backupLibrary(customName: scope.backupName)
             } catch {
                 NSLog("Failed to create pre-clear backup: %@", error.localizedDescription)
+                let errorAlert = NSAlert()
+                errorAlert.messageText = "Backup Failed"
+                errorAlert.informativeText = "Could not create a backup before clearing, so nothing was removed.\n\n\(error.localizedDescription)"
+                errorAlert.alertStyle = .critical
+                errorAlert.runModal()
+                return
             }
 
             switch scope {
@@ -5418,7 +5426,7 @@ class MenuActions: NSObject {
             case .all:
                 MediaLibrary.shared.clearLibrary()
             }
-            
+
             let successAlert = NSAlert()
             successAlert.messageText = "Library Updated"
             successAlert.informativeText = "Removed \(targetCount) \(targetLabel). A backup was saved automatically."
