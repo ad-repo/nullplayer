@@ -8,7 +8,7 @@ import NullPlayerCore
 /// ## Saved State (AppState struct, v2)
 /// - **Window visibility**: playlist, EQ, browser, ProjectM, spectrum, waveform
 /// - **Window frames**: main, playlist, EQ, browser, ProjectM, spectrum, waveform; ProjectM fullscreen
-/// - **Audio**: volume, balance, shuffle, repeat, gapless, normalization
+/// - **Audio**: volume, balance, shuffle, repeat, gapless, normalization, fake lossless reporting
 /// - **Sweet Fades**: enabled, duration
 /// - **EQ**: enabled, auto, preamp, active-layout bands (10 classic / 21 modern)
 /// - **Playlist**: all tracks (local, Plex, Subsonic, Jellyfin, radio) with metadata
@@ -204,6 +204,7 @@ class AppStateManager {
         var repeatEnabled: Bool
         var gaplessPlaybackEnabled: Bool
         var volumeNormalizationEnabled: Bool
+        var fakeLosslessReportingEnabled: Bool
         
         // Sweet Fades (crossfade) settings
         // Default values ensure backward compatibility with saved states from older versions
@@ -258,7 +259,7 @@ class AppStateManager {
         enum CodingKeys: String, CodingKey {
             case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isWaveformVisible
             case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, waveformWindowFrame, isProjectMFullscreen
-            case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
+            case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled, fakeLosslessReportingEnabled
             case sweetFadeEnabled, sweetFadeDuration
             case eqEnabled, eqAutoEnabled, eqPreamp, eqBands
             case playlistTracks, playlistURLs, currentTrackIndex, playbackPosition, wasPlaying
@@ -299,6 +300,7 @@ class AppStateManager {
             repeatEnabled = try container.decode(Bool.self, forKey: .repeatEnabled)
             gaplessPlaybackEnabled = try container.decode(Bool.self, forKey: .gaplessPlaybackEnabled)
             volumeNormalizationEnabled = try container.decode(Bool.self, forKey: .volumeNormalizationEnabled)
+            fakeLosslessReportingEnabled = try container.decodeIfPresent(Bool.self, forKey: .fakeLosslessReportingEnabled) ?? false
             
             // Sweet Fades - use defaults for backward compatibility with older saved states
             sweetFadeEnabled = try container.decodeIfPresent(Bool.self, forKey: .sweetFadeEnabled) ?? false
@@ -370,6 +372,7 @@ class AppStateManager {
             repeatEnabled: Bool,
             gaplessPlaybackEnabled: Bool,
             volumeNormalizationEnabled: Bool,
+            fakeLosslessReportingEnabled: Bool,
             sweetFadeEnabled: Bool,
             sweetFadeDuration: Double,
             eqEnabled: Bool,
@@ -411,6 +414,7 @@ class AppStateManager {
             self.repeatEnabled = repeatEnabled
             self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
             self.volumeNormalizationEnabled = volumeNormalizationEnabled
+            self.fakeLosslessReportingEnabled = fakeLosslessReportingEnabled
             self.sweetFadeEnabled = sweetFadeEnabled
             self.sweetFadeDuration = sweetFadeDuration
             self.eqEnabled = eqEnabled
@@ -503,6 +507,7 @@ class AppStateManager {
             repeatEnabled: engine.repeatEnabled,
             gaplessPlaybackEnabled: engine.gaplessPlaybackEnabled,
             volumeNormalizationEnabled: engine.volumeNormalizationEnabled,
+            fakeLosslessReportingEnabled: engine.fakeLosslessReportingEnabled,
             
             // Sweet Fades settings
             sweetFadeEnabled: engine.sweetFadeEnabled,
@@ -654,6 +659,7 @@ class AppStateManager {
         engine.repeatEnabled = state.repeatEnabled
         engine.gaplessPlaybackEnabled = state.gaplessPlaybackEnabled
         engine.volumeNormalizationEnabled = state.volumeNormalizationEnabled
+        engine.fakeLosslessReportingEnabled = state.fakeLosslessReportingEnabled
         
         // Restore Sweet Fades settings
         engine.sweetFadeEnabled = state.sweetFadeEnabled

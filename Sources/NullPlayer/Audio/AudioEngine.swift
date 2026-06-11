@@ -22,9 +22,12 @@ extension Notification.Name {
     /// userInfo contains: "state" (PlaybackState)
     static let audioPlaybackStateChanged = Notification.Name("audioPlaybackStateChanged")
 
-    /// Posted when playback option state changes (repeat, shuffle, gapless, normalization, crossfade)
+    /// Posted when playback option state changes (repeat, shuffle, gapless, normalization, fake lossless reporting, crossfade)
     static let audioPlaybackOptionsChanged = Notification.Name("audioPlaybackOptionsChanged")
-    
+
+    /// Posted when lossless authenticity reporting status changes for the current track.
+    static let losslessAuthenticityDidChange = Notification.Name("losslessAuthenticityDidChange")
+
     /// Posted when the current track changes
     /// userInfo contains: "track" (Track?) - may be nil when playback stops
     static let audioTrackDidChange = Notification.Name("audioTrackDidChange")
@@ -175,6 +178,21 @@ class AudioEngine {
     /// Token used to invalidate stale in-flight normalization analyses.
     private var normalizationAnalysisToken: UInt64 = 0
 
+    /// Token used to invalidate stale in-flight lossless authenticity analyses.
+    private var losslessAnalysisToken: UInt64 = 0
+
+    private let losslessAuthenticityCache = LosslessAuthenticityCache()
+
+    /// Dedicated queue for best-effort lossless authenticity scans. Kept separate from
+    /// `deferredIOQueue` so a slow remote/radio decode can never starve volume
+    /// normalization or gapless pre-open. Concurrent so a stalled remote load doesn't
+    /// head-of-line block a newer track's scan — stale results are dropped by token guard.
+    private let losslessAnalysisQueue = DispatchQueue(
+        label: "NullPlayer.AudioEngine.losslessAnalysis",
+        qos: .utility,
+        attributes: .concurrent
+    )
+
     /// Token used to invalidate stale in-flight gapless pre-schedule requests.
     private var gaplessPreparationToken: UInt64 = 0
 
@@ -315,6 +333,23 @@ class AudioEngine {
             notifyPlaybackOptionsChanged()
         }
     }
+
+    /// Fake lossless reporting - best-effort forensic scan for lossless-looking tracks.
+    var fakeLosslessReportingEnabled: Bool = false {
+        didSet {
+            guard fakeLosslessReportingEnabled != oldValue else { return }
+            UserDefaults.standard.set(fakeLosslessReportingEnabled, forKey: "fakeLosslessReportingEnabled")
+            if fakeLosslessReportingEnabled {
+                startLosslessAuthenticityAnalysisForCurrentTrackIfPossible()
+            } else {
+                losslessAnalysisToken &+= 1
+                setLosslessAuthenticityStatus(.disabled)
+            }
+            notifyPlaybackOptionsChanged()
+        }
+    }
+
+    private(set) var currentLosslessAuthenticityStatus: LosslessAuthenticityStatus = .disabled
     
     /// Current normalization gain factor (1.0 = no change)
     private var normalizationGain: Float = 1.0
@@ -664,6 +699,11 @@ class AudioEngine {
 
     private func notifyPlaybackOptionsChanged() {
         NotificationCenter.default.post(name: .audioPlaybackOptionsChanged, object: self)
+    }
+
+    private func setLosslessAuthenticityStatus(_ status: LosslessAuthenticityStatus) {
+        currentLosslessAuthenticityStatus = status
+        NotificationCenter.default.post(name: .losslessAuthenticityDidChange, object: self)
     }
 
     private func captureShufflePlaybackState() -> ShufflePlaybackStateSnapshot {
@@ -1058,6 +1098,7 @@ class AudioEngine {
     private func loadAudioPreferences() {
         gaplessPlaybackEnabled = UserDefaults.standard.bool(forKey: "gaplessPlaybackEnabled")
         volumeNormalizationEnabled = UserDefaults.standard.bool(forKey: "volumeNormalizationEnabled")
+        fakeLosslessReportingEnabled = UserDefaults.standard.bool(forKey: "fakeLosslessReportingEnabled")
         sweetFadeEnabled = UserDefaults.standard.bool(forKey: "sweetFadeEnabled")
         // Load sweet fade duration with default of 5.0 seconds
         let savedDuration = UserDefaults.standard.double(forKey: "sweetFadeDuration")
@@ -2052,6 +2093,10 @@ class AudioEngine {
         // Increment generation to invalidate completion handlers
         playbackGeneration += 1
         let currentGeneration = playbackGeneration
+        losslessAnalysisToken &+= 1
+        if fakeLosslessReportingEnabled {
+            setLosslessAuthenticityStatus(.notApplicable(reason: "No track loaded"))
+        }
         
         if isStreamingPlayback {
             streamingPlayer?.stop()
@@ -3999,6 +4044,13 @@ class AudioEngine {
         _currentTime = 0
         lastReportedTime = 0
 
+        startLosslessAuthenticityAnalysisIfNeeded(
+            track: track,
+            playbackURL: newAudioFile.url,
+            sourceKind: .localFile,
+            generation: generation
+        )
+
         // Analyze and apply volume normalization asynchronously to avoid blocking
         // UI/playback startup on slow disks or NAS volumes.
         if volumeNormalizationEnabled {
@@ -4075,6 +4127,8 @@ class AudioEngine {
         resetLocalCrossfadeStateForDirectPlayback()
         audioFile = nil
         currentTrack = nil
+        losslessAnalysisToken &+= 1
+        setLosslessAuthenticityStatus(fakeLosslessReportingEnabled ? .notApplicable(reason: "No track loaded") : .disabled)
         _currentTime = 0
         lastReportedTime = 0
         state = .stopped
@@ -4151,6 +4205,13 @@ class AudioEngine {
 
         // Increment generation
         playbackGeneration += 1
+
+        startLosslessAuthenticityAnalysisIfNeeded(
+            track: track,
+            playbackURL: track.url,
+            sourceKind: track.isRadioStream ? .internetRadioOrUnknownStream : .serviceStream,
+            generation: playbackGeneration
+        )
 
         // Start playback through the streaming player (routes through AVAudioEngine with EQ)
         streamingPlayer?.play(url: track.url)
@@ -4299,6 +4360,14 @@ class AudioEngine {
             currentTrack = playlist[currentIndex]
             _currentTime = 0
             lastReportedTime = 0
+            if let track = currentTrack, let audioFile {
+                startLosslessAuthenticityAnalysisIfNeeded(
+                    track: track,
+                    playbackURL: audioFile.url,
+                    sourceKind: .localFile,
+                    generation: playbackGeneration
+                )
+            }
             
             // Clear the pre-scheduled track
             nextScheduledFile = nil
@@ -4360,6 +4429,14 @@ class AudioEngine {
             currentTrack = playlist[currentIndex]
             _currentTime = 0
             lastReportedTime = 0
+            if let track = currentTrack {
+                startLosslessAuthenticityAnalysisIfNeeded(
+                    track: track,
+                    playbackURL: track.url,
+                    sourceKind: track.isRadioStream ? .internetRadioOrUnknownStream : .serviceStream,
+                    generation: playbackGeneration
+                )
+            }
             
             // Clear the pre-scheduled track index
             nextScheduledTrackIndex = -1
@@ -5098,6 +5175,107 @@ class AudioEngine {
 
         // Local playback is scheduled on playerNode; keep it at unity gain.
         playerNode.volume = 1.0
+    }
+
+    // MARK: - Lossless Authenticity
+
+    private func startLosslessAuthenticityAnalysisForCurrentTrackIfPossible() {
+        guard let track = currentTrack else {
+            setLosslessAuthenticityStatus(.notApplicable(reason: "No track loaded"))
+            return
+        }
+
+        let playbackURL = isStreamingPlayback ? track.url : (audioFile?.url ?? track.url)
+        let sourceKind: LosslessAnalysisSourceKind
+        if isStreamingPlayback {
+            sourceKind = track.isRadioStream ? .internetRadioOrUnknownStream : .serviceStream
+        } else {
+            sourceKind = .localFile
+        }
+
+        startLosslessAuthenticityAnalysisIfNeeded(
+            track: track,
+            playbackURL: playbackURL,
+            sourceKind: sourceKind,
+            generation: playbackGeneration
+        )
+    }
+
+    private func startLosslessAuthenticityAnalysisIfNeeded(
+        track: Track,
+        playbackURL: URL,
+        sourceKind: LosslessAnalysisSourceKind,
+        generation: Int
+    ) {
+        losslessAnalysisToken &+= 1
+        let token = losslessAnalysisToken
+
+        guard fakeLosslessReportingEnabled else {
+            setLosslessAuthenticityStatus(.disabled)
+            return
+        }
+
+        if let notApplicable = LosslessAuthenticityAnalyzer.notApplicableStatus(for: track, playbackURL: playbackURL) {
+            setLosslessAuthenticityStatus(notApplicable)
+            return
+        }
+
+        let cacheKey = LosslessAuthenticityAnalyzer.cacheKey(for: track, playbackURL: playbackURL)
+        if let cacheKey, let cached = losslessAuthenticityCache.status(forKey: cacheKey) {
+            setLosslessAuthenticityStatus(cached)
+            return
+        }
+
+        setLosslessAuthenticityStatus(.pending)
+
+        let request = LosslessAnalysisRequest(
+            track: track,
+            playbackURL: playbackURL,
+            generation: generation,
+            sourceKind: sourceKind,
+            maxAnalysisSeconds: 90,
+            maxRemoteBytes: 80 * 1024 * 1024
+        )
+
+        // Local files decode straight off disk with no contention, so analyze
+        // immediately. Remote scans are deferred a few seconds so the analyzer's
+        // AVAssetReader doesn't open the stream URL at the same instant the
+        // streaming player does — concurrent fetches of the same endpoint are a
+        // common cause of "Operation Stopped". The token re-check below means a
+        // track change/stop/disable during the delay cancels the scan before any
+        // network work starts.
+        let startDelay: TimeInterval = sourceKind == .localFile ? 0 : 3.0
+
+        let beginAnalysis = { [weak self] in
+            guard let self else { return }
+            guard self.losslessAnalysisToken == token,
+                  self.fakeLosslessReportingEnabled,
+                  self.playbackGeneration == request.generation,
+                  self.currentTrack?.id == request.track.id else { return }
+
+            self.losslessAnalysisQueue.async { [weak self] in
+                guard let self else { return }
+                let status = LosslessAuthenticityAnalyzer.status(for: request)
+                if let cacheKey {
+                    self.losslessAuthenticityCache.store(status, forKey: cacheKey)
+                }
+
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    guard self.losslessAnalysisToken == token,
+                          self.fakeLosslessReportingEnabled,
+                          self.playbackGeneration == request.generation,
+                          self.currentTrack?.id == request.track.id else { return }
+                    self.setLosslessAuthenticityStatus(status)
+                }
+            }
+        }
+
+        if startDelay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + startDelay, execute: beginAnalysis)
+        } else {
+            beginAnalysis()
+        }
     }
     
     // MARK: - Volume Normalization

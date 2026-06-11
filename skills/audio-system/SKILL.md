@@ -87,6 +87,7 @@ Main audio controller managing:
 - Sweet Fades crossfade (both pipelines)
 - Reference Tuning pitch shift (both pipelines via a shared `PitchTuningController`; disabled while casting)
 - Playback Speed tempo control (`0.25×...4.0×`; local files and HTTP streams; disabled while casting)
+- Fake lossless detection reporting (optional forensic analysis for lossless-looking tracks)
 - Output device selection
 - Delegate notifications for UI updates
 - Separate consumer gating for FFT/spectrum work vs live waveform chunk generation
@@ -102,6 +103,7 @@ private var streamingPlayer: StreamingAudioPlayer?
 private var crossfadeStreamingPlayer: StreamingAudioPlayer?
 var gaplessPlaybackEnabled: Bool
 var volumeNormalizationEnabled: Bool
+var fakeLosslessReportingEnabled: Bool
 var sweetFadeEnabled: Bool
 var sweetFadeDuration: TimeInterval
 ```
@@ -151,6 +153,16 @@ func streamingPlayerDidFinishPlaying() {
 ### NAS Responsiveness for Local Track Switches
 
 See `skills/local-library/SKILL.md` — NAS Responsiveness section.
+
+### Fake Lossless Detection Reporting
+
+`LosslessAuthenticityAnalyzer` is an opt-in forensic analyzer for tracks that look lossless by extension or content type (`flac`, `alac`, `wav`, `aiff`, `aif`, PCM). It treats `mp3`, `aac`, `ogg`, `opus`, and ordinary `m4a`/`audio/mp4` as not applicable unless ALAC is explicit. Metadata is only a routing hint; the reported result is probabilistic confidence, not proof.
+
+`AudioEngine.fakeLosslessReportingEnabled` persists to `UserDefaults` and `AppState`, posts `.audioPlaybackOptionsChanged` for menu state and `.losslessAuthenticityDidChange` for status observers, and tracks `currentLosslessAuthenticityStatus`. Analysis runs on a dedicated `losslessAnalysisQueue` with its own `losslessAnalysisToken`; completions must verify the token, current `Track.id`, playback generation, and toggle state before publishing a result. Stopping playback or disabling the toggle invalidates in-flight work.
+
+Local files are decoded through a separate `AVAudioFile` read handle. Service streams use bounded `AVAssetReader` decoding of the resolved playback URL. Radio/live streams are best effort and should never claim whole-track authenticity. The session cache is in-memory only, guarded by a serial queue, and stores final statuses only, never `.pending`.
+
+The scorer operates on decoded Float32 PCM or synthetic channel arrays for tests: 16,384-sample frames, 8,192 hop, vDSP Hann window, vDSP real FFT, DC/Nyquist handling, Hann coherent-gain normalization, near-silence rejection below -60 dBFS, and per-bin max across channels instead of L+R averaging. Brickwall evidence is capped on one axis, with a separate hi-res upsample penalty for sample rates at or above 88.2 kHz.
 
 ## Equalizer
 

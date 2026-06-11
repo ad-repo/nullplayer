@@ -899,6 +899,11 @@ class ContextMenuBuilder {
         normalizeItem.state = engine.volumeNormalizationEnabled ? .on : .off
         optionsMenu.addItem(normalizeItem)
 
+        let fakeLosslessItem = NSMenuItem(title: "Fake Lossless Detection Reporting", action: #selector(MenuActions.toggleFakeLosslessReporting), keyEquivalent: "")
+        fakeLosslessItem.target = MenuActions.shared
+        fakeLosslessItem.state = engine.fakeLosslessReportingEnabled ? .on : .off
+        optionsMenu.addItem(fakeLosslessItem)
+
         // Reference Tuning submenu
         let tuningRoot = NSMenuItem(title: "Reference Tuning", action: nil, keyEquivalent: "")
         tuningRoot.submenu = buildReferenceTuningMenu()
@@ -3221,16 +3226,16 @@ class MenuActions: NSObject {
             if let channels = track.channels { info.append("Channels: \(formatChannels(channels))") }
         }
         info.append("")
-        
+
         // Source
         if let serverName = PlexManager.shared.currentServer?.name {
             info.append("Source: Plex (\(serverName))")
         } else {
             info.append("Source: Plex")
         }
-        
+
         alert.informativeText = info.joined(separator: "\n")
-        alert.runModal()
+        runTrackInfoAlert(alert, for: track, forRadio: false)
     }
     
     @MainActor
@@ -3285,7 +3290,7 @@ class MenuActions: NSObject {
         info.append("Track ID: \(subsonicId)")
 
         alert.informativeText = info.joined(separator: "\n")
-        alert.runModal()
+        runTrackInfoAlert(alert, for: track, forRadio: false)
     }
     
     @MainActor
@@ -3341,7 +3346,7 @@ class MenuActions: NSObject {
         info.append("Track ID: \(jellyfinId)")
 
         alert.informativeText = info.joined(separator: "\n")
-        alert.runModal()
+        runTrackInfoAlert(alert, for: track, forRadio: false)
     }
     
     @MainActor
@@ -3397,7 +3402,7 @@ class MenuActions: NSObject {
         info.append("Track ID: \(embyId)")
 
         alert.informativeText = info.joined(separator: "\n")
-        alert.runModal()
+        runTrackInfoAlert(alert, for: track, forRadio: false)
     }
 
     @MainActor
@@ -3475,7 +3480,7 @@ class MenuActions: NSObject {
         info.append("Source: Local File")
 
         alert.informativeText = info.joined(separator: "\n")
-        alert.runModal()
+        runTrackInfoAlert(alert, for: track, forRadio: track.isRadioStream)
     }
 
     private func loadLocalAlbumArtist(from fileURL: URL) async -> String? {
@@ -3500,6 +3505,100 @@ class MenuActions: NSObject {
 
             return nil
         }.value
+    }
+
+    /// Presents a track-info alert whose Lossless Authenticity section live-refreshes
+    /// while an async scan is still pending. `runModal()` pumps the main run loop, so the
+    /// analysis completion (posted on `main`) reaches the observer and updates the accessory
+    /// in place — no reopen required. The observer's lifetime is bounded by the synchronous
+    /// modal. Falls back to a plain modal when there is nothing authenticity-related to show.
+    private func runTrackInfoAlert(_ alert: NSAlert, for track: Track, forRadio: Bool) {
+        let engine = WindowManager.shared.audioEngine
+        guard engine.fakeLosslessReportingEnabled,
+              engine.currentTrack?.id == track.id,
+              let initialText = losslessAuthenticityText(for: track, forRadio: forRadio) else {
+            alert.runModal()
+            return
+        }
+
+        let field = NSTextField(wrappingLabelWithString: initialText)
+        field.font = .systemFont(ofSize: 11)
+        field.textColor = .secondaryLabelColor
+        field.preferredMaxLayoutWidth = 340
+        // Reserve space for a full settled result while pending so the pending→result
+        // growth never clips; settled states size to their content exactly.
+        let isPending: Bool
+        if case .pending = engine.currentLosslessAuthenticityStatus { isPending = true } else { isPending = false }
+        let height = isPending ? CGFloat(132) : field.intrinsicContentSize.height
+        field.frame = NSRect(x: 0, y: 0, width: 340, height: height)
+        alert.accessoryView = field
+
+        let observer = NotificationCenter.default.addObserver(
+            forName: .losslessAuthenticityDidChange,
+            object: engine,
+            queue: .main
+        ) { [weak field] _ in
+            guard let field else { return }
+            field.stringValue = self.losslessAuthenticityText(for: track, forRadio: forRadio) ?? ""
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        alert.runModal()
+    }
+
+    /// Formats the Lossless Authenticity section for the current status, or `nil` when
+    /// there is nothing to show (reporting off, different track, or disabled). For radio,
+    /// any non-result state collapses to the friendly "live stream sample unavailable".
+    private func losslessAuthenticityText(for track: Track, forRadio: Bool) -> String? {
+        let engine = WindowManager.shared.audioEngine
+        guard engine.fakeLosslessReportingEnabled, engine.currentTrack?.id == track.id else { return nil }
+
+        switch engine.currentLosslessAuthenticityStatus {
+        case .disabled:
+            return nil
+        case .pending:
+            return "Lossless Authenticity: analyzing…"
+        case .notApplicable(let reason):
+            if forRadio { return "Lossless Authenticity: Not applicable: live stream sample unavailable" }
+            return "Lossless Authenticity: Not applicable: \(reason)"
+        case .failed(let reason):
+            if forRadio { return "Lossless Authenticity: Not applicable: live stream sample unavailable" }
+            return "Lossless Authenticity: Failed: \(reason)"
+        case .available(let result), .inconclusive(let result):
+            var lines = ["Lossless Authenticity:"]
+            lines.append("Confidence: \(result.confidencePercent)% (\(losslessClassificationDisplayName(result.classification)))")
+            lines.append("Coverage: \(losslessCoverageDisplayName(result.coverage)), \(String(format: "%.1f", result.analyzedDuration))s analyzed")
+            for evidence in result.evidence {
+                lines.append("\(evidence.label): \(evidence.value) (\(evidence.severity.rawValue))")
+            }
+            lines.append("Note: This is probabilistic; it cannot prove provenance.")
+            return lines.joined(separator: "\n")
+        }
+    }
+
+    private func losslessClassificationDisplayName(_ classification: LosslessAuthenticityResult.Classification) -> String {
+        switch classification {
+        case .highConfidenceGenuine:
+            return "High confidence genuine"
+        case .moderateConfidence:
+            return "Moderate"
+        case .lowConfidencePossibleLossySource:
+            return "Low confidence possible lossy source"
+        case .veryLowConfidenceLikelyLossyOrUpsampled:
+            return "Very low confidence likely lossy or upsampled"
+        case .inconclusive:
+            return "Inconclusive"
+        }
+    }
+
+    private func losslessCoverageDisplayName(_ coverage: LosslessAuthenticityResult.Coverage) -> String {
+        switch coverage {
+        case .sampledFile:
+            return "sampled file"
+        case .boundedRemoteSample:
+            return "bounded remote sample"
+        case .liveStreamSample:
+            return "live stream sample"
+        }
     }
     
     // MARK: - Formatting Helpers for About Playing
@@ -3810,6 +3909,10 @@ class MenuActions: NSObject {
     
     @objc func toggleVolumeNormalization() {
         WindowManager.shared.audioEngine.volumeNormalizationEnabled.toggle()
+    }
+
+    @objc func toggleFakeLosslessReporting() {
+        WindowManager.shared.audioEngine.fakeLosslessReportingEnabled.toggle()
     }
 
     // MARK: - Reference Tuning

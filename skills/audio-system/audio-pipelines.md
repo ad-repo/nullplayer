@@ -141,6 +141,31 @@ normalizationGain = pow(10.0, finalGainDB / 20.0)
 - Uses RMS as a loudness estimate (not true LUFS measurement)
 - Re-analyzes when track loads (no persistent cache)
 
+## Fake Lossless Detection Reporting
+
+When enabled via **Playback Options → Fake Lossless Detection Reporting**, the engine runs a bounded forensic scan for tracks that look lossless by extension or content type: `flac`, `alac`, `wav`, `aiff`, `aif`, or PCM. `mp3`, `aac`, `ogg`, `opus`, and ordinary `m4a`/`audio/mp4` are not applicable unless ALAC is explicit. Metadata is only a routing hint; the result is probabilistic confidence with evidence, not proof of provenance.
+
+### Analysis Lifecycle
+
+- Local files are decoded from a separate `AVAudioFile` handle on `losslessAnalysisQueue`.
+- Service streams use `AVAssetReader` over the resolved playback URL and are bounded to 90 seconds or 80 MB.
+- Internet radio and unknown live streams are best effort and must never claim whole-track authenticity.
+- `AudioEngine` uses a separate `losslessAnalysisToken`; completions must verify token, current `Track.id`, playback generation, and toggle state before publishing.
+- The session cache is in-memory only, guarded by a serial queue, and stores final statuses only, never `.pending`.
+
+### Scoring
+
+`LosslessAuthenticityAnalyzer` operates on decoded Float32 PCM or synthetic channel arrays for tests:
+
+- 16,384-sample frames, 8,192 hop
+- vDSP Hann window and real FFT
+- DC/Nyquist handling with Hann coherent-gain normalization
+- near-silence rejection below -60 dBFS
+- per-bin max across channels instead of L+R averaging, so out-of-phase high-frequency content is not cancelled
+- capped brickwall evidence axis plus a separate hi-res upsample penalty for sample rates at or above 88.2 kHz
+
+The UI copy must say confidence/evidence. It must not say verified.
+
 ## Output Device Selection
 
 AudioEngine supports routing audio to specific output devices:
