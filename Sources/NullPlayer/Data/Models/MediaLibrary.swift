@@ -603,28 +603,29 @@ class MediaLibrary {
                 .map { Self.normalizedPath(for: $0) }
                 .filter { $0 != removedFolderPath }
 
+            // Use track/movie/episode url.path directly — entries are scanned from the
+            // already-normalized watch folder URL, so the path is resolved. Calling
+            // normalizedPath() (resolvingSymlinksInPath) per entry is an O(N) filesystem
+            // hit that takes ~20s on a 60k-track library. (Same fix as watchFolderSummaries.)
             let trackCount = tracks.reduce(0) { count, track in
-                let path = Self.normalizedPath(for: track.url)
-                return count + (Self.shouldRemovePath(
-                    path,
+                count + (Self.shouldRemovePath(
+                    track.url.path,
                     whenRemovingFolderPath: removedFolderPath,
                     remainingFolderPaths: remainingFolderPaths
                 ) ? 1 : 0)
             }
 
             let movieCount = movies.reduce(0) { count, movie in
-                let path = Self.normalizedPath(for: movie.url)
-                return count + (Self.shouldRemovePath(
-                    path,
+                count + (Self.shouldRemovePath(
+                    movie.url.path,
                     whenRemovingFolderPath: removedFolderPath,
                     remainingFolderPaths: remainingFolderPaths
                 ) ? 1 : 0)
             }
 
             let episodeCount = episodes.reduce(0) { count, episode in
-                let path = Self.normalizedPath(for: episode.url)
-                return count + (Self.shouldRemovePath(
-                    path,
+                count + (Self.shouldRemovePath(
+                    episode.url.path,
                     whenRemovingFolderPath: removedFolderPath,
                     remainingFolderPaths: remainingFolderPaths
                 ) ? 1 : 0)
@@ -1118,6 +1119,12 @@ class MediaLibrary {
         let removedFolderPath = Self.normalizedPath(for: url)
         var didMutateWatchFolders = false
         var removalCounts = (tracks: 0, movies: 0, episodes: 0)
+        // Collect the actual URLs removed in memory so we can delete the matching rows
+        // from the SQLite store. The browser reads from the store, not these in-memory
+        // arrays, so skipping the store delete leaves removed tracks visible forever.
+        var removedTrackURLs: [URL] = []
+        var removedMovieURLs: [URL] = []
+        var removedEpisodeURLs: [URL] = []
 
         dataQueue.sync {
             let originalCount = watchFolders.count
@@ -1130,41 +1137,44 @@ class MediaLibrary {
 
             let remainingFolderPaths = watchFolders.map { Self.normalizedPath(for: $0) }
 
+            // Compare against url.path directly (resolved at scan time) — not
+            // normalizedPath() per entry, which is an O(N) filesystem hit (~20s on a
+            // 60k-track library). Matches removalCountsForWatchFolder/watchFolderSummaries.
             tracks.removeAll { track in
-                let normalizedTrackPath = Self.normalizedPath(for: track.url)
                 guard Self.shouldRemovePath(
-                    normalizedTrackPath,
+                    track.url.path,
                     whenRemovingFolderPath: removedFolderPath,
                     remainingFolderPaths: remainingFolderPaths
                 ) else { return false }
                 tracksByPath.removeValue(forKey: track.url.path)
                 scanSignaturesByPath.removeValue(forKey: track.url.path)
+                removedTrackURLs.append(track.url)
                 removalCounts.tracks += 1
                 return true
             }
 
             movies.removeAll { movie in
-                let normalizedMoviePath = Self.normalizedPath(for: movie.url)
                 guard Self.shouldRemovePath(
-                    normalizedMoviePath,
+                    movie.url.path,
                     whenRemovingFolderPath: removedFolderPath,
                     remainingFolderPaths: remainingFolderPaths
                 ) else { return false }
                 moviesByPath.removeValue(forKey: movie.url.path)
                 scanSignaturesByPath.removeValue(forKey: movie.url.path)
+                removedMovieURLs.append(movie.url)
                 removalCounts.movies += 1
                 return true
             }
 
             episodes.removeAll { episode in
-                let normalizedEpisodePath = Self.normalizedPath(for: episode.url)
                 guard Self.shouldRemovePath(
-                    normalizedEpisodePath,
+                    episode.url.path,
                     whenRemovingFolderPath: removedFolderPath,
                     remainingFolderPaths: remainingFolderPaths
                 ) else { return false }
                 episodesByPath.removeValue(forKey: episode.url.path)
                 scanSignaturesByPath.removeValue(forKey: episode.url.path)
+                removedEpisodeURLs.append(episode.url)
                 removalCounts.episodes += 1
                 return true
             }
@@ -1175,13 +1185,94 @@ class MediaLibrary {
         NSLog("MediaLibrary: Removed watch folder: %@ (removed entries: %d tracks, %d movies, %d episodes)",
               removedFolderPath, removalCounts.tracks, removalCounts.movies, removalCounts.episodes)
         store.deleteWatchFolder(removedFolderPath)
+        store.deleteTracks(byURLs: removedTrackURLs)
+        store.deleteMovies(byURLs: removedMovieURLs)
+        store.deleteEpisodes(byURLs: removedEpisodeURLs)
 
         if removeEntries,
            (removalCounts.tracks > 0 || removalCounts.movies > 0 || removalCounts.episodes > 0) {
             notifyChange()
         }
     }
-    
+
+    /// Counts of entries that are no longer inside any current watch folder. These are
+    /// "orphans" — typically left behind by an older buggy removal that deleted the
+    /// watch folder but not its entries. Preview for `removeOrphanedEntries()`.
+    func orphanedEntryCounts() -> (tracks: Int, movies: Int, episodes: Int, playlists: Int) {
+        dataQueue.sync {
+            let folderPaths = watchFolders.map { Self.normalizedPath(for: $0) }
+            // url.path directly (resolved at scan time) — never normalizedPath() per
+            // entry, which is an O(N) filesystem hit on large libraries.
+            let t = tracks.reduce(0)    { $0 + (Self.isPath($1.url.path, insideAnyFolderPaths: folderPaths) ? 0 : 1) }
+            let m = movies.reduce(0)    { $0 + (Self.isPath($1.url.path, insideAnyFolderPaths: folderPaths) ? 0 : 1) }
+            let e = episodes.reduce(0)  { $0 + (Self.isPath($1.url.path, insideAnyFolderPaths: folderPaths) ? 0 : 1) }
+            let p = playlists.reduce(0) { $0 + (Self.isPath($1.url.path, insideAnyFolderPaths: folderPaths) ? 0 : 1) }
+            return (t, m, e, p)
+        }
+    }
+
+    /// Remove every library entry whose file is not inside any current watch folder.
+    /// Deletes from both the in-memory arrays and the SQLite store. Returns the counts
+    /// removed. Files on disk are never touched.
+    @discardableResult
+    func removeOrphanedEntries() -> (tracks: Int, movies: Int, episodes: Int, playlists: Int) {
+        var counts = (tracks: 0, movies: 0, episodes: 0, playlists: 0)
+        var removedTrackURLs: [URL] = []
+        var removedMovieURLs: [URL] = []
+        var removedEpisodeURLs: [URL] = []
+        var removedPlaylistPaths: [String] = []
+
+        dataQueue.sync {
+            let folderPaths = watchFolders.map { Self.normalizedPath(for: $0) }
+
+            tracks.removeAll { track in
+                guard !Self.isPath(track.url.path, insideAnyFolderPaths: folderPaths) else { return false }
+                tracksByPath.removeValue(forKey: track.url.path)
+                scanSignaturesByPath.removeValue(forKey: track.url.path)
+                removedTrackURLs.append(track.url)
+                counts.tracks += 1
+                return true
+            }
+            movies.removeAll { movie in
+                guard !Self.isPath(movie.url.path, insideAnyFolderPaths: folderPaths) else { return false }
+                moviesByPath.removeValue(forKey: movie.url.path)
+                scanSignaturesByPath.removeValue(forKey: movie.url.path)
+                removedMovieURLs.append(movie.url)
+                counts.movies += 1
+                return true
+            }
+            episodes.removeAll { episode in
+                guard !Self.isPath(episode.url.path, insideAnyFolderPaths: folderPaths) else { return false }
+                episodesByPath.removeValue(forKey: episode.url.path)
+                scanSignaturesByPath.removeValue(forKey: episode.url.path)
+                removedEpisodeURLs.append(episode.url)
+                counts.episodes += 1
+                return true
+            }
+            playlists.removeAll { playlist in
+                guard !Self.isPath(playlist.url.path, insideAnyFolderPaths: folderPaths) else { return false }
+                playlistsByPath.removeValue(forKey: playlist.url.path)
+                scanSignaturesByPath.removeValue(forKey: playlist.url.path)
+                removedPlaylistPaths.append(playlist.url.path)
+                counts.playlists += 1
+                return true
+            }
+        }
+
+        let removedAny = !removedTrackURLs.isEmpty || !removedMovieURLs.isEmpty
+            || !removedEpisodeURLs.isEmpty || !removedPlaylistPaths.isEmpty
+        guard removedAny else { return counts }
+
+        NSLog("MediaLibrary: Removed orphaned entries not under any watch folder: %d tracks, %d movies, %d episodes, %d playlists",
+              counts.tracks, counts.movies, counts.episodes, counts.playlists)
+        store.deleteTracks(byURLs: removedTrackURLs)
+        store.deleteMovies(byURLs: removedMovieURLs)
+        store.deleteEpisodes(byURLs: removedEpisodeURLs)
+        store.deletePlaylistsByPath(removedPlaylistPaths)
+        notifyChange()
+        return counts
+    }
+
     /// Adds individual video files to the library (movies or episodes based on classification).
     func addVideoFiles(urls: [URL]) {
         for url in urls {

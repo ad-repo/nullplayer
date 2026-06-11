@@ -259,11 +259,37 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
         let row = tableView.selectedRow
         guard row >= 0 && row < summaries.count else { return }
         let summary = summaries[row]
-        let counts = MediaLibrary.shared.removalCountsForWatchFolder(summary.url)
-        guard confirmRemoval(of: summary.url, removalCounts: counts) else { return }
-        MediaLibrary.shared.removeWatchFolder(summary.url, removeEntries: true)
-        onLibraryChanged?()
-        reload()
+
+        // Both removalCountsForWatchFolder() and removeWatchFolder() block on
+        // dataQueue.sync (and the latter also performs a SQLite write). A running
+        // import scan can hold dataQueue for many seconds, so calling these on the
+        // main thread beachballs the app. Run them off-main; only the confirmation
+        // sheet stays on main. (Same reasoning as reload() above.)
+        removeBtn?.isEnabled = false
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let counts = MediaLibrary.shared.removalCountsForWatchFolder(summary.url)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // Present as a sheet on the manager window — a free-floating NSAlert
+                // opens at the normal window level, BELOW this window (which sits at
+                // .modalPanel for issue #254) and below any always-on-top floating
+                // windows, so it's invisible and never confirmed. A sheet inherits the
+                // parent's level and is window-modal, blocking the table beneath it.
+                self.confirmRemoval(of: summary.url, removalCounts: counts) { confirmed in
+                    guard confirmed else {
+                        self.updateButtonStates()
+                        return
+                    }
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        MediaLibrary.shared.removeWatchFolder(summary.url, removeEntries: true)
+                        DispatchQueue.main.async {
+                            self.onLibraryChanged?()
+                            self.reload()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @objc private func done() {
@@ -280,8 +306,9 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
 
     private func confirmRemoval(
         of folderURL: URL,
-        removalCounts: (tracks: Int, movies: Int, episodes: Int)
-    ) -> Bool {
+        removalCounts: (tracks: Int, movies: Int, episodes: Int),
+        completion: @escaping (Bool) -> Void
+    ) {
         let total = removalCounts.tracks + removalCounts.movies + removalCounts.episodes
         let alert = NSAlert()
         alert.messageText = "Remove Watched Folder?"
@@ -296,7 +323,15 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Remove Folder")
         alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
+        // Sheet on the manager window so it's always visible and window-modal. Fall
+        // back to app-modal only if the window is somehow unavailable.
+        guard let window = self.window else {
+            completion(alert.runModal() == .alertFirstButtonReturn)
+            return
+        }
+        alert.beginSheetModal(for: window) { response in
+            completion(response == .alertFirstButtonReturn)
+        }
     }
 
     // MARK: - NSWindowDelegate

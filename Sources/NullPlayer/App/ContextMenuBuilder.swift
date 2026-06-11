@@ -1698,6 +1698,17 @@ class ContextMenuBuilder {
         clearAllItem.isEnabled = totalLocalItems > 0
         clearMenu.addItem(clearAllItem)
 
+        clearMenu.addItem(NSMenuItem.separator())
+
+        // Maintenance: remove entries whose files are no longer inside any watch folder
+        // (orphans left by older removals that deleted the folder but not its entries).
+        let cleanOrphansItem = NSMenuItem(title: "Remove Orphaned Entries...", action: #selector(MenuActions.removeOrphanedEntries), keyEquivalent: "")
+        cleanOrphansItem.target = MenuActions.shared
+        // Include playlists — orphaned playlists are cleaned too, so this must not be
+        // disabled when only playlist orphans remain. (totalLocalItems excludes playlists.)
+        cleanOrphansItem.isEnabled = totalLocalItems > 0 || store.playlistCount() > 0
+        clearMenu.addItem(cleanOrphansItem)
+
         clearItem.submenu = clearMenu
         libraryMenu.addItem(clearItem)
         
@@ -5391,10 +5402,18 @@ class MenuActions: NSObject {
         alert.addButton(withTitle: "Cancel")
         
         if alert.runModal() == .alertFirstButtonReturn {
+            // Abort if the backup fails — proceeding would remove the rollback path
+            // while the success alert falsely claims a backup was saved.
             do {
                 try MediaLibrary.shared.backupLibrary(customName: scope.backupName)
             } catch {
                 NSLog("Failed to create pre-clear backup: %@", error.localizedDescription)
+                let errorAlert = NSAlert()
+                errorAlert.messageText = "Backup Failed"
+                errorAlert.informativeText = "Could not create a backup before clearing, so nothing was removed.\n\n\(error.localizedDescription)"
+                errorAlert.alertStyle = .critical
+                errorAlert.runModal()
+                return
             }
 
             switch scope {
@@ -5407,7 +5426,7 @@ class MenuActions: NSObject {
             case .all:
                 MediaLibrary.shared.clearLibrary()
             }
-            
+
             let successAlert = NSAlert()
             successAlert.messageText = "Library Updated"
             successAlert.informativeText = "Removed \(targetCount) \(targetLabel). A backup was saved automatically."
@@ -5415,7 +5434,68 @@ class MenuActions: NSObject {
             successAlert.runModal()
         }
     }
-    
+
+    /// Remove library entries whose files are no longer inside any watch folder. These
+    /// orphans are typically left behind by an older removal that deleted the folder but
+    /// not its entries (so they can't be cleared by removing a folder — none owns them).
+    @objc func removeOrphanedEntries() {
+        // orphanedEntryCounts() and removeOrphanedEntries() block on dataQueue.sync and
+        // scan the whole library, and the backup copies the (potentially large) DB file.
+        // Run them off-main so the menu action can't freeze the UI; keep all NSAlerts on main.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let counts = MediaLibrary.shared.orphanedEntryCounts()
+            let total = counts.tracks + counts.movies + counts.episodes + counts.playlists
+
+            DispatchQueue.main.async {
+                guard total > 0 else {
+                    let alert = NSAlert()
+                    alert.messageText = "Nothing to Clean"
+                    alert.informativeText = "Every library entry is inside a current watch folder. There are no orphaned entries to remove."
+                    alert.alertStyle = .informational
+                    alert.runModal()
+                    return
+                }
+
+                let alert = NSAlert()
+                alert.messageText = "Remove Orphaned Entries?"
+                alert.informativeText = "This will remove \(total) entr\(total == 1 ? "y" : "ies") whose files are no longer inside any watched folder (\(counts.tracks) tracks, \(counts.movies) movies, \(counts.episodes) episodes, \(counts.playlists) playlists). Files on disk will NOT be deleted.\n\nA backup will be created automatically before removing."
+                alert.alertStyle = .critical
+                alert.addButton(withTitle: "Remove Orphans")
+                alert.addButton(withTitle: "Cancel")
+
+                guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+                DispatchQueue.global(qos: .userInitiated).async {
+                    // Abort if the backup fails — proceeding would remove the rollback path.
+                    do {
+                        try MediaLibrary.shared.backupLibrary(customName: "pre_orphan_cleanup_auto_backup")
+                    } catch {
+                        NSLog("Failed to create pre-orphan-cleanup backup: %@", error.localizedDescription)
+                        DispatchQueue.main.async {
+                            let errorAlert = NSAlert()
+                            errorAlert.messageText = "Backup Failed"
+                            errorAlert.informativeText = "Could not create a backup before removing orphaned entries, so nothing was removed.\n\n\(error.localizedDescription)"
+                            errorAlert.alertStyle = .critical
+                            errorAlert.runModal()
+                        }
+                        return
+                    }
+
+                    let removed = MediaLibrary.shared.removeOrphanedEntries()
+                    let removedTotal = removed.tracks + removed.movies + removed.episodes + removed.playlists
+
+                    DispatchQueue.main.async {
+                        let successAlert = NSAlert()
+                        successAlert.messageText = "Library Updated"
+                        successAlert.informativeText = "Removed \(removedTotal) orphaned entr\(removedTotal == 1 ? "y" : "ies"). A backup was saved automatically."
+                        successAlert.alertStyle = .informational
+                        successAlert.runModal()
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Visualizations
     
     @objc func addVisualizationsFolder() {
