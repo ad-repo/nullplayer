@@ -473,11 +473,12 @@ in sync on the Mac. NullPlayer owns the local video clock, so it can correct A/V
    truly started playing** (`CastManager.isSonosPlaybackConfirmed`, backed by
    `sonosHasSeenActivePlayback`). Before that it leaves the video alone — otherwise it chases the
    optimistic, ever-advancing startup position and seek-freezes the video. Once playing it does
-   one initial alignment seek, then holds sync with a **playback-rate trim** (wide ±10% band — the
-   video is muted, so no pitch artifacts) and re-seeks only for ≥3 s drift with a 6 s cooldown
-   (seeking a network-streamed video re-buffers it; seeking every poll stalls it). The **A/V
-   offset slider** is the primary fine calibration (persisted to `UserDefaults` key
-   `youtubeSonosAVOffset`).
+   one initial alignment seek and then stops background sync. It must not continuously chase Sonos
+   drift: Sonos position is coarse and seeking a network-streamed YouTube video re-buffers it, so
+   repeated drift correction causes loading spinners every few seconds. The **A/V sync offset**
+   popover is the primary fine calibration (persisted to `UserDefaults` key
+   `youtubeSonosAVOffset`). Moving the slider only changes the stored offset and label; the
+   explicit **Resync** button applies the offset with a single deliberate video seek.
 
 ### Enabling the feature (requires yt-dlp + ffmpeg)
 The feature is gated on a runtime presence check (`HelperBinaries`). The menu item
@@ -506,24 +507,31 @@ this is intentional. For the DMG distribution, binaries are provisioned opt-in v
    if it looks like a YouTube link.
 3. Audio starts on the checked rooms; the first checked room becomes the coordinator and the rest
    join its group. The video opens muted.
-4. Drag the **A/V offset slider** until lip-sync is right (it persists across sessions).
-5. **Output → Streaming → Sonos → Stop YouTube → Sonos** tears everything down (unregisters the proxy *or* live
+4. Open the **A/V Sync Offset** popover and drag the slider until the displayed offset looks
+   right; it persists across sessions. Dragging does **not** seek the video.
+5. Click **Resync** to apply the current offset with one deliberate video seek. Avoid repeated
+   Resync clicks because each seek can force the remote YouTube stream to buffer.
+6. **Output → Streaming → Sonos → Stop YouTube → Sonos** tears everything down (unregisters the proxy *or* live
    stream, kills ffmpeg with SIGTERM→SIGKILL if it was used, stops the cast, restores video volume).
 
 ### v1 limitations
 - **Coarse sync only.** Sonos position is whole-second granular plus a ~1–3 s startup buffer;
-  the slider closes the residual. Not frame-accurate.
+  the offset control closes the residual. Not frame-accurate.
 - **Opus-only videos are unreliable.** The non-AAC fallback (live ffmpeg → `x-rincon-mp3radio://`)
   often won't sustain on Sonos. Videos that offer AAC (almost all) use the solid proxy path.
-- **No combined pause/seek/scrub.** Pausing the local video leaves Sonos playing (sync skips a
-  paused video and resyncs on resume). Whole-timeline scrubbing isn't wired — use Stop and reopen.
+- **No automatic drift correction.** After the startup alignment, NullPlayer leaves the local video
+  at 1.0x. Automatic rate trimming and repeated drift seeks were removed because they make remote
+  YouTube video stall. Use the offset control + Resync for manual correction.
+- **No combined pause/seek/scrub.** Pausing the local video leaves Sonos playing. Whole-timeline
+  scrubbing isn't wired — use Stop and reopen.
 - **Extraction fragility.** yt-dlp breaks when YouTube changes; a bundled copy needs app
   updates (a Homebrew copy can be `brew upgrade`d independently).
 
 ### Key files
 `Video/HelperBinaries.swift`, `Video/YouTubeStreamResolver.swift` (resolves streams + headers +
 `duration`), `Video/YouTubeToSonosCoordinator.swift` (AAC-proxy vs live-ffmpeg branch),
-`Video/SonosVideoSyncController.swift` (confirmed-playback gate, rate-trim + cooldown seeks);
+`Video/SonosVideoSyncController.swift` (confirmed-playback gate, one-shot startup alignment,
+manual Resync);
 `Casting/LocalMediaServer.swift` (`registerStreamURL` with `requestHeaders` passthrough →
 `/stream/*`; `registerLiveStream` → `/live/*` fallback);
 `Casting/CastManager.swift` (`cast(to:url:metadata:)` normal-track path, `castLiveAudioStream`

@@ -280,7 +280,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         set { videoPlayerView.onAVOffsetChanged = newValue }
     }
 
-    /// Show or hide the A/V offset slider (replaces the seek bar while active)
+    /// Callback when the user explicitly applies the current A/V offset.
+    var onAVOffsetResync: (() -> Void)? {
+        get { videoPlayerView.onAVOffsetResync }
+        set { videoPlayerView.onAVOffsetResync = newValue }
+    }
+
+    /// Show or hide the A/V offset control.
     func setAVOffsetVisible(_ visible: Bool) {
         videoPlayerView.setAVOffsetVisible(visible)
     }

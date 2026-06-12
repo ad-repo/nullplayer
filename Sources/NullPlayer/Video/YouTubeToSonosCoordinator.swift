@@ -112,6 +112,9 @@ final class YouTubeToSonosCoordinator {
             videoController.onAVOffsetChanged = { [weak syncController] value in
                 syncController?.userOffset = value
             }
+            videoController.onAVOffsetResync = { [weak syncController] in
+                syncController?.realignToCurrentOffset()
+            }
             videoController.setAVOffsetVisible(true)
             syncController.start()
 
@@ -141,6 +144,7 @@ final class YouTubeToSonosCoordinator {
 
         if let videoController = videoController {
             videoController.onAVOffsetChanged = nil
+            videoController.onAVOffsetResync = nil
             videoController.setAVOffsetVisible(false)
             videoController.stop()
             videoController.volume = 1.0 // Restore volume
