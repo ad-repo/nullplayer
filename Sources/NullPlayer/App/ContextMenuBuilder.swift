@@ -2208,6 +2208,107 @@ class ContextMenuBuilder {
         return item.submenu ?? NSMenu()
     }
 
+    private static func addSonosRoomCheckboxes(to menu: NSMenu, castManager: CastManager) {
+        let sonosRooms = castManager.sonosRooms
+        let castTargetUDN = castManager.activeSession?.device.id
+        let isCastingToSonos = castManager.activeSession?.device.type == .sonos
+
+        for room in sonosRooms {
+            let isChecked: Bool
+            if isCastingToSonos, let targetUDN = castTargetUDN {
+                if room.id == targetUDN {
+                    isChecked = true
+                } else if room.groupCoordinatorUDN == targetUDN {
+                    isChecked = true
+                } else if room.isGroupCoordinator {
+                    let targetRoom = sonosRooms.first { $0.id == targetUDN }
+                    isChecked = targetRoom?.groupCoordinatorUDN == room.id
+                } else {
+                    isChecked = false
+                }
+            } else {
+                isChecked = castManager.selectedSonosRooms.contains(room.id)
+            }
+
+            let toggleInfo = SonosRoomToggle(
+                roomUDN: room.id,
+                roomName: room.name,
+                coordinatorUDN: castTargetUDN ?? room.groupCoordinatorUDN ?? sonosRooms.first?.id ?? "",
+                coordinatorName: room.groupCoordinatorName ?? sonosRooms.first?.name ?? "",
+                isCurrentlyInGroup: isChecked,
+                isCoordinator: room.id == castTargetUDN
+            )
+
+            let roomItem = NSMenuItem()
+            roomItem.view = SonosRoomCheckboxView(info: toggleInfo, isChecked: isChecked, menu: menu)
+            menu.addItem(roomItem)
+        }
+    }
+
+    private static func buildMenuBarStreamingSubmenu(castManager: CastManager) -> NSMenu {
+        let streamingMenu = NSMenu()
+        streamingMenu.autoenablesItems = false
+
+        let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
+        sonosItem.submenu = buildMenuBarStreamingSonosMenu(castManager: castManager)
+        streamingMenu.addItem(sonosItem)
+
+        return streamingMenu
+    }
+
+    private static func buildMenuBarStreamingSonosMenu(castManager: CastManager) -> NSMenu {
+        let sonosMenu = NSMenu()
+        sonosMenu.autoenablesItems = false
+
+        if castManager.sonosRooms.isEmpty {
+            let emptyItem = NSMenuItem(title: "No Sonos rooms found", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            sonosMenu.addItem(emptyItem)
+        } else {
+            addSonosRoomCheckboxes(to: sonosMenu, castManager: castManager)
+        }
+
+        sonosMenu.addItem(NSMenuItem.separator())
+
+        if HelperBinaries.isAvailable {
+            let openItem = NSMenuItem(
+                title: "Open Video URL → Sonos…",
+                action: #selector(MenuActions.openVideoURLToSonos),
+                keyEquivalent: ""
+            )
+            openItem.target = MenuActions.shared
+            sonosMenu.addItem(openItem)
+
+            if MainActor.assumeIsolated({ YouTubeToSonosCoordinator.shared.isActive }) {
+                let stopItem = NSMenuItem(
+                    title: "Stop YouTube → Sonos",
+                    action: #selector(MenuActions.stopYouTubeToSonos),
+                    keyEquivalent: ""
+                )
+                stopItem.target = MenuActions.shared
+                sonosMenu.addItem(stopItem)
+            }
+        } else {
+            let noOp = NSMenuItem(title: "YouTube → Sonos needs yt-dlp + ffmpeg", action: nil, keyEquivalent: "")
+            noOp.isEnabled = false
+            sonosMenu.addItem(noOp)
+
+            let hint = NSMenuItem(title: "Install them (e.g. \"brew install yt-dlp ffmpeg\") to enable", action: nil, keyEquivalent: "")
+            hint.isEnabled = false
+            sonosMenu.addItem(hint)
+        }
+
+        if castManager.sonosRooms.isEmpty {
+            sonosMenu.addItem(NSMenuItem.separator())
+
+            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(MenuActions.refreshSonosRooms), keyEquivalent: "")
+            refreshItem.target = MenuActions.shared
+            sonosMenu.addItem(refreshItem)
+        }
+
+        return sonosMenu
+    }
+
     private static func buildMenuBarOutputDevicesMenu() -> NSMenu {
         let outputMenu = NSMenu()
         outputMenu.autoenablesItems = false
@@ -2288,40 +2389,9 @@ class ContextMenuBuilder {
             let sonosMenu = NSMenu()
             sonosMenu.autoenablesItems = false
 
-            let castTargetUDN = castManager.activeSession?.device.id
             let isCastingToSonos = castManager.activeSession?.device.type == .sonos
 
-            for room in sonosRooms {
-                let isChecked: Bool
-                if isCastingToSonos, let targetUDN = castTargetUDN {
-                    if room.id == targetUDN {
-                        isChecked = true
-                    } else if room.groupCoordinatorUDN == targetUDN {
-                        isChecked = true
-                    } else if room.isGroupCoordinator {
-                        let targetRoom = sonosRooms.first { $0.id == targetUDN }
-                        isChecked = targetRoom?.groupCoordinatorUDN == room.id
-                    } else {
-                        isChecked = false
-                    }
-                } else {
-                    isChecked = castManager.selectedSonosRooms.contains(room.id)
-                }
-
-                let toggleInfo = SonosRoomToggle(
-                    roomUDN: room.id,
-                    roomName: room.name,
-                    coordinatorUDN: castTargetUDN ?? room.groupCoordinatorUDN ?? sonosRooms.first?.id ?? "",
-                    coordinatorName: room.groupCoordinatorName ?? sonosRooms.first?.name ?? "",
-                    isCurrentlyInGroup: isChecked,
-                    isCoordinator: room.id == castTargetUDN
-                )
-
-                // Match the context menu behavior: toggling a room keeps the Sonos submenu open.
-                let roomItem = NSMenuItem()
-                roomItem.view = SonosRoomCheckboxView(info: toggleInfo, isChecked: isChecked, menu: sonosMenu)
-                sonosMenu.addItem(roomItem)
-            }
+            addSonosRoomCheckboxes(to: sonosMenu, castManager: castManager)
 
             sonosMenu.addItem(NSMenuItem.separator())
 
@@ -2342,6 +2412,14 @@ class ContextMenuBuilder {
             sonosItem.submenu = sonosMenu
             outputMenu.addItem(sonosItem)
         }
+
+        if outputMenu.items.last?.isSeparatorItem != true {
+            outputMenu.addItem(NSMenuItem.separator())
+        }
+
+        let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
+        streamingItem.submenu = buildMenuBarStreamingSubmenu(castManager: castManager)
+        outputMenu.addItem(streamingItem)
 
         // Other cast devices
         let activeSession = castManager.activeSession
@@ -2524,49 +2602,9 @@ class ContextMenuBuilder {
             let sonosMenu = NSMenu()
             sonosMenu.autoenablesItems = false
             
-            // Determine checkbox state based on whether we're casting
-            let castTargetUDN = castManager.activeSession?.device.id
             let isCastingToSonos = castManager.activeSession?.device.type == .sonos
             
-            for room in rooms {
-                var isChecked = false
-                
-                if isCastingToSonos, let targetUDN = castTargetUDN {
-                    // WHILE CASTING: checked = receiving audio from cast session
-                    // Direct match: this room is the cast target
-                    if room.id == targetUDN {
-                        isChecked = true
-                    }
-                    // This room's coordinator is the cast target
-                    else if room.groupCoordinatorUDN == targetUDN {
-                        isChecked = true
-                    }
-                    // This room IS a coordinator and has the cast target as a member
-                    else if room.isGroupCoordinator {
-                        let targetRoom = rooms.first { $0.id == targetUDN }
-                        if targetRoom?.groupCoordinatorUDN == room.id {
-                            isChecked = true
-                        }
-                    }
-                } else {
-                    // NOT CASTING: checked = room is selected for future cast
-                    isChecked = castManager.selectedSonosRooms.contains(room.id)
-                }
-                
-                let toggleInfo = SonosRoomToggle(
-                    roomUDN: room.id,
-                    roomName: room.name,
-                    coordinatorUDN: castTargetUDN ?? room.groupCoordinatorUDN ?? rooms.first?.id ?? "",
-                    coordinatorName: room.groupCoordinatorName ?? rooms.first?.name ?? "",
-                    isCurrentlyInGroup: isChecked,
-                    isCoordinator: room.id == castTargetUDN
-                )
-                
-                // Use custom view that keeps menu open when clicked
-                let roomItem = NSMenuItem()
-                roomItem.view = SonosRoomCheckboxView(info: toggleInfo, isChecked: isChecked, menu: sonosMenu)
-                sonosMenu.addItem(roomItem)
-            }
+            addSonosRoomCheckboxes(to: sonosMenu, castManager: castManager)
             
             sonosMenu.addItem(NSMenuItem.separator())
             
@@ -4908,6 +4946,122 @@ class MenuActions: NSObject {
             await CastManager.shared.refreshSonosGroups()
             NSLog("MenuActions: Refreshed Sonos rooms")
         }
+    }
+
+    @objc func stopYouTubeToSonos() {
+        Task { @MainActor in
+            YouTubeToSonosCoordinator.shared.stop()
+        }
+    }
+
+    @objc func openVideoURLToSonos() {
+        let castManager = CastManager.shared
+
+        let alert = NSAlert()
+        alert.messageText = "YouTube → Sonos"
+        alert.informativeText = "Enter a YouTube URL. Checked Sonos rooms in the Output menu will be used."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Stream")
+        alert.addButton(withTitle: "Cancel")
+
+        let width: CGFloat = 460
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 52))
+
+        let urlLabel = NSTextField(labelWithString: "YouTube URL")
+        urlLabel.font = .systemFont(ofSize: 11)
+        urlLabel.textColor = .secondaryLabelColor
+        urlLabel.frame = NSRect(x: 0, y: 32, width: width, height: 16)
+        container.addSubview(urlLabel)
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 4, width: width, height: 24))
+        textField.placeholderString = "https://www.youtube.com/watch?v=..."
+        textField.lineBreakMode = .byTruncatingHead
+        if let clipboard = NSPasteboard.general.string(forType: .string) {
+            let lowercasedClipboard = clipboard.lowercased()
+            if lowercasedClipboard.contains("youtube.com") || lowercasedClipboard.contains("youtu.be") {
+                textField.stringValue = clipboard
+            }
+        }
+        container.addSubview(textField)
+
+        alert.accessoryView = container
+        alert.window.initialFirstResponder = textField
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let urlString = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !urlString.isEmpty, let url = URL(string: urlString) else {
+            let errorAlert = NSAlert()
+            errorAlert.messageText = "Invalid URL"
+            errorAlert.informativeText = "Please enter a valid YouTube URL."
+            errorAlert.alertStyle = .warning
+            errorAlert.runModal()
+            return
+        }
+
+        let selectedUDNs = orderedSelectedSonosRoomUDNs(castManager: castManager)
+        if selectedUDNs.isEmpty {
+            NSLog("MenuActions: Cannot stream YouTube to Sonos - no rooms selected")
+            let errorAlert = NSAlert()
+            errorAlert.messageText = "No Room Selected"
+            errorAlert.informativeText = "Select a room first by checking it in the Sonos menu."
+            errorAlert.alertStyle = .warning
+            errorAlert.runModal()
+            return
+        }
+
+        var targetDevice: CastDevice?
+        var targetRoomUDN: String?
+        for udn in selectedUDNs {
+            if let device = castManager.sonosCastDevice(forRoomUDN: udn) {
+                targetDevice = device
+                targetRoomUDN = udn
+                break
+            }
+        }
+
+        guard let device = targetDevice, let firstUDN = targetRoomUDN else {
+            NSLog("MenuActions: Could not find any Sonos device for YouTube stream")
+            let errorAlert = NSAlert()
+            errorAlert.messageText = "No Device Found"
+            errorAlert.informativeText = "Could not find a Sonos device to cast to. Try refreshing."
+            errorAlert.alertStyle = .warning
+            errorAlert.runModal()
+            return
+        }
+
+        Task {
+            await YouTubeToSonosCoordinator.shared.start(youtubeURL: url, device: device)
+
+            let isActive = await MainActor.run { YouTubeToSonosCoordinator.shared.isActive }
+            guard isActive, let coordinatorUDN = castManager.activeSession?.device.id else { return }
+
+            let otherUDNs = selectedUDNs.filter { $0 != firstUDN && $0 != coordinatorUDN }
+            if !otherUDNs.isEmpty {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+
+                for udn in otherUDNs {
+                    do {
+                        NSLog("MenuActions: Joining room %@ to YouTube Sonos group (coordinator: %@)", udn, coordinatorUDN)
+                        try await castManager.joinSonosToGroup(zoneUDN: udn, coordinatorUDN: coordinatorUDN)
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                    } catch {
+                        NSLog("MenuActions: Failed to join room %@ to YouTube Sonos group: %@", udn, error.localizedDescription)
+                    }
+                }
+
+                await castManager.refreshSonosGroups()
+            }
+        }
+    }
+
+    private func orderedSelectedSonosRoomUDNs(castManager: CastManager) -> [String] {
+        let selectedUDNs = castManager.selectedSonosRooms
+        var orderedUDNs = castManager.sonosRooms.map(\.id).filter { selectedUDNs.contains($0) }
+        let orderedSet = Set(orderedUDNs)
+        orderedUDNs.append(contentsOf: selectedUDNs.filter { !orderedSet.contains($0) }.sorted())
+        return orderedUDNs
     }
     
     @objc func castToSonosRoom(_ sender: NSMenuItem) {

@@ -260,7 +260,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         addDynamicTopLevelMenu(title: "Visuals", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarVisualsMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Libraries", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarLibrariesMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Output", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarOutputMenu, refreshOnOpen: true)
-        addDynamicTopLevelMenu(title: "Streaming", to: mainMenu, builder: buildMenuBarStreamingMenu, refreshOnOpen: true)
         
         NSApplication.shared.mainMenu = mainMenu
     }
@@ -449,127 +448,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openReddit() {
         if let url = URL(string: "https://www.reddit.com/r/NullPlayer/") {
             NSWorkspace.shared.open(url)
-        }
-    }
-
-    // MARK: - Streaming Menu
-
-    private func buildMenuBarStreamingMenu() -> NSMenu {
-        let menu = NSMenu()
-
-        // YouTube → Sonos menu item (only when helper binaries are available)
-        if HelperBinaries.isAvailable {
-            let item = NSMenuItem(
-                title: "Open Video URL → Sonos…",
-                action: #selector(youtubeToSonos),
-                keyEquivalent: ""
-            )
-            item.target = self
-            menu.addItem(item)
-
-            if MainActor.assumeIsolated({ YouTubeToSonosCoordinator.shared.isActive }) {
-                let stop = NSMenuItem(
-                    title: "Stop YouTube → Sonos",
-                    action: #selector(stopYoutubeToSonos),
-                    keyEquivalent: ""
-                )
-                stop.target = self
-                menu.addItem(stop)
-            }
-        } else {
-            // Explain how to turn the feature on rather than just stating it's unavailable.
-            let noOp = NSMenuItem(title: "YouTube → Sonos needs yt-dlp + ffmpeg", action: nil, keyEquivalent: "")
-            noOp.isEnabled = false
-            menu.addItem(noOp)
-
-            let hint = NSMenuItem(title: "Install them (e.g. “brew install yt-dlp ffmpeg”) to enable", action: nil, keyEquivalent: "")
-            hint.isEnabled = false
-            menu.addItem(hint)
-        }
-
-        return menu
-    }
-
-    @objc private func stopYoutubeToSonos() {
-        Task { @MainActor in YouTubeToSonosCoordinator.shared.stop() }
-    }
-
-    @objc private func youtubeToSonos() {
-        let castManager = CastManager.shared
-        let rooms = castManager.sonosRooms
-
-        let alert = NSAlert()
-        alert.messageText = "YouTube → Sonos"
-        alert.informativeText = "Enter a YouTube URL and choose the Sonos room to play it on:"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Stream")
-        alert.addButton(withTitle: "Cancel")
-
-        // Custom accessory: a wide URL field (so a full YouTube URL fits) above a room picker.
-        let width: CGFloat = 460
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 86))
-
-        let urlLabel = NSTextField(labelWithString: "YouTube URL")
-        urlLabel.font = .systemFont(ofSize: 11)
-        urlLabel.textColor = .secondaryLabelColor
-        urlLabel.frame = NSRect(x: 0, y: 66, width: width, height: 16)
-        container.addSubview(urlLabel)
-
-        let textField = NSTextField(frame: NSRect(x: 0, y: 40, width: width, height: 24))
-        textField.placeholderString = "https://www.youtube.com/watch?v=..."
-        textField.lineBreakMode = .byTruncatingHead
-        // Try to get URL from clipboard
-        if let clipboard = NSPasteboard.general.string(forType: .string),
-           clipboard.lowercased().contains("youtube.com") || clipboard.lowercased().contains("youtu.be") {
-            textField.stringValue = clipboard
-        }
-        container.addSubview(textField)
-
-        let roomLabel = NSTextField(labelWithString: "Sonos room")
-        roomLabel.font = .systemFont(ofSize: 11)
-        roomLabel.textColor = .secondaryLabelColor
-        roomLabel.frame = NSRect(x: 0, y: 10, width: 90, height: 16)
-        container.addSubview(roomLabel)
-
-        let roomPopup = NSPopUpButton(frame: NSRect(x: 96, y: 2, width: width - 96, height: 26), pullsDown: false)
-        if rooms.isEmpty {
-            roomPopup.addItem(withTitle: "No Sonos rooms found")
-            roomPopup.isEnabled = false
-        } else {
-            for room in rooms { roomPopup.addItem(withTitle: room.name) }
-            // Preselect a previously selected room when one exists.
-            if let selected = castManager.selectedSonosRooms.first,
-               let idx = rooms.firstIndex(where: { $0.id == selected }) {
-                roomPopup.selectItem(at: idx)
-            }
-        }
-        container.addSubview(roomPopup)
-
-        alert.accessoryView = container
-        alert.window.initialFirstResponder = textField
-
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return }
-
-        let urlString = textField.stringValue.trimmingCharacters(in: .whitespaces)
-        guard !urlString.isEmpty, let url = URL(string: urlString) else {
-            let errorAlert = NSAlert()
-            errorAlert.messageText = "Invalid URL"
-            errorAlert.informativeText = "Please enter a valid YouTube URL."
-            errorAlert.alertStyle = .warning
-            errorAlert.runModal()
-            return
-        }
-
-        // Resolve the chosen room to a castable device (nil → coordinator falls back to first).
-        var device: CastDevice?
-        let selectedIndex = roomPopup.indexOfSelectedItem
-        if !rooms.isEmpty, selectedIndex >= 0, selectedIndex < rooms.count {
-            device = castManager.sonosCastDevice(forRoomUDN: rooms[selectedIndex].id)
-        }
-
-        Task {
-            await YouTubeToSonosCoordinator.shared.start(youtubeURL: url, device: device)
         }
     }
 

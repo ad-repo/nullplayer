@@ -481,7 +481,7 @@ in sync on the Mac. NullPlayer owns the local video clock, so it can correct A/V
 
 ### Enabling the feature (requires yt-dlp + ffmpeg)
 The feature is gated on a runtime presence check (`HelperBinaries`). The menu item
-**Streaming → Open Video URL → Sonos…** only appears when both binaries are found. Resolution
+**Output → Streaming → Sonos → Open Video URL → Sonos…** only appears when both binaries are found. Resolution
 order per binary:
 1. **Env override** — `NULLPLAYER_YTDLP_PATH` / `NULLPLAYER_FFMPEG_PATH` (absolute paths).
 2. **Bundled** in the app (`Contents/MacOS`, then `Contents/Resources`) — the DMG distribution.
@@ -501,12 +501,13 @@ this is intentional. For the DMG distribution, binaries are provisioned opt-in v
 `validate_notices.sh` fails.
 
 ### Usage
-1. **Streaming → Open Video URL → Sonos…** — the dialog has a wide URL field (auto-filled from
-   the clipboard if it looks like a YouTube link) and a **Sonos room picker** (same room list as
-   the Output menu; resolved to a coordinator device via `CastManager.sonosCastDevice(forRoomUDN:)`).
-2. Audio starts on the chosen room (first discovered if none picked); the video opens muted.
-3. Drag the **A/V offset slider** until lip-sync is right (it persists across sessions).
-4. **Streaming → Stop YouTube → Sonos** tears everything down (unregisters the proxy *or* live
+1. **Output → Streaming → Sonos** — check one or more rooms in the Sonos room list.
+2. **Open Video URL → Sonos…** — the dialog has a wide URL field, auto-filled from the clipboard
+   if it looks like a YouTube link.
+3. Audio starts on the checked rooms; the first checked room becomes the coordinator and the rest
+   join its group. The video opens muted.
+4. Drag the **A/V offset slider** until lip-sync is right (it persists across sessions).
+5. **Output → Streaming → Sonos → Stop YouTube → Sonos** tears everything down (unregisters the proxy *or* live
    stream, kills ffmpeg with SIGTERM→SIGKILL if it was used, stops the cast, restores video volume).
 
 ### v1 limitations
