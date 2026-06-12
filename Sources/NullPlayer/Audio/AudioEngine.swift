@@ -591,7 +591,16 @@ class AudioEngine {
     var isAnyCastingActive: Bool {
         isAudioCastRoutingActive || isVideoCastingActive
     }
-    
+
+    /// Whether a YouTube → Sonos session is active. The coordinator is @MainActor while AudioEngine
+    /// is not; these transport methods are UI-driven on the main thread, so we read its `isActive`
+    /// via `MainActor.assumeIsolated` (same pattern as `WindowManager.videoPlaybackDidStart`). Guard
+    /// the thread first so a stray off-main call returns false instead of crashing assumeIsolated.
+    var isYouTubeToSonosActive: Bool {
+        guard !AudioEngine.isHeadless, Thread.isMainThread else { return false }
+        return MainActor.assumeIsolated { YouTubeToSonosCoordinator.shared.isActive }
+    }
+
     // MARK: - Initialization
     
     init() {
@@ -1767,6 +1776,20 @@ class AudioEngine {
     // MARK: - Playback Control
     
     func play() {
+        // YouTube → Sonos session owns transport — synchronous, highest precedence.
+        if isYouTubeToSonosActive {
+            MainActor.assumeIsolated {
+                NSLog("AudioEngine.play(): Routing to YouTubeToSonosCoordinator")
+                YouTubeToSonosCoordinator.shared.resume()
+            }
+            state = .playing  // keep the play/pause glyph in sync
+            return
+        }
+        playNormalLogic()
+    }
+
+    /// Extracted normal play logic (for use after YouTube → Sonos check)
+    private func playNormalLogic() {
         // If video casting is active, forward to video player
         if isVideoCastingActive {
             guard !AudioEngine.isHeadless else { return }
@@ -1780,7 +1803,7 @@ class AudioEngine {
             NSLog("play(): Local video is active - ignoring audio play request")
             return
         }
-        
+
         // If audio casting is active, forward command to CastManager
         if isCastingActive {
             Task {
@@ -1952,7 +1975,21 @@ class AudioEngine {
     
     func pause() {
         NSLog("AudioEngine.pause() called - isVideoCastingActive=%d, isCastingActive=%d", isVideoCastingActive ? 1 : 0, isCastingActive ? 1 : 0)
-        
+
+        // YouTube → Sonos session owns transport — synchronous, highest precedence.
+        if isYouTubeToSonosActive {
+            MainActor.assumeIsolated {
+                NSLog("AudioEngine.pause(): Routing to YouTubeToSonosCoordinator")
+                YouTubeToSonosCoordinator.shared.pause()
+            }
+            state = .paused  // keep the play/pause glyph in sync
+            return
+        }
+        pauseNormalLogic()
+    }
+
+    /// Extracted normal pause logic (for use after YouTube → Sonos check)
+    private func pauseNormalLogic() {
         // If video casting is active, forward to video player
         if isVideoCastingActive {
             guard !AudioEngine.isHeadless else { return }
@@ -1977,7 +2014,7 @@ class AudioEngine {
             }
             return
         }
-        
+
         pauseLocalOnly()
     }
     
@@ -2015,9 +2052,22 @@ class AudioEngine {
     }
 
     func stop() {
+        // YouTube → Sonos session owns transport — Stop tears the whole session down (closes the
+        // muted video, stops the cast, unregisters the proxy, ends the completion poll). After this
+        // the coordinator is inactive, so a subsequent Play no longer restarts the session.
+        // stopLocalOnly() then clears the UI clock/glyph as a normal stop would.
+        if isYouTubeToSonosActive {
+            MainActor.assumeIsolated {
+                NSLog("AudioEngine.stop(): Routing to YouTubeToSonosCoordinator (tear down session)")
+                YouTubeToSonosCoordinator.shared.stop()
+            }
+            stopLocalOnly()
+            return
+        }
+
         // Cancel any in-progress crossfade
         cancelCrossfade()
-        
+
         // If playing radio, notify RadioManager of manual stop (prevents auto-reconnect)
         if RadioManager.shared.isActive {
             RadioManager.shared.stop()
@@ -2144,7 +2194,20 @@ class AudioEngine {
     func previous() {
         // Cancel any in-progress crossfade
         cancelCrossfade()
-        
+
+        // YouTube → Sonos session owns transport — Prev is a −10s relative seek on both surfaces.
+        if isYouTubeToSonosActive {
+            MainActor.assumeIsolated {
+                NSLog("AudioEngine.previous(): Routing to YouTubeToSonosCoordinator (skip -10s)")
+                YouTubeToSonosCoordinator.shared.skipRelative(-10)
+            }
+            return
+        }
+        previousNormalLogic()
+    }
+
+    /// Extracted normal previous logic (for use after YouTube → Sonos check)
+    private func previousNormalLogic() {
         guard !playlist.isEmpty else { return }
         
         // When casting local files, block rapid clicks - only accept if not already casting
@@ -2207,7 +2270,20 @@ class AudioEngine {
     func next() {
         // Cancel any in-progress crossfade
         cancelCrossfade()
-        
+
+        // YouTube → Sonos session owns transport — Next is a +10s relative seek on both surfaces.
+        if isYouTubeToSonosActive {
+            MainActor.assumeIsolated {
+                NSLog("AudioEngine.next(): Routing to YouTubeToSonosCoordinator (skip +10s)")
+                YouTubeToSonosCoordinator.shared.skipRelative(10)
+            }
+            return
+        }
+        nextNormalLogic()
+    }
+
+    /// Extracted normal next logic (for use after YouTube → Sonos check)
+    private func nextNormalLogic() {
         guard !playlist.isEmpty else { return }
         
         // When casting local files, block rapid clicks - only accept if not already casting
@@ -2356,6 +2432,21 @@ class AudioEngine {
         // Cancel any in-progress crossfade
         cancelCrossfade()
 
+        // YouTube → Sonos session owns transport — synchronous, highest precedence.
+        if isYouTubeToSonosActive {
+            _currentTime = time       // keep the UI clock in step with the requested target
+            lastReportedTime = time
+            MainActor.assumeIsolated {
+                NSLog("AudioEngine.seek(): Routing to YouTubeToSonosCoordinator (time=%.1f)", time)
+                YouTubeToSonosCoordinator.shared.seek(to: time)
+            }
+            return
+        }
+        seekNormalLogic(to: time)
+    }
+
+    /// Extracted normal seek logic (for use after YouTube → Sonos check)
+    private func seekNormalLogic(to time: TimeInterval) {
         // If casting is active, forward command to CastManager
         if isCastingActive {
             // CastManager will update activeSession position and playbackStartDate
@@ -2799,9 +2890,15 @@ class AudioEngine {
                 }
             }
             
-            // When casting, check if track has finished and auto-advance
+            // When casting, check if track has finished and auto-advance.
+            // Defensive guard for YouTube → Sonos: that session casts directly via CastManager
+            // without setting `currentTrack`, so `trackDuration` here is a *stale* library track's
+            // value if one was loaded beforehand — which would fire this block at the wrong time and
+            // advance the library playlist. Finish for that session is owned by the coordinator's
+            // own completion poll, so never let this block act on it.
             let isCastPlaying = CastManager.shared.activeSession?.playbackStartDate != nil
             if self.isCastingActive,
+               !self.isYouTubeToSonosActive,
                isCastPlaying,  // Casting is playing (not paused)
                trackDuration > 0,
                current >= trackDuration - 0.5 {  // Within 0.5s of end

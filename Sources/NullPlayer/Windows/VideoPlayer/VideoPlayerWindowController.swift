@@ -84,6 +84,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// True only when THIS window initiated the current cast (not a library-menu cast)
     private var didInitiateCast: Bool = false
 
+    /// Whether this window is the muted companion video for YouTube → Sonos
+    var isYouTubeToSonosCompanion: Bool = false
+
     /// Timer for updating main window with cast progress
     private var castUpdateTimer: Timer?
 
@@ -1224,8 +1227,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Toggle play/pause
     func togglePlayPause() {
-        NSLog("VideoPlayerWindowController: togglePlayPause — isCastingVideo=%d", isCastingVideo ? 1 : 0)
-        if isCastingVideo {
+        NSLog("VideoPlayerWindowController: togglePlayPause — isCastingVideo=%d, isYouTubeToSonosCompanion=%d", isCastingVideo ? 1 : 0, isYouTubeToSonosCompanion ? 1 : 0)
+        if isYouTubeToSonosCompanion {
+            YouTubeToSonosCoordinator.shared.togglePlayPause()
+        } else if isCastingVideo {
             toggleCastPlayPause()
         } else {
             videoPlayerView.togglePlayPause()
@@ -1234,8 +1239,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Skip forward
     func skipForward(_ seconds: TimeInterval = 10) {
-        NSLog("VideoPlayerWindowController: skipForward %.0fs — isCastingVideo=%d", seconds, isCastingVideo ? 1 : 0)
-        if isCastingVideo {
+        NSLog("VideoPlayerWindowController: skipForward %.0fs — isCastingVideo=%d, isYouTubeToSonosCompanion=%d", seconds, isCastingVideo ? 1 : 0, isYouTubeToSonosCompanion ? 1 : 0)
+        if isYouTubeToSonosCompanion {
+            YouTubeToSonosCoordinator.shared.skipRelative(seconds)
+        } else if isCastingVideo {
             seekCastRelative(seconds)
         } else {
             videoPlayerView.skipForward(seconds)
@@ -1244,8 +1251,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Skip backward
     func skipBackward(_ seconds: TimeInterval = 10) {
-        NSLog("VideoPlayerWindowController: skipBackward %.0fs — isCastingVideo=%d", seconds, isCastingVideo ? 1 : 0)
-        if isCastingVideo {
+        NSLog("VideoPlayerWindowController: skipBackward %.0fs — isCastingVideo=%d, isYouTubeToSonosCompanion=%d", seconds, isCastingVideo ? 1 : 0, isYouTubeToSonosCompanion ? 1 : 0)
+        if isYouTubeToSonosCompanion {
+            YouTubeToSonosCoordinator.shared.skipRelative(-seconds)
+        } else if isCastingVideo {
             seekCastRelative(-seconds)
         } else {
             videoPlayerView.skipBackward(seconds)
@@ -1254,8 +1263,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Seek to specific time
     func seek(to time: TimeInterval) {
-        NSLog("VideoPlayerWindowController.seek: time=%.1f, isCastingVideo=%d", time, isCastingVideo ? 1 : 0)
-        if isCastingVideo {
+        NSLog("VideoPlayerWindowController.seek: time=%.1f, isCastingVideo=%d, isYouTubeToSonosCompanion=%d", time, isCastingVideo ? 1 : 0, isYouTubeToSonosCompanion ? 1 : 0)
+        if isYouTubeToSonosCompanion {
+            YouTubeToSonosCoordinator.shared.seek(to: time)
+        } else if isCastingVideo {
             seekCast(to: time)
         } else {
             videoPlayerView.seek(to: time)
@@ -1264,7 +1275,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Handle seek request from slider (normalized 0-1 position)
     private func handleSeekRequest(_ position: Double) {
-        if isCastingVideo {
+        if isYouTubeToSonosCompanion {
+            // For YouTube → Sonos, convert position to time and delegate to coordinator
+            let time = position * duration
+            YouTubeToSonosCoordinator.shared.seek(to: time)
+        } else if isCastingVideo {
             // For casting, we need to convert position to time
             // Use duration from the original video
             let time = position * duration
@@ -1312,6 +1327,20 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
     }
     
+    /// Set playback pause state deterministically (used by YouTubeToSonosCoordinator)
+    func setPaused(_ paused: Bool) {
+        NSLog("VideoPlayerWindowController: setPaused(%d)", paused ? 1 : 0)
+        videoPlayerView.setPaused(paused)
+        isPlaying = !paused
+    }
+
+    /// Seek the local video directly, bypassing the companion/cast forwarding in `seek(to:)`.
+    /// The coordinator and `SonosVideoSyncController` use this so they don't recurse back into the
+    /// `isYouTubeToSonosCompanion` branch of `seek(to:)` (which would call right back into them).
+    func seekLocalVideo(to time: TimeInterval) {
+        videoPlayerView.seek(to: time)
+    }
+
     /// Seek relative on cast device (for skip forward/backward)
     private func seekCastRelative(_ seconds: TimeInterval) {
         Task {

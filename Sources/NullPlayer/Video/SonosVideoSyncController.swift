@@ -108,7 +108,9 @@ final class SonosVideoSyncController {
         hasAlignedOnce = true
         NSLog("SonosVideoSyncController: Initial alignment from video %.1f to %.1f", currentVideoTime, targetTime)
         videoController.playbackRate = 1.0
-        videoController.seek(to: max(0, targetTime))
+        // seekLocalVideo bypasses the companion-forwarding branch in VideoPlayerWindowController.seek,
+        // which (for the YouTube → Sonos companion) would recurse back through the coordinator.
+        videoController.seekLocalVideo(to: max(0, targetTime))
         syncTimer?.invalidate()
         syncTimer = nil
     }
@@ -127,6 +129,6 @@ final class SonosVideoSyncController {
         let targetTime = max(0, sonosPosition + userOffset)
         NSLog("SonosVideoSyncController: %@ alignment, seeking video to %.1f", reason, targetTime)
         videoController.playbackRate = 1.0
-        videoController.seek(to: targetTime)
+        videoController.seekLocalVideo(to: targetTime)
     }
 }

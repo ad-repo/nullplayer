@@ -20,6 +20,10 @@ final class YouTubeToSonosCoordinator {
     private weak var videoController: VideoPlayerWindowController?
     private var didStartManagedCast = false
 
+    // Transport state
+    private(set) var isPlaying: Bool = true    // Session starts playing
+    private var completionPollTimer: Timer?
+
     private init() {}
 
     // MARK: - Public API
@@ -97,6 +101,7 @@ final class YouTubeToSonosCoordinator {
                 httpHeaders: resolved.videoHeaders
             )
             self.videoController = videoController
+            videoController.isYouTubeToSonosCompanion = true
             NSLog("YouTubeToSonosCoordinator: Video playing MUTED with %d headers", resolved.videoHeaders.count)
 
             // 6. Start sync controller and connect the user-facing A/V offset slider (the
@@ -118,6 +123,9 @@ final class YouTubeToSonosCoordinator {
             videoController.setAVOffsetVisible(true)
             syncController.start()
 
+            // Start completion poll: check periodically if playback has finished
+            startCompletionPoll()
+
         } catch {
             NSLog("YouTubeToSonosCoordinator: Error during start - %@", error.localizedDescription)
             stop()
@@ -127,6 +135,9 @@ final class YouTubeToSonosCoordinator {
 
     /// Stop YouTube → Sonos streaming
     func stop() {
+        completionPollTimer?.invalidate()
+        completionPollTimer = nil
+
         syncController?.stop()
         syncController = nil
 
@@ -146,6 +157,7 @@ final class YouTubeToSonosCoordinator {
             videoController.onAVOffsetChanged = nil
             videoController.onAVOffsetResync = nil
             videoController.setAVOffsetVisible(false)
+            videoController.isYouTubeToSonosCompanion = false
             videoController.stop()
             videoController.volume = 1.0 // Restore volume
             self.videoController = nil
@@ -295,6 +307,117 @@ final class YouTubeToSonosCoordinator {
             normalizedExt == "aac" ||
             normalizedCodec.contains("aac") ||
             normalizedCodec.contains("mp4a")
+    }
+
+    // MARK: - Transport Control
+
+    /// Resume playback: video first, then Sonos, then re-align video if Sonos confirms.
+    func resume() {
+        NSLog("YouTubeToSonosCoordinator: resume()")
+        videoController?.setPaused(false)
+
+        Task {
+            try? await CastManager.shared.resume()
+
+            // Retry re-align briefly if Sonos confirmation hasn't landed yet
+            var attempts = 0
+            let maxAttempts = 20 // ~2 seconds with 100ms delays
+            while attempts < maxAttempts && !CastManager.shared.isSonosPlaybackConfirmed {
+                try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                attempts += 1
+            }
+
+            if CastManager.shared.isSonosPlaybackConfirmed {
+                await MainActor.run {
+                    self.syncController?.realignToCurrentOffset()
+                }
+            }
+        }
+
+        isPlaying = true
+    }
+
+    /// Pause playback on both video and Sonos.
+    func pause() {
+        NSLog("YouTubeToSonosCoordinator: pause()")
+        videoController?.setPaused(true)
+
+        Task {
+            try? await CastManager.shared.pause()
+        }
+
+        isPlaying = false
+    }
+
+    /// Toggle between resume and pause based on current state.
+    func togglePlayPause() {
+        NSLog("YouTubeToSonosCoordinator: togglePlayPause()")
+        if isPlaying {
+            pause()
+        } else {
+            resume()
+        }
+    }
+
+    /// Seek both video and Sonos to the given time.
+    /// - Parameter time: Target position in seconds (from Sonos/audio reference)
+    func seek(to time: TimeInterval) {
+        NSLog("YouTubeToSonosCoordinator: seek(to: %.1f)", time)
+
+        Task {
+            try? await CastManager.shared.seek(to: time)
+        }
+
+        // Video target = audio time + offset. Use seekLocalVideo (not seek) to bypass the
+        // companion-forwarding branch in VideoPlayerWindowController.seek, which would recurse here.
+        let videoTarget = max(0, time + (syncController?.userOffset ?? 0))
+        videoController?.seekLocalVideo(to: videoTarget)
+    }
+
+    /// Skip relative to current position (e.g. +10 or -10 seconds). Used by Next/Prev.
+    /// - Parameter seconds: Relative offset in seconds (may be negative)
+    func skipRelative(_ seconds: TimeInterval) {
+        NSLog("YouTubeToSonosCoordinator: skipRelative(%.1f)", seconds)
+        let target = max(0, min(currentPosition + seconds, duration))
+        seek(to: target)
+    }
+
+    /// Current Sonos playback position in seconds.
+    var currentPosition: TimeInterval {
+        CastManager.shared.currentCastPosition() ?? 0
+    }
+
+    /// Total duration of the stream in seconds.
+    var duration: TimeInterval {
+        resolved?.duration ?? 0
+    }
+
+    /// Called when playback reaches end-of-item. Stops and closes the session.
+    private func handlePlaybackFinished() {
+        NSLog("YouTubeToSonosCoordinator: handlePlaybackFinished()")
+        stop()
+    }
+
+    /// Lightweight completion poll: fires when position >= duration - 0.5 or on error.
+    private func startCompletionPoll() {
+        completionPollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                guard self.isActive else { return }
+
+                // Don't fire until Sonos has confirmed playback
+                guard CastManager.shared.isSonosPlaybackConfirmed else { return }
+
+                let dur = self.duration
+                guard dur > 0 else { return }
+
+                let pos = self.currentPosition
+                if pos >= dur - 0.5 {
+                    NSLog("YouTubeToSonosCoordinator: Position %.1f >= duration %.1f, finishing playback", pos, dur)
+                    self.handlePlaybackFinished()
+                }
+            }
+        }
     }
 
     private func showError(_ message: String) {

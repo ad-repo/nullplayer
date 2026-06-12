@@ -514,6 +514,11 @@ this is intentional. For the DMG distribution, binaries are provisioned opt-in v
 6. **Output → Streaming → Sonos → Stop YouTube → Sonos** tears everything down (unregisters the proxy *or* live
    stream, kills ffmpeg with SIGTERM→SIGKILL if it was used, stops the cast, restores video volume).
 
+### Transport control
+- **Play/Pause/Seek** from either the main window or video window drive both surfaces in lockstep.
+- **Next/Previous** perform relative ±10s seeks applied to both surfaces (used for quick navigation).
+- **End-of-item** stops the cast and closes the session cleanly; no library playlist advance.
+
 ### v1 limitations
 - **Coarse sync only.** Sonos position is whole-second granular plus a ~1–3 s startup buffer;
   the offset control closes the residual. Not frame-accurate.
@@ -522,8 +527,6 @@ this is intentional. For the DMG distribution, binaries are provisioned opt-in v
 - **No automatic drift correction.** After the startup alignment, NullPlayer leaves the local video
   at 1.0x. Automatic rate trimming and repeated drift seeks were removed because they make remote
   YouTube video stall. Use the offset control + Resync for manual correction.
-- **No combined pause/seek/scrub.** Pausing the local video leaves Sonos playing. Whole-timeline
-  scrubbing isn't wired — use Stop and reopen.
 - **Extraction fragility.** yt-dlp breaks when YouTube changes; a bundled copy needs app
   updates (a Homebrew copy can be `brew upgrade`d independently).
 

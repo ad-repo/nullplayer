@@ -768,8 +768,25 @@ class VideoPlayerView: NSView {
     /// Toggle play/pause
     func togglePlayPause() {
         guard let layer = playerLayer else { return }
-        
+
         if layer.state.isPlaying {
+            layer.pause()
+            controlBarView.updatePlayState(isPlaying: false)
+            centerOverlayView?.updatePlayState(isPlaying: false)
+            showControls()
+        } else {
+            layer.play()
+            controlBarView.updatePlayState(isPlaying: true)
+            centerOverlayView?.updatePlayState(isPlaying: true)
+            resetControlsHideTimer()
+        }
+    }
+
+    /// Set playback pause state deterministically
+    func setPaused(_ paused: Bool) {
+        guard let layer = playerLayer else { return }
+
+        if paused {
             layer.pause()
             controlBarView.updatePlayState(isPlaying: false)
             centerOverlayView?.updatePlayState(isPlaying: false)
