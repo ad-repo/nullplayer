@@ -29,12 +29,22 @@ final class SonosVideoSyncController {
         }
     }
 
-    /// Playback rate adjustment (0.97 to 1.03) during fine-tuning
+    /// Playback rate adjustment during fine-tuning. Wide band is fine — the video is muted, so
+    /// rate changes cause no pitch artifacts, and this lets us correct drift WITHOUT re-seeking.
     private var rateAdjustment: Float = 1.0
 
     /// Whether the one-time initial alignment seek has run (applies the persisted offset and
     /// compensates for the Sonos startup buffer instead of leaving the video pinned at 0).
     private var hasAlignedOnce = false
+
+    /// When we last issued a seek. Seeking a network-streamed video forces a re-buffer, so we must
+    /// not seek again until it has had time to recover — otherwise we spiral into a permanent stall.
+    private var lastSeekAt: Date?
+
+    /// Only seek for large desyncs, and never more often than the cooldown. Everything smaller is
+    /// corrected with playback-rate trimming, which does not interrupt/re-buffer the stream.
+    private let seekThreshold: TimeInterval = 3.0
+    private let seekCooldown: TimeInterval = 6.0
 
     // MARK: - Initialization
 
@@ -82,6 +92,12 @@ final class SonosVideoSyncController {
         // Sonos on resume.
         guard videoController.isPlaying else { return }
 
+        // Until Sonos has actually started playing, do NOT sync. The cast session reports an
+        // optimistic, ever-advancing startup position; chasing it makes us seek the video forward
+        // every poll, which stutters and freezes playback. Let the muted video play naturally and
+        // align once real Sonos playback begins.
+        guard CastManager.shared.isSonosPlaybackConfirmed else { return }
+
         // Retrieve current Sonos position from CastManager's interpolated session state.
         guard let sonosPosition = positionProvider() else {
             // Position provider unavailable; degraded mode (no sync adjustment)
@@ -97,6 +113,7 @@ final class SonosVideoSyncController {
             hasAlignedOnce = true
             NSLog("SonosVideoSyncController: Initial alignment, seeking video to %.1f", targetTime)
             videoController.seek(to: max(0, targetTime))
+            lastSeekAt = Date()
             lastSonosPosition = sonosPosition
             return
         }
@@ -104,20 +121,27 @@ final class SonosVideoSyncController {
         let drift = targetTime - currentVideoTime
         let absDrift = abs(drift)
 
-        // Large drift (≥1.0s): seek
-        if absDrift >= 1.0 {
-            NSLog("SonosVideoSyncController: Large drift %.2fs, seeking video to %.1f", drift, targetTime)
-            videoController.seek(to: targetTime)
-            lastSonosPosition = sonosPosition
-            rateAdjustment = 1.0
-            return
+        // Large desync: seek to realign — but only outside the cooldown window. Seeking a
+        // network-streamed video re-buffers it; seeking again before it recovers stalls playback
+        // permanently. Within the cooldown we fall through to rate trimming, which can't re-buffer.
+        if absDrift >= seekThreshold {
+            let now = Date()
+            let coolingDown = lastSeekAt.map { now.timeIntervalSince($0) < seekCooldown } ?? false
+            if !coolingDown {
+                NSLog("SonosVideoSyncController: Large drift %.2fs, seeking video to %.1f", drift, targetTime)
+                videoController.seek(to: max(0, targetTime))
+                lastSeekAt = now
+                lastSonosPosition = sonosPosition
+                rateAdjustment = 1.0
+                return
+            }
         }
 
-        // Small drift: adjust playback rate
+        // Everything else: nudge playback rate (no re-buffer). The video is muted, so a wide band
+        // is fine and converges faster than ±3%.
         if absDrift > 0.05 {
-            // Scale: ±1s drift -> ±0.03 rate adjustment
-            let rateDelta = Float(drift) * 0.03
-            let targetRate = (1.0 + rateDelta).clamped(to: 0.97...1.03)
+            let rateDelta = Float(drift) * 0.05   // 2s drift -> +0.10 -> clamps to 1.10
+            let targetRate = (1.0 + rateDelta).clamped(to: 0.90...1.10)
             videoController.playbackRate = targetRate
             rateAdjustment = targetRate
         } else {

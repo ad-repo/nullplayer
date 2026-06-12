@@ -355,7 +355,9 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 
 **Radio streams:** MP3 radio streams use `x-rincon-mp3radio://` URI scheme for better Sonos buffering.
 
-**Error 701:** "Transition Not Available" - occurs when the speaker is busy. NullPlayer waits for transport ready state before retrying.
+**Error 701:** "Transition Not Available" - occurs when the speaker is busy. NullPlayer waits for transport ready state before retrying. **It also fires when the speaker connects but can't decode the stream** (never leaves `STOPPED`), so all retries exhaust — see the FlyingFox chunked gotcha below for the YouTube → Sonos live path.
+
+**FlyingFox never frames chunked responses (live-stream gotcha):** FlyingFox auto-adds `Transfer-Encoding: chunked` to any response body with no `count`, but `HTTPConnection.sendResponse` writes the body bytes **un-framed** (raw `socket.write`, no chunk-size lines). The result is a malformed response that no compliant HTTP/1.1 client — Sonos included — can read, so the YouTube → Sonos cast connected but never played (UPnP 701, transport stuck `STOPPED`). Fix: the `/live/*` GET and HEAD handlers pass a sentinel `Content-Length` (`liveStreamAdvertisedLength`, 1 TiB) so FlyingFox takes its Content-Length branch and streams the raw bytes verbatim, plus `Connection: close` to mark true end-of-stream. The count only sets the header; iteration still ends when the ffmpeg producer EOFs. Never reintroduce `Transfer-Encoding: chunked` on these endpoints. (Normal internet radio is unaffected — Sonos connects directly to the remote SHOUTcast server, bypassing LocalMediaServer.)
 
 **Redirect limitation:** Sonos doesn't follow HTTP 30x redirects with relative URLs - only absolute URLs work.
 
@@ -446,18 +448,35 @@ in sync on the Mac. NullPlayer owns the local video clock, so it can correct A/V
 
 ### How it works
 1. `YouTubeStreamResolver` runs `yt-dlp -j <url>` and selects a video-only stream (≤1080p
-   h264/mp4) and the highest-bitrate audio-only stream.
-2. `YouTubeToSonosCoordinator` spawns `ffmpeg` to remux the audio to a live ADTS/AAC byte
-   stream (remux-copy when already AAC, transcode otherwise).
-3. `LocalMediaServer.registerLiveStream` serves it at `http://<ip>:8765/live/<token>` (chunked,
-   no Content-Length — a producer-backed endpoint, distinct from the URL-proxying `/stream/*`).
-4. `CastManager.castLiveAudioStream` rewrites it to `x-rincon-mp3radio://` (forcing the radio
-   path without `RadioManager`) and casts via the normal pipeline.
-5. The video plays muted via `WindowManager.showLocalMutedVideo` (bypasses video-cast routing).
-6. `SonosVideoSyncController` polls `CastManager.currentCastPosition()` (~1 s granular,
-   interpolated from the session clock) and corrects drift: a video **playback-rate trim**
-   (0.97–1.03) for small drift, a seek for large drift. The **A/V offset slider** in the video
-   control bar is the primary calibration (persisted to `UserDefaults` key
+   h264/mp4) and the highest-bitrate audio-only stream, capturing per-stream HTTP headers and
+   the media `duration`.
+2. **Audio → Sonos.** `YouTubeToSonosCoordinator` chooses one of two paths:
+   - **AAC (the common case — itag 140): proxy the real m4a file**, exactly like Navidrome/local
+     files. `LocalMediaServer.registerStreamURL(audioURL, contentType: "audio/mp4",
+     requestHeaders: audioHeaders)` serves it via `/stream/*` with real `Content-Length` + Range
+     passthrough; the yt-dlp headers (esp. `User-Agent`) are forwarded upstream because
+     googlevideo URLs are UA/IP-validated. It is cast as a **normal durationed track**
+     (`CastManager.cast(to:url:metadata:)`, `musicTrack` / `http-get:audio/mp4`) — **not** the
+     radio scheme. This is the reliable path; everything else was a dead end (see history below).
+   - **Non-AAC fallback (e.g. opus/webm): live ffmpeg transcode.** `setupLiveAudioStream` spawns
+     `ffmpeg` to transcode to ADTS/AAC served at `/live/<token>` (producer-backed; `Connection:
+     close` + sentinel `Content-Length`, never chunked — FlyingFox gotcha below) and cast via
+     `castLiveAudioStream` (`x-rincon-mp3radio://`). **Less reliable** — Sonos accepts `Play` and
+     fetches but often won't sustain the radio stream. Most videos offer AAC, so this rarely runs.
+3. The video plays muted via `WindowManager.showLocalMutedVideo` (bypasses video-cast routing).
+4. **The muted video must not pause the cast.** Starting any video calls
+   `WindowManager.videoPlaybackDidStart()`, which pauses the audio engine — but here the engine
+   *is* driving the Sonos cast. It's guarded with `YouTubeToSonosCoordinator.shared.isActive` so
+   it does **not** pause during a YT→Sonos session. (Symptom when broken: Sonos `Play` succeeds,
+   stream is fetched, then a `Pausing` SOAP fires ~30 ms later and Sonos sits `STOPPED`.)
+5. `SonosVideoSyncController` syncs the local video to the Sonos clock, but **only once Sonos has
+   truly started playing** (`CastManager.isSonosPlaybackConfirmed`, backed by
+   `sonosHasSeenActivePlayback`). Before that it leaves the video alone — otherwise it chases the
+   optimistic, ever-advancing startup position and seek-freezes the video. Once playing it does
+   one initial alignment seek, then holds sync with a **playback-rate trim** (wide ±10% band — the
+   video is muted, so no pitch artifacts) and re-seeks only for ≥3 s drift with a 6 s cooldown
+   (seeking a network-streamed video re-buffers it; seeking every poll stalls it). The **A/V
+   offset slider** is the primary fine calibration (persisted to `UserDefaults` key
    `youtubeSonosAVOffset`).
 
 ### Enabling the feature (requires yt-dlp + ffmpeg)
@@ -482,29 +501,33 @@ this is intentional. For the DMG distribution, binaries are provisioned opt-in v
 `validate_notices.sh` fails.
 
 ### Usage
-1. **Streaming → Open Video URL → Sonos…** (URL auto-filled from the clipboard if it looks
-   like a YouTube link).
-2. Audio starts on the first discovered Sonos room; the video opens muted.
+1. **Streaming → Open Video URL → Sonos…** — the dialog has a wide URL field (auto-filled from
+   the clipboard if it looks like a YouTube link) and a **Sonos room picker** (same room list as
+   the Output menu; resolved to a coordinator device via `CastManager.sonosCastDevice(forRoomUDN:)`).
+2. Audio starts on the chosen room (first discovered if none picked); the video opens muted.
 3. Drag the **A/V offset slider** until lip-sync is right (it persists across sessions).
-4. **Streaming → Stop YouTube → Sonos** tears everything down (unregisters the stream, kills
-   ffmpeg with SIGTERM→SIGKILL, stops the cast, restores video volume).
+4. **Streaming → Stop YouTube → Sonos** tears everything down (unregisters the proxy *or* live
+   stream, kills ffmpeg with SIGTERM→SIGKILL if it was used, stops the cast, restores video volume).
 
 ### v1 limitations
 - **Coarse sync only.** Sonos position is whole-second granular plus a ~1–3 s startup buffer;
   the slider closes the residual. Not frame-accurate.
-- **No combined pause/seek/scrub.** Pausing the local video leaves Sonos playing (the sync
-  controller stops fighting a paused video and resyncs on resume). Seeking the local video
-  snaps back to the Sonos position within ~1.5 s. Seeking the *whole timeline* (re-arming the
-  ffmpeg pipe at a new `-ss` offset) is not yet wired — use Stop and reopen.
+- **Opus-only videos are unreliable.** The non-AAC fallback (live ffmpeg → `x-rincon-mp3radio://`)
+  often won't sustain on Sonos. Videos that offer AAC (almost all) use the solid proxy path.
+- **No combined pause/seek/scrub.** Pausing the local video leaves Sonos playing (sync skips a
+  paused video and resyncs on resume). Whole-timeline scrubbing isn't wired — use Stop and reopen.
 - **Extraction fragility.** yt-dlp breaks when YouTube changes; a bundled copy needs app
   updates (a Homebrew copy can be `brew upgrade`d independently).
 
 ### Key files
-`Video/HelperBinaries.swift`, `Video/YouTubeStreamResolver.swift`,
-`Video/YouTubeToSonosCoordinator.swift`, `Video/SonosVideoSyncController.swift`;
-`Casting/LocalMediaServer.swift` (`registerLiveStream`/`/live/*`),
-`Casting/CastManager.swift` (`castLiveAudioStream`, `currentCastPosition`, `sonosRadioURL`'s
-`forceRadio`).
+`Video/HelperBinaries.swift`, `Video/YouTubeStreamResolver.swift` (resolves streams + headers +
+`duration`), `Video/YouTubeToSonosCoordinator.swift` (AAC-proxy vs live-ffmpeg branch),
+`Video/SonosVideoSyncController.swift` (confirmed-playback gate, rate-trim + cooldown seeks);
+`Casting/LocalMediaServer.swift` (`registerStreamURL` with `requestHeaders` passthrough →
+`/stream/*`; `registerLiveStream` → `/live/*` fallback);
+`Casting/CastManager.swift` (`cast(to:url:metadata:)` normal-track path, `castLiveAudioStream`
+fallback, `currentCastPosition`, `isSonosPlaybackConfirmed`, `sonosCastDevice(forRoomUDN:)`);
+`App/WindowManager.swift` (`videoPlaybackDidStart` cast-pause guard).
 
 ## Network Requirements
 

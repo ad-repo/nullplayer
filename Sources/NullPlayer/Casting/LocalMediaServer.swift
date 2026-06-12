@@ -28,6 +28,7 @@ class LocalMediaServer {
     private var registeredStreams: [String: URL] = [:]  // token -> stream URL (for Subsonic/Jellyfin proxy)
     private var registeredStreamContentTypes: [String: String] = [:]  // token -> MIME content type hint
     private var registeredStreamDebugLabels: [String: String] = [:]  // token -> human-readable track/source label
+    private var registeredStreamHeaders: [String: [String: String]] = [:]  // token -> upstream request headers (e.g. yt-dlp googlevideo headers)
     private var liveStreamProducers: [String: (contentType: String, producer: @Sendable () -> AsyncThrowingStream<Data, Error>)] = [:]  // token -> live stream producer + contentType
     static let httpPort: UInt16 = 8765
     private var port: UInt16 { Self.httpPort }
@@ -652,7 +653,7 @@ class LocalMediaServer {
     ///   - contentType: Optional MIME type hint (e.g. "audio/flac"). Used for HEAD responses when
     ///     the original URL has no file extension (Subsonic/Jellyfin streaming endpoints).
     /// Note: Prefer calling start() explicitly before this method in async contexts.
-    func registerStreamURL(_ url: URL, contentType: String? = nil, debugLabel: String? = nil) -> URL? {
+    func registerStreamURL(_ url: URL, contentType: String? = nil, debugLabel: String? = nil, requestHeaders: [String: String]? = nil) -> URL? {
         // Ensure server is running
         if !isRunning {
             let semaphore = DispatchSemaphore(value: 0)
@@ -694,6 +695,9 @@ class LocalMediaServer {
             if let debugLabel = debugLabel {
                 self?.registeredStreamDebugLabels[tokenString] = debugLabel
             }
+            if let requestHeaders = requestHeaders, !requestHeaders.isEmpty {
+                self?.registeredStreamHeaders[tokenString] = requestHeaders
+            }
         }
         
         // Return simple HTTP URL without query strings: http://192.168.x.x:8765/stream/token
@@ -719,6 +723,7 @@ class LocalMediaServer {
                 self.registeredStreams.removeValue(forKey: token)
                 self.registeredStreamContentTypes.removeValue(forKey: token)
                 self.registeredStreamDebugLabels.removeValue(forKey: token)
+                self.registeredStreamHeaders.removeValue(forKey: token)
                 NSLog("LocalMediaServer: Unregistered stream '%@'", url.host ?? "unknown")
             }
         }
@@ -1125,10 +1130,12 @@ class LocalMediaServer {
         var streamURL: URL?
         var storedContentType: String?
         var debugLabel: String?
+        var storedHeaders: [String: String]?
         queue.sync {
             streamURL = registeredStreams[token]
             storedContentType = registeredStreamContentTypes[token]
             debugLabel = registeredStreamDebugLabels[token]
+            storedHeaders = registeredStreamHeaders[token]
         }
         
         guard let originalURL = streamURL else {
@@ -1154,6 +1161,14 @@ class LocalMediaServer {
         if let rangeHeader {
             urlRequest.setValue(rangeHeader, forHTTPHeaderField: "Range")
             NSLog("LocalMediaServer: Passing through Range header: %@", rangeHeader)
+        }
+
+        // Apply per-stream upstream request headers (e.g. yt-dlp's User-Agent for googlevideo,
+        // which is IP/UA-validated). Never let them clobber Range/Accept-Encoding set above.
+        if let storedHeaders {
+            for (key, value) in storedHeaders where key.lowercased() != "range" && key.lowercased() != "accept-encoding" {
+                urlRequest.setValue(value, forHTTPHeaderField: key)
+            }
         }
         
         // Fetch from the original server and stream bytes through to Sonos as
@@ -1276,6 +1291,12 @@ class LocalMediaServer {
 
         let token = String(path.dropFirst(6))  // Remove "/live/"
 
+        // Diagnostic: reveals whether Sonos is range-seeking or reconnecting (each repeat restarts
+        // the producer from offset 0, which would loop the first seconds of audio).
+        let rangeHeader = request.headers[HTTPHeader("Range")] ?? "(none)"
+        let userAgent = request.headers[HTTPHeader("User-Agent")] ?? "(none)"
+        NSLog("LocalMediaServer: /live GET token=%@ Range=%@ UA=%@", token, rangeHeader, userAgent)
+
         // Thread-safe lookup and producer invocation
         var entry: (contentType: String, producer: @Sendable () -> AsyncThrowingStream<Data, Error>)?
         queue.sync {
@@ -1297,8 +1318,19 @@ class LocalMediaServer {
             debugLabel: token
         )
 
-        // Build response with chunked transfer-encoding (no Content-Length for live streams)
-        let body = HTTPBodySequence(from: byteSequence)
+        // Sonos's radio client (x-rincon-mp3radio://) reads a raw SHOUTcast-style byte stream and
+        // does NOT support HTTP chunked transfer-encoding. FlyingFox auto-applies
+        // `Transfer-Encoding: chunked` to any body with no `count`, yet writes the body bytes
+        // *un-framed* (HTTPConnection.sendResponse does raw socket writes, no chunk size lines).
+        // The result is a malformed response no compliant HTTP/1.1 client — Sonos included — can
+        // read, so playback never starts and AVTransport Play returns UPnP 701.
+        //
+        // Passing a sentinel `count` forces FlyingFox down its Content-Length branch instead, so
+        // it streams the raw bytes verbatim (exactly what a SHOUTcast radio stream looks like).
+        // The count only sets the advertised length; iteration still ends naturally when ffmpeg
+        // stops and the pipe EOFs. The length is deliberately far larger than any real stream so
+        // the bytes are never truncated; `Connection: close` signals the true end of stream.
+        let body = HTTPBodySequence(from: byteSequence, count: Self.liveStreamAdvertisedLength)
 
         NSLog("LocalMediaServer: Streaming live stream token=%@ contentType=%@ via GET",
               token, contentType)
@@ -1308,11 +1340,16 @@ class LocalMediaServer {
             headers: [
                 HTTPHeader("Content-Type"): contentType,
                 HTTPHeader("Cache-Control"): "no-cache",
-                HTTPHeader("Transfer-Encoding"): "chunked"
+                HTTPHeader("Connection"): "close"
             ],
             body: body
         )
     }
+
+    /// Advertised `Content-Length` for live (unbounded) streams. Chosen far larger than any real
+    /// stream so Sonos never truncates; the stream really ends when the producer EOFs and the
+    /// socket closes. Used only to keep FlyingFox off its broken chunked-encoding path.
+    private static let liveStreamAdvertisedLength = 1 << 40  // 1 TiB
 
     /// Handle HEAD requests for live streams (return headers only, no body).
     private func handleLiveStreamHeadRequest(_ request: HTTPRequest) async -> HTTPResponse {
@@ -1334,11 +1371,14 @@ class LocalMediaServer {
 
         NSLog("LocalMediaServer: HEAD /live/%@ contentType=%@", token, contentType)
 
+        // Mirror the GET response framing (Content-Length + Connection: close, never chunked) so
+        // Sonos's preflight HEAD sees the same headers it will get on the streaming GET.
         return HTTPResponse(
             statusCode: .ok,
             headers: [
                 HTTPHeader("Content-Type"): contentType,
-                HTTPHeader("Transfer-Encoding"): "chunked"
+                HTTPHeader("Content-Length"): String(Self.liveStreamAdvertisedLength),
+                HTTPHeader("Connection"): "close"
             ],
             body: Data()  // Empty body for HEAD
         )

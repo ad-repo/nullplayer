@@ -165,7 +165,23 @@ class CastManager {
             (room.isGroupCoordinator && rooms.first(where: { $0.id == targetUDN })?.groupCoordinatorUDN == room.id)
         }.map { $0.id }
     }
-    
+
+    /// Resolve a Sonos room (from `sonosRooms`) to a castable coordinator `CastDevice`.
+    /// Mirrors the matching used by the Output menu's Start Casting path:
+    /// direct UDN match → room-name prefix match → group-coordinator UDN match.
+    func sonosCastDevice(forRoomUDN udn: String) -> CastDevice? {
+        let devices = sonosDevices
+        // 1. Direct match (the room is itself a coordinator device)
+        if let device = devices.first(where: { $0.id == udn }) { return device }
+        // 2. Match by room name, or fall back to the room's group coordinator
+        if let room = sonosRooms.first(where: { $0.id == udn }) {
+            if let device = devices.first(where: { $0.name.hasPrefix(room.name) }) { return device }
+            if let coord = room.groupCoordinatorUDN,
+               let device = devices.first(where: { $0.id == coord }) { return device }
+        }
+        return nil
+    }
+
     /// Transfer an active Sonos cast from the current coordinator to a different room.
     /// Called when the user unchecks the coordinator while other rooms remain in the group.
     /// There will be a brief (~1-2s) playback interruption during the transfer.
@@ -1416,13 +1432,21 @@ class CastManager {
     func castLiveAudioStream(_ url: URL, to device: CastDevice, metadata: CastMetadata) async throws {
         NSLog("CastManager: castLiveAudioStream to %@ (%@)", device.name, device.type.displayName)
 
-        // Apply Sonos radio URI rewrite with forceRadio=true (bypasses RadioManager.isActive check)
+        // Use the x-rincon-mp3radio:// scheme: it's the only mode where Sonos's actual audio
+        // player engages with this live stream (it opens both a probe and a player connection).
+        // Casting as a plain track only gets the probe and never starts. forceRadio=true bypasses
+        // the RadioManager.isActive check.
         let finalCastURL = sonosRadioURL(for: url, device: device, forceRadio: true)
 
         NSLog("CastManager: castLiveAudioStream URL: %@, contentType: %@", finalCastURL.redacted, metadata.contentType)
 
         try await cast(to: device, url: finalCastURL, metadata: metadata)
     }
+
+    /// True once a Sonos poll has observed real PLAYING (not the optimistic startup state).
+    /// The video sync uses this so it doesn't chase the interpolated startup clock before audio
+    /// has actually begun — otherwise the local video gets seeked forward every poll and freezes.
+    var isSonosPlaybackConfirmed: Bool { sonosHasSeenActivePlayback }
 
     /// Current playback position of the active Sonos cast session, or nil if not casting to Sonos.
     /// Uses the same interpolated session state maintained by standard Sonos polling.

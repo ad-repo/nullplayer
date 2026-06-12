@@ -13,7 +13,8 @@ final class YouTubeToSonosCoordinator {
 
     private var resolved: ResolvedStreams?
     private var ffmpegProcess: Process?
-    private var liveStreamURL: URL?
+    private var liveStreamURL: URL?            // set for the live (ffmpeg transcode) audio path
+    private var proxyUpstreamURL: URL?         // set for the proxied-file audio path (AAC)
     private var syncController: SonosVideoSyncController?
     private var castDevice: CastDevice?
     private weak var videoController: VideoPlayerWindowController?
@@ -24,8 +25,10 @@ final class YouTubeToSonosCoordinator {
     // MARK: - Public API
 
     /// Start YouTube → Sonos streaming
-    /// - Parameter youtubeURL: The YouTube URL to stream
-    func start(youtubeURL: URL) async {
+    /// - Parameters:
+    ///   - youtubeURL: The YouTube URL to stream
+    ///   - device: The Sonos device to cast to. If nil, the first discovered Sonos device is used.
+    func start(youtubeURL: URL, device requestedDevice: CastDevice? = nil) async {
         guard HelperBinaries.isAvailable else {
             NSLog("YouTubeToSonosCoordinator: Helper binaries not available; aborting")
             showError("YouTube → Sonos streaming requires yt-dlp and ffmpeg binaries.")
@@ -38,25 +41,52 @@ final class YouTubeToSonosCoordinator {
             let resolved = try await YouTubeStreamResolver.resolve(youtubeURL)
             self.resolved = resolved
 
-            // 2. Find first available Sonos device
-            let sonosDevices = CastManager.shared.sonosDevices
-            guard let device = sonosDevices.first else {
+            // 2. Resolve the Sonos device (explicit user selection wins; else first discovered)
+            let device: CastDevice
+            if let requestedDevice {
+                device = requestedDevice
+            } else if let first = CastManager.shared.sonosDevices.first {
+                device = first
+            } else {
                 throw CastError.deviceNotFound
             }
             self.castDevice = device
             NSLog("YouTubeToSonosCoordinator: Selected Sonos device: %@", device.name)
 
-            // 3. Start ffmpeg producer and register live stream
-            let liveURL = try await setupLiveAudioStream(resolved)
-            self.liveStreamURL = liveURL
-
-            // 4. Cast live audio to Sonos
-            let metadata = CastMetadata(
-                title: resolved.title,
-                contentType: "audio/aac",
-                mediaType: .audio
-            )
-            try await CastManager.shared.castLiveAudioStream(liveURL, to: device, metadata: metadata)
+            // 3 + 4. Set up the Sonos audio. For AAC (itag 140 — the common case) proxy the real
+            //   m4a file through the SAME path Navidrome/local files use: real Content-Length +
+            //   Range passthrough, cast as a normal durationed track. That is the reliable Sonos
+            //   path. Only fall back to live ffmpeg transcoding when the audio isn't already AAC
+            //   (e.g. opus/webm, which Sonos can't play directly).
+            if isAACAudio(codec: resolved.audioCodec, ext: resolved.audioExtension) {
+                guard let proxyURL = LocalMediaServer.shared.registerStreamURL(
+                    resolved.audioURL,
+                    contentType: "audio/mp4",
+                    debugLabel: "YouTube audio (AAC proxy)",
+                    requestHeaders: resolved.audioHeaders
+                ) else {
+                    throw CastError.localServerError("Failed to register audio proxy")
+                }
+                self.proxyUpstreamURL = resolved.audioURL
+                NSLog("YouTubeToSonosCoordinator: Proxying AAC audio via %@", proxyURL.absoluteString)
+                let metadata = CastMetadata(
+                    title: resolved.title,
+                    duration: resolved.duration,
+                    contentType: "audio/mp4",
+                    mediaType: .audio
+                )
+                try await CastManager.shared.cast(to: device, url: proxyURL, metadata: metadata)
+            } else {
+                let liveURL = try await setupLiveAudioStream(resolved)
+                self.liveStreamURL = liveURL
+                let metadata = CastMetadata(
+                    title: resolved.title,
+                    duration: resolved.duration,
+                    contentType: "audio/aac",
+                    mediaType: .audio
+                )
+                try await CastManager.shared.castLiveAudioStream(liveURL, to: device, metadata: metadata)
+            }
             didStartManagedCast = true
             NSLog("YouTubeToSonosCoordinator: Cast started to %@", device.name)
 
@@ -102,6 +132,11 @@ final class YouTubeToSonosCoordinator {
             liveStreamURL = nil
         }
 
+        if let upstream = proxyUpstreamURL {
+            LocalMediaServer.shared.unregisterStreamURL(upstream)
+            proxyUpstreamURL = nil
+        }
+
         terminateFFmpeg()
 
         if let videoController = videoController {
@@ -125,8 +160,9 @@ final class YouTubeToSonosCoordinator {
         NSLog("YouTubeToSonosCoordinator: Stopped")
     }
 
-    /// Whether a YouTube → Sonos session is currently active (used to enable the Stop menu item).
-    var isActive: Bool { liveStreamURL != nil }
+    /// Whether a YouTube → Sonos session is currently active (used to enable the Stop menu item
+    /// and to suppress the video-start audio-pause). True for both the proxied and live paths.
+    var isActive: Bool { liveStreamURL != nil || proxyUpstreamURL != nil }
 
     // MARK: - Private Helpers
 
@@ -154,6 +190,9 @@ final class YouTubeToSonosCoordinator {
         }
         args += [
             "-ss", String(format: "%.3f", startOffset),
+            // NOTE: do NOT add `-re` here. Pacing the read at realtime starves Sonos's initial
+            // format probe (it delays the first bytes), so Sonos gives up and stays STOPPED.
+            // Letting ffmpeg run ahead lets Sonos buffer enough to start playback.
             "-i", resolved.audioURL.absoluteString,
             "-vn"
         ]
@@ -176,7 +215,9 @@ final class YouTubeToSonosCoordinator {
 
                 let pipe = Pipe()
                 process.standardOutput = pipe
-                process.standardError = FileHandle.nullDevice
+                // Capture stderr so a genuine transcode failure can be surfaced (see terminationHandler).
+                let errPipe = Pipe()
+                process.standardError = errPipe
                 let readHandle = pipe.fileHandleForReading
 
                 // Drive the stream from pipe readability events (no busy-wait). EOF -> finish.
@@ -190,8 +231,14 @@ final class YouTubeToSonosCoordinator {
                     }
                 }
 
-                process.terminationHandler = { _ in
+                process.terminationHandler = { proc in
                     readHandle.readabilityHandler = nil
+                    // Only log on a real ffmpeg failure, not our own SIGTERM teardown on stop().
+                    if proc.terminationReason == .exit && proc.terminationStatus != 0 {
+                        let errText = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                        NSLog("YouTubeToSonosCoordinator: ffmpeg exited %d: %@",
+                              proc.terminationStatus, String(errText.suffix(500)))
+                    }
                     continuation.finish()
                 }
 

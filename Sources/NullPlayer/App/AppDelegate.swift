@@ -495,25 +495,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func youtubeToSonos() {
+        let castManager = CastManager.shared
+        let rooms = castManager.sonosRooms
+
         let alert = NSAlert()
         alert.messageText = "YouTube → Sonos"
-        alert.informativeText = "Enter a YouTube URL or paste from clipboard:"
+        alert.informativeText = "Enter a YouTube URL and choose the Sonos room to play it on:"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Stream")
         alert.addButton(withTitle: "Cancel")
 
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        textField.placeholderString = "https://www.youtube.com/watch?v=..."
+        // Custom accessory: a wide URL field (so a full YouTube URL fits) above a room picker.
+        let width: CGFloat = 460
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 86))
 
+        let urlLabel = NSTextField(labelWithString: "YouTube URL")
+        urlLabel.font = .systemFont(ofSize: 11)
+        urlLabel.textColor = .secondaryLabelColor
+        urlLabel.frame = NSRect(x: 0, y: 66, width: width, height: 16)
+        container.addSubview(urlLabel)
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 40, width: width, height: 24))
+        textField.placeholderString = "https://www.youtube.com/watch?v=..."
+        textField.lineBreakMode = .byTruncatingHead
         // Try to get URL from clipboard
-        if let clipboard = NSPasteboard.general.string(forType: .string) {
-            if clipboard.lowercased().contains("youtube.com") || clipboard.lowercased().contains("youtu.be") {
-                textField.stringValue = clipboard
+        if let clipboard = NSPasteboard.general.string(forType: .string),
+           clipboard.lowercased().contains("youtube.com") || clipboard.lowercased().contains("youtu.be") {
+            textField.stringValue = clipboard
+        }
+        container.addSubview(textField)
+
+        let roomLabel = NSTextField(labelWithString: "Sonos room")
+        roomLabel.font = .systemFont(ofSize: 11)
+        roomLabel.textColor = .secondaryLabelColor
+        roomLabel.frame = NSRect(x: 0, y: 10, width: 90, height: 16)
+        container.addSubview(roomLabel)
+
+        let roomPopup = NSPopUpButton(frame: NSRect(x: 96, y: 2, width: width - 96, height: 26), pullsDown: false)
+        if rooms.isEmpty {
+            roomPopup.addItem(withTitle: "No Sonos rooms found")
+            roomPopup.isEnabled = false
+        } else {
+            for room in rooms { roomPopup.addItem(withTitle: room.name) }
+            // Preselect a previously selected room when one exists.
+            if let selected = castManager.selectedSonosRooms.first,
+               let idx = rooms.firstIndex(where: { $0.id == selected }) {
+                roomPopup.selectItem(at: idx)
             }
         }
+        container.addSubview(roomPopup)
 
-        alert.accessoryView = textField
-        textField.becomeFirstResponder()
+        alert.accessoryView = container
+        alert.window.initialFirstResponder = textField
 
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else { return }
@@ -528,8 +561,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Resolve the chosen room to a castable device (nil → coordinator falls back to first).
+        var device: CastDevice?
+        let selectedIndex = roomPopup.indexOfSelectedItem
+        if !rooms.isEmpty, selectedIndex >= 0, selectedIndex < rooms.count {
+            device = castManager.sonosCastDevice(forRoomUDN: rooms[selectedIndex].id)
+        }
+
         Task {
-            await YouTubeToSonosCoordinator.shared.start(youtubeURL: url)
+            await YouTubeToSonosCoordinator.shared.start(youtubeURL: url, device: device)
         }
     }
 

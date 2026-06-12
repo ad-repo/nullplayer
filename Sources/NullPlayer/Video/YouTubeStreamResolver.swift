@@ -12,6 +12,8 @@ struct ResolvedStreams {
     let audioCodec: String?
     let audioExtension: String?
     let expiresAt: Date?
+    /// Total media duration in seconds (from yt-dlp), used for the cast track's DIDL metadata.
+    let duration: TimeInterval?
 }
 
 /// Errors that can occur during stream resolution
@@ -119,7 +121,8 @@ enum YouTubeStreamResolver {
             audioHeaders: audioHeaders,
             audioCodec: audioFormat.acodec,
             audioExtension: audioFormat.ext,
-            expiresAt: expiresAt
+            expiresAt: expiresAt,
+            duration: ytdlpOutput.duration
         )
     }
 
@@ -268,11 +271,13 @@ private struct YtDlpOutput: Codable {
     let title: String?
     let formats: [Format]?
     let http_headers: [String: String]?
+    let duration: TimeInterval?
 
     enum CodingKeys: String, CodingKey {
         case title
         case formats
         case http_headers
+        case duration
     }
 }
 

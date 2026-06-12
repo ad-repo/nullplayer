@@ -1425,7 +1425,11 @@ class WindowManager {
     
     /// Called when video playback starts - pause audio
     func videoPlaybackDidStart() {
-        if audioEngine.state == .playing {
+        // The YouTube → Sonos muted companion video must NOT pause the audio engine: the engine is
+        // driving the Sonos cast that *is* this video's audio, so pausing it silences the cast the
+        // instant the video starts (the cause of "video plays but no sound").
+        let youtubeToSonosActive = MainActor.assumeIsolated { YouTubeToSonosCoordinator.shared.isActive }
+        if audioEngine.state == .playing && !youtubeToSonosActive {
             audioEngine.pause()
         }
         // Update main window with video title
