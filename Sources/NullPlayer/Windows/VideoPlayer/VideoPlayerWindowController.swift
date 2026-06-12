@@ -268,6 +268,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         set { videoPlayerView.playbackRate = newValue }
     }
 
+    /// A/V offset slider value in seconds (YouTube → Sonos sync calibration)
+    var avOffset: Double {
+        get { videoPlayerView.avOffset }
+        set { videoPlayerView.avOffset = newValue }
+    }
+
+    /// Callback when the user moves the A/V offset slider
+    var onAVOffsetChanged: ((Double) -> Void)? {
+        get { videoPlayerView.onAVOffsetChanged }
+        set { videoPlayerView.onAVOffsetChanged = newValue }
+    }
+
+    /// Show or hide the A/V offset slider (replaces the seek bar while active)
+    func setAVOffsetVisible(_ visible: Bool) {
+        videoPlayerView.setAVOffsetVisible(visible)
+    }
+
     // MARK: - Static Configuration
     
     /// Configure KSPlayer globally (call once at app startup)

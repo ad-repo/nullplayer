@@ -438,6 +438,74 @@ If you see "Sonos rejected the command":
 3. Check if Mac went to sleep (NullPlayer recovers on wake)
 4. Check Console.app for "Sonos reported STOPPED" or "consecutive command failures"
 
+## YouTube → Sonos (paste-URL middleman)
+
+Plays a YouTube (or other yt-dlp-supported) video **locally, muted**, while its audio is
+streamed to Sonos — so the audio comes out of your speakers and the video stays watchable and
+in sync on the Mac. NullPlayer owns the local video clock, so it can correct A/V lag.
+
+### How it works
+1. `YouTubeStreamResolver` runs `yt-dlp -j <url>` and selects a video-only stream (≤1080p
+   h264/mp4) and the highest-bitrate audio-only stream.
+2. `YouTubeToSonosCoordinator` spawns `ffmpeg` to remux the audio to a live ADTS/AAC byte
+   stream (remux-copy when already AAC, transcode otherwise).
+3. `LocalMediaServer.registerLiveStream` serves it at `http://<ip>:8765/live/<token>` (chunked,
+   no Content-Length — a producer-backed endpoint, distinct from the URL-proxying `/stream/*`).
+4. `CastManager.castLiveAudioStream` rewrites it to `x-rincon-mp3radio://` (forcing the radio
+   path without `RadioManager`) and casts via the normal pipeline.
+5. The video plays muted via `WindowManager.showLocalMutedVideo` (bypasses video-cast routing).
+6. `SonosVideoSyncController` polls `CastManager.currentCastPosition()` (~1 s granular,
+   interpolated from the session clock) and corrects drift: a video **playback-rate trim**
+   (0.97–1.03) for small drift, a seek for large drift. The **A/V offset slider** in the video
+   control bar is the primary calibration (persisted to `UserDefaults` key
+   `youtubeSonosAVOffset`).
+
+### Enabling the feature (requires yt-dlp + ffmpeg)
+The feature is gated on a runtime presence check (`HelperBinaries`). The menu item
+**Streaming → Open Video URL → Sonos…** only appears when both binaries are found. Resolution
+order per binary:
+1. **Env override** — `NULLPLAYER_YTDLP_PATH` / `NULLPLAYER_FFMPEG_PATH` (absolute paths).
+2. **Bundled** in the app (`Contents/MacOS`, then `Contents/Resources`) — the DMG distribution.
+3. **System install** on `PATH` plus `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`.
+
+So the simplest way to turn it on (dev or direct-download) is:
+
+```bash
+brew install yt-dlp ffmpeg
+```
+
+then relaunch NullPlayer. The sandboxed **Mac App Store build cannot use it** (no bundled
+binaries, and the sandbox blocks executing system binaries), so the menu stays hidden there —
+this is intentional. For the DMG distribution, binaries are provisioned opt-in via
+`NULLPLAYER_BUNDLE_YT_TOOLS=1 ./scripts/bootstrap.sh` (with real checksums) and bundled by
+`build_dmg.sh`; they must be listed in `scripts/third_party_components.tsv` or
+`validate_notices.sh` fails.
+
+### Usage
+1. **Streaming → Open Video URL → Sonos…** (URL auto-filled from the clipboard if it looks
+   like a YouTube link).
+2. Audio starts on the first discovered Sonos room; the video opens muted.
+3. Drag the **A/V offset slider** until lip-sync is right (it persists across sessions).
+4. **Streaming → Stop YouTube → Sonos** tears everything down (unregisters the stream, kills
+   ffmpeg with SIGTERM→SIGKILL, stops the cast, restores video volume).
+
+### v1 limitations
+- **Coarse sync only.** Sonos position is whole-second granular plus a ~1–3 s startup buffer;
+  the slider closes the residual. Not frame-accurate.
+- **No combined pause/seek/scrub.** Pausing the local video leaves Sonos playing (the sync
+  controller stops fighting a paused video and resyncs on resume). Seeking the local video
+  snaps back to the Sonos position within ~1.5 s. Seeking the *whole timeline* (re-arming the
+  ffmpeg pipe at a new `-ss` offset) is not yet wired — use Stop and reopen.
+- **Extraction fragility.** yt-dlp breaks when YouTube changes; a bundled copy needs app
+  updates (a Homebrew copy can be `brew upgrade`d independently).
+
+### Key files
+`Video/HelperBinaries.swift`, `Video/YouTubeStreamResolver.swift`,
+`Video/YouTubeToSonosCoordinator.swift`, `Video/SonosVideoSyncController.swift`;
+`Casting/LocalMediaServer.swift` (`registerLiveStream`/`/live/*`),
+`Casting/CastManager.swift` (`castLiveAudioStream`, `currentCastPosition`, `sonosRadioURL`'s
+`forceRadio`).
+
 ## Network Requirements
 
 ### Ports

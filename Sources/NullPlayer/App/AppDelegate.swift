@@ -457,7 +457,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenuBarStreamingMenu() -> NSMenu {
         let menu = NSMenu()
 
-        // YouTube → Sonos menu item (only when binaries available)
+        // YouTube → Sonos menu item (only when helper binaries are available)
         if HelperBinaries.isAvailable {
             let item = NSMenuItem(
                 title: "Open Video URL → Sonos…",
@@ -466,15 +466,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             item.target = self
             menu.addItem(item)
-        }
 
-        if menu.items.isEmpty {
-            let noOp = NSMenuItem(title: "YouTube streaming requires helper binaries", action: nil, keyEquivalent: "")
+            if MainActor.assumeIsolated({ YouTubeToSonosCoordinator.shared.isActive }) {
+                let stop = NSMenuItem(
+                    title: "Stop YouTube → Sonos",
+                    action: #selector(stopYoutubeToSonos),
+                    keyEquivalent: ""
+                )
+                stop.target = self
+                menu.addItem(stop)
+            }
+        } else {
+            // Explain how to turn the feature on rather than just stating it's unavailable.
+            let noOp = NSMenuItem(title: "YouTube → Sonos needs yt-dlp + ffmpeg", action: nil, keyEquivalent: "")
             noOp.isEnabled = false
             menu.addItem(noOp)
+
+            let hint = NSMenuItem(title: "Install them (e.g. “brew install yt-dlp ffmpeg”) to enable", action: nil, keyEquivalent: "")
+            hint.isEnabled = false
+            menu.addItem(hint)
         }
 
         return menu
+    }
+
+    @objc private func stopYoutubeToSonos() {
+        Task { @MainActor in YouTubeToSonosCoordinator.shared.stop() }
     }
 
     @objc private func youtubeToSonos() {

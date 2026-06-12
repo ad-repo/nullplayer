@@ -767,9 +767,10 @@ class LocalMediaServer {
         let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16)
         let tokenString = String(token)
 
-        // Store producer and contentType keyed by token
-        queue.async(flags: .barrier) { [weak self] in
-            self?.liveStreamProducers[tokenString] = (contentType: contentType, producer: producer)
+        // Store producer and contentType keyed by token before returning the URL;
+        // Sonos may issue HEAD/GET immediately after SetAVTransportURI.
+        queue.sync(flags: .barrier) {
+            liveStreamProducers[tokenString] = (contentType: contentType, producer: producer)
         }
 
         // Return HTTP URL: http://192.168.x.x:8765/live/token

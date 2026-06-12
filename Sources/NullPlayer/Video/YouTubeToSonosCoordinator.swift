@@ -17,6 +17,7 @@ final class YouTubeToSonosCoordinator {
     private var syncController: SonosVideoSyncController?
     private var castDevice: CastDevice?
     private weak var videoController: VideoPlayerWindowController?
+    private var didStartManagedCast = false
 
     private init() {}
 
@@ -56,25 +57,32 @@ final class YouTubeToSonosCoordinator {
                 mediaType: .audio
             )
             try await CastManager.shared.castLiveAudioStream(liveURL, to: device, metadata: metadata)
+            didStartManagedCast = true
             NSLog("YouTubeToSonosCoordinator: Cast started to %@", device.name)
 
             // 5. Play video locally, MUTED, with headers (stays local; audio goes to Sonos)
             let videoController = WindowManager.shared.showLocalMutedVideo(
                 url: resolved.videoURL,
                 title: resolved.title,
-                httpHeaders: resolved.httpHeaders
+                httpHeaders: resolved.videoHeaders
             )
             self.videoController = videoController
-            NSLog("YouTubeToSonosCoordinator: Video playing MUTED with %d headers", resolved.httpHeaders.count)
+            NSLog("YouTubeToSonosCoordinator: Video playing MUTED with %d headers", resolved.videoHeaders.count)
 
-            // 6. Start sync controller
+            // 6. Start sync controller and connect the user-facing A/V offset slider (the
+            //    primary calibration mechanism: Sonos position is only ~1s granular).
             let syncController = SonosVideoSyncController(
                 positionProvider: {
-                    await CastManager.shared.currentCastPosition()
+                    CastManager.shared.currentCastPosition()
                 },
                 videoController: videoController
             )
             self.syncController = syncController
+            videoController.avOffset = syncController.userOffset // reflect the persisted value
+            videoController.onAVOffsetChanged = { [weak syncController] value in
+                syncController?.userOffset = value
+            }
+            videoController.setAVOffsetVisible(true)
             syncController.start()
 
         } catch {
@@ -97,20 +105,28 @@ final class YouTubeToSonosCoordinator {
         terminateFFmpeg()
 
         if let videoController = videoController {
+            videoController.onAVOffsetChanged = nil
+            videoController.setAVOffsetVisible(false)
             videoController.stop()
             videoController.volume = 1.0 // Restore volume
             self.videoController = nil
         }
 
-        Task {
-            await CastManager.shared.stopCasting()
+        if didStartManagedCast {
+            Task {
+                await CastManager.shared.stopCasting()
+            }
         }
 
         resolved = nil
         castDevice = nil
+        didStartManagedCast = false
 
         NSLog("YouTubeToSonosCoordinator: Stopped")
     }
+
+    /// Whether a YouTube → Sonos session is currently active (used to enable the Stop menu item).
+    var isActive: Bool { liveStreamURL != nil }
 
     // MARK: - Private Helpers
 
@@ -127,10 +143,11 @@ final class YouTubeToSonosCoordinator {
             s.replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
         }
         var headers = ""
-        for (key, value) in resolved.httpHeaders {
+        for (key, value) in resolved.audioHeaders {
             headers += "\(sanitize(key)): \(sanitize(value))\r\n"
         }
 
+        let canCopyToADTS = isAACAudio(codec: resolved.audioCodec, ext: resolved.audioExtension)
         var args: [String] = []
         if !headers.isEmpty {
             args = ["-headers", headers]
@@ -138,10 +155,16 @@ final class YouTubeToSonosCoordinator {
         args += [
             "-ss", String(format: "%.3f", startOffset),
             "-i", resolved.audioURL.absoluteString,
-            "-vn", // No video
-            "-c:a", "copy", // Copy audio codec
-            "-f", "adts", // ADTS container
-            "pipe:1" // Output to stdout
+            "-vn"
+        ]
+        if canCopyToADTS {
+            args += ["-c:a", "copy"]
+        } else {
+            args += ["-c:a", "aac", "-b:a", "192k"]
+        }
+        args += [
+            "-f", "adts",
+            "pipe:1"
         ]
 
         let argsSnapshot = args // Capture args for the closure
@@ -212,6 +235,15 @@ final class YouTubeToSonosCoordinator {
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
             if process.isRunning { kill(pid, SIGKILL) }
         }
+    }
+
+    private func isAACAudio(codec: String?, ext: String?) -> Bool {
+        let normalizedCodec = codec?.lowercased() ?? ""
+        let normalizedExt = ext?.lowercased() ?? ""
+        return normalizedExt == "m4a" ||
+            normalizedExt == "aac" ||
+            normalizedCodec.contains("aac") ||
+            normalizedCodec.contains("mp4a")
     }
 
     private func showError(_ message: String) {

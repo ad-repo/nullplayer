@@ -1424,13 +1424,14 @@ class CastManager {
         try await cast(to: device, url: finalCastURL, metadata: metadata)
     }
 
-    /// Current playback position of the active Sonos cast session, or nil if not casting to Sonos
-    /// or the position is unavailable. UPnP `GetPositionInfo` is whole-second granular, so this is
-    /// only suitable for coarse drift correction (used by the YouTube → Sonos sync controller).
-    func currentCastPosition() async -> TimeInterval? {
-        guard activeSession?.device.type == .sonos else { return nil }
-        guard let info = try? await upnpManager.getPositionInfo() else { return nil }
-        return info.position
+    /// Current playback position of the active Sonos cast session, or nil if not casting to Sonos.
+    /// Uses the same interpolated session state maintained by standard Sonos polling.
+    func currentCastPosition() -> TimeInterval? {
+        guard let session = activeSession, session.device.type == .sonos else { return nil }
+        if let startDate = session.playbackStartDate, session.isPlaying {
+            return session.position + Date().timeIntervalSince(startDate)
+        }
+        return session.position
     }
 
     // MARK: - Video Casting

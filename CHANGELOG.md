@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.27.0
+
+### New Features
+
+- **YouTube → Sonos (paste-URL middleman)** — a new **Streaming → Open Video URL → Sonos…** action plays a YouTube (or any yt-dlp-supported) video **locally and muted** in NullPlayer's video window while streaming its **audio to Sonos**, keeping the watchable video in sync. NullPlayer resolves the URL with `yt-dlp`, picks a ≤1080p h264 video-only stream plus the highest-bitrate audio-only stream, remuxes the audio to a live ADTS/AAC stream with `ffmpeg` (copy when already AAC, transcode otherwise), serves it from a new producer-backed `/live/*` endpoint on the embedded HTTP server, and casts it to the first discovered Sonos room via `x-rincon-mp3radio://`. Because NullPlayer owns the video clock, an A/V sync controller corrects lag automatically (coarse, from the ~1 s-granular Sonos position) using a video playback-rate trim for small drift and a seek for large drift; a persisted **A/V offset slider** in the video control bar covers the residual. **Stop YouTube → Sonos** tears the whole pipeline down cleanly (unregisters the stream, kills ffmpeg, stops the cast). The feature is gated on the presence of the `yt-dlp` and `ffmpeg` binaries and is hidden when they're absent — install them to enable it (e.g. `brew install yt-dlp ffmpeg`), point at custom paths via `NULLPLAYER_YTDLP_PATH`/`NULLPLAYER_FFMPEG_PATH`, or use a DMG build with the binaries bundled. The sandboxed Mac App Store build cannot run external binaries, so the feature stays hidden there by design. *v1 limitations:* sync is coarse (not frame-accurate), and combined pause/whole-timeline seek isn't wired yet — pausing the local video leaves Sonos playing and resyncs on resume; to jump elsewhere, Stop and reopen. See the `sonos-casting` skill for details.
+
 ## 0.26.0
 
 ### New Features

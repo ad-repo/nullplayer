@@ -117,7 +117,24 @@ class VideoPlayerView: NSView {
     
     /// Callback when seek is requested (for casting intercept) - normalized 0-1 position
     var onSeekRequested: ((Double) -> Void)?
-    
+
+    /// Passthrough to the control bar's A/V offset slider (YouTube → Sonos sync calibration)
+    var onAVOffsetChanged: ((Double) -> Void)? {
+        get { controlBarView.onAVOffsetChanged }
+        set { controlBarView.onAVOffsetChanged = newValue }
+    }
+
+    /// Current A/V offset slider value, in seconds
+    var avOffset: Double {
+        get { controlBarView.avOffset }
+        set { controlBarView.avOffset = newValue }
+    }
+
+    /// Show or hide the A/V offset slider (replaces the seek bar while active)
+    func setAVOffsetVisible(_ visible: Bool) {
+        controlBarView.setAVOffsetVisible(visible)
+    }
+
     /// Callback when skip forward is requested (for casting intercept)
     var onSkipForwardRequested: ((TimeInterval) -> Void)?
     
@@ -1511,6 +1528,12 @@ class VideoControlBarView: NSView {
         seekSlider.isHidden = visible
         currentTimeLabel.isHidden = visible
         durationLabel.isHidden = visible
+    }
+
+    /// Current A/V offset slider value, in seconds
+    var avOffset: Double {
+        get { avOffsetSlider?.doubleValue ?? 0 }
+        set { avOffsetSlider?.doubleValue = newValue }
     }
 
     /// Update the cast state display

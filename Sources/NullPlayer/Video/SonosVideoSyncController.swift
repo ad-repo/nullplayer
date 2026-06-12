@@ -6,9 +6,9 @@ final class SonosVideoSyncController {
 
     // MARK: - Properties
 
-    /// Callback to retrieve current Sonos playback position
-    /// Returns TimeInterval or nil if position unavailable
-    private let positionProvider: () async -> TimeInterval?
+    /// Callback to retrieve current Sonos playback position from CastManager's
+    /// existing session clock. The Sonos SOAP polling owner remains CastManager.
+    private let positionProvider: () -> TimeInterval?
 
     /// Reference to the video window controller being synced
     private weak var videoController: VideoPlayerWindowController?
@@ -32,10 +32,14 @@ final class SonosVideoSyncController {
     /// Playback rate adjustment (0.97 to 1.03) during fine-tuning
     private var rateAdjustment: Float = 1.0
 
+    /// Whether the one-time initial alignment seek has run (applies the persisted offset and
+    /// compensates for the Sonos startup buffer instead of leaving the video pinned at 0).
+    private var hasAlignedOnce = false
+
     // MARK: - Initialization
 
     init(
-        positionProvider: @escaping @Sendable () async -> TimeInterval?,
+        positionProvider: @escaping @Sendable () -> TimeInterval?,
         videoController: VideoPlayerWindowController
     ) {
         self.positionProvider = positionProvider
@@ -51,8 +55,8 @@ final class SonosVideoSyncController {
         NSLog("SonosVideoSyncController: Starting sync (userOffset=%.1fs)", userOffset)
 
         syncTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            Task {
-                await self?.performSync()
+            Task { @MainActor in
+                self?.performSync()
             }
         }
     }
@@ -71,17 +75,31 @@ final class SonosVideoSyncController {
 
     // MARK: - Private Sync Logic
 
-    private func performSync() async {
+    private func performSync() {
         guard let videoController = videoController else { return }
 
-        // Retrieve current Sonos position
-        guard let sonosPosition = await positionProvider() else {
+        // Don't fight the user: while the local video is paused, leave it alone. It resyncs to
+        // Sonos on resume.
+        guard videoController.isPlaying else { return }
+
+        // Retrieve current Sonos position from CastManager's interpolated session state.
+        guard let sonosPosition = positionProvider() else {
             // Position provider unavailable; degraded mode (no sync adjustment)
             return
         }
 
         let currentVideoTime = videoController.currentTime
         let targetTime = sonosPosition + userOffset
+
+        // First valid reading: align explicitly so the persisted offset + Sonos startup buffer
+        // are honored from the start, rather than playing from 0.
+        if !hasAlignedOnce {
+            hasAlignedOnce = true
+            NSLog("SonosVideoSyncController: Initial alignment, seeking video to %.1f", targetTime)
+            videoController.seek(to: max(0, targetTime))
+            lastSonosPosition = sonosPosition
+            return
+        }
 
         let drift = targetTime - currentVideoTime
         let absDrift = abs(drift)

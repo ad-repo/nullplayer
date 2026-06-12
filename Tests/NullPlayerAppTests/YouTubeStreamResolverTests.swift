@@ -22,6 +22,10 @@ final class YouTubeStreamResolverTests: XCTestCase {
         XCTAssertEqual(result.videoURL.absoluteString, "https://example.com/video.mp4")
         XCTAssertEqual(result.audioURL.absoluteString, "https://example.com/audio.m4a")
         XCTAssertEqual(result.httpHeaders["User-Agent"], "Mozilla/5.0")
+        XCTAssertEqual(result.videoHeaders["User-Agent"], "Mozilla/5.0")
+        XCTAssertEqual(result.audioHeaders["User-Agent"], "Mozilla/5.0")
+        XCTAssertEqual(result.audioCodec, "aac")
+        XCTAssertEqual(result.audioExtension, "m4a")
         XCTAssertNil(result.expiresAt)  // No expire param in fixture
     }
 
@@ -38,10 +42,13 @@ final class YouTubeStreamResolverTests: XCTestCase {
         let json = globalAndFormatHeadersJSON()
         let result = try YouTubeStreamResolver.selectStreams(fromYtDlpJSON: json)
 
-        // Both global and format-level headers present
-        XCTAssertEqual(result.httpHeaders["User-Agent"], "Format-UA")  // Format headers override global
-        XCTAssertEqual(result.httpHeaders["X-Custom-Header"], "GlobalValue")
-        XCTAssertEqual(result.httpHeaders["Range"], "bytes=0-1000")  // Format-specific header
+        // Both global and selected-format headers present, kept separate per URL.
+        XCTAssertEqual(result.videoHeaders["User-Agent"], "Video-UA")
+        XCTAssertEqual(result.videoHeaders["X-Custom-Header"], "GlobalValue")
+        XCTAssertEqual(result.videoHeaders["Range"], "bytes=0-1000")
+        XCTAssertEqual(result.audioHeaders["User-Agent"], "Audio-UA")
+        XCTAssertEqual(result.audioHeaders["X-Custom-Header"], "GlobalValue")
+        XCTAssertEqual(result.audioHeaders["X-Audio-Only"], "1")
     }
 
     // MARK: - Codec Preference Tests
@@ -62,22 +69,31 @@ final class YouTubeStreamResolverTests: XCTestCase {
         XCTAssertEqual(result.audioURL.absoluteString, "https://example.com/audio_aac.m4a")
     }
 
+    func testPrefersHighestBitrateAACWhenMultiplePresent() throws {
+        // yt-dlp lists formats worst-first; the low-bitrate AAC appears before the high one.
+        let json = multipleAACBitratesJSON()
+        let result = try YouTubeStreamResolver.selectStreams(fromYtDlpJSON: json)
+
+        // Must pick the highest-bitrate AAC, not simply the first match.
+        XCTAssertEqual(result.audioURL.absoluteString, "https://example.com/audio_aac_high.m4a")
+    }
+
     func testFallsBackToOpusAudioWhenM4aNotAvailable() throws {
         let json = opusAudioOnlyJSON()
         let result = try YouTubeStreamResolver.selectStreams(fromYtDlpJSON: json)
 
         // Should accept opus as fallback
         XCTAssertEqual(result.audioURL.absoluteString, "https://example.com/audio_opus.webm")
+        XCTAssertEqual(result.audioCodec, "opus")
+        XCTAssertEqual(result.audioExtension, "webm")
     }
 
-    func testSelectsFirstVideoResolutionFallback() throws {
+    func testSelectsHighestVideoResolutionFallback() throws {
         let json = multipleVideoResolutionsNoH264JSON()
         let result = try YouTubeStreamResolver.selectStreams(fromYtDlpJSON: json)
 
-        // Selects first video-only format when no h264/mp4 available
-        // (Note: the max predicate in selectBestVideoFormat actually selects the first match
-        // due to how the comparison is written, not the highest resolution)
-        XCTAssertEqual(result.videoURL.absoluteString, "https://example.com/video_360p.webm")
+        // Selects the highest-resolution video-only fallback when no h264/mp4 is available.
+        XCTAssertEqual(result.videoURL.absoluteString, "https://example.com/video_720p.webm")
     }
 
     // MARK: - Error Cases
@@ -260,7 +276,7 @@ final class YouTubeStreamResolverTests: XCTestCase {
                     "vcodec": "h264",
                     "acodec": "none",
                     "http_headers": {
-                        "User-Agent": "Format-UA",
+                        "User-Agent": "Video-UA",
                         "Range": "bytes=0-1000"
                     }
                 },
@@ -268,7 +284,11 @@ final class YouTubeStreamResolverTests: XCTestCase {
                     "url": "https://example.com/audio.m4a",
                     "ext": "m4a",
                     "vcodec": "none",
-                    "acodec": "aac"
+                    "acodec": "aac",
+                    "http_headers": {
+                        "User-Agent": "Audio-UA",
+                        "X-Audio-Only": "1"
+                    }
                 }
             ]
         }
@@ -333,6 +353,39 @@ final class YouTubeStreamResolverTests: XCTestCase {
                     "ext": "m4a",
                     "vcodec": "none",
                     "acodec": "aac"
+                }
+            ]
+        }
+        """
+        return json.data(using: .utf8)!
+    }
+
+    private func multipleAACBitratesJSON() -> Data {
+        let json = """
+        {
+            "title": "Multiple AAC Bitrates",
+            "formats": [
+                {
+                    "url": "https://example.com/video.mp4",
+                    "ext": "mp4",
+                    "vcodec": "h264",
+                    "acodec": "none",
+                    "width": 1280,
+                    "height": 720
+                },
+                {
+                    "url": "https://example.com/audio_aac_low.m4a",
+                    "ext": "m4a",
+                    "vcodec": "none",
+                    "acodec": "mp4a.40.2",
+                    "abr": 48.0
+                },
+                {
+                    "url": "https://example.com/audio_aac_high.m4a",
+                    "ext": "m4a",
+                    "vcodec": "none",
+                    "acodec": "mp4a.40.2",
+                    "abr": 128.0
                 }
             ]
         }
