@@ -334,6 +334,11 @@ Bundled third-party components:
 - **aubio** (GPL-3.0) — BPM/tempo detection
 - **libsndfile** (LGPL-2.1), **FLAC** (BSD-3), **libogg** (BSD-3), **libvorbis** (BSD-3), **Opus** (BSD-3), **LAME** (LGPL-2.0+), **mpg123** (LGPL-2.1) — audio codecs
 
+**Optional helper executables (DMG build only)**
+- **yt-dlp** (Unlicense) — YouTube content extraction (DMG build; MAS build excludes)
+- **FFmpeg CLI** (LGPL-2.1+) — minimal audio codec processing (DMG build; MAS build excludes)
+  - These tools enable the YouTube → Sonos feature. The feature automatically disables when binaries are absent.
+
 **Native visualization ports (compiled into the binary)**
 - **vis_classic** (MIT) — Winamp AVS classic port
 - **Geiss** (BSD-3) — Geiss visualization port

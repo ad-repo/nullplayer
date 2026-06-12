@@ -82,6 +82,13 @@ for dylib in "$FRAMEWORKS_DIR/"*.dylib; do
     fi
 done
 
+# Sign optional YouTube→Sonos helper executables if present (before whole-app sign)
+for helper in "$MACOS_DIR/yt-dlp" "$MACOS_DIR/ffmpeg"; do
+    if [[ -f "$helper" ]]; then
+        codesign --force --sign - "$helper" 2>/dev/null || true
+    fi
+done
+
 # Sign the main executable and app bundle last
 codesign --force --sign - "$APP_BUNDLE"
 log_success "Code signing complete"

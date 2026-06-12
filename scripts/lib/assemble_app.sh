@@ -53,6 +53,19 @@ assemble_app() {
     cp "$REPO_ROOT/Frameworks/libprojectM-4.dylib" "$FRAMEWORKS_DIR/"
     ln -sf "libprojectM-4.dylib" "$FRAMEWORKS_DIR/libprojectM-4.4.dylib"
 
+    # Step 5b: Copy optional YouTube→Sonos helper binaries (DMG only; MAS does not include)
+    # These are DMG-only and self-disable when absent via runtime binary-presence check.
+    if [[ -f "$REPO_ROOT/Frameworks/yt-dlp" ]]; then
+        cp "$REPO_ROOT/Frameworks/yt-dlp" "$MACOS_DIR/yt-dlp"
+        chmod +x "$MACOS_DIR/yt-dlp"
+        log_success "yt-dlp bundled"
+    fi
+    if [[ -f "$REPO_ROOT/Frameworks/ffmpeg" ]]; then
+        cp "$REPO_ROOT/Frameworks/ffmpeg" "$MACOS_DIR/ffmpeg"
+        chmod +x "$MACOS_DIR/ffmpeg"
+        log_success "ffmpeg CLI bundled"
+    fi
+
     # Copy libaubio (BPM detection) and all its transitive Homebrew dependencies
     if [[ -f "$REPO_ROOT/Frameworks/libaubio.5.dylib" ]]; then
         cp "$REPO_ROOT/Frameworks/libaubio.5.dylib" "$FRAMEWORKS_DIR/"
@@ -130,9 +143,10 @@ assemble_app() {
     # Step 6b: Validate third-party notices for every bundled dependency.
     # Forward: every component in scripts/third_party_components.tsv ships its
     # license text. Reverse: every framework/dylib in Contents/Frameworks is
-    # covered by a manifest entry. Fails the build on any gap.
+    # covered by a manifest entry. Also validates helper executables in MacOS dir.
+    # Fails the build on any gap.
     log_info "Validating bundled third-party notices..."
-    "$REPO_ROOT/scripts/validate_notices.sh" "$RESOURCES_DIR" "$FRAMEWORKS_DIR"
+    "$REPO_ROOT/scripts/validate_notices.sh" "$RESOURCES_DIR" "$FRAMEWORKS_DIR" "$MACOS_DIR"
 
     # Step 7: Create app icon from AppIcon.png
     APP_ICON_PNG="$REPO_ROOT/Sources/NullPlayer/Resources/AppIcon.png"

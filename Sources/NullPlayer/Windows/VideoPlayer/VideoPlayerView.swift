@@ -71,6 +71,16 @@ class VideoPlayerView: NSView {
             playerLayer?.player.playbackVolume = volume
         }
     }
+
+    /// Playback rate (0.5 - 2.0)
+    var playbackRate: Float {
+        get {
+            playerLayer?.player.playbackRate ?? 1.0
+        }
+        set {
+            playerLayer?.player.playbackRate = newValue
+        }
+    }
     
     /// Callback when close button is clicked
     var onClose: (() -> Void)?
@@ -656,32 +666,37 @@ class VideoPlayerView: NSView {
     ///   - title: Display title
     ///   - isPlexURL: Whether this is a Plex stream
     ///   - plexHeaders: Full Plex headers for streaming (required for remote/relay connections)
-    func play(url: URL, title: String, isPlexURL: Bool = false, plexHeaders: [String: String]? = nil) {
+    ///   - httpHeaders: Custom HTTP headers to apply for non-Plex URLs
+    func play(url: URL, title: String, isPlexURL: Bool = false, plexHeaders: [String: String]? = nil, httpHeaders: [String: String]? = nil) {
         currentTitle = title
         currentURL = url
         isPlexStream = isPlexURL
-        
+
         // Title removed - update window title instead
         window?.title = title
-        
+
         // Show loading indicator
         showLoading(true)
-        
+
         // Reset time display
         currentTime = 0
         totalDuration = 0
         controlBarView.updateTime(current: 0, total: 0)
         controlBarView.updatePlayState(isPlaying: false)
-        
+
         // Reset cast state when starting a new video (ensures UI shows local playback)
         controlBarView.updateCastState(isPlaying: false, deviceName: nil)
-        
+
         // Configure options
         let options = KSOptions()
         if isPlexURL, let headers = plexHeaders {
             // Remote/relay Plex connections require full client identification headers
             options.appendHeader(headers)
             NSLog("VideoPlayerView: Attaching %d Plex headers for streaming", headers.count)
+        } else if let headers = httpHeaders {
+            // Apply custom headers for non-Plex URLs (YouTube, etc.)
+            options.appendHeader(headers)
+            NSLog("VideoPlayerView: Attaching %d custom headers for streaming", headers.count)
         }
         
         // Stop existing player if any
@@ -1222,7 +1237,7 @@ class VideoCenterOverlayView: NSView {
 class VideoControlBarView: NSView {
     
     // MARK: - Properties
-    
+
     var onPlayPause: (() -> Void)?
     var onStop: (() -> Void)?
     var onSeek: ((Double) -> Void)?
@@ -1231,7 +1246,8 @@ class VideoControlBarView: NSView {
     var onFullscreen: (() -> Void)?
     var onTrackSettings: (() -> Void)?
     var onCast: (() -> Void)?
-    
+    var onAVOffsetChanged: ((Double) -> Void)?
+
     private var playButton: NSButton!
     private var stopButton: NSButton!
     private var skipBackButton: NSButton!
@@ -1243,6 +1259,7 @@ class VideoControlBarView: NSView {
     private var currentTimeLabel: NSTextField!
     private var durationLabel: NSTextField!
     private var castingLabel: NSTextField!
+    private var avOffsetSlider: NSSlider?
     
     private var isPlaying: Bool = false
     private var isSeeking: Bool = false
@@ -1304,7 +1321,13 @@ class VideoControlBarView: NSView {
         castingLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         castingLabel.alignment = .center
         castingLabel.isHidden = true
-        
+
+        // A/V offset slider (hidden by default, for YouTube → Sonos sync)
+        avOffsetSlider = NSSlider(value: 0, minValue: -5, maxValue: 5, target: self, action: #selector(avOffsetChanged))
+        avOffsetSlider?.translatesAutoresizingMaskIntoConstraints = false
+        avOffsetSlider?.isContinuous = true
+        avOffsetSlider?.isHidden = true
+
         addSubview(stopButton)
         addSubview(skipBackButton)
         addSubview(playButton)
@@ -1316,6 +1339,9 @@ class VideoControlBarView: NSView {
         addSubview(castButton)
         addSubview(trackSettingsButton)
         addSubview(fullscreenButton)
+        if let slider = avOffsetSlider {
+            addSubview(slider)
+        }
         
         setupConstraints()
     }
@@ -1408,6 +1434,15 @@ class VideoControlBarView: NSView {
             seekSlider.trailingAnchor.constraint(equalTo: durationLabel.leadingAnchor, constant: -10),
             seekSlider.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+
+        // A/V offset slider constraints (hidden by default)
+        if let slider = avOffsetSlider {
+            NSLayoutConstraint.activate([
+                slider.leadingAnchor.constraint(equalTo: currentTimeLabel.trailingAnchor, constant: 10),
+                slider.trailingAnchor.constraint(equalTo: durationLabel.leadingAnchor, constant: -10),
+                slider.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ])
+        }
     }
     
     // MARK: - Actions
@@ -1443,7 +1478,13 @@ class VideoControlBarView: NSView {
     @objc private func seekChanged() {
         onSeek?(seekSlider.doubleValue)
     }
-    
+
+    @objc private func avOffsetChanged() {
+        if let slider = avOffsetSlider {
+            onAVOffsetChanged?(slider.doubleValue)
+        }
+    }
+
     // MARK: - Updates
     
     func updatePlayState(isPlaying: Bool) {
@@ -1464,6 +1505,14 @@ class VideoControlBarView: NSView {
         }
     }
     
+    /// Show or hide the A/V offset slider
+    func setAVOffsetVisible(_ visible: Bool) {
+        avOffsetSlider?.isHidden = !visible
+        seekSlider.isHidden = visible
+        currentTimeLabel.isHidden = visible
+        durationLabel.isHidden = visible
+    }
+
     /// Update the cast state display
     /// - Parameters:
     ///   - isPlaying: Whether the cast is playing

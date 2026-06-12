@@ -1084,6 +1084,21 @@ class WindowManager {
     }
     
     /// Show the video player with a URL and title
+    /// Present a locally-played, optionally header-authenticated video muted, and return the
+    /// controller. Used by the YouTube → Sonos coordinator: the video stays local while audio is
+    /// cast to Sonos separately, so this deliberately bypasses `routeToVideoCastIfNeeded`.
+    @discardableResult
+    func showLocalMutedVideo(url: URL, title: String, httpHeaders: [String: String]?) -> VideoPlayerWindowController {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        let vpc = videoPlayerWindowController!
+        vpc.play(url: url, title: title, httpHeaders: httpHeaders)
+        vpc.volume = 0.0
+        applyAlwaysOnTopToWindow(vpc.window)
+        return vpc
+    }
+
     func showVideoPlayer(url: URL, title: String) {
         let artworkTrack = Track(url: url, title: title, mediaType: .video)
         if routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: { device in

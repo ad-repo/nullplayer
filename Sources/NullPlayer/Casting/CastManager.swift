@@ -1406,6 +1406,33 @@ class CastManager {
         try await task.value
     }
 
+    /// Cast a live audio stream (produced in-process, e.g., YouTube audio → Sonos) to a device.
+    /// This is a thin wrapper that reuses the standard cast pipeline while forcing the Sonos
+    /// radio URI rewrite (x-rincon-mp3radio://) without requiring RadioManager to be active.
+    /// - Parameters:
+    ///   - url: The local HTTP URL of the live stream (typically from LocalMediaServer.registerLiveStream)
+    ///   - device: Target cast device
+    ///   - metadata: Metadata for the stream (title, contentType, etc.)
+    func castLiveAudioStream(_ url: URL, to device: CastDevice, metadata: CastMetadata) async throws {
+        NSLog("CastManager: castLiveAudioStream to %@ (%@)", device.name, device.type.displayName)
+
+        // Apply Sonos radio URI rewrite with forceRadio=true (bypasses RadioManager.isActive check)
+        let finalCastURL = sonosRadioURL(for: url, device: device, forceRadio: true)
+
+        NSLog("CastManager: castLiveAudioStream URL: %@, contentType: %@", finalCastURL.redacted, metadata.contentType)
+
+        try await cast(to: device, url: finalCastURL, metadata: metadata)
+    }
+
+    /// Current playback position of the active Sonos cast session, or nil if not casting to Sonos
+    /// or the position is unavailable. UPnP `GetPositionInfo` is whole-second granular, so this is
+    /// only suitable for coarse drift correction (used by the YouTube → Sonos sync controller).
+    func currentCastPosition() async -> TimeInterval? {
+        guard activeSession?.device.type == .sonos else { return nil }
+        guard let info = try? await upnpManager.getPositionInfo() else { return nil }
+        return info.position
+    }
+
     // MARK: - Video Casting
     
     /// Get video-capable cast devices (excludes Sonos which is audio-only)
@@ -2442,13 +2469,18 @@ class CastManager {
     }
 
     // MARK: - Sonos Radio URI (Fix 10)
-    
-    /// Convert HTTP radio stream URL to Sonos x-rincon-mp3radio:// scheme for better buffering
-    private func sonosRadioURL(for url: URL, device: CastDevice) -> URL {
-        // Only for Sonos devices, only for http:// streams, only for radio
+
+    /// Convert HTTP radio stream URL to Sonos x-rincon-mp3radio:// scheme for better buffering.
+    /// - Parameters:
+    ///   - url: The HTTP stream URL to rewrite
+    ///   - device: The target cast device
+    ///   - forceRadio: If true, apply radio rewrite even when RadioManager is inactive (for live audio streams)
+    /// - Returns: The rewritten URL if conditions are met, otherwise the original URL
+    private func sonosRadioURL(for url: URL, device: CastDevice, forceRadio: Bool = false) -> URL {
+        // Only for Sonos devices, only for http:// streams, only for radio (or forced)
         guard device.type == .sonos,
               url.scheme == "http" || url.scheme == "https",
-              RadioManager.shared.isActive else {
+              RadioManager.shared.isActive || forceRadio else {
             return url
         }
         // Replace http:// with x-rincon-mp3radio://

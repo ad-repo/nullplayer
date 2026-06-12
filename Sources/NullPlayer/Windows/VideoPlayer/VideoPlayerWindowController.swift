@@ -261,7 +261,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         get { videoPlayerView.volume }
         set { videoPlayerView.volume = newValue }
     }
-    
+
+    /// Playback rate (0.5 - 2.0)
+    var playbackRate: Float {
+        get { videoPlayerView.playbackRate }
+        set { videoPlayerView.playbackRate = newValue }
+    }
+
     // MARK: - Static Configuration
     
     /// Configure KSPlayer globally (call once at app startup)
@@ -600,10 +606,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     }
     
     // MARK: - Playback Control
-    
-    /// Play a video from URL with optional title
+
+    /// Play a video from URL with optional title and HTTP headers
     /// If called from WindowManager.playVideoTrack, the onVideoFinishedForPlaylist callback will be set
-    func play(url: URL, title: String) {
+    func play(url: URL, title: String, httpHeaders: [String: String]? = nil) {
         // Reset any lingering cast state from previous video
         resetCastState()
 
@@ -630,17 +636,17 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentJellyfinEpisode = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        
+
         // Store local URL for casting
         currentLocalURL = url.isFileURL ? url : nil
-        
+
         // Check if this is being played from the playlist (callback was set)
         isFromPlaylist = onVideoFinishedForPlaylist != nil
-        
+
         currentTitle = title
         currentArtworkTrack = Track(url: url, title: title, mediaType: .video)
         window?.title = title
-        videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
+        videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil, httpHeaders: httpHeaders)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true

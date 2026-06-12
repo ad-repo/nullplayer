@@ -260,6 +260,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         addDynamicTopLevelMenu(title: "Visuals", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarVisualsMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Libraries", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarLibrariesMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Output", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarOutputMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Streaming", to: mainMenu, builder: buildMenuBarStreamingMenu, refreshOnOpen: true)
         
         NSApplication.shared.mainMenu = mainMenu
     }
@@ -450,7 +451,71 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.open(url)
         }
     }
-    
+
+    // MARK: - Streaming Menu
+
+    private func buildMenuBarStreamingMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        // YouTube → Sonos menu item (only when binaries available)
+        if HelperBinaries.isAvailable {
+            let item = NSMenuItem(
+                title: "Open Video URL → Sonos…",
+                action: #selector(youtubeToSonos),
+                keyEquivalent: ""
+            )
+            item.target = self
+            menu.addItem(item)
+        }
+
+        if menu.items.isEmpty {
+            let noOp = NSMenuItem(title: "YouTube streaming requires helper binaries", action: nil, keyEquivalent: "")
+            noOp.isEnabled = false
+            menu.addItem(noOp)
+        }
+
+        return menu
+    }
+
+    @objc private func youtubeToSonos() {
+        let alert = NSAlert()
+        alert.messageText = "YouTube → Sonos"
+        alert.informativeText = "Enter a YouTube URL or paste from clipboard:"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Stream")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        textField.placeholderString = "https://www.youtube.com/watch?v=..."
+
+        // Try to get URL from clipboard
+        if let clipboard = NSPasteboard.general.string(forType: .string) {
+            if clipboard.lowercased().contains("youtube.com") || clipboard.lowercased().contains("youtu.be") {
+                textField.stringValue = clipboard
+            }
+        }
+
+        alert.accessoryView = textField
+        textField.becomeFirstResponder()
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let urlString = textField.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !urlString.isEmpty, let url = URL(string: urlString) else {
+            let errorAlert = NSAlert()
+            errorAlert.messageText = "Invalid URL"
+            errorAlert.informativeText = "Please enter a valid YouTube URL."
+            errorAlert.alertStyle = .warning
+            errorAlert.runModal()
+            return
+        }
+
+        Task {
+            await YouTubeToSonosCoordinator.shared.start(youtubeURL: url)
+        }
+    }
+
 }
 
 extension AppDelegate: NSMenuDelegate {
