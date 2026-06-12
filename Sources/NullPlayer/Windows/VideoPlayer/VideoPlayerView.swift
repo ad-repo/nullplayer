@@ -1524,15 +1524,15 @@ class VideoControlBarView: NSView {
         let slider = NSSlider(value: avOffsetValue, minValue: -5, maxValue: 5, target: self, action: #selector(avOffsetChanged))
         slider.translatesAutoresizingMaskIntoConstraints = false
         slider.isContinuous = true
-        slider.toolTip = "Negative shows the video earlier; positive shows the video later."
+        slider.toolTip = "Move left when the video is ahead; move right when the video is behind."
         avOffsetSlider = slider
 
-        let earlierLabel = NSTextField(labelWithString: "-5s video earlier")
+        let earlierLabel = NSTextField(labelWithString: "Video is ahead")
         earlierLabel.translatesAutoresizingMaskIntoConstraints = false
         earlierLabel.font = NSFont.systemFont(ofSize: 11)
         earlierLabel.textColor = .secondaryLabelColor
 
-        let laterLabel = NSTextField(labelWithString: "+5s video later")
+        let laterLabel = NSTextField(labelWithString: "Video is behind")
         laterLabel.translatesAutoresizingMaskIntoConstraints = false
         laterLabel.font = NSFont.systemFont(ofSize: 11)
         laterLabel.textColor = .secondaryLabelColor
