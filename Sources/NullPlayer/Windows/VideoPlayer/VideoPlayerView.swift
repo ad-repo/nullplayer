@@ -1272,11 +1272,16 @@ class VideoControlBarView: NSView {
     private var fullscreenButton: NSButton!
     private var trackSettingsButton: NSButton!
     private var castButton: NSButton!
+    private var avOffsetButton: NSButton!
     private var seekSlider: NSSlider!
     private var currentTimeLabel: NSTextField!
     private var durationLabel: NSTextField!
     private var castingLabel: NSTextField!
     private var avOffsetSlider: NSSlider?
+    private var avOffsetValueLabel: NSTextField?
+    private var avOffsetPopover: NSPopover?
+    private var avOffsetButtonWidthConstraint: NSLayoutConstraint?
+    private var avOffsetValue: Double = 0
     
     private var isPlaying: Bool = false
     private var isSeeking: Bool = false
@@ -1327,6 +1332,11 @@ class VideoControlBarView: NSView {
         // Cast button (for casting to TVs/Chromecast)
         castButton = createButton(symbol: "tv", action: #selector(castClicked))
         castButton.toolTip = "Cast to TV"
+
+        // A/V offset button (shown only for YouTube -> Sonos sync)
+        avOffsetButton = createButton(symbol: "slider.horizontal.3", action: #selector(avOffsetClicked))
+        avOffsetButton.toolTip = "A/V Sync Offset"
+        avOffsetButton.isHidden = true
         
         // Fullscreen button
         fullscreenButton = createButton(symbol: "arrow.up.left.and.arrow.down.right", action: #selector(fullscreenClicked))
@@ -1339,12 +1349,6 @@ class VideoControlBarView: NSView {
         castingLabel.alignment = .center
         castingLabel.isHidden = true
 
-        // A/V offset slider (hidden by default, for YouTube → Sonos sync)
-        avOffsetSlider = NSSlider(value: 0, minValue: -5, maxValue: 5, target: self, action: #selector(avOffsetChanged))
-        avOffsetSlider?.translatesAutoresizingMaskIntoConstraints = false
-        avOffsetSlider?.isContinuous = true
-        avOffsetSlider?.isHidden = true
-
         addSubview(stopButton)
         addSubview(skipBackButton)
         addSubview(playButton)
@@ -1353,12 +1357,10 @@ class VideoControlBarView: NSView {
         addSubview(castingLabel)
         addSubview(seekSlider)
         addSubview(durationLabel)
+        addSubview(avOffsetButton)
         addSubview(castButton)
         addSubview(trackSettingsButton)
         addSubview(fullscreenButton)
-        if let slider = avOffsetSlider {
-            addSubview(slider)
-        }
         
         setupConstraints()
     }
@@ -1389,6 +1391,8 @@ class VideoControlBarView: NSView {
     }
     
     private func setupConstraints() {
+        avOffsetButtonWidthConstraint = avOffsetButton.widthAnchor.constraint(equalToConstant: 0)
+
         NSLayoutConstraint.activate([
             // Stop button
             stopButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
@@ -1440,9 +1444,15 @@ class VideoControlBarView: NSView {
             castButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             castButton.widthAnchor.constraint(equalToConstant: 30),
             castButton.heightAnchor.constraint(equalToConstant: 30),
+
+            // A/V offset button
+            avOffsetButton.trailingAnchor.constraint(equalTo: castButton.leadingAnchor, constant: -5),
+            avOffsetButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            avOffsetButtonWidthConstraint!,
+            avOffsetButton.heightAnchor.constraint(equalToConstant: 30),
             
             // Duration label
-            durationLabel.trailingAnchor.constraint(equalTo: castButton.leadingAnchor, constant: -10),
+            durationLabel.trailingAnchor.constraint(equalTo: avOffsetButton.leadingAnchor, constant: -10),
             durationLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             durationLabel.widthAnchor.constraint(equalToConstant: 50),
             
@@ -1451,15 +1461,6 @@ class VideoControlBarView: NSView {
             seekSlider.trailingAnchor.constraint(equalTo: durationLabel.leadingAnchor, constant: -10),
             seekSlider.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
-
-        // A/V offset slider constraints (hidden by default)
-        if let slider = avOffsetSlider {
-            NSLayoutConstraint.activate([
-                slider.leadingAnchor.constraint(equalTo: currentTimeLabel.trailingAnchor, constant: 10),
-                slider.trailingAnchor.constraint(equalTo: durationLabel.leadingAnchor, constant: -10),
-                slider.centerYAnchor.constraint(equalTo: centerYAnchor),
-            ])
-        }
     }
     
     // MARK: - Actions
@@ -1491,6 +1492,81 @@ class VideoControlBarView: NSView {
     @objc private func castClicked() {
         onCast?()
     }
+
+    @objc private func avOffsetClicked() {
+        if let popover = avOffsetPopover, popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 96))
+        contentView.wantsLayer = true
+
+        let titleLabel = NSTextField(labelWithString: "A/V sync offset")
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        titleLabel.textColor = .labelColor
+
+        let valueLabel = NSTextField(labelWithString: formatOffset(avOffsetValue))
+        valueLabel.translatesAutoresizingMaskIntoConstraints = false
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        valueLabel.textColor = .secondaryLabelColor
+        valueLabel.alignment = .right
+        avOffsetValueLabel = valueLabel
+
+        let slider = NSSlider(value: avOffsetValue, minValue: -5, maxValue: 5, target: self, action: #selector(avOffsetChanged))
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        slider.isContinuous = true
+        slider.toolTip = "Negative shows the video earlier; positive shows the video later."
+        avOffsetSlider = slider
+
+        let earlierLabel = NSTextField(labelWithString: "-5s video earlier")
+        earlierLabel.translatesAutoresizingMaskIntoConstraints = false
+        earlierLabel.font = NSFont.systemFont(ofSize: 11)
+        earlierLabel.textColor = .secondaryLabelColor
+
+        let laterLabel = NSTextField(labelWithString: "+5s video later")
+        laterLabel.translatesAutoresizingMaskIntoConstraints = false
+        laterLabel.font = NSFont.systemFont(ofSize: 11)
+        laterLabel.textColor = .secondaryLabelColor
+        laterLabel.alignment = .right
+
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(valueLabel)
+        contentView.addSubview(slider)
+        contentView.addSubview(earlierLabel)
+        contentView.addSubview(laterLabel)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+
+            valueLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            valueLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            valueLabel.widthAnchor.constraint(equalToConstant: 64),
+
+            slider.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            slider.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            slider.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+
+            earlierLabel.leadingAnchor.constraint(equalTo: slider.leadingAnchor),
+            earlierLabel.topAnchor.constraint(equalTo: slider.bottomAnchor, constant: 2),
+
+            laterLabel.trailingAnchor.constraint(equalTo: slider.trailingAnchor),
+            laterLabel.topAnchor.constraint(equalTo: earlierLabel.topAnchor),
+            laterLabel.widthAnchor.constraint(equalToConstant: 120),
+        ])
+
+        let controller = NSViewController()
+        controller.view = contentView
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentSize = contentView.frame.size
+        popover.contentViewController = controller
+        avOffsetPopover = popover
+        popover.show(relativeTo: avOffsetButton.bounds, of: avOffsetButton, preferredEdge: .maxY)
+    }
     
     @objc private func seekChanged() {
         onSeek?(seekSlider.doubleValue)
@@ -1498,7 +1574,9 @@ class VideoControlBarView: NSView {
 
     @objc private func avOffsetChanged() {
         if let slider = avOffsetSlider {
-            onAVOffsetChanged?(slider.doubleValue)
+            avOffsetValue = slider.doubleValue
+            avOffsetValueLabel?.stringValue = formatOffset(avOffsetValue)
+            onAVOffsetChanged?(avOffsetValue)
         }
     }
 
@@ -1524,16 +1602,21 @@ class VideoControlBarView: NSView {
     
     /// Show or hide the A/V offset slider
     func setAVOffsetVisible(_ visible: Bool) {
-        avOffsetSlider?.isHidden = !visible
-        seekSlider.isHidden = visible
-        currentTimeLabel.isHidden = visible
-        durationLabel.isHidden = visible
+        avOffsetButton.isHidden = !visible
+        avOffsetButtonWidthConstraint?.constant = visible ? 30 : 0
+        if !visible {
+            avOffsetPopover?.performClose(nil)
+        }
     }
 
     /// Current A/V offset slider value, in seconds
     var avOffset: Double {
-        get { avOffsetSlider?.doubleValue ?? 0 }
-        set { avOffsetSlider?.doubleValue = newValue }
+        get { avOffsetValue }
+        set {
+            avOffsetValue = newValue
+            avOffsetSlider?.doubleValue = avOffsetValue
+            avOffsetValueLabel?.stringValue = formatOffset(avOffsetValue)
+        }
     }
 
     /// Update the cast state display
@@ -1589,6 +1672,10 @@ class VideoControlBarView: NSView {
         } else {
             return String(format: "%d:%02d", minutes, seconds)
         }
+    }
+
+    private func formatOffset(_ value: Double) -> String {
+        String(format: "%+.1fs", value)
     }
 }
 

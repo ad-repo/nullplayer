@@ -1093,6 +1093,9 @@ class WindowManager {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
         let vpc = videoPlayerWindowController!
+        // Mute before creating the KSPlayer layer. Setting volume only after play() leaves a short
+        // window where a reused video controller can start at its previous nonzero volume.
+        vpc.volume = 0.0
         vpc.play(url: url, title: title, httpHeaders: httpHeaders)
         vpc.volume = 0.0
         applyAlwaysOnTopToWindow(vpc.window)

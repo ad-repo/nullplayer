@@ -22,15 +22,18 @@ final class SonosVideoSyncController {
     /// User-configured A/V offset in seconds (persisted to UserDefaults)
     var userOffset: TimeInterval {
         get {
-            UserDefaults.standard.double(forKey: "youtubeSonosAVOffset")
+            guard UserDefaults.standard.object(forKey: Self.userOffsetKey) != nil else {
+                return Self.defaultSonosOutputOffset
+            }
+            return UserDefaults.standard.double(forKey: Self.userOffsetKey)
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: "youtubeSonosAVOffset")
+            UserDefaults.standard.set(newValue, forKey: Self.userOffsetKey)
         }
     }
 
-    /// Playback rate adjustment during fine-tuning. Wide band is fine — the video is muted, so
-    /// rate changes cause no pitch artifacts, and this lets us correct drift WITHOUT re-seeking.
+    /// Playback rate adjustment during fine-tuning. Keep this narrow: even muted video looks
+    /// choppy when the rate visibly wobbles around coarse Sonos position updates.
     private var rateAdjustment: Float = 1.0
 
     /// Whether the one-time initial alignment seek has run (applies the persisted offset and
@@ -43,8 +46,17 @@ final class SonosVideoSyncController {
 
     /// Only seek for large desyncs, and never more often than the cooldown. Everything smaller is
     /// corrected with playback-rate trimming, which does not interrupt/re-buffer the stream.
-    private let seekThreshold: TimeInterval = 3.0
+    private let seekThreshold: TimeInterval = 2.75
     private let seekCooldown: TimeInterval = 6.0
+    private let fineTrimDeadband: TimeInterval = 0.35
+    private let maximumFineTrim: Float = 0.03
+    private let driftSmoothingFactor = 0.35
+    private var smoothedDrift: TimeInterval?
+
+    private static let userOffsetKey = "youtubeSonosAVOffset"
+    /// Sonos output is commonly around two seconds behind the reported transport position.
+    /// Negative means "show an earlier video frame" so the picture waits for delayed audio.
+    private static let defaultSonosOutputOffset: TimeInterval = -2.0
 
     // MARK: - Initialization
 
@@ -79,6 +91,7 @@ final class SonosVideoSyncController {
         // Reset playback rate to normal
         videoController?.playbackRate = 1.0
         rateAdjustment = 1.0
+        smoothedDrift = nil
 
         NSLog("SonosVideoSyncController: Stopped sync")
     }
@@ -119,7 +132,14 @@ final class SonosVideoSyncController {
         }
 
         let drift = targetTime - currentVideoTime
-        let absDrift = abs(drift)
+        let filteredDrift: TimeInterval
+        if let previous = smoothedDrift {
+            filteredDrift = previous + (drift - previous) * driftSmoothingFactor
+        } else {
+            filteredDrift = drift
+        }
+        smoothedDrift = filteredDrift
+        let absDrift = abs(filteredDrift)
 
         // Large desync: seek to realign — but only outside the cooldown window. Seeking a
         // network-streamed video re-buffers it; seeking again before it recovers stalls playback
@@ -128,20 +148,23 @@ final class SonosVideoSyncController {
             let now = Date()
             let coolingDown = lastSeekAt.map { now.timeIntervalSince($0) < seekCooldown } ?? false
             if !coolingDown {
-                NSLog("SonosVideoSyncController: Large drift %.2fs, seeking video to %.1f", drift, targetTime)
+                NSLog("SonosVideoSyncController: Large drift %.2fs, seeking video to %.1f", filteredDrift, targetTime)
                 videoController.seek(to: max(0, targetTime))
                 lastSeekAt = now
                 lastSonosPosition = sonosPosition
                 rateAdjustment = 1.0
+                smoothedDrift = nil
                 return
             }
         }
 
-        // Everything else: nudge playback rate (no re-buffer). The video is muted, so a wide band
-        // is fine and converges faster than ±3%.
-        if absDrift > 0.05 {
-            let rateDelta = Float(drift) * 0.05   // 2s drift -> +0.10 -> clamps to 1.10
-            let targetRate = (1.0 + rateDelta).clamped(to: 0.90...1.10)
+        // Everything else: nudge playback rate (no re-buffer). Sonos position is coarse, so ignore
+        // sub-frame-ish drift and keep the rate band tight enough that 4K playback stays smooth.
+        if absDrift > fineTrimDeadband {
+            let rateDelta = Float(filteredDrift) * 0.015
+            let minimumRate: Float = 1.0 - maximumFineTrim
+            let maximumRate: Float = 1.0 + maximumFineTrim
+            let targetRate = (1.0 + rateDelta).clamped(to: minimumRate...maximumRate)
             videoController.playbackRate = targetRate
             rateAdjustment = targetRate
         } else {
