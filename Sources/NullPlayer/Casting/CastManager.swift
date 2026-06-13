@@ -1448,6 +1448,49 @@ class CastManager {
     /// has actually begun — otherwise the local video gets seeked forward every poll and freezes.
     var isSonosPlaybackConfirmed: Bool { sonosHasSeenActivePlayback }
 
+    /// Poll Sonos directly until it reports real PLAYING for the active session.
+    /// YouTube → Sonos uses this to start the muted local video from a known point instead of
+    /// launching it immediately and trying to repair sync after the Sonos startup buffer.
+    func waitForSonosPlaybackConfirmed(
+        timeout: TimeInterval = 12,
+        pollInterval: TimeInterval = 0.5
+    ) async -> TimeInterval? {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if sonosHasSeenActivePlayback {
+                return currentCastPosition()
+            }
+
+            if let result = await upnpManager.pollSonosPlaybackState() {
+                if result.state == "PLAYING" {
+                    await MainActor.run {
+                        self.sonosHasSeenActivePlayback = true
+                        self.activeSession?.position = result.position
+                        self.activeSession?.duration = result.duration
+                        self.activeSession?.playbackStartDate = Date()
+                        self.activeSession?.isPlaying = true
+                        self.activeSession?.state = .casting
+                        self.resolvedAudioEngine.updateCastPosition(
+                            currentTime: result.position,
+                            isPlaying: true,
+                            isBuffering: false
+                        )
+                    }
+                    NSLog("CastManager: Direct Sonos confirmation — state=PLAYING t=%.1f", result.position)
+                    return result.position
+                }
+
+                NSLog("CastManager: Waiting for Sonos PLAYING — state=%@ t=%.1f", result.state, result.position)
+            }
+
+            try? await Task.sleep(nanoseconds: UInt64(max(0.1, pollInterval) * 1_000_000_000))
+        }
+
+        NSLog("CastManager: Timed out waiting for Sonos playback confirmation")
+        return nil
+    }
+
     /// Current playback position of the active Sonos cast session, or nil if not casting to Sonos.
     /// Uses the same interpolated session state maintained by standard Sonos polling.
     func currentCastPosition() -> TimeInterval? {

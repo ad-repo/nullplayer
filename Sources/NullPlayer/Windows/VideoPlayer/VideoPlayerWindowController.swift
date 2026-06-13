@@ -634,7 +634,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Play a video from URL with optional title and HTTP headers
     /// If called from WindowManager.playVideoTrack, the onVideoFinishedForPlaylist callback will be set
-    func play(url: URL, title: String, httpHeaders: [String: String]? = nil) {
+    func play(url: URL, title: String, httpHeaders: [String: String]? = nil, autoPlay: Bool = true) {
         // Reset any lingering cast state from previous video
         resetCastState()
 
@@ -671,12 +671,21 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = title
         currentArtworkTrack = Track(url: url, title: title, mediaType: .video)
         window?.title = title
-        videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil, httpHeaders: httpHeaders)
+        videoPlayerView.play(
+            url: url,
+            title: title,
+            isPlexURL: false,
+            plexHeaders: nil,
+            httpHeaders: httpHeaders,
+            autoPlay: autoPlay
+        )
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-        isPlaying = true
+        isPlaying = autoPlay
         beginPlaybackAnalyticsSession(contentType: "video")
-        WindowManager.shared.videoPlaybackDidStart()
+        if autoPlay {
+            WindowManager.shared.videoPlaybackDidStart()
+        }
     }
 
     /// Play a Plex video track from the playlist

@@ -19,6 +19,7 @@ final class YouTubeToSonosCoordinator {
     private var castDevice: CastDevice?
     private weak var videoController: VideoPlayerWindowController?
     private var didStartManagedCast = false
+    private var isLocalVideoReady = false
 
     // Transport state
     private(set) var isPlaying: Bool = true    // Session starts playing
@@ -98,11 +99,13 @@ final class YouTubeToSonosCoordinator {
             let videoController = WindowManager.shared.showLocalMutedVideo(
                 url: resolved.videoURL,
                 title: resolved.title,
-                httpHeaders: resolved.videoHeaders
+                httpHeaders: resolved.videoHeaders,
+                autoPlay: false
             )
             self.videoController = videoController
+            isLocalVideoReady = false
             videoController.isYouTubeToSonosCompanion = true
-            NSLog("YouTubeToSonosCoordinator: Video playing MUTED with %d headers", resolved.videoHeaders.count)
+            NSLog("YouTubeToSonosCoordinator: Video opened MUTED and paused with %d headers", resolved.videoHeaders.count)
 
             // 6. Start sync controller and connect the user-facing A/V offset slider (the
             //    primary calibration mechanism: Sonos position is only ~1s granular).
@@ -122,6 +125,27 @@ final class YouTubeToSonosCoordinator {
                 videoController?.showAVOffsetPopover()
             }
             syncController.start()
+
+            let confirmedPosition = await CastManager.shared.waitForSonosPlaybackConfirmed(timeout: 12)
+            guard self.videoController === videoController else { return }
+
+            syncController.noteSonosPlaybackConfirmed()
+            let startupTarget = (confirmedPosition ?? 0) + syncController.userOffset
+            if startupTarget > 0.1 {
+                NSLog("YouTubeToSonosCoordinator: Starting video at %.1f after Sonos confirmation", startupTarget)
+                videoController.seekLocalVideo(to: startupTarget)
+            } else if startupTarget < -0.1 {
+                let delay = min(-startupTarget, 5.0)
+                NSLog("YouTubeToSonosCoordinator: Delaying video start by %.1fs after Sonos confirmation", delay)
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+
+            guard self.videoController === videoController else { return }
+            isLocalVideoReady = true
+            if isPlaying {
+                videoController.setPaused(false)
+                WindowManager.shared.videoPlaybackDidStart()
+            }
 
             // Start completion poll: check periodically if playback has finished
             startCompletionPoll()
@@ -171,6 +195,7 @@ final class YouTubeToSonosCoordinator {
         resolved = nil
         castDevice = nil
         didStartManagedCast = false
+        isLocalVideoReady = false
 
         NSLog("YouTubeToSonosCoordinator: Stopped")
     }
@@ -313,7 +338,9 @@ final class YouTubeToSonosCoordinator {
     /// Resume playback on both video and Sonos without seeking the network video.
     func resume() {
         NSLog("YouTubeToSonosCoordinator: resume()")
-        videoController?.setPaused(false)
+        if isLocalVideoReady {
+            videoController?.setPaused(false)
+        }
 
         Task {
             try? await CastManager.shared.resume()

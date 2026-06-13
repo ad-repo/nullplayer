@@ -16,13 +16,10 @@ final class SonosVideoSyncController {
     /// Timer for waiting until Sonos has confirmed playback.
     private var syncTimer: Timer?
 
-    /// Timer for applying user offset changes with playback-rate nudges instead of seeks.
-    private var adjustmentTimer: Timer?
-
     /// User-configured A/V offset in seconds for the current YouTube → Sonos session.
     var userOffset: TimeInterval = 0 {
         didSet {
-            applyCurrentOffsetAdjustment()
+            applyCurrentOffset()
         }
     }
 
@@ -58,8 +55,6 @@ final class SonosVideoSyncController {
     func stop() {
         syncTimer?.invalidate()
         syncTimer = nil
-        adjustmentTimer?.invalidate()
-        adjustmentTimer = nil
 
         // Reset playback rate to normal
         videoController?.playbackRate = 1.0
@@ -93,53 +88,26 @@ final class SonosVideoSyncController {
         videoController.playbackRate = 1.0
         syncTimer?.invalidate()
         syncTimer = nil
-        if abs(userOffset) > 0.001 {
-            applyCurrentOffsetAdjustment()
-        }
     }
 
-    private func applyCurrentOffsetAdjustment() {
+    func noteSonosPlaybackConfirmed() {
+        hasConfirmedPlayback = true
+        syncTimer?.invalidate()
+        syncTimer = nil
+        videoController?.playbackRate = 1.0
+    }
+
+    private func applyCurrentOffset() {
         guard hasConfirmedPlayback else { return }
-        updatePlaybackRateForCurrentOffset()
-        guard adjustmentTimer == nil else { return }
-        adjustmentTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updatePlaybackRateForCurrentOffset()
-            }
-        }
-    }
-
-    private func updatePlaybackRateForCurrentOffset() {
         guard let videoController = videoController,
               videoController.isPlaying,
               CastManager.shared.isSonosPlaybackConfirmed,
               let sonosPosition = positionProvider()
-        else {
-            stopOffsetAdjustment(resetRate: true)
-            return
-        }
+        else { return }
 
         let targetTime = max(0, sonosPosition + userOffset)
-        let delta = targetTime - videoController.currentTime
-        let magnitude = abs(delta)
-        guard magnitude > 0.18 else {
-            stopOffsetAdjustment(resetRate: true)
-            return
-        }
-
-        let cappedMagnitude = min(magnitude, 3.0)
-        let rateDelta = Float(cappedMagnitude * 0.12)
-        let rate = delta > 0
-            ? min(1.35, 1.0 + rateDelta)
-            : max(0.65, 1.0 - rateDelta)
-        videoController.playbackRate = rate
-    }
-
-    private func stopOffsetAdjustment(resetRate: Bool) {
-        adjustmentTimer?.invalidate()
-        adjustmentTimer = nil
-        if resetRate {
-            videoController?.playbackRate = 1.0
-        }
+        NSLog("SonosVideoSyncController: Applying user offset %.1fs, seeking video to %.1f", userOffset, targetTime)
+        videoController.playbackRate = 1.0
+        videoController.seekLocalVideo(to: targetTime)
     }
 }

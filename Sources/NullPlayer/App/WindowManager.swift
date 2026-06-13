@@ -1088,7 +1088,12 @@ class WindowManager {
     /// controller. Used by the YouTube → Sonos coordinator: the video stays local while audio is
     /// cast to Sonos separately, so this deliberately bypasses `routeToVideoCastIfNeeded`.
     @discardableResult
-    func showLocalMutedVideo(url: URL, title: String, httpHeaders: [String: String]?) -> VideoPlayerWindowController {
+    func showLocalMutedVideo(
+        url: URL,
+        title: String,
+        httpHeaders: [String: String]?,
+        autoPlay: Bool = true
+    ) -> VideoPlayerWindowController {
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
@@ -1096,7 +1101,7 @@ class WindowManager {
         // Mute before creating the KSPlayer layer. Setting volume only after play() leaves a short
         // window where a reused video controller can start at its previous nonzero volume.
         vpc.volume = 0.0
-        vpc.play(url: url, title: title, httpHeaders: httpHeaders)
+        vpc.play(url: url, title: title, httpHeaders: httpHeaders, autoPlay: autoPlay)
         vpc.volume = 0.0
         applyAlwaysOnTopToWindow(vpc.window)
         return vpc

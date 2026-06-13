@@ -469,16 +469,14 @@ in sync on the Mac. NullPlayer owns the local video clock, so it can correct A/V
    *is* driving the Sonos cast. It's guarded with `YouTubeToSonosCoordinator.shared.isActive` so
    it does **not** pause during a YT→Sonos session. (Symptom when broken: Sonos `Play` succeeds,
    stream is fetched, then a `Pausing` SOAP fires ~30 ms later and Sonos sits `STOPPED`.)
-5. `SonosVideoSyncController` waits until Sonos has **truly started playing**
-   (`CastManager.isSonosPlaybackConfirmed`, backed by `sonosHasSeenActivePlayback`) and then stops
-   its startup poll without seeking the local YouTube video. Before confirmation it leaves the
-   video alone because the cast session reports an optimistic, ever-advancing startup position.
-   After confirmation it still avoids automatic seeks: seeking a network-streamed YouTube video a
-   few seconds after launch causes a large rebuffer stall, which makes A/V alignment worse. The
-   **A/V sync offset** popover is the primary fine calibration and opens automatically when a
-   YouTube → Sonos session starts. The offset is current-session only, starts at `0` for each
-   video, and dragging the slider applies the adjustment with temporary local playback-rate nudges
-   rather than a video seek.
+5. The local video opens muted but paused. `YouTubeToSonosCoordinator` then calls
+   `CastManager.waitForSonosPlaybackConfirmed`, which directly polls Sonos until the coordinator
+   reports real `PLAYING` (`sonosHasSeenActivePlayback`). Only then does the video start, using
+   the confirmed Sonos position plus the current-session offset as its initial time. This avoids
+   the old startup race where the video ran several seconds ahead and a later seek caused a large
+   YouTube rebuffer stall. The **A/V sync offset** popover opens automatically when a YouTube →
+   Sonos session starts. The offset is current-session only, starts at `0` for each video, and
+   releasing the slider applies one deliberate video time shift for manual calibration.
 
 ### Enabling the feature (requires yt-dlp + ffmpeg)
 The feature is gated on a runtime presence check (`HelperBinaries`). The menu item
@@ -506,11 +504,12 @@ this is intentional. For the DMG distribution, binaries are provisioned opt-in v
 2. **Open Video URL → Sonos…** — the dialog has a wide URL field, auto-filled from the clipboard
    if it looks like a YouTube link.
 3. Audio starts on the checked rooms; the first checked room becomes the coordinator and the rest
-   join its group. The video opens muted, with the **A/V Sync Offset** popover already visible.
+   join its group. The video opens muted and paused, with the **A/V Sync Offset** popover already
+   visible, then starts when Sonos reports real playback.
 4. Use the already-visible **A/V Sync Offset** popover and drag the slider until the video looks
    aligned with the Sonos audio. The offset starts at `0` for each video and does not persist.
-   Dragging does **not** seek the video; it briefly speeds up or slows down the muted local video,
-   then returns to 1.0x.
+   Releasing the slider applies one deliberate video seek; avoid scrubbing it repeatedly because
+   each time shift can force the remote YouTube stream to buffer.
 5. **Output → Streaming → Sonos (Experimental) → Stop YouTube → Sonos** tears everything down (unregisters the proxy *or* live
    stream, kills ffmpeg with SIGTERM→SIGKILL if it was used, stops the cast, restores video volume).
 
@@ -524,10 +523,10 @@ this is intentional. For the DMG distribution, binaries are provisioned opt-in v
   the offset control closes the residual. Not frame-accurate.
 - **Opus-only videos are unreliable.** The non-AAC fallback (live ffmpeg → `x-rincon-mp3radio://`)
   often won't sustain on Sonos. Videos that offer AAC (almost all) use the solid proxy path.
-- **No automatic startup seek or drift seeking.** NullPlayer leaves the local video clock untouched
-  when Sonos playback first confirms and does not seek on resume. Automatic startup alignment and
-  repeated drift seeks were removed because they make remote YouTube video stall. Use the offset
-  slider for manual rate-nudge correction.
+- **No post-start automatic drift seeking.** Startup alignment happens before local video playback:
+  the video stays paused until Sonos reports `PLAYING`, then starts from the confirmed Sonos
+  position. NullPlayer does not seek on resume or repeatedly chase drift because remote YouTube
+  seeks can stall. Use the offset slider for one deliberate manual time shift when needed.
 - **Extraction fragility.** yt-dlp breaks when YouTube changes; a bundled copy needs app
   updates (a Homebrew copy can be `brew upgrade`d independently).
 
@@ -535,7 +534,7 @@ this is intentional. For the DMG distribution, binaries are provisioned opt-in v
 `Video/HelperBinaries.swift`, `Video/YouTubeStreamResolver.swift` (resolves streams + headers +
 `duration`), `Video/YouTubeToSonosCoordinator.swift` (AAC-proxy vs live-ffmpeg branch),
 `Video/SonosVideoSyncController.swift` (confirmed-playback gate, current-session offset,
-rate-nudge correction without startup seeks);
+manual time-shift application);
 `Casting/LocalMediaServer.swift` (`registerStreamURL` with `requestHeaders` passthrough →
 `/stream/*`; `registerLiveStream` → `/live/*` fallback);
 `Casting/CastManager.swift` (`cast(to:url:metadata:)` normal-track path, `castLiveAudioStream`

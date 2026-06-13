@@ -689,7 +689,14 @@ class VideoPlayerView: NSView {
     ///   - isPlexURL: Whether this is a Plex stream
     ///   - plexHeaders: Full Plex headers for streaming (required for remote/relay connections)
     ///   - httpHeaders: Custom HTTP headers to apply for non-Plex URLs
-    func play(url: URL, title: String, isPlexURL: Bool = false, plexHeaders: [String: String]? = nil, httpHeaders: [String: String]? = nil) {
+    func play(
+        url: URL,
+        title: String,
+        isPlexURL: Bool = false,
+        plexHeaders: [String: String]? = nil,
+        httpHeaders: [String: String]? = nil,
+        autoPlay: Bool = true
+    ) {
         currentTitle = title
         currentURL = url
         isPlexStream = isPlexURL
@@ -726,11 +733,12 @@ class VideoPlayerView: NSView {
         playerLayer = nil
         
         // Create new player layer with the URL
-        let layer = KSPlayerLayer(url: url, options: options, delegate: self)
+        let layer = KSPlayerLayer(url: url, isAutoPlay: autoPlay, options: options, delegate: self)
         playerLayer = layer
         
         // Apply current volume to the new player
         layer.player.playbackVolume = volume
+        layer.player.playbackRate = 1.0
         
         // Add player view to host
         if let playerView = layer.player.view {
@@ -1538,8 +1546,8 @@ class VideoControlBarView: NSView {
 
         let slider = NSSlider(value: avOffsetValue, minValue: -5, maxValue: 5, target: self, action: #selector(avOffsetChanged))
         slider.translatesAutoresizingMaskIntoConstraints = false
-        slider.isContinuous = true
-        slider.toolTip = "Move left when the video is ahead; move right when the video is behind."
+        slider.isContinuous = false
+        slider.toolTip = "Move left when the video is ahead; move right when the video is behind. Applies when released."
         avOffsetSlider = slider
 
         let earlierLabel = NSTextField(labelWithString: "Video is ahead")
