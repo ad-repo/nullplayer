@@ -204,9 +204,9 @@ Import discovery is now unified across classic + modern entry points (main windo
 - Auto-detected output devices
 
 ### Stream Ripper (Output → Streaming → Rip URL…)
-- Paste a URL (auto-filled from the clipboard) and pick **FLAC**, **MP3**, or **MP4 video** at a chosen resolution (720p/1080p/1440p/4K-best)
+- Paste a URL (auto-filled from the clipboard) and pick **FLAC**, **MP3**, or **MP4 video** at a chosen profile: 720p / 2.5 Mbps, 1080p / 4 Mbps (recommended), 1080p / 8 Mbps (high quality), 1440p / 16 Mbps, 4K / 35 Mbps, or Full / 50 Mbps
 - Downloads via a system-installed `yt-dlp` (+`ffmpeg`); shows an install hint if missing
-- Best-quality source selection; lossless FLAC, no video re-encode
+- Best-quality source selection; lossless FLAC; video is compatibility-transcoded to H.264/AAC MP4
 - Tags output with source metadata + embedded cover art; names the file `Artist - Title`
 - Writes a `.cue` sheet when the source has chapter timestamps
 - Progress band at the top of the main window; finish dialog offers **Play Now** / **Reveal in Finder**

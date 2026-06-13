@@ -2609,6 +2609,15 @@ class ContextMenuBuilder {
             sonosItem.submenu = sonosMenu
             outputMenu.addItem(sonosItem)
         }
+
+        // ========== Streaming ==========
+        if outputMenu.items.last?.isSeparatorItem != true {
+            outputMenu.addItem(NSMenuItem.separator())
+        }
+
+        let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
+        streamingItem.submenu = buildMenuBarStreamingSubmenu()
+        outputMenu.addItem(streamingItem)
         
         // ========== Other Cast Devices ==========
         let chromecastDevices = castManager.chromecastDevices
