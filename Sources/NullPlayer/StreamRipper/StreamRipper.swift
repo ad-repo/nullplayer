@@ -45,16 +45,19 @@ final class StreamRipper {
     /// x86, MacPorts, system).
     private static let searchPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin"]
 
-    /// Resolves the `yt-dlp` executable path, or nil if it is not installed.
-    static func resolveYtDlp() -> String? {
+    /// Resolves a tool executable path from the known system locations, or nil.
+    static func resolveTool(_ name: String) -> String? {
         for dir in searchPaths {
-            let candidate = "\(dir)/yt-dlp"
+            let candidate = "\(dir)/\(name)"
             if FileManager.default.isExecutableFile(atPath: candidate) {
                 return candidate
             }
         }
         return nil
     }
+
+    /// Resolves the `yt-dlp` executable path, or nil if it is not installed.
+    static func resolveYtDlp() -> String? { resolveTool("yt-dlp") }
 
     // MARK: - Entry point
 
@@ -67,7 +70,9 @@ final class StreamRipper {
 
     /// Prompt for a URL and output type, then a destination, then start the rip.
     func promptAndRip() {
-        guard let ytdlp = Self.resolveYtDlp() else {
+        // Both tools are required: yt-dlp drives the download, ffmpeg does the
+        // extraction / remux / metadata + thumbnail embedding.
+        guard let ytdlp = Self.resolveYtDlp(), Self.resolveTool("ffmpeg") != nil else {
             presentMissingToolAlert()
             return
         }
@@ -195,7 +200,9 @@ final class StreamRipper {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = (Self.searchPaths + [env["PATH"] ?? ""]).joined(separator: ":")
 
-        NSLog("StreamRipper: ripping %@ (%@) → %@", sourceURL.absoluteString, mode.fileExtension, folder)
+        // Log only the host + format — avoid leaking full URLs (query tokens)
+        // or local destination paths into the system log.
+        NSLog("StreamRipper: ripping from %@ (%@)", sourceURL.host ?? "?", mode.fileExtension)
 
         // Show a spinner + message on the main window for the duration of the rip.
         WindowManager.shared.mainWindowController?.showActivity("Ripping… \(sourceURL.host ?? "downloading")")
@@ -229,19 +236,19 @@ final class StreamRipper {
             let status = task.terminationStatus
             let errText = String(data: errData, encoding: .utf8) ?? ""
 
-            // Resolve the actual output path yt-dlp reported (falls back to the
-            // destination folder if the print file is unavailable).
+            // The actual output path yt-dlp reported (nil if it couldn't be
+            // resolved — we must not pretend the destination folder is the file).
             let reported = (try? String(contentsOfFile: pathFile, encoding: .utf8))?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             try? FileManager.default.removeItem(atPath: pathFile)
-            let outputPath = (reported?.isEmpty == false) ? reported! : folder
+            let outputPath: String? = (reported?.isEmpty == false) ? reported : nil
 
             // Write a .cue sheet if the source had chapter timestamps.
             var cueTrackCount = 0
-            if status == 0, reported?.isEmpty == false, let cf = chaptersFile {
+            if status == 0, let path = outputPath, let cf = chaptersFile {
                 let chapters = Self.readChapters(from: cf)
                 if chapters.count >= 2 {
-                    Self.writeCueFile(audioPath: outputPath, chapters: chapters)
+                    Self.writeCueFile(audioPath: path, chapters: chapters)
                     cueTrackCount = chapters.count
                 }
             }
@@ -250,7 +257,7 @@ final class StreamRipper {
             DispatchQueue.main.async {
                 self.endActivity()
                 if status == 0 {
-                    self.presentSuccess(outputPath: outputPath, mode: mode, cueTrackCount: cueTrackCount)
+                    self.presentSuccess(outputPath: outputPath, folder: folder, mode: mode, cueTrackCount: cueTrackCount)
                 } else {
                     self.presentFailure(message: errText.isEmpty ? "yt-dlp exited with code \(status)." : errText)
                 }
@@ -345,15 +352,28 @@ final class StreamRipper {
         alert.runModal()
     }
 
-    private func presentSuccess(outputPath: String, mode: Mode, cueTrackCount: Int) {
+    private func presentSuccess(outputPath: String?, folder: String, mode: Mode, cueTrackCount: Int) {
         let alert = NSAlert()
         alert.messageText = "Rip Complete"
+        alert.alertStyle = .informational
+
+        guard let outputPath else {
+            // yt-dlp succeeded but we couldn't resolve the exact file path, so we
+            // can't offer Play Now / reveal-the-file — point at the folder instead.
+            alert.informativeText = "Saved to \(folder)\n\nThe exact file couldn't be located automatically."
+            alert.addButton(withTitle: "Reveal in Finder")
+            alert.addButton(withTitle: "Done")
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)])
+            }
+            return
+        }
+
         var info = (outputPath as NSString).lastPathComponent
         if cueTrackCount > 0 {
             info += "\n\nWrote a \(cueTrackCount)-track .cue sheet from the chapter timestamps."
         }
         alert.informativeText = info
-        alert.alertStyle = .informational
         alert.addButton(withTitle: "Play Now")
         alert.addButton(withTitle: "Reveal in Finder")
         alert.addButton(withTitle: "Done")
