@@ -113,12 +113,9 @@ final class YouTubeToSonosCoordinator {
                 videoController: videoController
             )
             self.syncController = syncController
-            videoController.avOffset = syncController.userOffset // reflect the persisted value
+            videoController.avOffset = syncController.userOffset
             videoController.onAVOffsetChanged = { [weak syncController] value in
                 syncController?.userOffset = value
-            }
-            videoController.onAVOffsetResync = { [weak syncController] in
-                syncController?.realignToCurrentOffset()
             }
             videoController.setAVOffsetVisible(true)
             DispatchQueue.main.async { [weak videoController] in
@@ -158,7 +155,6 @@ final class YouTubeToSonosCoordinator {
 
         if let videoController = videoController {
             videoController.onAVOffsetChanged = nil
-            videoController.onAVOffsetResync = nil
             videoController.setAVOffsetVisible(false)
             videoController.isYouTubeToSonosCompanion = false
             videoController.stop()
@@ -314,27 +310,13 @@ final class YouTubeToSonosCoordinator {
 
     // MARK: - Transport Control
 
-    /// Resume playback: video first, then Sonos, then re-align video if Sonos confirms.
+    /// Resume playback on both video and Sonos without seeking the network video.
     func resume() {
         NSLog("YouTubeToSonosCoordinator: resume()")
         videoController?.setPaused(false)
 
         Task {
             try? await CastManager.shared.resume()
-
-            // Retry re-align briefly if Sonos confirmation hasn't landed yet
-            var attempts = 0
-            let maxAttempts = 20 // ~2 seconds with 100ms delays
-            while attempts < maxAttempts && !CastManager.shared.isSonosPlaybackConfirmed {
-                try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                attempts += 1
-            }
-
-            if CastManager.shared.isSonosPlaybackConfirmed {
-                await MainActor.run {
-                    self.syncController?.realignToCurrentOffset()
-                }
-            }
         }
 
         isPlaying = true

@@ -124,12 +124,6 @@ class VideoPlayerView: NSView {
         set { controlBarView.onAVOffsetChanged = newValue }
     }
 
-    /// Callback when the user explicitly applies the current A/V offset.
-    var onAVOffsetResync: (() -> Void)? {
-        get { controlBarView.onAVOffsetResync }
-        set { controlBarView.onAVOffsetResync = newValue }
-    }
-
     /// Current A/V offset slider value, in seconds
     var avOffset: Double {
         get { controlBarView.avOffset }
@@ -1292,7 +1286,6 @@ class VideoControlBarView: NSView {
     var onTrackSettings: (() -> Void)?
     var onCast: (() -> Void)?
     var onAVOffsetChanged: ((Double) -> Void)?
-    var onAVOffsetResync: (() -> Void)?
 
     private var playButton: NSButton!
     private var stopButton: NSButton!
@@ -1528,7 +1521,7 @@ class VideoControlBarView: NSView {
             return
         }
 
-        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 132))
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 92))
         contentView.wantsLayer = true
 
         let titleLabel = NSTextField(labelWithString: "A/V sync offset")
@@ -1560,17 +1553,11 @@ class VideoControlBarView: NSView {
         laterLabel.textColor = .secondaryLabelColor
         laterLabel.alignment = .right
 
-        let resyncButton = NSButton(title: "Resync", target: self, action: #selector(avOffsetResyncClicked))
-        resyncButton.translatesAutoresizingMaskIntoConstraints = false
-        resyncButton.bezelStyle = .rounded
-        resyncButton.toolTip = "Apply the current offset with one video seek."
-
         contentView.addSubview(titleLabel)
         contentView.addSubview(valueLabel)
         contentView.addSubview(slider)
         contentView.addSubview(earlierLabel)
         contentView.addSubview(laterLabel)
-        contentView.addSubview(resyncButton)
 
         NSLayoutConstraint.activate([
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
@@ -1590,10 +1577,6 @@ class VideoControlBarView: NSView {
             laterLabel.trailingAnchor.constraint(equalTo: slider.trailingAnchor),
             laterLabel.topAnchor.constraint(equalTo: earlierLabel.topAnchor),
             laterLabel.widthAnchor.constraint(equalToConstant: 120),
-
-            resyncButton.trailingAnchor.constraint(equalTo: slider.trailingAnchor),
-            resyncButton.topAnchor.constraint(equalTo: earlierLabel.bottomAnchor, constant: 10),
-            resyncButton.widthAnchor.constraint(equalToConstant: 82),
         ])
 
         let controller = NSViewController()
@@ -1623,10 +1606,6 @@ class VideoControlBarView: NSView {
             avOffsetValueLabel?.stringValue = formatOffset(avOffsetValue)
             onAVOffsetChanged?(avOffsetValue)
         }
-    }
-
-    @objc private func avOffsetResyncClicked() {
-        onAVOffsetResync?()
     }
 
     // MARK: - Updates
