@@ -208,7 +208,10 @@ final class StreamRipper {
             task.arguments = args
             task.environment = env
             task.standardError = errPipe
-            task.standardOutput = Pipe()
+            // Discard stdout: yt-dlp streams progress here and we don't read it.
+            // An unread Pipe() fills its ~64KB OS buffer mid-download and blocks
+            // the process forever (stalls at the same spot every time).
+            task.standardOutput = FileHandle.nullDevice
 
             do {
                 try task.run()
