@@ -29,7 +29,8 @@ final class StreamRipper {
 
     enum Mode {
         case audio(AudioFormat)
-        case video
+        /// Video with an optional max height cap (nil = best available, no cap).
+        case video(maxHeight: Int?)
 
         /// Requested file extension (logging / diagnostics only — the real
         /// extension is decided by yt-dlp and read back after the rip).
@@ -65,7 +66,10 @@ final class StreamRipper {
     private static let formatChoices: [(title: String, mode: Mode)] = [
         ("Audio — FLAC (lossless)", .audio(.flac)),
         ("Audio — MP3", .audio(.mp3)),
-        ("Video — MP4", .video),
+        ("Video — 1080p (recommended)", .video(maxHeight: 1080)),
+        ("Video — 720p (smaller)", .video(maxHeight: 720)),
+        ("Video — 1440p", .video(maxHeight: 1440)),
+        ("Video — 4K / best (largest)", .video(maxHeight: nil)),
     ]
 
     /// Prompt for a URL and output type, then a destination, then start the rip.
@@ -181,11 +185,21 @@ final class StreamRipper {
             let cf = NSTemporaryDirectory() + "nullplayer-chapters-\(UUID().uuidString).json"
             chaptersFile = cf
             args += ["--print-to-file", "after_move:%(chapters)j", cf]
-        case .video:
-            // Best video-only + best audio, merged; bias selection toward
-            // resolution/fps/bitrate. --remux-video only swaps the container
-            // (no quality-losing re-encode); incompatible codecs stay as-is.
-            args += ["-f", "bv*+ba/b", "-S", "res,fps,vcodec,br,acodec", "--remux-video", "mp4"]
+        case .video(let maxHeight):
+            // Best video-only + best audio, merged, optionally capped at a max
+            // height to avoid huge 4K/high-bitrate files. Prefer efficient codecs
+            // (av1 > vp9 > h264) at a given resolution to shrink size further.
+            // --remux-video only swaps the container (no quality-losing re-encode).
+            let format: String
+            if let h = maxHeight {
+                format = "bv*[height<=\(h)]+ba/b[height<=\(h)]/bv*+ba"
+            } else {
+                format = "bv*+ba/b"
+            }
+            // Default vcodec ordering already prefers av1 > vp9 > h264 (more
+            // efficient = smaller at the same resolution). vcodec is ranked
+            // before br so an efficient codec wins over a fatter h264 stream.
+            args += ["-f", format, "-S", "res,fps,vcodec,br,acodec", "--remux-video", "mp4"]
         }
         // Name the file from the source metadata: "Artist - Title" when an artist
         // is available, otherwise just the title.
