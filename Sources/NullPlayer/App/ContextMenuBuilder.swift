@@ -2208,6 +2208,17 @@ class ContextMenuBuilder {
         return item.submenu ?? NSMenu()
     }
 
+    private static func buildMenuBarStreamingSubmenu() -> NSMenu {
+        let streamingMenu = NSMenu()
+        streamingMenu.autoenablesItems = false
+
+        let ripItem = NSMenuItem(title: "Rip URL…", action: #selector(MenuActions.ripURL), keyEquivalent: "")
+        ripItem.target = MenuActions.shared
+        streamingMenu.addItem(ripItem)
+
+        return streamingMenu
+    }
+
     private static func buildMenuBarOutputDevicesMenu() -> NSMenu {
         let outputMenu = NSMenu()
         outputMenu.autoenablesItems = false
@@ -2342,6 +2353,15 @@ class ContextMenuBuilder {
             sonosItem.submenu = sonosMenu
             outputMenu.addItem(sonosItem)
         }
+
+        // Streaming
+        if outputMenu.items.last?.isSeparatorItem != true {
+            outputMenu.addItem(NSMenuItem.separator())
+        }
+
+        let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
+        streamingItem.submenu = buildMenuBarStreamingSubmenu()
+        outputMenu.addItem(streamingItem)
 
         // Other cast devices
         let activeSession = castManager.activeSession
@@ -2589,6 +2609,15 @@ class ContextMenuBuilder {
             sonosItem.submenu = sonosMenu
             outputMenu.addItem(sonosItem)
         }
+
+        // ========== Streaming ==========
+        if outputMenu.items.last?.isSeparatorItem != true {
+            outputMenu.addItem(NSMenuItem.separator())
+        }
+
+        let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
+        streamingItem.submenu = buildMenuBarStreamingSubmenu()
+        outputMenu.addItem(streamingItem)
         
         // ========== Other Cast Devices ==========
         let chromecastDevices = castManager.chromecastDevices
@@ -4909,7 +4938,11 @@ class MenuActions: NSObject {
             NSLog("MenuActions: Refreshed Sonos rooms")
         }
     }
-    
+
+    @objc func ripURL() {
+        MainActor.assumeIsolated { StreamRipper.shared.promptAndRip() }
+    }
+
     @objc func castToSonosRoom(_ sender: NSMenuItem) {
         let castManager = CastManager.shared
         
