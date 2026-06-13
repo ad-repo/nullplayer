@@ -35,13 +35,6 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Sleep Timer submenu
-        let sleepTimerItem = NSMenuItem(title: "Sleep Timer", action: nil, keyEquivalent: "")
-        sleepTimerItem.submenu = buildSleepTimerMenu()
-        if SleepTimerManager.shared.isActive { sleepTimerItem.state = .on }
-        menu.addItem(sleepTimerItem)
-        menu.addItem(NSMenuItem.separator())
-
         // Output Devices submenu
         if includeOutputDevices {
             menu.addItem(buildOutputDevicesMenuItem())
@@ -70,13 +63,6 @@ class ContextMenuBuilder {
         let minimizeAll = NSMenuItem(title: "Minimize All", action: #selector(MenuActions.minimizeAllWindows), keyEquivalent: "")
         minimizeAll.target = MenuActions.shared
         menu.addItem(minimizeAll)
-        menu.addItem(NSMenuItem.separator())
-
-        // Settings
-        let rememberState = NSMenuItem(title: "Remember State", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
-        rememberState.target = MenuActions.shared
-        rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
-        menu.addItem(rememberState)
         menu.addItem(NSMenuItem.separator())
 
         // Exit
