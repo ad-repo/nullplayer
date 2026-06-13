@@ -1084,9 +1084,9 @@ class WindowManager {
     }
     
     /// Show the video player with a URL and title
-    func showVideoPlayer(url: URL, title: String) {
+    func showVideoPlayer(url: URL, title: String, allowCasting: Bool = true) {
         let artworkTrack = Track(url: url, title: title, mediaType: .video)
-        if routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: { device in
+        if allowCasting, routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: { device in
             try await CastManager.shared.castVideoURL(url, title: title, to: device)
         }) {
             return

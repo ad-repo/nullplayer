@@ -2208,79 +2208,15 @@ class ContextMenuBuilder {
         return item.submenu ?? NSMenu()
     }
 
-    private static func addSonosRoomCheckboxes(to menu: NSMenu, castManager: CastManager) {
-        let sonosRooms = castManager.sonosRooms
-        let castTargetUDN = castManager.activeSession?.device.id
-        let isCastingToSonos = castManager.activeSession?.device.type == .sonos
-
-        for room in sonosRooms {
-            let isChecked: Bool
-            if isCastingToSonos, let targetUDN = castTargetUDN {
-                if room.id == targetUDN {
-                    isChecked = true
-                } else if room.groupCoordinatorUDN == targetUDN {
-                    isChecked = true
-                } else if room.isGroupCoordinator {
-                    let targetRoom = sonosRooms.first { $0.id == targetUDN }
-                    isChecked = targetRoom?.groupCoordinatorUDN == room.id
-                } else {
-                    isChecked = false
-                }
-            } else {
-                isChecked = castManager.selectedSonosRooms.contains(room.id)
-            }
-
-            let toggleInfo = SonosRoomToggle(
-                roomUDN: room.id,
-                roomName: room.name,
-                coordinatorUDN: castTargetUDN ?? room.groupCoordinatorUDN ?? sonosRooms.first?.id ?? "",
-                coordinatorName: room.groupCoordinatorName ?? sonosRooms.first?.name ?? "",
-                isCurrentlyInGroup: isChecked,
-                isCoordinator: room.id == castTargetUDN
-            )
-
-            let roomItem = NSMenuItem()
-            roomItem.view = SonosRoomCheckboxView(info: toggleInfo, isChecked: isChecked, menu: menu)
-            menu.addItem(roomItem)
-        }
-    }
-
-    private static func buildMenuBarStreamingSubmenu(castManager: CastManager) -> NSMenu {
+    private static func buildMenuBarStreamingSubmenu() -> NSMenu {
         let streamingMenu = NSMenu()
         streamingMenu.autoenablesItems = false
-
-        let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
-        sonosItem.submenu = buildMenuBarStreamingSonosMenu(castManager: castManager)
-        streamingMenu.addItem(sonosItem)
-
-        streamingMenu.addItem(NSMenuItem.separator())
 
         let ripItem = NSMenuItem(title: "Rip URL…", action: #selector(MenuActions.ripURL), keyEquivalent: "")
         ripItem.target = MenuActions.shared
         streamingMenu.addItem(ripItem)
 
         return streamingMenu
-    }
-
-    private static func buildMenuBarStreamingSonosMenu(castManager: CastManager) -> NSMenu {
-        let sonosMenu = NSMenu()
-        sonosMenu.autoenablesItems = false
-
-        if castManager.sonosRooms.isEmpty {
-            let emptyItem = NSMenuItem(title: "No Sonos rooms found", action: nil, keyEquivalent: "")
-            emptyItem.isEnabled = false
-            sonosMenu.addItem(emptyItem)
-
-            sonosMenu.addItem(NSMenuItem.separator())
-
-            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(MenuActions.refreshSonosRooms), keyEquivalent: "")
-            refreshItem.target = MenuActions.shared
-            sonosMenu.addItem(refreshItem)
-        } else {
-            addSonosRoomCheckboxes(to: sonosMenu, castManager: castManager)
-        }
-
-        return sonosMenu
     }
 
     private static func buildMenuBarOutputDevicesMenu() -> NSMenu {
@@ -2424,7 +2360,7 @@ class ContextMenuBuilder {
         }
 
         let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
-        streamingItem.submenu = buildMenuBarStreamingSubmenu(castManager: castManager)
+        streamingItem.submenu = buildMenuBarStreamingSubmenu()
         outputMenu.addItem(streamingItem)
 
         // Other cast devices
