@@ -37,6 +37,14 @@ mpg123	mpg123	LGPL-2.1-only	Copyright (c) 1995-2020 Michael Hipp and others	http
 ogg-binary-xcframework	ogg.xcframework	BSD-3-Clause	Copyright (c) 2002 Xiph.Org Foundation	https://github.com/sbooth/ogg-binary-xcframework	0.1.2	ThirdPartyLicenses/libogg_LICENSE.txt	ogg.framework
 vorbis-binary-xcframework	vorbis.xcframework	BSD-3-Clause	Copyright (c) 2002-2020 Xiph.Org Foundation	https://github.com/sbooth/vorbis-binary-xcframework	0.1.2	ThirdPartyLicenses/libvorbis_LICENSE.txt	vorbis.framework
 #
+# === Optional YouTube→Sonos helper executables (DMG build only; MAS does not include) ===
+yt-dlp	yt-dlp	Unlicense	Public domain - released under The Unlicense	https://github.com/yt-dlp/yt-dlp	TODO (bundled binary)	ThirdPartyLicenses/Unlicense.txt	yt-dlp
+ffmpeg-cli	FFmpeg (bundled CLI)	LGPL-2.1-or-later	Copyright (c) 2000-2024 the FFmpeg developers	https://ffmpeg.org	TODO (bundled CLI build)	ThirdPartyLicenses/licenses/LGPL-2.1.txt	ffmpeg
+# NOTE: If the bundled ffmpeg build includes GPL components (e.g. libx264, libx265),
+# the spdx must change from LGPL-2.1-or-later to GPL-3.0, and license_text must
+# reference ThirdPartyLicenses/licenses/GPL-3.0.txt. Ensure the build configuration
+# uses only LGPL-compatible components (minimal audio-only codec set recommended).
+#
 # === Native visualization ports compiled into the NullPlayer binary ===
 vis_classic	vis_classic (Winamp AVS classic)	MIT	Copyright (c) 1998-2018 Mike Lynch; (c) 2018 WACUP	https://github.com/WACUP/vis_classic	bundled source	vis_classic/LICENSE.txt	-
 geiss	Geiss	BSD-3-Clause	Copyright (c) 1998-2022 Ryan Geiss	https://www.geisswerks.com/about_geiss.html	bundled source	ThirdPartyLicenses/GEISS_LICENSE.txt	-

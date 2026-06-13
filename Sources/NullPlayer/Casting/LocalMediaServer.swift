@@ -21,13 +21,15 @@ class LocalMediaServer {
     static let shared = LocalMediaServer()
     
     // MARK: - Properties
-    
+
     private var server: HTTPServer?
     private var serverTask: Task<Void, Never>?
     private var registeredFiles: [String: URL] = [:]  // token -> file URL
     private var registeredStreams: [String: URL] = [:]  // token -> stream URL (for Subsonic/Jellyfin proxy)
     private var registeredStreamContentTypes: [String: String] = [:]  // token -> MIME content type hint
     private var registeredStreamDebugLabels: [String: String] = [:]  // token -> human-readable track/source label
+    private var registeredStreamHeaders: [String: [String: String]] = [:]  // token -> upstream request headers (e.g. yt-dlp googlevideo headers)
+    private var liveStreamProducers: [String: (contentType: String, producer: @Sendable () -> AsyncThrowingStream<Data, Error>)] = [:]  // token -> live stream producer + contentType
     static let httpPort: UInt16 = 8765
     private var port: UInt16 { Self.httpPort }
     private(set) var isRunning: Bool = false
@@ -179,6 +181,155 @@ class LocalMediaServer {
             }
         }
     }
+
+    /// Adapter that wraps AsyncThrowingStream<Data, Error> for use with HTTPBodySequence.
+    /// Converts a Data-based async stream into the byte-sequence protocol FlyingFox expects.
+    private struct LiveStreamByteSequence: AsyncBufferedSequence, @unchecked Sendable {
+        typealias Element = UInt8
+
+        let stream: AsyncThrowingStream<Data, Error>
+        let token: String
+        let debugLabel: String
+        let startedAt = Date()
+
+        func makeAsyncIterator() -> Iterator {
+            Iterator(
+                stream: stream,
+                token: token,
+                debugLabel: debugLabel,
+                startedAt: startedAt
+            )
+        }
+
+        struct Iterator: AsyncBufferedIteratorProtocol {
+            private var iterator: AsyncThrowingStream<Data, Error>.Iterator
+            private let token: String
+            private let debugLabel: String
+            private let startedAt: Date
+            private var bytesSent: Int64 = 0
+            private var nextProgressLogBytes: Int64 = 5 * 1024 * 1024
+            private var didLogCompletion = false
+            private var pendingBytes: [UInt8] = []
+            private var pendingIndex = 0
+
+            init(
+                stream: AsyncThrowingStream<Data, Error>,
+                token: String,
+                debugLabel: String,
+                startedAt: Date
+            ) {
+                self.iterator = stream.makeAsyncIterator()
+                self.token = token
+                self.debugLabel = debugLabel
+                self.startedAt = startedAt
+            }
+
+            mutating func next() async throws -> UInt8? {
+                // Drain pending bytes first
+                while pendingIndex < pendingBytes.count {
+                    let byte = pendingBytes[pendingIndex]
+                    pendingIndex += 1
+                    bytesSent += 1
+                    logProgressIfNeeded()
+                    return byte
+                }
+
+                // Get next chunk from stream
+                do {
+                    guard let chunk = try await iterator.next() else {
+                        logCompletionIfNeeded()
+                        return nil
+                    }
+                    pendingBytes = [UInt8](chunk)
+                    pendingIndex = 0
+
+                    // Return first byte of the new chunk
+                    if !pendingBytes.isEmpty {
+                        let byte = pendingBytes[0]
+                        pendingIndex = 1
+                        bytesSent += 1
+                        logProgressIfNeeded()
+                        return byte
+                    }
+                } catch {
+                    logStreamError(error)
+                    throw error
+                }
+
+                return nil
+            }
+
+            mutating func nextBuffer(suggested count: Int) async throws -> [UInt8]? {
+                let byteCount = Swift.max(1, Swift.min(count, 64 * 1024))
+                var buffer: [UInt8] = []
+                buffer.reserveCapacity(byteCount)
+
+                do {
+                    // First drain pending bytes
+                    while pendingIndex < pendingBytes.count && buffer.count < byteCount {
+                        buffer.append(pendingBytes[pendingIndex])
+                        pendingIndex += 1
+                    }
+
+                    // Then fetch new chunks
+                    while buffer.count < byteCount {
+                        guard let chunk = try await iterator.next() else { break }
+                        pendingBytes = [UInt8](chunk)
+                        pendingIndex = 0
+
+                        while pendingIndex < pendingBytes.count && buffer.count < byteCount {
+                            buffer.append(pendingBytes[pendingIndex])
+                            pendingIndex += 1
+                        }
+                    }
+                } catch {
+                    logStreamError(error)
+                    throw error
+                }
+
+                if buffer.isEmpty {
+                    logCompletionIfNeeded()
+                    return nil
+                }
+
+                bytesSent += Int64(buffer.count)
+                logProgressIfNeeded()
+                return buffer
+            }
+
+            private mutating func logProgressIfNeeded() {
+                guard bytesSent >= nextProgressLogBytes else { return }
+                NSLog("LocalMediaServer: Live stream %@ sent %lld bytes (label=%@)",
+                      token,
+                      bytesSent,
+                      debugLabel)
+                while bytesSent >= nextProgressLogBytes {
+                    nextProgressLogBytes += 5 * 1024 * 1024
+                }
+            }
+
+            private mutating func logCompletionIfNeeded() {
+                guard !didLogCompletion else { return }
+                didLogCompletion = true
+                let elapsed = Date().timeIntervalSince(startedAt)
+                NSLog("LocalMediaServer: Live stream %@ completed after %.1fs, sent=%lld label=%@",
+                      token,
+                      elapsed,
+                      bytesSent,
+                      debugLabel)
+            }
+
+            private func logStreamError(_ error: Error) {
+                let elapsed = Date().timeIntervalSince(startedAt)
+                NSLog("LocalMediaServer: Live stream %@ ended with error after %.1fs, sent=%lld label=%@ error=%@",
+                      token,
+                      elapsed,
+                      bytesSent,
+                      debugLabel,
+                      error.localizedDescription)
+            }
+        }
+    }
     
     // MARK: - Initialization
     
@@ -233,12 +384,27 @@ class LocalMediaServer {
             }
             return await self.handleMediaHeadRequest(request)
         }
-        
+
         await server.appendRoute("HEAD /stream/*") { [weak self] request in
             guard let self = self else {
                 return HTTPResponse(statusCode: .internalServerError)
             }
             return await self.handleStreamHeadRequest(request)
+        }
+
+        // Add route handlers for live streams (in-process producers, e.g., YouTube audio → Sonos)
+        await server.appendRoute("GET /live/*") { [weak self] request in
+            guard let self = self else {
+                return HTTPResponse(statusCode: .internalServerError)
+            }
+            return await self.handleLiveStreamRequest(request)
+        }
+
+        await server.appendRoute("HEAD /live/*") { [weak self] request in
+            guard let self = self else {
+                return HTTPResponse(statusCode: .internalServerError)
+            }
+            return await self.handleLiveStreamHeadRequest(request)
         }
 
         // Plex Radio History web page
@@ -487,7 +653,7 @@ class LocalMediaServer {
     ///   - contentType: Optional MIME type hint (e.g. "audio/flac"). Used for HEAD responses when
     ///     the original URL has no file extension (Subsonic/Jellyfin streaming endpoints).
     /// Note: Prefer calling start() explicitly before this method in async contexts.
-    func registerStreamURL(_ url: URL, contentType: String? = nil, debugLabel: String? = nil) -> URL? {
+    func registerStreamURL(_ url: URL, contentType: String? = nil, debugLabel: String? = nil, requestHeaders: [String: String]? = nil) -> URL? {
         // Ensure server is running
         if !isRunning {
             let semaphore = DispatchSemaphore(value: 0)
@@ -529,6 +695,9 @@ class LocalMediaServer {
             if let debugLabel = debugLabel {
                 self?.registeredStreamDebugLabels[tokenString] = debugLabel
             }
+            if let requestHeaders = requestHeaders, !requestHeaders.isEmpty {
+                self?.registeredStreamHeaders[tokenString] = requestHeaders
+            }
         }
         
         // Return simple HTTP URL without query strings: http://192.168.x.x:8765/stream/token
@@ -554,7 +723,81 @@ class LocalMediaServer {
                 self.registeredStreams.removeValue(forKey: token)
                 self.registeredStreamContentTypes.removeValue(forKey: token)
                 self.registeredStreamDebugLabels.removeValue(forKey: token)
+                self.registeredStreamHeaders.removeValue(forKey: token)
                 NSLog("LocalMediaServer: Unregistered stream '%@'", url.host ?? "unknown")
+            }
+        }
+    }
+
+    /// Register an in-process live audio stream for serving to cast devices.
+    /// Returns an HTTP URL that cast devices can use, or nil if the server isn't running.
+    /// - Parameters:
+    ///   - contentType: MIME type for the stream (e.g. "audio/mpeg" for MP3, "audio/aac" for AAC)
+    ///   - debugLabel: Optional human-readable label for logging
+    ///   - producer: A closure that produces an AsyncThrowingStream<Data, Error> of audio bytes.
+    ///     Called once per HTTP client request; the stream should emit audio data and complete
+    ///     when playback ends or error occurs.
+    /// Note: Prefer calling start() explicitly before this method in async contexts.
+    func registerLiveStream(contentType: String, debugLabel: String? = nil, producer: @escaping @Sendable () -> AsyncThrowingStream<Data, Error>) -> URL? {
+        // Ensure server is running
+        if !isRunning {
+            let semaphore = DispatchSemaphore(value: 0)
+            Task {
+                do {
+                    try await start()
+                } catch {
+                    NSLog("LocalMediaServer: Failed to start server: %@", error.localizedDescription)
+                }
+                semaphore.signal()
+            }
+            // Wait for server startup with timeout
+            let result = semaphore.wait(timeout: .now() + 2.0)
+            if result == .timedOut {
+                NSLog("LocalMediaServer: Server startup timed out")
+            }
+
+            // Verify server actually started
+            if !isRunning {
+                NSLog("LocalMediaServer: Server failed to start, cannot register live stream")
+                return nil
+            }
+        }
+
+        guard let ip = localIPAddress else {
+            NSLog("LocalMediaServer: No local IP address available")
+            return nil
+        }
+
+        // Generate unique token for this live stream
+        let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16)
+        let tokenString = String(token)
+
+        // Store producer and contentType keyed by token before returning the URL;
+        // Sonos may issue HEAD/GET immediately after SetAVTransportURI.
+        queue.sync(flags: .barrier) {
+            liveStreamProducers[tokenString] = (contentType: contentType, producer: producer)
+        }
+
+        // Return HTTP URL: http://192.168.x.x:8765/live/token
+        let httpURL = URL(string: "http://\(ip):\(port)/live/\(tokenString)")
+
+        NSLog("LocalMediaServer: Registered live stream token=%@ contentType=%@ debugLabel=%@, URL=%@",
+              tokenString, contentType, debugLabel ?? "nil", httpURL?.absoluteString ?? "nil")
+
+        return httpURL
+    }
+
+    /// Unregister a live stream URL (stops serving, drops the producer).
+    func unregisterLiveStream(_ url: URL) {
+        queue.async(flags: .barrier) { [weak self] in
+            guard let self = self else { return }
+            // Extract token from URL (e.g., "http://192.168.x.x:8765/live/TOKEN" -> "TOKEN")
+            let path = url.path  // "/live/TOKEN"
+            guard path.hasPrefix("/live/") else { return }
+            let token = String(path.dropFirst(6))
+
+            if self.liveStreamProducers.removeValue(forKey: token) != nil {
+                NSLog("LocalMediaServer: Unregistered live stream '%@'", token)
             }
         }
     }
@@ -887,10 +1130,12 @@ class LocalMediaServer {
         var streamURL: URL?
         var storedContentType: String?
         var debugLabel: String?
+        var storedHeaders: [String: String]?
         queue.sync {
             streamURL = registeredStreams[token]
             storedContentType = registeredStreamContentTypes[token]
             debugLabel = registeredStreamDebugLabels[token]
+            storedHeaders = registeredStreamHeaders[token]
         }
         
         guard let originalURL = streamURL else {
@@ -916,6 +1161,14 @@ class LocalMediaServer {
         if let rangeHeader {
             urlRequest.setValue(rangeHeader, forHTTPHeaderField: "Range")
             NSLog("LocalMediaServer: Passing through Range header: %@", rangeHeader)
+        }
+
+        // Apply per-stream upstream request headers (e.g. yt-dlp's User-Agent for googlevideo,
+        // which is IP/UA-validated). Never let them clobber Range/Accept-Encoding set above.
+        if let storedHeaders {
+            for (key, value) in storedHeaders where key.lowercased() != "range" && key.lowercased() != "accept-encoding" {
+                urlRequest.setValue(value, forHTTPHeaderField: key)
+            }
         }
         
         // Fetch from the original server and stream bytes through to Sonos as
@@ -1023,6 +1276,112 @@ class LocalMediaServer {
         case .none:
             return false
         }
+    }
+
+    /// Handle incoming HTTP requests for live streams (ffmpeg, YouTube audio, etc.)
+    private func handleLiveStreamRequest(_ request: HTTPRequest) async -> HTTPResponse {
+        let path = request.path
+        NSLog("LocalMediaServer: Received live stream request for %@", path)
+
+        // Parse path: /live/{token}
+        guard path.hasPrefix("/live/") else {
+            NSLog("LocalMediaServer: Invalid live stream path - not /live/")
+            return HTTPResponse(statusCode: .notFound)
+        }
+
+        let token = String(path.dropFirst(6))  // Remove "/live/"
+
+        // Diagnostic: reveals whether Sonos is range-seeking or reconnecting (each repeat restarts
+        // the producer from offset 0, which would loop the first seconds of audio).
+        let rangeHeader = request.headers[HTTPHeader("Range")] ?? "(none)"
+        let userAgent = request.headers[HTTPHeader("User-Agent")] ?? "(none)"
+        NSLog("LocalMediaServer: /live GET token=%@ Range=%@ UA=%@", token, rangeHeader, userAgent)
+
+        // Thread-safe lookup and producer invocation
+        var entry: (contentType: String, producer: @Sendable () -> AsyncThrowingStream<Data, Error>)?
+        queue.sync {
+            entry = liveStreamProducers[token]
+        }
+
+        guard let (contentType, producer) = entry else {
+            NSLog("LocalMediaServer: Live stream token not found: %@", token)
+            return HTTPResponse(statusCode: .notFound)
+        }
+
+        // Call the producer to get a fresh stream for this request
+        let stream = producer()
+
+        // Wrap it in our adapter
+        let byteSequence = LiveStreamByteSequence(
+            stream: stream,
+            token: token,
+            debugLabel: token
+        )
+
+        // Sonos's radio client (x-rincon-mp3radio://) reads a raw SHOUTcast-style byte stream and
+        // does NOT support HTTP chunked transfer-encoding. FlyingFox auto-applies
+        // `Transfer-Encoding: chunked` to any body with no `count`, yet writes the body bytes
+        // *un-framed* (HTTPConnection.sendResponse does raw socket writes, no chunk size lines).
+        // The result is a malformed response no compliant HTTP/1.1 client — Sonos included — can
+        // read, so playback never starts and AVTransport Play returns UPnP 701.
+        //
+        // Passing a sentinel `count` forces FlyingFox down its Content-Length branch instead, so
+        // it streams the raw bytes verbatim (exactly what a SHOUTcast radio stream looks like).
+        // The count only sets the advertised length; iteration still ends naturally when ffmpeg
+        // stops and the pipe EOFs. The length is deliberately far larger than any real stream so
+        // the bytes are never truncated; `Connection: close` signals the true end of stream.
+        let body = HTTPBodySequence(from: byteSequence, count: Self.liveStreamAdvertisedLength)
+
+        NSLog("LocalMediaServer: Streaming live stream token=%@ contentType=%@ via GET",
+              token, contentType)
+
+        return HTTPResponse(
+            statusCode: .ok,
+            headers: [
+                HTTPHeader("Content-Type"): contentType,
+                HTTPHeader("Cache-Control"): "no-cache",
+                HTTPHeader("Connection"): "close"
+            ],
+            body: body
+        )
+    }
+
+    /// Advertised `Content-Length` for live (unbounded) streams. Chosen far larger than any real
+    /// stream so Sonos never truncates; the stream really ends when the producer EOFs and the
+    /// socket closes. Used only to keep FlyingFox off its broken chunked-encoding path.
+    private static let liveStreamAdvertisedLength = 1 << 40  // 1 TiB
+
+    /// Handle HEAD requests for live streams (return headers only, no body).
+    private func handleLiveStreamHeadRequest(_ request: HTTPRequest) async -> HTTPResponse {
+        let path = request.path
+        guard path.hasPrefix("/live/") else {
+            return HTTPResponse(statusCode: .notFound)
+        }
+
+        let token = String(path.dropFirst(6))
+
+        var entry: (contentType: String, producer: @Sendable () -> AsyncThrowingStream<Data, Error>)?
+        queue.sync {
+            entry = liveStreamProducers[token]
+        }
+
+        guard let (contentType, _) = entry else {
+            return HTTPResponse(statusCode: .notFound)
+        }
+
+        NSLog("LocalMediaServer: HEAD /live/%@ contentType=%@", token, contentType)
+
+        // Mirror the GET response framing (Content-Length + Connection: close, never chunked) so
+        // Sonos's preflight HEAD sees the same headers it will get on the streaming GET.
+        return HTTPResponse(
+            statusCode: .ok,
+            headers: [
+                HTTPHeader("Content-Type"): contentType,
+                HTTPHeader("Content-Length"): String(Self.liveStreamAdvertisedLength),
+                HTTPHeader("Connection"): "close"
+            ],
+            body: Data()  // Empty body for HEAD
+        )
     }
 
     /// Detect content type from file extension

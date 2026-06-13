@@ -24,6 +24,20 @@ AUBIO_FILE="libaubio-macos.tar.gz"
 AUBIO_SHA256="0fbcdfcea459e6f8278bfef134e4eddafad4a7764389bc6147428e59b25933d0"
 AUBIO_TARGET="Frameworks/libaubio.5.dylib"
 
+# === OPTIONAL helper binaries for YouTube→Sonos feature (DMG build only) ===
+# These are provisioned ONLY if NULLPLAYER_BUNDLE_YT_TOOLS=1 AND checksums are real.
+# MAS builds do NOT include these; the feature self-disables when binaries are absent.
+# TODO: Replace SHA256 values with real signed binary checksums once available.
+# - yt-dlp: obtain from https://github.com/yt-dlp/yt-dlp/releases (official release)
+# - ffmpeg CLI: use a minimal audio-only static build (https://ffmpeg.org/download.html)
+YTDLP_FILE="yt-dlp"  # TODO: actual filename from release (e.g. yt-dlp_macos_legacy)
+YTDLP_SHA256="TODO_REPLACE_WITH_REAL_SHA256"  # TODO: compute from signed binary
+YTDLP_TARGET="Frameworks/yt-dlp"
+
+FFMPEGCLI_FILE="ffmpeg"  # TODO: actual filename (e.g. ffmpeg-macos-build)
+FFMPEGCLI_SHA256="TODO_REPLACE_WITH_REAL_SHA256"  # TODO: compute from signed binary
+FFMPEGCLI_TARGET="Frameworks/ffmpeg"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -56,6 +70,50 @@ log_warning() {
 
 log_error() {
     echo -e "${RED}✗${NC} $1" >&2
+}
+
+# Download and install an optional binary executable (not a framework)
+install_optional_binary() {
+    local name="$1"
+    local filename="$2"
+    local checksum="$3"
+    local target="$4"
+
+    # If checksum is still a sentinel, skip provisioning
+    if [[ "$checksum" == "TODO_REPLACE_WITH_REAL_SHA256" ]]; then
+        log_warning "Skipping $name: checksum is a placeholder (awaiting real signed binary)"
+        return 0
+    fi
+
+    local tmpfile="/tmp/${filename}"
+
+    log_info "Downloading ${name}..."
+    if ! download_file "$filename" "$tmpfile"; then
+        log_error "Failed to download ${name}"
+        rm -f "$tmpfile"
+        return 1
+    fi
+
+    log_info "Verifying checksum..."
+    if ! verify_checksum "$tmpfile" "$checksum"; then
+        rm -f "$tmpfile"
+        return 1
+    fi
+
+    log_info "Installing ${name}..."
+
+    # Remove existing target if it exists
+    if [[ -e "${REPO_ROOT}/${target}" ]]; then
+        rm -f "${REPO_ROOT}/${target}"
+    fi
+
+    # Copy the binary and make it executable
+    cp "$tmpfile" "${REPO_ROOT}/${target}"
+    chmod +x "${REPO_ROOT}/${target}"
+
+    rm -f "$tmpfile"
+    log_success "${name} installed successfully"
+    return 0
 }
 
 # Check dependencies
@@ -239,7 +297,35 @@ main() {
     else
         log_success "libaubio already installed"
     fi
-    
+
+    # === Optional: YouTube→Sonos helper binaries (DMG only; requires explicit opt-in) ===
+    echo ""
+    if [[ "${NULLPLAYER_BUNDLE_YT_TOOLS:-}" == "1" ]]; then
+        log_info "Provisioning optional YouTube→Sonos helper binaries (NULLPLAYER_BUNDLE_YT_TOOLS=1)"
+
+        # yt-dlp
+        if [[ "$FORCE" == true ]] || [[ ! -e "${REPO_ROOT}/${YTDLP_TARGET}" ]]; then
+            if ! install_optional_binary "yt-dlp" "$YTDLP_FILE" "$YTDLP_SHA256" "$YTDLP_TARGET"; then
+                failed=1
+            fi
+            echo ""
+        else
+            log_success "yt-dlp already installed"
+        fi
+
+        # ffmpeg CLI
+        if [[ "$FORCE" == true ]] || [[ ! -e "${REPO_ROOT}/${FFMPEGCLI_TARGET}" ]]; then
+            if ! install_optional_binary "ffmpeg CLI" "$FFMPEGCLI_FILE" "$FFMPEGCLI_SHA256" "$FFMPEGCLI_TARGET"; then
+                failed=1
+            fi
+            echo ""
+        else
+            log_success "ffmpeg CLI already installed"
+        fi
+    else
+        log_info "Skipping optional YouTube helper binaries (set NULLPLAYER_BUNDLE_YT_TOOLS=1 and real checksums to enable)"
+    fi
+
     # Summary
     echo "======================================"
     if [[ $failed -eq 0 ]]; then

@@ -1083,7 +1083,30 @@ class WindowManager {
         return true
     }
     
-    /// Show the video player with a URL and title
+    /// Show the video player with a URL and title.
+    /// Present a locally-played, optionally header-authenticated video muted, and return the
+    /// controller. Used by the YouTube → Sonos coordinator: the video stays local while audio is
+    /// cast to Sonos separately, so this deliberately bypasses `routeToVideoCastIfNeeded`.
+    @discardableResult
+    func showLocalMutedVideo(
+        url: URL,
+        title: String,
+        httpHeaders: [String: String]?,
+        autoPlay: Bool = true
+    ) -> VideoPlayerWindowController {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        let vpc = videoPlayerWindowController!
+        // Mute before creating the KSPlayer layer. Setting volume only after play() leaves a short
+        // window where a reused video controller can start at its previous nonzero volume.
+        vpc.volume = 0.0
+        vpc.play(url: url, title: title, httpHeaders: httpHeaders, autoPlay: autoPlay)
+        vpc.volume = 0.0
+        applyAlwaysOnTopToWindow(vpc.window)
+        return vpc
+    }
+
     func showVideoPlayer(url: URL, title: String, allowCasting: Bool = true) {
         let artworkTrack = Track(url: url, title: title, mediaType: .video)
         if allowCasting, routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: { device in
@@ -1410,7 +1433,11 @@ class WindowManager {
     
     /// Called when video playback starts - pause audio
     func videoPlaybackDidStart() {
-        if audioEngine.state == .playing {
+        // The YouTube → Sonos muted companion video must NOT pause the audio engine: the engine is
+        // driving the Sonos cast that *is* this video's audio, so pausing it silences the cast the
+        // instant the video starts (the cause of "video plays but no sound").
+        let youtubeToSonosActive = MainActor.assumeIsolated { YouTubeToSonosCoordinator.shared.isActive }
+        if audioEngine.state == .playing && !youtubeToSonosActive {
             audioEngine.pause()
         }
         // Update main window with video title

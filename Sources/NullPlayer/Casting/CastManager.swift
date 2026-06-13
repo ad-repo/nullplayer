@@ -165,7 +165,23 @@ class CastManager {
             (room.isGroupCoordinator && rooms.first(where: { $0.id == targetUDN })?.groupCoordinatorUDN == room.id)
         }.map { $0.id }
     }
-    
+
+    /// Resolve a Sonos room (from `sonosRooms`) to a castable coordinator `CastDevice`.
+    /// Mirrors the matching used by the Output menu's Start Casting path:
+    /// direct UDN match → room-name prefix match → group-coordinator UDN match.
+    func sonosCastDevice(forRoomUDN udn: String) -> CastDevice? {
+        let devices = sonosDevices
+        // 1. Direct match (the room is itself a coordinator device)
+        if let device = devices.first(where: { $0.id == udn }) { return device }
+        // 2. Match by room name, or fall back to the room's group coordinator
+        if let room = sonosRooms.first(where: { $0.id == udn }) {
+            if let device = devices.first(where: { $0.name.hasPrefix(room.name) }) { return device }
+            if let coord = room.groupCoordinatorUDN,
+               let device = devices.first(where: { $0.id == coord }) { return device }
+        }
+        return nil
+    }
+
     /// Transfer an active Sonos cast from the current coordinator to a different room.
     /// Called when the user unchecks the coordinator while other rooms remain in the group.
     /// There will be a brief (~1-2s) playback interruption during the transfer.
@@ -1406,6 +1422,85 @@ class CastManager {
         try await task.value
     }
 
+    /// Cast a live audio stream (produced in-process, e.g., YouTube audio → Sonos) to a device.
+    /// This is a thin wrapper that reuses the standard cast pipeline while forcing the Sonos
+    /// radio URI rewrite (x-rincon-mp3radio://) without requiring RadioManager to be active.
+    /// - Parameters:
+    ///   - url: The local HTTP URL of the live stream (typically from LocalMediaServer.registerLiveStream)
+    ///   - device: Target cast device
+    ///   - metadata: Metadata for the stream (title, contentType, etc.)
+    func castLiveAudioStream(_ url: URL, to device: CastDevice, metadata: CastMetadata) async throws {
+        NSLog("CastManager: castLiveAudioStream to %@ (%@)", device.name, device.type.displayName)
+
+        // Use the x-rincon-mp3radio:// scheme: it's the only mode where Sonos's actual audio
+        // player engages with this live stream (it opens both a probe and a player connection).
+        // Casting as a plain track only gets the probe and never starts. forceRadio=true bypasses
+        // the RadioManager.isActive check.
+        let finalCastURL = sonosRadioURL(for: url, device: device, forceRadio: true)
+
+        NSLog("CastManager: castLiveAudioStream URL: %@, contentType: %@", finalCastURL.redacted, metadata.contentType)
+
+        try await cast(to: device, url: finalCastURL, metadata: metadata)
+    }
+
+    /// True once a Sonos poll has observed real PLAYING (not the optimistic startup state).
+    /// The video sync uses this so it doesn't chase the interpolated startup clock before audio
+    /// has actually begun — otherwise the local video gets seeked forward every poll and freezes.
+    var isSonosPlaybackConfirmed: Bool { sonosHasSeenActivePlayback }
+
+    /// Poll Sonos directly until it reports real PLAYING for the active session.
+    /// YouTube → Sonos uses this to start the muted local video from a known point instead of
+    /// launching it immediately and trying to repair sync after the Sonos startup buffer.
+    func waitForSonosPlaybackConfirmed(
+        timeout: TimeInterval = 12,
+        pollInterval: TimeInterval = 0.5
+    ) async -> TimeInterval? {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if sonosHasSeenActivePlayback {
+                return currentCastPosition()
+            }
+
+            if let result = await upnpManager.pollSonosPlaybackState() {
+                if result.state == "PLAYING" {
+                    await MainActor.run {
+                        self.sonosHasSeenActivePlayback = true
+                        self.activeSession?.position = result.position
+                        self.activeSession?.duration = result.duration
+                        self.activeSession?.playbackStartDate = Date()
+                        self.activeSession?.isPlaying = true
+                        self.activeSession?.state = .casting
+                        self.resolvedAudioEngine.updateCastPosition(
+                            currentTime: result.position,
+                            isPlaying: true,
+                            isBuffering: false
+                        )
+                    }
+                    NSLog("CastManager: Direct Sonos confirmation — state=PLAYING t=%.1f", result.position)
+                    return result.position
+                }
+
+                NSLog("CastManager: Waiting for Sonos PLAYING — state=%@ t=%.1f", result.state, result.position)
+            }
+
+            try? await Task.sleep(nanoseconds: UInt64(max(0.1, pollInterval) * 1_000_000_000))
+        }
+
+        NSLog("CastManager: Timed out waiting for Sonos playback confirmation")
+        return nil
+    }
+
+    /// Current playback position of the active Sonos cast session, or nil if not casting to Sonos.
+    /// Uses the same interpolated session state maintained by standard Sonos polling.
+    func currentCastPosition() -> TimeInterval? {
+        guard let session = activeSession, session.device.type == .sonos else { return nil }
+        if let startDate = session.playbackStartDate, session.isPlaying {
+            return session.position + Date().timeIntervalSince(startDate)
+        }
+        return session.position
+    }
+
     // MARK: - Video Casting
     
     /// Get video-capable cast devices (excludes Sonos which is audio-only)
@@ -2442,13 +2537,18 @@ class CastManager {
     }
 
     // MARK: - Sonos Radio URI (Fix 10)
-    
-    /// Convert HTTP radio stream URL to Sonos x-rincon-mp3radio:// scheme for better buffering
-    private func sonosRadioURL(for url: URL, device: CastDevice) -> URL {
-        // Only for Sonos devices, only for http:// streams, only for radio
+
+    /// Convert HTTP radio stream URL to Sonos x-rincon-mp3radio:// scheme for better buffering.
+    /// - Parameters:
+    ///   - url: The HTTP stream URL to rewrite
+    ///   - device: The target cast device
+    ///   - forceRadio: If true, apply radio rewrite even when RadioManager is inactive (for live audio streams)
+    /// - Returns: The rewritten URL if conditions are met, otherwise the original URL
+    private func sonosRadioURL(for url: URL, device: CastDevice, forceRadio: Bool = false) -> URL {
+        // Only for Sonos devices, only for http:// streams, only for radio (or forced)
         guard device.type == .sonos,
               url.scheme == "http" || url.scheme == "https",
-              RadioManager.shared.isActive else {
+              RadioManager.shared.isActive || forceRadio else {
             return url
         }
         // Replace http:// with x-rincon-mp3radio://

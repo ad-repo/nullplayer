@@ -71,6 +71,16 @@ class VideoPlayerView: NSView {
             playerLayer?.player.playbackVolume = volume
         }
     }
+
+    /// Playback rate (0.5 - 2.0)
+    var playbackRate: Float {
+        get {
+            playerLayer?.player.playbackRate ?? 1.0
+        }
+        set {
+            playerLayer?.player.playbackRate = newValue
+        }
+    }
     
     /// Callback when close button is clicked
     var onClose: (() -> Void)?
@@ -107,7 +117,29 @@ class VideoPlayerView: NSView {
     
     /// Callback when seek is requested (for casting intercept) - normalized 0-1 position
     var onSeekRequested: ((Double) -> Void)?
-    
+
+    /// Passthrough to the control bar's A/V offset slider (YouTube → Sonos sync calibration)
+    var onAVOffsetChanged: ((Double) -> Void)? {
+        get { controlBarView.onAVOffsetChanged }
+        set { controlBarView.onAVOffsetChanged = newValue }
+    }
+
+    /// Current A/V offset slider value, in seconds
+    var avOffset: Double {
+        get { controlBarView.avOffset }
+        set { controlBarView.avOffset = newValue }
+    }
+
+    /// Show or hide the A/V offset control.
+    func setAVOffsetVisible(_ visible: Bool) {
+        controlBarView.setAVOffsetVisible(visible)
+    }
+
+    /// Open the A/V offset popover when the offset control is visible.
+    func showAVOffsetPopover() {
+        controlBarView.showAVOffsetPopover()
+    }
+
     /// Callback when skip forward is requested (for casting intercept)
     var onSkipForwardRequested: ((TimeInterval) -> Void)?
     
@@ -656,32 +688,44 @@ class VideoPlayerView: NSView {
     ///   - title: Display title
     ///   - isPlexURL: Whether this is a Plex stream
     ///   - plexHeaders: Full Plex headers for streaming (required for remote/relay connections)
-    func play(url: URL, title: String, isPlexURL: Bool = false, plexHeaders: [String: String]? = nil) {
+    ///   - httpHeaders: Custom HTTP headers to apply for non-Plex URLs
+    func play(
+        url: URL,
+        title: String,
+        isPlexURL: Bool = false,
+        plexHeaders: [String: String]? = nil,
+        httpHeaders: [String: String]? = nil,
+        autoPlay: Bool = true
+    ) {
         currentTitle = title
         currentURL = url
         isPlexStream = isPlexURL
-        
+
         // Title removed - update window title instead
         window?.title = title
-        
+
         // Show loading indicator
         showLoading(true)
-        
+
         // Reset time display
         currentTime = 0
         totalDuration = 0
         controlBarView.updateTime(current: 0, total: 0)
         controlBarView.updatePlayState(isPlaying: false)
-        
+
         // Reset cast state when starting a new video (ensures UI shows local playback)
         controlBarView.updateCastState(isPlaying: false, deviceName: nil)
-        
+
         // Configure options
         let options = KSOptions()
         if isPlexURL, let headers = plexHeaders {
             // Remote/relay Plex connections require full client identification headers
             options.appendHeader(headers)
             NSLog("VideoPlayerView: Attaching %d Plex headers for streaming", headers.count)
+        } else if let headers = httpHeaders {
+            // Apply custom headers for non-Plex URLs (YouTube, etc.)
+            options.appendHeader(headers)
+            NSLog("VideoPlayerView: Attaching %d custom headers for streaming", headers.count)
         }
         
         // Stop existing player if any
@@ -689,11 +733,12 @@ class VideoPlayerView: NSView {
         playerLayer = nil
         
         // Create new player layer with the URL
-        let layer = KSPlayerLayer(url: url, options: options, delegate: self)
+        let layer = KSPlayerLayer(url: url, isAutoPlay: autoPlay, options: options, delegate: self)
         playerLayer = layer
         
         // Apply current volume to the new player
         layer.player.playbackVolume = volume
+        layer.player.playbackRate = 1.0
         
         // Add player view to host
         if let playerView = layer.player.view {
@@ -730,8 +775,25 @@ class VideoPlayerView: NSView {
     /// Toggle play/pause
     func togglePlayPause() {
         guard let layer = playerLayer else { return }
-        
+
         if layer.state.isPlaying {
+            layer.pause()
+            controlBarView.updatePlayState(isPlaying: false)
+            centerOverlayView?.updatePlayState(isPlaying: false)
+            showControls()
+        } else {
+            layer.play()
+            controlBarView.updatePlayState(isPlaying: true)
+            centerOverlayView?.updatePlayState(isPlaying: true)
+            resetControlsHideTimer()
+        }
+    }
+
+    /// Set playback pause state deterministically
+    func setPaused(_ paused: Bool) {
+        guard let layer = playerLayer else { return }
+
+        if paused {
             layer.pause()
             controlBarView.updatePlayState(isPlaying: false)
             centerOverlayView?.updatePlayState(isPlaying: false)
@@ -1222,7 +1284,7 @@ class VideoCenterOverlayView: NSView {
 class VideoControlBarView: NSView {
     
     // MARK: - Properties
-    
+
     var onPlayPause: (() -> Void)?
     var onStop: (() -> Void)?
     var onSeek: ((Double) -> Void)?
@@ -1231,7 +1293,8 @@ class VideoControlBarView: NSView {
     var onFullscreen: (() -> Void)?
     var onTrackSettings: (() -> Void)?
     var onCast: (() -> Void)?
-    
+    var onAVOffsetChanged: ((Double) -> Void)?
+
     private var playButton: NSButton!
     private var stopButton: NSButton!
     private var skipBackButton: NSButton!
@@ -1239,10 +1302,16 @@ class VideoControlBarView: NSView {
     private var fullscreenButton: NSButton!
     private var trackSettingsButton: NSButton!
     private var castButton: NSButton!
+    private var avOffsetButton: NSButton!
     private var seekSlider: NSSlider!
     private var currentTimeLabel: NSTextField!
     private var durationLabel: NSTextField!
     private var castingLabel: NSTextField!
+    private var avOffsetSlider: NSSlider?
+    private var avOffsetValueLabel: NSTextField?
+    private var avOffsetPopover: NSPopover?
+    private var avOffsetButtonWidthConstraint: NSLayoutConstraint?
+    private var avOffsetValue: Double = 0
     
     private var isPlaying: Bool = false
     private var isSeeking: Bool = false
@@ -1293,6 +1362,11 @@ class VideoControlBarView: NSView {
         // Cast button (for casting to TVs/Chromecast)
         castButton = createButton(symbol: "tv", action: #selector(castClicked))
         castButton.toolTip = "Cast to TV"
+
+        // A/V offset button (shown only for YouTube -> Sonos sync)
+        avOffsetButton = createButton(symbol: "slider.horizontal.3", action: #selector(avOffsetClicked))
+        avOffsetButton.toolTip = "A/V Sync Offset"
+        avOffsetButton.isHidden = true
         
         // Fullscreen button
         fullscreenButton = createButton(symbol: "arrow.up.left.and.arrow.down.right", action: #selector(fullscreenClicked))
@@ -1304,7 +1378,7 @@ class VideoControlBarView: NSView {
         castingLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         castingLabel.alignment = .center
         castingLabel.isHidden = true
-        
+
         addSubview(stopButton)
         addSubview(skipBackButton)
         addSubview(playButton)
@@ -1313,6 +1387,7 @@ class VideoControlBarView: NSView {
         addSubview(castingLabel)
         addSubview(seekSlider)
         addSubview(durationLabel)
+        addSubview(avOffsetButton)
         addSubview(castButton)
         addSubview(trackSettingsButton)
         addSubview(fullscreenButton)
@@ -1346,6 +1421,8 @@ class VideoControlBarView: NSView {
     }
     
     private func setupConstraints() {
+        avOffsetButtonWidthConstraint = avOffsetButton.widthAnchor.constraint(equalToConstant: 0)
+
         NSLayoutConstraint.activate([
             // Stop button
             stopButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
@@ -1397,9 +1474,15 @@ class VideoControlBarView: NSView {
             castButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             castButton.widthAnchor.constraint(equalToConstant: 30),
             castButton.heightAnchor.constraint(equalToConstant: 30),
+
+            // A/V offset button
+            avOffsetButton.trailingAnchor.constraint(equalTo: castButton.leadingAnchor, constant: -5),
+            avOffsetButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            avOffsetButtonWidthConstraint!,
+            avOffsetButton.heightAnchor.constraint(equalToConstant: 30),
             
             // Duration label
-            durationLabel.trailingAnchor.constraint(equalTo: castButton.leadingAnchor, constant: -10),
+            durationLabel.trailingAnchor.constraint(equalTo: avOffsetButton.leadingAnchor, constant: -10),
             durationLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             durationLabel.widthAnchor.constraint(equalToConstant: 50),
             
@@ -1439,11 +1522,100 @@ class VideoControlBarView: NSView {
     @objc private func castClicked() {
         onCast?()
     }
+
+    @objc private func avOffsetClicked() {
+        if let popover = avOffsetPopover, popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 92))
+        contentView.wantsLayer = true
+
+        let titleLabel = NSTextField(labelWithString: "A/V sync offset")
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        titleLabel.textColor = .labelColor
+
+        let valueLabel = NSTextField(labelWithString: formatOffset(avOffsetValue))
+        valueLabel.translatesAutoresizingMaskIntoConstraints = false
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        valueLabel.textColor = .secondaryLabelColor
+        valueLabel.alignment = .right
+        avOffsetValueLabel = valueLabel
+
+        let slider = NSSlider(value: avOffsetValue, minValue: -5, maxValue: 5, target: self, action: #selector(avOffsetChanged))
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        slider.isContinuous = false
+        slider.toolTip = "Move left when the video is ahead; move right when the video is behind. Applies when released."
+        avOffsetSlider = slider
+
+        let earlierLabel = NSTextField(labelWithString: "Video is ahead")
+        earlierLabel.translatesAutoresizingMaskIntoConstraints = false
+        earlierLabel.font = NSFont.systemFont(ofSize: 11)
+        earlierLabel.textColor = .secondaryLabelColor
+
+        let laterLabel = NSTextField(labelWithString: "Video is behind")
+        laterLabel.translatesAutoresizingMaskIntoConstraints = false
+        laterLabel.font = NSFont.systemFont(ofSize: 11)
+        laterLabel.textColor = .secondaryLabelColor
+        laterLabel.alignment = .right
+
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(valueLabel)
+        contentView.addSubview(slider)
+        contentView.addSubview(earlierLabel)
+        contentView.addSubview(laterLabel)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+
+            valueLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            valueLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            valueLabel.widthAnchor.constraint(equalToConstant: 64),
+
+            slider.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            slider.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            slider.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+
+            earlierLabel.leadingAnchor.constraint(equalTo: slider.leadingAnchor),
+            earlierLabel.topAnchor.constraint(equalTo: slider.bottomAnchor, constant: 2),
+
+            laterLabel.trailingAnchor.constraint(equalTo: slider.trailingAnchor),
+            laterLabel.topAnchor.constraint(equalTo: earlierLabel.topAnchor),
+            laterLabel.widthAnchor.constraint(equalToConstant: 120),
+        ])
+
+        let controller = NSViewController()
+        controller.view = contentView
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentSize = contentView.frame.size
+        popover.contentViewController = controller
+        avOffsetPopover = popover
+        popover.show(relativeTo: avOffsetButton.bounds, of: avOffsetButton, preferredEdge: .maxY)
+    }
+
+    func showAVOffsetPopover() {
+        guard !avOffsetButton.isHidden else { return }
+        guard avOffsetPopover?.isShown != true else { return }
+        avOffsetClicked()
+    }
     
     @objc private func seekChanged() {
         onSeek?(seekSlider.doubleValue)
     }
-    
+
+    @objc private func avOffsetChanged() {
+        if let slider = avOffsetSlider {
+            avOffsetValue = slider.doubleValue
+            avOffsetValueLabel?.stringValue = formatOffset(avOffsetValue)
+            onAVOffsetChanged?(avOffsetValue)
+        }
+    }
+
     // MARK: - Updates
     
     func updatePlayState(isPlaying: Bool) {
@@ -1464,6 +1636,25 @@ class VideoControlBarView: NSView {
         }
     }
     
+    /// Show or hide the A/V offset slider
+    func setAVOffsetVisible(_ visible: Bool) {
+        avOffsetButton.isHidden = !visible
+        avOffsetButtonWidthConstraint?.constant = visible ? 30 : 0
+        if !visible {
+            avOffsetPopover?.performClose(nil)
+        }
+    }
+
+    /// Current A/V offset slider value, in seconds
+    var avOffset: Double {
+        get { avOffsetValue }
+        set {
+            avOffsetValue = newValue
+            avOffsetSlider?.doubleValue = avOffsetValue
+            avOffsetValueLabel?.stringValue = formatOffset(avOffsetValue)
+        }
+    }
+
     /// Update the cast state display
     /// - Parameters:
     ///   - isPlaying: Whether the cast is playing
@@ -1517,6 +1708,10 @@ class VideoControlBarView: NSView {
         } else {
             return String(format: "%d:%02d", minutes, seconds)
         }
+    }
+
+    private func formatOffset(_ value: Double) -> String {
+        String(format: "%+.1fs", value)
     }
 }
 

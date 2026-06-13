@@ -16,7 +16,7 @@
 
 
 ## Features
-s
+
 - Library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
 - Plex Media Server integration with PIN-based authentication
 - Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
@@ -47,6 +47,7 @@ s
 - Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
 - AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
+- Experimental YouTube → Sonos streaming — play a YouTube video locally while sending its audio to Sonos via **Output → Streaming → Sonos (Experimental)** when `yt-dlp` and `ffmpeg` are available
 - Stream Ripper — paste a URL and rip it to lossless FLAC, MP3, or an MP4 video file (via yt-dlp), with metadata tags, embedded cover art, metadata-based filenames, and a `.cue` sheet generated from chapter timestamps
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
 - [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
@@ -334,6 +335,11 @@ Bundled third-party components:
 - **libprojectM** (LGPL-2.1) — ProjectM/MilkDrop visualizations
 - **aubio** (GPL-3.0) — BPM/tempo detection
 - **libsndfile** (LGPL-2.1), **FLAC** (BSD-3), **libogg** (BSD-3), **libvorbis** (BSD-3), **Opus** (BSD-3), **LAME** (LGPL-2.0+), **mpg123** (LGPL-2.1) — audio codecs
+
+**Optional helper executables (DMG build only)**
+- **yt-dlp** (Unlicense) — YouTube content extraction (DMG build; MAS build excludes)
+- **FFmpeg CLI** (LGPL-2.1+) — minimal audio codec processing (DMG build; MAS build excludes)
+  - These tools enable the experimental YouTube → Sonos streaming feature. The feature automatically disables when binaries are absent.
 
 **Native visualization ports (compiled into the binary)**
 - **vis_classic** (MIT) — Winamp AVS classic port

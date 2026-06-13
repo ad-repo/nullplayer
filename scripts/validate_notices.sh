@@ -30,9 +30,10 @@ MANIFEST="$REPO_ROOT/scripts/third_party_components.tsv"
 
 RESOURCES_DIR="${1:-}"
 FRAMEWORKS_DIR="${2:-}"
+MACOS_DIR="${3:-}"
 
 if [[ -z "$RESOURCES_DIR" || -z "$FRAMEWORKS_DIR" ]]; then
-    log_err "Usage: $0 <RESOURCES_DIR> <FRAMEWORKS_DIR>"
+    log_err "Usage: $0 <RESOURCES_DIR> <FRAMEWORKS_DIR> [MACOS_DIR]"
     exit 2
 fi
 if [[ ! -f "$MANIFEST" ]]; then
@@ -154,6 +155,40 @@ else
     log_err "Frameworks dir not found: $FRAMEWORKS_DIR"
     log_err "Cannot validate bundled binary notice coverage."
     errors=$((errors + 1))
+fi
+
+# --- Reverse check: every bundled helper executable in MacOS dir is covered ------
+# (Optional; only if MACOS_DIR was provided and is a valid directory)
+if [[ -n "$MACOS_DIR" && -d "$MACOS_DIR" ]]; then
+    for path in "$MACOS_DIR"/*; do
+        [[ -e "$path" ]] || continue
+        base="$(basename "$path")"
+        # Skip symlinks (should be none here, but consistent with frameworks check)
+        [[ -L "$path" ]] && continue
+        # Skip the main app binary — only check helper executables
+        if [[ "$base" == "NullPlayer" ]]; then
+            continue
+        fi
+        # Only check files that are executable
+        if [[ -f "$path" && -x "$path" ]]; then
+            covered=false
+            for g in "${globs[@]}"; do
+                # shellcheck disable=SC2053
+                if [[ "$base" == $g ]]; then
+                    covered=true
+                    break
+                fi
+            done
+
+            if [[ "$covered" == true ]]; then
+                log_ok "Bundled helper executable covered: $base"
+            else
+                log_err "Bundled helper executable has NO notice in manifest: $base"
+                log_err "Add an entry to scripts/third_party_components.tsv with a matching bundle_glob."
+                errors=$((errors + 1))
+            fi
+        fi
+    done
 fi
 
 echo ""
