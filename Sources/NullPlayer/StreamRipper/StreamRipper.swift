@@ -162,6 +162,10 @@ final class StreamRipper {
 
         // Embed source metadata (title/artist/album/date, etc.) into the file.
         var args: [String] = ["--no-playlist", "--embed-metadata"]
+
+        // For audio rips, capture the source's chapter list so we can write a
+        // .cue sheet when the video has timestamps (e.g. album/mix uploads).
+        var chaptersFile: String?
         switch mode {
         case .audio(let format):
             // Grab the best audio-only source, then transcode to the requested
@@ -169,6 +173,9 @@ final class StreamRipper {
             // Embed the thumbnail as cover art (converted to jpg for compatibility).
             args += ["-f", "bestaudio/best", "-x", "--audio-format", format.rawValue, "--audio-quality", "0",
                      "--embed-thumbnail", "--convert-thumbnails", "jpg"]
+            let cf = NSTemporaryDirectory() + "nullplayer-chapters-\(UUID().uuidString).json"
+            chaptersFile = cf
+            args += ["--print-to-file", "after_move:%(chapters)j", cf]
         case .video:
             // Best video-only + best audio, merged; bias selection toward
             // resolution/fps/bitrate. --remux-video only swaps the container
@@ -226,15 +233,91 @@ final class StreamRipper {
             try? FileManager.default.removeItem(atPath: pathFile)
             let outputPath = (reported?.isEmpty == false) ? reported! : folder
 
+            // Write a .cue sheet if the source had chapter timestamps.
+            var cueTrackCount = 0
+            if status == 0, reported?.isEmpty == false, let cf = chaptersFile {
+                let chapters = Self.readChapters(from: cf)
+                if chapters.count >= 2 {
+                    Self.writeCueFile(audioPath: outputPath, chapters: chapters)
+                    cueTrackCount = chapters.count
+                }
+            }
+            if let cf = chaptersFile { try? FileManager.default.removeItem(atPath: cf) }
+
             DispatchQueue.main.async {
                 self.endActivity()
                 if status == 0 {
-                    self.presentSuccess(outputPath: outputPath, mode: mode)
+                    self.presentSuccess(outputPath: outputPath, mode: mode, cueTrackCount: cueTrackCount)
                 } else {
                     self.presentFailure(message: errText.isEmpty ? "yt-dlp exited with code \(status)." : errText)
                 }
             }
         }
+    }
+
+    // MARK: - Cue sheet
+
+    private struct Chapter {
+        let start: Double
+        let title: String
+    }
+
+    /// Parse the chapter JSON array yt-dlp wrote (or an empty array if none).
+    private nonisolated static func readChapters(from path: String) -> [Chapter] {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return [] }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "NA", trimmed != "null",
+              let data = trimmed.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return []
+        }
+        return array.enumerated().compactMap { index, entry in
+            guard let start = entry["start_time"] as? Double else { return nil }
+            let title = (entry["title"] as? String) ?? "Track \(index + 1)"
+            return Chapter(start: start, title: title)
+        }
+    }
+
+    /// Write a CUE sheet next to the audio file, one TRACK per chapter.
+    private nonisolated static func writeCueFile(audioPath: String, chapters: [Chapter]) {
+        let audioURL = URL(fileURLWithPath: audioPath)
+        let fileName = audioURL.lastPathComponent
+        let base = audioURL.deletingPathExtension().lastPathComponent
+
+        // Derive album/performer from the "Artist - Title" filename convention.
+        var album = base
+        var performer = ""
+        if let range = base.range(of: " - ") {
+            performer = String(base[..<range.lowerBound])
+            album = String(base[range.upperBound...])
+        }
+
+        // CUE FILE type: MP3 for mp3, WAVE is widely accepted for lossless.
+        let fileType = audioURL.pathExtension.lowercased() == "mp3" ? "MP3" : "WAVE"
+
+        func quote(_ s: String) -> String { s.replacingOccurrences(of: "\"", with: "'") }
+
+        var lines: [String] = []
+        if !performer.isEmpty { lines.append("PERFORMER \"\(quote(performer))\"") }
+        lines.append("TITLE \"\(quote(album))\"")
+        lines.append("FILE \"\(quote(fileName))\" \(fileType)")
+        for (index, chapter) in chapters.enumerated() {
+            lines.append(String(format: "  TRACK %02d AUDIO", index + 1))
+            lines.append("    TITLE \"\(quote(chapter.title))\"")
+            if !performer.isEmpty { lines.append("    PERFORMER \"\(quote(performer))\"") }
+            lines.append("    INDEX 01 \(cueTimestamp(chapter.start))")
+        }
+
+        let cueURL = audioURL.deletingPathExtension().appendingPathExtension("cue")
+        try? (lines.joined(separator: "\n") + "\n").write(to: cueURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Format seconds as a CUE MM:SS:FF timestamp (75 frames per second).
+    private nonisolated static func cueTimestamp(_ seconds: Double) -> String {
+        let totalFrames = Int((seconds * 75).rounded())
+        let frames = totalFrames % 75
+        let totalSeconds = totalFrames / 75
+        return String(format: "%02d:%02d:%02d", totalSeconds / 60, totalSeconds % 60, frames)
     }
 
     private func endActivity() {
@@ -259,10 +342,14 @@ final class StreamRipper {
         alert.runModal()
     }
 
-    private func presentSuccess(outputPath: String, mode: Mode) {
+    private func presentSuccess(outputPath: String, mode: Mode, cueTrackCount: Int) {
         let alert = NSAlert()
         alert.messageText = "Rip Complete"
-        alert.informativeText = (outputPath as NSString).lastPathComponent
+        var info = (outputPath as NSString).lastPathComponent
+        if cueTrackCount > 0 {
+            info += "\n\nWrote a \(cueTrackCount)-track .cue sheet from the chapter timestamps."
+        }
+        alert.informativeText = info
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Play Now")
         alert.addButton(withTitle: "Reveal in Finder")
