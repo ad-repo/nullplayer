@@ -1083,7 +1083,7 @@ class WindowManager {
         return true
     }
     
-    /// Show the video player with a URL and title
+    /// Show the video player with a URL and title.
     /// Present a locally-played, optionally header-authenticated video muted, and return the
     /// controller. Used by the YouTube → Sonos coordinator: the video stays local while audio is
     /// cast to Sonos separately, so this deliberately bypasses `routeToVideoCastIfNeeded`.
@@ -1102,9 +1102,9 @@ class WindowManager {
         return vpc
     }
 
-    func showVideoPlayer(url: URL, title: String) {
+    func showVideoPlayer(url: URL, title: String, allowCasting: Bool = true) {
         let artworkTrack = Track(url: url, title: title, mediaType: .video)
-        if routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: { device in
+        if allowCasting, routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: { device in
             try await CastManager.shared.castVideoURL(url, title: title, to: device)
         }) {
             return

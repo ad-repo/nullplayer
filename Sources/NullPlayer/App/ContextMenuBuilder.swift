@@ -35,13 +35,6 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Sleep Timer submenu
-        let sleepTimerItem = NSMenuItem(title: "Sleep Timer", action: nil, keyEquivalent: "")
-        sleepTimerItem.submenu = buildSleepTimerMenu()
-        if SleepTimerManager.shared.isActive { sleepTimerItem.state = .on }
-        menu.addItem(sleepTimerItem)
-        menu.addItem(NSMenuItem.separator())
-
         // Output Devices submenu
         if includeOutputDevices {
             menu.addItem(buildOutputDevicesMenuItem())
@@ -70,13 +63,6 @@ class ContextMenuBuilder {
         let minimizeAll = NSMenuItem(title: "Minimize All", action: #selector(MenuActions.minimizeAllWindows), keyEquivalent: "")
         minimizeAll.target = MenuActions.shared
         menu.addItem(minimizeAll)
-        menu.addItem(NSMenuItem.separator())
-
-        // Settings
-        let rememberState = NSMenuItem(title: "Remember State", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
-        rememberState.target = MenuActions.shared
-        rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
-        menu.addItem(rememberState)
         menu.addItem(NSMenuItem.separator())
 
         // Exit
@@ -2253,6 +2239,11 @@ class ContextMenuBuilder {
         sonosItem.submenu = buildMenuBarStreamingSonosMenu(castManager: castManager)
         streamingMenu.addItem(sonosItem)
 
+        let ripItem = NSMenuItem(title: "Rip URL…", action: #selector(MenuActions.ripURL), keyEquivalent: "")
+        ripItem.target = MenuActions.shared
+        streamingMenu.addItem(NSMenuItem.separator())
+        streamingMenu.addItem(ripItem)
+
         return streamingMenu
     }
 
@@ -2413,6 +2404,7 @@ class ContextMenuBuilder {
             outputMenu.addItem(sonosItem)
         }
 
+        // Streaming
         if outputMenu.items.last?.isSeparatorItem != true {
             outputMenu.addItem(NSMenuItem.separator())
         }
@@ -2627,6 +2619,15 @@ class ContextMenuBuilder {
             sonosItem.submenu = sonosMenu
             outputMenu.addItem(sonosItem)
         }
+
+        // ========== Streaming ==========
+        if outputMenu.items.last?.isSeparatorItem != true {
+            outputMenu.addItem(NSMenuItem.separator())
+        }
+
+        let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
+        streamingItem.submenu = buildMenuBarStreamingSubmenu(castManager: castManager)
+        outputMenu.addItem(streamingItem)
         
         // ========== Other Cast Devices ==========
         let chromecastDevices = castManager.chromecastDevices
@@ -5063,7 +5064,11 @@ class MenuActions: NSObject {
         orderedUDNs.append(contentsOf: selectedUDNs.filter { !orderedSet.contains($0) }.sorted())
         return orderedUDNs
     }
-    
+
+    @objc func ripURL() {
+        MainActor.assumeIsolated { StreamRipper.shared.promptAndRip() }
+    }
+
     @objc func castToSonosRoom(_ sender: NSMenuItem) {
         let castManager = CastManager.shared
         
