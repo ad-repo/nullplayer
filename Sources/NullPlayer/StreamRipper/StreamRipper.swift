@@ -229,7 +229,7 @@ final class StreamRipper {
             DispatchQueue.main.async {
                 self.endActivity()
                 if status == 0 {
-                    self.presentSuccess(outputPath: outputPath)
+                    self.presentSuccess(outputPath: outputPath, mode: mode)
                 } else {
                     self.presentFailure(message: errText.isEmpty ? "yt-dlp exited with code \(status)." : errText)
                 }
@@ -259,15 +259,36 @@ final class StreamRipper {
         alert.runModal()
     }
 
-    private func presentSuccess(outputPath: String) {
+    private func presentSuccess(outputPath: String, mode: Mode) {
         let alert = NSAlert()
         alert.messageText = "Rip Complete"
         alert.informativeText = (outputPath as NSString).lastPathComponent
         alert.alertStyle = .informational
+        alert.addButton(withTitle: "Play Now")
         alert.addButton(withTitle: "Reveal in Finder")
         alert.addButton(withTitle: "Done")
-        if alert.runModal() == .alertFirstButtonReturn {
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            playFile(at: outputPath, mode: mode)
+        case .alertSecondButtonReturn:
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: outputPath)])
+        default:
+            break
+        }
+    }
+
+    /// Play the ripped file: video opens in the video player window, audio loads
+    /// into the player (same path as opening a file from Finder).
+    private func playFile(at path: String, mode: Mode) {
+        let url = URL(fileURLWithPath: path)
+        switch mode {
+        case .video:
+            let track = Track(url: url)
+            WindowManager.shared.playVideoTrack(track)
+        case .audio:
+            let engine = WindowManager.shared.audioEngine
+            engine.loadFiles([url])
+            engine.play()
         }
     }
 

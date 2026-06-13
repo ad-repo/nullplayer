@@ -80,9 +80,10 @@ extension MainWindowProviding {
         }
 
         let barHeight: CGFloat = 22
-        let bar = NSView(frame: NSRect(x: 0, y: 0, width: content.bounds.width, height: barHeight))
+        // Pinned to the TOP of the window (macOS origin is bottom-left).
+        let bar = NSView(frame: NSRect(x: 0, y: content.bounds.height - barHeight, width: content.bounds.width, height: barHeight))
         bar.identifier = activityOverlayID
-        bar.autoresizingMask = [.width]
+        bar.autoresizingMask = [.width, .minYMargin]
         bar.wantsLayer = true
         bar.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.78).cgColor
 
