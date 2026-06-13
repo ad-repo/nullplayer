@@ -51,6 +51,8 @@ Global controls are also available from the macOS top menu bar:
 
 `Output > Sonos` supports persistent-open room checkbox selection (same behavior as the context menu Sonos submenu).
 
+`Output > Streaming > Rip URL…` opens the Stream Ripper (paste a URL → FLAC/MP3/MP4); see Output Devices & Casting below.
+
 ### Window Docking
 
 Windows automatically snap together when dragged near each other:
@@ -200,6 +202,15 @@ Import discovery is now unified across classic + modern entry points (main windo
 ### AirPlay
 - Native macOS AirPlay support
 - Auto-detected output devices
+
+### Stream Ripper (Output → Streaming → Rip URL…)
+- Paste a URL (auto-filled from the clipboard) and pick **FLAC**, **MP3**, or **MP4 video**
+- Downloads via a system-installed `yt-dlp` (+`ffmpeg`); shows an install hint if missing
+- Best-quality source selection; lossless FLAC, no video re-encode
+- Tags output with source metadata + embedded cover art; names the file `Artist - Title`
+- Writes a `.cue` sheet when the source has chapter timestamps
+- Progress band at the top of the main window; finish dialog offers **Play Now** / **Reveal in Finder**
+- See the **stream-ripper** skill for internals
 
 ## Audio Features
 

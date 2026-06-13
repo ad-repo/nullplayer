@@ -22,6 +22,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **user-guide**: Features, menus, keyboard shortcuts
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations
 - **sonos-casting**, **chromecast-casting**: Casting protocols and debugging
+- **stream-ripper**: Rip a URL to FLAC/MP3/MP4 via yt-dlp — format selection, tagging, cover art, .cue from chapters, activity band
 - **radio-streaming**: Internet radio + library radio support
 - **visualizations**: Index/router across all visualization sub-skills (comparison table, when-to-use)
 - **main-window-visualization**: Main window's 76×16 vis area — modes, switching, settings
@@ -45,6 +46,7 @@ Sources/NullPlayer/
 ├── App/              # AppDelegate, WindowManager, menus, MainWindowProviding protocol
 ├── Audio/            # AudioEngine, StreamingAudioPlayer, EQ
 ├── Casting/          # Chromecast, Sonos, DLNA casting
+├── StreamRipper/     # Rip a URL to FLAC/MP3/MP4 via yt-dlp (tagging, cover art, .cue)
 ├── Radio/            # Internet radio (stations, metadata fallback, ratings, folders)
 ├── Skin/             # Classic .wsz skin loading and rendering
 ├── ModernSkin/       # Modern skin engine (independent of classic system)
