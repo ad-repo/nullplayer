@@ -5,13 +5,13 @@ description: Rip a media URL to FLAC/MP3/MP4 via yt-dlp — quality-first format
 
 # Stream Ripper
 
-Paste a URL and download it to a local file: lossless **FLAC**, **MP3**, or an **MP4** video. Implemented entirely in `Sources/NullPlayer/StreamRipper/StreamRipper.swift`, wired into the menu via `App/ContextMenuBuilder.swift`, with progress shown via `App/MainWindowProviding.swift`.
+Paste a URL and download it to a local file: lossless **FLAC**, **MP3**, or an **MP4 video at a chosen resolution** (720p/1080p/1440p/4K-best). Implemented entirely in `Sources/NullPlayer/StreamRipper/StreamRipper.swift`, wired into the menu via `App/ContextMenuBuilder.swift`, with progress shown via `App/MainWindowProviding.swift`.
 
 ## Quick Start (user)
 
 1. **Output → Streaming → Rip URL…** (right-click anywhere, or the menu bar **Output** menu)
 2. Paste a URL (the field pre-fills from the clipboard when it holds an `http(s)` link)
-3. Pick an output type: **Audio — FLAC (lossless)**, **Audio — MP3**, or **Video — MP4**
+3. Pick an output type: **Audio — FLAC (lossless)**, **Audio — MP3**, or video at **1080p** / **720p** / **1440p** / **4K-best**
 4. Choose a destination folder (defaults to Downloads)
 5. A spinner + message appears at the top of the main window during the rip
 6. When done: **Play Now**, **Reveal in Finder**, or **Done**
@@ -33,8 +33,8 @@ Common: `--no-playlist --embed-metadata`, output template `"<folder>/%(artist|)s
 
 - **Audio** (`-f bestaudio/best -x --audio-format {flac|mp3} --audio-quality 0 --embed-thumbnail --convert-thumbnails jpg`):
   grabs the best audio-only source, transcodes to the chosen format (FLAC = lossless encode of the decoded source; MP3 = top-VBR). Thumbnail is converted to JPEG before embedding (YouTube serves WebP, which doesn't embed cleanly into FLAC/MP3). Also adds `--print-to-file after_move:%(chapters)j <tmp>` for the cue sheet.
-- **Video** (`-f bv*+ba/b -S res,fps,vcodec,br,acodec --remux-video mp4`):
-  best video + best audio, merged; `--remux-video` only swaps the container (**no quality-losing re-encode**); biased toward resolution/fps/bitrate.
+- **Video** — `Mode.video(maxHeight: Int?)` carries the user-chosen resolution cap. With a cap: `-f "bv*[height<=N]+ba/b[height<=N]/bv*+ba"`; uncapped (4K-best): `-f "bv*+ba/b"`. Sort is `-S res,fps,vcodec,br,acodec` and `--remux-video mp4` (only swaps the container, **no quality-losing re-encode**). `vcodec` is ranked **before** `br`, and yt-dlp's default vcodec order prefers **av1 > vp9 > h264**, so at a given resolution it picks the more efficient (smaller) stream rather than the fattest h264 one.
+  - **Why the cap matters:** uncapped "best" pulls 4K/high-bitrate streams — a 2.5h video ballooned to ~28GB. The user picks 720p / 1080p (default-recommended) / 1440p / 4K-best per rip; the height filter is a hard cap, not just a sort preference.
 
 ### Quality caveat
 

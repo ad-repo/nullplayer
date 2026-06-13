@@ -204,7 +204,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - Auto-detected output devices
 
 ### Stream Ripper (Output → Streaming → Rip URL…)
-- Paste a URL (auto-filled from the clipboard) and pick **FLAC**, **MP3**, or **MP4 video**
+- Paste a URL (auto-filled from the clipboard) and pick **FLAC**, **MP3**, or **MP4 video** at a chosen resolution (720p/1080p/1440p/4K-best)
 - Downloads via a system-installed `yt-dlp` (+`ffmpeg`); shows an install hint if missing
 - Best-quality source selection; lossless FLAC, no video re-encode
 - Tags output with source metadata + embedded cover art; names the file `Artist - Title`
