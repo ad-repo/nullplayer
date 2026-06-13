@@ -121,6 +121,9 @@ final class YouTubeToSonosCoordinator {
                 syncController?.realignToCurrentOffset()
             }
             videoController.setAVOffsetVisible(true)
+            DispatchQueue.main.async { [weak videoController] in
+                videoController?.showAVOffsetPopover()
+            }
             syncController.start()
 
             // Start completion poll: check periodically if playback has finished

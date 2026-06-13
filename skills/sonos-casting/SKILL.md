@@ -440,9 +440,9 @@ If you see "Sonos rejected the command":
 3. Check if Mac went to sleep (NullPlayer recovers on wake)
 4. Check Console.app for "Sonos reported STOPPED" or "consecutive command failures"
 
-## YouTube → Sonos (paste-URL middleman)
+## YouTube → Sonos (experimental paste-URL middleman)
 
-Plays a YouTube (or other yt-dlp-supported) video **locally, muted**, while its audio is
+Experimental feature. Plays a YouTube (or other yt-dlp-supported) video **locally, muted**, while its audio is
 streamed to Sonos — so the audio comes out of your speakers and the video stays watchable and
 in sync on the Mac. NullPlayer owns the local video clock, so it can correct A/V lag.
 
@@ -478,11 +478,13 @@ in sync on the Mac. NullPlayer owns the local video clock, so it can correct A/V
    repeated drift correction causes loading spinners every few seconds. The **A/V sync offset**
    popover is the primary fine calibration (persisted to `UserDefaults` key
    `youtubeSonosAVOffset`). Moving the slider only changes the stored offset and label; the
-   explicit **Resync** button applies the offset with a single deliberate video seek.
+   explicit **Resync** button applies the offset with a single deliberate video seek. The popover
+   opens automatically when a YouTube → Sonos session starts so the manual time-shift control is
+   visible without hunting for the toolbar button.
 
 ### Enabling the feature (requires yt-dlp + ffmpeg)
 The feature is gated on a runtime presence check (`HelperBinaries`). The menu item
-**Output → Streaming → Sonos → Open Video URL → Sonos…** only appears when both binaries are found. Resolution
+**Output → Streaming → Sonos (Experimental) → Open Video URL → Sonos…** only appears when both binaries are found. Resolution
 order per binary:
 1. **Env override** — `NULLPLAYER_YTDLP_PATH` / `NULLPLAYER_FFMPEG_PATH` (absolute paths).
 2. **Bundled** in the app (`Contents/MacOS`, then `Contents/Resources`) — the DMG distribution.
@@ -502,16 +504,16 @@ this is intentional. For the DMG distribution, binaries are provisioned opt-in v
 `validate_notices.sh` fails.
 
 ### Usage
-1. **Output → Streaming → Sonos** — check one or more rooms in the Sonos room list.
+1. **Output → Streaming → Sonos (Experimental)** — check one or more rooms in the Sonos room list.
 2. **Open Video URL → Sonos…** — the dialog has a wide URL field, auto-filled from the clipboard
    if it looks like a YouTube link.
 3. Audio starts on the checked rooms; the first checked room becomes the coordinator and the rest
-   join its group. The video opens muted.
-4. Open the **A/V Sync Offset** popover and drag the slider until the displayed offset looks
-   right; it persists across sessions. Dragging does **not** seek the video.
+   join its group. The video opens muted, with the **A/V Sync Offset** popover already visible.
+4. Use the already-visible **A/V Sync Offset** popover and drag the slider until the displayed
+   offset looks right; it persists across sessions. Dragging does **not** seek the video.
 5. Click **Resync** to apply the current offset with one deliberate video seek. Avoid repeated
    Resync clicks because each seek can force the remote YouTube stream to buffer.
-6. **Output → Streaming → Sonos → Stop YouTube → Sonos** tears everything down (unregisters the proxy *or* live
+6. **Output → Streaming → Sonos (Experimental) → Stop YouTube → Sonos** tears everything down (unregisters the proxy *or* live
    stream, kills ffmpeg with SIGTERM→SIGKILL if it was used, stops the cast, restores video volume).
 
 ### Transport control

@@ -294,6 +294,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         videoPlayerView.setAVOffsetVisible(visible)
     }
 
+    /// Open the A/V offset popover when the offset control is visible.
+    func showAVOffsetPopover() {
+        videoPlayerView.showAVOffsetPopover()
+    }
+
     // MARK: - Static Configuration
     
     /// Configure KSPlayer globally (call once at app startup)

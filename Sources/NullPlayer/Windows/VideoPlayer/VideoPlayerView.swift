@@ -141,6 +141,11 @@ class VideoPlayerView: NSView {
         controlBarView.setAVOffsetVisible(visible)
     }
 
+    /// Open the A/V offset popover when the offset control is visible.
+    func showAVOffsetPopover() {
+        controlBarView.showAVOffsetPopover()
+    }
+
     /// Callback when skip forward is requested (for casting intercept)
     var onSkipForwardRequested: ((TimeInterval) -> Void)?
     
@@ -1600,6 +1605,12 @@ class VideoControlBarView: NSView {
         popover.contentViewController = controller
         avOffsetPopover = popover
         popover.show(relativeTo: avOffsetButton.bounds, of: avOffsetButton, preferredEdge: .maxY)
+    }
+
+    func showAVOffsetPopover() {
+        guard !avOffsetButton.isHidden else { return }
+        guard avOffsetPopover?.isShown != true else { return }
+        avOffsetClicked()
     }
     
     @objc private func seekChanged() {

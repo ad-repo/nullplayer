@@ -2235,7 +2235,7 @@ class ContextMenuBuilder {
         let streamingMenu = NSMenu()
         streamingMenu.autoenablesItems = false
 
-        let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
+        let sonosItem = NSMenuItem(title: "Sonos (Experimental)", action: nil, keyEquivalent: "")
         sonosItem.submenu = buildMenuBarStreamingSonosMenu(castManager: castManager)
         streamingMenu.addItem(sonosItem)
 

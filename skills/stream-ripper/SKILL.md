@@ -24,7 +24,7 @@ Ripping shells out to a **system-installed** `yt-dlp` (+ `ffmpeg`) — nothing i
 
 - **`StreamRipper`** (`@MainActor final class`, `.shared` singleton) owns the whole flow:
   `promptForInput()` (URL + format popup) → `promptForDestinationFolder()` (NSOpenPanel) → `rip(...)`.
-- **Menu**: `ContextMenuBuilder.buildMenuBarStreamingSubmenu` adds the single **Rip URL…** item. Action: `MenuActions.ripURL()` → `MainActor.assumeIsolated { StreamRipper.shared.promptAndRip() }` (menu clicks are already on the main thread).
+- **Menu**: `ContextMenuBuilder.buildMenuBarStreamingSubmenu` includes **Rip URL…** alongside other streaming actions. Action: `MenuActions.ripURL()` → `MainActor.assumeIsolated { StreamRipper.shared.promptAndRip() }` (menu clicks are already on the main thread).
 - **The rip runs off the main thread** (`DispatchQueue.global`); UI (alerts, activity band) is dispatched back to main.
 
 ## yt-dlp invocation (quality-first)
