@@ -118,16 +118,11 @@ class VideoPlayerView: NSView {
     /// Callback when seek is requested (for casting intercept) - normalized 0-1 position
     var onSeekRequested: ((Double) -> Void)?
 
-    /// Passthrough to the control bar's A/V offset slider (YouTube → Sonos sync calibration)
+    /// Passthrough to the control bar's A/V nudge callback. The closure receives the *relative*
+    /// correction in seconds for a single tap (YouTube → Sonos sync calibration).
     var onAVOffsetChanged: ((Double) -> Void)? {
         get { controlBarView.onAVOffsetChanged }
         set { controlBarView.onAVOffsetChanged = newValue }
-    }
-
-    /// Current A/V offset slider value, in seconds
-    var avOffset: Double {
-        get { controlBarView.avOffset }
-        set { controlBarView.avOffset = newValue }
     }
 
     /// Show or hide the A/V offset control.
@@ -695,7 +690,8 @@ class VideoPlayerView: NSView {
         isPlexURL: Bool = false,
         plexHeaders: [String: String]? = nil,
         httpHeaders: [String: String]? = nil,
-        autoPlay: Bool = true
+        autoPlay: Bool = true,
+        accurateSeek: Bool = false
     ) {
         currentTitle = title
         currentURL = url
@@ -718,6 +714,10 @@ class VideoPlayerView: NSView {
 
         // Configure options
         let options = KSOptions()
+        // Frame-accurate seeking. Default (false) snaps seeks to the nearest keyframe, so small
+        // relative seeks (e.g. the YouTube → Sonos A/V nudges) land back on the same GOP keyframe
+        // and appear to do nothing. With this on, the player decodes to the exact target frame.
+        options.isAccurateSeek = accurateSeek
         if isPlexURL, let headers = plexHeaders {
             // Remote/relay Plex connections require full client identification headers
             options.appendHeader(headers)
@@ -816,6 +816,18 @@ class VideoPlayerView: NSView {
     /// Seek to time
     func seek(to time: TimeInterval) {
         playerLayer?.seek(time: time, autoPlay: true) { _ in }
+    }
+
+    /// Seek by `delta` seconds relative to the *live* playhead. Uses the player's live
+    /// `currentPlaybackTime` (not the throttled cached `currentTime`, which lags ~1s and would
+    /// make a sub-second nudge land at the wrong spot). Used by the A/V sync nudge buttons.
+    func nudgeRelative(_ delta: TimeInterval) {
+        guard let layer = playerLayer else { return }
+        let base = layer.player.currentPlaybackTime
+        let clampMax = totalDuration > 0 ? min(base + delta, totalDuration) : base + delta
+        let target = max(0, clampMax)
+        NSLog("VideoPlayerView: nudgeRelative %.2fs (live %.2f -> %.2f)", delta, base, target)
+        layer.seek(time: target, autoPlay: true) { _ in }
     }
     
     /// Skip forward by seconds
@@ -1307,11 +1319,17 @@ class VideoControlBarView: NSView {
     private var currentTimeLabel: NSTextField!
     private var durationLabel: NSTextField!
     private var castingLabel: NSTextField!
-    private var avOffsetSlider: NSSlider?
     private var avOffsetValueLabel: NSTextField?
     private var avOffsetPopover: NSPopover?
     private var avOffsetButtonWidthConstraint: NSLayoutConstraint?
-    private var avOffsetValue: Double = 0
+    /// Reverts the readout to its resting "0.0s" after a nudge flash.
+    private var avOffsetResetWork: DispatchWorkItem?
+
+    /// A/V nudge steps in seconds. Each press is a one-shot relative correction; there is no
+    /// persistent offset, so there is no range to clamp. Coarse is large enough to dig out of a
+    /// multi-second Sonos buffer offset in a tap or two; fine is for trimming after.
+    private let avOffsetFineStep: Double = 0.5
+    private let avOffsetCoarseStep: Double = 2.0
     
     private var isPlaying: Bool = false
     private var isSeeking: Bool = false
@@ -1529,26 +1547,46 @@ class VideoControlBarView: NSView {
             return
         }
 
-        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 92))
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 110))
         contentView.wantsLayer = true
 
-        let titleLabel = NSTextField(labelWithString: "A/V sync offset")
+        let titleLabel = NSTextField(labelWithString: "Nudge video sync")
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         titleLabel.textColor = .labelColor
 
-        let valueLabel = NSTextField(labelWithString: formatOffset(avOffsetValue))
+        let hintLabel = NSTextField(labelWithString: "Each tap is a one-shot correction")
+        hintLabel.translatesAutoresizingMaskIntoConstraints = false
+        hintLabel.font = NSFont.systemFont(ofSize: 11)
+        hintLabel.textColor = .secondaryLabelColor
+
+        // Resting readout is "0.0s"; a tap briefly flashes the applied step, then returns to 0.
+        let valueLabel = NSTextField(labelWithString: formatOffset(0))
         valueLabel.translatesAutoresizingMaskIntoConstraints = false
-        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        valueLabel.textColor = .secondaryLabelColor
-        valueLabel.alignment = .right
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 18, weight: .medium)
+        valueLabel.textColor = .labelColor
+        valueLabel.alignment = .center
         avOffsetValueLabel = valueLabel
 
-        let slider = NSSlider(value: avOffsetValue, minValue: -5, maxValue: 5, target: self, action: #selector(avOffsetChanged))
-        slider.translatesAutoresizingMaskIntoConstraints = false
-        slider.isContinuous = false
-        slider.toolTip = "Move left when the video is ahead; move right when the video is behind. Applies when released."
-        avOffsetSlider = slider
+        // Nudge buttons: «/» = coarse (0.5s), ‹/› = fine (0.1s). Each is a momentary relative
+        // slide of the muted video — negative when the video is ahead, positive when it's behind.
+        let minusCoarse = makeNudgeButton(title: "«", delta: -avOffsetCoarseStep,
+                                          tooltip: "Nudge video back \(formatStep(avOffsetCoarseStep)) (it's ahead)")
+        let minusFine = makeNudgeButton(title: "‹", delta: -avOffsetFineStep,
+                                        tooltip: "Nudge video back \(formatStep(avOffsetFineStep)) (it's ahead)")
+        let plusFine = makeNudgeButton(title: "›", delta: avOffsetFineStep,
+                                       tooltip: "Nudge video forward \(formatStep(avOffsetFineStep)) (it's behind)")
+        let plusCoarse = makeNudgeButton(title: "»", delta: avOffsetCoarseStep,
+                                         tooltip: "Nudge video forward \(formatStep(avOffsetCoarseStep)) (it's behind)")
+
+        let buttonRow = NSStackView(views: [minusCoarse, minusFine, valueLabel, plusFine, plusCoarse])
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.distribution = .fill
+        buttonRow.spacing = 8
+        buttonRow.setCustomSpacing(2, after: minusCoarse)
+        buttonRow.setCustomSpacing(2, after: plusFine)
 
         let earlierLabel = NSTextField(labelWithString: "Video is ahead")
         earlierLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -1562,8 +1600,8 @@ class VideoControlBarView: NSView {
         laterLabel.alignment = .right
 
         contentView.addSubview(titleLabel)
-        contentView.addSubview(valueLabel)
-        contentView.addSubview(slider)
+        contentView.addSubview(hintLabel)
+        contentView.addSubview(buttonRow)
         contentView.addSubview(earlierLabel)
         contentView.addSubview(laterLabel)
 
@@ -1571,20 +1609,20 @@ class VideoControlBarView: NSView {
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
             titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
 
-            valueLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
-            valueLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            valueLabel.widthAnchor.constraint(equalToConstant: 64),
+            hintLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            hintLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
 
-            slider.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
-            slider.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
-            slider.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            buttonRow.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            buttonRow.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            buttonRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
 
-            earlierLabel.leadingAnchor.constraint(equalTo: slider.leadingAnchor),
-            earlierLabel.topAnchor.constraint(equalTo: slider.bottomAnchor, constant: 2),
+            valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
 
-            laterLabel.trailingAnchor.constraint(equalTo: slider.trailingAnchor),
+            earlierLabel.leadingAnchor.constraint(equalTo: buttonRow.leadingAnchor),
+            earlierLabel.topAnchor.constraint(equalTo: buttonRow.bottomAnchor, constant: 8),
+
+            laterLabel.trailingAnchor.constraint(equalTo: buttonRow.trailingAnchor),
             laterLabel.topAnchor.constraint(equalTo: earlierLabel.topAnchor),
-            laterLabel.widthAnchor.constraint(equalToConstant: 120),
         ])
 
         let controller = NSViewController()
@@ -1608,12 +1646,36 @@ class VideoControlBarView: NSView {
         onSeek?(seekSlider.doubleValue)
     }
 
-    @objc private func avOffsetChanged() {
-        if let slider = avOffsetSlider {
-            avOffsetValue = slider.doubleValue
-            avOffsetValueLabel?.stringValue = formatOffset(avOffsetValue)
-            onAVOffsetChanged?(avOffsetValue)
+    /// Build a nudge button whose step (seconds) is carried in its tag as milliseconds.
+    private func makeNudgeButton(title: String, delta: Double, tooltip: String) -> NSButton {
+        let button = NSButton(title: title, target: self, action: #selector(avOffsetNudge(_:)))
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.bezelStyle = .rounded
+        button.font = NSFont.systemFont(ofSize: 16, weight: .medium)
+        // Carry the step (milliseconds) in the identifier; NSButton.tag is ambiguous here
+        // because a project protocol also declares `tag`.
+        let millis: Int = Int((delta * 1000).rounded())
+        button.identifier = NSUserInterfaceItemIdentifier("\(millis)")
+        button.toolTip = tooltip
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        return button
+    }
+
+    @objc private func avOffsetNudge(_ sender: NSButton) {
+        guard let millis = sender.identifier.flatMap({ Int($0.rawValue) }) else { return }
+        let delta = Double(millis) / 1000.0
+
+        // One-shot relative correction: apply it, then flash the amount and return to 0.0s.
+        onAVOffsetChanged?(delta)
+
+        avOffsetResetWork?.cancel()
+        avOffsetValueLabel?.stringValue = formatOffset(delta)
+        let work = DispatchWorkItem { [weak self] in
+            self?.avOffsetValueLabel?.stringValue = self?.formatOffset(0) ?? "0.0s"
         }
+        avOffsetResetWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
     }
 
     // MARK: - Updates
@@ -1636,22 +1698,12 @@ class VideoControlBarView: NSView {
         }
     }
     
-    /// Show or hide the A/V offset slider
+    /// Show or hide the A/V offset nudge panel button
     func setAVOffsetVisible(_ visible: Bool) {
         avOffsetButton.isHidden = !visible
         avOffsetButtonWidthConstraint?.constant = visible ? 30 : 0
         if !visible {
             avOffsetPopover?.performClose(nil)
-        }
-    }
-
-    /// Current A/V offset slider value, in seconds
-    var avOffset: Double {
-        get { avOffsetValue }
-        set {
-            avOffsetValue = newValue
-            avOffsetSlider?.doubleValue = avOffsetValue
-            avOffsetValueLabel?.stringValue = formatOffset(avOffsetValue)
         }
     }
 
@@ -1712,6 +1764,10 @@ class VideoControlBarView: NSView {
 
     private func formatOffset(_ value: Double) -> String {
         String(format: "%+.1fs", value)
+    }
+
+    private func formatStep(_ value: Double) -> String {
+        String(format: "%.0f ms", value * 1000)
     }
 }
 

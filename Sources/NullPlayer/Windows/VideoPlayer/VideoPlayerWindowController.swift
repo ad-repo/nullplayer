@@ -271,13 +271,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         set { videoPlayerView.playbackRate = newValue }
     }
 
-    /// A/V offset slider value in seconds (YouTube → Sonos sync calibration)
-    var avOffset: Double {
-        get { videoPlayerView.avOffset }
-        set { videoPlayerView.avOffset = newValue }
-    }
-
-    /// Callback when the user moves the A/V offset slider
+    /// Callback when the user taps an A/V nudge button; receives the relative correction (seconds)
     var onAVOffsetChanged: ((Double) -> Void)? {
         get { videoPlayerView.onAVOffsetChanged }
         set { videoPlayerView.onAVOffsetChanged = newValue }
@@ -634,7 +628,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Play a video from URL with optional title and HTTP headers
     /// If called from WindowManager.playVideoTrack, the onVideoFinishedForPlaylist callback will be set
-    func play(url: URL, title: String, httpHeaders: [String: String]? = nil, autoPlay: Bool = true) {
+    func play(url: URL, title: String, httpHeaders: [String: String]? = nil, autoPlay: Bool = true, accurateSeek: Bool = false) {
         // Reset any lingering cast state from previous video
         resetCastState()
 
@@ -677,7 +671,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             isPlexURL: false,
             plexHeaders: nil,
             httpHeaders: httpHeaders,
-            autoPlay: autoPlay
+            autoPlay: autoPlay,
+            accurateSeek: accurateSeek
         )
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
@@ -1345,6 +1340,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Seek the local video directly, bypassing the companion/cast forwarding in `seek(to:)`.
     /// The coordinator and `SonosVideoSyncController` use this so they don't recurse back into the
     /// `isYouTubeToSonosCompanion` branch of `seek(to:)` (which would call right back into them).
+    /// Nudge the local video by `delta` seconds relative to its live playhead (A/V sync).
+    func nudgeLocalVideo(by delta: TimeInterval) {
+        videoPlayerView.nudgeRelative(delta)
+    }
+
     func seekLocalVideo(to time: TimeInterval) {
         videoPlayerView.seek(to: time)
     }

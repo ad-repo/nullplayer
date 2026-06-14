@@ -16,13 +16,6 @@ final class SonosVideoSyncController {
     /// Timer for waiting until Sonos has confirmed playback.
     private var syncTimer: Timer?
 
-    /// User-configured A/V offset in seconds for the current YouTube → Sonos session.
-    var userOffset: TimeInterval = 0 {
-        didSet {
-            applyCurrentOffset()
-        }
-    }
-
     /// Whether Sonos playback has been confirmed for this session.
     private var hasConfirmedPlayback = false
 
@@ -42,7 +35,7 @@ final class SonosVideoSyncController {
     func start() {
         guard syncTimer == nil else { return }
 
-        NSLog("SonosVideoSyncController: Starting sync (userOffset=%.1fs)", userOffset)
+        NSLog("SonosVideoSyncController: Starting sync")
 
         syncTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -97,17 +90,21 @@ final class SonosVideoSyncController {
         videoController?.playbackRate = 1.0
     }
 
-    private func applyCurrentOffset() {
-        guard hasConfirmedPlayback else { return }
-        guard let videoController = videoController,
-              videoController.isPlaying,
-              CastManager.shared.isSonosPlaybackConfirmed,
-              let sonosPosition = positionProvider()
-        else { return }
+    // MARK: - Manual A/V Nudge
 
-        let targetTime = max(0, sonosPosition + userOffset)
-        NSLog("SonosVideoSyncController: Applying user offset %.1fs, seeking video to %.1f", userOffset, targetTime)
-        videoController.playbackRate = 1.0
-        videoController.seekLocalVideo(to: targetTime)
+    /// Apply a one-shot, *relative* A/V correction by seeking the local video's playhead by
+    /// `delta` seconds relative to where it is now. There is no persistent offset state: a nudge
+    /// is a momentary push, after which the video free-runs again. Positive advances the picture
+    /// (use when the video is behind the audio); negative delays it (use when the video is ahead).
+    ///
+    /// A relative seek (the same mechanism as the ±10s skip buttons) is used rather than a
+    /// playback-rate excursion: a rate excursion of only a fraction of a second is too brief for
+    /// the player to act on, so it under-corrects. A seek moves the playhead by exactly `delta`,
+    /// immediately and fully. It is relative to the video's *own* clock — never the noisy Sonos
+    /// clock — so the correction is deterministic and convergeable.
+    func nudge(by delta: TimeInterval) {
+        guard abs(delta) > 0.0001 else { return }
+        NSLog("SonosVideoSyncController: Nudging video by %.2fs", delta)
+        videoController?.nudgeLocalVideo(by: delta)
     }
 }

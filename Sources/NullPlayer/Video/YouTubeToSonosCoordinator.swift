@@ -116,9 +116,8 @@ final class YouTubeToSonosCoordinator {
                 videoController: videoController
             )
             self.syncController = syncController
-            videoController.avOffset = syncController.userOffset
-            videoController.onAVOffsetChanged = { [weak syncController] value in
-                syncController?.userOffset = value
+            videoController.onAVOffsetChanged = { [weak syncController] delta in
+                syncController?.nudge(by: delta)
             }
             videoController.setAVOffsetVisible(true)
             DispatchQueue.main.async { [weak videoController] in
@@ -130,7 +129,7 @@ final class YouTubeToSonosCoordinator {
             guard self.videoController === videoController else { return }
 
             syncController.noteSonosPlaybackConfirmed()
-            let startupTarget = (confirmedPosition ?? 0) + syncController.userOffset
+            let startupTarget = (confirmedPosition ?? 0)
             if startupTarget > 0.1 {
                 NSLog("YouTubeToSonosCoordinator: Starting video at %.1f after Sonos confirmation", startupTarget)
                 videoController.seekLocalVideo(to: startupTarget)
@@ -380,10 +379,11 @@ final class YouTubeToSonosCoordinator {
             try? await CastManager.shared.seek(to: time)
         }
 
-        // Video target = audio time + offset. Use seekLocalVideo (not seek) to bypass the
-        // companion-forwarding branch in VideoPlayerWindowController.seek, which would recurse here.
-        let videoTarget = max(0, time + (syncController?.userOffset ?? 0))
-        videoController?.seekLocalVideo(to: videoTarget)
+        // Seek video to the same position. Manual A/V nudges are momentary corrections with no
+        // persistent offset, so there is nothing to re-apply here. Use seekLocalVideo (not seek)
+        // to bypass the companion-forwarding branch in VideoPlayerWindowController.seek, which
+        // would recurse here.
+        videoController?.seekLocalVideo(to: max(0, time))
     }
 
     /// Skip relative to current position (e.g. +10 or -10 seconds). Used by Next/Prev.

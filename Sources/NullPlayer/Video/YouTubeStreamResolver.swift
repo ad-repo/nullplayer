@@ -72,8 +72,21 @@ enum YouTubeStreamResolver {
             throw ResolverError.missingTitle
         }
 
-        // Select best video format (vcodec != none, acodec == none)
-        guard let videoFormat = selectBestVideoFormat(ytdlpOutput.formats) else {
+        // Select the local video format. Prefer a PROGRESSIVE (muxed: video+audio) stream so the
+        // local player has an audio track to use as its master clock. A video-only stream has no
+        // audio clock, and KSPlayer's fallback video-clock pacing runs the picture in slow motion
+        // that can never catch up to the Sonos audio. The muxed stream is played muted (its audio
+        // only drives the clock); high-quality audio for Sonos still comes from `audioFormat`.
+        // Fall back to a video-only format only if the video has no progressive format at all.
+        let usingProgressiveVideo: Bool
+        let videoFormat: Format
+        if let progressive = selectBestProgressiveFormat(ytdlpOutput.formats) {
+            videoFormat = progressive
+            usingProgressiveVideo = true
+        } else if let videoOnly = selectBestVideoFormat(ytdlpOutput.formats) {
+            videoFormat = videoOnly
+            usingProgressiveVideo = false
+        } else {
             throw ResolverError.missingVideoFormat
         }
 
@@ -81,6 +94,11 @@ enum YouTubeStreamResolver {
         guard let audioFormat = selectBestAudioFormat(ytdlpOutput.formats) else {
             throw ResolverError.missingAudioFormat
         }
+
+        NSLog("YouTubeStreamResolver: Local video %@ vcodec=%@ %dx%d ext=%@ | Sonos audio acodec=%@ ext=%@",
+              usingProgressiveVideo ? "PROGRESSIVE(muxed,muted)" : "VIDEO-ONLY(no audio clock)",
+              videoFormat.vcodec ?? "?", videoFormat.width ?? 0, videoFormat.height ?? 0, videoFormat.ext ?? "?",
+              audioFormat.acodec ?? "?", audioFormat.ext ?? "?")
 
         guard let videoURL = URL(string: videoFormat.url) else {
             throw ResolverError.invalidURL(videoFormat.url)
@@ -207,6 +225,28 @@ enum YouTubeStreamResolver {
 
     // MARK: - Format Selection
 
+    /// Select the best PROGRESSIVE (muxed) format: one stream carrying both video and audio.
+    /// Played muted locally, its audio track gives KSPlayer a master clock so the picture runs at
+    /// realtime. Prefer h264/mp4 (hardware decode) and cap at 720p (small muted window).
+    private static func selectBestProgressiveFormat(_ formats: [Format]?) -> Format? {
+        guard let formats = formats else { return nil }
+
+        let progressive = formats.filter { format in
+            (format.vcodec != nil && format.vcodec != "none") &&
+                (format.acodec != nil && format.acodec != "none")
+        }
+        guard !progressive.isEmpty else { return nil }
+
+        let h264 = progressive.filter { ($0.ext == "mp4" || $0.ext == "m4v") && $0.vcodec?.contains("h264") == true }
+        let pool = h264.isEmpty ? progressive : h264
+
+        let within720 = pool.filter { ($0.height ?? 0) <= 720 }
+        if let best = within720.max(by: resolutionAscending) {
+            return best
+        }
+        return pool.min(by: resolutionAscending)
+    }
+
     private static func selectBestVideoFormat(_ formats: [Format]?) -> Format? {
         guard let formats = formats else { return nil }
 
@@ -216,14 +256,19 @@ enum YouTubeStreamResolver {
                 (format.acodec == nil || format.acodec == "none")
         }
 
-        // Prefer mp4/h264 (the video window handles these reliably); else any video-only format.
+        // Strongly prefer mp4/h264: it hardware-decodes on every Mac, so it sustains realtime
+        // playback. VP9/AV1 fall back to software decode and can run in slow motion (the video
+        // clock then falls progressively behind the Sonos audio — unsyncable). Only use a
+        // non-h264 format if the video has no h264 at all.
         let h264Formats = videoFormats.filter { ($0.ext == "mp4" || $0.ext == "m4v") && $0.vcodec?.contains("h264") == true }
         let pool = h264Formats.isEmpty ? videoFormats : h264Formats
 
-        // Cap at 1080p: the window is small/muted, so 4K just wastes decode. Pick the highest
-        // resolution at or below 1080p; if every format is above 1080p, take the smallest.
-        let within1080 = pool.filter { ($0.height ?? 0) <= 1080 }
-        if let best = within1080.max(by: resolutionAscending) {
+        // Cap at 720p: the companion window is small and muted, so higher resolutions only add
+        // decode load with no visible benefit, and risk the decoder falling behind realtime.
+        // Pick the highest resolution at or below 720p; if every format is above 720p, take the
+        // smallest available.
+        let within720 = pool.filter { ($0.height ?? 0) <= 720 }
+        if let best = within720.max(by: resolutionAscending) {
             return best
         }
         return pool.min(by: resolutionAscending)

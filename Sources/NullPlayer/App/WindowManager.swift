@@ -1101,7 +1101,9 @@ class WindowManager {
         // Mute before creating the KSPlayer layer. Setting volume only after play() leaves a short
         // window where a reused video controller can start at its previous nonzero volume.
         vpc.volume = 0.0
-        vpc.play(url: url, title: title, httpHeaders: httpHeaders, autoPlay: autoPlay)
+        // Accurate (frame-level) seeking so the A/V nudge buttons land on the exact target
+        // instead of snapping to the nearest keyframe.
+        vpc.play(url: url, title: title, httpHeaders: httpHeaders, autoPlay: autoPlay, accurateSeek: true)
         vpc.volume = 0.0
         applyAlwaysOnTopToWindow(vpc.window)
         return vpc
