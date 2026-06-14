@@ -1370,6 +1370,9 @@ class MediaLibrary {
             var quickAddedTracks: [(track: LibraryTrack, sig: FileScanSignature?)] = []
             var discoveredPaths = Set<String>()
 
+            // Read cue-split preference for this scan
+            let cueSplitOnImportEnabled = UserDefaults.standard.bool(forKey: "cueSplitOnImportEnabled")
+
             // Stream discovery: process audio in 500-file batches as the enumerator yields them.
             // Tracks appear in the library immediately rather than waiting for full enumeration.
             let discovery = LocalFileDiscovery.discoverMediaStreaming(
@@ -1378,6 +1381,7 @@ class MediaLibrary {
                 includeVideo: includeVideo,
                 includeLegacyWMA: isLibraryScan,
                 includePlaylists: true,
+                cueSplitOnImportEnabled: cueSplitOnImportEnabled,
                 audioBatchSize: 500
             ) { audioBatch in
                 if isLibraryScan, self.scanGeneration != generation { return }
@@ -1417,9 +1421,36 @@ class MediaLibrary {
                 }
             }
 
-            NSLog("MediaLibrary: Discovery complete — %d audio, %d video, %d playlist files found", discovery.audioFiles.count, discovery.videoFiles.count, discovery.playlistFiles.count)
+            NSLog("MediaLibrary: Discovery complete — %d audio, %d video, %d playlist files, %d cue files found", discovery.audioFiles.count, discovery.videoFiles.count, discovery.playlistFiles.count, discovery.cueFiles.count)
+
+            // Pre-pass: split cue albums if enabled (runs after discovery, before cleanup)
+            var backingFilesWithSplitTracks = Set<String>()
+            if cueSplitOnImportEnabled && !discovery.cueFiles.isEmpty {
+                NSLog("MediaLibrary: Cue split enabled, processing %d cue files", discovery.cueFiles.count)
+                for cueFile in discovery.cueFiles {
+                    if let backingPath = CueAlbumSplitter.splitIfNeeded(cueURL: cueFile.url) {
+                        backingFilesWithSplitTracks.insert(backingPath.path)
+                    }
+                }
+                NSLog("MediaLibrary: Cue split pre-pass complete, %d backing files have split tracks", backingFilesWithSplitTracks.count)
+
+                // Remove backing files from library now that splits exist
+                // (they were added during the discovery streaming callback)
+                self.dataQueue.sync {
+                    self.tracks.removeAll { track in
+                        guard backingFilesWithSplitTracks.contains(track.url.path) else { return false }
+                        self.tracksByPath.removeValue(forKey: track.url.path)
+                        self.scanSignaturesByPath.removeValue(forKey: track.url.path)
+                        cleanedTrackPaths.append(track.url.path)
+                        didQuickMutate = true
+                        return true
+                    }
+                }
+            }
+
             discoveredPaths.formUnion(discovery.videoFiles.map(\.path))
             discoveredPaths.formUnion(discovery.playlistFiles.map(\.path))
+            // Do NOT add cue files to discovered paths — they are never imported as tracks or playlists
             let cleanFolderPathSet = Set(cleanMissingFolderPaths)
             let cleanFolderPaths = Array(cleanFolderPathSet)
 

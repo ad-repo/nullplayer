@@ -10588,7 +10588,19 @@ class ModernLibraryBrowserView: NSView {
     }
     private func playEmbyMovie(_ movie: EmbyMovie) { WindowManager.shared.playEmbyMovie(movie) }
     private func playEmbyEpisode(_ episode: EmbyEpisode) { WindowManager.shared.playEmbyEpisode(episode) }
-    private func playLocalTrack(_ track: LibraryTrack) { WindowManager.shared.audioEngine.playNow([track.toTrack()]) }
+    private func playLocalTrack(_ track: LibraryTrack) {
+        // Try to expand .cue files or sibling cues first
+        let ext = track.url.pathExtension.lowercased()
+        if ext == "cue" || ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+            if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: track.url) {
+                if !cueExpanded.isEmpty {
+                    WindowManager.shared.audioEngine.playNow(cueExpanded)
+                    return
+                }
+            }
+        }
+        WindowManager.shared.audioEngine.playNow([track.toTrack()])
+    }
 
     /// Returns tracks for a local album, fetching from the store if the album was built as a stub (empty tracks).
     private func resolvedTracksForLocalAlbum(_ album: Album) -> [LibraryTrack] {

@@ -83,6 +83,15 @@ struct Track: Identifiable, Equatable {
     /// MIME content type hint for casting (e.g. "audio/flac"). When nil, detected from URL extension.
     let contentType: String?
 
+    /// Start offset within the backing file for cue sheet virtual tracks; nil for normal tracks
+    let cueStartOffset: TimeInterval?
+
+    /// End offset within the backing file for cue sheet virtual tracks; nil for last cue track or normal tracks
+    let cueEndOffset: TimeInterval?
+
+    /// Originating .cue file URL; nil for normal tracks (used to identify virtual cue tracks)
+    let cueSourceURL: URL?
+
     /// True when this track originated from an internet radio context. Persists across
     /// transient `file://` URLs (e.g., recordings or temp-cached streams) so cast/local
     /// classification stays correct even when the playback URL is local.
@@ -220,6 +229,9 @@ struct Track: Identifiable, Equatable {
         self.genre = extractedGenre
         self.playHistoryContentTypeOverride = nil
         self.contentType = nil  // Local files use URL extension detection
+        self.cueStartOffset = nil
+        self.cueEndOffset = nil
+        self.cueSourceURL = nil
         self.isRadioOrigin = false
     }
 
@@ -247,6 +259,9 @@ struct Track: Identifiable, Equatable {
         self.genre = nil
         self.playHistoryContentTypeOverride = nil
         self.contentType = nil
+        self.cueStartOffset = nil
+        self.cueEndOffset = nil
+        self.cueSourceURL = nil
         self.isRadioOrigin = false
     }
 
@@ -272,6 +287,9 @@ struct Track: Identifiable, Equatable {
          genre: String? = nil,
          playHistoryContentTypeOverride: String? = nil,
          contentType: String? = nil,
+         cueStartOffset: TimeInterval? = nil,
+         cueEndOffset: TimeInterval? = nil,
+         cueSourceURL: URL? = nil,
          isRadioOrigin: Bool = false) {
         self.id = id
         self.url = url
@@ -295,6 +313,9 @@ struct Track: Identifiable, Equatable {
         self.genre = genre
         self.playHistoryContentTypeOverride = playHistoryContentTypeOverride
         self.contentType = contentType
+        self.cueStartOffset = cueStartOffset
+        self.cueEndOffset = cueEndOffset
+        self.cueSourceURL = cueSourceURL
         self.isRadioOrigin = isRadioOrigin
     }
     
@@ -324,6 +345,11 @@ struct Track: Identifiable, Equatable {
     /// True when this row is a state-restore placeholder awaiting URL refresh.
     var isStreamingPlaceholder: Bool {
         url.absoluteString == "about:blank"
+    }
+
+    /// True when this track is a virtual cue sheet track (originated from .cue parsing)
+    var isCueTrack: Bool {
+        cueSourceURL != nil
     }
 
     /// True when this track is an internet radio stream. Honors the explicit

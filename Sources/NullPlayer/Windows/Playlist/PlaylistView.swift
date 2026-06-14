@@ -1980,18 +1980,62 @@ class PlaylistView: NSView {
             return false
         }
 
-        guard LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: true) else {
+        // Check if any items are .cue files or supported audio/video
+        let hasCue = items.contains { $0.pathExtension.lowercased() == "cue" }
+        let hasOtherContent = LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: true)
+
+        guard hasCue || hasOtherContent else {
             return false
         }
 
-        LocalFileDiscovery.discoverMediaURLsAsync(from: items, includeVideo: true) { [weak self] mediaURLs in
-            guard !mediaURLs.isEmpty else { return }
+        // Process cue files first, then normal media discovery
+        var tracksToAdd: [Track] = []
+
+        // Expand .cue files and sibling cues
+        for url in items {
+            let ext = url.pathExtension.lowercased()
+            if ext == "cue" {
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
+                    if !cueExpanded.isEmpty {
+                        tracksToAdd.append(contentsOf: cueExpanded)
+                    }
+                }
+            } else if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+                // Check for sibling .cue
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
+                    if !cueExpanded.isEmpty {
+                        tracksToAdd.append(contentsOf: cueExpanded)
+                    }
+                } else {
+                    // No sibling cue, add as normal audio file
+                    tracksToAdd.append(Track(url: url))
+                }
+            }
+        }
+
+        // For non-cue items, use normal discovery (directories, playlists, etc.)
+        let nonCueItems = items.filter { $0.pathExtension.lowercased() != "cue" }
+        if !nonCueItems.isEmpty {
+            LocalFileDiscovery.discoverMediaURLsAsync(from: nonCueItems, includeVideo: true) { [weak self] mediaURLs in
+                // Filter out items already added via cue expansion
+                let cueURLs = tracksToAdd.map { $0.url }
+                let newMediaURLs = mediaURLs.filter { !cueURLs.contains($0) }
+
+                let audioEngine = WindowManager.shared.audioEngine
+                let firstNewIndex = audioEngine.playlist.count
+                audioEngine.appendTracks(tracksToAdd + newMediaURLs.map { Track(url: $0) })
+                audioEngine.playTrack(at: firstNewIndex)
+                self?.needsDisplay = true
+            }
+        } else if !tracksToAdd.isEmpty {
+            // Only cue files were dropped
             let audioEngine = WindowManager.shared.audioEngine
             let firstNewIndex = audioEngine.playlist.count
-            audioEngine.appendFiles(mediaURLs)
+            audioEngine.appendTracks(tracksToAdd)
             audioEngine.playTrack(at: firstNewIndex)
-            self?.needsDisplay = true
+            self.needsDisplay = true
         }
+
         return true
     }
 

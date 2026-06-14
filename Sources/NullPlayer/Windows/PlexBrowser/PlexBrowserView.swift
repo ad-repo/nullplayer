@@ -17337,6 +17337,19 @@ class PlexBrowserView: NSView {
     
     private func playLocalTrack(_ track: LibraryTrack) {
         NSLog("playLocalTrack: %@", track.title)
+
+        // Try to expand .cue files or sibling cues first
+        let ext = track.url.pathExtension.lowercased()
+        if ext == "cue" || ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+            if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: track.url) {
+                if !cueExpanded.isEmpty {
+                    WindowManager.shared.audioEngine.playNow(cueExpanded)
+                    return
+                }
+            }
+        }
+
+        // Fall back to normal audio file loading
         let playbackTrack = track.toTrack()
         WindowManager.shared.audioEngine.playNow([playbackTrack])
     }

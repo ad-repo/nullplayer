@@ -1911,9 +1911,31 @@ class MainWindowView: NSView {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.audio, .mp3, .wav, .aiff]
-        
+
         if panel.runModal() == .OK {
-            WindowManager.shared.audioEngine.loadFiles(panel.urls)
+            var tracksToLoad: [Track] = []
+            for url in panel.urls {
+                let ext = url.pathExtension.lowercased()
+
+                // Try to expand .cue files or sibling cues first
+                if ext == "cue" || ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+                    if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
+                        if !cueExpanded.isEmpty {
+                            tracksToLoad.append(contentsOf: cueExpanded)
+                            continue
+                        }
+                    }
+                }
+
+                // Fall back to normal audio file loading
+                if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+                    tracksToLoad.append(Track(url: url))
+                }
+            }
+
+            if !tracksToLoad.isEmpty {
+                WindowManager.shared.audioEngine.loadTracks(tracksToLoad)
+            }
         }
     }
     
@@ -2034,17 +2056,64 @@ class MainWindowView: NSView {
             return false
         }
 
-        guard LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false) else {
+        // Check if any items are .cue files or supported audio/video
+        let hasCue = items.contains { $0.pathExtension.lowercased() == "cue" }
+        let hasOtherContent = LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false)
+
+        guard hasCue || hasOtherContent else {
             return false
         }
 
-        LocalFileDiscovery.discoverMediaURLsAsync(from: items, includeVideo: false) { mediaURLs in
-            guard !mediaURLs.isEmpty else { return }
+        // Process cue files first, then normal media discovery
+        var tracksToAdd: [Track] = []
+
+        // Expand .cue files and sibling cues
+        for url in items {
+            let ext = url.pathExtension.lowercased()
+            if ext == "cue" {
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
+                    if !cueExpanded.isEmpty {
+                        tracksToAdd.append(contentsOf: cueExpanded)
+                    }
+                }
+            } else if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+                // Check for sibling .cue
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
+                    if !cueExpanded.isEmpty {
+                        tracksToAdd.append(contentsOf: cueExpanded)
+                    }
+                } else {
+                    // No sibling cue, add as normal audio file
+                    tracksToAdd.append(Track(url: url))
+                }
+            }
+        }
+
+        // For non-cue items, use normal discovery (directories, playlists, etc.)
+        let nonCueItems = items.filter { $0.pathExtension.lowercased() != "cue" }
+        if !nonCueItems.isEmpty {
+            LocalFileDiscovery.discoverMediaURLsAsync(from: nonCueItems, includeVideo: false) { mediaURLs in
+                // Filter out items already added via cue expansion
+                let cueURLs = tracksToAdd.map { $0.url }
+                let newMediaURLs = mediaURLs.filter { !cueURLs.contains($0) }
+
+                let audioEngine = WindowManager.shared.audioEngine
+                let firstNewIndex = audioEngine.playlist.count
+                audioEngine.appendTracks(tracksToAdd + newMediaURLs.map { Track(url: $0) })
+                if firstNewIndex < audioEngine.playlist.count {
+                    audioEngine.playTrack(at: firstNewIndex)
+                }
+            }
+        } else if !tracksToAdd.isEmpty {
+            // Only cue files were dropped
             let audioEngine = WindowManager.shared.audioEngine
             let firstNewIndex = audioEngine.playlist.count
-            audioEngine.appendFiles(mediaURLs)
-            audioEngine.playTrack(at: firstNewIndex)
+            audioEngine.appendTracks(tracksToAdd)
+            if firstNewIndex < audioEngine.playlist.count {
+                audioEngine.playTrack(at: firstNewIndex)
+            }
         }
+
         return true
     }
 }

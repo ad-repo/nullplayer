@@ -1657,6 +1657,15 @@ class ContextMenuBuilder {
 
         libraryMenu.addItem(NSMenuItem.separator())
 
+        // Split .cue Albums on Import toggle
+        let cueSplitEnabled = UserDefaults.standard.bool(forKey: "cueSplitOnImportEnabled")
+        let cueSplitItem = NSMenuItem(title: "Split .cue Albums on Import", action: #selector(MenuActions.toggleCueSplitOnImport), keyEquivalent: "")
+        cueSplitItem.target = MenuActions.shared
+        cueSplitItem.state = cueSplitEnabled ? .on : .off
+        libraryMenu.addItem(cueSplitItem)
+
+        libraryMenu.addItem(NSMenuItem.separator())
+
         // Clear Library submenu (with confirmations)
         let clearItem = NSMenuItem(title: "Clear...", action: nil, keyEquivalent: "")
         let clearMenu = NSMenu()
@@ -5308,6 +5317,11 @@ class MenuActions: NSObject {
     
     @objc func manageFolders() {
         WatchFolderManagerDialog.present {}
+    }
+
+    @objc func toggleCueSplitOnImport() {
+        let current = UserDefaults.standard.bool(forKey: "cueSplitOnImportEnabled")
+        UserDefaults.standard.set(!current, forKey: "cueSplitOnImportEnabled")
     }
 
     @objc func showLibraryInFinder() {
