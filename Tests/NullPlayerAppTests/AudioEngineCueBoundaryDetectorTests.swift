@@ -341,10 +341,12 @@ final class AudioEngineCueBoundaryDetectorTests: XCTestCase {
         )
         XCTAssertEqual(nextIndex, 1)
 
-        // Cross second boundary
+        // Cross second boundary. currentTime is track-relative (reset to 0 at each advance),
+        // and track 2 is 120s long (cueEnd 240 − cueStart 120), so it crosses at 120s — NOT
+        // at the absolute cueEnd of 240s.
         nextIndex = AudioEngine.shouldAdvanceCueTrackAtBoundary(
             currentIndex: 1,
-            currentTime: 240.0,
+            currentTime: 120.0,
             currentTrack: track2,
             playlist: playlist,
             shuffleEnabled: false,
@@ -352,10 +354,10 @@ final class AudioEngineCueBoundaryDetectorTests: XCTestCase {
         )
         XCTAssertEqual(nextIndex, 2)
 
-        // Last track, no third boundary
+        // Last track, no third boundary (no next entry, so returns nil regardless of time)
         nextIndex = AudioEngine.shouldAdvanceCueTrackAtBoundary(
             currentIndex: 2,
-            currentTime: 360.0,
+            currentTime: 120.0,
             currentTrack: track3,
             playlist: playlist,
             shuffleEnabled: false,

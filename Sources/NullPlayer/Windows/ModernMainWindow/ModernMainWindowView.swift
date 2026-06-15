@@ -1894,22 +1894,29 @@ class ModernMainWindowView: NSView {
 
         // Process cue files first, then normal media discovery
         var tracksToLoad: [Track] = []
+        // Dedupe by cue source so a .cue and its backing audio in the same drop don't
+        // enqueue the album's tracks twice.
+        var seenCueSources = Set<String>()
+        func appendCueDeduped(_ expanded: [Track]) {
+            guard !expanded.isEmpty else { return }
+            if let src = expanded.first?.cueSourceURL?.standardizedFileURL.path,
+               !seenCueSources.insert(src).inserted {
+                return  // album already added from its .cue or sibling audio
+            }
+            tracksToLoad.append(contentsOf: expanded)
+        }
 
         // Expand .cue files and sibling cues
         for url in items {
             let ext = url.pathExtension.lowercased()
             if ext == "cue" {
                 if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
-                    if !cueExpanded.isEmpty {
-                        tracksToLoad.append(contentsOf: cueExpanded)
-                    }
+                    appendCueDeduped(cueExpanded)
                 }
             } else if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
                 // Check for sibling .cue
-                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
-                    if !cueExpanded.isEmpty {
-                        tracksToLoad.append(contentsOf: cueExpanded)
-                    }
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url), !cueExpanded.isEmpty {
+                    appendCueDeduped(cueExpanded)
                 } else {
                     // No sibling cue, add as normal audio file
                     tracksToLoad.append(Track(url: url))

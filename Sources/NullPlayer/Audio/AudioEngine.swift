@@ -2849,8 +2849,11 @@ class AudioEngine {
             return nil
         }
 
-        // Guard: current track must have a cue end offset
-        guard let cueEnd = currentTrack?.cueEndOffset else {
+        // Guard: current track must have cue offsets. `currentTime` is track-relative
+        // (reset to 0 on each cue advance), but cueEndOffset/cueStartOffset are absolute
+        // positions in the backing file — so compare against the track-relative length.
+        guard let cueStart = currentTrack?.cueStartOffset,
+              let cueEnd = currentTrack?.cueEndOffset else {
             return nil
         }
 
@@ -2867,8 +2870,8 @@ class AudioEngine {
             return nil
         }
 
-        // Check if we've crossed the boundary
-        guard currentTime >= cueEnd else {
+        // Check if we've crossed the boundary (track-relative time vs. track length)
+        guard currentTime >= cueEnd - cueStart else {
             return nil
         }
 

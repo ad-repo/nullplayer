@@ -10589,15 +10589,11 @@ class ModernLibraryBrowserView: NSView {
     private func playEmbyMovie(_ movie: EmbyMovie) { WindowManager.shared.playEmbyMovie(movie) }
     private func playEmbyEpisode(_ episode: EmbyEpisode) { WindowManager.shared.playEmbyEpisode(episode) }
     private func playLocalTrack(_ track: LibraryTrack) {
-        // Try to expand .cue files or sibling cues first
-        let ext = track.url.pathExtension.lowercased()
-        if ext == "cue" || ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
-            if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: track.url) {
-                if !cueExpanded.isEmpty {
-                    WindowManager.shared.audioEngine.playNow(cueExpanded)
-                    return
-                }
-            }
+        // Expand .cue files or audio files with a sibling .cue. tracksForCueOrSibling owns
+        // the eligibility check, so don't gate on a hard-coded extension list.
+        if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: track.url), !cueExpanded.isEmpty {
+            WindowManager.shared.audioEngine.playNow(cueExpanded)
+            return
         }
         WindowManager.shared.audioEngine.playNow([track.toTrack()])
     }

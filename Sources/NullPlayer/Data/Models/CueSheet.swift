@@ -42,8 +42,8 @@ struct CueSheet {
                 continue
             }
 
-            // Split into tokens (preserve order for quoted values)
-            let components = trimmed.components(separatedBy: " ").filter { !$0.isEmpty }
+            // Split into tokens on any whitespace (cue files may use tabs, not just spaces)
+            let components = trimmed.split(whereSeparator: { $0.isWhitespace }).map(String.init)
             guard let command = components.first?.uppercased() else { continue }
 
             switch command {
@@ -166,10 +166,10 @@ struct CueSheet {
             return nil
         }
 
-        let value = String(quoted[quoted.index(after: quoted.startIndex)..<secondQuote])
-
-        // Strip single quotes used as escapes for double quotes
-        return value.replacingOccurrences(of: "'", with: "\"")
+        // Return the quoted value verbatim. (We intentionally do NOT turn ' back into " —
+        // the writer's "→' escape is lossy, and reversing it would corrupt apostrophes in
+        // ordinary titles like "Don't Stop".)
+        return String(quoted[quoted.index(after: quoted.startIndex)..<secondQuote])
     }
 
     /// Parse MM:SS:FF (MM:SS:FF @ 75 fps) to seconds
@@ -181,6 +181,10 @@ struct CueSheet {
         guard let mm = Int(parts[0]),
               let ss = Int(parts[1]),
               let ff = Int(parts[2]) else {
+            return nil
+        }
+        // Reject out-of-range fields (e.g. 00:99:99): SS is 0–59, FF is 0–74 (75 fps).
+        guard mm >= 0, (0..<60).contains(ss), (0..<75).contains(ff) else {
             return nil
         }
 

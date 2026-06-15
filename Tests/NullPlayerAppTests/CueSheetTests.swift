@@ -75,6 +75,14 @@ final class CueSheetTests: XCTestCase {
         XCTAssertNil(CueSheet.parseCueTimestamp(""))
     }
 
+    func testParseCueTimestampRejectsOutOfRangeFields() throws {
+        XCTAssertNil(CueSheet.parseCueTimestamp("00:60:00"))  // SS must be 0–59
+        XCTAssertNil(CueSheet.parseCueTimestamp("00:00:75"))  // FF must be 0–74 (75 fps)
+        XCTAssertNil(CueSheet.parseCueTimestamp("00:99:99"))  // both out of range
+        XCTAssertNil(CueSheet.parseCueTimestamp("-1:00:00"))  // negative minutes
+        XCTAssertEqual(try XCTUnwrap(CueSheet.parseCueTimestamp("00:59:74")), (59.0 * 75 + 74) / 75.0, accuracy: 0.0001)  // max valid
+    }
+
     // MARK: - CueSheet.parse Tests
 
     func testParseMultiTrackCueSheetExtractsMetadata() throws {
@@ -126,11 +134,11 @@ final class CueSheetTests: XCTestCase {
     }
 
     func testParseStripsSurroundingQuotes() throws {
-        // The cue format uses single quotes to escape inner double quotes:
-        // PERFORMER "Album 'Artist'" → parses to "Album "Artist""
+        // Surrounding double quotes are stripped; apostrophes inside the value are preserved
+        // verbatim (NOT rewritten to double quotes — that would corrupt titles like "Don't").
         let cueContent = """
-        PERFORMER "Album 'Artist'"
-        TITLE "Album Title"
+        PERFORMER "Don't Stop"
+        TITLE "Rock 'n' Roll"
         FILE "backing.flac" WAVE
         TRACK 01 AUDIO
             TITLE "Track One"
@@ -142,9 +150,8 @@ final class CueSheetTests: XCTestCase {
 
         let cue = try CueSheet.parse(from: cueURL)
 
-        // The parser should strip surrounding quotes and replace single quotes with double quotes
-        XCTAssertEqual(cue.performer, "Album \"Artist\"")
-        XCTAssertEqual(cue.title, "Album Title")
+        XCTAssertEqual(cue.performer, "Don't Stop")
+        XCTAssertEqual(cue.title, "Rock 'n' Roll")
     }
 
     func testParseIndex00FallbackWhenIndex01Missing() throws {

@@ -183,6 +183,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Process each URL: expand cues or accept as audio files
         var tracksToLoad: [Track] = []
+        // Dedupe by cue source so opening both a .cue and its backing audio (which resolve
+        // to the same cueSourceURL) doesn't enqueue the album's tracks twice.
+        var seenCueSources = Set<String>()
         for url in urls {
             let ext = url.pathExtension.lowercased()
 
@@ -190,6 +193,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if ext == "cue" || ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
                 if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
                     if !cueExpanded.isEmpty {
+                        if let src = cueExpanded.first?.cueSourceURL?.standardizedFileURL.path,
+                           !seenCueSources.insert(src).inserted {
+                            continue  // album already enqueued from its .cue or sibling audio
+                        }
                         tracksToLoad.append(contentsOf: cueExpanded)
                         continue
                     } else {

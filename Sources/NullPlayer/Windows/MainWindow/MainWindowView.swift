@@ -1919,21 +1919,21 @@ class MainWindowView: NSView {
 
         if panel.runModal() == .OK {
             var tracksToLoad: [Track] = []
+            var seenCueSources = Set<String>()
             for url in panel.urls {
-                let ext = url.pathExtension.lowercased()
-
-                // Try to expand .cue files or sibling cues first
-                if ext == "cue" || ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
-                    if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
-                        if !cueExpanded.isEmpty {
-                            tracksToLoad.append(contentsOf: cueExpanded)
-                            continue
-                        }
+                // Expand .cue files or audio files that have a sibling .cue.
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url), !cueExpanded.isEmpty {
+                    if let src = cueExpanded.first?.cueSourceURL?.standardizedFileURL.path,
+                       !seenCueSources.insert(src).inserted {
+                        continue  // album already enqueued from its .cue or sibling audio
                     }
+                    tracksToLoad.append(contentsOf: cueExpanded)
+                    continue
                 }
 
-                // Fall back to normal audio file loading
-                if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+                // Otherwise load as a normal audio file. The open panel already restricts the
+                // selection to audio + .cue types, so anything that isn't a cue is loadable.
+                if url.pathExtension.lowercased() != "cue" {
                     tracksToLoad.append(Track(url: url))
                 }
             }
@@ -2071,22 +2071,29 @@ class MainWindowView: NSView {
 
         // Process cue files first, then normal media discovery
         var tracksToAdd: [Track] = []
+        // Dedupe by cue source so a .cue and its backing audio in the same drop don't
+        // enqueue the album's tracks twice.
+        var seenCueSources = Set<String>()
+        func appendCueDeduped(_ expanded: [Track]) {
+            guard !expanded.isEmpty else { return }
+            if let src = expanded.first?.cueSourceURL?.standardizedFileURL.path,
+               !seenCueSources.insert(src).inserted {
+                return  // album already added from its .cue or sibling audio
+            }
+            tracksToAdd.append(contentsOf: expanded)
+        }
 
         // Expand .cue files and sibling cues
         for url in items {
             let ext = url.pathExtension.lowercased()
             if ext == "cue" {
                 if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
-                    if !cueExpanded.isEmpty {
-                        tracksToAdd.append(contentsOf: cueExpanded)
-                    }
+                    appendCueDeduped(cueExpanded)
                 }
             } else if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
                 // Check for sibling .cue
-                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
-                    if !cueExpanded.isEmpty {
-                        tracksToAdd.append(contentsOf: cueExpanded)
-                    }
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url), !cueExpanded.isEmpty {
+                    appendCueDeduped(cueExpanded)
                 } else {
                     // No sibling cue, add as normal audio file
                     tracksToAdd.append(Track(url: url))

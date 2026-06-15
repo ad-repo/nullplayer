@@ -66,25 +66,23 @@ enum CueAlbumSplitter {
     /// - Returns: A `SplitOutcome` describing the backing file to exclude and the per-track
     ///   files that now exist on disk and should be imported.
     static func splitIfNeeded(cueURL: URL) -> SplitOutcome {
-        guard let shouldSplit = shouldPerformSplit(cueURL: cueURL) else {
+        // Parse once up front and resolve the backing path now, so the idempotent branch
+        // never depends on a second parse that could fail and let the backing slip back in.
+        guard let cue = try? CueSheet.parse(from: cueURL), !cue.entries.isEmpty else {
             return SplitOutcome(backingFileToExclude: nil, trackFiles: [])  // Cue unparseable
+        }
+        let backingURL = CueSheet.resolveBackingFile(for: cueURL, fileName: cue.fileName)
+
+        guard let shouldSplit = shouldPerformSplit(cueURL: cueURL) else {
+            return SplitOutcome(backingFileToExclude: nil, trackFiles: [])
         }
 
         guard shouldSplit else {
-            // Idempotent: all outputs already exist. Exclude the backing and import the
-            // existing per-track files.
-            if let expectedPaths = expectedOutputPaths(for: cueURL), !expectedPaths.isEmpty {
-                do {
-                    let cue = try CueSheet.parse(from: cueURL)
-                    let backingURL = CueSheet.resolveBackingFile(for: cueURL, fileName: cue.fileName)
-                    if FileManager.default.fileExists(atPath: backingURL.path) {
-                        return SplitOutcome(backingFileToExclude: backingURL, trackFiles: expectedPaths)
-                    }
-                } catch {
-                    return SplitOutcome(backingFileToExclude: nil, trackFiles: [])
-                }
-            }
-            return SplitOutcome(backingFileToExclude: nil, trackFiles: [])
+            // Idempotent: all outputs already exist. Always exclude the backing while it's on
+            // disk (so it can never be re-imported), and import the existing per-track files.
+            let expectedPaths = expectedOutputPaths(for: cueURL) ?? []
+            let backingExists = FileManager.default.fileExists(atPath: backingURL.path)
+            return SplitOutcome(backingFileToExclude: backingExists ? backingURL : nil, trackFiles: expectedPaths)
         }
 
         // Work needed: attempt to split
