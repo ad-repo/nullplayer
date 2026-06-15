@@ -16,7 +16,7 @@
 
 
 ## Features
-s
+
 - Library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
 - Plex Media Server integration with PIN-based authentication
 - Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
