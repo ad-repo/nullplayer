@@ -48,6 +48,7 @@ s
 - AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - Stream Ripper — paste a URL and rip it to lossless FLAC, MP3, or an MP4 video file (via yt-dlp), with metadata tags, embedded cover art, metadata-based filenames, and a `.cue` sheet generated from chapter timestamps
+- `.cue` sheet support — open a `.cue` (or an audio file with a sibling `.cue`) to virtually split one backing file into per-track, gapless playlist rows; an optional library setting (off by default, needs ffmpeg) physically splits cue albums on import into per-track FLACs, organized into a per-album folder named from the source's metadata
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
 - [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
 - Headless CLI mode for querying libraries, starting playback, and routing to local outputs or cast devices (no GUI, no Dock icon)

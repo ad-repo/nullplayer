@@ -59,6 +59,8 @@ Audio rips capture the source chapter list via `%(chapters)j` (JSON array of `{s
 
 `readChapters` / `writeCueFile` / `cueTimestamp` are `nonisolated static` (pure, no UI) so they run safely in the background completion block.
 
+The cue this writes is consumed by the **cue-sheets** feature (direct-play virtual split / library split-on-import); its parser's `parseCueTimestamp` is the exact inverse of `cueTimestamp` and must round-trip — see the **cue-sheets** skill.
+
 ## Progress band (main window)
 
 `MainWindowProviding` gained `showActivity(_:)` / `hideActivity()` with **default implementations** (so both classic and modern UIs get it free, without either window referencing the other). It overlays a 22px bar at the **top** of `window.contentView` (`y = height - barHeight`, autoresizing `[.width, .minYMargin]`) with a spinning `NSProgressIndicator` + white label on translucent black, found/removed by `NSUserInterfaceItemIdentifier`. `StreamRipper` calls `showActivity` before launching and `hideActivity` on every completion path.

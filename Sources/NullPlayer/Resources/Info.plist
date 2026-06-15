@@ -2,83 +2,66 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>NullPlayer</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.nullplayer.app</string>
-    <key>CFBundleName</key>
-    <string>NullPlayer</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.25.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>LSApplicationCategoryType</key>
-    <string>public.app-category.music</string>
-    <key>ITSAppUsesNonExemptEncryption</key>
-    <false/>
-
-    <!-- Local Network Access -->
-    <key>NSLocalNetworkUsageDescription</key>
-    <string>NullPlayer needs access to your local network to discover and cast audio to Chromecast, Sonos, and DLNA devices.</string>
-    
-    <!-- Bonjour Services for Device Discovery -->
-    <key>NSBonjourServices</key>
-    <array>
-        <!-- Chromecast devices -->
-        <string>_googlecast._tcp</string>
-        <!-- AirPlay devices (existing) -->
-        <string>_airplay._tcp</string>
-        <!-- RAOP (Remote Audio Output Protocol) -->
-        <string>_raop._tcp</string>
-        <!-- Sonos devices -->
-        <string>_sonos._tcp</string>
-    </array>
-    
-    <!-- App Transport Security for local network communication -->
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <!-- Internet radio plays cleartext-HTTP Icecast/SHOUTcast streams from
-             arbitrary user-supplied hosts via URLSession (AudioStreaming).
-             NSAllowsArbitraryLoadsForMedia does NOT cover this — that key only
-             exempts AVFoundation media loads, not URLSession — so http:// stations
-             were silently blocked by ATS (stuck buffering, never play). See #255. -->
-        <key>NSAllowsArbitraryLoads</key>
-        <true/>
-        <key>NSAllowsLocalNetworking</key>
-        <true/>
-    </dict>
-    
-    <!-- Document Types - Audio file associations -->
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Audio File</string>
-            <key>CFBundleTypeRole</key>
-            <string>Viewer</string>
-            <key>LSHandlerRank</key>
-            <string>Alternate</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>public.audio</string>
-                <string>public.mp3</string>
-                <string>public.mpeg-4-audio</string>
-                <string>public.aiff-audio</string>
-                <string>com.microsoft.waveform-audio</string>
-                <string>org.xiph.flac</string>
-                <string>org.xiph.ogg-vorbis</string>
-            </array>
-        </dict>
-    </array>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.mp3</string>
+				<string>public.mpeg-4-audio</string>
+				<string>public.aiff-audio</string>
+				<string>com.microsoft.waveform-audio</string>
+				<string>org.xiph.flac</string>
+				<string>org.xiph.ogg-vorbis</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleExecutable</key>
+	<string>NullPlayer</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.nullplayer.app</string>
+	<key>CFBundleName</key>
+	<string>NullPlayer</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.26.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_googlecast._tcp</string>
+		<string>_airplay._tcp</string>
+		<string>_raop._tcp</string>
+		<string>_sonos._tcp</string>
+	</array>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>NullPlayer needs access to your local network to discover and cast audio to Chromecast, Sonos, and DLNA devices.</string>
 </dict>
 </plist>

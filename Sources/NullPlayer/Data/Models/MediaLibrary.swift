@@ -1370,6 +1370,9 @@ class MediaLibrary {
             var quickAddedTracks: [(track: LibraryTrack, sig: FileScanSignature?)] = []
             var discoveredPaths = Set<String>()
 
+            // Read cue-split preference for this scan
+            let cueSplitOnImportEnabled = UserDefaults.standard.bool(forKey: "cueSplitOnImportEnabled")
+
             // Stream discovery: process audio in 500-file batches as the enumerator yields them.
             // Tracks appear in the library immediately rather than waiting for full enumeration.
             let discovery = LocalFileDiscovery.discoverMediaStreaming(
@@ -1378,6 +1381,7 @@ class MediaLibrary {
                 includeVideo: includeVideo,
                 includeLegacyWMA: isLibraryScan,
                 includePlaylists: true,
+                cueSplitOnImportEnabled: cueSplitOnImportEnabled,
                 audioBatchSize: 500
             ) { audioBatch in
                 if isLibraryScan, self.scanGeneration != generation { return }
@@ -1417,9 +1421,83 @@ class MediaLibrary {
                 }
             }
 
-            NSLog("MediaLibrary: Discovery complete — %d audio, %d video, %d playlist files found", discovery.audioFiles.count, discovery.videoFiles.count, discovery.playlistFiles.count)
+            NSLog("MediaLibrary: Discovery complete — %d audio, %d video, %d playlist files, %d cue files found", discovery.audioFiles.count, discovery.videoFiles.count, discovery.playlistFiles.count, discovery.cueFiles.count)
+
+            // Pre-pass: split cue albums if enabled (runs after discovery, before cleanup)
+            var backingFilesWithSplitTracks = Set<String>()
+            if cueSplitOnImportEnabled && !discovery.cueFiles.isEmpty {
+                NSLog("MediaLibrary: Cue split enabled, processing %d cue files", discovery.cueFiles.count)
+                var splitTrackURLs: [URL] = []
+                for cueFile in discovery.cueFiles {
+                    let outcome = CueAlbumSplitter.splitIfNeeded(cueURL: cueFile.url)
+                    if let backingPath = outcome.backingFileToExclude {
+                        backingFilesWithSplitTracks.insert(backingPath.path)
+                    }
+                    splitTrackURLs.append(contentsOf: outcome.trackFiles)
+                }
+                NSLog("MediaLibrary: Cue split pre-pass complete, %d backing files excluded, %d split track files", backingFilesWithSplitTracks.count, splitTrackURLs.count)
+
+                // Remove backing files from the library now that splits exist
+                // (they were added during the discovery streaming callback).
+                self.dataQueue.sync {
+                    self.tracks.removeAll { track in
+                        guard backingFilesWithSplitTracks.contains(track.url.path) else { return false }
+                        self.tracksByPath.removeValue(forKey: track.url.path)
+                        self.scanSignaturesByPath.removeValue(forKey: track.url.path)
+                        cleanedTrackPaths.append(track.url.path)
+                        didQuickMutate = true
+                        return true
+                    }
+                }
+
+                // Critical: the backing files were ALSO queued for metadata enrichment during
+                // discovery. The enrichment pass (below) re-inserts any queued file it finds
+                // missing from tracksByPath — which would resurrect the backing under its own
+                // tags right after we excluded it. Drop them from the queue.
+                audioMetadataTasks.removeAll { backingFilesWithSplitTracks.contains($0.path) }
+
+                // Add the freshly-written split track files now. They were created AFTER
+                // discovery enumerated audio (the per-cue subdir didn't exist yet), so they
+                // would otherwise not be imported until a second scan. On idempotent re-scans
+                // discovery has already added them, so the dedup guard below skips re-adding.
+                let splitFiles: [LocalDiscoveredMediaFile] = splitTrackURLs.compactMap { url in
+                    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+                    let rv = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+                    return LocalDiscoveredMediaFile(
+                        url: url,
+                        path: url.path,
+                        fileSize: Int64(rv?.fileSize ?? 0),
+                        contentModificationDate: rv?.contentModificationDate
+                    )
+                }
+                if !splitFiles.isEmpty {
+                    var splitAdded: [(track: LibraryTrack, sig: FileScanSignature?)] = []
+                    self.dataQueue.sync {
+                        for file in splitFiles {
+                            guard self.tracksByPath[file.path] == nil else { continue }
+                            let signature = self.signature(for: file)
+                            let track = self.makeFastTrack(from: file)
+                            self.tracks.append(track)
+                            self.tracksByPath[file.path] = track
+                            self.scanSignaturesByPath[file.path] = signature
+                            audioMetadataTasks.append(file)
+                            splitAdded.append((track: track, sig: nil))
+                        }
+                    }
+                    if !splitAdded.isEmpty {
+                        quickAddedTracks.append(contentsOf: splitAdded)
+                        self.store.upsertTracks(splitAdded)
+                        didQuickMutate = true
+                        self.notifyChangeCoalesced()
+                    }
+                    // Keep them out of the cleanup pass (they live inside a watched folder).
+                    discoveredPaths.formUnion(splitFiles.map(\.path))
+                }
+            }
+
             discoveredPaths.formUnion(discovery.videoFiles.map(\.path))
             discoveredPaths.formUnion(discovery.playlistFiles.map(\.path))
+            // Do NOT add cue files to discovered paths — they are never imported as tracks or playlists
             let cleanFolderPathSet = Set(cleanMissingFolderPaths)
             let cleanFolderPaths = Array(cleanFolderPathSet)
 
@@ -2045,6 +2123,51 @@ class MediaLibrary {
             }
         }
         
+        // Album artist is NOT a common key and lives under container-specific keys:
+        // Vorbis "ALBUMARTIST"/"album_artist" (FLAC/OGG), iTunes "aART" (M4A/ALAC), ID3
+        // "TPE2" (MP3 — already handled above). Without this, FLAC albumArtist stays nil and
+        // the library groups albums by per-track artist, fragmenting one album into many.
+        if (track.albumArtist ?? "").isEmpty {
+            outer: for format in asset.availableMetadataFormats {
+                for item in asset.metadata(forFormat: format) {
+                    let raw = ((item.key as? String) ?? "") + " " + (item.identifier?.rawValue ?? "")
+                    let k = raw.lowercased()
+                    if k.contains("albumartist") || k.contains("album_artist")
+                        || k.contains("aart") || k.contains("tpe2") {
+                        if let v = item.stringValue, !v.isEmpty {
+                            track.albumArtist = v
+                            break outer
+                        }
+                    }
+                }
+            }
+        }
+
+        // Track/disc numbers aren't common keys either: FLAC/OGG store Vorbis
+        // "TRACKNUMBER"/"DISCNUMBER" (value often "1/10"), M4A uses "trkn"/"disk", ID3 uses
+        // TRCK/TPOS (already handled above). Without this, FLAC tracks come back with no
+        // track number and lose their album ordering.
+        if track.trackNumber == nil || track.discNumber == nil {
+            func leadingInt(_ item: AVMetadataItem) -> Int? {
+                if let s = item.stringValue,
+                   let first = s.split(whereSeparator: { !$0.isNumber }).first,
+                   let n = Int(first) {
+                    return n
+                }
+                return item.numberValue?.intValue
+            }
+            for format in asset.availableMetadataFormats {
+                for item in asset.metadata(forFormat: format) {
+                    let k = (((item.key as? String) ?? "") + " " + (item.identifier?.rawValue ?? "")).lowercased()
+                    if track.trackNumber == nil, k.contains("tracknumber") || k.contains("trkn") {
+                        track.trackNumber = leadingInt(item)
+                    } else if track.discNumber == nil, k.contains("discnumber") || k.contains("disk") {
+                        track.discNumber = leadingInt(item)
+                    }
+                }
+            }
+        }
+
         // Get audio format info
         if let audioTrack = asset.tracks(withMediaType: .audio).first {
             if let formatDescriptions = audioTrack.formatDescriptions as? [CMFormatDescription],
@@ -2055,7 +2178,7 @@ class MediaLibrary {
                     track.channels = Int(desc.mChannelsPerFrame)
                 }
             }
-            
+
             // Estimate bitrate
             if track.duration > 0 {
                 track.bitrate = Int(Double(track.fileSize * 8) / track.duration / 1000)

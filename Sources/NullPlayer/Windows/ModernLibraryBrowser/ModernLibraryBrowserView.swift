@@ -10588,7 +10588,15 @@ class ModernLibraryBrowserView: NSView {
     }
     private func playEmbyMovie(_ movie: EmbyMovie) { WindowManager.shared.playEmbyMovie(movie) }
     private func playEmbyEpisode(_ episode: EmbyEpisode) { WindowManager.shared.playEmbyEpisode(episode) }
-    private func playLocalTrack(_ track: LibraryTrack) { WindowManager.shared.audioEngine.playNow([track.toTrack()]) }
+    private func playLocalTrack(_ track: LibraryTrack) {
+        // Expand .cue files or audio files with a sibling .cue. tracksForCueOrSibling owns
+        // the eligibility check, so don't gate on a hard-coded extension list.
+        if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: track.url), !cueExpanded.isEmpty {
+            WindowManager.shared.audioEngine.playNow(cueExpanded)
+            return
+        }
+        WindowManager.shared.audioEngine.playNow([track.toTrack()])
+    }
 
     /// Returns tracks for a local album, fetching from the store if the album was built as a stub (empty tracks).
     private func resolvedTracksForLocalAlbum(_ album: Album) -> [LibraryTrack] {

@@ -10,8 +10,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Whether the app is running in UI testing mode
     private(set) var isUITesting = false
     
-    /// Files to open after app finishes launching (when opened via double-click before app is ready)
-    private var pendingFilesToOpen: [URL] = []
+    /// Tracks to open after app finishes launching (when opened via double-click before app is ready)
+    private var pendingFilesToOpen: [Track] = []
     
     /// Whether the app has finished launching and is ready to handle file opens
     private var isAppReady = false
@@ -180,42 +180,68 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         let urls = filenames.map { URL(fileURLWithPath: $0) }
-        
-        // Filter to audio files only
-        let audioURLs = urls.filter { url in
+
+        // Process each URL: expand cues or accept as audio files
+        var tracksToLoad: [Track] = []
+        // Dedupe by cue source so opening both a .cue and its backing audio (which resolve
+        // to the same cueSourceURL) doesn't enqueue the album's tracks twice.
+        var seenCueSources = Set<String>()
+        for url in urls {
             let ext = url.pathExtension.lowercased()
-            return ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext)
+
+            // Try to expand .cue files or sibling cues first
+            if ext == "cue" || ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
+                    if !cueExpanded.isEmpty {
+                        if let src = cueExpanded.first?.cueSourceURL?.standardizedFileURL.path,
+                           !seenCueSources.insert(src).inserted {
+                            continue  // album already enqueued from its .cue or sibling audio
+                        }
+                        tracksToLoad.append(contentsOf: cueExpanded)
+                        continue
+                    } else {
+                        // Empty cue — log and skip
+                        NSLog("AppDelegate: Cue sheet has no tracks, skipping: %@", url.lastPathComponent)
+                        continue
+                    }
+                }
+            }
+
+            // Fall back to normal audio file loading
+            if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+                tracksToLoad.append(Track(url: url))
+            }
         }
-        
-        guard !audioURLs.isEmpty else {
+
+        guard !tracksToLoad.isEmpty else {
             NSApp.reply(toOpenOrPrint: .failure)
             return
         }
-        
+
         // If app isn't ready yet (called before applicationDidFinishLaunching completes),
         // store the files to be opened once the app is ready
         guard isAppReady else {
-            pendingFilesToOpen.append(contentsOf: audioURLs)
+            pendingFilesToOpen.append(contentsOf: tracksToLoad)
             NSApp.reply(toOpenOrPrint: .success)
             return
         }
-        
+
         // Load files into the audio engine
-        windowManager.audioEngine.loadFiles(audioURLs)
+        windowManager.audioEngine.loadTracks(tracksToLoad)
         windowManager.audioEngine.play()
-        
+
         NSApp.reply(toOpenOrPrint: .success)
     }
     
     /// Process files that were queued before app finished launching
     private func processPendingFiles() {
         guard !pendingFilesToOpen.isEmpty else { return }
-        
-        let filesToOpen = pendingFilesToOpen
+
+        let tracksToOpen = pendingFilesToOpen
         pendingFilesToOpen = []
-        
+
         // Load and play the files
-        windowManager.audioEngine.loadFiles(filesToOpen)
+        windowManager.audioEngine.loadTracks(tracksToOpen)
         windowManager.audioEngine.play()
     }
     

@@ -235,6 +235,9 @@ class AudioEngine {
     /// Current track index in playlist
     private(set) var currentIndex: Int = -1
 
+    /// Base index for cue boundary detection (reset each load, used to detect boundary crossings within same file)
+    private var cueBoundaryBaseIndex: Int = -1
+
     /// Stable shuffled traversal state used for auto-advance and manual next/previous.
     private var shufflePlaybackOrder: [Int] = []
     private var shufflePlaybackPosition: Int = -1
@@ -2421,9 +2424,9 @@ class AudioEngine {
         } else {
             // Local file playback - seek via AVAudioEngine
             guard let file = audioFile else { return }
-            
+
             let wasPlaying = state == .playing
-            
+
             // Ensure crossfade player is stopped and reset to playerNode as primary
             // (after a completed crossfade, crossfadePlayerNode may be the active player)
             if crossfadePlayerIsActive {
@@ -2431,35 +2434,36 @@ class AudioEngine {
                 crossfadePlayerNode.volume = 0
                 crossfadePlayerIsActive = false
             }
-            
+
             _currentTime = seekTime
             lastReportedTime = seekTime  // Keep in sync
             playbackStartDate = nil  // Will be set when play resumes
             suspendedLocalPlaybackClockForSleep = false
-            
+
             // Increment generation to invalidate old completion handlers
             playbackGeneration += 1
             let currentGeneration = playbackGeneration
-            
+
             // Stop current playback
             playerNode.stop()
-            
-            // Calculate frame position
+
+            // Calculate frame position: clamp to cue bounds if applicable
             let sampleRate = file.processingFormat.sampleRate
-            let framePosition = AVAudioFramePosition(seekTime * sampleRate)
-            let remainingFrames = file.length - framePosition
-            
+            let cueStart = currentTrack?.cueStartOffset ?? 0
+            let fileFramePosition = AVAudioFramePosition((seekTime + cueStart) * sampleRate)
+            let remainingFrames = file.length - fileFramePosition
+
             guard remainingFrames > 0 else { return }
-            
+
             // Schedule from the new position with a new completion handler
-            playerNode.scheduleSegment(file, startingFrame: framePosition,
+            playerNode.scheduleSegment(file, startingFrame: fileFramePosition,
                                        frameCount: AVAudioFrameCount(remainingFrames), at: nil,
                                        completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.handlePlaybackComplete(generation: currentGeneration)
                 }
             }
-            
+
             // Resume if was playing
             if wasPlaying {
                 playbackStartDate = Date()  // Start tracking from seek position
@@ -2527,12 +2531,24 @@ class AudioEngine {
         if isCastingActive {
             return currentTrack?.duration ?? 0
         }
-        
+
         if isStreamingPlayback {
             // Get duration from streaming player, fall back to track metadata
             let streamDuration = streamingPlayer?.duration ?? 0
             return streamDuration > 0 ? streamDuration : (currentTrack?.duration ?? 0)
         } else {
+            // For cue tracks, return the duration between start and end offsets
+            if let cueStart = currentTrack?.cueStartOffset {
+                if let cueEnd = currentTrack?.cueEndOffset {
+                    return cueEnd - cueStart
+                } else {
+                    // Last cue track: play to EOF
+                    guard let file = audioFile else { return 0 }
+                    let fileDuration = Double(file.length) / file.processingFormat.sampleRate
+                    return fileDuration - cueStart
+                }
+            }
+
             guard let file = audioFile else { return 0 }
             return Double(file.length) / file.processingFormat.sampleRate
         }
@@ -2790,7 +2806,10 @@ class AudioEngine {
             if self.isCastingActive || self.state != .playing {
                 self.decaySpectrum()
             }
-            
+
+            // Check for cue track boundary crossing (gapless within a single backing file)
+            self.advanceCueTrackIfBoundaryCrossed()
+
             // Check if we should start crossfade (Sweet Fades)
             if self.sweetFadeEnabled && !self.isCrossfading && !self.isCastingActive && self.state == .playing {
                 let timeRemaining = trackDuration - current
@@ -2812,6 +2831,82 @@ class AudioEngine {
         // Add to common modes so it runs during menu tracking and other modal states
         RunLoop.main.add(timer, forMode: .common)
         timeUpdateTimer = timer
+    }
+
+    /// Pure logic to determine if a cue boundary should be crossed.
+    /// Separated from audio state for testability.
+    /// Returns the next index if a boundary crossing should occur, or nil if not.
+    static func shouldAdvanceCueTrackAtBoundary(
+        currentIndex: Int,
+        currentTime: TimeInterval,
+        currentTrack: Track?,
+        playlist: [Track],
+        shuffleEnabled: Bool,
+        repeatEnabled: Bool
+    ) -> Int? {
+        // Guard: shuffle and repeat-single disable gapless within cues
+        guard !shuffleEnabled && !repeatEnabled else {
+            return nil
+        }
+
+        // Guard: current track must have cue offsets. `currentTime` is track-relative
+        // (reset to 0 on each cue advance), but cueEndOffset/cueStartOffset are absolute
+        // positions in the backing file — so compare against the track-relative length.
+        guard let cueStart = currentTrack?.cueStartOffset,
+              let cueEnd = currentTrack?.cueEndOffset else {
+            return nil
+        }
+
+        // Guard: next track must exist in playlist
+        guard currentIndex + 1 < playlist.count else {
+            return nil
+        }
+
+        let nextTrack = playlist[currentIndex + 1]
+
+        // Only advance if next track is from the same backing file (same cueSourceURL)
+        guard let currentCueSourceURL = currentTrack?.cueSourceURL,
+              nextTrack.cueSourceURL == currentCueSourceURL else {
+            return nil
+        }
+
+        // Check if we've crossed the boundary (track-relative time vs. track length)
+        guard currentTime >= cueEnd - cueStart else {
+            return nil
+        }
+
+        return currentIndex + 1
+    }
+
+    /// Advance to the next cue track if a boundary is crossed within a single backing file.
+    /// This provides gapless playback across virtual cue tracks by detecting when the current
+    /// playback time reaches the end of the current cue segment.
+    private func advanceCueTrackIfBoundaryCrossed() {
+        // Guard: only applies to local playback
+        guard !isStreamingPlayback && audioFile != nil else {
+            return
+        }
+
+        // Determine if we should advance using the pure decision function
+        guard let nextIndex = AudioEngine.shouldAdvanceCueTrackAtBoundary(
+            currentIndex: currentIndex,
+            currentTime: currentTime,
+            currentTrack: currentTrack,
+            playlist: playlist,
+            shuffleEnabled: shuffleEnabled,
+            repeatEnabled: repeatEnabled
+        ) else {
+            return
+        }
+
+        // Advance to next cue track and reset time tracking
+        currentIndex = nextIndex
+        currentTrack = playlist[nextIndex]
+        _currentTime = 0
+        lastReportedTime = 0
+        playbackStartDate = Date()  // Critical: restart the 0-relative clock
+
+        NSLog("AudioEngine: Advanced to cue track %d ('%@') at boundary", currentIndex, currentTrack?.title ?? "Unknown")
     }
 
     private func handleRadioSessionPlaybackStateChange(from oldState: PlaybackState, to newState: PlaybackState) {
@@ -3934,6 +4029,27 @@ class AudioEngine {
         playbackGeneration += 1
         let currentGeneration = playbackGeneration
 
+        // Fast path: the target track is backed by the file already open. Adjacent cue
+        // tracks share one backing file, so Prev/Next between them — and re-selecting the
+        // current track — hit this. Reuse the open AVAudioFile instead of reopening it (a
+        // synchronous, main-thread parse that stalls navigation on large FLACs) and keep
+        // the already-computed normalization gain. prepareForLocalTrackLoad() is skipped
+        // deliberately so it does not delete a temp NAS copy that may back the open file.
+        if !isStreamingPlayback,
+           let openFile = audioFile,
+           currentTrack?.url == track.url {
+            // Cancel any crossfade tail and clear a stale gapless pre-schedule.
+            if crossfadePlayerIsActive {
+                crossfadePlayerNode.stop()
+                crossfadePlayerNode.volume = 0
+                crossfadePlayerIsActive = false
+            }
+            nextScheduledFile = nil
+            nextScheduledTrackIndex = -1
+            commitLoadedLocalTrack(openFile, track: track, generation: currentGeneration, reuseExistingFile: true)
+            return true
+        }
+
         prepareForLocalTrackLoad()
 
         do {
@@ -3988,7 +4104,7 @@ class AudioEngine {
         nextScheduledTrackIndex = -1
     }
 
-    private func commitLoadedLocalTrack(_ newAudioFile: AVAudioFile, track: Track, generation: Int) {
+    private func commitLoadedLocalTrack(_ newAudioFile: AVAudioFile, track: Track, generation: Int, reuseExistingFile: Bool = false) {
         NSLog("loadLocalTrack: file loaded successfully, format: %@", newAudioFile.processingFormat.description)
 
         // Install spectrum analyzer tap.
@@ -3999,9 +4115,13 @@ class AudioEngine {
         _currentTime = 0
         lastReportedTime = 0
 
-        // Analyze and apply volume normalization asynchronously to avoid blocking
-        // UI/playback startup on slow disks or NAS volumes.
-        if volumeNormalizationEnabled {
+        // Volume normalization gain is a property of the backing file. When reusing the
+        // already-open file (an adjacent cue track, or re-selecting the current track),
+        // the gain is unchanged — keep it and skip the whole-file re-analysis. Otherwise
+        // analyze asynchronously to avoid blocking UI/playback startup on slow disks/NAS.
+        if reuseExistingFile {
+            // Keep existing normalizationGain (already analyzed + applied for this file).
+        } else if volumeNormalizationEnabled {
             analyzeAndApplyNormalization(file: newAudioFile, generation: generation)
         } else {
             normalizationGain = 1.0
@@ -4010,11 +4130,36 @@ class AudioEngine {
 
         NSLog("loadLocalTrack: Stopping playerNode and scheduling file...")
         playerNode.stop()
-        playerNode.scheduleFile(newAudioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.handlePlaybackComplete(generation: generation)
+
+        // Handle cue sheet tracks: schedule from start offset to EOF (cueEndOffset is enforced via duration getter and seek bounds)
+        if let cueStartOffset = track.cueStartOffset {
+            let sampleRate = newAudioFile.processingFormat.sampleRate
+            let startFrame = AVAudioFramePosition(cueStartOffset * sampleRate)
+            let frameCount = newAudioFile.length - startFrame
+
+            guard frameCount > 0 else {
+                NSLog("loadLocalTrack: Cue track start offset beyond file length")
+                handleLocalTrackLoadFailure(track: track, error: NSError(domain: "CueSheet", code: -1, userInfo: ["message": "Cue offset out of range"]))
+                return
+            }
+
+            playerNode.scheduleSegment(newAudioFile, startingFrame: startFrame,
+                                       frameCount: AVAudioFrameCount(frameCount), at: nil,
+                                       completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.handlePlaybackComplete(generation: generation)
+                }
+            }
+        } else {
+            playerNode.scheduleFile(newAudioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.handlePlaybackComplete(generation: generation)
+                }
             }
         }
+
+        // Reset cue boundary detector for fresh load
+        cueBoundaryBaseIndex = currentIndex
 
         // Pre-schedule next track for gapless playback.
         if gaplessPlaybackEnabled {
@@ -5393,7 +5538,39 @@ class AudioEngine {
         clearShufflePlaybackState()
         delegate?.audioEngineDidChangePlaylist()
     }
-    
+
+    /// Helper to expand a .cue file or detect a sibling .cue next to an audio file.
+    /// Returns an array of virtual tracks if expansion succeeds, or nil if no cue is found/applicable.
+    /// - Parameter url: The URL to process (either a .cue file or an audio file with sibling .cue)
+    /// - Returns: Expanded cue tracks if a .cue is found and parses, otherwise nil
+    static func tracksForCueOrSibling(url: URL) -> [Track]? {
+        let ext = url.pathExtension.lowercased()
+
+        // If the URL is a .cue file, try to parse it directly
+        if ext == "cue" {
+            do {
+                let cue = try CueSheet.parse(from: url)
+                return CueSheet.expandToTracks(cue: cue, cueFileURL: url)
+            } catch {
+                NSLog("AudioEngine: Failed to parse .cue file '%@': %@", url.lastPathComponent, error.localizedDescription)
+                return nil
+            }
+        }
+
+        // If the URL is an audio file, check for a sibling .cue
+        if let siblingCueURL = CueSheet.siblingCue(for: url) {
+            do {
+                let cue = try CueSheet.parse(from: siblingCueURL)
+                return CueSheet.expandToTracks(cue: cue, cueFileURL: siblingCueURL)
+            } catch {
+                NSLog("AudioEngine: Failed to parse sibling .cue for '%@': %@", url.lastPathComponent, error.localizedDescription)
+                return nil
+            }
+        }
+
+        return nil
+    }
+
     func removeTrack(at index: Int) {
         guard index >= 0 && index < playlist.count else { return }
         

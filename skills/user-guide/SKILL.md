@@ -153,6 +153,11 @@ Modern UI adds: **HT** (Hide Title Bars), **CA** (Cast), **pM** (ProjectM), **SP
 ### Local Files
 Drag & drop or use File menu. Supports: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALAC
 
+### .cue Sheets
+Open a `.cue` file (File → Open, drag-drop, or double-click), or open an audio file that has a sibling `.cue` next to it, and the single backing file is **virtually split** into its cue tracks — one row per track in the now-playing playlist, with correct titles/durations. Prev/Next move per cue track, seek stays within the current track, and playback crosses track boundaries **gaplessly** (shuffle and repeat-single still advance correctly, but a small gap is expected in those modes). Nothing is written to disk and nothing is added to the library.
+
+Optionally, **Library → Split .cue Albums on Import** (off by default) makes the library scan physically split a backing file into per-track FLACs (via `ffmpeg`) when it finds a `.cue`; the split tracks are added to the library and the original is hidden. With it off, the `.cue` is ignored and the backing file imports as one track. If `ffmpeg` isn't installed, splitting is skipped with a one-time notice and the original imports normally. Takes effect on the next scan. See the **cue-sheets** skill for internals.
+
 ### Local Library Browser
 Switch the Library Browser source to "Local" to manage a persistent media library.
 

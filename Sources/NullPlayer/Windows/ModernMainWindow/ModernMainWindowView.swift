@@ -1884,15 +1884,64 @@ class ModernMainWindowView: NSView {
             return false
         }
 
-        guard LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false) else {
+        // Check if any items are .cue files or supported audio
+        let hasCue = items.contains { $0.pathExtension.lowercased() == "cue" }
+        let hasOtherContent = LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false)
+
+        guard hasCue || hasOtherContent else {
             return false
         }
 
-        LocalFileDiscovery.discoverMediaURLsAsync(from: items, includeVideo: false) { audioURLs in
-            guard !audioURLs.isEmpty else { return }
-            WindowManager.shared.audioEngine.loadFiles(audioURLs)
+        // Process cue files first, then normal media discovery
+        var tracksToLoad: [Track] = []
+        // Dedupe by cue source so a .cue and its backing audio in the same drop don't
+        // enqueue the album's tracks twice.
+        var seenCueSources = Set<String>()
+        func appendCueDeduped(_ expanded: [Track]) {
+            guard !expanded.isEmpty else { return }
+            if let src = expanded.first?.cueSourceURL?.standardizedFileURL.path,
+               !seenCueSources.insert(src).inserted {
+                return  // album already added from its .cue or sibling audio
+            }
+            tracksToLoad.append(contentsOf: expanded)
+        }
+
+        // Expand .cue files and sibling cues
+        for url in items {
+            let ext = url.pathExtension.lowercased()
+            if ext == "cue" {
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
+                    appendCueDeduped(cueExpanded)
+                }
+            } else if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+                // Check for sibling .cue
+                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url), !cueExpanded.isEmpty {
+                    appendCueDeduped(cueExpanded)
+                } else {
+                    // No sibling cue, add as normal audio file
+                    tracksToLoad.append(Track(url: url))
+                }
+            }
+        }
+
+        // For non-cue items, use normal discovery (directories, playlists, etc.)
+        let nonCueItems = items.filter { $0.pathExtension.lowercased() != "cue" }
+        if !nonCueItems.isEmpty {
+            LocalFileDiscovery.discoverMediaURLsAsync(from: nonCueItems, includeVideo: false) { audioURLs in
+                // Filter out items already added via cue expansion
+                let cueURLs = tracksToLoad.map { $0.url }
+                let newAudioURLs = audioURLs.filter { !cueURLs.contains($0) }
+
+                let allTracks = tracksToLoad + newAudioURLs.map { Track(url: $0) }
+                WindowManager.shared.audioEngine.loadTracks(allTracks)
+                WindowManager.shared.audioEngine.play()
+            }
+        } else if !tracksToLoad.isEmpty {
+            // Only cue files were dropped
+            WindowManager.shared.audioEngine.loadTracks(tracksToLoad)
             WindowManager.shared.audioEngine.play()
         }
+
         return true
     }
 }
