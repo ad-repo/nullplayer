@@ -56,14 +56,28 @@
 ## Installation
 
     brew install --cask ad-repo/nullplayer/nullplayer
+    brew tap ad-repo/nullplayer        # one-time configuration  
 
-Or download the latest DMG from [Releases](https://github.com/ad-repo/nullplayer/releases).
-
-The Homebrew cask strips the quarantine attribute on install because the app is currently ad-hoc signed (Apple Developer ID notarization is on the roadmap). `brew uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
+    brew install --cask ad-repo/nullplayer/nullplayer  
+    or if already installed manually
+    brew install --cask --force ad-repo/nullplayer/nullplayer 
+    
+    To upgrade to a new release:   
+    brew update   
+    brew upgrade --cask ad-repo/nullplayer/nullplayer   
+    
+    To verify the tap is picking up the latest version:   
+    brew livecheck --cask ad-repo/nullplayer/nullplayer   
+    
+    Notes from the cask:   
+    - App is ad-hoc signed (not notarized). 
+    The cask's postflight runs xattr -cr to strip the quarantine bit so Gatekeeper allows first launch.   
+    - Requires macOS Sonoma or newer.   
+    - brew uninstall --cask --zap nullplayer removes app support/caches/prefs, but Keychain tokens (service com.nullplayer.app) must be removed manually: security 
+    
+    The Homebrew cask strips the quarantine attribute on install because the app is currently ad-hoc signed (Apple Developer ID notarization is on the roadmap). `brew     uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
 
     security delete-generic-password -s com.nullplayer.app
-
-Follow [r/NullPlayer](https://www.reddit.com/r/NullPlayer/) for release notifications. Report bugs on [GitHub Issues](https://github.com/ad-repo/nullplayer/issues) or the subreddit.
 
 ### Optional command-line launcher
 
