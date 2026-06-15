@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// Visualization mode for the main window's built-in visualization area
 enum MainWindowVisMode: String, CaseIterable {
@@ -1910,7 +1911,11 @@ class MainWindowView: NSView {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.audio, .mp3, .wav, .aiff]
+        var allowedTypes: [UTType] = [.audio, .mp3, .wav, .aiff]
+        if let cueType = UTType(filenameExtension: "cue") {
+            allowedTypes.append(cueType)
+        }
+        panel.allowedContentTypes = allowedTypes
 
         if panel.runModal() == .OK {
             var tracksToLoad: [Track] = []

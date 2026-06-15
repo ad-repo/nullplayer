@@ -14,6 +14,9 @@ struct CueSheet {
     let fileName: String     // first FILE only (warn if more)
     let entries: [Entry]
 
+    /// Upper bound on TRACK entries accepted from a single cue (DoS guard).
+    static let maxEntries = 10_000
+
     /// Parse a .cue sheet from file
     static func parse(from url: URL) throws -> CueSheet {
         let content = try String(contentsOf: url, encoding: .utf8)
@@ -132,6 +135,14 @@ struct CueSheet {
             throw NSError(domain: "CueSheet", code: -1, userInfo: ["message": "No FILE entry found"])
         }
 
+        // Defensive cap: a pathological cue with a huge TRACK count could spawn an
+        // unbounded number of ffmpeg jobs (Part B) or playlist rows (Part A). Real
+        // albums are well under this; reject rather than process.
+        if entries.count > maxEntries {
+            NSLog("CueSheet: %d tracks exceeds maximum (%d); ignoring cue", entries.count, maxEntries)
+            throw NSError(domain: "CueSheet", code: -2, userInfo: ["message": "Too many tracks in cue sheet"])
+        }
+
         return CueSheet(performer: performer, title: title, fileName: fileName, entries: entries)
     }
 
@@ -180,14 +191,28 @@ struct CueSheet {
 
     /// Resolve the backing file path, relative to the .cue's directory if relative
     static func resolveBackingFile(for cueURL: URL, fileName: String) -> URL {
-        // If fileName starts with /, it's absolute
+        // If fileName starts with /, it's absolute — honored as authored.
         if fileName.hasPrefix("/") {
             return URL(fileURLWithPath: fileName)
         }
 
-        // Otherwise, resolve relative to the .cue's directory
+        // Otherwise, resolve relative to the .cue's directory.
         let cueDir = cueURL.deletingLastPathComponent()
-        return cueDir.appendingPathComponent(fileName)
+        let resolved = cueDir.appendingPathComponent(fileName)
+
+        // Guard against a crafted relative FILE ("../../…") escaping the cue's own
+        // directory. A .cue is untrusted input that travels with downloaded media;
+        // its backing file is expected to sit alongside it. An escaping path is
+        // treated as missing (Part A shows unplayable rows; Part B skips the split)
+        // rather than reading an arbitrary file on disk.
+        let cueDirStd = cueDir.standardizedFileURL.path
+        let resolvedStd = resolved.standardizedFileURL.path
+        if resolvedStd == cueDirStd || resolvedStd.hasPrefix(cueDirStd + "/") {
+            return resolved
+        }
+
+        NSLog("CueSheet: backing file path escapes cue directory, treating as missing: %@", fileName)
+        return cueDir.appendingPathComponent(".cue-invalid-backing")
     }
 
     /// Check if a sibling .cue file exists next to an audio file

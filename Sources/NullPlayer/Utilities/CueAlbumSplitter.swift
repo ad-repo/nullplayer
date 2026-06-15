@@ -18,7 +18,7 @@ enum CueAlbumSplitter {
             let cue = try CueSheet.parse(from: cueURL)
             guard !cue.entries.isEmpty else { return nil }
 
-            let cueDir = cueURL.deletingLastPathComponent()
+            let outDir = outputDirectory(for: cue, cueURL: cueURL)
 
             // Output extension: always FLAC (re-encode for all sources per spec)
             let outExt = "flac"
@@ -28,7 +28,7 @@ enum CueAlbumSplitter {
 
             for (index, entry) in cue.entries.enumerated() {
                 let trackNum = index + 1
-                let outURL = computeOutputPath(for: entry.title, trackIndex: trackNum, totalTracks: cue.entries.count, inDirectory: cueDir, fileExtension: outExt, excludedPaths: pathsSet, checkFilesystem: false)
+                let outURL = computeOutputPath(for: entry.title, trackIndex: trackNum, totalTracks: cue.entries.count, inDirectory: outDir, fileExtension: outExt, excludedPaths: pathsSet, checkFilesystem: false)
                 paths.append(outURL)
                 pathsSet.insert(outURL.path)
             }
@@ -59,50 +59,58 @@ enum CueAlbumSplitter {
     /// Splits a .cue album into individual track files via ffmpeg (if available).
     /// Performs idempotency check: if all outputs exist, returns backing file path for exclusion
     /// and performs no ffmpeg work.
-    /// On ffmpeg absence or write failure, logs a one-time warning notice and returns nil
-    /// (original file remains importable).
+    /// On ffmpeg absence or write failure, logs a one-time warning notice and returns
+    /// an empty outcome (original file remains importable).
     /// - Parameters:
     ///   - cueURL: URL of the .cue file
-    /// - Returns: Backing file URL if successfully split (or already split), nil otherwise
-    static func splitIfNeeded(cueURL: URL) -> URL? {
+    /// - Returns: A `SplitOutcome` describing the backing file to exclude and the per-track
+    ///   files that now exist on disk and should be imported.
+    static func splitIfNeeded(cueURL: URL) -> SplitOutcome {
         guard let shouldSplit = shouldPerformSplit(cueURL: cueURL) else {
-            return nil  // Cue unparseable
+            return SplitOutcome(backingFileToExclude: nil, trackFiles: [])  // Cue unparseable
         }
 
         guard shouldSplit else {
-            // Idempotent: all outputs exist, return backing file for exclusion
+            // Idempotent: all outputs already exist. Exclude the backing and import the
+            // existing per-track files.
             if let expectedPaths = expectedOutputPaths(for: cueURL), !expectedPaths.isEmpty {
                 do {
                     let cue = try CueSheet.parse(from: cueURL)
                     let backingURL = CueSheet.resolveBackingFile(for: cueURL, fileName: cue.fileName)
                     if FileManager.default.fileExists(atPath: backingURL.path) {
-                        return backingURL
+                        return SplitOutcome(backingFileToExclude: backingURL, trackFiles: expectedPaths)
                     }
                 } catch {
-                    return nil
+                    return SplitOutcome(backingFileToExclude: nil, trackFiles: [])
                 }
             }
-            return nil
+            return SplitOutcome(backingFileToExclude: nil, trackFiles: [])
         }
 
         // Work needed: attempt to split
         let result = performSplit(cueURL: cueURL)
 
-        if let backingURL = result.backingFile {
-            return backingURL
-        }
-
         if let notice = result.skipWarnNotice {
             postSkipWarnNotice(notice)
         }
 
-        return nil
+        return SplitOutcome(backingFileToExclude: result.backingFile, trackFiles: result.trackFiles)
+    }
+
+    /// Result of attempting to split a cue album.
+    struct SplitOutcome {
+        /// Backing file to exclude from the library — non-nil only when the per-track
+        /// split files exist on disk (freshly written or from a prior scan).
+        let backingFileToExclude: URL?
+        /// Per-track files that now exist on disk and should be imported as library tracks.
+        let trackFiles: [URL]
     }
 
     // MARK: - Private Implementation
 
     private struct SplitResult {
         let backingFile: URL?  // Backing file to exclude (only if split succeeded)
+        let trackFiles: [URL]  // Per-track files written/confirmed on disk
         let skipWarnNotice: String?  // One-time warning message if split skipped
     }
 
@@ -129,7 +137,7 @@ enum CueAlbumSplitter {
             // Check backing file exists
             guard FileManager.default.fileExists(atPath: backingURL.path) else {
                 NSLog("CueAlbumSplitter: Backing file missing: %@", backingURL.path)
-                return SplitResult(backingFile: nil, skipWarnNotice: nil)
+                return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: nil)
             }
 
             // Resolve ffmpeg
@@ -138,9 +146,9 @@ enum CueAlbumSplitter {
                 NSLog("CueAlbumSplitter: ffmpeg not found")
                 if !skipWarnNoticeShown {
                     skipWarnNoticeShown = true
-                    return SplitResult(backingFile: nil, skipWarnNotice: msg)
+                    return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: msg)
                 }
-                return SplitResult(backingFile: nil, skipWarnNotice: nil)
+                return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: nil)
             }
 
             // Resolve ffprobe for cover-art detection
@@ -149,21 +157,45 @@ enum CueAlbumSplitter {
             // Check if source has video/attached-pic stream for cover art
             let hasAttachedPic = ffprobePath != nil ? checkHasAttachedPic(backingURL, ffprobePath: ffprobePath!) : false
 
-            let cueDir = cueURL.deletingLastPathComponent()
+            // Read the source file's own album/artist tags. The cue's TITLE is usually the
+            // video/show title (the "track" name); the real album lives in the file metadata.
+            let src = sourceTags(for: cue, cueURL: cueURL)
+
+            // Write each album into its own subdirectory (named from metadata) so tracks
+            // don't land loose alongside the source. Create it before writing.
+            let outDir = outputDirectory(for: cue, cueURL: cueURL)
+            do {
+                try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+            } catch {
+                NSLog("CueAlbumSplitter: Failed to create output directory %@: %@", outDir.path, error.localizedDescription)
+                if !skipWarnNoticeShown {
+                    skipWarnNoticeShown = true
+                    return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: "Failed to create folder for split .cue album (check permissions).")
+                }
+                return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: nil)
+            }
             let outExt = "flac"
 
             var anyWriteFailed = false
             var successCount = 0
-            var thisCueOutputPaths: Set<String> = []  // Track this cue's expected outputs for de-dup logic
+            var producedFiles: [URL] = []
+
+            // Seed with this cue's FULL set of deterministic canonical output paths up front.
+            // A track whose canonical file already exists (idempotent partial re-run) is then
+            // recognized as our own output and reused, never re-encoded into a "(N)" duplicate.
+            // Collision de-dup only fires against genuinely unrelated pre-existing files.
+            let thisCueOutputPaths: Set<String> = Set(cue.entries.enumerated().map { index, entry in
+                computeOutputPath(for: entry.title, trackIndex: index + 1, totalTracks: cue.entries.count, inDirectory: outDir, fileExtension: outExt, excludedPaths: [], checkFilesystem: false).path
+            })
 
             for (index, entry) in cue.entries.enumerated() {
                 let trackNum = index + 1
-                let outURL = computeOutputPath(for: entry.title, trackIndex: trackNum, totalTracks: cue.entries.count, inDirectory: cueDir, fileExtension: outExt, excludedPaths: thisCueOutputPaths, checkFilesystem: true)
-                thisCueOutputPaths.insert(outURL.path)
+                let outURL = computeOutputPath(for: entry.title, trackIndex: trackNum, totalTracks: cue.entries.count, inDirectory: outDir, fileExtension: outExt, excludedPaths: thisCueOutputPaths, checkFilesystem: true)
 
                 // Skip if already exists
                 if FileManager.default.fileExists(atPath: outURL.path) {
                     successCount += 1
+                    producedFiles.append(outURL)
                     continue
                 }
 
@@ -186,16 +218,31 @@ enum CueAlbumSplitter {
                     args.append(String(format: "%.6f", endTime))
                 }
 
+                // Inherit the source file's metadata (date, genre, album-art tags, and any
+                // album/artist the source carries), then layer the cue's values on top.
+                // `-map_metadata 0` copies the source global metadata; per-track title and
+                // track number always override; album/artist/album_artist override ONLY when
+                // the cue provides a non-empty value, so we never blank an inherited field.
                 args.append(contentsOf: [
                     "-map", "0:a:0",
                     "-c:a", "flac",
-                    "-map_metadata", "-1",
+                    "-map_metadata", "0",
                     "-metadata", "title=\(entry.title)",
-                    "-metadata", "artist=\(entry.performer ?? cue.performer ?? "")",
-                    "-metadata", "album=\(cue.title ?? "")",
-                    "-metadata", "album_artist=\(cue.performer ?? "")",
                     "-metadata", "track=\(trackNum)/\(cue.entries.count)"
                 ])
+                if let artist = (entry.performer ?? src.artist ?? cue.performer)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !artist.isEmpty {
+                    args.append(contentsOf: ["-metadata", "artist=\(artist)"])
+                }
+                // Album comes from the source file's tag (the real release), not the cue TITLE.
+                if let album = (src.album ?? cue.title)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !album.isEmpty {
+                    args.append(contentsOf: ["-metadata", "album=\(album)"])
+                }
+                if let albumArtist = (src.albumArtist ?? src.artist ?? cue.performer)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !albumArtist.isEmpty {
+                    args.append(contentsOf: ["-metadata", "album_artist=\(albumArtist)"])
+                }
 
                 // Conditionally add cover art (only if source has video/attached-pic)
                 if hasAttachedPic {
@@ -223,6 +270,7 @@ enum CueAlbumSplitter {
 
                     if task.terminationStatus == 0 && FileManager.default.fileExists(atPath: outURL.path) {
                         successCount += 1
+                        producedFiles.append(outURL)
                     } else {
                         anyWriteFailed = true
                         NSLog("CueAlbumSplitter: ffmpeg failed for track %d: %@", trackNum, outURL.lastPathComponent)
@@ -238,33 +286,69 @@ enum CueAlbumSplitter {
 
             // Only exclude backing if ALL tracks succeeded (no partial writes)
             if successCount == cue.entries.count && !anyWriteFailed {
-                return SplitResult(backingFile: backingURL, skipWarnNotice: nil)
+                return SplitResult(backingFile: backingURL, trackFiles: producedFiles, skipWarnNotice: nil)
             } else if anyWriteFailed {
                 let msg = "Failed to split some .cue albums (permission or disk space). Check logs."
                 if !skipWarnNoticeShown {
                     skipWarnNoticeShown = true
-                    return SplitResult(backingFile: nil, skipWarnNotice: msg)
+                    return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: msg)
                 }
-                return SplitResult(backingFile: nil, skipWarnNotice: nil)
+                return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: nil)
             }
 
-            return SplitResult(backingFile: nil, skipWarnNotice: nil)
+            return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: nil)
         } catch {
             NSLog("CueAlbumSplitter: Error during split: %@", error.localizedDescription)
-            return SplitResult(backingFile: nil, skipWarnNotice: nil)
+            return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: nil)
         }
+    }
+
+    // MARK: - Output Location
+
+    /// The directory split tracks are written to: a per-cue subdirectory of the cue's
+    /// own folder, named from album metadata (falling back to the .cue's filename), so
+    /// each album lands in its own folder instead of loose alongside the source.
+    private static func outputDirectory(for cue: CueSheet, cueURL: URL) -> URL {
+        cueURL.deletingLastPathComponent()
+            .appendingPathComponent(albumFolderName(for: cue, cueURL: cueURL), isDirectory: true)
+    }
+
+    /// Builds the album subdirectory name: "Artist - Album" from cue metadata, falling
+    /// back to the album or artist alone, then to the .cue's own basename (always unique
+    /// within the folder) when no usable metadata is present.
+    private static func albumFolderName(for cue: CueSheet, cueURL: URL) -> String {
+        // Prefer the source file's own ALBUM/ARTIST tags (the real release). The cue's TITLE
+        // is usually the video/show title (the "track" name), not the album.
+        let src = sourceTags(for: cue, cueURL: cueURL)
+        let artist = (src.artist ?? cue.performer ?? "").trimmingCharacters(in: .whitespaces)
+        let album = (src.album ?? cue.title ?? "").trimmingCharacters(in: .whitespaces)
+        let base: String
+        if !artist.isEmpty && !album.isEmpty {
+            base = "\(artist) - \(album)"
+        } else if !album.isEmpty {
+            base = album
+        } else if !artist.isEmpty {
+            base = artist
+        } else {
+            base = ""
+        }
+        let sanitized = sanitizeFilenameComponent(base)
+        if !sanitized.isEmpty { return sanitized }
+        // Unique fallback: the cue's own filename.
+        let fromCue = sanitizeFilenameComponent(cueURL.deletingPathExtension().lastPathComponent)
+        return fromCue.isEmpty ? "Cue Album" : fromCue
     }
 
     // MARK: - Filename Sanitization
 
-    /// Sanitizes a track title for use in a filename.
+    /// Sanitizes a string for use as a single filename/directory component.
     /// - Replaces illegal characters (/ \ : * ? " < > | + control chars) with `_`
     /// - Collapses runs of whitespace to single space
     /// - Trims leading/trailing spaces and dots
     /// - Applies Unicode NFC normalization to avoid HFS+/APFS collisions
-    /// - Truncates to ~200 UTF-8 bytes for the title portion
-    private static func sanitizeTrackTitle(_ title: String, trackIndex: Int, totalTracks: Int) -> String {
-        var result = title
+    /// - Truncates to ~200 UTF-8 bytes
+    private static func sanitizeFilenameComponent(_ input: String) -> String {
+        var result = input
 
         // Replace illegal filesystem characters with underscore
         let illegalChars = CharacterSet(charactersIn: "/\\:*?\"<>|")
@@ -284,9 +368,8 @@ enum CueAlbumSplitter {
         // Apply Unicode NFC normalization (avoids HFS+/APFS case- and form-folding collisions)
         result = (result as NSString).precomposedStringWithCanonicalMapping
 
-        // Truncate title to ~200 UTF-8 bytes
+        // Truncate to ~200 UTF-8 bytes (don't split UTF-8 sequences)
         if let data = result.data(using: .utf8), data.count > 200 {
-            // Find safe truncation point (don't split UTF-8 sequences)
             if let truncated = String(data: data.prefix(200), encoding: .utf8) {
                 result = truncated.trimmingCharacters(in: .whitespaces)
             }
@@ -316,7 +399,7 @@ enum CueAlbumSplitter {
         excludedPaths: Set<String>,
         checkFilesystem: Bool
     ) -> URL {
-        let sanitized = sanitizeTrackTitle(title, trackIndex: trackIndex, totalTracks: totalTracks)
+        let sanitized = sanitizeFilenameComponent(title)
         let baseFilename = "\(trackIndex) - \(sanitized)"
         let ext = fileExtension
         var filename = "\(baseFilename).\(ext)"
@@ -334,6 +417,51 @@ enum CueAlbumSplitter {
         }
 
         return outURL
+    }
+
+    // MARK: - Source Tags
+
+    /// Reads the backing file's own album/artist/album_artist tags via ffprobe.
+    /// Deterministic (same file → same result), so it is safe to call from both the
+    /// idempotency path and the split path. Returns nils when ffprobe or the file is absent.
+    private static func sourceTags(for cue: CueSheet, cueURL: URL) -> (artist: String?, album: String?, albumArtist: String?) {
+        let backingURL = CueSheet.resolveBackingFile(for: cueURL, fileName: cue.fileName)
+        guard FileManager.default.fileExists(atPath: backingURL.path),
+              let ffprobe = resolveToolPath("ffprobe") else { return (nil, nil, nil) }
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: ffprobe)
+        task.arguments = [
+            "-v", "error",
+            "-show_entries", "format_tags=artist,album,album_artist",
+            "-of", "default=noprint_wrappers=1",
+            backingURL.path
+        ]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+
+        var artist: String?, album: String?, albumArtist: String?
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let out = String(data: data, encoding: .utf8) ?? ""
+            for raw in out.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) {
+                let line = String(raw)
+                guard let eq = line.firstIndex(of: "=") else { continue }
+                // Key form is "TAG:album" or "album" depending on ffprobe version.
+                let key = String(line[..<eq]).lowercased()
+                let val = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !val.isEmpty else { continue }
+                if key.hasSuffix("album_artist") { albumArtist = val }
+                else if key.hasSuffix("album") { album = val }
+                else if key.hasSuffix("artist") { artist = val }
+            }
+        } catch {
+            return (nil, nil, nil)
+        }
+        return (artist, album, albumArtist)
     }
 
     // MARK: - Cover Art Detection

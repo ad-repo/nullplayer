@@ -4026,6 +4026,27 @@ class AudioEngine {
         playbackGeneration += 1
         let currentGeneration = playbackGeneration
 
+        // Fast path: the target track is backed by the file already open. Adjacent cue
+        // tracks share one backing file, so Prev/Next between them — and re-selecting the
+        // current track — hit this. Reuse the open AVAudioFile instead of reopening it (a
+        // synchronous, main-thread parse that stalls navigation on large FLACs) and keep
+        // the already-computed normalization gain. prepareForLocalTrackLoad() is skipped
+        // deliberately so it does not delete a temp NAS copy that may back the open file.
+        if !isStreamingPlayback,
+           let openFile = audioFile,
+           currentTrack?.url == track.url {
+            // Cancel any crossfade tail and clear a stale gapless pre-schedule.
+            if crossfadePlayerIsActive {
+                crossfadePlayerNode.stop()
+                crossfadePlayerNode.volume = 0
+                crossfadePlayerIsActive = false
+            }
+            nextScheduledFile = nil
+            nextScheduledTrackIndex = -1
+            commitLoadedLocalTrack(openFile, track: track, generation: currentGeneration, reuseExistingFile: true)
+            return true
+        }
+
         prepareForLocalTrackLoad()
 
         do {
@@ -4080,7 +4101,7 @@ class AudioEngine {
         nextScheduledTrackIndex = -1
     }
 
-    private func commitLoadedLocalTrack(_ newAudioFile: AVAudioFile, track: Track, generation: Int) {
+    private func commitLoadedLocalTrack(_ newAudioFile: AVAudioFile, track: Track, generation: Int, reuseExistingFile: Bool = false) {
         NSLog("loadLocalTrack: file loaded successfully, format: %@", newAudioFile.processingFormat.description)
 
         // Install spectrum analyzer tap.
@@ -4091,9 +4112,13 @@ class AudioEngine {
         _currentTime = 0
         lastReportedTime = 0
 
-        // Analyze and apply volume normalization asynchronously to avoid blocking
-        // UI/playback startup on slow disks or NAS volumes.
-        if volumeNormalizationEnabled {
+        // Volume normalization gain is a property of the backing file. When reusing the
+        // already-open file (an adjacent cue track, or re-selecting the current track),
+        // the gain is unchanged — keep it and skip the whole-file re-analysis. Otherwise
+        // analyze asynchronously to avoid blocking UI/playback startup on slow disks/NAS.
+        if reuseExistingFile {
+            // Keep existing normalizationGain (already analyzed + applied for this file).
+        } else if volumeNormalizationEnabled {
             analyzeAndApplyNormalization(file: newAudioFile, generation: generation)
         } else {
             normalizationGain = 1.0

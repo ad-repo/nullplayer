@@ -43,11 +43,13 @@ final class CueAlbumSplitterTests: XCTestCase {
         XCTAssertNotNil(paths)
         XCTAssertEqual(paths?.count, 3)
 
-        // Paths should be in the same directory as the cue
+        // Paths should be in a per-album subdirectory named from metadata
+        // ("Album Artist - Album Title"), inside the cue's own folder.
         let cueDir = cueURL.deletingLastPathComponent()
-        XCTAssertEqual(paths?[0].deletingLastPathComponent(), cueDir)
-        XCTAssertEqual(paths?[1].deletingLastPathComponent(), cueDir)
-        XCTAssertEqual(paths?[2].deletingLastPathComponent(), cueDir)
+        let albumDir = cueDir.appendingPathComponent("Album Artist - Album Title", isDirectory: true)
+        XCTAssertEqual(paths?[0].deletingLastPathComponent().standardizedFileURL, albumDir.standardizedFileURL)
+        XCTAssertEqual(paths?[1].deletingLastPathComponent().standardizedFileURL, albumDir.standardizedFileURL)
+        XCTAssertEqual(paths?[2].deletingLastPathComponent().standardizedFileURL, albumDir.standardizedFileURL)
 
         // Filenames should be numbered and include titles
         XCTAssertTrue(paths?[0].lastPathComponent.hasPrefix("1 -") ?? false)
@@ -134,6 +136,37 @@ final class CueAlbumSplitterTests: XCTestCase {
         XCTAssertEqual(shouldSplit, true)
     }
 
+    func testOutputSubdirectoryNamedFromMetadata() throws {
+        let cueContent = """
+        PERFORMER "Pink Floyd"
+        TITLE "The Wall"
+        FILE "backing.flac" WAVE
+        TRACK 01 AUDIO
+            TITLE "In the Flesh"
+            INDEX 01 00:00:00
+        """
+        let cueURL = tempDirectory.appendingPathComponent("wall.cue")
+        try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
+
+        let paths = CueAlbumSplitter.expectedOutputPaths(for: cueURL)
+        XCTAssertEqual(paths?.first?.deletingLastPathComponent().lastPathComponent, "Pink Floyd - The Wall")
+    }
+
+    func testOutputSubdirectoryFallsBackToCueNameWithoutMetadata() throws {
+        // No PERFORMER/TITLE — must fall back to the cue's own basename.
+        let cueContent = """
+        FILE "backing.flac" WAVE
+        TRACK 01 AUDIO
+            TITLE "Untitled"
+            INDEX 01 00:00:00
+        """
+        let cueURL = tempDirectory.appendingPathComponent("mix-2024.cue")
+        try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
+
+        let paths = CueAlbumSplitter.expectedOutputPaths(for: cueURL)
+        XCTAssertEqual(paths?.first?.deletingLastPathComponent().lastPathComponent, "mix-2024")
+    }
+
     func testShouldPerformSplitReturnsFalseWhenAllOutputsExist() throws {
         let cueContent = """
         PERFORMER "Artist"
@@ -150,9 +183,10 @@ final class CueAlbumSplitterTests: XCTestCase {
         let cueURL = tempDirectory.appendingPathComponent("idempotent.cue")
         try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
 
-        // Create expected output files
+        // Create expected output files (in their per-album subdir)
         let outputPaths = CueAlbumSplitter.expectedOutputPaths(for: cueURL)
         for path in outputPaths ?? [] {
+            try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
             try "dummy".write(to: path, atomically: true, encoding: .utf8)
         }
 
@@ -181,9 +215,10 @@ final class CueAlbumSplitterTests: XCTestCase {
         let cueURL = tempDirectory.appendingPathComponent("partial.cue")
         try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
 
-        // Create only first two expected output files
+        // Create only first two expected output files (in their per-album subdir)
         let outputPaths = CueAlbumSplitter.expectedOutputPaths(for: cueURL)
         for i in 0..<min(2, outputPaths?.count ?? 0) {
+            try FileManager.default.createDirectory(at: outputPaths![i].deletingLastPathComponent(), withIntermediateDirectories: true)
             try "dummy".write(to: outputPaths![i], atomically: true, encoding: .utf8)
         }
 
@@ -379,9 +414,10 @@ final class CueAlbumSplitterTests: XCTestCase {
         let shouldSplit1 = CueAlbumSplitter.shouldPerformSplit(cueURL: cueURL)
         XCTAssertEqual(shouldSplit1, true)
 
-        // Create the expected outputs
+        // Create the expected outputs (in their per-album subdir)
         let paths = CueAlbumSplitter.expectedOutputPaths(for: cueURL)
         for path in paths ?? [] {
+            try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
             try "dummy audio".write(to: path, atomically: true, encoding: .utf8)
         }
 

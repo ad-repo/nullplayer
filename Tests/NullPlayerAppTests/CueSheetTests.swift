@@ -498,4 +498,28 @@ final class CueSheetTests: XCTestCase {
 
         XCTAssertEqual(resolved.path, absPath)
     }
+
+    func testResolveBackingFileRejectsParentTraversal() throws {
+        let cueURL = tempDirectory.appendingPathComponent("cues").appendingPathComponent("album.cue")
+        let fileName = "../../../../etc/passwd"
+
+        let resolved = CueSheet.resolveBackingFile(for: cueURL, fileName: fileName)
+
+        // Escaping path is neutralized: it must NOT resolve outside the cue's directory.
+        XCTAssertFalse(resolved.standardizedFileURL.path.hasSuffix("/etc/passwd"))
+        XCTAssertEqual(resolved.deletingLastPathComponent().standardizedFileURL.path,
+                       cueURL.deletingLastPathComponent().standardizedFileURL.path)
+    }
+
+    func testParseRejectsExcessiveTrackCount() throws {
+        var lines = ["FILE \"backing.flac\" WAVE"]
+        for n in 1...(CueSheet.maxEntries + 1) {
+            lines.append("TRACK \(n) AUDIO")
+            lines.append("INDEX 01 00:00:00")
+        }
+        let cueURL = tempDirectory.appendingPathComponent("huge.cue")
+        try lines.joined(separator: "\n").write(to: cueURL, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(try CueSheet.parse(from: cueURL))
+    }
 }
