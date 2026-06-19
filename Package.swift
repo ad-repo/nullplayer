@@ -152,6 +152,7 @@ let package = Package(
             resources: [
                 .copy("Resources"),
                 .copy("Visualization/SpectrumShaders.metal"),
+                .copy("Visualization/SpectrogramShaders.metal"),
                 .copy("Visualization/FlameShaders.metal"),
                 .copy("Visualization/CosmicShaders.metal"),
                 .copy("Visualization/ElectricityShaders.metal"),

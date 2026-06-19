@@ -28,6 +28,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **visualizations**: Index/router across all visualization sub-skills (comparison table, when-to-use)
 - **main-window-visualization**: Main window's 76×16 vis area — modes, switching, settings
 - **spectrum-analyzer-window**: Dedicated 84-bar spectrum window — docking, geometry, analyzer curve, vis_classic waveform demand
+- **audio-analysis-window**: Friture-style multi-pane Audio Analysis window — Scope/Levels/Spectrogram panes, stereo PCM path, per-pane consumer gating, AudioAnalysisDSP module
 - **gpu-vis-modes**: Per-mode shader internals (Fire/JWST/Lightning/Matrix/Snow/EKG) shared by both windows
 - **album-art-visualizer**: Library Browser ART-mode Core Image effects
 - **projectm-milkdrop**: ProjectM/MilkDrop preset engine + drag-suspend behavior

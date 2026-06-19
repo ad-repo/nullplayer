@@ -36,6 +36,7 @@
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
 - Modern V2 UI skin system, many v2 skins included. Open format, users can easily make new v2 skins via json
 - Original Spenctrum analysis visualization system
+- Audio Analysis window — Friture-style multi-pane analyzer with a live oscilloscope, stereo peak/RMS level meters, and a scrolling Metal spectrogram (Viridis colormap)
 - Album art visualization system with user selected effects
 - Modern mode with 21-band EQ implementation, Classic mode with standard 10-band EQ
 - Reference Tuning for pitch-shifting local playback and HTTP streams to a different reference frequency, with 432 Hz, 440 Hz, and custom source/target Hz options
@@ -359,4 +360,5 @@ Bundled third-party components:
 **Fonts & assets**
 - **Departure Mono** (SIL OFL-1.1) — bundled font
 - **MilkDrop / projectM presets** — community-authored (attribution in preset filenames)
+- **Viridis colormap** (CC0 / public domain) — spectrogram color ramp, by Stéfan van der Walt and Nathaniel Smith
 - **Bundled skins** — original NullPlayer assets

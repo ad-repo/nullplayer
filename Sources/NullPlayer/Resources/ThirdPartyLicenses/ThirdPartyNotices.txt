@@ -6060,3 +6060,34 @@ If you believe a bundled asset infringes your rights, please open an issue on
 the project repository so it can be removed or re-attributed.
 
 
+================================================================================
+Viridis colormap
+================================================================================
+License:    CC0-1.0
+Copyright:  Copyright waived — Stéfan van der Walt and Nathaniel Smith (public domain via CC0)
+Source:     https://github.com/BIDS/colormap
+Version:    bundled constants
+
+Viridis colormap
+================
+
+NullPlayer's Audio Analysis spectrogram pane colors its waterfall using the
+"viridis" perceptually-uniform colormap (a small set of sampled RGB control
+points reproduced in the spectrogram Metal shader).
+
+The viridis colormap was created by Stéfan van der Walt (@stefanv) and
+Nathaniel Smith (@njsmith) for the matplotlib project and dedicated to the
+public domain.
+
+Source: https://github.com/BIDS/colormap
+
+License: Creative Commons CC0 1.0 Universal (Public Domain Dedication)
+
+  To the extent possible under law, the authors have waived all copyright and
+  related or neighboring rights to the viridis colormap. The work is published
+  from the United States.
+
+  The full text of the CC0 1.0 dedication is available at:
+  https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+

@@ -363,6 +363,9 @@ class WindowManager {
     /// Spectrum analyzer window controller (classic or modern, accessed via protocol)
     private var spectrumWindowController: SpectrumWindowProviding?
 
+    /// Audio analysis window controller (modern-only, accessed via protocol)
+    private var audioAnalysisWindowController: AudioAnalysisWindowProviding?
+
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
 
@@ -678,6 +681,7 @@ class WindowManager {
         if let w = equalizerWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = playlistWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
+        if let w = audioAnalysisWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         
         // Sort top-to-bottom (highest minY first, since macOS Y increases upward)
@@ -1647,6 +1651,57 @@ class WindowManager {
         }
         notifyMainWindowVisibilityChanged()
         _ = tightenClassicCenterStackIfNeeded()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
+    // MARK: - Audio Analysis Window
+
+    func showAudioAnalysis(at restoredFrame: NSRect? = nil) {
+        guard isModernUIEnabled else { return }
+
+        let isNewWindow = audioAnalysisWindowController == nil
+        if isNewWindow {
+            audioAnalysisWindowController = ModernAudioAnalysisWindowController()
+        }
+
+        if let window = audioAnalysisWindowController?.window {
+            if let frame = restoredFrame, frame != .zero {
+                window.setFrame(frame, display: true)
+            } else {
+                positionSubWindow(window)
+            }
+        }
+
+        audioAnalysisWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(audioAnalysisWindowController?.window)
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+    }
+
+    var isAudioAnalysisVisible: Bool {
+        audioAnalysisWindowController?.window?.isVisible == true
+    }
+
+    /// Get the Audio Analysis window frame (for state saving)
+    var audioAnalysisWindowFrame: NSRect? {
+        return audioAnalysisWindowController?.window?.frame
+    }
+
+    func toggleAudioAnalysis() {
+        guard isModernUIEnabled else { return }
+
+        if let controller = audioAnalysisWindowController,
+           let window = controller.window,
+           window.isVisible {
+            let closingFrame = window.frame
+            controller.stopRenderingForHide()
+            window.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
+        } else {
+            showAudioAnalysis()
+        }
+        notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
@@ -3564,10 +3619,11 @@ class WindowManager {
         if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
-    
+
     /// Get windows that participate in docking/snapping together (classic skin windows)
     private func dockableWindows() -> [NSWindow] {
         var windows: [NSWindow] = []
@@ -3575,6 +3631,7 @@ class WindowManager {
         if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
