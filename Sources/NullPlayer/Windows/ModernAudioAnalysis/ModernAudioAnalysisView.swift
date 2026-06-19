@@ -10,7 +10,10 @@ class ModernAudioAnalysisView: NSView {
 
     /// Selected-pane state shared with the SwiftUI content; driven by the right-click menu.
     private let model = AudioAnalysisModel(
-        selectedPane: UserDefaults.standard.integer(forKey: "audioAnalysisSelectedPane"))
+        selectedPane: UserDefaults.standard.integer(
+            forKey: AudioAnalysisModel.selectedPaneDefaultsKey
+        )
+    )
 
     var selectedPane: Int { model.selectedPane }
 
@@ -86,7 +89,9 @@ class ModernAudioAnalysisView: NSView {
 
     private func setupContentView() {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
-        let contentView = AudioAnalysisContentView(nsView: self, model: model, skinTextColor: Color(skin.textColor))
+        let contentView = AudioAnalysisContentView(model: model) { [weak self] pane in
+            (self?.controller as? ModernAudioAnalysisWindowController)?.setVisiblePane(pane)
+        }
         let hostingController = NSHostingController(rootView: contentView)
 
         addSubview(hostingController.view)
@@ -177,7 +182,9 @@ class ModernAudioAnalysisView: NSView {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
         hostingController?.view.appearance = skinAppearance(for: skin)
-        hostingController?.rootView = AudioAnalysisContentView(nsView: self, model: model, skinTextColor: Color(skin.textColor))
+        hostingController?.rootView = AudioAnalysisContentView(model: model) { [weak self] pane in
+            (self?.controller as? ModernAudioAnalysisWindowController)?.setVisiblePane(pane)
+        }
         layoutHostingView()
         updateCornerMask()
         needsDisplay = true
@@ -370,55 +377,5 @@ class ModernAudioAnalysisView: NSView {
         let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
                                         .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         layer.maskedCorners = allCorners.subtracting(sharpCorners)
-    }
-}
-
-// MARK: - Pane Selection Model
-
-/// Shared selected-pane state. The NSView's right-click context menu mutates it; the
-/// SwiftUI content observes it. Pane selection is NOT an in-window control (matches the
-/// Spectrum window, which selects its mode via the right-click menu).
-final class AudioAnalysisModel: ObservableObject {
-    @Published var selectedPane: Int
-
-    /// Pane titles, indexed by tag. Used for both the content switch and the context menu.
-    static let paneTitles = ["Scope", "Levels", "Spectrogram"]
-
-    init(selectedPane: Int) {
-        self.selectedPane = min(max(0, selectedPane), Self.paneTitles.count - 1)
-    }
-}
-
-// MARK: - SwiftUI Content View
-
-struct AudioAnalysisContentView: View {
-    weak var nsView: ModernAudioAnalysisView?
-    @ObservedObject var model: AudioAnalysisModel
-    var skinTextColor: Color = .primary
-
-    var body: some View {
-        // No in-window controls — the pane fills the content area; selection is via the
-        // window's right-click context menu (see ModernAudioAnalysisView.menu(for:)).
-        ZStack {
-            switch model.selectedPane {
-            case 1:  LevelsPaneView()
-            case 2:  SpectrogramPaneView()
-            default: ScopePaneView()
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: model.selectedPane) {
-            UserDefaults.standard.set(model.selectedPane, forKey: "audioAnalysisSelectedPane")
-            updateConsumerForPane(model.selectedPane)
-        }
-    }
-
-    private func updateConsumerForPane(_ paneIndex: Int) {
-        guard let nsView = nsView,
-              let window = nsView.window,
-              let windowController = window.windowController as? ModernAudioAnalysisWindowController else {
-            return
-        }
-        windowController.setVisiblePane(paneIndex)
     }
 }

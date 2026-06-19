@@ -1539,19 +1539,23 @@ class SkinRenderer {
     /// The visualization area itself is handled by the OpenGL view
     func drawProjectMWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
                             pressedButton: ProjectMButtonType?, isShadeMode: Bool,
-                            controlScale: CGFloat = 1.0) {
+                            controlScale: CGFloat = 1.0,
+                            title: String = "VISUALIZATIONS") {
         if isShadeMode {
-            drawProjectMShade(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+            drawProjectMShade(in: context, bounds: bounds, isActive: isActive,
+                              pressedButton: pressedButton, title: title)
         } else {
             drawProjectMNormal(in: context, bounds: bounds, isActive: isActive,
-                               pressedButton: pressedButton, controlScale: controlScale)
+                               pressedButton: pressedButton, controlScale: controlScale,
+                               title: title)
         }
     }
     
     /// Draw normal mode ProjectM window chrome
-    /// Uses PLEDIT.BMP title bar sprites (same style as playlist) with "PROJECTM" text
+    /// Uses PLEDIT.BMP title bar sprites (same style as playlist) with an explicit title.
     private func drawProjectMNormal(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                    pressedButton: ProjectMButtonType?, controlScale: CGFloat) {
+                                    pressedButton: ProjectMButtonType?, controlScale: CGFloat,
+                                    title: String) {
         // Fill background with black for visualization area
         NSColor.black.setFill()
         context.fill(bounds)
@@ -1567,14 +1571,16 @@ class SkinRenderer {
 
         // Draw title bar using PLEDIT.BMP sprites (without custom text)
         drawProjectMTitleBarFromPledit(in: context, bounds: bounds, isActive: isActive,
-                                       pressedButton: pressedButton, controlScale: controlScale)
+                                       pressedButton: pressedButton, controlScale: controlScale,
+                                       title: title)
     }
     
-    /// Draw ProjectM title bar using PLEDIT.BMP sprites (without custom text)
+    /// Draw ProjectM title bar using PLEDIT.BMP sprites.
     private func drawProjectMTitleBarFromPledit(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                                pressedButton: ProjectMButtonType?, controlScale: CGFloat) {
+                                                pressedButton: ProjectMButtonType?, controlScale: CGFloat,
+                                                title: String) {
         guard let pleditImage = skin.pledit else {
-            drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive)
+            drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive, title: title)
             return
         }
         
@@ -1614,6 +1620,9 @@ class SkinRenderer {
             x += tileWidth
         }
 
+        drawGenFontTitleText(title, in: context, bounds: bounds,
+                             titleHeight: titleHeight, isActive: isActive)
+
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
                                      controlScale: controlScale, showsShade: true,
@@ -1621,7 +1630,6 @@ class SkinRenderer {
 
         _ = rightCorner
 
-        // Note: Custom text removed - let the skin's title bar show through
     }
 
     /// Draw "PROJECTM" text using GenFont from gen.png
@@ -1726,18 +1734,23 @@ class SkinRenderer {
     /// Uses same style as ProjectM window but with "SPECTRUM ANALYZER" title
     func drawSpectrumAnalyzerWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
                                     pressedButton: ProjectMButtonType?, isShadeMode: Bool,
-                                    controlScale: CGFloat = 1.0) {
+                                    controlScale: CGFloat = 1.0, title: String? = nil,
+                                    showsShade: Bool = true) {
         if isShadeMode {
-            drawSpectrumAnalyzerShade(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+            drawSpectrumAnalyzerShade(in: context, bounds: bounds, isActive: isActive,
+                                      pressedButton: pressedButton,
+                                      title: title ?? "SPECTRUM ANALYZER")
         } else {
             drawSpectrumAnalyzerNormal(in: context, bounds: bounds, isActive: isActive,
-                                       pressedButton: pressedButton, controlScale: controlScale)
+                                       pressedButton: pressedButton, controlScale: controlScale,
+                                       title: title, showsShade: showsShade)
         }
     }
     
     /// Draw normal mode spectrum analyzer window chrome
     private func drawSpectrumAnalyzerNormal(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                            pressedButton: ProjectMButtonType?, controlScale: CGFloat) {
+                                            pressedButton: ProjectMButtonType?, controlScale: CGFloat,
+                                            title: String?, showsShade: Bool) {
         // Fill background with black for visualization area
         NSColor.black.setFill()
         context.fill(bounds)
@@ -1753,14 +1766,21 @@ class SkinRenderer {
 
         // Draw title bar using PLEDIT.BMP sprites (without custom text)
         drawSpectrumAnalyzerTitleBar(in: context, bounds: bounds, isActive: isActive,
-                                     pressedButton: pressedButton, controlScale: controlScale)
+                                     pressedButton: pressedButton, controlScale: controlScale,
+                                     title: title, showsShade: showsShade)
     }
     
-    /// Draw spectrum analyzer title bar using PLEDIT.BMP sprites (without custom text)
+    /// Draw spectrum-style title bar using PLEDIT.BMP sprites.
     private func drawSpectrumAnalyzerTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                              pressedButton: ProjectMButtonType?, controlScale: CGFloat) {
+                                              pressedButton: ProjectMButtonType?, controlScale: CGFloat,
+                                              title: String?, showsShade: Bool) {
         guard let pleditImage = skin.pledit else {
-            drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive)
+            drawFallbackProjectMTitleBar(
+                in: context,
+                bounds: bounds,
+                isActive: isActive,
+                title: title ?? "SPECTRUM ANALYZER"
+            )
             return
         }
         
@@ -1802,9 +1822,13 @@ class SkinRenderer {
             x += tileWidth
         }
 
+        if let title {
+            drawGenFontTitleText(title, in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
+        }
+
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
-                                     controlScale: controlScale, showsShade: true,
+                                     controlScale: controlScale, showsShade: showsShade,
                                      closePressed: pressedButton == .close, shadePressed: pressedButton == .shade)
 
         _ = rightCorner  // original sprite no longer drawn; reference kept above for parity
@@ -1919,7 +1943,8 @@ class SkinRenderer {
     }
     
     /// Draw spectrum analyzer shade mode
-    private func drawSpectrumAnalyzerShade(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: ProjectMButtonType?) {
+    private func drawSpectrumAnalyzerShade(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                           pressedButton: ProjectMButtonType?, title: String) {
         guard let pleditImage = skin.pledit else {
             // Simple fallback
             NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.22, alpha: 1.0).setFill()
@@ -1952,8 +1977,8 @@ class SkinRenderer {
             x += tile.width
         }
         
-        // Draw "NULLPLAYER ANALYZER" text (smaller for shade mode)
-        drawGenFontTitleText("NULLPLAYER ANALYZER", in: context, bounds: bounds, titleHeight: shadeHeight, isActive: isActive)
+        drawGenFontTitleText(title, in: context, bounds: bounds,
+                             titleHeight: shadeHeight, isActive: isActive)
         
         // Close button pressed state
         if pressedButton == .close {
@@ -1963,9 +1988,10 @@ class SkinRenderer {
         }
     }
     
-    /// Draw "NULLPLAYER LIBRARY" text using GenFont from gen.png
+    /// Draw the Library title using GenFont from gen.png.
     private func drawLibraryTitleText(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
-        drawGenFontTitleText("NULLPLAYER LIBRARY", in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
+        drawGenFontTitleText("LIBRARY", in: context, bounds: bounds,
+                             titleHeight: titleHeight, isActive: isActive)
     }
     
     /// Draw title text using GenFont from gen.png with a dark background gap
@@ -2308,10 +2334,10 @@ class SkinRenderer {
     
     /// Draw ProjectM window in shade mode (title bar only)
     private func drawProjectMShade(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                   pressedButton: ProjectMButtonType?) {
+                                   pressedButton: ProjectMButtonType?, title: String) {
         // In shade mode, use playlist shade sprites
         guard let pleditImage = skin.pledit else {
-            drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive)
+            drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive, title: title)
             return
         }
         
@@ -2340,7 +2366,8 @@ class SkinRenderer {
             x += tile.width
         }
         
-        // Note: Custom text removed - let the skin's title bar show through
+        drawGenFontTitleText(title, in: context, bounds: bounds,
+                             titleHeight: shadeHeight, isActive: isActive)
         
         // Close button pressed state
         if pressedButton == .close {
@@ -2361,7 +2388,8 @@ class SkinRenderer {
         let borderColor = NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0)
         
         // Draw title bar background
-        drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive)
+        drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive,
+                                     title: "VISUALIZATIONS")
         
         // Draw side borders
         borderColor.setFill()
@@ -2380,7 +2408,8 @@ class SkinRenderer {
     }
     
     /// Fallback title bar for ProjectM window when image not available
-    private func drawFallbackProjectMTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool) {
+    private func drawFallbackProjectMTitleBar(in context: CGContext, bounds: NSRect,
+                                              isActive: Bool, title: String) {
         let titleHeight = SkinElements.GenWindow.titleBarHeight
         let titleRect = NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight)
         
@@ -2391,8 +2420,8 @@ class SkinRenderer {
         ])
         gradient?.draw(in: titleRect, angle: 90)
         
-        // Draw "PROJECTM" text using fallback pixel patterns
-        drawFallbackProjectMTitleText(centeredIn: titleRect, isActive: isActive, in: context)
+        drawFallbackProjectMTitleText(title, centeredIn: titleRect,
+                                      isActive: isActive, in: context)
         
         // Draw close button (X) in the top-right corner
         let closeX = bounds.width - 15
@@ -2408,7 +2437,8 @@ class SkinRenderer {
     }
     
     /// Draw ProjectM title text using pixel patterns (fallback only)
-    private func drawFallbackProjectMTitleText(centeredIn rect: NSRect, isActive: Bool, in context: CGContext) {
+    private func drawFallbackProjectMTitleText(_ title: String, centeredIn rect: NSRect,
+                                               isActive: Bool, in context: CGContext) {
         let charWidth: CGFloat = 5
         let charHeight: CGFloat = 6
         let letterSpacing: CGFloat = 1
@@ -2418,8 +2448,7 @@ class SkinRenderer {
         context.setShouldAntialias(false)
         context.interpolationQuality = .none
         
-        let titleText = "PROJECTM"
-        let chars = Array(titleText)
+        let chars = Array(title)
         let totalWidth = CGFloat(chars.count) * charWidth + CGFloat(chars.count - 1) * letterSpacing
         let startX = rect.midX - totalWidth / 2
         let startY = rect.midY - charHeight / 2
@@ -2428,8 +2457,16 @@ class SkinRenderer {
         
         var xPos = startX
         for char in chars {
-            if let pattern = plexTitlePixels()[char.uppercased().first ?? " "] {
+            let upper = char.uppercased().first ?? char
+            if let pattern = plexTitlePixels()[upper] {
                 drawTitleBarPixelChar(pattern, at: NSPoint(x: xPos, y: startY), color: textColor, in: context)
+            } else {
+                drawTitleBarFallbackChar(
+                    upper,
+                    at: NSPoint(x: xPos, y: startY),
+                    color: textColor,
+                    in: context
+                )
             }
             xPos += charWidth + letterSpacing
         }
@@ -2912,6 +2949,9 @@ class SkinRenderer {
             x += tileWidth
         }
 
+        drawLibraryTitleText(in: context, bounds: bounds,
+                             titleHeight: titleHeight, isActive: isActive)
+
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
                                      controlScale: controlScale, showsShade: true,
@@ -2920,7 +2960,6 @@ class SkinRenderer {
 
         _ = rightCorner
 
-        // Note: Custom text removed - let the skin's title bar show through
     }
     
     /// Draw title bar using library-window.png sprites
@@ -3675,8 +3714,8 @@ class SkinRenderer {
                 x += 25
             }
             
-            // Draw "PLEX" text in shade mode using the same pixel font style
-            drawTitleBarText("PLEX", centeredIn: NSRect(x: 25, y: 0, width: 50, height: 14), in: context)
+            drawGenFontTitleText("LIBRARY", in: context, bounds: bounds,
+                                 titleHeight: 14, isActive: isActive)
         } else {
             // Fallback shade background
             let gradient = NSGradient(colors: [
@@ -3685,12 +3724,12 @@ class SkinRenderer {
             ])
             gradient?.draw(in: bounds, angle: 90)
             
-            // Draw PLEX label
+            // Draw Library label
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.white,
                 .font: NSFont.boldSystemFont(ofSize: 9)
             ]
-            "PLEX".draw(at: NSPoint(x: 6, y: 3), withAttributes: attrs)
+            "LIBRARY".draw(at: NSPoint(x: 6, y: 3), withAttributes: attrs)
         }
         
         // Draw window control buttons (relative to right edge)
@@ -3738,7 +3777,7 @@ class SkinRenderer {
         context.translateBy(x: 0, y: titleHeight)
         context.scaleBy(x: 1, y: -1)
         
-        let title = "PLEX BROWSER"
+        let title = "LIBRARY"
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.white,
             .font: NSFont.boldSystemFont(ofSize: 8)

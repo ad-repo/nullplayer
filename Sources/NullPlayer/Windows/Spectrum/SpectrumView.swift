@@ -175,10 +175,11 @@ class SpectrumView: NSView {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
         
-        // Draw window chrome with "NULLPLAYER ANALYZER" title
+        // Draw window chrome with an explicit title over the skin's decorative rails.
         renderer.drawSpectrumAnalyzerWindow(in: context, bounds: bounds, isActive: isActive,
                                             pressedButton: pressedButton, isShadeMode: isShadeMode,
-                                            controlScale: WindowManager.shared.playlistChromeScale)
+                                            controlScale: WindowManager.shared.playlistChromeScale,
+                                            title: "SPECTRUM ANALYZER")
         
         context.restoreGState()
 
