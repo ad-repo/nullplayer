@@ -8,6 +8,10 @@ class ModernAudioAnalysisView: NSView {
     private var renderer: ModernSkinRenderer!
     private var hostingController: NSHostingController<AudioAnalysisContentView>?
 
+    /// Selected-pane state shared with the SwiftUI content; driven by the right-click menu.
+    private let model = AudioAnalysisModel(
+        selectedPane: UserDefaults.standard.integer(forKey: "audioAnalysisSelectedPane"))
+
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
     private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
@@ -79,16 +83,42 @@ class ModernAudioAnalysisView: NSView {
     }
 
     private func setupContentView() {
-        let contentView = AudioAnalysisContentView(nsView: self)
+        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
+        let contentView = AudioAnalysisContentView(nsView: self, model: model, skinTextColor: Color(skin.textColor))
         let hostingController = NSHostingController(rootView: contentView)
 
         addSubview(hostingController.view)
-        hostingController.view.frame = bounds
-        hostingController.view.autoresizingMask = [.width, .height]
+        hostingController.view.autoresizingMask = []  // Manual frame updates in layout()
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.isOpaque = false
+        // Adapt SwiftUI controls (segmented picker) to the skin's light/dark theme
+        hostingController.view.appearance = skinAppearance(for: skin)
 
         self.hostingController = hostingController
+        layoutHostingView()
+    }
+
+    /// Content rect inside the chrome (inside the border, below the title bar).
+    private func contentAreaRect() -> NSRect {
+        NSRect(
+            x: borderWidth,
+            y: borderWidth,
+            width: max(0, bounds.width - borderWidth * 2),
+            height: max(0, bounds.height - titleBarHeight - borderWidth)
+        )
+    }
+
+    private func layoutHostingView() {
+        hostingController?.view.frame = contentAreaRect()
+    }
+
+    /// Pick an aqua/darkAqua appearance based on the skin background brightness so the
+    /// SwiftUI segmented picker and system controls match the skin theme.
+    private func skinAppearance(for skin: ModernSkin) -> NSAppearance? {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        skin.backgroundColor.usingColorSpace(.deviceRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let brightness = 0.299 * r + 0.587 * g + 0.114 * b
+        return NSAppearance(named: brightness < 0.5 ? .darkAqua : .aqua)
     }
 
     // MARK: - Drawing
@@ -144,6 +174,9 @@ class ModernAudioAnalysisView: NSView {
     func skinDidChange() {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
+        hostingController?.view.appearance = skinAppearance(for: skin)
+        hostingController?.rootView = AudioAnalysisContentView(nsView: self, model: model, skinTextColor: Color(skin.textColor))
+        layoutHostingView()
         updateCornerMask()
         needsDisplay = true
     }
@@ -268,10 +301,41 @@ class ModernAudioAnalysisView: NSView {
         }
     }
 
+    // MARK: - Context Menu
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+
+        for (index, title) in AudioAnalysisModel.paneTitles.enumerated() {
+            let item = NSMenuItem(title: title, action: #selector(selectPane(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.state = (model.selectedPane == index) ? .on : .off
+            menu.addItem(item)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        let closeItem = NSMenuItem(title: "Close", action: #selector(closeWindow(_:)), keyEquivalent: "")
+        closeItem.target = self
+        menu.addItem(closeItem)
+
+        return menu
+    }
+
+    @objc private func selectPane(_ sender: NSMenuItem) {
+        model.selectedPane = sender.tag
+    }
+
+    @objc private func closeWindow(_ sender: Any?) {
+        window?.close()
+    }
+
     // MARK: - Layout
 
     override func layout() {
         super.layout()
+        layoutHostingView()
         updateCornerMask()
     }
 
@@ -294,49 +358,44 @@ class ModernAudioAnalysisView: NSView {
     }
 }
 
+// MARK: - Pane Selection Model
+
+/// Shared selected-pane state. The NSView's right-click context menu mutates it; the
+/// SwiftUI content observes it. Pane selection is NOT an in-window control (matches the
+/// Spectrum window, which selects its mode via the right-click menu).
+final class AudioAnalysisModel: ObservableObject {
+    @Published var selectedPane: Int
+
+    /// Pane titles, indexed by tag. Used for both the content switch and the context menu.
+    static let paneTitles = ["Scope", "Levels", "Spectrogram"]
+
+    init(selectedPane: Int) {
+        self.selectedPane = min(max(0, selectedPane), Self.paneTitles.count - 1)
+    }
+}
+
 // MARK: - SwiftUI Content View
 
 struct AudioAnalysisContentView: View {
     weak var nsView: ModernAudioAnalysisView?
-
-    @State private var selectedPane: Int = 0  // 0: Scope, 1: Levels, 2: Spectrogram
+    @ObservedObject var model: AudioAnalysisModel
+    var skinTextColor: Color = .primary
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Pane selector
-            Picker("", selection: $selectedPane) {
-                Text("Scope").tag(0)
-                Text("Levels").tag(1)
-                Text("Spectrogram").tag(2)
+        // No in-window controls — the pane fills the content area; selection is via the
+        // window's right-click context menu (see ModernAudioAnalysisView.menu(for:)).
+        ZStack {
+            switch model.selectedPane {
+            case 1:  LevelsPaneView()
+            case 2:  SpectrogramPaneView()
+            default: ScopePaneView()
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-
-            // Pane content
-            ZStack {
-                if selectedPane == 0 {
-                    ScopePaneView()
-                } else if selectedPane == 1 {
-                    LevelsPaneView()
-                } else {
-                    SpectrogramPaneView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.black)
-        .onAppear {
-            // Load saved pane selection
-            selectedPane = UserDefaults.standard.integer(forKey: "audioAnalysisSelectedPane")
-            // Register consumer for the initial pane
-            updateConsumerForPane(selectedPane)
-        }
-        .onChange(of: selectedPane) {
-            // Save pane selection
-            UserDefaults.standard.set(selectedPane, forKey: "audioAnalysisSelectedPane")
-            // Update consumers when pane changes
-            updateConsumerForPane(selectedPane)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { updateConsumerForPane(model.selectedPane) }
+        .onChange(of: model.selectedPane) {
+            UserDefaults.standard.set(model.selectedPane, forKey: "audioAnalysisSelectedPane")
+            updateConsumerForPane(model.selectedPane)
         }
     }
 

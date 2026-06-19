@@ -1,7 +1,7 @@
 import SwiftUI
 import NullPlayerCore
 
-/// Levels pane — displays stereo peak and RMS meters
+/// Levels pane — displays stereo peak and RMS meters as vertical bars that fill the window.
 struct LevelsPaneView: View {
     @State private var leftPeakDB: Float = -120
     @State private var rightPeakDB: Float = -120
@@ -9,39 +9,23 @@ struct LevelsPaneView: View {
     @State private var rightRMSDB: Float = -120
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("LEVELS")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-
-            HStack(spacing: 24) {
-                VStack(spacing: 12) {
-                    Text("LEFT")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.cyan)
-
-                    MeterView(label: "Peak", value: leftPeakDB)
-                    MeterView(label: "RMS", value: leftRMSDB)
-                }
-                .frame(maxWidth: .infinity)
-
-                VStack(spacing: 12) {
-                    Text("RIGHT")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundColor(Color(red: 1, green: 0, blue: 1))
-
-                    MeterView(label: "Peak", value: rightPeakDB)
-                    MeterView(label: "RMS", value: rightRMSDB)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .padding(.horizontal, 12)
-
-            Spacer()
+        HStack(spacing: 24) {
+            ChannelMetersView(
+                name: "LEFT",
+                nameColor: .cyan,
+                peakDB: leftPeakDB,
+                rmsDB: leftRMSDB
+            )
+            ChannelMetersView(
+                name: "RIGHT",
+                nameColor: Color(red: 1, green: 0, blue: 1),
+                peakDB: rightPeakDB,
+                rmsDB: rightRMSDB
+            )
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
         .onReceive(NotificationCenter.default.publisher(for: .audioStereoPCMDataUpdated).receive(on: DispatchQueue.main)) { notification in
             guard let userInfo = notification.userInfo,
@@ -56,12 +40,36 @@ struct LevelsPaneView: View {
     }
 }
 
-struct MeterView: View {
+/// One channel: a label above a pair of full-height Peak/RMS vertical meters.
+private struct ChannelMetersView: View {
+    let name: String
+    let nameColor: Color
+    let peakDB: Float
+    let rmsDB: Float
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(name)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundColor(nameColor)
+
+            HStack(spacing: 16) {
+                VerticalMeterView(label: "Peak", value: peakDB)
+                VerticalMeterView(label: "RMS", value: rmsDB)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// A single vertical level meter that fills the available height.
+struct VerticalMeterView: View {
     let label: String
     let value: Float
 
     private var normalizedValue: CGFloat {
-        CGFloat((value + 120) / 120)  // Map -120 to 0 dB → 0.0 to 1.0
+        CGFloat(max(0, min(1, (value + 120) / 120)))  // -120…0 dB → 0…1
     }
 
     private var meterColor: Color {
@@ -71,34 +79,32 @@ struct MeterView: View {
     }
 
     var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
-                Text(label)
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.gray)
-                    .frame(width: 40, alignment: .leading)
-
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color(white: 0.3))
-
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(meterColor)
-                            .frame(width: geo.size.width * normalizedValue)
-                    }
+        VStack(spacing: 6) {
+            GeometryReader { geo in
+                ZStack(alignment: .bottom) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color(white: 0.18))
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(meterColor)
+                        .frame(height: geo.size.height * normalizedValue)
                 }
-                .frame(height: 12)
-
-                Text(String(format: "%.1f", value))
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white)
-                    .frame(width: 50, alignment: .trailing)
             }
+            .frame(maxWidth: 44, maxHeight: .infinity)
+
+            Text(label)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundColor(.gray)
+
+            Text(String(format: "%.1f", value))
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundColor(.white)
+                .monospacedDigit()
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
 #Preview {
     LevelsPaneView()
+        .frame(width: 275, height: 220)
 }

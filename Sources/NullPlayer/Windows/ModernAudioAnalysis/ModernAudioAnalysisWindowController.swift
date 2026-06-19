@@ -22,7 +22,9 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
 
     convenience init() {
         let scale = ModernSkinElements.scaleFactor
-        let defaultSize = NSSize(width: 600 * scale, height: 400 * scale)
+        // Match the center-stack windows (same width as the main window). WindowManager
+        // normalizes the exact frame via applyDefaultCenterStackFrameForCurrentHT on show.
+        let defaultSize = ModernSkinElements.spectrumWindowSize
 
         let window = BorderlessWindow(
             contentRect: NSRect(origin: .zero, size: defaultSize),
@@ -51,7 +53,8 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.minSize = NSSize(width: 400, height: 300)
+        // Center-stack minimum; WindowManager.applyCenterStackSizingConstraints refines this on show.
+        window.minSize = ModernSkinElements.spectrumMinSize
         window.title = "NullPlayer Audio Analysis"
 
         // Prevent window from being released when closed - we reuse the same controller

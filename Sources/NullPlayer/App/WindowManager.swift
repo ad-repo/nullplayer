@@ -331,7 +331,8 @@ class WindowManager {
         let isSubWindow = window === equalizerWindowController?.window ||
                           window === playlistWindowController?.window ||
                           window === spectrumWindowController?.window ||
-                          window === waveformWindowController?.window
+                          window === waveformWindowController?.window ||
+                          window === audioAnalysisWindowController?.window
         if isSubWindow && isWindowDocked(window) {
             return true
         }
@@ -1666,9 +1667,11 @@ class WindowManager {
         }
 
         if let window = audioAnalysisWindowController?.window {
+            applyCenterStackSizingConstraints(window, kind: .audioAnalysis)
             if let frame = restoredFrame, frame != .zero {
-                window.setFrame(frame, display: true)
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .audioAnalysis), display: true)
             } else {
+                applyDefaultCenterStackFrameForCurrentHT(window, kind: .audioAnalysis)
                 positionSubWindow(window)
             }
         }
@@ -2318,6 +2321,32 @@ class WindowManager {
             }
         }
         
+        // Audio Analysis window - position below previous stack window (modern-only).
+        if let audioAnalysisWindow = audioAnalysisWindowController?.window {
+            let minHeight = expectedMainHeightForCurrentHT(mainWindowController?.window)
+            let minWidth = ModernSkinElements.spectrumMinSize.width
+            audioAnalysisWindow.minSize = NSSize(width: minWidth, height: minHeight)
+            audioAnalysisWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+            let currentFrame = audioAnalysisWindow.frame
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
+            if audioAnalysisWindow.isVisible {
+                let analysisFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - newHeight,
+                    width: newWidth,
+                    height: newHeight
+                )
+                audioAnalysisWindow.setFrame(analysisFrame, display: true, animate: false)
+                nextY = analysisFrame.minY
+            } else {
+                audioAnalysisWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
+            }
+        }
+
         // Side windows - match the vertical stack height and reposition
         let stackTopY = mainFrame.maxY
         let stackHeight = stackTopY - nextY
@@ -2459,6 +2488,7 @@ class WindowManager {
         case playlist
         case spectrum
         case waveform
+        case audioAnalysis
     }
 
     private func centerStackWindowKind(for window: NSWindow) -> CenterStackWindowKind? {
@@ -2466,6 +2496,7 @@ class WindowManager {
         if window === playlistWindowController?.window { return .playlist }
         if window === spectrumWindowController?.window { return .spectrum }
         if window === waveformWindowController?.window { return .waveform }
+        if window === audioAnalysisWindowController?.window { return .audioAnalysis }
         return nil
     }
 
@@ -2501,6 +2532,10 @@ class WindowManager {
         case .waveform:
             window.minSize = NSSize(width: ModernSkinElements.waveformMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        case .audioAnalysis:
+            // Matches the center-stack width; stretchable in height like spectrum/playlist.
+            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
     }
 
@@ -2531,7 +2566,7 @@ class WindowManager {
         switch kind {
         case .equalizer, .spectrum:
             normalized.size.height = target
-        case .playlist, .waveform:
+        case .playlist, .waveform, .audioAnalysis:
             // Accept legacy compact saved frames but normalize to current full-height minimum.
             normalized.size.height = max(target, normalized.height)
         }

@@ -79,9 +79,19 @@ class SpectrogramMetalView: NSView {
         // Create command queue
         commandQueue = device.makeCommandQueue()
 
-        // Load shaders
-        guard let library = device.makeDefaultLibrary() else {
-            NSLog("AudioAnalysis: Failed to load shader library")
+        // Load shader source from the resource bundle and compile at runtime.
+        // makeDefaultLibrary() returns nil in SPM executables — match SpectrumAnalyzerView.
+        guard let shaderURL = BundleHelper.url(forResource: "SpectrogramShaders", withExtension: "metal"),
+              let shaderSource = try? String(contentsOf: shaderURL, encoding: .utf8) else {
+            NSLog("AudioAnalysis: Failed to load spectrogram shader source file")
+            return
+        }
+
+        let library: MTLLibrary
+        do {
+            library = try device.makeLibrary(source: shaderSource, options: nil)
+        } catch {
+            NSLog("AudioAnalysis: Failed to compile spectrogram shader library: \(error)")
             return
         }
 
@@ -150,10 +160,9 @@ class SpectrogramMetalView: NSView {
                 historyBuffer[i * historyWidth + (x - 1)] = historyBuffer[i * historyWidth + x]
             }
             if i < bandCount {
-                // Normalize spectrum value to [0, 1] for colormapping (-80 to 0 dBFS)
-                let dbValue = spectrum[i]
-                let normalized = (dbValue + 80) / 80
-                historyBuffer[i * historyWidth + (historyWidth - 1)] = max(0, min(1, normalized))
+                // `spectrum` bands are already normalized 0–1 magnitudes (see
+                // AudioEngine.audioSpectrumDataUpdated) — use them directly for colormapping.
+                historyBuffer[i * historyWidth + (historyWidth - 1)] = max(0, min(1, spectrum[i]))
             } else {
                 historyBuffer[i * historyWidth + (historyWidth - 1)] = 0
             }
