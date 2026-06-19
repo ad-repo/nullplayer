@@ -60,8 +60,9 @@ Deferred (DSP exists, panes not built): Octave spectrum, Pitch tracker, Delay es
   `AudioAnalysisConsumerCoordinator.swift`.
 - **Pane selection state**: `AudioAnalysisModel: ObservableObject` (`@Published var selectedPane`),
   owned by the NSView and observed by `AudioAnalysisContentView`. The right-click `menu(for:)` mutates
-  it (radio items + Close); the content view's `.onChange` persists it and calls
-  `controller.setVisiblePane(_:)`.
+  it (radio items + Close); the shared content view's `.onChange` persists it (UserDefaults) and
+  invokes its `onPaneChange` callback, which each window's NSView routes to
+  `controller.setVisiblePane(_:)` → `AudioAnalysisConsumerCoordinator`.
 - **Panes**: shared files under `Windows/AudioAnalysis/`: `ScopePaneView.swift`,
   `LevelsPaneView.swift` (vertical full-height peak/RMS meters, no title text), and
   `SpectrogramPaneView.swift`.
@@ -80,17 +81,21 @@ Deferred (DSP exists, panes not built): Octave spectrum, Pitch tracker, Delay es
 
 ## Consumer gating (CPU)
 
-The controller registers the initial pane in `showWindow(_:)`; `AudioAnalysisContentView` updates it
-on `.onChange(of: model.selectedPane)`. The controller registers exactly the visible pane's consumer,
-and both `stopRenderingForHide()` and `windowWillClose` call `deregisterAllConsumers()`. A
-hidden/closed window must leave the FFT and stereo path idle. The spectrogram also pauses its
-`MTKView` (`isPaused`) while hidden or miniaturized.
+`AudioAnalysisConsumerCoordinator` owns the gating (shared by both windows): `setVisiblePane(_:)`
+registers exactly the visible pane's consumer (scope/spectrogram → spectrum, levels → stereo) and
+removes the others; `deregisterAll()` removes everything. The controller registers the initial pane
+in `showWindow(_:)`; the shared content view re-invokes it on `.onChange(of: model.selectedPane)`.
+Both `stopRenderingForHide()` and `windowWillClose` call `consumerCoordinator.deregisterAll()` so a
+hidden/closed window leaves the FFT and stereo path idle. The spectrogram also pauses its `MTKView`
+(`isPaused`) while hidden or miniaturized.
 
 ## Persistence
 
-Window frame saved in `AppStateManager` session state (`audioAnalysisWindowFrame`, gated by
-`savedInModernMode`); the selected pane persists via `UserDefaults`. Docks/snaps with
-Main/EQ/Playlist/Spectrum via `WindowManager`.
+Window frame saved in `AppStateManager` session state (`audioAnalysisWindowFrame`). On restore it's
+gated by a UI-mode match (`modeMatches`), so a frame saved in classic only restores in classic and
+vice-versa. The selected pane persists via `UserDefaults`
+(`AudioAnalysisModel.selectedPaneDefaultsKey`). Docks/snaps with Main/EQ/Playlist/Spectrum via
+`WindowManager`.
 
 ## Gotchas
 
@@ -107,8 +112,10 @@ Main/EQ/Playlist/Spectrum via `WindowManager`.
 - **Metal**: guard `pipelineState` and `historyTexture` **before** creating the command encoder
   (see [metal-gotchas](../metal-gotchas/SKILL.md)); watch the render-to-texture y-flip. The
   spectrogram uses paced `MTKView` drawing (`preferredFramesPerSecond`), not a manual timer loop.
-- **Modern independence**: files under `Windows/ModernAudioAnalysis/` must not import from `Skin/`
-  or `Windows/MainWindow/`.
+- **Modern independence / shared layer**: files under `Windows/ModernAudioAnalysis/` must not import
+  from `Skin/` or `Windows/MainWindow/`. The shared files in `Windows/AudioAnalysis/` (content view,
+  model, coordinator, panes) must stay **mode-neutral** — no modern- or classic-skin-specific imports;
+  only the classic shell (`AudioAnalysisView` / `AudioAnalysisWindowController`) may use `Skin/`.
 - **Two playback paths**: any new tap data must be emitted by both `AudioEngine` and the
   `StreamingAudioPlayer` delegate route, or streaming silently misses it.
 
