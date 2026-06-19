@@ -1662,8 +1662,9 @@ class WindowManager {
     // MARK: - Audio Analysis Window
 
     func showAudioAnalysis(at restoredFrame: NSRect? = nil) {
+        let runningModernMode = isRunningModernUI
         if audioAnalysisWindowController == nil {
-            if isModernUIEnabled {
+            if runningModernMode {
                 audioAnalysisWindowController = ModernAudioAnalysisWindowController()
             } else {
                 audioAnalysisWindowController = AudioAnalysisWindowController()
@@ -1675,7 +1676,7 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .audioAnalysis), display: true)
             } else {
-                if isModernUIEnabled {
+                if runningModernMode {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .audioAnalysis)
                 } else {
                     (audioAnalysisWindowController as? AudioAnalysisWindowController)?.resetToDefaultFrame()
@@ -1715,6 +1716,7 @@ class WindowManager {
             showAudioAnalysis()
         }
         notifyMainWindowVisibilityChanged()
+        _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }

@@ -2457,8 +2457,16 @@ class SkinRenderer {
         
         var xPos = startX
         for char in chars {
-            if let pattern = plexTitlePixels()[char.uppercased().first ?? " "] {
+            let upper = char.uppercased().first ?? char
+            if let pattern = plexTitlePixels()[upper] {
                 drawTitleBarPixelChar(pattern, at: NSPoint(x: xPos, y: startY), color: textColor, in: context)
+            } else {
+                drawTitleBarFallbackChar(
+                    upper,
+                    at: NSPoint(x: xPos, y: startY),
+                    color: textColor,
+                    in: context
+                )
             }
             xPos += charWidth + letterSpacing
         }

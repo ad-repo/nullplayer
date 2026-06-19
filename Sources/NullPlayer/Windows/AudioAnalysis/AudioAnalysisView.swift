@@ -6,7 +6,9 @@ final class AudioAnalysisView: NSView {
     weak var controller: AudioAnalysisWindowController?
 
     private let model = AudioAnalysisModel(
-        selectedPane: UserDefaults.standard.integer(forKey: "audioAnalysisSelectedPane")
+        selectedPane: UserDefaults.standard.integer(
+            forKey: AudioAnalysisModel.selectedPaneDefaultsKey
+        )
     )
     private var hostingController: NSHostingController<AudioAnalysisContentView>?
     private var pressedButton: SkinRenderer.ProjectMButtonType?

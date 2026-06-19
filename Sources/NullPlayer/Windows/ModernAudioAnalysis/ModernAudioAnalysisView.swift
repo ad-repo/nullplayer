@@ -10,7 +10,10 @@ class ModernAudioAnalysisView: NSView {
 
     /// Selected-pane state shared with the SwiftUI content; driven by the right-click menu.
     private let model = AudioAnalysisModel(
-        selectedPane: UserDefaults.standard.integer(forKey: "audioAnalysisSelectedPane"))
+        selectedPane: UserDefaults.standard.integer(
+            forKey: AudioAnalysisModel.selectedPaneDefaultsKey
+        )
+    )
 
     var selectedPane: Int { model.selectedPane }
 

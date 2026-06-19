@@ -67,7 +67,7 @@ final class AudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
         let scale = WindowManager.shared.classicScaleMultiplier
         let height = SkinElements.SpectrumWindow.windowSize.height * scale
         window.minSize = NSSize(
-            width: SkinElements.SpectrumWindow.minSize.width,
+            width: SkinElements.SpectrumWindow.minSize.width * scale,
             height: SkinElements.SpectrumWindow.minSize.height * scale
         )
         window.setFrame(

@@ -5,6 +5,7 @@ final class AudioAnalysisModel: ObservableObject {
     @Published var selectedPane: Int
 
     static let paneTitles = ["Scope", "Levels", "Spectrogram"]
+    static let selectedPaneDefaultsKey = "audioAnalysisSelectedPane"
 
     init(selectedPane: Int) {
         self.selectedPane = min(max(0, selectedPane), Self.paneTitles.count - 1)
@@ -26,7 +27,10 @@ struct AudioAnalysisContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: model.selectedPane) {
-            UserDefaults.standard.set(model.selectedPane, forKey: "audioAnalysisSelectedPane")
+            UserDefaults.standard.set(
+                model.selectedPane,
+                forKey: AudioAnalysisModel.selectedPaneDefaultsKey
+            )
             onPaneChange(model.selectedPane)
         }
     }

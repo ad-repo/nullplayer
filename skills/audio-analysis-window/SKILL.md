@@ -29,11 +29,14 @@ Spectrum windows in each UI mode.
 - **Hide Title Bars.** Included in `effectiveHideTitleBars(for:)` (sub-window list), so it auto-hides
   when docked and follows the global HT toggle. The view reads `effectiveHideTitleBars` for its
   title-bar height, drawing, and hit-testing.
-- **Chrome rendering.** `ModernAudioAnalysisView` draws the skin title bar + close button (`spectrum_`
-  prefix) and insets the SwiftUI hosting view into the content area (inside `borderWidth`, below
-  `titleBarHeight`) via `contentAreaRect()` / `layoutHostingView()`. The hosting view's `appearance`
-  is set from skin brightness (aqua/darkAqua) and the content gets `skinTextColor` — do **not** cover
-  the chrome with an opaque background.
+- **Chrome rendering — modern.** `ModernAudioAnalysisView` draws the modern skin title bar + close
+  button (`spectrum_` prefix) and insets the SwiftUI hosting view into the content area via
+  `contentAreaRect()` / `layoutHostingView()`. Its hosting view uses an aqua/darkAqua appearance
+  selected from the modern skin brightness.
+- **Chrome rendering — classic.** `AudioAnalysisView` uses `SkinRenderer`'s playlist/spectrum-style
+  chrome with the `AUDIO ANALYSIS` bitmap title and no shade button. It hosts the same SwiftUI pane
+  content inside the classic side and bottom borders. Neither mode may cover its chrome with the
+  pane's opaque black background.
 
 ## Panes (MVP)
 
