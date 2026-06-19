@@ -245,6 +245,7 @@ class WindowManager {
             let subWindows = [equalizerWindowController?.window,
                               playlistWindowController?.window,
                               spectrumWindowController?.window,
+                              audioAnalysisWindowController?.window,
                               waveformWindowController?.window].compactMap { $0 }
             var windowsBelow: [NSWindow] = []
             var frontier: [NSRect] = [mainWindow.frame]
@@ -305,6 +306,7 @@ class WindowManager {
                            equalizerWindowController as? NSWindowController,
                            playlistWindowController as? NSWindowController,
                            spectrumWindowController as? NSWindowController,
+                           audioAnalysisWindowController as? NSWindowController,
                            waveformWindowController as? NSWindowController,
                            projectMWindowController as? NSWindowController,
                            plexBrowserWindowController as? NSWindowController] {
@@ -732,6 +734,7 @@ class WindowManager {
         let subWindows = [equalizerWindowController?.window,
                           playlistWindowController?.window,
                           spectrumWindowController?.window,
+                          audioAnalysisWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
 
         // BFS: find windows directly docked below closingFrame, then those below them
@@ -1659,7 +1662,7 @@ class WindowManager {
     // MARK: - Audio Analysis Window
 
     func showAudioAnalysis(at restoredFrame: NSRect? = nil) {
-        guard isModernUIEnabled else { return }
+        guard isRunningModernUI else { return }
 
         let isNewWindow = audioAnalysisWindowController == nil
         if isNewWindow {
@@ -1692,7 +1695,7 @@ class WindowManager {
     }
 
     func toggleAudioAnalysis() {
-        guard isModernUIEnabled else { return }
+        guard isRunningModernUI else { return }
 
         if let controller = audioAnalysisWindowController,
            let window = controller.window,
@@ -2389,6 +2392,7 @@ class WindowManager {
         videoPlayerWindowController?.window?.level = level
         projectMWindowController?.window?.level = level
         spectrumWindowController?.window?.level = level
+        audioAnalysisWindowController?.window?.level = level
         waveformWindowController?.window?.level = level
     }
     
@@ -2408,6 +2412,7 @@ class WindowManager {
             equalizerWindowController?.window,
             playlistWindowController?.window,
             spectrumWindowController?.window,
+            audioAnalysisWindowController?.window,
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
@@ -2433,6 +2438,7 @@ class WindowManager {
         let subWindows = [equalizerWindowController?.window,
                           playlistWindowController?.window,
                           spectrumWindowController?.window,
+                          audioAnalysisWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
         var docked: [NSWindow] = []
         var frontier: [NSRect] = [mainFrame]
@@ -3692,6 +3698,7 @@ class WindowManager {
                window === playlistWindowController?.window ||
                window === equalizerWindowController?.window ||
                window === spectrumWindowController?.window ||
+               window === audioAnalysisWindowController?.window ||
                window === waveformWindowController?.window
     }
     

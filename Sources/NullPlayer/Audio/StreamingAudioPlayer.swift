@@ -448,58 +448,6 @@ class StreamingAudioPlayer {
             )
         }
 
-        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
-
-        // Get audio samples (mono mix if stereo) - use pre-allocated buffer
-        if channelCount == 1 {
-            memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
-        } else {
-            // Mix stereo to mono
-            for i in 0..<fftSize {
-                fftSamples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
-            }
-        }
-
-        // Compensate for volume so visualization is volume-independent
-        // The frameFiltering tap captures audio after volume is applied, so we divide by volume
-        // to recover the original signal level for visualization purposes
-        if volumeCompensation > 1.0 {
-            var compensation = volumeCompensation
-            vDSP_vsmul(fftSamples, 1, &compensation, &fftSamples, 1, vDSP_Length(fftSize))
-        }
-
-        // Throttle updates to 60Hz max to prevent memory buildup
-        let now = CFAbsoluteTimeGetCurrent()
-        let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
-        guard shouldUpdate else { return }
-        lastSpectrumUpdateTime = now
-        
-        // Feed BPM detector with raw mono samples before windowing.
-        fftSamples.withUnsafeBufferPointer { ptr in
-            if let base = ptr.baseAddress {
-                bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
-            }
-        }
-        
-        // Forward PCM data for projectM visualization
-        // Downsample to 512 samples for efficient visualization and lowest latency
-        let pcmSize = 512
-        let stride = fftSize / pcmSize
-        for i in 0..<pcmSize {
-            fftPcmSamples[i] = fftSamples[i * stride]
-        }
-        
-        // Coalesce PCM updates to prevent main queue buildup
-        if !pendingPcmUpdate {
-            pendingPcmUpdate = true
-            let pcmCopy = Array(fftPcmSamples)
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.pendingPcmUpdate = false
-                self.delegate?.streamingPlayerDidUpdatePCM(pcmCopy)
-            }
-        }
-
         // Publish stereo PCM data when needed (independent of spectrum)
         if stereoNeeded && frameCount >= 512 {
             let pcmSize = 512
@@ -538,6 +486,58 @@ class StreamingAudioPlayer {
                     self.pendingStereoPcmUpdate = false
                     self.delegate?.streamingPlayerDidUpdateStereoPCM(left: leftCopy, right: rightCopy, sampleRate: sampleRateDouble)
                 }
+            }
+        }
+
+        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
+
+        // Get audio samples (mono mix if stereo) - use pre-allocated buffer
+        if channelCount == 1 {
+            memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
+        } else {
+            // Mix stereo to mono
+            for i in 0..<fftSize {
+                fftSamples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
+            }
+        }
+
+        // Compensate for volume so visualization is volume-independent
+        // The frameFiltering tap captures audio after volume is applied, so we divide by volume
+        // to recover the original signal level for visualization purposes
+        if volumeCompensation > 1.0 {
+            var compensation = volumeCompensation
+            vDSP_vsmul(fftSamples, 1, &compensation, &fftSamples, 1, vDSP_Length(fftSize))
+        }
+
+        // Throttle updates to 60Hz max to prevent memory buildup
+        let now = CFAbsoluteTimeGetCurrent()
+        let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
+        guard shouldUpdate else { return }
+        lastSpectrumUpdateTime = now
+
+        // Feed BPM detector with raw mono samples before windowing.
+        fftSamples.withUnsafeBufferPointer { ptr in
+            if let base = ptr.baseAddress {
+                bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
+            }
+        }
+
+        // Forward PCM data for projectM visualization
+        // Downsample to 512 samples for efficient visualization and lowest latency
+        let pcmSize = 512
+        let stride = fftSize / pcmSize
+        for i in 0..<pcmSize {
+            fftPcmSamples[i] = fftSamples[i * stride]
+        }
+
+        // Coalesce PCM updates to prevent main queue buildup
+        if !pendingPcmUpdate {
+            pendingPcmUpdate = true
+            let pcmCopy = Array(fftPcmSamples)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.pendingPcmUpdate = false
+                self.delegate?.streamingPlayerDidUpdatePCM(pcmCopy)
             }
         }
 

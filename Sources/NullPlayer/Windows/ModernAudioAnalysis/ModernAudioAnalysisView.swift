@@ -12,6 +12,8 @@ class ModernAudioAnalysisView: NSView {
     private let model = AudioAnalysisModel(
         selectedPane: UserDefaults.standard.integer(forKey: "audioAnalysisSelectedPane"))
 
+    var selectedPane: Int { model.selectedPane }
+
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
     private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
@@ -331,6 +333,19 @@ class ModernAudioAnalysisView: NSView {
         window?.close()
     }
 
+    func setRenderingPaused(_ paused: Bool) {
+        func update(in view: NSView) {
+            if let spectrogram = view as? SpectrogramMetalView {
+                spectrogram.setRenderingPaused(paused)
+            }
+            for subview in view.subviews {
+                update(in: subview)
+            }
+        }
+
+        update(in: self)
+    }
+
     // MARK: - Layout
 
     override func layout() {
@@ -392,7 +407,6 @@ struct AudioAnalysisContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { updateConsumerForPane(model.selectedPane) }
         .onChange(of: model.selectedPane) {
             UserDefaults.standard.set(model.selectedPane, forKey: "audioAnalysisSelectedPane")
             updateConsumerForPane(model.selectedPane)

@@ -3,7 +3,6 @@ import Accelerate
 
 /// Pure-Swift DSP utilities for audio analysis.
 /// All functions are deterministic with no side effects and no global state — suitable for unit testing.
-/// No per-call heap allocations beyond the caller's responsibility.
 public enum AudioAnalysisDSP {
 
     // MARK: - Level Measurement
@@ -21,7 +20,7 @@ public enum AudioAnalysisDSP {
 
         guard maxAbs > 0 else { return -120.0 }
         let dB = 20.0 * log10(maxAbs)
-        return max(dB, -120.0)
+        return min(0.0, max(dB, -120.0))
     }
 
     /// Calculate RMS (root mean square) level in decibels full-scale (dB FS) from audio samples.
@@ -40,7 +39,7 @@ public enum AudioAnalysisDSP {
         guard meanSquare > 0 else { return -120.0 }
         let rms = sqrt(meanSquare)
         let dB = 20.0 * log10(rms)
-        return max(dB, -120.0)
+        return min(0.0, max(dB, -120.0))
     }
 
     // MARK: - Octave Band Analysis
@@ -71,6 +70,7 @@ public enum AudioAnalysisDSP {
         maxFreq: Double
     ) -> [(centerHz: Double, level: Float)] {
         guard !magnitudes.isEmpty, bandsPerOctave > 0, fftSize > 0 else { return [] }
+        guard minFreq.isFinite, maxFreq.isFinite, sampleRate.isFinite else { return [] }
         guard minFreq > 0, maxFreq > minFreq, sampleRate > 0 else { return [] }
 
         let binWidth = sampleRate / Double(fftSize)
@@ -79,6 +79,7 @@ public enum AudioAnalysisDSP {
         var bands: [(centerHz: Double, level: Float)] = []
 
         let octaveRatio = pow(2.0, 1.0 / Double(bandsPerOctave))
+        guard octaveRatio.isFinite, octaveRatio > 1 else { return [] }
         var freq = minFreq
 
         while freq <= maxFreq {
@@ -86,8 +87,16 @@ public enum AudioAnalysisDSP {
             let lowFreq = centerFreq / sqrt(octaveRatio)
             let highFreq = centerFreq * sqrt(octaveRatio)
 
-            let lowBin = max(0, Int(lowFreq / binWidth))
-            let highBin = min(magnitudes.count - 1, Int(highFreq / binWidth))
+            let lowBinValue = lowFreq / binWidth
+            let highBinValue = highFreq / binWidth
+            guard lowBinValue.isFinite, highBinValue.isFinite,
+                  lowBinValue <= Double(magnitudes.count - 1),
+                  highBinValue >= 0 else {
+                freq *= octaveRatio
+                continue
+            }
+            let lowBin = max(0, Int(lowBinValue))
+            let highBin = min(magnitudes.count - 1, Int(min(highBinValue, Double(magnitudes.count - 1))))
 
             var bandLevel: Float = 0.0
             for bin in lowBin...highBin {
@@ -127,10 +136,16 @@ public enum AudioAnalysisDSP {
         minHz: Double,
         maxHz: Double
     ) -> Double? {
-        guard !samples.isEmpty, minHz > 0, maxHz > minHz, sampleRate > 0 else { return nil }
+        guard !samples.isEmpty, minHz.isFinite, maxHz.isFinite, sampleRate.isFinite else { return nil }
+        guard minHz > 0, maxHz > minHz, sampleRate > 0 else { return nil }
 
-        let minLag = max(1, Int(sampleRate / maxHz))
-        let maxLag = min(samples.count / 2, Int(sampleRate / minHz))
+        let largestUsefulLag = samples.count / 2
+        let minLagValue = sampleRate / maxHz
+        let maxLagValue = sampleRate / minHz
+        guard minLagValue <= Double(largestUsefulLag), maxLagValue >= 1 else { return nil }
+
+        let minLag = max(1, Int(minLagValue))
+        let maxLag = maxLagValue >= Double(largestUsefulLag) ? largestUsefulLag : Int(maxLagValue)
 
         guard minLag <= maxLag else { return nil }
 
@@ -220,6 +235,7 @@ public enum AudioAnalysisDSP {
         // Seed with the zero-lag correlation so perfectly aligned channels report 0;
         // a real delay only wins if its correlation exceeds the aligned case.
         let searchLag = min(maxLagSamples, left.count / 2)
+        guard searchLag > 0 else { return 0 }
 
         var zeroCorr: Float = 0.0
         for i in 0..<left.count {

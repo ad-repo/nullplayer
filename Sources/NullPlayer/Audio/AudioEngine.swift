@@ -1489,62 +1489,6 @@ class AudioEngine {
             )
         }
 
-        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
-        
-        // Throttle updates to 60Hz max to prevent memory buildup
-        let now = CFAbsoluteTimeGetCurrent()
-        let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
-        guard shouldUpdate else { return }
-        lastSpectrumUpdateTime = now
-        
-        // Get audio samples (mono mix if stereo) - use pre-allocated buffer
-        if channelCount == 1 {
-            memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
-        } else {
-            // Mix stereo to mono
-            for i in 0..<fftSize {
-                fftSamples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
-            }
-        }
-        
-        // Feed BPM detector with raw mono samples before windowing.
-        fftSamples.withUnsafeBufferPointer { ptr in
-            if let base = ptr.baseAddress {
-                bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
-            }
-        }
-        
-        // Store raw PCM data for waveform visualization (before windowing)
-        // Downsample to 512 samples for efficient storage and lowest latency
-        let pcmSize = 512
-        let pcmStride = fftSize / pcmSize
-        for i in 0..<pcmSize {
-            fftPcmSamples[i] = fftSamples[i * pcmStride]
-        }
-        
-        // Post notification for low-latency visualization (direct from audio tap)
-        // Copy to avoid data races since we reuse the buffer
-        let pcmCopy = Array(fftPcmSamples)
-        pcmUserInfo["pcm"] = pcmCopy
-        pcmUserInfo["sampleRate"] = bufferSampleRate
-        NotificationCenter.default.post(
-            name: .audioPCMDataUpdated,
-            object: self,
-            userInfo: pcmUserInfo
-        )
-
-        // Also store in property for legacy access - coalesce dispatches
-        if !pendingPcmUpdate {
-            pendingPcmUpdate = true
-            let pcmForMain = pcmCopy
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.pendingPcmUpdate = false
-                self.pcmSampleRate = bufferSampleRate
-                self.pcmData = pcmForMain
-            }
-        }
-
         // Publish stereo PCM data when needed (independent of spectrum)
         if stereoNeeded && frameCount >= 512 {
             let pcmSize = 512
@@ -1577,6 +1521,62 @@ class AudioEngine {
                     "sampleRate": bufferSampleRate
                 ]
             )
+        }
+
+        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
+
+        // Throttle updates to 60Hz max to prevent memory buildup
+        let now = CFAbsoluteTimeGetCurrent()
+        let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
+        guard shouldUpdate else { return }
+        lastSpectrumUpdateTime = now
+
+        // Get audio samples (mono mix if stereo) - use pre-allocated buffer
+        if channelCount == 1 {
+            memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
+        } else {
+            // Mix stereo to mono
+            for i in 0..<fftSize {
+                fftSamples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
+            }
+        }
+
+        // Feed BPM detector with raw mono samples before windowing.
+        fftSamples.withUnsafeBufferPointer { ptr in
+            if let base = ptr.baseAddress {
+                bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
+            }
+        }
+
+        // Store raw PCM data for waveform visualization (before windowing)
+        // Downsample to 512 samples for efficient storage and lowest latency
+        let pcmSize = 512
+        let pcmStride = fftSize / pcmSize
+        for i in 0..<pcmSize {
+            fftPcmSamples[i] = fftSamples[i * pcmStride]
+        }
+
+        // Post notification for low-latency visualization (direct from audio tap)
+        // Copy to avoid data races since we reuse the buffer
+        let pcmCopy = Array(fftPcmSamples)
+        pcmUserInfo["pcm"] = pcmCopy
+        pcmUserInfo["sampleRate"] = bufferSampleRate
+        NotificationCenter.default.post(
+            name: .audioPCMDataUpdated,
+            object: self,
+            userInfo: pcmUserInfo
+        )
+
+        // Also store in property for legacy access - coalesce dispatches
+        if !pendingPcmUpdate {
+            pendingPcmUpdate = true
+            let pcmForMain = pcmCopy
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.pendingPcmUpdate = false
+                self.pcmSampleRate = bufferSampleRate
+                self.pcmData = pcmForMain
+            }
         }
 
         // Apply Hann window - use pre-allocated buffers

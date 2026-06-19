@@ -40,6 +40,10 @@ final class AudioAnalysisDSPTests: XCTestCase {
         XCTAssertEqual(result, -120.0)
     }
 
+    func testPeakDBFSClampedToFullScale() {
+        XCTAssertEqual(AudioAnalysisDSP.peakDBFS([2.0]), 0.0)
+    }
+
     // MARK: - rmsDBFS Tests
 
     func testRmsDBFSWithEmptyArray() {
@@ -82,6 +86,10 @@ final class AudioAnalysisDSPTests: XCTestCase {
         // 20 * log10(0.367) ≈ -8.70
         let result = AudioAnalysisDSP.rmsDBFS(samples)
         XCTAssertEqual(result, 20.0 * log10(sqrt(0.135)), accuracy: 0.1)
+    }
+
+    func testRmsDBFSClampedToFullScale() {
+        XCTAssertEqual(AudioAnalysisDSP.rmsDBFS([2.0, -2.0]), 0.0)
     }
 
     // MARK: - octaveBands Tests
@@ -149,6 +157,30 @@ final class AudioAnalysisDSPTests: XCTestCase {
             maxFreq: 20000
         )
         XCTAssertEqual(result.count, 0)
+    }
+
+    func testOctaveBandsRejectsNonFiniteParameters() {
+        let magnitudes = [Float](repeating: 0.5, count: 16)
+        XCTAssertTrue(AudioAnalysisDSP.octaveBands(
+            magnitudes: magnitudes,
+            sampleRate: .infinity,
+            fftSize: 32,
+            bandsPerOctave: 3,
+            minFreq: 20,
+            maxFreq: 20000
+        ).isEmpty)
+    }
+
+    func testOctaveBandsSkipsBandsAboveAvailableSpectrum() {
+        let result = AudioAnalysisDSP.octaveBands(
+            magnitudes: [0.5],
+            sampleRate: 44100,
+            fftSize: 2048,
+            bandsPerOctave: 3,
+            minFreq: 1000,
+            maxFreq: 2000
+        )
+        XCTAssertTrue(result.isEmpty)
     }
 
     func testOctaveBandsWithSinglePeakAt1000Hz() {
@@ -308,13 +340,7 @@ final class AudioAnalysisDSPTests: XCTestCase {
             minHz: 50,
             maxHz: 2000
         )
-        // Random noise may or may not return nil; the autocorrelation peak should be low.
-        // Accept either nil or an unstable result; we're asserting no stable harmonic.
-        if let pitch = result {
-            // If we got a result, it should not be suspiciously harmonic
-            // (This is a loose check; noise is inherently unpredictable.)
-            _ = pitch
-        }
+        XCTAssertNil(result, "Deterministic white noise should not produce a stable pitch")
     }
 
     func testEstimatePitchHzInvalidMinMaxHz() {
@@ -352,6 +378,16 @@ final class AudioAnalysisDSPTests: XCTestCase {
         XCTAssertNil(result)
     }
 
+    func testEstimatePitchHzRejectsNonFiniteParameters() {
+        let samples = [Float](repeating: 0.5, count: 2048)
+        XCTAssertNil(AudioAnalysisDSP.estimatePitchHz(
+            samples: samples,
+            sampleRate: .infinity,
+            minHz: 50,
+            maxHz: 2000
+        ))
+    }
+
     func testEstimatePitchHzLowFreqIn512SampleWindow() {
         // DOCUMENTED LIMIT: sub-100 Hz in a 512-sample window is unreliable.
         // For 50 Hz at 44100 Hz sample rate, period = 44100 / 50 = 882 samples.
@@ -386,6 +422,11 @@ final class AudioAnalysisDSPTests: XCTestCase {
 
     func testEstimateDelaySamplesWithEmptyArrays() {
         let result = AudioAnalysisDSP.estimateDelaySamples(left: [], right: [], maxLagSamples: 20)
+        XCTAssertEqual(result, 0)
+    }
+
+    func testEstimateDelaySamplesWithSingleSample() {
+        let result = AudioAnalysisDSP.estimateDelaySamples(left: [1], right: [1], maxLagSamples: 1)
         XCTAssertEqual(result, 0)
     }
 

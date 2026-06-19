@@ -80,11 +80,14 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         analysisView.needsDisplay = true
+        analysisView.setRenderingPaused(false)
+        setVisiblePane(analysisView.selectedPane)
         startRendering()
     }
 
     func stopRenderingForHide() {
-        // Stop any display link rendering if needed
+        analysisView.setRenderingPaused(true)
+        deregisterAllConsumers()
     }
 
     // MARK: - Public Methods
@@ -192,12 +195,16 @@ extension ModernAudioAnalysisWindowController: NSWindowDelegate {
     }
 
     func windowDidDeminiaturize(_ notification: Notification) {
+        setVisiblePane(analysisView.selectedPane)
+        analysisView.setRenderingPaused(false)
         startRendering()
     }
 
     func windowWillClose(_ notification: Notification) {
-        // CRITICAL: Deregister ALL consumers to prevent idle FFT + stereo processing
-        deregisterAllConsumers()
+        if let window {
+            WindowManager.shared.handleCenterStackWindowWillClose(window)
+        }
+        stopRenderingForHide()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }
 }

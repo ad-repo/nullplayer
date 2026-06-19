@@ -12,14 +12,15 @@ playing audio. Exactly one pane is visible at a time; the pane is selected via t
 
 ## Accessing
 
-- Window menu / right-click main window → **Audio Analysis** (guarded by `isModernUIEnabled`)
+- Window menu / main window right-click context menu → **Audio Analysis** (guarded by
+  `isRunningModernUI`)
 - Available in **modern UI mode only**.
 
 ## Window chrome & sizing
 
 - **Center-stack window.** Registered as `CenterStackWindowKind.audioAnalysis` in `WindowManager`.
-  It opens at the **same width as the main window**, docks/snaps flush in the vertical stack, and is
-  stretchable in height like the spectrum/playlist windows. `showAudioAnalysis` applies
+  It opens at the **same width as the main window**, docks/snaps flush in the vertical stack and is
+  vertically stretchable like spectrum/playlist windows. `showAudioAnalysis` applies
   `applyCenterStackSizingConstraints` / `applyDefaultCenterStackFrameForCurrentHT` /
   `normalizedCenterStackRestoredFrame` exactly like `showSpectrum`. The controller's default size is
   `ModernSkinElements.spectrumWindowSize`.
@@ -74,11 +75,11 @@ Deferred (DSP exists, panes not built): Octave spectrum, Pitch tracker, Delay es
 
 ## Consumer gating (CPU)
 
-`AudioAnalysisContentView` calls `controller.setVisiblePane(_:)` on `.onAppear` and
-`.onChange(of: model.selectedPane)`; the controller registers exactly the visible pane's consumer and
-`windowWillClose` calls `deregisterAllConsumers()`. A hidden/closed window must leave the FFT and
-stereo path idle. The spectrogram also pauses its `MTKView` (`isPaused`) on window miniaturize and
-when removed from its window.
+The controller registers the initial pane in `showWindow(_:)`; `AudioAnalysisContentView` updates it
+on `.onChange(of: model.selectedPane)`. The controller registers exactly the visible pane's consumer,
+and both `stopRenderingForHide()` and `windowWillClose` call `deregisterAllConsumers()`. A
+hidden/closed window must leave the FFT and stereo path idle. The spectrogram also pauses its
+`MTKView` (`isPaused`) while hidden or miniaturized.
 
 ## Persistence
 

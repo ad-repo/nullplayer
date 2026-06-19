@@ -22,7 +22,6 @@ class SpectrogramMetalView: NSView {
     private var pipelineState: MTLRenderPipelineState?
     private var historyTexture: MTLTexture?
     private var spectrumObserver: NSObjectProtocol?
-    private var observers: [NSObjectProtocol] = []
 
     // Scrolling history buffer (width × height, each pixel is a spectrum sample over time)
     private var historyBuffer: [Float] = []
@@ -46,9 +45,6 @@ class SpectrogramMetalView: NSView {
 
     deinit {
         if let observer = spectrumObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        for observer in observers {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -116,7 +112,7 @@ class SpectrogramMetalView: NSView {
             height: historyHeight,
             mipmapped: false
         )
-        textureDesc.usage = [.shaderRead, .shaderWrite]
+        textureDesc.usage = .shaderRead
         historyTexture = device.makeTexture(descriptor: textureDesc)
 
         // Subscribe to spectrum updates (on main thread)
@@ -128,24 +124,6 @@ class SpectrogramMetalView: NSView {
             self?.handleSpectrumUpdate(notification)
         }
 
-        // Observe window minimize/deminiaturize for pause/resume
-        let miniObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didMiniaturizeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.metalView?.isPaused = true
-        }
-        observers.append(miniObserver)
-
-        let deminiObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didDeminiaturizeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.metalView?.isPaused = false
-        }
-        observers.append(deminiObserver)
     }
 
     private func handleSpectrumUpdate(_ notification: Notification) {
@@ -176,10 +154,11 @@ class SpectrogramMetalView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil {
-            // View removed from window, pause rendering
-            metalView?.isPaused = true
-        }
+        metalView?.isPaused = window == nil
+    }
+
+    func setRenderingPaused(_ paused: Bool) {
+        metalView?.isPaused = paused
     }
 
     override func layout() {
