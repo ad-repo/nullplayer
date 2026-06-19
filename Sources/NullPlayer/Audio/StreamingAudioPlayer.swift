@@ -10,6 +10,7 @@ protocol StreamingAudioPlayerDelegate: AnyObject {
     func streamingPlayerDidFinishPlaying()
     func streamingPlayerDidUpdateSpectrum(_ levels: [Float])
     func streamingPlayerDidUpdatePCM(_ samples: [Float])
+    func streamingPlayerDidUpdateStereoPCM(left: [Float], right: [Float], sampleRate: Double)
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int)
     func streamingPlayerDidEncounterError(_ error: AudioPlayerError)
     func streamingPlayerDidReceiveMetadata(_ metadata: [String: String])
@@ -41,9 +42,12 @@ class StreamingAudioPlayer {
 
     /// Whether spectrum FFT should run — bridged from AudioEngine.spectrumNeeded
     var spectrumNeeded: Bool = false
-    
+
     /// Whether 576-sample waveform frames should be generated for consumers like vis_classic or the stream waveform window.
     var waveformNeeded: Bool = false
+
+    /// Whether stereo PCM data should be produced — bridged from AudioEngine.stereoNeeded
+    var stereoNeeded: Bool = false
 
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
     var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
@@ -138,6 +142,11 @@ class StreamingAudioPlayer {
     private var fftMagnitudes = [Float](repeating: 0, count: 1024)
     private var fftNewSpectrum = [Float](repeating: 0, count: 75)
     private var fftPcmSamples = [Float](repeating: 0, count: 512)
+    /// Pre-allocated stereo PCM buffers (512 samples each for left and right channels)
+    private var stereoPcmLeft = [Float](repeating: 0, count: 512)
+    private var stereoPcmRight = [Float](repeating: 0, count: 512)
+    /// Flag to coalesce stereo PCM main queue dispatches
+    private var pendingStereoPcmUpdate = false
     private var waveformLeftU8 = [UInt8](repeating: 128, count: 576)
     private var waveformRightU8 = [UInt8](repeating: 128, count: 576)
     private var waveformUserInfo: [String: Any] = [:]
@@ -408,7 +417,7 @@ class StreamingAudioPlayer {
         // Skip FFT processing when paused or stopped to save CPU
         // The frame filter still receives buffers but we don't need to process them
         guard state == .playing else { return }
-        guard spectrumNeeded || waveformNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded else { return }
 
         guard let channelData = buffer.floatChannelData else { return }
         
@@ -439,6 +448,47 @@ class StreamingAudioPlayer {
             )
         }
 
+        // Publish stereo PCM data when needed (independent of spectrum)
+        if stereoNeeded && frameCount >= 512 {
+            let pcmSize = 512
+            let stride = frameCount / pcmSize
+            // Extract and downsample left and right channels
+            if channelCount == 1 {
+                // Mono: duplicate to both channels
+                for i in 0..<pcmSize {
+                    let sample = channelData[0][i * stride]
+                    stereoPcmLeft[i] = sample
+                    stereoPcmRight[i] = sample
+                }
+            } else {
+                // Stereo: separate channels
+                for i in 0..<pcmSize {
+                    stereoPcmLeft[i] = channelData[0][i * stride]
+                    stereoPcmRight[i] = channelData[1][i * stride]
+                }
+            }
+
+            // Apply volume compensation (same as spectrum path)
+            if volumeCompensation > 1.0 {
+                var compensation = volumeCompensation
+                vDSP_vsmul(stereoPcmLeft, 1, &compensation, &stereoPcmLeft, 1, vDSP_Length(pcmSize))
+                vDSP_vsmul(stereoPcmRight, 1, &compensation, &stereoPcmRight, 1, vDSP_Length(pcmSize))
+            }
+
+            // Coalesce stereo PCM updates to prevent main queue buildup
+            if !pendingStereoPcmUpdate {
+                pendingStereoPcmUpdate = true
+                let leftCopy = Array(stereoPcmLeft)
+                let rightCopy = Array(stereoPcmRight)
+                let sampleRateDouble = Double(buffer.format.sampleRate)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.pendingStereoPcmUpdate = false
+                    self.delegate?.streamingPlayerDidUpdateStereoPCM(left: leftCopy, right: rightCopy, sampleRate: sampleRateDouble)
+                }
+            }
+        }
+
         guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
 
         // Get audio samples (mono mix if stereo) - use pre-allocated buffer
@@ -464,14 +514,14 @@ class StreamingAudioPlayer {
         let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
         guard shouldUpdate else { return }
         lastSpectrumUpdateTime = now
-        
+
         // Feed BPM detector with raw mono samples before windowing.
         fftSamples.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
                 bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
             }
         }
-        
+
         // Forward PCM data for projectM visualization
         // Downsample to 512 samples for efficient visualization and lowest latency
         let pcmSize = 512
@@ -479,7 +529,7 @@ class StreamingAudioPlayer {
         for i in 0..<pcmSize {
             fftPcmSamples[i] = fftSamples[i * stride]
         }
-        
+
         // Coalesce PCM updates to prevent main queue buildup
         if !pendingPcmUpdate {
             pendingPcmUpdate = true

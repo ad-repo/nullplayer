@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.26.0
+
+### New Features
+
+- **Audio Analysis window — Friture-style multi-pane analyzer** — a new modern-UI **Audio Analysis** window (Window menu / right-click → **Audio Analysis**) gives a real-time, multi-pane view of what's playing, modeled on [Friture](https://friture.org). A segmented picker switches between three panes: a **Scope** (oscilloscope) drawing the live mono waveform; a **Levels** meter showing per-channel peak and RMS in dBFS with color-coded headroom; and a **Spectrogram** — a scrolling Metal waterfall that maps each frame's FFT magnitudes through a perceptually-uniform Viridis color ramp (low frequencies at the bottom, time scrolling right-to-left). The window docks and snaps with Main/EQ/Playlist/Spectrum, restores its frame with **Remember State on Quit**, and remembers the selected pane. Each pane registers as an audio consumer only while it's the visible pane and the window is open, so a hidden or closed window leaves the FFT and audio taps idle (the spectrogram also pauses rendering when the window is minimized). The peak/RMS, octave-band, pitch (autocorrelation), and L/R delay (cross-correlation) routines live in a new, unit-tested pure-Swift DSP module shared for future panes. The window is available in modern UI mode.
+
+- **Stereo PCM analysis path** — the audio engine now publishes separate downsampled left/right PCM buffers (`.audioStereoPCMDataUpdated`) alongside the existing mono mix, gated behind its own consumer set so it costs nothing when no analysis pane is open. Wired through both the local playback engine and the streaming-audio delegate route, so the new panes work for local files and HTTP streams alike.
+
 ## 0.25.0
 
 ### New Features

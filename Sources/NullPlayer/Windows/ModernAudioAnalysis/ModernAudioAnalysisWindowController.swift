@@ -1,0 +1,210 @@
+import AppKit
+
+/// Controller for the standalone Audio Analysis window (modern skin).
+/// Conforms to `AudioAnalysisWindowProviding` for WindowManager integration.
+///
+/// This controller has ZERO dependencies on the classic skin system.
+class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWindowProviding {
+
+    // MARK: - Properties
+
+    private var analysisView: ModernAudioAnalysisView!
+
+    // Consumer IDs for audio data subscriptions
+    private let scopeConsumerId = "audioAnalysis.scope"
+    private let levelsConsumerId = "audioAnalysis.levels"
+    private let spectrogramConsumerId = "audioAnalysis.spectrogram"
+
+    // Current active consumers
+    private var activeConsumers: Set<String> = []
+
+    // MARK: - Initialization
+
+    convenience init() {
+        let scale = ModernSkinElements.scaleFactor
+        // Match the center-stack windows (same width as the main window). WindowManager
+        // normalizes the exact frame via applyDefaultCenterStackFrameForCurrentHT on show.
+        let defaultSize = ModernSkinElements.spectrumWindowSize
+
+        let window = BorderlessWindow(
+            contentRect: NSRect(origin: .zero, size: defaultSize),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.allowedResizeEdges = [.bottom, .left, .right]
+        window.titleBarHeight = ModernSkinElements.titleBarBaseHeight * scale
+
+        // Enable fullscreen support
+        window.collectionBehavior = [.fullScreenPrimary, .managed]
+
+        self.init(window: window)
+
+        setupWindow()
+        setupView()
+    }
+
+    // MARK: - Setup
+
+    private func setupWindow() {
+        guard let window = window else { return }
+
+        window.isMovableByWindowBackground = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        // Center-stack minimum; WindowManager.applyCenterStackSizingConstraints refines this on show.
+        window.minSize = ModernSkinElements.spectrumMinSize
+        window.title = "NullPlayer Audio Analysis"
+
+        // Prevent window from being released when closed - we reuse the same controller
+        window.isReleasedWhenClosed = false
+
+        window.center()
+        window.delegate = self
+
+        // Set accessibility identifier
+        window.setAccessibilityIdentifier("ModernAudioAnalysisWindow")
+        window.setAccessibilityLabel("NullPlayer Audio Analysis Window")
+    }
+
+    private func setupView() {
+        analysisView = ModernAudioAnalysisView(frame: NSRect(origin: .zero, size: ModernSkinElements.spectrumWindowSize))
+        analysisView.controller = self
+        analysisView.autoresizingMask = [.width, .height]
+        window?.contentView = analysisView
+    }
+
+    // MARK: - Window Display
+
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        analysisView.needsDisplay = true
+        analysisView.setRenderingPaused(false)
+        setVisiblePane(analysisView.selectedPane)
+        startRendering()
+    }
+
+    func stopRenderingForHide() {
+        analysisView.setRenderingPaused(true)
+        deregisterAllConsumers()
+    }
+
+    // MARK: - Public Methods
+
+    func skinDidChange() {
+        analysisView.skinDidChange()
+    }
+
+    /// Sets the visible pane index and updates consumers accordingly.
+    /// Called by the SwiftUI view when the pane selection changes.
+    func setVisiblePane(_ index: Int) {
+        updateConsumers(forVisiblePanes: [index])
+    }
+
+    // MARK: - Consumer Management
+
+    private func updateConsumers(forVisiblePanes panes: Set<Int>) {
+        let engine = WindowManager.shared.audioEngine
+
+        // Scope pane (0) needs spectrum consumer for PCM data
+        if panes.contains(0) {
+            if !activeConsumers.contains(scopeConsumerId) {
+                engine.addSpectrumConsumer(scopeConsumerId)
+                activeConsumers.insert(scopeConsumerId)
+            }
+        } else {
+            if activeConsumers.contains(scopeConsumerId) {
+                engine.removeSpectrumConsumer(scopeConsumerId)
+                activeConsumers.remove(scopeConsumerId)
+            }
+        }
+
+        // Levels pane (1) needs stereo consumer for PCM peak/RMS
+        if panes.contains(1) {
+            if !activeConsumers.contains(levelsConsumerId) {
+                engine.addStereoConsumer(levelsConsumerId)
+                activeConsumers.insert(levelsConsumerId)
+            }
+        } else {
+            if activeConsumers.contains(levelsConsumerId) {
+                engine.removeStereoConsumer(levelsConsumerId)
+                activeConsumers.remove(levelsConsumerId)
+            }
+        }
+
+        // Spectrogram pane (2) needs spectrum consumer for FFT magnitudes
+        if panes.contains(2) {
+            if !activeConsumers.contains(spectrogramConsumerId) {
+                engine.addSpectrumConsumer(spectrogramConsumerId)
+                activeConsumers.insert(spectrogramConsumerId)
+            }
+        } else {
+            if activeConsumers.contains(spectrogramConsumerId) {
+                engine.removeSpectrumConsumer(spectrogramConsumerId)
+                activeConsumers.remove(spectrogramConsumerId)
+            }
+        }
+    }
+
+    private func startRendering() {
+        // The pane views handle their own rendering (CVDisplayLink, Metal, etc.)
+        // This is a placeholder for future rendering coordination if needed
+    }
+
+    private func deregisterAllConsumers() {
+        let engine = WindowManager.shared.audioEngine
+        for consumerId in activeConsumers {
+            if consumerId == scopeConsumerId {
+                engine.removeSpectrumConsumer(consumerId)
+            } else if consumerId == levelsConsumerId {
+                engine.removeStereoConsumer(consumerId)
+            } else if consumerId == spectrogramConsumerId {
+                engine.removeSpectrumConsumer(consumerId)
+            }
+        }
+        activeConsumers.removeAll()
+    }
+}
+
+// MARK: - NSWindowDelegate
+
+extension ModernAudioAnalysisWindowController: NSWindowDelegate {
+    func windowDidMove(_ notification: Notification) {
+        guard let window = window else { return }
+        let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
+        WindowManager.shared.applySnappedPosition(window, to: newOrigin)
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        analysisView.needsDisplay = true
+        WindowManager.shared.postWindowLayoutDidChange()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        analysisView.needsDisplay = true
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        analysisView.needsDisplay = true
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        stopRenderingForHide()
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        setVisiblePane(analysisView.selectedPane)
+        analysisView.setRenderingPaused(false)
+        startRendering()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let window {
+            WindowManager.shared.handleCenterStackWindowWillClose(window)
+        }
+        stopRenderingForHide()
+        WindowManager.shared.notifyMainWindowVisibilityChanged()
+    }
+}

@@ -245,6 +245,7 @@ class WindowManager {
             let subWindows = [equalizerWindowController?.window,
                               playlistWindowController?.window,
                               spectrumWindowController?.window,
+                              audioAnalysisWindowController?.window,
                               waveformWindowController?.window].compactMap { $0 }
             var windowsBelow: [NSWindow] = []
             var frontier: [NSRect] = [mainWindow.frame]
@@ -305,6 +306,7 @@ class WindowManager {
                            equalizerWindowController as? NSWindowController,
                            playlistWindowController as? NSWindowController,
                            spectrumWindowController as? NSWindowController,
+                           audioAnalysisWindowController as? NSWindowController,
                            waveformWindowController as? NSWindowController,
                            projectMWindowController as? NSWindowController,
                            plexBrowserWindowController as? NSWindowController] {
@@ -331,7 +333,8 @@ class WindowManager {
         let isSubWindow = window === equalizerWindowController?.window ||
                           window === playlistWindowController?.window ||
                           window === spectrumWindowController?.window ||
-                          window === waveformWindowController?.window
+                          window === waveformWindowController?.window ||
+                          window === audioAnalysisWindowController?.window
         if isSubWindow && isWindowDocked(window) {
             return true
         }
@@ -362,6 +365,9 @@ class WindowManager {
     
     /// Spectrum analyzer window controller (classic or modern, accessed via protocol)
     private var spectrumWindowController: SpectrumWindowProviding?
+
+    /// Audio analysis window controller (modern-only, accessed via protocol)
+    private var audioAnalysisWindowController: AudioAnalysisWindowProviding?
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
@@ -678,6 +684,7 @@ class WindowManager {
         if let w = equalizerWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = playlistWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
+        if let w = audioAnalysisWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         
         // Sort top-to-bottom (highest minY first, since macOS Y increases upward)
@@ -727,6 +734,7 @@ class WindowManager {
         let subWindows = [equalizerWindowController?.window,
                           playlistWindowController?.window,
                           spectrumWindowController?.window,
+                          audioAnalysisWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
 
         // BFS: find windows directly docked below closingFrame, then those below them
@@ -1651,6 +1659,59 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
+    // MARK: - Audio Analysis Window
+
+    func showAudioAnalysis(at restoredFrame: NSRect? = nil) {
+        guard isRunningModernUI else { return }
+
+        let isNewWindow = audioAnalysisWindowController == nil
+        if isNewWindow {
+            audioAnalysisWindowController = ModernAudioAnalysisWindowController()
+        }
+
+        if let window = audioAnalysisWindowController?.window {
+            applyCenterStackSizingConstraints(window, kind: .audioAnalysis)
+            if let frame = restoredFrame, frame != .zero {
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .audioAnalysis), display: true)
+            } else {
+                applyDefaultCenterStackFrameForCurrentHT(window, kind: .audioAnalysis)
+                positionSubWindow(window)
+            }
+        }
+
+        audioAnalysisWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(audioAnalysisWindowController?.window)
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+    }
+
+    var isAudioAnalysisVisible: Bool {
+        audioAnalysisWindowController?.window?.isVisible == true
+    }
+
+    /// Get the Audio Analysis window frame (for state saving)
+    var audioAnalysisWindowFrame: NSRect? {
+        return audioAnalysisWindowController?.window?.frame
+    }
+
+    func toggleAudioAnalysis() {
+        guard isRunningModernUI else { return }
+
+        if let controller = audioAnalysisWindowController,
+           let window = controller.window,
+           window.isVisible {
+            let closingFrame = window.frame
+            controller.stopRenderingForHide()
+            window.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
+        } else {
+            showAudioAnalysis()
+        }
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
     // MARK: - Waveform Window
 
     func showWaveform(at restoredFrame: NSRect? = nil) {
@@ -2263,6 +2324,32 @@ class WindowManager {
             }
         }
         
+        // Audio Analysis window - position below previous stack window (modern-only).
+        if let audioAnalysisWindow = audioAnalysisWindowController?.window {
+            let minHeight = expectedMainHeightForCurrentHT(mainWindowController?.window)
+            let minWidth = ModernSkinElements.spectrumMinSize.width
+            audioAnalysisWindow.minSize = NSSize(width: minWidth, height: minHeight)
+            audioAnalysisWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+            let currentFrame = audioAnalysisWindow.frame
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
+            if audioAnalysisWindow.isVisible {
+                let analysisFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - newHeight,
+                    width: newWidth,
+                    height: newHeight
+                )
+                audioAnalysisWindow.setFrame(analysisFrame, display: true, animate: false)
+                nextY = analysisFrame.minY
+            } else {
+                audioAnalysisWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
+            }
+        }
+
         // Side windows - match the vertical stack height and reposition
         let stackTopY = mainFrame.maxY
         let stackHeight = stackTopY - nextY
@@ -2305,6 +2392,7 @@ class WindowManager {
         videoPlayerWindowController?.window?.level = level
         projectMWindowController?.window?.level = level
         spectrumWindowController?.window?.level = level
+        audioAnalysisWindowController?.window?.level = level
         waveformWindowController?.window?.level = level
     }
     
@@ -2324,6 +2412,7 @@ class WindowManager {
             equalizerWindowController?.window,
             playlistWindowController?.window,
             spectrumWindowController?.window,
+            audioAnalysisWindowController?.window,
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
@@ -2349,6 +2438,7 @@ class WindowManager {
         let subWindows = [equalizerWindowController?.window,
                           playlistWindowController?.window,
                           spectrumWindowController?.window,
+                          audioAnalysisWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
         var docked: [NSWindow] = []
         var frontier: [NSRect] = [mainFrame]
@@ -2404,6 +2494,7 @@ class WindowManager {
         case playlist
         case spectrum
         case waveform
+        case audioAnalysis
     }
 
     private func centerStackWindowKind(for window: NSWindow) -> CenterStackWindowKind? {
@@ -2411,6 +2502,7 @@ class WindowManager {
         if window === playlistWindowController?.window { return .playlist }
         if window === spectrumWindowController?.window { return .spectrum }
         if window === waveformWindowController?.window { return .waveform }
+        if window === audioAnalysisWindowController?.window { return .audioAnalysis }
         return nil
     }
 
@@ -2446,6 +2538,10 @@ class WindowManager {
         case .waveform:
             window.minSize = NSSize(width: ModernSkinElements.waveformMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        case .audioAnalysis:
+            // Matches the center-stack width; stretchable in height like spectrum/playlist.
+            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
     }
 
@@ -2476,7 +2572,7 @@ class WindowManager {
         switch kind {
         case .equalizer, .spectrum:
             normalized.size.height = target
-        case .playlist, .waveform:
+        case .playlist, .waveform, .audioAnalysis:
             // Accept legacy compact saved frames but normalize to current full-height minimum.
             normalized.size.height = max(target, normalized.height)
         }
@@ -3564,10 +3660,11 @@ class WindowManager {
         if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
-    
+
     /// Get windows that participate in docking/snapping together (classic skin windows)
     private func dockableWindows() -> [NSWindow] {
         var windows: [NSWindow] = []
@@ -3575,6 +3672,7 @@ class WindowManager {
         if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
@@ -3600,6 +3698,7 @@ class WindowManager {
                window === playlistWindowController?.window ||
                window === equalizerWindowController?.window ||
                window === spectrumWindowController?.window ||
+               window === audioAnalysisWindowController?.window ||
                window === waveformWindowController?.window
     }
     
