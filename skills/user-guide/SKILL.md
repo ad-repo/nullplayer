@@ -22,6 +22,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Playlist Editor** | Track list and playlist management | PL button or context menu |
 | **Equalizer** | Classic 10-band EQ or modern 21-band EQ with presets | EQ button or context menu |
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
+| **Audio Analysis** | Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay) | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **ProjectM** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art | Menu button or context menu |
 
@@ -263,6 +264,17 @@ Accessible via **Playback > Sleep Timer** (or the right-click context menu).
 - **Dynamic**: Per-region normalization (bass/mid/treble)
 
 ## Visualizations
+
+### Audio Analysis Window
+A multi-pane real-time analyzer (Friture-style), available in both classic and modern UI. Right-click the window to pick a pane:
+- **Scope** — oscilloscope waveform of the live signal.
+- **Levels** — per-channel Peak and RMS meters (green/yellow/red) in dBFS.
+- **Spectrogram** — scrolling waterfall of the spectrum over time.
+- **Octave** — 1/3-octave bar spectrum (20 Hz–20 kHz) with peak-hold markers.
+- **Pitch** — detected note, frequency, and how sharp/flat it is (best for vocals/single notes; unreliable on deep bass).
+- **Delay** — stereo left/right timing offset in ms and samples (resolves up to ±~5.8 ms).
+
+Only the visible pane runs, so the window is light on CPU and idles when closed.
 
 ### Main Window GPU Modes
 Off, Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow, EKG. Double-click cycles visual modes; choose Off from Visuals > Spectrum Analyzer > Main Window > Mode.

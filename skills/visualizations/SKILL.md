@@ -15,7 +15,7 @@ The standalone waveform window is **not** a Metal visualization mode. It reuses 
 |-------|-------|
 | [main-window-visualization](../main-window-visualization/SKILL.md) | The 76×16 main-window display area: 11 modes, switching, mode-specific settings |
 | [spectrum-analyzer-window](../spectrum-analyzer-window/SKILL.md) | Dedicated 84-bar spectrum window: docking, geometry, mode list, the cropped analyzer curve, vis_classic waveform demand |
-| [audio-analysis-window](../audio-analysis-window/SKILL.md) | Friture-style multi-pane Audio Analysis window: Scope/Levels/Spectrogram panes, stereo PCM path, per-pane consumer gating, AudioAnalysisDSP module |
+| [audio-analysis-window](../audio-analysis-window/SKILL.md) | Friture-style multi-pane Audio Analysis window: Scope/Levels/Spectrogram/Octave/Pitch/Delay panes, stereo PCM + FFT-magnitudes paths, per-pane consumer gating, AudioAnalysisDSP module |
 | [gpu-vis-modes](../gpu-vis-modes/SKILL.md) | Per-mode internals shared by both windows: Fire, JWST, Lightning, Matrix, Snow, EKG, Classic/Enhanced/Ultra |
 | [album-art-visualizer](../album-art-visualizer/SKILL.md) | Library Browser ART-mode effects (30 Core Image filters) |
 | [projectm-milkdrop](../projectm-milkdrop/SKILL.md) | ProjectM/MilkDrop preset engine in the visualization window |

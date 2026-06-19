@@ -325,10 +325,29 @@ Do not assume spectrum demand implies waveform demand.
 
 - `AudioEngine.spectrumConsumers` controls FFT/spectrum work
 - `AudioEngine.waveformConsumers` controls 576-sample waveform chunk generation
+- `AudioEngine.stereoConsumers` controls separate L/R downsampled PCM (`.audioStereoPCMDataUpdated`)
+- `AudioEngine.magnitudesConsumers` controls raw linear FFT magnitudes (`.audioFFTMagnitudesUpdated`)
 - The waveform window registers a waveform consumer only while visible on a non-file audio track
 - `SpectrumAnalyzerView` registers a waveform consumer only while `qualityMode == .visClassicExact` and the analyzer is actively rendering
+- The Audio Analysis window registers per-pane consumers (see audio-analysis-window skill); a closed window deregisters all of them
 
 This split matters for CPU usage: hidden waveform windows and inactive `vis_classic` views should not keep paying the live waveform callback cost.
+
+### Stereo PCM and FFT-magnitudes paths (Audio Analysis)
+
+Two analysis-only paths exist alongside the mono PCM/spectrum/waveform feeds, each gated by its own
+consumer set so it costs nothing when unused:
+
+- **`.audioStereoPCMDataUpdated`** — `["left": [Float](512), "right": [Float](512), "sampleRate": Double]`.
+  Separate downsampled L/R buffers (mono streams are duplicated into both). Gated by `stereoNeeded`.
+- **`.audioFFTMagnitudesUpdated`** — `["magnitudes": [Float](fftSize/2 linear), "sampleRate": Double, "fftSize": Int]`.
+  Raw **linear** FFT magnitudes (not dB, not the 75-band normalized spectrum). Posted inside the
+  `spectrumNeeded` FFT block, additionally gated by `magnitudesNeeded`. Consumers of this path must also
+  hold a spectrum consumer so the FFT actually runs.
+
+**Both paths are wired in `AudioEngine` (local) and `StreamingAudioPlayer` (streaming) and emit the
+identical payload shape.** A consumer listening to only one path silently misses the other engine — the
+`stereoNeeded`/`magnitudesNeeded` mirror flags bridge engine → streaming the same way `spectrumNeeded` does.
 
 ## BPM Detection
 

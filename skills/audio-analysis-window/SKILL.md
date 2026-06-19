@@ -56,6 +56,33 @@ Spectrum windows in each UI mode.
 **magnitudes** (to receive raw linear magnitudes). This is the only pane that gates the magnitudes
 path; all others share existing notification/consumer infrastructure.
 
+## What each pane shows (behavior + accuracy caveats)
+
+- **Scope** — time-domain oscilloscope: a green waveform line of the 512-sample mono PCM frame over
+  a faint grid. Shows instantaneous waveform shape; idles flat on silence.
+- **Levels** — per-channel **Peak** and **RMS** vertical meters (LEFT/RIGHT), in dBFS over a
+  −120…0 dB range. Meter color: green normally, yellow above −12 dB, red above −6 dB. RMS responds
+  more smoothly than peak.
+- **Spectrogram** — scrolling waterfall (Metal). Each new column is one 75-band spectrum frame mapped
+  through a Viridis colormap (dark = quiet, bright = loud); low frequencies at the bottom, time scrolls
+  right-to-left.
+- **Octave** — 1/3-octave bar spectrum, 20 Hz–20 kHz, one bar per band growing up from the baseline.
+  Bar color green → yellow (>0.4) → red (>0.7) by level; a **white peak-hold tick** marks each band's
+  recent maximum and decays 85%/frame. **Caveat:** the 2048-pt FFT is ≈21.5 Hz/bin, so sub-200 Hz
+  bands have sparse bin coverage and look coarse/step-like.
+- **Pitch** — fundamental-frequency tracker (autocorrelation). Shows **NOTE** (nearest note + octave,
+  e.g. `A4`) and **FREQ (Hz)**, or `—` when there is no confident pitch (silence, noise, or polyphonic
+  material). A cents bar shows deviation from equal temperament: green in tune (<5¢), yellow (<20¢),
+  red beyond. **Caveat:** the 512-sample window (~11.6 ms) is reliable for vocals/treble but unreliable
+  below ~100 Hz (octave errors).
+- **Delay** — stereo inter-channel delay (L/R cross-correlation). Shows **DELAY (ms)**, **SAMPLES**, a
+  direction string ("right lags left" / "left lags right" / "aligned"), and a needle centered at 0.
+  **Caveat:** the 512-sample window resolves only **±~5.8 ms** (at 44.1 kHz); larger delays alias.
+
+These caveats are inherent to the existing 2048-pt FFT / 512-sample PCM frames the panes consume — they
+are display limits, not bugs. If a pane needs better low-frequency or long-delay resolution, the fix is a
+larger analysis buffer, not pane code.
+
 ## Architecture
 
 - **Windows**: `Windows/ModernAudioAnalysis/ModernAudioAnalysisWindowController.swift` and
