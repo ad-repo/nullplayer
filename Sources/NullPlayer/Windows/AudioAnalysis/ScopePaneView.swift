@@ -23,8 +23,11 @@ class ScopeCanvasView: NSView {
     private var displayBuffer: [Float] = []
     private var pcmObserver: NSObjectProtocol?
 
-    /// Weight of each incoming frame in the temporal blend (1 = no smoothing, lower = smoother).
-    private let frameWeight: Float = 0.6
+    /// Temporal-blend weights (1 = no smoothing, lower = smoother). The blend is asymmetric: a frame
+    /// that is louder than what's on screen (a beat) snaps in quickly so it is never averaged away,
+    /// while quieter frames blend slowly to suppress flicker.
+    private let attackWeight: Float = 0.85
+    private let releaseWeight: Float = 0.45
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -75,11 +78,21 @@ class ScopeCanvasView: NSView {
 
         if displayBuffer.count != windowLength {
             displayBuffer = Array(pcm[trigger..<(trigger + windowLength)])
-        } else {
-            for i in 0..<windowLength {
-                let sample = pcm[trigger + i]
-                displayBuffer[i] += (sample - displayBuffer[i]) * frameWeight
-            }
+            needsDisplay = true
+            return
+        }
+
+        // Asymmetric blend: snap toward a louder frame (a beat), ease toward a quieter one. This stops
+        // the smoothing from averaging away a strong beat whose trigger locked to a different cycle.
+        var framePeak: Float = 0
+        var displayPeak: Float = 0
+        for i in 0..<windowLength {
+            framePeak = max(framePeak, abs(pcm[trigger + i]))
+            displayPeak = max(displayPeak, abs(displayBuffer[i]))
+        }
+        let weight = framePeak > displayPeak ? attackWeight : releaseWeight
+        for i in 0..<windowLength {
+            displayBuffer[i] += (pcm[trigger + i] - displayBuffer[i]) * weight
         }
         needsDisplay = true
     }
