@@ -80,5 +80,9 @@ fragment float4 spectrogramFragmentShader(
     // Apply colormap based on magnitude
     float3 color = viridisColormap(historyValue);
 
+    // Fade the noise floor to black so silence reads as a black background instead of
+    // Viridis' dark-purple zero color, without distorting the rest of the gradient.
+    color *= smoothstep(0.0, 0.05, historyValue);
+
     return float4(color, 1.0);
 }
