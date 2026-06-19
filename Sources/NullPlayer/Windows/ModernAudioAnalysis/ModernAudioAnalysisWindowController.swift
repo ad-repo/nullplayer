@@ -10,13 +10,7 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
 
     private var analysisView: ModernAudioAnalysisView!
 
-    // Consumer IDs for audio data subscriptions
-    private let scopeConsumerId = "audioAnalysis.scope"
-    private let levelsConsumerId = "audioAnalysis.levels"
-    private let spectrogramConsumerId = "audioAnalysis.spectrogram"
-
-    // Current active consumers
-    private var activeConsumers: Set<String> = []
+    private let consumerCoordinator = AudioAnalysisConsumerCoordinator()
 
     // MARK: - Initialization
 
@@ -99,52 +93,7 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
     /// Sets the visible pane index and updates consumers accordingly.
     /// Called by the SwiftUI view when the pane selection changes.
     func setVisiblePane(_ index: Int) {
-        updateConsumers(forVisiblePanes: [index])
-    }
-
-    // MARK: - Consumer Management
-
-    private func updateConsumers(forVisiblePanes panes: Set<Int>) {
-        let engine = WindowManager.shared.audioEngine
-
-        // Scope pane (0) needs spectrum consumer for PCM data
-        if panes.contains(0) {
-            if !activeConsumers.contains(scopeConsumerId) {
-                engine.addSpectrumConsumer(scopeConsumerId)
-                activeConsumers.insert(scopeConsumerId)
-            }
-        } else {
-            if activeConsumers.contains(scopeConsumerId) {
-                engine.removeSpectrumConsumer(scopeConsumerId)
-                activeConsumers.remove(scopeConsumerId)
-            }
-        }
-
-        // Levels pane (1) needs stereo consumer for PCM peak/RMS
-        if panes.contains(1) {
-            if !activeConsumers.contains(levelsConsumerId) {
-                engine.addStereoConsumer(levelsConsumerId)
-                activeConsumers.insert(levelsConsumerId)
-            }
-        } else {
-            if activeConsumers.contains(levelsConsumerId) {
-                engine.removeStereoConsumer(levelsConsumerId)
-                activeConsumers.remove(levelsConsumerId)
-            }
-        }
-
-        // Spectrogram pane (2) needs spectrum consumer for FFT magnitudes
-        if panes.contains(2) {
-            if !activeConsumers.contains(spectrogramConsumerId) {
-                engine.addSpectrumConsumer(spectrogramConsumerId)
-                activeConsumers.insert(spectrogramConsumerId)
-            }
-        } else {
-            if activeConsumers.contains(spectrogramConsumerId) {
-                engine.removeSpectrumConsumer(spectrogramConsumerId)
-                activeConsumers.remove(spectrogramConsumerId)
-            }
-        }
+        consumerCoordinator.setVisiblePane(index)
     }
 
     private func startRendering() {
@@ -153,17 +102,7 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
     }
 
     private func deregisterAllConsumers() {
-        let engine = WindowManager.shared.audioEngine
-        for consumerId in activeConsumers {
-            if consumerId == scopeConsumerId {
-                engine.removeSpectrumConsumer(consumerId)
-            } else if consumerId == levelsConsumerId {
-                engine.removeStereoConsumer(consumerId)
-            } else if consumerId == spectrogramConsumerId {
-                engine.removeSpectrumConsumer(consumerId)
-            }
-        }
-        activeConsumers.removeAll()
+        consumerCoordinator.deregisterAll()
     }
 }
 

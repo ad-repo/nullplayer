@@ -1,20 +1,19 @@
 ---
 name: audio-analysis-window
-description: The modern-UI Audio Analysis window — a Friture-style multi-pane analyzer (Scope, Levels, Spectrogram), the stereo PCM path that feeds it, per-pane consumer gating, and the shared AudioAnalysisDSP module. Use when modifying the analysis window, its panes, the spectrogram shader, or the stereo/DSP plumbing.
+description: The classic and modern Audio Analysis windows — a Friture-style multi-pane analyzer (Scope, Levels, Spectrogram), the stereo PCM path that feeds them, per-pane consumer gating, and the shared AudioAnalysisDSP module. Use when modifying either analysis window, its panes, the spectrogram shader, or the stereo/DSP plumbing.
 ---
 
 # Audio Analysis Window
 
-A modern-UI-only window offering a Friture-style (https://friture.org) real-time view of the
+A classic and modern UI window offering a Friture-style (https://friture.org) real-time view of the
 playing audio. Exactly one pane is visible at a time; the pane is selected via the window's
 **right-click context menu** (no in-window controls — matches the Spectrum window). Modeled on the
-`ModernSpectrum` window pattern and has **zero** dependencies on the classic skin system.
+Spectrum windows in each UI mode.
 
 ## Accessing
 
-- Window menu / main window right-click context menu → **Audio Analysis** (guarded by
-  `isRunningModernUI`)
-- Available in **modern UI mode only**.
+- Window menu / main window right-click context menu → **Audio Analysis**
+- Available in classic and modern UI modes.
 
 ## Window chrome & sizing
 
@@ -51,15 +50,18 @@ Deferred (DSP exists, panes not built): Octave spectrum, Pitch tracker, Delay es
 
 ## Architecture
 
-- **Window**: `Windows/ModernAudioAnalysis/ModernAudioAnalysisWindowController.swift` (conforms to
-  `App/AudioAnalysisWindowProviding.swift`) + `ModernAudioAnalysisView.swift` (SwiftUI host + the
-  `menu(for:)` context menu for pane selection + Close).
+- **Windows**: `Windows/ModernAudioAnalysis/ModernAudioAnalysisWindowController.swift` and
+  `Windows/AudioAnalysis/AudioAnalysisWindowController.swift` conform to
+  `App/AudioAnalysisWindowProviding.swift`. Their skin-specific NSViews host the shared pane content.
+- **Shared UI and gating**: `Windows/AudioAnalysis/AudioAnalysisContentView.swift` and
+  `AudioAnalysisConsumerCoordinator.swift`.
 - **Pane selection state**: `AudioAnalysisModel: ObservableObject` (`@Published var selectedPane`),
   owned by the NSView and observed by `AudioAnalysisContentView`. The right-click `menu(for:)` mutates
   it (radio items + Close); the content view's `.onChange` persists it and calls
   `controller.setVisiblePane(_:)`.
-- **Panes**: `ScopePaneView.swift`, `LevelsPaneView.swift` (vertical full-height peak/RMS meters,
-  no title text), `SpectrogramPaneView.swift`.
+- **Panes**: shared files under `Windows/AudioAnalysis/`: `ScopePaneView.swift`,
+  `LevelsPaneView.swift` (vertical full-height peak/RMS meters, no title text), and
+  `SpectrogramPaneView.swift`.
 - **Shader**: `Visualization/SpectrogramShaders.metal` — fullscreen quad generated from
   `[[vertex_id]]` (no vertex buffer), samples an `r32Float` history texture, Viridis colormap LUT.
   Low frequencies at the bottom (texCoord.y = 0). **Loaded via `BundleHelper.url(...)` +

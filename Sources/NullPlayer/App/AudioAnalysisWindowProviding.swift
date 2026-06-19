@@ -1,10 +1,8 @@
 import AppKit
 
 /// Protocol abstracting the audio analysis window.
-/// Both modern and classic (if added) implementations conform to this protocol.
+/// Both modern and classic implementations conform to this protocol.
 /// `WindowManager` holds a reference to whichever is active.
-///
-/// Audio Analysis windows are modern-only in this MVP.
 protocol AudioAnalysisWindowProviding: AnyObject {
     /// The underlying window
     var window: NSWindow? { get }

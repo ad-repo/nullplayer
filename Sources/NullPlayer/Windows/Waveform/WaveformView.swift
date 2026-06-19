@@ -100,7 +100,8 @@ class WaveformView: BaseWaveformView {
             isActive: isActive,
             pressedButton: pressedClose ? .close : nil,
             isShadeMode: false,
-            controlScale: WindowManager.shared.playlistChromeScale
+            controlScale: WindowManager.shared.playlistChromeScale,
+            title: "WAVEFORM"
         )
         context.restoreGState()
 

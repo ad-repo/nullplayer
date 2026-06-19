@@ -366,7 +366,7 @@ class WindowManager {
     /// Spectrum analyzer window controller (classic or modern, accessed via protocol)
     private var spectrumWindowController: SpectrumWindowProviding?
 
-    /// Audio analysis window controller (modern-only, accessed via protocol)
+    /// Audio analysis window controller for the active UI mode, accessed via protocol.
     private var audioAnalysisWindowController: AudioAnalysisWindowProviding?
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
@@ -1662,11 +1662,12 @@ class WindowManager {
     // MARK: - Audio Analysis Window
 
     func showAudioAnalysis(at restoredFrame: NSRect? = nil) {
-        guard isRunningModernUI else { return }
-
-        let isNewWindow = audioAnalysisWindowController == nil
-        if isNewWindow {
-            audioAnalysisWindowController = ModernAudioAnalysisWindowController()
+        if audioAnalysisWindowController == nil {
+            if isModernUIEnabled {
+                audioAnalysisWindowController = ModernAudioAnalysisWindowController()
+            } else {
+                audioAnalysisWindowController = AudioAnalysisWindowController()
+            }
         }
 
         if let window = audioAnalysisWindowController?.window {
@@ -1674,7 +1675,11 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .audioAnalysis), display: true)
             } else {
-                applyDefaultCenterStackFrameForCurrentHT(window, kind: .audioAnalysis)
+                if isModernUIEnabled {
+                    applyDefaultCenterStackFrameForCurrentHT(window, kind: .audioAnalysis)
+                } else {
+                    (audioAnalysisWindowController as? AudioAnalysisWindowController)?.resetToDefaultFrame()
+                }
                 positionSubWindow(window)
             }
         }
@@ -1694,9 +1699,11 @@ class WindowManager {
         return audioAnalysisWindowController?.window?.frame
     }
 
-    func toggleAudioAnalysis() {
-        guard isRunningModernUI else { return }
+    var audioAnalysisWindow: NSWindow? {
+        audioAnalysisWindowController?.window
+    }
 
+    func toggleAudioAnalysis() {
         if let controller = audioAnalysisWindowController,
            let window = controller.window,
            window.isVisible {
@@ -2091,6 +2098,7 @@ class WindowManager {
         plexBrowserWindowController?.skinDidChange()
         projectMWindowController?.skinDidChange()
         spectrumWindowController?.skinDidChange()
+        audioAnalysisWindowController?.skinDidChange()
         waveformWindowController?.skinDidChange()
     }
     
@@ -2324,10 +2332,17 @@ class WindowManager {
             }
         }
         
-        // Audio Analysis window - position below previous stack window (modern-only).
+        // Audio Analysis window - position below previous stack window.
         if let audioAnalysisWindow = audioAnalysisWindowController?.window {
-            let minHeight = expectedMainHeightForCurrentHT(mainWindowController?.window)
-            let minWidth = ModernSkinElements.spectrumMinSize.width
+            let baseMinSize: NSSize = runningModernMode
+                ? ModernSkinElements.spectrumMinSize
+                : SkinElements.SpectrumWindow.minSize
+            let minHeight = runningModernMode
+                ? expectedMainHeightForCurrentHT(mainWindowController?.window)
+                : baseMinSize.height * scale
+            let minWidth = runningModernMode
+                ? ModernSkinElements.spectrumMinSize.width
+                : baseMinSize.width * scale
             audioAnalysisWindow.minSize = NSSize(width: minWidth, height: minHeight)
             audioAnalysisWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
@@ -2606,6 +2621,7 @@ class WindowManager {
         let playlistWindow = playlistWindowController?.window
         let spectrumWindow = spectrumWindowController?.window
         let waveformWindow = waveformWindowController?.window
+        let audioAnalysisWindow = audioAnalysisWindowController?.window
 
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
@@ -2613,6 +2629,7 @@ class WindowManager {
             playlistFrame: (playlistWindow?.isVisible == true) ? playlistWindow?.frame : nil,
             spectrumFrame: (spectrumWindow?.isVisible == true) ? spectrumWindow?.frame : nil,
             waveformFrame: (waveformWindow?.isVisible == true) ? waveformWindow?.frame : nil,
+            audioAnalysisFrame: (audioAnalysisWindow?.isVisible == true) ? audioAnalysisWindow?.frame : nil,
             scale: scale
         )
 
@@ -2653,6 +2670,12 @@ class WindowManager {
            repairedFrame != waveformWindow.frame {
             waveformWindow.setFrame(repairedFrame, display: true, animate: false)
         }
+        if let audioAnalysisWindow,
+           audioAnalysisWindow.isVisible,
+           let repairedFrame = repaired.audioAnalysisFrame,
+           repairedFrame != audioAnalysisWindow.frame {
+            audioAnalysisWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
 
         return true
     }
@@ -2681,7 +2704,8 @@ class WindowManager {
         // Each window preserves its current size and aligns left with main
         var nextY = mainFrame.minY  // Bottom of previous window in stack
         
-        // Collect frames for visible stack windows (order: EQ, Playlist, Spectrum, Waveform)
+        // Collect frames for visible stack windows
+        // (order: EQ, Playlist, Spectrum, Waveform, Audio Analysis).
         var eqFrame: NSRect?
         var playlistFrame: NSRect?
         var spectrumFrame: NSRect?
@@ -2713,6 +2737,14 @@ class WindowManager {
             let w = waveformWindow.frame.width
             nextY -= h
             waveformFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
+        }
+
+        var audioAnalysisFrame: NSRect?
+        if let audioAnalysisWindow = audioAnalysisWindowController?.window, audioAnalysisWindow.isVisible {
+            let h = audioAnalysisWindow.frame.height
+            let w = audioAnalysisWindow.frame.width
+            nextY -= h
+            audioAnalysisFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
         }
         
         // Side windows span the full stack height
@@ -2762,6 +2794,9 @@ class WindowManager {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = waveformFrame, let window = waveformWindowController?.window {
+            window.setFrame(frame, display: true, animate: false)
+        }
+        if let frame = audioAnalysisFrame, let window = audioAnalysisWindowController?.window {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
