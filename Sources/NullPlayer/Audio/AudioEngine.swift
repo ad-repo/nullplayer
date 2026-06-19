@@ -4333,9 +4333,10 @@ class AudioEngine {
             streamingPlayer?.delegate = self
             streamingPlayer?.spectrumNeeded = spectrumNeeded
             streamingPlayer?.waveformNeeded = waveformNeeded
+            streamingPlayer?.stereoNeeded = stereoNeeded
             streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         }
-        
+
         // Sync EQ settings from main EQ to streaming player
         syncEQToStreamingPlayer()
         
@@ -5150,6 +5151,7 @@ class AudioEngine {
         streamingPlayer?.delegate = self
         streamingPlayer?.spectrumNeeded = spectrumNeeded
         streamingPlayer?.waveformNeeded = waveformNeeded
+        streamingPlayer?.stereoNeeded = stereoNeeded
         streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         
