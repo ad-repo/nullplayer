@@ -5561,7 +5561,10 @@ class AudioEngine {
         if let siblingCueURL = CueSheet.siblingCue(for: url) {
             do {
                 let cue = try CueSheet.parse(from: siblingCueURL)
-                return CueSheet.expandToTracks(cue: cue, cueFileURL: siblingCueURL)
+                // The opened audio file IS the backing for a sibling cue — use it directly
+                // rather than the cue's FILE line, which may be stale or a leftover
+                // placeholder pointing at a nonexistent file.
+                return CueSheet.expandToTracks(cue: cue, cueFileURL: siblingCueURL, backingOverride: url)
             } catch {
                 NSLog("AudioEngine: Failed to parse sibling .cue for '%@': %@", url.lastPathComponent, error.localizedDescription)
                 return nil

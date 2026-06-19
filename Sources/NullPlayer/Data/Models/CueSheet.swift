@@ -233,14 +233,19 @@ struct CueSheet {
     /// Returns empty array if cue is degenerate (no entries or unusable), which signals
     /// callers to fall back to normal Track-from-URL handling (for sibling-cue case) or
     /// log + no-op (for direct .cue open).
-    static func expandToTracks(cue: CueSheet, cueFileURL: URL) -> [Track] {
+    /// - Parameter backingOverride: When non-nil, used as the backing file instead of the
+    ///   cue's `FILE` line. The sibling-cue case passes the audio file the user actually
+    ///   opened — that file *is* the backing, so a stale/wrong `FILE` line in the cue (e.g.
+    ///   a leftover placeholder) can never pin the rows to a nonexistent file.
+    static func expandToTracks(cue: CueSheet, cueFileURL: URL, backingOverride: URL? = nil) -> [Track] {
         // Guard: if no entries, cue is unusable
         guard !cue.entries.isEmpty else {
             return []
         }
 
-        // Resolve the backing file
-        let backingURL = resolveBackingFile(for: cueFileURL, fileName: cue.fileName)
+        // Resolve the backing file: prefer the explicit override (sibling-cue case),
+        // otherwise honor the cue's FILE line (direct .cue open).
+        let backingURL = backingOverride ?? resolveBackingFile(for: cueFileURL, fileName: cue.fileName)
 
         var tracks: [Track] = []
 
