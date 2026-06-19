@@ -49,6 +49,9 @@ class StreamingAudioPlayer {
     /// Whether stereo PCM data should be produced — bridged from AudioEngine.stereoNeeded
     var stereoNeeded: Bool = false
 
+    /// Whether raw FFT magnitudes should be posted — bridged from AudioEngine.magnitudesNeeded
+    var magnitudesNeeded: Bool = false
+
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
     var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
 
@@ -555,7 +558,21 @@ class StreamingAudioPlayer {
         for i in 0..<fftSize / 2 {
             fftMagnitudes[i] = sqrt(fftRealOut[i] * fftRealOut[i] + fftImagOut[i] * fftImagOut[i])
         }
-        
+
+        // Post raw linear magnitudes for octave band analysis (gated by magnitudesNeeded)
+        if magnitudesNeeded {
+            let magnitudesCopy = Array(fftMagnitudes.prefix(fftSize / 2))
+            NotificationCenter.default.post(
+                name: .audioFFTMagnitudesUpdated,
+                object: self,
+                userInfo: [
+                    "magnitudes": magnitudesCopy,
+                    "sampleRate": buffer.format.sampleRate,
+                    "fftSize": fftSize
+                ]
+            )
+        }
+
         // Map to 75 bands (classic skin-style) using logarithmic frequency mapping
         // Zero out pre-allocated buffer
         let bandCount = 75

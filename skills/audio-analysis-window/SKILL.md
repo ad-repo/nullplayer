@@ -38,18 +38,23 @@ Spectrum windows in each UI mode.
   content inside the classic side and bottom borders. Neither mode may cover its chrome with the
   pane's opaque black background.
 
-## Panes (MVP)
+## Panes
 
-| Pane | Source notification | Consumer it registers | Render |
+| Pane | Source notification | Consumer(s) it registers | Render |
 |------|--------------------|----------------------|--------|
 | **Scope** (oscilloscope) | `.audioPCMDataUpdated` (`userInfo["pcm"]` 512 mono) | spectrum | CoreGraphics (`NSView`) |
 | **Levels** (peak/RMS) | `.audioStereoPCMDataUpdated` (`left`/`right` 512) | stereo | SwiftUI bars |
 | **Spectrogram** (waterfall) | `.audioSpectrumDataUpdated` (`spectrum` 75 bands) | spectrum | Metal (`MTKView`) |
+| **Octave** (1/3-octave spectrum) | `.audioFFTMagnitudesUpdated` (`magnitudes` raw linear, `sampleRate`, `fftSize`) | spectrum + magnitudes | CoreGraphics (`NSView`) bars + peak-hold |
+| **Pitch** (fundamental frequency) | `.audioPCMDataUpdated` (512 mono) | spectrum | SwiftUI (Hz, note name, cents deviation) |
+| **Delay** (L/R phase delay) | `.audioStereoPCMDataUpdated` (`left`/`right` 512) | stereo | SwiftUI (ms, samples, direction) |
 
-`.audioPCMDataUpdated` is posted *inside* the spectrum block, so the Scope pane registers a
+`.audioPCMDataUpdated` is posted *inside* the spectrum block, so the Scope and Pitch panes register a
 **spectrum** consumer (not a dedicated PCM one) to make mono PCM flow.
 
-Deferred (DSP exists, panes not built): Octave spectrum, Pitch tracker, Delay estimator.
+**Octave requires dual consumers:** it registers both **spectrum** (to trigger the FFT) and
+**magnitudes** (to receive raw linear magnitudes). This is the only pane that gates the magnitudes
+path; all others share existing notification/consumer infrastructure.
 
 ## Architecture
 
@@ -64,8 +69,10 @@ Deferred (DSP exists, panes not built): Octave spectrum, Pitch tracker, Delay es
   invokes its `onPaneChange` callback, which each window's NSView routes to
   `controller.setVisiblePane(_:)` → `AudioAnalysisConsumerCoordinator`.
 - **Panes**: shared files under `Windows/AudioAnalysis/`: `ScopePaneView.swift`,
-  `LevelsPaneView.swift` (vertical full-height peak/RMS meters, no title text), and
-  `SpectrogramPaneView.swift`.
+  `LevelsPaneView.swift` (vertical full-height peak/RMS meters, no title text),
+  `SpectrogramPaneView.swift`, `OctavePaneView.swift` (1/3-octave bands CoreGraphics with peak-hold),
+  `PitchPaneView.swift` (Hz + note + cents SwiftUI), and `DelayPaneView.swift` (stereo delay
+  cross-correlation SwiftUI).
 - **Shader**: `Visualization/SpectrogramShaders.metal` — fullscreen quad generated from
   `[[vertex_id]]` (no vertex buffer), samples an `r32Float` history texture, Viridis colormap LUT.
   Low frequencies at the bottom (texCoord.y = 0). **Loaded via `BundleHelper.url(...)` +
@@ -79,15 +86,30 @@ Deferred (DSP exists, panes not built): Octave spectrum, Pitch tracker, Delay es
   `stereoNeeded`, mirroring the spectrum/waveform consumer pattern. Wired in **both** the local
   engine and the streaming delegate (`streamingPlayerDidUpdateStereoPCM(left:right:sampleRate:)`).
 
+- **Magnitudes path** (new): `Audio/AudioEngine.swift` and `Audio/StreamingAudioPlayer.swift` publish
+  `.audioFFTMagnitudesUpdated` (userInfo: `"magnitudes"` raw linear half-spectrum, `"sampleRate"`,
+  `"fftSize"`) gated by `addMagnitudesConsumer`/`removeMagnitudesConsumer`/`magnitudesNeeded`.
+  Posted inside the spectrum FFT block, *after* magnitudes are computed but *before* dB conversion.
+  Octave pane is the sole consumer; the gating cost is zero when no Octave pane is visible.
+
 ## Consumer gating (CPU)
 
 `AudioAnalysisConsumerCoordinator` owns the gating (shared by both windows): `setVisiblePane(_:)`
-registers exactly the visible pane's consumer (scope/spectrogram → spectrum, levels → stereo) and
-removes the others; `deregisterAll()` removes everything. The controller registers the initial pane
-in `showWindow(_:)`; the shared content view re-invokes it on `.onChange(of: model.selectedPane)`.
-Both `stopRenderingForHide()` and `windowWillClose` call `consumerCoordinator.deregisterAll()` so a
-hidden/closed window leaves the FFT and stereo path idle. The spectrogram also pauses its `MTKView`
-(`isPaused`) while hidden or miniaturized.
+maps each pane to its consumer(s):
+- Scope (pane 0) → spectrum
+- Levels (pane 1) → stereo
+- Spectrogram (pane 2) → spectrum
+- Octave (pane 3) → spectrum + magnitudes (dual consumers)
+- Pitch (pane 4) → spectrum
+- Delay (pane 5) → stereo
+
+Only the visible pane's consumer(s) are registered; others are removed. `deregisterAll()` removes
+everything via a `consumerRemovers` map that tracks which remove function to call per consumer ID.
+The controller registers the initial pane in `showWindow(_:)`; the shared content view re-invokes
+it on `.onChange(of: model.selectedPane)`. Both `stopRenderingForHide()` and `windowWillClose` call
+`consumerCoordinator.deregisterAll()` so a hidden/closed window leaves the FFT, stereo, and
+magnitudes paths idle. The spectrogram also pauses its `MTKView` (`isPaused`) while hidden or
+miniaturized.
 
 ## Persistence
 
