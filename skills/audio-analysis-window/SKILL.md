@@ -59,7 +59,10 @@ path; all others share existing notification/consumer infrastructure.
 ## What each pane shows (behavior + accuracy caveats)
 
 - **Scope** — time-domain oscilloscope: a green waveform line of the 512-sample mono PCM frame over
-  a faint grid. Shows instantaneous waveform shape; idles flat on silence.
+  a faint grid. Each frame is **trigger-aligned** to a rising zero-crossing in its first quarter so
+  periodic content stays phase-locked (stationary) instead of swimming, then gently blended into the
+  previous frame (`frameWeight`) to reduce flicker, and drawn as a smoothed quadratic curve. Idles flat
+  on silence (no trigger found → no lock).
 - **Levels** — per-channel **Peak** and **RMS** vertical meters (LEFT/RIGHT), in dBFS over a
   −120…0 dB range. Meter color: green normally, yellow above −12 dB, red above −6 dB. RMS responds
   more smoothly than peak.
