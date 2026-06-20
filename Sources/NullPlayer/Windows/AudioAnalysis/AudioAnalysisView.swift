@@ -40,7 +40,7 @@ final class AudioAnalysisView: NSView {
         wantsLayer = true
         setAccessibilityIdentifier("audioAnalysisView")
         setAccessibilityRole(.group)
-        setAccessibilityLabel("NullPlayer Audio Analysis")
+        setAccessibilityLabel("NullPlayer Audio Analyzer")
 
         let content = AudioAnalysisContentView(model: model) { [weak self] pane in
             self?.controller?.setVisiblePane(pane)
@@ -96,7 +96,7 @@ final class AudioAnalysisView: NSView {
             pressedButton: pressedButton,
             isShadeMode: false,
             controlScale: WindowManager.shared.playlistChromeScale,
-            title: "AUDIO ANALYSIS",
+            title: "AUDIO ANALYZER",
             showsShade: false
         )
         context.restoreGState()

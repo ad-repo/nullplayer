@@ -4,7 +4,7 @@ import SwiftUI
 final class AudioAnalysisModel: ObservableObject {
     @Published var selectedPane: Int
 
-    static let paneTitles = ["Scope", "Levels", "Spectrogram"]
+    static let paneTitles = ["Scope", "Levels", "Spectrogram", "Octave", "Pitch", "Delay"]
     static let selectedPaneDefaultsKey = "audioAnalysisSelectedPane"
 
     init(selectedPane: Int) {
@@ -22,6 +22,9 @@ struct AudioAnalysisContentView: View {
             switch model.selectedPane {
             case 1: LevelsPaneView()
             case 2: SpectrogramPaneView()
+            case 3: OctavePaneView()
+            case 4: PitchPaneView()
+            case 5: DelayPaneView()
             default: ScopePaneView()
             }
         }

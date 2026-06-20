@@ -28,12 +28,12 @@ final class AudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
-        window.title = "NullPlayer Audio Analysis"
+        window.title = "NullPlayer Audio Analyzer"
         window.isReleasedWhenClosed = false
         window.center()
         window.delegate = self
         window.setAccessibilityIdentifier("AudioAnalysisWindow")
-        window.setAccessibilityLabel("NullPlayer Audio Analysis Window")
+        window.setAccessibilityLabel("NullPlayer Audio Analyzer Window")
     }
 
     private func setupView() {

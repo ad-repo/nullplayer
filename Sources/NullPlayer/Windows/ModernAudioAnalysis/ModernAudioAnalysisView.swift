@@ -155,7 +155,7 @@ class ModernAudioAnalysisView: NSView {
         if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             renderer.drawTitleBar(
                 in: ModernSkinElements.spectrumTitleBar.defaultRect,
-                title: "AUDIO ANALYSIS",
+                title: "AUDIO ANALYZER",
                 prefix: "spectrum_",
                 context: context
             )

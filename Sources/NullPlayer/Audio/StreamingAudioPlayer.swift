@@ -49,6 +49,9 @@ class StreamingAudioPlayer {
     /// Whether stereo PCM data should be produced — bridged from AudioEngine.stereoNeeded
     var stereoNeeded: Bool = false
 
+    /// Whether raw FFT magnitudes should be posted — bridged from AudioEngine.magnitudesNeeded
+    var magnitudesNeeded: Bool = false
+
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
     var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
 
@@ -417,7 +420,7 @@ class StreamingAudioPlayer {
         // Skip FFT processing when paused or stopped to save CPU
         // The frame filter still receives buffers but we don't need to process them
         guard state == .playing else { return }
-        guard spectrumNeeded || waveformNeeded || stereoNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || magnitudesNeeded else { return }
 
         guard let channelData = buffer.floatChannelData else { return }
         
@@ -489,7 +492,9 @@ class StreamingAudioPlayer {
             }
         }
 
-        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
+        // The FFT runs when spectrum OR raw magnitudes are demanded; the 75-band spectrum
+        // work below is gated separately by `spectrumNeeded`.
+        guard spectrumNeeded || magnitudesNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
 
         // Get audio samples (mono mix if stereo) - use pre-allocated buffer
         if channelCount == 1 {
@@ -555,7 +560,24 @@ class StreamingAudioPlayer {
         for i in 0..<fftSize / 2 {
             fftMagnitudes[i] = sqrt(fftRealOut[i] * fftRealOut[i] + fftImagOut[i] * fftImagOut[i])
         }
-        
+
+        // Post raw linear magnitudes for octave band analysis (gated by magnitudesNeeded)
+        if magnitudesNeeded {
+            let magnitudesCopy = Array(fftMagnitudes.prefix(fftSize / 2))
+            NotificationCenter.default.post(
+                name: .audioFFTMagnitudesUpdated,
+                object: self,
+                userInfo: [
+                    "magnitudes": magnitudesCopy,
+                    "sampleRate": buffer.format.sampleRate,
+                    "fftSize": fftSize
+                ]
+            )
+        }
+
+        // Everything below is the 75-band spectrum path; skip it for magnitudes-only consumers.
+        guard spectrumNeeded else { return }
+
         // Map to 75 bands (classic skin-style) using logarithmic frequency mapping
         // Zero out pre-allocated buffer
         let bandCount = 75

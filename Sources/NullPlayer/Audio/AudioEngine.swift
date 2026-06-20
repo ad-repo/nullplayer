@@ -22,6 +22,10 @@ extension Notification.Name {
     /// userInfo contains: "spectrum" ([Float]) - 75 bands normalized 0-1
     static let audioSpectrumDataUpdated = Notification.Name("audioSpectrumDataUpdated")
 
+    /// Posted when raw FFT magnitudes are available for octave band analysis
+    /// userInfo contains: "magnitudes" ([Float]) - linear magnitudes (fftSize/2 elements), "sampleRate" (Double), "fftSize" (Int)
+    static let audioFFTMagnitudesUpdated = Notification.Name("audioFFTMagnitudesUpdated")
+
     /// Posted when playback state changes (playing, paused, stopped)
     /// userInfo contains: "state" (PlaybackState)
     static let audioPlaybackStateChanged = Notification.Name("audioPlaybackStateChanged")
@@ -472,6 +476,9 @@ class AudioEngine {
     /// Stereo PCM consumers — stereo tap is skipped entirely when this set is empty
     private var stereoConsumers = Set<String>()
 
+    /// Magnitudes consumers — raw FFT magnitude posting is skipped entirely when this set is empty
+    private var magnitudesConsumers = Set<String>()
+
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
     private var isModernUIEnabled: Bool
 
@@ -514,6 +521,18 @@ class AudioEngine {
     }
 
     var stereoNeeded: Bool { !stereoConsumers.isEmpty }
+
+    func addMagnitudesConsumer(_ id: String) {
+        magnitudesConsumers.insert(id)
+        streamingPlayer?.magnitudesNeeded = !magnitudesConsumers.isEmpty
+    }
+
+    func removeMagnitudesConsumer(_ id: String) {
+        magnitudesConsumers.remove(id)
+        streamingPlayer?.magnitudesNeeded = !magnitudesConsumers.isEmpty
+    }
+
+    var magnitudesNeeded: Bool { !magnitudesConsumers.isEmpty }
 
     // MARK: - Pre-allocated FFT Buffers (Memory Optimization)
 
@@ -1472,7 +1491,7 @@ class AudioEngine {
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard spectrumNeeded || waveformNeeded || stereoNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || magnitudesNeeded else { return }
         guard let channelData = buffer.floatChannelData else { return }
 
         let frameCount = Int(buffer.frameLength)
@@ -1523,7 +1542,10 @@ class AudioEngine {
             )
         }
 
-        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
+        // The FFT runs when spectrum OR raw magnitudes are demanded; the 75-band spectrum
+        // work below is gated separately by `spectrumNeeded` so an octave-only (magnitudes)
+        // consumer does not pay for it.
+        guard spectrumNeeded || magnitudesNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
 
         // Throttle updates to 60Hz max to prevent memory buildup
         let now = CFAbsoluteTimeGetCurrent()
@@ -1594,7 +1616,24 @@ class AudioEngine {
         for i in 0..<fftSize / 2 {
             fftMagnitudes[i] = sqrt(fftRealOut[i] * fftRealOut[i] + fftImagOut[i] * fftImagOut[i])
         }
-        
+
+        // Post raw linear magnitudes for octave band analysis (gated by magnitudesNeeded)
+        if magnitudesNeeded {
+            let magnitudesCopy = Array(fftMagnitudes.prefix(fftSize / 2))
+            NotificationCenter.default.post(
+                name: .audioFFTMagnitudesUpdated,
+                object: self,
+                userInfo: [
+                    "magnitudes": magnitudesCopy,
+                    "sampleRate": buffer.format.sampleRate,
+                    "fftSize": fftSize
+                ]
+            )
+        }
+
+        // Everything below is the 75-band spectrum path; skip it for magnitudes-only consumers.
+        guard spectrumNeeded else { return }
+
         // Convert to dB and normalize - use pre-allocated buffer
         var one: Float = 1.0
         vDSP_vdbcon(fftMagnitudes, 1, &one, &fftLogMagnitudes, 1, vDSP_Length(fftSize / 2), 0)
@@ -4334,6 +4373,7 @@ class AudioEngine {
             streamingPlayer?.spectrumNeeded = spectrumNeeded
             streamingPlayer?.waveformNeeded = waveformNeeded
             streamingPlayer?.stereoNeeded = stereoNeeded
+            streamingPlayer?.magnitudesNeeded = magnitudesNeeded
             streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         }
 
@@ -5152,6 +5192,7 @@ class AudioEngine {
         streamingPlayer?.spectrumNeeded = spectrumNeeded
         streamingPlayer?.waveformNeeded = waveformNeeded
         streamingPlayer?.stereoNeeded = stereoNeeded
+        streamingPlayer?.magnitudesNeeded = magnitudesNeeded
         streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         

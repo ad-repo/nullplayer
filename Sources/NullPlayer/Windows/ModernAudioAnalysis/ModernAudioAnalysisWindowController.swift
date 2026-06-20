@@ -49,7 +49,7 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
         window.hasShadow = true
         // Center-stack minimum; WindowManager.applyCenterStackSizingConstraints refines this on show.
         window.minSize = ModernSkinElements.spectrumMinSize
-        window.title = "NullPlayer Audio Analysis"
+        window.title = "NullPlayer Audio Analyzer"
 
         // Prevent window from being released when closed - we reuse the same controller
         window.isReleasedWhenClosed = false
@@ -59,7 +59,7 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
 
         // Set accessibility identifier
         window.setAccessibilityIdentifier("ModernAudioAnalysisWindow")
-        window.setAccessibilityLabel("NullPlayer Audio Analysis Window")
+        window.setAccessibilityLabel("NullPlayer Audio Analyzer Window")
     }
 
     private func setupView() {
