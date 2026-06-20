@@ -22,7 +22,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Playlist Editor** | Track list and playlist management | PL button or context menu |
 | **Equalizer** | Classic 10-band EQ or modern 21-band EQ with presets | EQ button or context menu |
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
-| **Audio Analysis** | Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay) | Context menu or Window menu |
+| **Audio Analyzer** | Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay) | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **ProjectM** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art | Menu button or context menu |
 
@@ -265,7 +265,7 @@ Accessible via **Playback > Sleep Timer** (or the right-click context menu).
 
 ## Visualizations
 
-### Audio Analysis Window
+### Audio Analyzer Window
 A multi-pane real-time analyzer (Friture-style), available in both classic and modern UI. Right-click the window to pick a pane:
 - **Scope** — oscilloscope waveform of the live signal.
 - **Levels** — per-channel Peak and RMS meters (green/yellow/red) in dBFS.
