@@ -329,11 +329,11 @@ Do not assume spectrum demand implies waveform demand.
 - `AudioEngine.magnitudesConsumers` controls raw linear FFT magnitudes (`.audioFFTMagnitudesUpdated`)
 - The waveform window registers a waveform consumer only while visible on a non-file audio track
 - `SpectrumAnalyzerView` registers a waveform consumer only while `qualityMode == .visClassicExact` and the analyzer is actively rendering
-- The Audio Analysis window registers per-pane consumers (see audio-analysis-window skill); a closed window deregisters all of them
+- The Audio Analyzer window registers per-pane consumers (see audio-analysis-window skill); a closed window deregisters all of them
 
 This split matters for CPU usage: hidden waveform windows and inactive `vis_classic` views should not keep paying the live waveform callback cost.
 
-### Stereo PCM and FFT-magnitudes paths (Audio Analysis)
+### Stereo PCM and FFT-magnitudes paths (Audio Analyzer)
 
 Two analysis-only paths exist alongside the mono PCM/spectrum/waveform feeds, each gated by its own
 consumer set so it costs nothing when unused:

@@ -1,9 +1,9 @@
 ---
 name: audio-analysis-window
-description: The classic and modern Audio Analysis windows — a Friture-style multi-pane analyzer (Scope, Levels, Spectrogram), the stereo PCM path that feeds them, per-pane consumer gating, and the shared AudioAnalysisDSP module. Use when modifying either analysis window, its panes, the spectrogram shader, or the stereo/DSP plumbing.
+description: The classic and modern Audio Analyzer windows — a Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay), the stereo PCM path that feeds them, per-pane consumer gating, and the shared AudioAnalysisDSP module. Use when modifying either analyzer window, its panes, the spectrogram shader, or the stereo/DSP plumbing.
 ---
 
-# Audio Analysis Window
+# Audio Analyzer Window
 
 A classic and modern UI window offering a Friture-style (https://friture.org) real-time view of the
 playing audio. Exactly one pane is visible at a time; the pane is selected via the window's
@@ -12,7 +12,7 @@ Spectrum windows in each UI mode.
 
 ## Accessing
 
-- Window menu / main window right-click context menu → **Audio Analysis**
+- Window menu / main window right-click context menu → **Audio Analyzer**
 - Available in classic and modern UI modes.
 
 ## Window chrome & sizing
@@ -34,7 +34,7 @@ Spectrum windows in each UI mode.
   `contentAreaRect()` / `layoutHostingView()`. Its hosting view uses an aqua/darkAqua appearance
   selected from the modern skin brightness.
 - **Chrome rendering — classic.** `AudioAnalysisView` uses `SkinRenderer`'s playlist/spectrum-style
-  chrome with the `AUDIO ANALYSIS` bitmap title and no shade button. It hosts the same SwiftUI pane
+  chrome with the `AUDIO ANALYZER` bitmap title and no shade button. It hosts the same SwiftUI pane
   content inside the classic side and bottom borders. Neither mode may cover its chrome with the
   pane's opaque black background.
 
