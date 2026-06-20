@@ -41,7 +41,11 @@ final class YouTubeManager {
     var downloadRoot: URL {
         get { _downloadRoot }
         set {
-            _downloadRoot = newValue
+            let normalizedRoot = newValue.standardizedFileURL
+            guard normalizedRoot != _downloadRoot else { return }
+            _downloadRoot = normalizedRoot
+            downloadManifest = [:]
+            manifestLoaded = false
             saveDownloadRoot()
             // Create directory if it's on a local volume
             createLocalDownloadDirectoryIfNeeded()
@@ -79,11 +83,11 @@ final class YouTubeManager {
     private func setupDownloadRoot() {
         if let savedPath = UserDefaults.standard.string(forKey: downloadRootKey),
            !savedPath.isEmpty {
-            _downloadRoot = URL(fileURLWithPath: savedPath)
+            _downloadRoot = URL(fileURLWithPath: savedPath).standardizedFileURL
         } else {
             // Default: ~/Library/Application Support/NullPlayer/YouTube/
             let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            _downloadRoot = appSupport.appendingPathComponent("NullPlayer/YouTube/")
+            _downloadRoot = appSupport.appendingPathComponent("NullPlayer/YouTube/").standardizedFileURL
             // Eagerly create the default local folder so the very first download works.
             // (User-chosen folders go through the `downloadRoot` setter instead, which
             // gates creation on reachability to avoid writing into a stale NAS mount.)
@@ -122,7 +126,7 @@ final class YouTubeManager {
         let channel = YouTubeChannel(
             id: key,
             title: title,
-            url: URL(string: "https://www.youtube.com/@\(key)") ?? url,
+            url: listURL.deletingLastPathComponent(),
             dateAdded: Date()
         )
 
@@ -214,8 +218,8 @@ final class YouTubeManager {
     /// Get the local URL for a downloaded video (if it exists)
     func downloadedFileURL(for videoId: String) -> URL? {
         loadManifestIfNeeded()
-        guard let download = downloadManifest[videoId] else { return nil }
-        let fileURL = downloadRoot.appendingPathComponent(download.fileName)
+        guard let download = downloadManifest[videoId],
+              let fileURL = manifestFileURL(for: download) else { return nil }
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         return fileURL
     }
@@ -229,8 +233,9 @@ final class YouTubeManager {
     func removeDownload(videoId: String) {
         loadManifestIfNeeded()
         guard let download = downloadManifest[videoId] else { return }
-        let fileURL = downloadRoot.appendingPathComponent(download.fileName)
-        try? FileManager.default.removeItem(at: fileURL)
+        if let fileURL = manifestFileURL(for: download) {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
         downloadManifest.removeValue(forKey: videoId)
         saveManifest()
     }
@@ -256,7 +261,17 @@ final class YouTubeManager {
     private func saveManifest() {
         let manifestURL = downloadRoot.appendingPathComponent("youtube_downloads.json")
         guard let data = try? JSONEncoder().encode(downloadManifest) else { return }
-        try? data.write(to: manifestURL)
+        try? data.write(to: manifestURL, options: .atomic)
+    }
+
+    /// Resolve a manifest entry without allowing a malformed or edited manifest to
+    /// escape the selected download root via `..` path components.
+    private func manifestFileURL(for download: YouTubeDownload) -> URL? {
+        let root = downloadRoot.standardizedFileURL
+        let candidate = root.appendingPathComponent(download.fileName).standardizedFileURL
+        let rootPrefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        guard candidate.path.hasPrefix(rootPrefix) else { return nil }
+        return candidate
     }
 
     // MARK: - Private Helpers
@@ -284,8 +299,10 @@ final class YouTubeManager {
     nonisolated static func normalizeChannelURL(_ url: URL) -> (key: String, listURL: URL)? {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
 
-        // Ensure we're working with youtube.com
-        guard let host = components.host, host.contains("youtube.com") else { return nil }
+        // Only accept youtube.com and its real subdomains, not lookalike hosts such
+        // as evilyoutube.com.
+        guard let host = components.host?.lowercased(),
+              host == "youtube.com" || host.hasSuffix(".youtube.com") else { return nil }
 
         let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         var pathSegments = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
@@ -296,14 +313,12 @@ final class YouTubeManager {
         }
 
         var key: String?
+        var canonicalPathSegments: [String]?
         if pathSegments.count == 1 {
-            // Could be @handle, user/NAME, channel/ID, or c/Name
+            // A handle, channel ID, or legacy single-segment custom URL.
             let segment = pathSegments[0]
             if segment.hasPrefix("@") {
                 key = String(segment.dropFirst()) // Remove the @ prefix
-            } else if segment.hasPrefix("UC") && segment.count >= 20 {
-                // Likely a channel ID
-                key = segment
             } else if segment == "user" || segment == "c" {
                 // Need more segments; won't normalize
                 return nil
@@ -313,22 +328,30 @@ final class YouTubeManager {
             } else {
                 key = segment
             }
+            canonicalPathSegments = [segment]
         } else if pathSegments.count == 2 {
             // /user/NAME or /channel/ID or /c/Name
-            let prefix = pathSegments[0]
+            let prefix = pathSegments[0].lowercased()
             let identifier = pathSegments[1]
             if prefix == "user" || prefix == "channel" || prefix == "c" {
                 key = identifier
+                canonicalPathSegments = [prefix, identifier]
             }
         } else if pathSegments.isEmpty {
             // Just youtube.com with no path
             return nil
         }
 
-        guard let normalizedKey = key, !normalizedKey.isEmpty else { return nil }
+        guard let normalizedKey = key, !normalizedKey.isEmpty,
+              let canonicalPathSegments else { return nil }
 
-        // Construct the list URL: https://www.youtube.com/@key/videos
-        let listURL = URL(string: "https://www.youtube.com/@\(normalizedKey)/videos")!
+        // Preserve the accepted route form. A channel ID, legacy /user URL, or /c
+        // URL is not generally equivalent to an @handle with the same identifier.
+        var listComponents = URLComponents()
+        listComponents.scheme = "https"
+        listComponents.host = "www.youtube.com"
+        listComponents.path = "/" + canonicalPathSegments.joined(separator: "/") + "/videos"
+        guard let listURL = listComponents.url else { return nil }
         return (key: normalizedKey, listURL: listURL)
     }
 
@@ -387,10 +410,25 @@ final class YouTubeManager {
         task.arguments = ["--flat-playlist", "-J", "--playlist-end", "\(playlistEnd)", url.absoluteString]
         task.environment = env
 
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        task.standardOutput = outputPipe
-        task.standardError = errorPipe
+        let tempDirectory = FileManager.default.temporaryDirectory
+        let outputURL = tempDirectory.appendingPathComponent("nullplayer-ytdlp-output-\(UUID().uuidString)")
+        let errorURL = tempDirectory.appendingPathComponent("nullplayer-ytdlp-error-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+        FileManager.default.createFile(atPath: errorURL.path, contents: nil)
+        guard let outputHandle = try? FileHandle(forWritingTo: outputURL),
+              let errorHandle = try? FileHandle(forWritingTo: errorURL) else {
+            try? FileManager.default.removeItem(at: outputURL)
+            try? FileManager.default.removeItem(at: errorURL)
+            throw YouTubeManagerError.toolFailed("Could not create temporary yt-dlp output files")
+        }
+        defer {
+            try? outputHandle.close()
+            try? errorHandle.close()
+            try? FileManager.default.removeItem(at: outputURL)
+            try? FileManager.default.removeItem(at: errorURL)
+        }
+        task.standardOutput = outputHandle
+        task.standardError = errorHandle
 
         do {
             try task.run()
@@ -399,10 +437,12 @@ final class YouTubeManager {
         }
 
         task.waitUntilExit()
+        try? outputHandle.close()
+        try? errorHandle.close()
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let outputData = (try? Data(contentsOf: outputURL)) ?? Data()
         if task.terminationStatus != 0 {
-            let errData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errData = (try? Data(contentsOf: errorURL)) ?? Data()
             let errText = String(data: errData, encoding: .utf8) ?? "Unknown error"
             throw YouTubeManagerError.toolFailed("yt-dlp failed: \(errText)")
         }

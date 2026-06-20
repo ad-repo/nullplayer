@@ -145,6 +145,16 @@ final class StreamRipper {
 
         let pathFile = NSTemporaryDirectory() + "nullplayer-yt-audio-\(UUID().uuidString).txt"
         defer { try? FileManager.default.removeItem(atPath: pathFile) }
+        let errorFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-yt-audio-error-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: errorFile.path, contents: nil)
+        guard let errorHandle = try? FileHandle(forWritingTo: errorFile) else {
+            throw DownloadAudioError.processStartFailed("Could not create temporary error output")
+        }
+        defer {
+            try? errorHandle.close()
+            try? FileManager.default.removeItem(at: errorFile)
+        }
 
         var args = ["-f", "bestaudio/best", "-x"]
         args += formatArgs
@@ -163,7 +173,7 @@ final class StreamRipper {
         task.executableURL = URL(fileURLWithPath: ytdlp)
         task.arguments = args
         task.environment = env
-        task.standardError = Pipe()
+        task.standardError = errorHandle
         task.standardOutput = FileHandle.nullDevice
 
         do {
@@ -173,6 +183,7 @@ final class StreamRipper {
         }
 
         task.waitUntilExit()
+        try? errorHandle.close()
         let status = task.terminationStatus
 
         let reported = (try? String(contentsOfFile: pathFile, encoding: .utf8))?
@@ -180,7 +191,12 @@ final class StreamRipper {
         let outputPath = (reported?.isEmpty == false) ? reported : nil
 
         if status != 0 || outputPath == nil {
-            let errMsg = outputPath == nil ? "yt-dlp did not report output path" : "yt-dlp exited with code \(status)"
+            let stderr = (try? String(contentsOf: errorFile, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallback = outputPath == nil
+                ? "yt-dlp did not report output path"
+                : "yt-dlp exited with code \(status)"
+            let errMsg = stderr.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
             throw DownloadAudioError.downloadFailed(errMsg)
         }
 

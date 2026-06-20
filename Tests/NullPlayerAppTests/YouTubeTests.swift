@@ -31,7 +31,7 @@ final class YouTubeTests: XCTestCase {
 
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.key, "UC_x5XG1OV2P6uZZ5FSM9Ttw")
-        XCTAssertEqual(result?.listURL.absoluteString, "https://www.youtube.com/@UC_x5XG1OV2P6uZZ5FSM9Ttw/videos")
+        XCTAssertEqual(result?.listURL.absoluteString, "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw/videos")
     }
 
     func testNormalizeChannelURLWithCPath() {
@@ -41,7 +41,7 @@ final class YouTubeTests: XCTestCase {
 
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.key, "SomeName")
-        XCTAssertEqual(result?.listURL.absoluteString, "https://www.youtube.com/@SomeName/videos")
+        XCTAssertEqual(result?.listURL.absoluteString, "https://www.youtube.com/c/SomeName/videos")
     }
 
     func testNormalizeChannelURLWithUserPath() {
@@ -51,7 +51,7 @@ final class YouTubeTests: XCTestCase {
 
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.key, "SomeName")
-        XCTAssertEqual(result?.listURL.absoluteString, "https://www.youtube.com/@SomeName/videos")
+        XCTAssertEqual(result?.listURL.absoluteString, "https://www.youtube.com/user/SomeName/videos")
     }
 
     func testNormalizeChannelURLWithQueryParameters() {
@@ -70,6 +70,21 @@ final class YouTubeTests: XCTestCase {
         let result = YouTubeManager.normalizeChannelURL(url)
 
         XCTAssertNil(result)
+    }
+
+    func testNormalizeChannelURLRejectsLookalikeYouTubeHost() {
+        let url = URL(string: "https://evilyoutube.com/@NASA")!
+
+        XCTAssertNil(YouTubeManager.normalizeChannelURL(url))
+    }
+
+    func testNormalizeChannelURLAcceptsYouTubeSubdomain() {
+        let url = URL(string: "https://m.youtube.com/@NASA")!
+
+        XCTAssertEqual(
+            YouTubeManager.normalizeChannelURL(url)?.listURL.absoluteString,
+            "https://www.youtube.com/@NASA/videos"
+        )
     }
 
     func testNormalizeChannelURLInvalidPathReturnNil() {
@@ -400,5 +415,74 @@ final class YouTubeTests: XCTestCase {
         let videos = try YouTubeManager.parseFlatPlaylist(data, channelId: testChannelId)
 
         XCTAssertTrue(videos.allSatisfy { $0.channelId == testChannelId })
+    }
+
+    // MARK: - Download Manifest Tests
+
+    func testChangingDownloadRootReloadsThatFoldersManifest() throws {
+        let manager = YouTubeManager.shared
+        let originalRoot = manager.downloadRoot
+        let rootA = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-youtube-test-a-\(UUID().uuidString)", isDirectory: true)
+        let rootB = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-youtube-test-b-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            manager.downloadRoot = originalRoot
+            try? FileManager.default.removeItem(at: rootA)
+            try? FileManager.default.removeItem(at: rootB)
+        }
+
+        try writeManifest(
+            root: rootA,
+            download: YouTubeDownload(videoId: "video-a", title: "A", channelId: "channel", fileName: "A.flac")
+        )
+        try writeManifest(
+            root: rootB,
+            download: YouTubeDownload(videoId: "video-b", title: "B", channelId: "channel", fileName: "B.flac")
+        )
+
+        manager.downloadRoot = rootA
+        XCTAssertNotNil(manager.downloadedFileURL(for: "video-a"))
+        XCTAssertNil(manager.downloadedFileURL(for: "video-b"))
+
+        manager.downloadRoot = rootB
+        XCTAssertNil(manager.downloadedFileURL(for: "video-a"))
+        XCTAssertNotNil(manager.downloadedFileURL(for: "video-b"))
+    }
+
+    func testManifestEntryCannotEscapeDownloadRoot() throws {
+        let manager = YouTubeManager.shared
+        let originalRoot = manager.downloadRoot
+        let parent = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-youtube-test-parent-\(UUID().uuidString)", isDirectory: true)
+        let root = parent.appendingPathComponent("downloads", isDirectory: true)
+        let outsideFile = parent.appendingPathComponent("outside.flac")
+        defer {
+            manager.downloadRoot = originalRoot
+            try? FileManager.default.removeItem(at: parent)
+        }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data().write(to: outsideFile)
+        let download = YouTubeDownload(
+            videoId: "outside",
+            title: "Outside",
+            channelId: "channel",
+            fileName: "../outside.flac"
+        )
+        let manifest = try JSONEncoder().encode(["outside": download])
+        try manifest.write(to: root.appendingPathComponent("youtube_downloads.json"))
+
+        manager.downloadRoot = root
+        XCTAssertNil(manager.downloadedFileURL(for: "outside"))
+        manager.removeDownload(videoId: "outside")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outsideFile.path))
+    }
+
+    private func writeManifest(root: URL, download: YouTubeDownload) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data().write(to: root.appendingPathComponent(download.fileName))
+        let data = try JSONEncoder().encode([download.videoId: download])
+        try data.write(to: root.appendingPathComponent("youtube_downloads.json"))
     }
 }
