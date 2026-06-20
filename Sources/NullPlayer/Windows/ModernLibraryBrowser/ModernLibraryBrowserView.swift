@@ -5950,7 +5950,7 @@ class ModernLibraryBrowserView: NSView {
         guard let video = sender.representedObject as? YouTubeVideo else { return }
         if YouTubeManager.shared.isDownloaded(video.videoId) {
             if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
-                let track = Track(url: url)
+                let track = Track(url: url, isYouTubeOrigin: true)
                 WindowManager.shared.audioEngine.playNow([track])
             }
         } else {
@@ -5960,7 +5960,7 @@ class ModernLibraryBrowserView: NSView {
                 guard let self = self else { return }
                 do {
                     let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
-                    let track = Track(url: downloadedURL)
+                    let track = Track(url: downloadedURL, isYouTubeOrigin: true)
                     WindowManager.shared.audioEngine.playNow([track])
                     rebuildCurrentModeItems()
                 } catch {
@@ -11289,7 +11289,7 @@ class ModernLibraryBrowserView: NSView {
         case .youtubeVideo(let video):
             if YouTubeManager.shared.isDownloaded(video.videoId) {
                 if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
-                    let track = Track(url: url)
+                    let track = Track(url: url, isYouTubeOrigin: true)
                     WindowManager.shared.audioEngine.playNow([track])
                 }
             } else {
@@ -11299,7 +11299,7 @@ class ModernLibraryBrowserView: NSView {
                     guard let self = self else { return }
                     do {
                         let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
-                        let track = Track(url: downloadedURL)
+                        let track = Track(url: downloadedURL, isYouTubeOrigin: true)
                         WindowManager.shared.audioEngine.playNow([track])
                         rebuildCurrentModeItems()
                     } catch {

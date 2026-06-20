@@ -3138,7 +3138,7 @@ class AudioEngine {
             case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
-            case .local, .radio:
+            case .local, .radio, .youtube:
                 LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
             }
         }
@@ -4504,7 +4504,7 @@ class AudioEngine {
             case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
-            case .local, .radio:
+            case .local, .radio, .youtube:
                 LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
             }
         }
@@ -5083,7 +5083,7 @@ class AudioEngine {
             case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
-            case .local, .radio:
+            case .local, .radio, .youtube:
                 LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             }
         }
@@ -5206,7 +5206,7 @@ class AudioEngine {
             case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
-            case .local, .radio:
+            case .local, .radio, .youtube:
                 LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             }
         }
