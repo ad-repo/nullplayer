@@ -84,6 +84,10 @@ final class YouTubeManager {
             // Default: ~/Library/Application Support/NullPlayer/YouTube/
             let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             _downloadRoot = appSupport.appendingPathComponent("NullPlayer/YouTube/")
+            // Eagerly create the default local folder so the very first download works.
+            // (User-chosen folders go through the `downloadRoot` setter instead, which
+            // gates creation on reachability to avoid writing into a stale NAS mount.)
+            try? FileManager.default.createDirectory(at: _downloadRoot, withIntermediateDirectories: true)
         }
     }
 
