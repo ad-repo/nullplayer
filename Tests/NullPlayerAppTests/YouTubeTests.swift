@@ -368,6 +368,18 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(video.watchURL, URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
     }
 
+    func testYouTubeVideoFormattedDurationDoesNotRoundMinutes() {
+        let video = YouTubeVideo(
+            videoId: "duration",
+            title: "Duration",
+            channelId: "channel",
+            duration: 119,
+            uploadDate: nil
+        )
+
+        XCTAssertEqual(video.formattedDuration, "1:59")
+    }
+
     // MARK: - Edge Cases and Integration
 
     func testNormalizeChannelURLWithHandleContainingNumbers() {

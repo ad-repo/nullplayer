@@ -44,6 +44,14 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
         URL(string: "https://www.youtube.com/watch?v=\(videoId)")!
     }
 
+    /// Duration formatted as minutes and seconds without rounding the minute component.
+    var formattedDuration: String? {
+        duration.map {
+            let totalSeconds = max(0, Int($0))
+            return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case videoId, title, channelId, duration, uploadDate
     }

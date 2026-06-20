@@ -1075,6 +1075,7 @@ class PlexBrowserView: NSView {
     private var expandedYouTubeChannels: Set<String> = []
     private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
     private var youtubeExpandTask: Task<Void, Never>?
+    private var youtubeDownloadTask: Task<Void, Never>?
 
     private let historyAgent = PlayHistoryAgent()
     private var historyHostingView: NSHostingView<StatsContentView>?
@@ -8112,10 +8113,18 @@ class PlexBrowserView: NSView {
 
         // YouTube source reuses the radio tab to list its channels.
         if case .youtube = currentSource {
-            if browseMode == .radio, !radioSlotShowsChannels {
-                loadRadioStations()
-            } else {
-                loadYouTubeChannels()
+            switch browseMode {
+            case .radio:
+                if radioSlotShowsChannels { loadYouTubeChannels() }
+                else { loadRadioStations() }
+            case .search:
+                loadRadioSearchResults()
+            default:
+                isLoading = false
+                errorMessage = nil
+                stopLoadingAnimation()
+                displayItems = []
+                needsDisplay = true
             }
             return
         }
@@ -10982,6 +10991,9 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
         YouTubeManager.shared.removeChannel(channel)
+        expandedYouTubeChannels.remove(channel.id)
+        youtubeChannelVideos.removeValue(forKey: channel.id)
+        rebuildCurrentModeItems()
     }
 
     @objc private func contextMenuPlayYouTubeVideo(_ sender: NSMenuItem) {
@@ -10993,8 +11005,8 @@ class PlexBrowserView: NSView {
             }
         } else {
             startLoadingAnimation()
-            youtubeExpandTask?.cancel()
-            youtubeExpandTask = Task.detached { @MainActor [weak self] in
+            youtubeDownloadTask?.cancel()
+            youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                 guard let self = self else { return }
                 do {
                     let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
@@ -13951,8 +13963,14 @@ class PlexBrowserView: NSView {
         needsDisplay = true
     }
 
+    private var isShowingInternetRadioContent: Bool {
+        currentSource.isRadio ||
+            (currentSource.isYouTube &&
+             (browseMode == .search || (browseMode == .radio && !radioSlotShowsChannels)))
+    }
+
     private func reloadInternetRadioForCurrentMode() {
-        guard case .radio = currentSource else { return }
+        guard isShowingInternetRadioContent else { return }
         if browseMode == .radio {
             loadRadioStations()
         } else if browseMode == .search {
@@ -14011,7 +14029,7 @@ class PlexBrowserView: NSView {
                 displayItems.append(PlexDisplayItem(
                     id: "youtube-video-\(video.videoId)",
                     title: marker + video.title,
-                    info: video.duration.map { String(format: "%.0f:%.2d", $0 / 60, Int($0) % 60) },
+                    info: video.formattedDuration,
                     indentLevel: 1,
                     hasChildren: false,
                     type: .youtubeVideo(video)
@@ -14557,7 +14575,7 @@ class PlexBrowserView: NSView {
     
     @objc private func radioStationsDidChange() {
         // Only reload if we're showing radio content
-        guard case .radio = currentSource else { return }
+        guard isShowingInternetRadioContent else { return }
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -16147,7 +16165,14 @@ class PlexBrowserView: NSView {
         
         // YouTube source reuses the radio tab to list its channels.
         if case .youtube = currentSource {
-            buildYouTubeChannelItems()
+            if browseMode == .radio {
+                if radioSlotShowsChannels { buildYouTubeChannelItems() }
+                else { buildRadioStationItems() }
+            } else if browseMode == .search {
+                buildRadioSearchItems()
+            } else {
+                displayItems = []
+            }
             if columnSortId != nil {
                 applyColumnSort()
             }
@@ -17256,8 +17281,8 @@ class PlexBrowserView: NSView {
                 }
             } else {
                 startLoadingAnimation()
-                youtubeExpandTask?.cancel()
-                youtubeExpandTask = Task.detached { @MainActor [weak self] in
+                youtubeDownloadTask?.cancel()
+                youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                     guard let self = self else { return }
                     do {
                         let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)

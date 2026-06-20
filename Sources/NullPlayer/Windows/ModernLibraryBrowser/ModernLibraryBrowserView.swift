@@ -401,6 +401,7 @@ class ModernLibraryBrowserView: NSView {
     private var expandedYouTubeChannels: Set<String> = []
     private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
     private var youtubeExpandTask: Task<Void, Never>?
+    private var youtubeDownloadTask: Task<Void, Never>?
     
     // Cached data - Video (Plex)
     private var cachedMovies: [PlexMovie] = []
@@ -1032,7 +1033,7 @@ class ModernLibraryBrowserView: NSView {
         let statusBarHeight = Layout.statusBarHeight
 
         // Offline volume banner (local source only, above list content)
-        let showOfflineBanner = !currentSource.isRemote && !currentSource.isRadio && !offlineWatchFolders.isEmpty
+        let showOfflineBanner = isLocalSource && !offlineWatchFolders.isEmpty
         let bannerHeight = showOfflineBanner ? Layout.offlineBannerHeight : 0
 
         // List area (between content top and status bar bottom)
@@ -4029,10 +4030,18 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         if case .youtube = currentSource {
-            if browseMode == .radio, !radioSlotShowsChannels {
-                loadRadioStations()
-            } else {
-                loadYouTubeChannels()
+            switch browseMode {
+            case .radio:
+                if radioSlotShowsChannels { loadYouTubeChannels() }
+                else { loadRadioStations() }
+            case .search:
+                loadRadioSearchResults()
+            default:
+                isLoading = false
+                errorMessage = nil
+                stopLoadingAnimation()
+                displayItems = []
+                needsDisplay = true
             }
             return
         }
@@ -4728,7 +4737,10 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func columnGroupsForCurrentMenu() -> [LibraryColumnVisibilityGroup] {
-        LibraryColumnVisibility.menuGroups(
+        if hasYouTubeColumns {
+            return [.youtube]
+        }
+        return LibraryColumnVisibility.menuGroups(
             isArtistsMode: browseMode == .artists,
             isAlbumsMode: browseMode == .albums,
             hasTrackRows: hasTrackRows(),
@@ -4752,7 +4764,7 @@ class ModernLibraryBrowserView: NSView {
             item.view = ColumnVisibilityCheckboxView(
                 title: column.title,
                 isChecked: column.id == "title" || visibleIds.contains(column.id),
-                isEnabled: column.id != "title"
+                isEnabled: group != .youtube && column.id != "title"
             ) { [weak self] isVisible in
                 self?.toggleColumnVisibility(group: group, columnId: column.id, visible: isVisible)
             }
@@ -5944,6 +5956,9 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
         YouTubeManager.shared.removeChannel(channel)
+        expandedYouTubeChannels.remove(channel.id)
+        youtubeChannelVideos.removeValue(forKey: channel.id)
+        rebuildCurrentModeItems()
     }
 
     @objc private func contextMenuPlayYouTubeVideo(_ sender: NSMenuItem) {
@@ -5955,8 +5970,8 @@ class ModernLibraryBrowserView: NSView {
             }
         } else {
             startLoadingAnimation()
-            youtubeExpandTask?.cancel()
-            youtubeExpandTask = Task.detached { @MainActor [weak self] in
+            youtubeDownloadTask?.cancel()
+            youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                 guard let self = self else { return }
                 do {
                     let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
@@ -7115,8 +7130,14 @@ class ModernLibraryBrowserView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: workItem)
     }
     
+    private var isShowingInternetRadioContent: Bool {
+        currentSource.isRadio ||
+            (currentSource.isYouTube &&
+             (browseMode == .search || (browseMode == .radio && !radioSlotShowsChannels)))
+    }
+
     @objc private func radioStationsDidChange() {
-        guard case .radio = currentSource else { return }
+        guard isShowingInternetRadioContent else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             switch self.browseMode {
@@ -8524,7 +8545,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func reloadInternetRadioForCurrentMode() {
-        guard case .radio = currentSource else { return }
+        guard isShowingInternetRadioContent else { return }
         switch browseMode {
         case .radio:
             loadRadioStations()
@@ -9376,7 +9397,7 @@ class ModernLibraryBrowserView: NSView {
                     ModernDisplayItem(
                         id: "youtube-video-\(video.videoId)",
                         title: marker + video.title,
-                        info: video.duration.map { String(format: "%.0f:%.2d", $0 / 60, Int($0) % 60) },
+                        info: video.formattedDuration,
                         indentLevel: 1,
                         hasChildren: false,
                         type: .youtubeVideo(video)
@@ -10438,7 +10459,15 @@ class ModernLibraryBrowserView: NSView {
     private func rebuildCurrentModeItems() {
         horizontalScrollOffset = 0
         if case .youtube = currentSource {
-            buildYouTubeChannelItems()
+            switch browseMode {
+            case .radio:
+                if radioSlotShowsChannels { buildYouTubeChannelItems() }
+                else { buildRadioStationItems() }
+            case .search:
+                buildRadioSearchItems()
+            default:
+                displayItems = []
+            }
             if columnSortId != nil { applyColumnSort() }
             needsDisplay = true
             return
@@ -11294,8 +11323,8 @@ class ModernLibraryBrowserView: NSView {
                 }
             } else {
                 startLoadingAnimation()
-                youtubeExpandTask?.cancel()
-                youtubeExpandTask = Task.detached { @MainActor [weak self] in
+                youtubeDownloadTask?.cancel()
+                youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                     guard let self = self else { return }
                     do {
                         let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
@@ -11657,7 +11686,7 @@ extension ModernDisplayItem {
             }
         case .youtubeVideo(let video):
             if column.id == "duration" {
-                return video.duration.map { String(format: "%.0f:%.2d", $0 / 60, Int($0) % 60) } ?? ""
+                return video.formattedDuration ?? ""
             }
             return ""
         default: return ""

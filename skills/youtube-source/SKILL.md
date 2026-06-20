@@ -18,7 +18,7 @@ Subscribe to YouTube channels in the **Radio tab** and browse their uploads. Dou
 
 ## Architecture
 
-```
+```text
 Sources/NullPlayer/
 ├── YouTube/
 │   ├── YouTubeModels.swift          # Channel, Video, Download, Quality data models

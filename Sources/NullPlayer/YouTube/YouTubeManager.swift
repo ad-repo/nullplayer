@@ -122,6 +122,7 @@ final class YouTubeManager {
         }
 
         let title = try await Self.fetchChannelTitle(from: listURL)
+        try Task.checkCancellation()
 
         let channel = YouTubeChannel(
             id: key,

@@ -5,6 +5,7 @@ class AddYouTubeChannelSheet: NSWindowController, NSWindowDelegate {
     private var urlField: NSTextField!
     private var statusLabel: NSTextField!
     private var saveButton: NSButton!
+    private var addTask: Task<Void, Never>?
 
     private var completionHandler: ((YouTubeChannel?) -> Void)?
 
@@ -71,6 +72,8 @@ class AddYouTubeChannelSheet: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        addTask?.cancel()
+        addTask = nil
         completionHandler?(nil)
         completionHandler = nil
     }
@@ -100,6 +103,8 @@ class AddYouTubeChannelSheet: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func cancel() {
+        addTask?.cancel()
+        addTask = nil
         let handler = completionHandler
         completionHandler = nil
         window?.close()
@@ -118,20 +123,22 @@ class AddYouTubeChannelSheet: NSWindowController, NSWindowDelegate {
         status("Adding channel...")
         buttons(false)
 
-        Task {
+        addTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
                 try await YouTubeManager.shared.addChannel(url: url)
-                DispatchQueue.main.async {
-                    let handler = self.completionHandler
-                    self.completionHandler = nil
-                    self.window?.close()
-                    handler?(YouTubeManager.shared.channels.last)
-                }
+                try Task.checkCancellation()
+                let handler = completionHandler
+                completionHandler = nil
+                addTask = nil
+                window?.close()
+                handler?(YouTubeManager.shared.channels.last)
+            } catch is CancellationError {
+                addTask = nil
             } catch {
-                DispatchQueue.main.async {
-                    self.status(error.localizedDescription, err: true)
-                    self.buttons(true)
-                }
+                status(error.localizedDescription, err: true)
+                buttons(true)
+                addTask = nil
             }
         }
     }
