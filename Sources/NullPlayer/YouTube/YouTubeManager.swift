@@ -149,14 +149,25 @@ final class YouTubeManager {
 
     // MARK: - Downloads API
 
-    /// Download audio from a YouTube video
+    /// Download audio from a YouTube video.
+    ///
+    /// Files are organized as `<downloadRoot>/<Channel Name>/<Title> [<videoId>].<ext>`
+    /// so the on-disk layout mirrors the channel/video hierarchy and filenames are
+    /// human-readable while staying unique (the bracketed video ID disambiguates
+    /// videos that share a title).
     func downloadAudio(video: YouTubeVideo) async throws -> URL {
         guard isDownloadFolderReachable() else {
             throw YouTubeManagerError.downloadFolderNotReachable("Download folder is not accessible")
         }
 
+        // Per-channel subfolder, created up front so yt-dlp can write into it.
+        let channelFolder = channelFolderName(for: video.channelId)
+        let channelDir = downloadRoot.appendingPathComponent(channelFolder, isDirectory: true)
+        try FileManager.default.createDirectory(at: channelDir, withIntermediateDirectories: true)
+
         let formatArgs = quality.ytdlpArgs + ["-x", "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg", "--no-playlist"]
-        let outputTemplate = "\(downloadRoot.path)/\(video.videoId).\(quality.fileExtension)"
+        // Let yt-dlp sanitize the title and pick the final extension after conversion.
+        let outputTemplate = "\(channelDir.path)/%(title)s [%(id)s].%(ext)s"
 
         let fileURL = try await StreamRipper.downloadAudio(
             from: video.watchURL,
@@ -164,16 +175,36 @@ final class YouTubeManager {
             outputTemplate: outputTemplate
         )
 
-        // Record in manifest
+        // Record in manifest as a path relative to downloadRoot (channel/file).
+        let relativePath = "\(channelFolder)/\(fileURL.lastPathComponent)"
         let download = YouTubeDownload(
             videoId: video.videoId,
             title: video.title,
             channelId: video.channelId,
-            fileName: fileURL.lastPathComponent
+            fileName: relativePath
         )
         recordDownload(download)
 
         return fileURL
+    }
+
+    /// Folder name for a channel's downloads: the human-readable channel title when
+    /// known, falling back to the channel identifier. Sanitized for use as a path
+    /// component.
+    private func channelFolderName(for channelId: String) -> String {
+        let raw = channels.first(where: { $0.id == channelId })?.title ?? channelId
+        return Self.sanitizedPathComponent(raw)
+    }
+
+    /// Sanitize an arbitrary string into a safe single path component (no path
+    /// separators or characters that confuse the filesystem).
+    nonisolated static func sanitizedPathComponent(_ name: String) -> String {
+        let invalid = CharacterSet(charactersIn: "/\\:")
+        let cleaned = name
+            .components(separatedBy: invalid)
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "Unknown Channel" : cleaned
     }
 
     /// Get the local URL for a downloaded video (if it exists)
