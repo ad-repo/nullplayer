@@ -341,9 +341,10 @@ consumer set so it costs nothing when unused:
 - **`.audioStereoPCMDataUpdated`** — `["left": [Float](512), "right": [Float](512), "sampleRate": Double]`.
   Separate downsampled L/R buffers (mono streams are duplicated into both). Gated by `stereoNeeded`.
 - **`.audioFFTMagnitudesUpdated`** — `["magnitudes": [Float](fftSize/2 linear), "sampleRate": Double, "fftSize": Int]`.
-  Raw **linear** FFT magnitudes (not dB, not the 75-band normalized spectrum). Posted inside the
-  `spectrumNeeded` FFT block, additionally gated by `magnitudesNeeded`. Consumers of this path must also
-  hold a spectrum consumer so the FFT actually runs.
+  Raw **linear** FFT magnitudes (not dB, not the 75-band normalized spectrum). The FFT runs when
+  `spectrumNeeded || magnitudesNeeded`; this notification is posted right after the magnitudes are
+  computed, gated by `magnitudesNeeded`, and the 75-band spectrum work is gated separately by
+  `spectrumNeeded`. So a magnitudes consumer is independent — it does not require a spectrum consumer.
 
 **Both paths are wired in `AudioEngine` (local) and `StreamingAudioPlayer` (streaming) and emit the
 identical payload shape.** A consumer listening to only one path silently misses the other engine — the

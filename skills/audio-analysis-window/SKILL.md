@@ -45,16 +45,18 @@ Spectrum windows in each UI mode.
 | **Scope** (oscilloscope) | `.audioPCMDataUpdated` (`userInfo["pcm"]` 512 mono) | spectrum | CoreGraphics (`NSView`) |
 | **Levels** (peak/RMS) | `.audioStereoPCMDataUpdated` (`left`/`right` 512) | stereo | SwiftUI bars |
 | **Spectrogram** (waterfall) | `.audioSpectrumDataUpdated` (`spectrum` 75 bands) | spectrum | Metal (`MTKView`) |
-| **Octave** (1/3-octave spectrum) | `.audioFFTMagnitudesUpdated` (`magnitudes` raw linear, `sampleRate`, `fftSize`) | spectrum + magnitudes | CoreGraphics (`NSView`) bars + peak-hold |
+| **Octave** (1/3-octave spectrum) | `.audioFFTMagnitudesUpdated` (`magnitudes` raw linear, `sampleRate`, `fftSize`) | magnitudes | CoreGraphics (`NSView`) bars + peak-hold |
 | **Pitch** (fundamental frequency) | `.audioPCMDataUpdated` (512 mono) | spectrum | SwiftUI (Hz, note name, cents deviation) |
 | **Delay** (L/R phase delay) | `.audioStereoPCMDataUpdated` (`left`/`right` 512) | stereo | SwiftUI (ms, samples, direction) |
 
 `.audioPCMDataUpdated` is posted *inside* the spectrum block, so the Scope and Pitch panes register a
 **spectrum** consumer (not a dedicated PCM one) to make mono PCM flow.
 
-**Octave requires dual consumers:** it registers both **spectrum** (to trigger the FFT) and
-**magnitudes** (to receive raw linear magnitudes). This is the only pane that gates the magnitudes
-path; all others share existing notification/consumer infrastructure.
+**Octave uses the magnitudes consumer alone.** The magnitudes path is independent: the FFT runs when
+`spectrumNeeded || magnitudesNeeded`, and the 75-band spectrum work is gated separately by
+`spectrumNeeded`. So a `magnitudes` consumer triggers the FFT and `.audioFFTMagnitudesUpdated` on its
+own — no spectrum consumer required, and an octave-only window skips the 75-band mapping. Both
+`AudioEngine` and `StreamingAudioPlayer` implement this gating identically.
 
 ## What each pane shows (behavior + accuracy caveats)
 
@@ -129,7 +131,7 @@ maps each pane to its consumer(s):
 - Scope (pane 0) → spectrum
 - Levels (pane 1) → stereo
 - Spectrogram (pane 2) → spectrum
-- Octave (pane 3) → spectrum + magnitudes (dual consumers)
+- Octave (pane 3) → magnitudes
 - Pitch (pane 4) → spectrum
 - Delay (pane 5) → stereo
 

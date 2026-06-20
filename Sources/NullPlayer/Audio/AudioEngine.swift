@@ -1491,7 +1491,7 @@ class AudioEngine {
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard spectrumNeeded || waveformNeeded || stereoNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || magnitudesNeeded else { return }
         guard let channelData = buffer.floatChannelData else { return }
 
         let frameCount = Int(buffer.frameLength)
@@ -1542,7 +1542,10 @@ class AudioEngine {
             )
         }
 
-        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
+        // The FFT runs when spectrum OR raw magnitudes are demanded; the 75-band spectrum
+        // work below is gated separately by `spectrumNeeded` so an octave-only (magnitudes)
+        // consumer does not pay for it.
+        guard spectrumNeeded || magnitudesNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
 
         // Throttle updates to 60Hz max to prevent memory buildup
         let now = CFAbsoluteTimeGetCurrent()
@@ -1627,6 +1630,9 @@ class AudioEngine {
                 ]
             )
         }
+
+        // Everything below is the 75-band spectrum path; skip it for magnitudes-only consumers.
+        guard spectrumNeeded else { return }
 
         // Convert to dB and normalize - use pre-allocated buffer
         var one: Float = 1.0

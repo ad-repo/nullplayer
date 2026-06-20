@@ -7,7 +7,6 @@ final class AudioAnalysisConsumerCoordinator {
     private let levelsConsumerId = "audioAnalysis.levels"
     private let spectrogramConsumerId = "audioAnalysis.spectrogram"
     private let pitchConsumerId = "audioAnalysis.pitch"
-    private let octaveSpectrumConsumerId = "audioAnalysis.octave.spectrum"
     private let octaveMagnitudesConsumerId = "audioAnalysis.octave.magnitudes"
     private let delayConsumerId = "audioAnalysis.delay"
 
@@ -42,13 +41,8 @@ final class AudioAnalysisConsumerCoordinator {
             remove: engine.removeSpectrumConsumer
         )
 
-        // Pane 3: Octave — spectrum + magnitudes consumers
-        updateConsumer(
-            octaveSpectrumConsumerId,
-            needed: index == 3,
-            add: engine.addSpectrumConsumer,
-            remove: engine.removeSpectrumConsumer
-        )
+        // Pane 3: Octave — magnitudes consumer only. The magnitudes path runs the FFT on its
+        // own (see AudioEngine/StreamingAudioPlayer), so no spectrum consumer is needed.
         updateConsumer(
             octaveMagnitudesConsumerId,
             needed: index == 3,
