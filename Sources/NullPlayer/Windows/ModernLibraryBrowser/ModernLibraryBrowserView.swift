@@ -1078,6 +1078,23 @@ class ModernLibraryBrowserView: NSView {
 
     // MARK: - Tab Bar Drawing (Modern Boxed Toggle Style)
     
+    /// Per-tab widths across the tab bar. Normally every tab is equal width, but when the
+    /// radio slot displays "Channels" (YouTube source) that label needs more room than the
+    /// short "Data" label, so we shift some width from the Data tab to the Channels tab.
+    private func tabBarWidths(totalWidth: CGFloat) -> [CGFloat] {
+        let modes = ModernBrowseMode.allCases
+        let base = totalWidth / CGFloat(modes.count)
+        var widths = [CGFloat](repeating: base, count: modes.count)
+        if radioSlotShowingChannels,
+           let radioIdx = modes.firstIndex(of: .radio),
+           let dataIdx = modes.firstIndex(of: .history) {
+            let shift = 14 * ModernSkinElements.sizeMultiplier
+            widths[radioIdx] += shift
+            widths[dataIdx] -= shift
+        }
+        return widths
+    }
+
     private func drawTabBar(in context: CGContext, tabBarY: CGFloat, skin: ModernSkin) {
         let tabBarRect = NSRect(x: Layout.borderWidth, y: tabBarY,
                                 width: bounds.width - Layout.borderWidth * 2, height: Layout.tabBarHeight)
@@ -1098,11 +1115,14 @@ class ModernLibraryBrowserView: NSView {
         let sortWidth = sortSize.width + 16
         
         let tabsWidth = tabBarRect.width - sortWidth
-        let tabWidth = tabsWidth / CGFloat(ModernBrowseMode.allCases.count)
-        
+        let widths = tabBarWidths(totalWidth: tabsWidth)
+        var tabX = tabBarRect.minX
+
         for (index, mode) in ModernBrowseMode.allCases.enumerated() {
-            let tabRect = NSRect(x: tabBarRect.minX + CGFloat(index) * tabWidth, y: tabBarY,
+            let tabWidth = widths[index]
+            let tabRect = NSRect(x: tabX, y: tabBarY,
                                  width: tabWidth, height: Layout.tabBarHeight)
+            tabX += tabWidth
             // Special handling for plists slot: show "Folders" if toggled, and highlight if browseMode is .folders
             var label = mode.title
             var isSelected = mode == browseMode
@@ -3083,12 +3103,17 @@ class ModernLibraryBrowserView: NSView {
         let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
 
         let tabsWidth = bounds.width - Layout.borderWidth * 2 - sortWidth
-        let tabWidth = tabsWidth / CGFloat(ModernBrowseMode.allCases.count)
+        let widths = tabBarWidths(totalWidth: tabsWidth)
         let relativeX = point.x - Layout.borderWidth
 
         if relativeX >= 0 && relativeX < tabsWidth {
-            let index = Int(relativeX / tabWidth)
-            if index < ModernBrowseMode.allCases.count { return ModernBrowseMode.allCases[index] }
+            var x: CGFloat = 0
+            for (index, width) in widths.enumerated() {
+                if relativeX < x + width {
+                    return ModernBrowseMode.allCases[index]
+                }
+                x += width
+            }
         }
         return nil
     }
