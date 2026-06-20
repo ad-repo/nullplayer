@@ -4,12 +4,14 @@ enum LibraryColumnVisibilityGroup: String, CaseIterable {
     case artist
     case album
     case track
+    case youtube
 
     var headerTitle: String {
         switch self {
         case .artist: return "Artist columns"
         case .album: return "Album columns"
         case .track: return "Track columns"
+        case .youtube: return "Channel columns"
         }
     }
 
@@ -18,6 +20,7 @@ enum LibraryColumnVisibilityGroup: String, CaseIterable {
         case .artist: return "Reset Artist Columns"
         case .album: return "Reset Album Columns"
         case .track: return "Reset Track Columns"
+        case .youtube: return "Reset Channel Columns"
         }
     }
 }

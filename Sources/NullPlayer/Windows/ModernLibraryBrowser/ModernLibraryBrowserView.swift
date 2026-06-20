@@ -336,6 +336,18 @@ class ModernLibraryBrowserView: NSView {
         return .plists
     }
 
+    /// The Radio tab slot toggles between Internet Radio stations and YouTube
+    /// channels (YouTube source only), mirroring the Plists/Folders toggle.
+    /// Defaults to showing channels so the YouTube source opens on "Channels".
+    private var radioSlotShowsChannels: Bool {
+        get { UserDefaults.standard.object(forKey: "RadioSlotShowsChannels") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "RadioSlotShowsChannels") }
+    }
+    /// Whether the Radio tab slot is currently displaying YouTube channels.
+    private var radioSlotShowingChannels: Bool {
+        currentSource.isYouTube && radioSlotShowsChannels
+    }
+
     private var isLocalSource: Bool {
         if case .local = currentSource { return true }
         return false
@@ -1109,6 +1121,10 @@ class ModernLibraryBrowserView: NSView {
                         isSelected = true
                     }
                 }
+            }
+            // Radio slot shows "Channels" when the YouTube source is displaying channels.
+            if mode == .radio, radioSlotShowingChannels {
+                label = "Channels"
             }
             drawToggleTab(label: label, isActive: isSelected, rect: tabRect.insetBy(dx: 2, dy: 2),
                           font: font, skin: skin, context: context)
@@ -2494,9 +2510,22 @@ class ModernLibraryBrowserView: NSView {
         return false
     }
 
+    /// YouTube channel uploads render through the resizable column path (title + time),
+    /// gated on the "Channels" view actually containing video rows.
+    private var hasYouTubeColumns: Bool {
+        guard radioSlotShowingChannels else { return false }
+        return displayItems.contains {
+            if case .youtubeVideo = $0.type { return true }
+            return false
+        }
+    }
+
     private func headerColumnsForCurrentContent() -> [ModernBrowserColumn]? {
         if hasInternetRadioColumns {
             return ModernBrowserColumn.internetRadioColumns
+        }
+        if hasYouTubeColumns {
+            return ModernBrowserColumn.youtubeColumns
         }
         let columns = currentVisibleColumns()
         guard !columns.isEmpty else { return nil }
@@ -2547,12 +2576,15 @@ class ModernLibraryBrowserView: NSView {
             return .album
         case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist:
             return item.indentLevel == 0 ? .artist : nil
+        case .youtubeVideo:
+            return .youtube
         default:
             return nil
         }
     }
 
     private func currentColumnGroup() -> LibraryColumnVisibilityGroup? {
+        if hasYouTubeColumns { return .youtube }
         if hasTrackRows() { return .track }
         if hasAlbumRows() { return .album }
         if hasArtistRows() { return .artist }
@@ -2567,6 +2599,8 @@ class ModernLibraryBrowserView: NSView {
             return visibleColumns(allColumns: ModernBrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
         case .artist:
             return visibleColumns(allColumns: ModernBrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
+        case .youtube:
+            return ModernBrowserColumn.youtubeColumns
         case nil:
             break
         }
@@ -2697,6 +2731,9 @@ class ModernLibraryBrowserView: NSView {
         if hasInternetRadioColumns {
             return ModernBrowserColumn.internetRadioColumns
         }
+        if hasYouTubeColumns {
+            return ModernBrowserColumn.youtubeColumns
+        }
         if hasTrackRows() {
             return visibleColumns(allColumns: ModernBrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
         }
@@ -2741,7 +2778,11 @@ class ModernLibraryBrowserView: NSView {
         if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: columnSortAscending) {
             needsDisplay = true; return
         }
-        
+
+        if applyYouTubeColumnSort(sortColumn: sortColumn) {
+            needsDisplay = true; return
+        }
+
         // When rows are expanded, the build order comes from the store (SQLite BINARY
         // collation), which diverges from the in-memory column sort (LibraryTextSorter:
         // diacritic-insensitive, numeric, article-stripping) precisely around special
@@ -2899,6 +2940,29 @@ class ModernLibraryBrowserView: NSView {
             didSort = true
         }
         return didSort
+    }
+
+    /// Sorts the videos within each expanded YouTube channel (contiguous runs of video rows)
+    /// by the clicked column, leaving the channel leaders in place. Mirrors the internet-radio
+    /// in-place run sort so the "Channels" view supports sortable column headers like other tabs.
+    private func applyYouTubeColumnSort(sortColumn: ModernBrowserColumn) -> Bool {
+        guard radioSlotShowingChannels,
+              ModernBrowserColumn.youtubeColumns.contains(where: { $0.id == sortColumn.id }),
+              displayItems.contains(where: { if case .youtubeVideo = $0.type { return true }; return false }) else {
+            return false
+        }
+
+        var index = 0
+        while index < displayItems.count {
+            guard case .youtubeVideo = displayItems[index].type else { index += 1; continue }
+            let start = index
+            while index < displayItems.count, case .youtubeVideo = displayItems[index].type {
+                index += 1
+            }
+            let sorted = stableColumnSortedItems(Array(displayItems[start..<index]), sortColumn: sortColumn)
+            displayItems.replaceSubrange(start..<index, with: sorted)
+        }
+        return true
     }
 
     private func sortedInternetRadioItems(_ items: [ModernDisplayItem], sortColumn: ModernBrowserColumn, ascending: Bool) -> [ModernDisplayItem] {
@@ -3318,6 +3382,14 @@ class ModernLibraryBrowserView: NSView {
                     loadDataForCurrentMode(); window?.makeFirstResponder(self)
                     return
                 }
+            }
+            // Double-click the radio slot while the YouTube source toggles Radio/Channels.
+            if event.clickCount == 2 && tabMode == .radio && currentSource.isYouTube {
+                radioSlotShowsChannels.toggle()
+                browseMode = .radio
+                selectedIndices.removeAll(); scrollOffset = 0
+                loadDataForCurrentMode(); window?.makeFirstResponder(self)
+                return
             }
             // Single-click selects whatever the slot currently shows (Plists or Folders)
             browseMode = (tabMode == .plists) ? effectivePlistsSlotMode : tabMode
@@ -3932,7 +4004,11 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         if case .youtube = currentSource {
-            loadYouTubeChannels()
+            if browseMode == .radio, !radioSlotShowsChannels {
+                loadRadioStations()
+            } else {
+                loadYouTubeChannels()
+            }
             return
         }
         if case .radio = currentSource {
@@ -4669,6 +4745,7 @@ class ModernLibraryBrowserView: NSView {
         case .artist: return ModernBrowserColumn.allArtistColumns
         case .album: return ModernBrowserColumn.allAlbumColumns
         case .track: return ModernBrowserColumn.allTrackColumns
+        case .youtube: return ModernBrowserColumn.youtubeColumns
         }
     }
 
@@ -4677,6 +4754,7 @@ class ModernLibraryBrowserView: NSView {
         case .artist: return ModernBrowserColumn.defaultArtistColumnIds
         case .album: return ModernBrowserColumn.defaultAlbumColumnIds
         case .track: return ModernBrowserColumn.defaultTrackColumnIds
+        case .youtube: return ModernBrowserColumn.defaultYouTubeColumnIds
         }
     }
 
@@ -4685,6 +4763,8 @@ class ModernLibraryBrowserView: NSView {
         case .artist: return normalizedColumnIds(visibleArtistColumnIds, allColumns: ModernBrowserColumn.allArtistColumns)
         case .album: return normalizedColumnIds(visibleAlbumColumnIds, allColumns: ModernBrowserColumn.allAlbumColumns)
         case .track: return normalizedColumnIds(visibleTrackColumnIds, allColumns: ModernBrowserColumn.allTrackColumns)
+        // YouTube columns are fixed (not user-hideable); always the full set.
+        case .youtube: return ModernBrowserColumn.defaultYouTubeColumnIds
         }
     }
 
@@ -4696,6 +4776,8 @@ class ModernLibraryBrowserView: NSView {
             visibleAlbumColumnIds = normalizedColumnIds(ids, allColumns: ModernBrowserColumn.allAlbumColumns)
         case .track:
             visibleTrackColumnIds = normalizedColumnIds(ids, allColumns: ModernBrowserColumn.allTrackColumns)
+        case .youtube:
+            break  // fixed column set, nothing to persist
         }
     }
 
@@ -8268,7 +8350,23 @@ class ModernLibraryBrowserView: NSView {
         }
         
         if case .youtube = currentSource {
-            loadYouTubeChannels()
+            // YouTube content lives only in the Radio tab slot. The slot toggles
+            // between YouTube channels and Internet Radio stations; other tabs are
+            // empty (matching how the Internet Radio source treats its tabs).
+            switch browseMode {
+            case .radio:
+                if radioSlotShowsChannels {
+                    loadYouTubeChannels()
+                } else {
+                    loadRadioStations()
+                }
+            case .search:
+                loadRadioSearchResults()
+            default:
+                displayItems = []
+                isLoading = false
+                needsDisplay = true
+            }
             return
         }
 
@@ -11462,6 +11560,9 @@ private struct ModernBrowserColumn {
     static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
     static let defaultArtistColumnIds: [String] = ["title", "rating", "albums", "genre"]
     static let internetRadioColumns: [ModernBrowserColumn] = [.title, .genre, .rating]
+    // YouTube channel uploads (Radio tab "Channels" view): title + a resizable time column.
+    static let youtubeColumns: [ModernBrowserColumn] = [.title, .duration]
+    static let defaultYouTubeColumnIds: [String] = ["title", "duration"]
     
     // Legacy arrays kept for backwards compatibility with sort lookup
     static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount]
@@ -11473,6 +11574,7 @@ private struct ModernBrowserColumn {
         if let c = allAlbumColumns.first(where: { $0.id == id }) { return c }
         if let c = allArtistColumns.first(where: { $0.id == id }) { return c }
         if let c = internetRadioColumns.first(where: { $0.id == id }) { return c }
+        if let c = youtubeColumns.first(where: { $0.id == id }) { return c }
         return nil
     }
 }
@@ -11528,6 +11630,11 @@ extension ModernDisplayItem {
             default:
                 return ""
             }
+        case .youtubeVideo(let video):
+            if column.id == "duration" {
+                return video.duration.map { String(format: "%.0f:%.2d", $0 / 60, Int($0) % 60) } ?? ""
+            }
+            return ""
         default: return ""
         }
     }

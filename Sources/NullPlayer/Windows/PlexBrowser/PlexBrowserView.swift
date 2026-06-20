@@ -495,7 +495,7 @@ class PlexBrowserView: NSView {
             return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
         case .artist:
             return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
-        case nil:
+        case .youtube, nil:  // classic UI has no resizable YouTube column group
             break
         }
 
@@ -970,6 +970,18 @@ class PlexBrowserView: NSView {
     private var effectivePlistsSlotMode: PlexBrowseMode {
         guard case .local = currentSource, localPlistsSlotShowsFolders else { return .plists }
         return .folders
+    }
+
+    /// The Radio tab slot toggles between Internet Radio stations and YouTube
+    /// channels (YouTube source only), mirroring the Plists/Folders toggle.
+    /// Defaults to showing channels so the YouTube source opens on "Channels".
+    private var radioSlotShowsChannels: Bool {
+        get { UserDefaults.standard.object(forKey: "ClassicRadioSlotShowsChannels") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "ClassicRadioSlotShowsChannels") }
+    }
+    /// Whether the Radio tab slot is currently displaying YouTube channels.
+    private var radioSlotShowingChannels: Bool {
+        currentSource.isYouTube && radioSlotShowsChannels
     }
 
     private var isLocalSource: Bool {
@@ -3147,6 +3159,10 @@ class PlexBrowserView: NSView {
                 if browseMode == .folders, case .local = currentSource {
                     isSelected = true
                 }
+            }
+            // Radio slot shows "Channels" when the YouTube source is displaying channels.
+            if mode == .radio, radioSlotShowingChannels {
+                label = "Channels"
             }
 
             if isSelected {
@@ -7353,6 +7369,7 @@ class PlexBrowserView: NSView {
         case .artist: return BrowserColumn.allArtistColumns
         case .album: return BrowserColumn.allAlbumColumns
         case .track: return BrowserColumn.allTrackColumns
+        case .youtube: return []  // classic UI has no resizable YouTube column group
         }
     }
 
@@ -7361,6 +7378,7 @@ class PlexBrowserView: NSView {
         case .artist: return BrowserColumn.defaultArtistColumnIds
         case .album: return BrowserColumn.defaultAlbumColumnIds
         case .track: return BrowserColumn.defaultTrackColumnIds
+        case .youtube: return []
         }
     }
 
@@ -7369,6 +7387,7 @@ class PlexBrowserView: NSView {
         case .artist: return normalizedColumnIds(visibleArtistColumnIds, allColumns: BrowserColumn.allArtistColumns)
         case .album: return normalizedColumnIds(visibleAlbumColumnIds, allColumns: BrowserColumn.allAlbumColumns)
         case .track: return normalizedColumnIds(visibleTrackColumnIds, allColumns: BrowserColumn.allTrackColumns)
+        case .youtube: return []
         }
     }
 
@@ -7380,6 +7399,8 @@ class PlexBrowserView: NSView {
             visibleAlbumColumnIds = normalizedColumnIds(ids, allColumns: BrowserColumn.allAlbumColumns)
         case .track:
             visibleTrackColumnIds = normalizedColumnIds(ids, allColumns: BrowserColumn.allTrackColumns)
+        case .youtube:
+            break
         }
     }
 
@@ -7823,6 +7844,16 @@ class PlexBrowserView: NSView {
                 window?.makeFirstResponder(self)
                 return
             }
+            // Double-click the radio slot while the YouTube source toggles Radio/Channels.
+            if event.clickCount == 2, newMode == .radio, currentSource.isYouTube {
+                radioSlotShowsChannels.toggle()
+                browseMode = .radio
+                selectedIndices.removeAll()
+                scrollOffset = 0
+                loadDataForCurrentMode()
+                window?.makeFirstResponder(self)
+                return
+            }
             // Single-click selects whatever the slot currently shows
             browseMode = (newMode == .plists) ? effectivePlistsSlotMode : newMode
             selectedIndices.removeAll()
@@ -8081,7 +8112,11 @@ class PlexBrowserView: NSView {
 
         // YouTube source reuses the radio tab to list its channels.
         if case .youtube = currentSource {
-            loadYouTubeChannels()
+            if browseMode == .radio, !radioSlotShowsChannels {
+                loadRadioStations()
+            } else {
+                loadYouTubeChannels()
+            }
             return
         }
 
@@ -13059,7 +13094,24 @@ class PlexBrowserView: NSView {
         }
         
         if case .youtube = currentSource {
-            loadYouTubeChannels()
+            // YouTube content lives only in the Radio tab slot. The slot toggles
+            // between YouTube channels and Internet Radio stations; other tabs are
+            // empty (matching how the Internet Radio source treats its tabs).
+            if browseMode == .radio {
+                if radioSlotShowsChannels {
+                    loadYouTubeChannels()
+                } else {
+                    loadRadioStations()
+                }
+            } else if browseMode == .search {
+                loadRadioSearchResults()
+            } else {
+                isLoading = false
+                errorMessage = nil
+                stopLoadingAnimation()
+                displayItems = []
+                needsDisplay = true
+            }
             return
         }
 
@@ -16930,13 +16982,38 @@ class PlexBrowserView: NSView {
             }
             rebuildCurrentModeItems()
 
+        case .youtubeChannel(let channel):
+            if expandedYouTubeChannels.contains(channel.id) {
+                expandedYouTubeChannels.remove(channel.id)
+            } else {
+                expandedYouTubeChannels.insert(channel.id)
+                if youtubeChannelVideos[channel.id] == nil {
+                    youtubeExpandTask?.cancel()
+                    youtubeExpandTask = Task.detached { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            let videos = try await YouTubeManager.shared.videos(forChannel: channel)
+                            youtubeChannelVideos[channel.id] = videos
+                            rebuildCurrentModeItems()
+                        } catch is CancellationError { }
+                        catch where Task.isCancelled { }
+                        catch {
+                            NSLog("Failed to load YouTube videos for channel '%@': %@", channel.title, error.localizedDescription)
+                        }
+                    }
+                    needsDisplay = true
+                    return
+                }
+            }
+            rebuildCurrentModeItems()
+
         default:
             break
         }
 
         needsDisplay = true
     }
-    
+
     // MARK: - Playback
     
     private func playTrack(_ item: PlexDisplayItem) {
