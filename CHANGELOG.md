@@ -8,6 +8,8 @@
 
 - **Stereo PCM analysis path** — the audio engine now publishes separate downsampled left/right PCM buffers (`.audioStereoPCMDataUpdated`) alongside the existing mono mix, gated behind its own consumer set so it costs nothing when no analysis pane is open. Wired through both the local playback engine and the streaming-audio delegate route, so the new panes work for local files and HTTP streams alike.
 
+- **YouTube source — channel uploads in the Radio tab** — a new YouTube source appears in the Radio tab alongside internet radio. Add YouTube channel URLs and the app lists each channel's uploads via `yt-dlp --flat-playlist` (no API key / account required). Videos appear as indented rows under an expandable channel folder; double-clicking downloads the audio (via `yt-dlp`) and plays it immediately. Downloads are stored in a **user-chosen folder** (reachability is checked before downloading) with deterministic `<videoId>.<ext>` naming, separate from the Local library, and tracked in a manifest. A **quality setting** (FLAC / MP3 High / MP3 Low) is in the Library menu, alongside "Set Download Folder…". Works in both modern and classic UI, and downloaded files cast to Sonos, Chromecast, and DLNA like any local track.
+
 ### Improvements
 
 - **Classic utility-window titles** — the classic Spectrum Analyzer, Waveform, Library, and ProjectM windows now draw explicit bitmap-font titles into their skinned title bars, matching the Audio Analysis window. ProjectM is labeled **VISUALIZATIONS**.

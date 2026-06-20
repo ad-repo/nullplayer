@@ -29,6 +29,7 @@ enum ModernBrowserSource: Equatable, Codable {
     case jellyfin(serverId: String)
     case emby(serverId: String)
     case radio
+    case youtube
 
     var displayName: String {
         switch self {
@@ -54,6 +55,7 @@ enum ModernBrowserSource: Equatable, Codable {
             }
             return "EMBY"
         case .radio: return "INTERNET RADIO"
+        case .youtube: return "YOUTUBE"
         }
     }
 
@@ -81,6 +83,7 @@ enum ModernBrowserSource: Equatable, Codable {
             }
             return "Emby"
         case .radio: return "Radio"
+        case .youtube: return "YouTube"
         }
     }
 
@@ -89,8 +92,11 @@ enum ModernBrowserSource: Equatable, Codable {
     var isEmby: Bool { if case .emby = self { return true }; return false }
     var isPlex: Bool { if case .plex = self { return true }; return false }
     var isRadio: Bool { if case .radio = self { return true }; return false }
+    var isYouTube: Bool { if case .youtube = self { return true }; return false }
+    /// YouTube reuses the Internet Radio tab's UI to list its channels/videos.
+    var usesRadioTab: Bool { isRadio || isYouTube }
     var isRemote: Bool {
-        switch self { case .local, .radio: return false; case .plex, .subsonic, .jellyfin, .emby: return true }
+        switch self { case .local, .radio, .youtube: return false; case .plex, .subsonic, .jellyfin, .emby: return true }
     }
 
     private static let userDefaultsKey = "BrowserSource"
@@ -377,6 +383,12 @@ class ModernLibraryBrowserView: NSView {
     private var cachedRadioFolders: [RadioFolderDescriptor] = []
     private var expandedRadioFolders: Set<String> = []
     private var activeRadioStationSheet: AddRadioStationSheet?
+    private var activeYouTubeChannelSheet: AddYouTubeChannelSheet?
+
+    // Cached data - YouTube
+    private var expandedYouTubeChannels: Set<String> = []
+    private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
+    private var youtubeExpandTask: Task<Void, Never>?
     
     // Cached data - Video (Plex)
     private var cachedMovies: [PlexMovie] = []
@@ -662,6 +674,8 @@ class ModernLibraryBrowserView: NSView {
                 }
             case .radio:
                 currentSource = .radio
+            case .youtube:
+                currentSource = .youtube
             }
         } else {
             if PlexManager.shared.isLinked, let firstServer = PlexManager.shared.servers.first {
@@ -708,6 +722,8 @@ class ModernLibraryBrowserView: NSView {
                                                name: MediaLibrary.libraryDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(radioStationsDidChange),
                                                name: RadioManager.stationsDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(youtubeChannelsDidChange),
+                                               name: YouTubeManager.youtubeChannelsDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackDidChange),
                                                name: .audioTrackDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(playHistoryDidChange),
@@ -1515,14 +1531,31 @@ class ModernLibraryBrowserView: NSView {
             let sourceText = "Internet Radio"
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
-            
+
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
-            
+
             // Item count (only in list mode)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) stations"
+                let countWidth = countText.size(withAttributes: dataAttrs).width
+                let countX = visEndX - countWidth - 24 * m
+                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
+            }
+
+        case .youtube:
+            let sourceText = "YouTube"
+            drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
+            let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
+
+            let addText = "+ADD"
+            let addX = sourceNameStartX + sourceTextWidth + 28 * m
+            drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
+
+            // Item count (only in list mode)
+            if !isArtOnlyMode {
+                let countText = "\(displayItems.count) items"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
                 drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
@@ -3882,12 +3915,24 @@ class ModernLibraryBrowserView: NSView {
             let addZoneEnd = addZoneStart + 50 * m
             if relativeX >= addZoneStart && relativeX <= addZoneEnd { showRadioAddMenu(at: event) }
             else if relativeX < sourceZoneEnd { showSourceMenu(at: event) }
+        case .youtube:
+            let ytNameWidth = "YouTube".size(withAttributes: fontAttrs).width
+            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
+            let sourceZoneEnd = sourcePrefix + ytNameWidth
+            let addZoneStart = sourceZoneEnd + 28 * m
+            let addZoneEnd = addZoneStart + 50 * m
+            if relativeX >= addZoneStart && relativeX <= addZoneEnd { showYouTubeAddMenu(at: event) }
+            else if relativeX < sourceZoneEnd { showSourceMenu(at: event) }
         }
     }
-    
+
     private func handleRefreshClick() {
         if browseMode.isHistoryMode {
             historyAgent.scheduleRefresh()
+            return
+        }
+        if case .youtube = currentSource {
+            loadYouTubeChannels()
             return
         }
         if case .radio = currentSource {
@@ -3953,6 +3998,7 @@ class ModernLibraryBrowserView: NSView {
                 self.refreshData()
             }
         case .radio: break
+        case .youtube: loadYouTubeChannels()
         }
     }
     
@@ -4121,6 +4167,9 @@ class ModernLibraryBrowserView: NSView {
         let radioItem = NSMenuItem(title: "Internet Radio", action: #selector(selectRadioSource), keyEquivalent: "")
         radioItem.target = self; if case .radio = currentSource { radioItem.state = .on }
         menu.addItem(radioItem)
+        let youtubeItem = NSMenuItem(title: "YouTube", action: #selector(selectYouTubeSource), keyEquivalent: "")
+        youtubeItem.target = self; if case .youtube = currentSource { youtubeItem.state = .on }
+        menu.addItem(youtubeItem)
 
         if case .local = currentSource {
             let store = MediaLibraryStore.shared
@@ -4927,6 +4976,25 @@ class ModernLibraryBrowserView: NSView {
                 break
             }
             if menu.items.isEmpty { return }
+        case .youtubeChannel(let channel):
+            let expandTitle = expandedYouTubeChannels.contains(channel.id) ? "Collapse" : "Expand"
+            let expandItem = NSMenuItem(title: expandTitle, action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
+            menu.addItem(NSMenuItem.separator())
+            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(contextMenuRefreshYouTubeChannel(_:)), keyEquivalent: "")
+            refreshItem.target = self; refreshItem.representedObject = channel; menu.addItem(refreshItem)
+            let removeItem = NSMenuItem(title: "Remove Channel", action: #selector(contextMenuRemoveYouTubeChannel(_:)), keyEquivalent: "")
+            removeItem.target = self; removeItem.representedObject = channel; menu.addItem(removeItem)
+        case .youtubeVideo(let video):
+            let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
+            let actionTitle = isDownloaded ? "Play" : "Download & Play"
+            let actionItem = NSMenuItem(title: actionTitle, action: #selector(contextMenuPlayYouTubeVideo(_:)), keyEquivalent: "")
+            actionItem.target = self; actionItem.representedObject = video; menu.addItem(actionItem)
+            if isDownloaded {
+                menu.addItem(NSMenuItem.separator())
+                let removeDownloadItem = NSMenuItem(title: "Remove Download", action: #selector(contextMenuRemoveYouTubeDownload(_:)), keyEquivalent: "")
+                removeDownloadItem.target = self; removeDownloadItem.representedObject = video; menu.addItem(removeDownloadItem)
+            }
         case .plexRadioStation:
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayPlexRadioStation(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
@@ -5118,6 +5186,15 @@ class ModernLibraryBrowserView: NSView {
     
     @objc private func selectLocalSource() { currentSource = .local }
     @objc private func selectRadioSource() { currentSource = .radio }
+    @objc private func selectYouTubeSource() { currentSource = .youtube }
+
+    private func showYouTubeAddMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let addItem = NSMenuItem(title: "Add Channel...", action: #selector(showAddYouTubeChannelDialog), keyEquivalent: "")
+        addItem.target = self; menu.addItem(addItem)
+        let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
+        menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
+    }
     @objc private func clearLocalMusicFromSourceMenu() {
         MenuActions.shared.clearLocalMusic()
         if case .local = currentSource { loadLocalData() }
@@ -5292,6 +5369,21 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         reloadInternetRadioForCurrentMode()
+    }
+
+    @objc private func showAddYouTubeChannelDialog() {
+        activeYouTubeChannelSheet = AddYouTubeChannelSheet()
+        activeYouTubeChannelSheet?.showDialog { [weak self] channel in
+            self?.activeYouTubeChannelSheet = nil
+            guard let self = self else { return }
+            if channel != nil {
+                if case .youtube = self.currentSource {
+                    self.rebuildCurrentModeItems()
+                } else {
+                    self.currentSource = .youtube
+                }
+            }
+        }
     }
     @objc private func addMissingRadioDefaults() { RadioManager.shared.addMissingDefaults(); if case .radio = currentSource { reloadInternetRadioForCurrentMode() } }
     @objc private func resetRadioToDefaults() {
@@ -5723,6 +5815,61 @@ class ModernLibraryBrowserView: NSView {
         _ = RadioManager.shared.deleteUserFolder(id: action.folderID)
         reloadInternetRadioForCurrentMode()
     }
+    @objc private func contextMenuRefreshYouTubeChannel(_ sender: NSMenuItem) {
+        guard let channel = sender.representedObject as? YouTubeChannel else { return }
+        youtubeChannelVideos.removeValue(forKey: channel.id)
+        expandedYouTubeChannels.insert(channel.id)
+        youtubeExpandTask?.cancel()
+        youtubeExpandTask = Task.detached { @MainActor [weak self] in
+            guard let self = self else { return }
+            do {
+                let videos = try await YouTubeManager.shared.videos(forChannel: channel)
+                youtubeChannelVideos[channel.id] = videos
+                rebuildCurrentModeItems()
+            } catch is CancellationError { }
+            catch where Task.isCancelled { }
+            catch {
+                NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription)
+            }
+        }
+    }
+
+    @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
+        guard let channel = sender.representedObject as? YouTubeChannel else { return }
+        YouTubeManager.shared.removeChannel(channel)
+    }
+
+    @objc private func contextMenuPlayYouTubeVideo(_ sender: NSMenuItem) {
+        guard let video = sender.representedObject as? YouTubeVideo else { return }
+        if YouTubeManager.shared.isDownloaded(video.videoId) {
+            if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
+                let track = Track(url: url)
+                WindowManager.shared.audioEngine.playNow([track])
+            }
+        } else {
+            startLoadingAnimation()
+            youtubeExpandTask?.cancel()
+            youtubeExpandTask = Task.detached { @MainActor [weak self] in
+                guard let self = self else { return }
+                do {
+                    let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                    let track = Track(url: downloadedURL)
+                    WindowManager.shared.audioEngine.playNow([track])
+                    rebuildCurrentModeItems()
+                } catch {
+                    NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                }
+                self.stopLoadingAnimation()
+            }
+        }
+    }
+
+    @objc private func contextMenuRemoveYouTubeDownload(_ sender: NSMenuItem) {
+        guard let video = sender.representedObject as? YouTubeVideo else { return }
+        YouTubeManager.shared.removeDownload(videoId: video.videoId)
+        rebuildCurrentModeItems()
+    }
+
     @objc private func contextMenuToggleStationFolderMembership(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioFolderMembershipAction else { return }
         if RadioManager.shared.isStation(action.station, inUserFolderID: action.folderID) {
@@ -6783,6 +6930,7 @@ class ModernLibraryBrowserView: NSView {
                     else if let first = EmbyManager.shared.servers.first { self.currentSource = .emby(serverId: first.id); return }
                 case .local: break
                 case .radio: self.currentSource = .radio; return
+                case .youtube: self.currentSource = .youtube; return
                 }
             }
             self.clearAllCachedData(); self.reloadData()
@@ -6875,7 +7023,15 @@ class ModernLibraryBrowserView: NSView {
             self.needsDisplay = true
         }
     }
-    
+
+    @objc private func youtubeChannelsDidChange() {
+        guard case .youtube = currentSource else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.rebuildCurrentModeItems()
+        }
+    }
+
     @objc private func trackDidChange(_ notification: Notification) {
         if isArtOnlyMode {
             // Art-only mode uses loadAllArtworkForCurrentTrack exclusively.
@@ -6902,9 +7058,10 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfin(let serverId): currentSource = .jellyfin(serverId: serverId)
         case .emby(let serverId): currentSource = .emby(serverId: serverId)
         case .radio: currentSource = .radio
+        case .youtube: currentSource = .youtube
         }
     }
-    
+
     @objc private func windowDidMiniaturize(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
         stopServerNameScroll()
@@ -6977,7 +7134,8 @@ class ModernLibraryBrowserView: NSView {
         scrollOffset = 0; errorMessage = nil; isLoading = false; stopLoadingAnimation()
         // Internet Radio only has radio/search content, but every library
         // source supports the Radio tab. Preserve Radio across source changes.
-        if !browseMode.isHistoryMode, case .radio = currentSource {
+        // YouTube reuses the Radio tab to list its channels, so force it too.
+        if !browseMode.isHistoryMode, currentSource.usesRadioTab {
             browseMode = .radio
         }
         reloadData()
@@ -8109,6 +8267,11 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         
+        if case .youtube = currentSource {
+            loadYouTubeChannels()
+            return
+        }
+
         if case .radio = currentSource {
             switch browseMode {
             case .radio:
@@ -8124,7 +8287,7 @@ class ModernLibraryBrowserView: NSView {
             }
             return
         }
-        
+
         if browseMode == .radio {
             switch currentSource {
             case .plex:
@@ -8139,11 +8302,13 @@ class ModernLibraryBrowserView: NSView {
                 loadLocalRadioStations()
             case .radio:
                 displayItems = []
+            case .youtube:
+                displayItems = []
             }
             needsDisplay = true
             return
         }
-        
+
         switch currentSource {
         case .local:
             loadLocalData()
@@ -8156,6 +8321,8 @@ class ModernLibraryBrowserView: NSView {
         case .emby(let serverId):
             loadEmbyData(serverId: serverId, generation: generation)
         case .radio:
+            break
+        case .youtube:
             break
         }
     }
@@ -9052,6 +9219,47 @@ class ModernLibraryBrowserView: NSView {
 
         for root in roots {
             appendRadioFolderRow(root, level: 0, childrenByParent: childrenByParent)
+        }
+    }
+
+    // MARK: - YouTube (shares the Radio tab UI as its own source)
+
+    private func loadYouTubeChannels() {
+        isLoading = false
+        errorMessage = nil
+        stopLoadingAnimation()
+        buildYouTubeChannelItems()
+        needsDisplay = true
+    }
+
+    private func buildYouTubeChannelItems() {
+        displayItems.removeAll()
+        for channel in YouTubeManager.shared.channels {
+            displayItems.append(
+                ModernDisplayItem(
+                    id: "youtube-channel-\(channel.id)",
+                    title: channel.title,
+                    info: nil,
+                    indentLevel: 0,
+                    hasChildren: true,
+                    type: .youtubeChannel(channel)
+                )
+            )
+            guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { continue }
+            for video in videos {
+                let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
+                let marker = isDownloaded ? "⬇ " : ""
+                displayItems.append(
+                    ModernDisplayItem(
+                        id: "youtube-video-\(video.videoId)",
+                        title: marker + video.title,
+                        info: video.duration.map { String(format: "%.0f:%.2d", $0 / 60, Int($0) % 60) },
+                        indentLevel: 1,
+                        hasChildren: false,
+                        type: .youtubeVideo(video)
+                    )
+                )
+            }
         }
     }
 
@@ -10106,6 +10314,12 @@ class ModernLibraryBrowserView: NSView {
     
     private func rebuildCurrentModeItems() {
         horizontalScrollOffset = 0
+        if case .youtube = currentSource {
+            buildYouTubeChannelItems()
+            if columnSortId != nil { applyColumnSort() }
+            needsDisplay = true
+            return
+        }
         if case .radio = currentSource {
             switch browseMode {
             case .radio:
@@ -10206,6 +10420,7 @@ class ModernLibraryBrowserView: NSView {
         case .embySeason(let s): return expandedEmbySeasons.contains(s.id)
         case .plexPlaylist(let p): return expandedPlexPlaylists.contains(p.id)
         case .radioFolder(let folder): return expandedRadioFolders.contains(folder.id)
+        case .youtubeChannel(let ch): return expandedYouTubeChannels.contains(ch.id)
         case .localPlaylist(let p): return expandedLocalPlaylists.contains(p.url.path)
         default: return false
         }
@@ -10522,6 +10737,27 @@ class ModernLibraryBrowserView: NSView {
                     return
                 }
                 rebuildCurrentModeItems()
+            }
+        case .youtubeChannel(let ch):
+            if expandedYouTubeChannels.contains(ch.id) {
+                expandedYouTubeChannels.remove(ch.id)
+            } else {
+                expandedYouTubeChannels.insert(ch.id)
+                if youtubeChannelVideos[ch.id] == nil {
+                    let id = ch.id; youtubeExpandTask?.cancel()
+                    youtubeExpandTask = Task.detached { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            let videos = try await YouTubeManager.shared.videos(forChannel: ch)
+                            youtubeChannelVideos[id] = videos
+                            rebuildCurrentModeItems()
+                        } catch is CancellationError { }
+                        catch where Task.isCancelled { }
+                        catch {
+                            NSLog("Failed to load YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
+                        }
+                    }; return
+                }
             }
         default: break
         }
@@ -10926,6 +11162,29 @@ class ModernLibraryBrowserView: NSView {
             if folder.hasChildren {
                 toggleExpand(item)
             }
+        case .youtubeChannel(let channel): toggleExpand(item)
+        case .youtubeVideo(let video):
+            if YouTubeManager.shared.isDownloaded(video.videoId) {
+                if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
+                    let track = Track(url: url)
+                    WindowManager.shared.audioEngine.playNow([track])
+                }
+            } else {
+                startLoadingAnimation()
+                youtubeExpandTask?.cancel()
+                youtubeExpandTask = Task.detached { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    do {
+                        let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                        let track = Track(url: downloadedURL)
+                        WindowManager.shared.audioEngine.playNow([track])
+                        rebuildCurrentModeItems()
+                    } catch {
+                        NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                    }
+                    self.stopLoadingAnimation()
+                }
+            }
         case .plexRadioStation(let r): playPlexRadioStation(r)
         case .subsonicRadioStation(let r): playSubsonicRadioStation(r)
         case .jellyfinRadioStation(let r): playJellyfinRadioStation(r)
@@ -11021,6 +11280,8 @@ private struct ModernDisplayItem {
         case plexPlaylist(PlexPlaylist)
         case radioStation(RadioStation)
         case radioFolder(RadioFolderDescriptor)
+        case youtubeChannel(YouTubeChannel)
+        case youtubeVideo(YouTubeVideo)
         case plexRadioStation(PlexRadioType)
         case subsonicRadioStation(SubsonicRadioType)
         case jellyfinRadioStation(JellyfinRadioType)
