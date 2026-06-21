@@ -2049,6 +2049,12 @@ class WindowManager {
     }
 
     private func applyClassicVisualizationDefaults(notify: Bool) {
+        // Classic and modern skins are independent. WindowManager still loads the
+        // remembered classic skin at startup so it is ready if the user switches UI
+        // modes, but its visualization defaults must not overwrite modern scoped
+        // profile preferences while the modern UI is active.
+        guard !isRunningModernUI else { return }
+
         let defaults = UserDefaults.standard
         let visClassicMode = MainWindowVisMode.visClassicExact.rawValue
         let classicProfile = "Purple Neon"
