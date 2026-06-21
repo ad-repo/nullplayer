@@ -169,6 +169,12 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     /// Whether the browser is showing the embedded compact player bar.
     private(set) var isCompactMode = false
 
+    /// Smallest width that keeps the tab labels inside their outlines. Used to floor the
+    /// Compact Mode window so it never launches too thin.
+    var minimumCompactContentWidth: CGFloat {
+        browserView.minimumCompactContentWidth
+    }
+
     /// Enable/disable Compact Mode. Unlike shade mode this does NOT resize or size-lock the
     /// window — the full, resizable library window is kept; only the embedded player bar is
     /// toggled and the list/content region shifts to make room.

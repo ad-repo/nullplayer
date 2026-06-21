@@ -966,7 +966,10 @@ class WindowManager {
             let available = topY - visible.minY - 8
             // Ensure a usable width and a tall, dropdown-style height. Don't shrink a window the
             // user has already grown; only grow a too-small one. Always clamp to fit the screen.
-            frame.size.width = max(frame.width, 360 * m)
+            // Floor at the width needed to keep all tab labels inside their outlines.
+            let tabFloor = (plexBrowserWindowController as? ModernLibraryBrowserWindowController)?
+                .minimumCompactContentWidth ?? (360 * m)
+            frame.size.width = max(frame.width, max(360 * m, tabFloor))
             frame.size.height = max(frame.height, min(available, 620 * m))
             frame.size.height = min(frame.height, available)
             originX = min(max(originX, visible.minX + 8), visible.maxX - frame.width - 8)
@@ -984,6 +987,7 @@ class WindowManager {
 
         // Restore the Dock icon and remove the status-bar item.
         NSApp.setActivationPolicy(.regular)
+        restoreDockIconImage()
         removeCompactStatusItem()
 
         restoreWindowVisibilityAfterCompactMode()
@@ -999,7 +1003,10 @@ class WindowManager {
             "spectrum": spectrumWindowController?.window?.isVisible ?? false,
             "audioAnalysis": audioAnalysisWindowController?.window?.isVisible ?? false,
             "waveform": waveformWindowController?.window?.isVisible ?? false,
-            "projectM": projectMWindowController?.window?.isVisible ?? false
+            "projectM": projectMWindowController?.window?.isVisible ?? false,
+            // The library browser becomes the sole compact window, so remember whether it
+            // was open beforehand — otherwise it lingers on screen after exiting Compact Mode.
+            "plexBrowser": plexBrowserWindowController?.window?.isVisible ?? false
         ]
     }
 
@@ -1016,6 +1023,11 @@ class WindowManager {
     }
 
     private func restoreWindowVisibilityAfterCompactMode() {
+        // The library browser hosted the compact UI; if it wasn't open before entering
+        // Compact Mode, order it out so it doesn't linger as a second window on exit.
+        if savedWindowVisibility["plexBrowser"] != true {
+            plexBrowserWindowController?.window?.orderOut(nil)
+        }
         if savedWindowVisibility["main"] == true { showMainWindow() }
         if savedWindowVisibility["equalizer"] == true { showEqualizer() }
         if savedWindowVisibility["playlist"] == true { showPlaylist() }
@@ -1024,6 +1036,23 @@ class WindowManager {
         if savedWindowVisibility["waveform"] == true { showWaveform() }
         if savedWindowVisibility["projectM"] == true { showProjectM() }
         savedWindowVisibility.removeAll()
+    }
+
+    /// Switching activation policy `.accessory` → `.regular` makes macOS forget the bundle's
+    /// CFBundleIconFile and show the generic executable icon in the Dock. Re-apply the app icon
+    /// explicitly so the NullPlayer logo returns when leaving Compact Mode.
+    private func restoreDockIconImage() {
+        let image: NSImage?
+        if let icnsURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") {
+            image = NSImage(contentsOf: icnsURL)
+        } else if let pngURL = BundleHelper.url(forResource: "AppIcon", withExtension: "png"),
+                  let png = NSImage(contentsOf: pngURL) {
+            png.size = NSSize(width: 128, height: 128)
+            image = png
+        } else {
+            image = nil
+        }
+        if let image { NSApp.applicationIconImage = image }
     }
 
     private func createCompactStatusItem() {

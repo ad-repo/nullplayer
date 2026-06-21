@@ -1164,6 +1164,28 @@ class ModernLibraryBrowserView: NSView {
         return widths
     }
 
+    /// Smallest window width at which every tab label still fits inside its outline.
+    /// Mirrors the layout math in `drawTabBar`: tabs share `bounds.width - borders - sortWidth`
+    /// equally, so the narrowest label-fit is driven by the widest label ("Channels" in the
+    /// YouTube radio slot). Used to floor the Compact Mode window so labels never spill out.
+    var minimumCompactContentWidth: CGFloat {
+        let skin = currentSkin()
+        let font = skin.sideWindowFont(size: 11)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+
+        // Widest possible tab label across all sources (includes the YouTube "Channels" slot).
+        var labels = ModernBrowseMode.allCases.map { $0.title }
+        labels.append("Channels")
+        labels.append("Folders")
+        let maxLabelWidth = labels.map { $0.size(withAttributes: attrs).width }.max() ?? 0
+
+        let sortWidth = "Sort".size(withAttributes: attrs).width + 16
+        // Per-tab outline keeps a 2pt inset each side; add a little breathing room.
+        let perTab = maxLabelWidth + 4 + 8
+        let tabsWidth = perTab * CGFloat(ModernBrowseMode.allCases.count)
+        return ceil(tabsWidth + sortWidth + Layout.borderWidth * 2)
+    }
+
     private func drawTabBar(in context: CGContext, tabBarY: CGFloat, skin: ModernSkin) {
         let tabBarRect = NSRect(x: Layout.borderWidth, y: tabBarY,
                                 width: bounds.width - Layout.borderWidth * 2, height: Layout.tabBarHeight)
