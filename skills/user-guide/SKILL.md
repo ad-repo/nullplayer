@@ -308,8 +308,8 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Bundled skins: Silver (default), Classic, Dark, Light
 
 ### Modern UI Mode
-- **Options > Use Modern UI** to enable modern skin engine
-- Requires restart to switch modes
+- **Skins > Modern/Classic > Switch to…** to change UI mode
+- Switches **live, with no restart** — only the mode-dependent window layer is rebuilt; audio, casting, the video player, and playlist/seek/play state continue uninterrupted. Picking a specific modern or classic skin while in the other mode also switches live.
 - Modern skins use `skin.json` format
 - Portable modern skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Modern > Load Skin...**
 - Bundled modern skins: NeonWave (default), Skulls

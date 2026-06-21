@@ -4291,6 +4291,67 @@ class WindowManager {
     }
     #endif
 
+    /// Switch between Classic and Modern UI in-process, with **no app restart**.
+    ///
+    /// This is the production live-switch built on the same teardown/rebuild primitive proven
+    /// by the DEBUG recreate action, with mode-change semantics layered on:
+    ///   1. snapshot which mode-dependent windows are open (+ frames) and the Compact-Mode state;
+    ///   2. `teardownModeDependentWindows()` — synchronous; its completion gates recreation;
+    ///   3. flip `isModernUIEnabled` — the `show*()` paths read it to pick classic vs. modern
+    ///      controllers, so it must change *between* teardown and recreate;
+    ///   4. `prepareUIRuntime(forModernUI:)` — target-mode runtime prep before any controller exists;
+    ///   5. reprogram both EQ nodes to the target layout via canonical per-layout gains;
+    ///   6. rebuild the menu bar (mode-dependent items);
+    ///   7+8. recreate windows, restore visibility/frames, re-push presentation state, make the
+    ///      new main window key (all inside `recreateModeDependentLayout`), then restore Compact Mode.
+    ///
+    /// Audio, casting, the video player, and all playback state survive untouched: `AudioEngine`
+    /// is owned here (not by any window), so playlist / current track / seek / play-pause continue
+    /// across the switch — audio state is deliberately *not* snapshotted or restored. No-op if the
+    /// requested mode is already running.
+    func reloadUI(toModernUI targetModern: Bool) {
+        guard targetModern != isRunningModernUI else { return }
+        NSLog("WindowManager: reloadUI — switching to %@ UI", targetModern ? "modern" : "classic")
+
+        let snapshot = captureModeDependentLayout()
+        let wasCompact = compactModeEnabled
+        if wasCompact { exitCompactMode() }
+
+        let t0 = CACurrentMediaTime()
+        teardownModeDependentWindows()
+        let tTorn = CACurrentMediaTime()
+
+        // Flip the persisted flag before recreate — show*() reads it to choose controllers.
+        isModernUIEnabled = targetModern
+
+        prepareUIRuntime(forModernUI: targetModern)
+        audioEngine.applyEQLayout(forModernUI: targetModern)
+        (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
+
+        recreateModeDependentLayout(snapshot)
+
+        // Restore Compact Mode last so it captures the freshly rebuilt window set, not stale state.
+        if wasCompact { enterCompactMode() }
+        let tDone = CACurrentMediaTime()
+
+        NSLog("WindowManager: reloadUI — teardown %.1fms, recreate %.1fms (now %@ UI)",
+              (tTorn - t0) * 1000.0, (tDone - tTorn) * 1000.0, targetModern ? "modern" : "classic")
+    }
+
+    /// Prepare mode-specific runtime state *before* target-mode controllers are created.
+    /// Mirrors the startup branches in `AppDelegate.applicationDidFinishLaunching`: load the
+    /// preferred modern skin when entering modern; reset classic spectrum transparent-background
+    /// defaults when entering classic. The classic `currentSkin` is loaded once at init and
+    /// survives across switches, so no classic skin reload is needed here.
+    private func prepareUIRuntime(forModernUI targetModern: Bool) {
+        if targetModern {
+            ModernSkinEngine.shared.loadPreferredSkin()
+        } else {
+            UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
+            UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
+        }
+    }
+
     /// Miniaturize all visible, managed player windows.
     /// Main window is miniaturized first so existing docked-window miniaturize
     /// coordination remains intact, then any remaining visible windows follow.

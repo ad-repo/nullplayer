@@ -574,6 +574,36 @@ UI label is **Large UI**. Internal state key remains `isDoubleSize`.
 - When title bars are hidden, all window drags pass `fromTitleBar: true` to allow undocking
 - Classic windows use drawing transform offset (`translateBy`) to shift the skin image up; modern windows use conditional `titleBarHeight`
 
+## Live UI Mode Switching (Modern ↔ Classic, no restart)
+
+Switching UI mode rebuilds **only the mode-dependent window layer** in-process — no app
+restart. `AudioEngine` is owned by `WindowManager` (not by any window), so playback,
+casting, playlist, current track, seek position, and play/pause survive the switch
+untouched; audio state is deliberately never snapshotted.
+
+**Entry points** (`ContextMenuBuilder` / `MenuActions`): `setClassicMode()` /
+`setModernMode()`, plus the skin-driven switches `selectClassicSkin` / `selectModernSkin` /
+`loadDefaultClassicSkin` (picking a skin for the other mode switches into it). All call
+`WindowManager.reloadUI(toModernUI:)`. Only classic **Large UI** (Double Size) still
+restarts — it's a size change, not a mode switch.
+
+**`WindowManager.reloadUI(toModernUI:)`** orchestration:
+1. `captureModeDependentLayout()` — snapshot which mode-dependent windows are open + frames; snapshot Compact Mode.
+2. `teardownModeDependentWindows()` — synchronous; completion gates recreation. Orders out, calls `prepareForUITeardown()` on each controller (cancels tasks/timers, stops render loops, unregisters audio consumers), detaches docked children, `close()` + nils the mode-dependent controllers, clears drag/snap/dock state, and flushes the `ObjectIdentifier`-keyed geometry caches. **Preserves `videoPlayerWindowController`** (mode-independent — closing it stops playback/casts).
+3. Flip `isModernUIEnabled` — the `show*()` paths read it to choose classic vs. modern controllers, so it must change *between* teardown and recreate.
+4. `prepareUIRuntime(forModernUI:)` — `ModernSkinEngine.shared.loadPreferredSkin()` entering modern; reset classic spectrum transparent-bg keys entering classic. Classic `currentSkin` is loaded once at init and survives, so no classic reload is needed for a plain mode toggle (skin-driven classic switches load the chosen skin via `loadSkin` *before* `reloadUI`).
+5. `audioEngine.applyEQLayout(forModernUI:)` — reprograms the shared fixed-21-band EQ node to the target layout (mirrors to the streaming player internally); guard-idempotent.
+6. `rebuildMainMenu()` via `(NSApp.delegate as? AppDelegate)?`.
+7. `recreateModeDependentLayout(snapshot)` — `showMainWindow()` + `makeKeyAndOrderFront`, restore sub-window visibility/frames via `show*(at:)`, re-push presentation state; restore Compact Mode last.
+
+**Audio-consumer ordering safety**: consumer sets in `AudioEngine` (spectrum/waveform/
+stereo/magnitudes) are **ref-counted** (`[String: Int]`), so a late `remove` from an old
+view's deferred `deinit` cannot wipe a same-id registration the replacement already made.
+
+**DEBUG-only** `debugRecreateModeDependentWindows()` (Window menu → "Recreate Windows
+(Debug)") runs the same teardown/rebuild in the *same* mode — the leak/lifecycle test that
+de-risks the live switch. Requires a debug build: `./scripts/kill_build_run.sh --debug`.
+
 ## Window Docking
 
 Complex snapping logic in `WindowManager`:

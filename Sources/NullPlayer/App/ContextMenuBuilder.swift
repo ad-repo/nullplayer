@@ -3672,21 +3672,12 @@ class MenuActions: NSObject {
     
     @objc func loadDefaultClassicSkin() {
         let wm = WindowManager.shared
-        let previousSkinPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath")
-        // Clear the last used skin so the bundled default loads
-        UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
-        
+
         if wm.isRunningModernUI {
-            // Switch to classic mode with default skin on next launch
-            if !showRestartAlert(beforeRelaunch: {
-                wm.isModernUIEnabled = false
-            }) {
-                if let previousSkinPath = previousSkinPath {
-                    UserDefaults.standard.set(previousSkinPath, forKey: "lastClassicSkinPath")
-                } else {
-                    UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
-                }
-            }
+            // Load the bundled default classic skin (clears lastClassicSkinPath itself),
+            // then live-switch to classic. No restart.
+            wm.loadBundledDefaultSkin()
+            wm.reloadUI(toModernUI: false)
         } else {
             // Already in classic mode - load bundled default skin now
             wm.loadBundledDefaultSkin()
@@ -3770,51 +3761,31 @@ class MenuActions: NSObject {
     @objc func selectClassicSkin(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         let wm = WindowManager.shared
-        
-        // Persist the last used classic skin path
-        let previousSkinPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath")
-        UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
-        
+
         if wm.isRunningModernUI {
-            // Switch to classic mode and load this skin on next launch
-            if !showRestartAlert(beforeRelaunch: {
-                wm.isModernUIEnabled = false
-            }) {
-                // User cancelled — revert
-                if let previousSkinPath = previousSkinPath {
-                    UserDefaults.standard.set(previousSkinPath, forKey: "lastClassicSkinPath")
-                } else {
-                    UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
-                }
-            }
+            // Load the chosen classic skin into `currentSkin` (also persists
+            // lastClassicSkinPath), then live-switch to classic — the rebuilt classic
+            // windows render `currentSkin`. No restart.
+            wm.loadSkin(from: url)
+            wm.reloadUI(toModernUI: false)
         } else {
             // Already in classic mode — load the skin immediately
             wm.loadSkin(from: url)
         }
     }
-    
+
     /// Select a modern skin and switch to modern mode if needed
     @objc func selectModernSkin(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         let wm = WindowManager.shared
-        
-        // Persist the selected modern skin name (ModernSkinEngine does this too, but
-        // we need it set before restart when switching from classic mode)
-        let previousSkinName = UserDefaults.standard.string(forKey: "modernSkinName")
+
+        // Persist the selected modern skin name; `prepareUIRuntime` → `loadPreferredSkin()`
+        // reads this key when entering modern, so the live switch loads exactly this skin.
         UserDefaults.standard.set(name, forKey: "modernSkinName")
-        
+
         if !wm.isRunningModernUI {
-            // Switch to modern mode — skin will load on next launch
-            if !showRestartAlert(beforeRelaunch: {
-                wm.isModernUIEnabled = true
-            }) {
-                // User cancelled — revert
-                if let previousSkinName = previousSkinName {
-                    UserDefaults.standard.set(previousSkinName, forKey: "modernSkinName")
-                } else {
-                    UserDefaults.standard.removeObject(forKey: "modernSkinName")
-                }
-            }
+            // Live-switch to modern — no restart.
+            wm.reloadUI(toModernUI: true)
         } else {
             // Already in modern mode — load the skin immediately
             ModernSkinEngine.shared.loadSkin(named: name)
@@ -3830,40 +3801,13 @@ class MenuActions: NSObject {
     @objc func setClassicMode() {
         let wm = WindowManager.shared
         guard wm.isRunningModernUI else { return }
-        _ = showRestartAlert(beforeRelaunch: {
-            wm.isModernUIEnabled = false
-        })
+        wm.reloadUI(toModernUI: false)
     }
-    
+
     @objc func setModernMode() {
         let wm = WindowManager.shared
         guard !wm.isRunningModernUI else { return }
-        _ = showRestartAlert(beforeRelaunch: {
-            wm.isModernUIEnabled = true
-        })
-    }
-    
-    /// Shows a restart confirmation alert. Returns `true` if the user confirmed and the app is restarting.
-    @discardableResult
-    private func showRestartAlert(
-        informativeText: String = "NullPlayer needs to restart to apply the UI mode change. Restart now?",
-        beforeRelaunch: (() -> Void)? = nil
-    ) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "Restart Required"
-        alert.informativeText = informativeText
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Restart")
-        alert.addButton(withTitle: "Cancel")
-        
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            // User confirmed — relaunch the app
-            beforeRelaunch?()
-            relaunchApp()
-            return true
-        }
-        return false
+        wm.reloadUI(toModernUI: true)
     }
     
     /// Relaunch the application by opening a new instance and terminating the current one.
@@ -4596,9 +4540,9 @@ class MenuActions: NSObject {
             wm.isDoubleSize.toggle()
         } else {
             // Classic mode: show the dialog BEFORE touching the UI so it never distorts.
-            // Inline the alert so we can toggle the flag and call relaunchApp() ourselves —
-            // the standard showRestartAlert() helper calls relaunchApp() internally and never
-            // returns, which would leave the flag at the old value when saveState() fires.
+            // Classic Double Size still requires a restart (unlike UI-mode switching, which is
+            // now live): toggle the flag only after the user confirms, then relaunch, so
+            // applicationWillTerminate → saveState() captures the new value.
             let alert = NSAlert()
             alert.messageText = "Restart Required"
             alert.informativeText = "NullPlayer needs to restart to apply the size change. Restart now?"
