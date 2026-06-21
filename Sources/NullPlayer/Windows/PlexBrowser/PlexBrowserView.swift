@@ -1328,7 +1328,25 @@ class PlexBrowserView: NSView {
     private var Layout: SkinElements.PlexBrowser.Layout.Type {
         SkinElements.PlexBrowser.Layout.self
     }
-    
+
+    /// Smallest content width that keeps every tab label inside its slot. Used to floor the
+    /// Compact Mode window so it doesn't launch too thin (mirrors the modern browser).
+    var minimumCompactContentWidth: CGFloat {
+        // Tab labels are drawn with the bitmap font at this scale (see drawTabBar).
+        let scaledCharWidth = SkinElements.TextFont.charWidth * 1.5
+        // Widest label across all tabs, including the dynamic "Channels"/"Folders" slots.
+        var labels = PlexBrowseMode.allCases.map { $0.title }
+        labels.append("Channels")
+        labels.append("Folders")
+        let maxLabelChars = labels.map { $0.count }.max() ?? 0
+        let maxLabelWidth = CGFloat(maxLabelChars) * scaledCharWidth
+        let sortWidth = CGFloat("Sort".count) * scaledCharWidth + 8
+        let perTab = maxLabelWidth + 12  // breathing room so labels don't touch
+        let tabsWidth = perTab * CGFloat(PlexBrowseMode.allCases.count)
+        let insets = tabItemHorizontalEdgePadding + (tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost)
+        return ceil(tabsWidth + sortWidth + insets + Layout.leftBorder + Layout.rightBorder)
+    }
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {

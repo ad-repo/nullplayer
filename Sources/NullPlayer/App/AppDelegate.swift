@@ -92,11 +92,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             AppStateManager.shared.restorePlaylistState()
         }
 
-        // Restore Compact Mode if it was active when the app last quit (modern UI only).
+        // Restore Compact Mode if it was active when the app last quit (classic or modern UI).
         // Deferred a tick so windows and restored state are fully in place first.
-        if windowManager.isRunningModernUI && UserDefaults.standard.bool(forKey: "compactModeEnabled") {
+        if UserDefaults.standard.bool(forKey: "compactModeEnabled") {
             DispatchQueue.main.async { [weak self] in
-                self?.windowManager.enterCompactMode()
+                self?.windowManager.enterCompactMode(revealWindow: false)
             }
         }
     }

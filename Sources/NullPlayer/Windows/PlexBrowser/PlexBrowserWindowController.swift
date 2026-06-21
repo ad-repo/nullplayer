@@ -24,7 +24,13 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     
     /// Normal mode frame (stored when entering shade mode)
     private var normalModeFrame: NSRect?
-    
+
+    /// Compact Mode state. When active the browser view is wrapped in a container with an
+    /// embedded `ClassicCompactPlayerBarView` pinned across the top.
+    private(set) var isCompactMode = false
+    private var compactBar: ClassicCompactPlayerBarView?
+    private var compactContainer: NSView?
+
     // MARK: - Initialization
     
     convenience init() {
@@ -163,6 +169,76 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     
     func skinDidChange() {
         browserView.skinDidChange()
+        compactBar?.skinDidChange()
+    }
+
+    // MARK: - Compact Mode
+
+    /// Smallest content width to keep the window usable in Compact Mode.
+    var minimumCompactContentWidth: CGFloat {
+        max(Self.minSize.width, browserView.minimumCompactContentWidth)
+    }
+
+    /// Enable/disable Compact Mode. Unlike shade mode this does NOT resize or size-lock the
+    /// window — the full, resizable browser is kept; the browser view is wrapped in a container
+    /// with an embedded classic player bar pinned across the top.
+    func setCompactMode(_ enabled: Bool) {
+        guard isCompactMode != enabled, let window = window else { return }
+        isCompactMode = enabled
+
+        if enabled {
+            let size = browserView.frame.size
+            // Tuck the browser's own "LIBRARY" title bar up behind the (opaque) player bar so it
+            // disappears in this view — the player bar becomes the window's top chrome. The
+            // container lays both children out deterministically on every resize.
+            let container = ClassicCompactContainerView(frame: NSRect(origin: .zero, size: size))
+            container.autoresizingMask = [.width, .height]
+            container.barHeight = ClassicCompactPlayerBarView.preferredHeight()
+            container.titleBarHeight = SkinElements.PlexBrowser.Layout.titleBarHeight
+
+            browserView.autoresizingMask = []
+            let bar = ClassicCompactPlayerBarView(frame: .zero)
+            bar.autoresizingMask = []
+
+            container.addSubview(browserView)   // below
+            container.addSubview(bar)           // on top (opaque, covers the title bar)
+            container.browser = browserView
+            container.playerBar = bar
+            window.contentView = container
+            container.layoutChildren()
+            compactContainer = container
+            compactBar = bar
+            seedCompactBar(bar)
+        } else {
+            let size = (window.contentView?.frame.size) ?? browserView.frame.size
+            compactBar?.removeFromSuperview()
+            compactBar = nil
+            compactContainer = nil
+            browserView.frame = NSRect(origin: .zero, size: size)
+            browserView.autoresizingMask = [.width, .height]
+            window.contentView = browserView
+        }
+        browserView.needsDisplay = true
+    }
+
+    /// Seed the bar with the engine's current state so it isn't blank until the next tick.
+    private func seedCompactBar(_ bar: ClassicCompactPlayerBarView) {
+        let engine = WindowManager.shared.audioEngine
+        bar.updateTrackInfo(engine.currentTrack)
+        bar.updateTime(current: engine.currentTime, duration: engine.duration)
+        bar.updatePlaybackState()
+    }
+
+    func updateCompactBarTime(current: TimeInterval, duration: TimeInterval) {
+        compactBar?.updateTime(current: current, duration: duration)
+    }
+
+    func updateCompactBarTrack(_ track: Track?) {
+        compactBar?.updateTrackInfo(track)
+    }
+
+    func updateCompactBarPlaybackState() {
+        compactBar?.updatePlaybackState()
     }
     
     func reloadData() {
@@ -207,5 +283,16 @@ extension PlexBrowserWindowController: NSWindowDelegate {
     
     func windowWillClose(_ notification: Notification) {
         WindowManager.shared.notifyMainWindowVisibilityChanged()
+    }
+
+    /// In Compact Mode this window is the app's only surface, so closing it just hides it
+    /// (the status-bar item brings it back). Exiting Compact Mode is done from the menu.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if isCompactMode {
+            sender.orderOut(nil)
+            WindowManager.shared.notifyMainWindowVisibilityChanged()
+            return false
+        }
+        return true
     }
 }

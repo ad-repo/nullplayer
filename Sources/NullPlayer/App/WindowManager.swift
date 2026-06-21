@@ -202,8 +202,9 @@ class WindowManager {
     }
 
     /// Whether Compact Mode (menu-bar app: one window = library browser + embedded player) is
-    /// currently active. Modern UI only; toggled live at runtime. The persisted preference key
-    /// `compactModeEnabled` mirrors this so the mode can be restored on the next launch.
+    /// currently active. Works in both classic and modern UI; toggled live at runtime. The
+    /// persisted preference key `compactModeEnabled` mirrors this so the mode can be restored
+    /// on the next launch.
     private(set) var compactModeEnabled = false
 
     /// Status-bar item shown while Compact Mode is active.
@@ -908,9 +909,8 @@ class WindowManager {
 
     // MARK: - Compact Mode
 
-    /// Toggle the menu-bar Compact Mode (modern UI only). Live — no restart.
+    /// Toggle the menu-bar Compact Mode (works in both classic and modern UI). Live — no restart.
     func toggleCompactMode() {
-        guard isRunningModernUI else { return }
         if compactModeEnabled {
             exitCompactMode()
         } else {
@@ -918,8 +918,12 @@ class WindowManager {
         }
     }
 
-    func enterCompactMode() {
-        guard isRunningModernUI, !compactModeEnabled else { return }
+    /// - Parameter revealWindow: When `true` (live toggle from the menu) the compact window is
+    ///   shown and positioned under the status item. When `false` (restore on launch) the window
+    ///   is left hidden behind the status item so the *first* click reveals it — otherwise the
+    ///   status item starts in a "visible" state and the first click would just hide it.
+    func enterCompactMode(revealWindow: Bool = true) {
+        guard !compactModeEnabled else { return }
         compactModeEnabled = true
         UserDefaults.standard.set(true, forKey: "compactModeEnabled")
 
@@ -930,15 +934,20 @@ class WindowManager {
 
         // Ensure the library browser exists and shows the embedded player bar.
         showPlexBrowser()
-        (plexBrowserWindowController as? ModernLibraryBrowserWindowController)?.setCompactMode(true)
+        plexBrowserWindowController?.setCompactMode(true)
 
         // Menu-bar app behaviour: hide the Dock icon, add a status-bar item.
         NSApp.setActivationPolicy(.accessory)
         createCompactStatusItem()
 
-        plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
-        positionCompactWindowUnderStatusItem()
-        NSApp.activate(ignoringOtherApps: true)
+        if revealWindow {
+            plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
+            positionCompactWindowUnderStatusItem()
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            // showPlexBrowser() ordered the window front; tuck it away until the first click.
+            plexBrowserWindowController?.window?.orderOut(nil)
+        }
         postLayoutChangeNotification()
     }
 
@@ -959,7 +968,7 @@ class WindowManager {
 
         let screen = buttonWindow.screen ?? NSScreen.screens.first { $0.frame.contains(buttonScreenRect.origin) } ?? NSScreen.main
         if let visible = screen?.visibleFrame {
-            let m = ModernSkinElements.sizeMultiplier
+            let m = isRunningModernUI ? ModernSkinElements.sizeMultiplier : 1.0
             originX = min(max(originX, visible.minX + 8), visible.maxX - frame.width - 8)
 
             // Available vertical space below the status item (top stays anchored to the item).
@@ -967,8 +976,7 @@ class WindowManager {
             // Ensure a usable width and a tall, dropdown-style height. Don't shrink a window the
             // user has already grown; only grow a too-small one. Always clamp to fit the screen.
             // Floor at the width needed to keep all tab labels inside their outlines.
-            let tabFloor = (plexBrowserWindowController as? ModernLibraryBrowserWindowController)?
-                .minimumCompactContentWidth ?? (360 * m)
+            let tabFloor = plexBrowserWindowController?.minimumCompactContentWidth ?? (360 * m)
             frame.size.width = max(frame.width, max(360 * m, tabFloor))
             frame.size.height = max(frame.height, min(available, 620 * m))
             frame.size.height = min(frame.height, available)
@@ -983,7 +991,7 @@ class WindowManager {
         compactModeEnabled = false
         UserDefaults.standard.set(false, forKey: "compactModeEnabled")
 
-        (plexBrowserWindowController as? ModernLibraryBrowserWindowController)?.setCompactMode(false)
+        plexBrowserWindowController?.setCompactMode(false)
 
         // Restore the Dock icon and remove the status-bar item.
         NSApp.setActivationPolicy(.regular)
@@ -1149,20 +1157,17 @@ class WindowManager {
     // Forwarders from the AudioEngine broadcast hub to the embedded compact player bar.
     func compactBarUpdateTime(current: TimeInterval, duration: TimeInterval) {
         guard compactModeEnabled else { return }
-        (plexBrowserWindowController as? ModernLibraryBrowserWindowController)?
-            .updateCompactBarTime(current: current, duration: duration)
+        plexBrowserWindowController?.updateCompactBarTime(current: current, duration: duration)
     }
 
     func compactBarUpdateTrack(_ track: Track?) {
         guard compactModeEnabled else { return }
-        (plexBrowserWindowController as? ModernLibraryBrowserWindowController)?
-            .updateCompactBarTrack(track)
+        plexBrowserWindowController?.updateCompactBarTrack(track)
     }
 
     func compactBarUpdatePlaybackState() {
         guard compactModeEnabled else { return }
-        (plexBrowserWindowController as? ModernLibraryBrowserWindowController)?
-            .updateCompactBarPlaybackState()
+        plexBrowserWindowController?.updateCompactBarPlaybackState()
     }
 
     // MARK: - Library History
