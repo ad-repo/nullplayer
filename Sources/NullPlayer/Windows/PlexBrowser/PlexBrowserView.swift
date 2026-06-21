@@ -8239,6 +8239,7 @@ class PlexBrowserView: NSView {
             radioItem.state = .on
         }
         menu.addItem(radioItem)
+        menu.addItem(NSMenuItem.separator())
         let youtubeItem = NSMenuItem(title: "YouTube", action: #selector(selectYouTubeSource), keyEquivalent: "")
         youtubeItem.target = self
         if case .youtube = currentSource {

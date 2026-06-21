@@ -998,6 +998,9 @@ class WindowManager {
         restoreDockIconImage()
         removeCompactStatusItem()
 
+        // Switching `.accessory` → `.regular` makes macOS drop the main menu bar, so rebuild it.
+        (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
+
         restoreWindowVisibilityAfterCompactMode()
         NSApp.activate(ignoringOtherApps: true)
         postLayoutChangeNotification()

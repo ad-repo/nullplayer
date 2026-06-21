@@ -270,6 +270,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // MARK: - Menu Setup
     
+    /// Rebuilds and reinstalls the application's main menu.
+    ///
+    /// Switching the activation policy from `.accessory` (Compact Mode) back to `.regular`
+    /// makes macOS drop the menu bar, so it must be rebuilt when leaving Compact Mode.
+    func rebuildMainMenu() {
+        setupMainMenu()
+    }
+
     private func setupMainMenu() {
         let mainMenu = NSMenu()
         
