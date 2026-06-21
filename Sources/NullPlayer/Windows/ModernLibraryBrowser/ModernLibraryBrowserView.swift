@@ -484,11 +484,19 @@ class ModernLibraryBrowserView: NSView {
     // Art-only mode
     private var isArtOnlyMode: Bool = false {
         didSet {
+            artModeLifecycleGeneration &+= 1
             needsDisplay = true
             if isArtOnlyMode { fetchCurrentTrackRating(); loadAllArtworkForCurrentTrack() }
-            else { isVisualizingArt = false; artworkImages = []; artworkIndex = 0 }
+            else {
+                isVisualizingArt = false
+                artworkCyclingTask?.cancel()
+                artworkCyclingTask = nil
+                artworkImages = []
+                artworkIndex = 0
+            }
         }
     }
+    private var artModeLifecycleGeneration = 0
     private var isVisualizingArt: Bool = false {
         didSet {
             if isVisualizingArt { startVisualizerTimer() } else { stopVisualizerTimer() }
@@ -7161,7 +7169,22 @@ class ModernLibraryBrowserView: NSView {
     }
 
     @objc private func trackDidChange(_ notification: Notification) {
+        artModeLifecycleGeneration &+= 1
+        let generation = artModeLifecycleGeneration
+        let track = notification.userInfo?["track"] as? Track
+
         if isArtOnlyMode {
+            guard track != nil else {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self,
+                          self.artModeLifecycleGeneration == generation,
+                          self.isArtOnlyMode,
+                          WindowManager.shared.audioEngine.currentTrack == nil else { return }
+                    self.exitArtOnlyModeForMissingArtwork()
+                }
+                return
+            }
+
             // Art-only mode uses loadAllArtworkForCurrentTrack exclusively.
             // Don't also call loadArtwork(for:) to avoid a race where loadArtwork
             // finishes last with nil and overwrites valid artwork.
@@ -7172,7 +7195,6 @@ class ModernLibraryBrowserView: NSView {
         guard WindowManager.shared.showBrowserArtworkBackground else {
             if currentArtwork != nil { currentArtwork = nil; artworkTrackId = nil; needsDisplay = true }; return
         }
-        let track = notification.userInfo?["track"] as? Track
         loadArtwork(for: track)
     }
     
@@ -8067,7 +8089,12 @@ class ModernLibraryBrowserView: NSView {
                 image = await self.loadRemoteArtwork(urlString: thumb, cacheNamespace: "generic")
             }
             guard !Task.isCancelled else { return }
-            await MainActor.run { self.currentArtwork = image; self.artworkTrackId = track.id; self.needsDisplay = true }
+            await MainActor.run {
+                guard WindowManager.shared.audioEngine.currentTrack?.id == track.id else { return }
+                self.currentArtwork = image
+                self.artworkTrackId = track.id
+                self.needsDisplay = true
+            }
         }
     }
 
@@ -8201,8 +8228,12 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func loadAllArtworkForCurrentTrack() {
+        artworkLoadTask?.cancel(); artworkLoadTask = nil
         artworkCyclingTask?.cancel(); artworkCyclingTask = nil
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { artworkImages = []; artworkIndex = 0; currentArtwork = nil; needsDisplay = true; return }
+        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
+            exitArtOnlyModeForMissingArtwork()
+            return
+        }
         artworkImages = []; artworkIndex = 0
         artworkCyclingTask = Task { [weak self] in
             guard let self = self else { return }
@@ -8224,11 +8255,32 @@ class ModernLibraryBrowserView: NSView {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
+                guard self.isArtOnlyMode,
+                      WindowManager.shared.audioEngine.currentTrack?.id == currentTrack.id else { return }
+                guard !images.isEmpty else {
+                    self.exitArtOnlyModeForMissingArtwork()
+                    return
+                }
+
                 self.artworkImages = images; self.artworkIndex = 0
                 self.currentArtwork = images.first
+                self.artworkTrackId = currentTrack.id
                 self.needsDisplay = true
             }
         }
+    }
+
+    private func exitArtOnlyModeForMissingArtwork() {
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+        artworkCyclingTask?.cancel()
+        artworkCyclingTask = nil
+        artworkImages = []
+        artworkIndex = 0
+        currentArtwork = nil
+        artworkTrackId = nil
+        isArtOnlyMode = false
+        needsDisplay = true
     }
     
     private func cycleToNextArtwork() {
