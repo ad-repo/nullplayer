@@ -11,7 +11,8 @@ enum BrowserSource: Equatable, Codable {
     case jellyfin(serverId: String)
     case emby(serverId: String)
     case radio
-    
+    case youtube
+
     /// Display name for the source
     var displayName: String {
         switch self {
@@ -39,6 +40,8 @@ enum BrowserSource: Equatable, Codable {
             return "EMBY"
         case .radio:
             return "INTERNET RADIO"
+        case .youtube:
+            return "YOUTUBE"
         }
     }
 
@@ -69,9 +72,11 @@ enum BrowserSource: Equatable, Codable {
             return "Emby"
         case .radio:
             return "Radio"
+        case .youtube:
+            return "YouTube"
         }
     }
-    
+
     /// Whether this is a Subsonic source
     var isSubsonic: Bool {
         if case .subsonic = self { return true }
@@ -101,11 +106,20 @@ enum BrowserSource: Equatable, Codable {
         if case .radio = self { return true }
         return false
     }
-    
+
+    /// Whether this is a YouTube source
+    var isYouTube: Bool {
+        if case .youtube = self { return true }
+        return false
+    }
+
+    /// YouTube reuses the Internet Radio tab's UI to list its channels/videos.
+    var usesRadioTab: Bool { isRadio || isYouTube }
+
     /// Whether this is a remote source (Plex, Subsonic, Jellyfin, or Emby)
     var isRemote: Bool {
         switch self {
-        case .local, .radio:
+        case .local, .radio, .youtube:
             return false
         case .plex, .subsonic, .jellyfin, .emby:
             return true
@@ -481,7 +495,7 @@ class PlexBrowserView: NSView {
             return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
         case .artist:
             return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
-        case nil:
+        case .youtube, nil:  // classic UI has no resizable YouTube column group
             break
         }
 
@@ -958,6 +972,18 @@ class PlexBrowserView: NSView {
         return .folders
     }
 
+    /// The Radio tab slot toggles between Internet Radio stations and YouTube
+    /// channels (YouTube source only), mirroring the Plists/Folders toggle.
+    /// Defaults to showing channels so the YouTube source opens on "Channels".
+    private var radioSlotShowsChannels: Bool {
+        get { UserDefaults.standard.object(forKey: "ClassicRadioSlotShowsChannels") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "ClassicRadioSlotShowsChannels") }
+    }
+    /// Whether the Radio tab slot is currently displaying YouTube channels.
+    private var radioSlotShowingChannels: Bool {
+        currentSource.isYouTube && radioSlotShowsChannels
+    }
+
     private var isLocalSource: Bool {
         if case .local = currentSource { return true }
         return false
@@ -1046,6 +1072,11 @@ class PlexBrowserView: NSView {
     private var radioPlayTask: Task<Void, Never>?
     private var loadGeneration: Int = 0
 
+    private var expandedYouTubeChannels: Set<String> = []
+    private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
+    private var youtubeExpandTask: Task<Void, Never>?
+    private var youtubeDownloadTask: Task<Void, Never>?
+
     private let historyAgent = PlayHistoryAgent()
     private var historyHostingView: NSHostingView<StatsContentView>?
 
@@ -1067,6 +1098,7 @@ class PlexBrowserView: NSView {
     
     /// Strong reference to prevent deallocation while dialog is open
     private var activeRadioStationSheet: AddRadioStationSheet?
+    private var activeYouTubeChannelSheet: AddYouTubeChannelSheet?
     
     /// Cached data - Video
     private var cachedMovies: [PlexMovie] = []
@@ -1113,6 +1145,7 @@ class PlexBrowserView: NSView {
     /// Art-only mode - hides tabs and list, shows just album art (session only, not persisted)
     private var isArtOnlyMode: Bool = false {
         didSet {
+            artModeLifecycleGeneration &+= 1
             updateHistoryHostingVisibility()
             needsDisplay = true
             if isArtOnlyMode {
@@ -1123,12 +1156,15 @@ class PlexBrowserView: NSView {
             } else {
                 // Stop visualization when exiting art-only mode
                 isVisualizingArt = false
+                artworkCyclingTask?.cancel()
+                artworkCyclingTask = nil
                 // Clear cycling state
                 artworkImages = []
                 artworkIndex = 0
             }
         }
     }
+    private var artModeLifecycleGeneration = 0
     
     /// Visualization mode - applies audio-reactive effects to album art
     private var isVisualizingArt: Bool = false {
@@ -1296,7 +1332,25 @@ class PlexBrowserView: NSView {
     private var Layout: SkinElements.PlexBrowser.Layout.Type {
         SkinElements.PlexBrowser.Layout.self
     }
-    
+
+    /// Smallest content width that keeps every tab label inside its slot. Used to floor the
+    /// Compact Mode window so it doesn't launch too thin (mirrors the modern browser).
+    var minimumCompactContentWidth: CGFloat {
+        // Tab labels are drawn with the bitmap font at this scale (see drawTabBar).
+        let scaledCharWidth = SkinElements.TextFont.charWidth * 1.5
+        // Widest label across all tabs, including the dynamic "Channels"/"Folders" slots.
+        var labels = PlexBrowseMode.allCases.map { $0.title }
+        labels.append("Channels")
+        labels.append("Folders")
+        let maxLabelChars = labels.map { $0.count }.max() ?? 0
+        let maxLabelWidth = CGFloat(maxLabelChars) * scaledCharWidth
+        let sortWidth = CGFloat("Sort".count) * scaledCharWidth + 8
+        let perTab = maxLabelWidth + 12  // breathing room so labels don't touch
+        let tabsWidth = perTab * CGFloat(PlexBrowseMode.allCases.count)
+        let insets = tabItemHorizontalEdgePadding + (tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost)
+        return ceil(tabsWidth + sortWidth + insets + Layout.leftBorder + Layout.rightBorder)
+    }
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -1379,6 +1433,8 @@ class PlexBrowserView: NSView {
                 }
             case .radio:
                 currentSource = .radio
+            case .youtube:
+                currentSource = .youtube
             }
         } else {
             // Default: local if not linked to Plex, otherwise first Plex server
@@ -1913,8 +1969,9 @@ class PlexBrowserView: NSView {
         
         // Internet Radio only has radio/search content, but every library
         // source supports the Radio tab. Preserve Radio across source changes.
+        // YouTube reuses the Radio tab to list its channels, so force it too.
         if !browseMode.isHistoryMode {
-            if case .radio = currentSource {
+            if currentSource.usesRadioTab {
                 browseMode = .radio
             }
         }
@@ -3004,9 +3061,34 @@ class PlexBrowserView: NSView {
             drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
             let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
             drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+
+        case .youtube:
+            // YOUTUBE mode (shares the radio tab UI)
+            let sourceText = "YouTube"
+            drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
+
+            // +ADD button after source name (green text)
+            let addText = "+ADD"
+            let addX = sourceNameStartX + sourceTextWidth + 28
+            drawScaledSkinText(addText, at: NSPoint(x: addX, y: textY), scale: textScale, renderer: renderer, in: context)
+
+            // Right side: F5 refresh label
+            let refreshText = "F5"
+            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
+            drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+
+            // Item count
+            let countNumber = "\(displayItems.count)"
+            let countLabel = " items"
+            let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+            let countX = refreshX - countWidth - 24
+            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+            drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
         }
     }
-    
+
     /// Draw text with circular scrolling when it's too long
     private func drawScrollingText(_ text: String, startX: CGFloat, textY: CGFloat,
                                    availableWidth: CGFloat, scale: CGFloat,
@@ -3100,6 +3182,10 @@ class PlexBrowserView: NSView {
                 if browseMode == .folders, case .local = currentSource {
                     isSelected = true
                 }
+            }
+            // Radio slot shows "Channels" when the YouTube source is displaying channels.
+            if mode == .radio, radioSlotShowingChannels {
+                label = "Channels"
             }
 
             if isSelected {
@@ -5627,7 +5713,7 @@ class PlexBrowserView: NSView {
             serverName = configuredServer?.name ?? "Select Server"
             libraryName = embyCurrentLibraryName
             serverWidth = maxRemoteServerWidth
-        case .local, .radio:
+        case .local, .radio, .youtube:
             let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
             stopServerNameScroll()
             if hadOffset { needsDisplay = true }
@@ -5785,6 +5871,7 @@ class PlexBrowserView: NSView {
     
     /// Toggle shade mode
     private func toggleShadeMode() {
+        guard controller?.isCompactMode != true else { return }
         isShadeMode.toggle()
         controller?.setShadeMode(isShadeMode)
     }
@@ -5864,6 +5951,9 @@ class PlexBrowserView: NSView {
                 case .radio:
                     self.currentSource = .radio
                     return
+                case .youtube:
+                    self.currentSource = .youtube
+                    return
                 }
             }
 
@@ -5914,7 +6004,22 @@ class PlexBrowserView: NSView {
     // MARK: - Artwork Background
     
     @objc private func trackDidChange(_ notification: Notification) {
+        artModeLifecycleGeneration &+= 1
+        let generation = artModeLifecycleGeneration
+        let track = notification.userInfo?["track"] as? Track
+
         if isArtOnlyMode {
+            guard track != nil else {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self,
+                          self.artModeLifecycleGeneration == generation,
+                          self.isArtOnlyMode,
+                          WindowManager.shared.audioEngine.currentTrack == nil else { return }
+                    self.exitArtOnlyModeForMissingArtwork()
+                }
+                return
+            }
+
             // Art-only mode uses loadAllArtworkForCurrentTrack exclusively.
             // Don't also call loadArtwork(for:) to avoid a race where loadArtwork
             // finishes last with nil and overwrites valid artwork.
@@ -5933,7 +6038,6 @@ class PlexBrowserView: NSView {
             return
         }
         
-        let track = notification.userInfo?["track"] as? Track
         loadArtwork(for: track)
     }
     
@@ -5946,9 +6050,10 @@ class PlexBrowserView: NSView {
         case .jellyfin(let serverId): currentSource = .jellyfin(serverId: serverId)
         case .emby(let serverId): currentSource = .emby(serverId: serverId)
         case .radio: currentSource = .radio
+        case .youtube: currentSource = .youtube
         }
     }
-    
+
     /// Load artwork for a track (Plex or local)
     private func loadArtwork(for track: Track?) {
         // Cancel any pending load
@@ -6022,6 +6127,7 @@ class PlexBrowserView: NSView {
             guard !Task.isCancelled else { return }
             
             await MainActor.run {
+                guard WindowManager.shared.audioEngine.currentTrack?.id == track.id else { return }
                 self.currentArtwork = image
                 self.artworkTrackId = track.id
                 self.needsDisplay = true
@@ -6445,15 +6551,16 @@ class PlexBrowserView: NSView {
     
     /// Load all available artwork for the currently playing track
     private func loadAllArtworkForCurrentTrack() {
+        // ART mode owns the displayed artwork while active.
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+
         // Cancel any pending artwork cycling task
         artworkCyclingTask?.cancel()
         artworkCyclingTask = nil
         
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
-            artworkImages = []
-            artworkIndex = 0
-            currentArtwork = nil
-            needsDisplay = true
+            exitArtOnlyModeForMissingArtwork()
             return
         }
         
@@ -6500,12 +6607,33 @@ class PlexBrowserView: NSView {
             guard !Task.isCancelled else { return }
             
             await MainActor.run {
+                guard self.isArtOnlyMode,
+                      WindowManager.shared.audioEngine.currentTrack?.id == currentTrack.id else { return }
+                guard !images.isEmpty else {
+                    self.exitArtOnlyModeForMissingArtwork()
+                    return
+                }
+
                 self.artworkImages = images
                 self.artworkIndex = 0
                 self.currentArtwork = images.first
+                self.artworkTrackId = currentTrack.id
                 self.needsDisplay = true
             }
         }
+    }
+
+    private func exitArtOnlyModeForMissingArtwork() {
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+        artworkCyclingTask?.cancel()
+        artworkCyclingTask = nil
+        artworkImages = []
+        artworkIndex = 0
+        currentArtwork = nil
+        artworkTrackId = nil
+        isArtOnlyMode = false
+        needsDisplay = true
     }
     
     /// Load artwork based on the currently selected item in the browser
@@ -6670,6 +6798,8 @@ class PlexBrowserView: NSView {
                  .embyRadioStation,
                  .localRadioStation,
                  .radioFolder,
+                 .youtubeChannel,
+                 .youtubeVideo,
                  .header:
                 break
             }
@@ -7300,6 +7430,7 @@ class PlexBrowserView: NSView {
         case .artist: return BrowserColumn.allArtistColumns
         case .album: return BrowserColumn.allAlbumColumns
         case .track: return BrowserColumn.allTrackColumns
+        case .youtube: return []  // classic UI has no resizable YouTube column group
         }
     }
 
@@ -7308,6 +7439,7 @@ class PlexBrowserView: NSView {
         case .artist: return BrowserColumn.defaultArtistColumnIds
         case .album: return BrowserColumn.defaultAlbumColumnIds
         case .track: return BrowserColumn.defaultTrackColumnIds
+        case .youtube: return []
         }
     }
 
@@ -7316,6 +7448,7 @@ class PlexBrowserView: NSView {
         case .artist: return normalizedColumnIds(visibleArtistColumnIds, allColumns: BrowserColumn.allArtistColumns)
         case .album: return normalizedColumnIds(visibleAlbumColumnIds, allColumns: BrowserColumn.allAlbumColumns)
         case .track: return normalizedColumnIds(visibleTrackColumnIds, allColumns: BrowserColumn.allTrackColumns)
+        case .youtube: return []
         }
     }
 
@@ -7327,6 +7460,8 @@ class PlexBrowserView: NSView {
             visibleAlbumColumnIds = normalizedColumnIds(ids, allColumns: BrowserColumn.allAlbumColumns)
         case .track:
             visibleTrackColumnIds = normalizedColumnIds(ids, allColumns: BrowserColumn.allTrackColumns)
+        case .youtube:
+            break
         }
     }
 
@@ -7770,6 +7905,16 @@ class PlexBrowserView: NSView {
                 window?.makeFirstResponder(self)
                 return
             }
+            // Double-click the radio slot while the YouTube source toggles Radio/Channels.
+            if event.clickCount == 2, newMode == .radio, currentSource.isYouTube {
+                radioSlotShowsChannels.toggle()
+                browseMode = .radio
+                selectedIndices.removeAll()
+                scrollOffset = 0
+                loadDataForCurrentMode()
+                window?.makeFirstResponder(self)
+                return
+            }
             // Single-click selects whatever the slot currently shows
             browseMode = (newMode == .plists) ? effectivePlistsSlotMode : newMode
             selectedIndices.removeAll()
@@ -7996,12 +8141,24 @@ class PlexBrowserView: NSView {
             let sourceZoneEnd = sourcePrefix + radioNameWidth
             let addZoneStart = sourceZoneEnd + 24
             let addZoneEnd = addZoneStart + 4 * charWidth + 8  // "+ADD" (4 chars)
-            
+
             if relativeX >= addZoneStart && relativeX <= addZoneEnd {
                 // +ADD button click - show add menu
                 showRadioAddMenu(at: event)
             } else if relativeX < sourceZoneEnd {
                 // Source area = source dropdown
+                showSourceMenu(at: event)
+            }
+        } else if case .youtube = currentSource {
+            // YouTube mode - Source and +ADD on left (shares radio tab layout)
+            let ytNameWidth: CGFloat = 7 * charWidth  // "YouTube"
+            let sourceZoneEnd = sourcePrefix + ytNameWidth
+            let addZoneStart = sourceZoneEnd + 24
+            let addZoneEnd = addZoneStart + 4 * charWidth + 8  // "+ADD" (4 chars)
+
+            if relativeX >= addZoneStart && relativeX <= addZoneEnd {
+                showYouTubeAddMenu(at: event)
+            } else if relativeX < sourceZoneEnd {
                 showSourceMenu(at: event)
             }
         }
@@ -8011,6 +8168,24 @@ class PlexBrowserView: NSView {
     private func handleRefreshClick() {
         if browseMode.isHistoryMode {
             historyAgent.scheduleRefresh()
+            return
+        }
+
+        // YouTube source reuses the radio tab to list its channels.
+        if case .youtube = currentSource {
+            switch browseMode {
+            case .radio:
+                if radioSlotShowsChannels { loadYouTubeChannels() }
+                else { loadRadioStations() }
+            case .search:
+                loadRadioSearchResults()
+            default:
+                isLoading = false
+                errorMessage = nil
+                stopLoadingAnimation()
+                displayItems = []
+                needsDisplay = true
+            }
             return
         }
 
@@ -8079,6 +8254,9 @@ class PlexBrowserView: NSView {
         case .radio:
             // Already handled above
             break
+        case .youtube:
+            // Already handled above
+            break
         }
     }
 
@@ -8103,6 +8281,13 @@ class PlexBrowserView: NSView {
             radioItem.state = .on
         }
         menu.addItem(radioItem)
+        menu.addItem(NSMenuItem.separator())
+        let youtubeItem = NSMenuItem(title: "YouTube", action: #selector(selectYouTubeSource), keyEquivalent: "")
+        youtubeItem.target = self
+        if case .youtube = currentSource {
+            youtubeItem.state = .on
+        }
+        menu.addItem(youtubeItem)
 
         if case .local = currentSource {
             let store = MediaLibraryStore.shared
@@ -8261,9 +8446,9 @@ class PlexBrowserView: NSView {
         let addFolderItem = NSMenuItem(title: "New Folder...", action: #selector(showCreateRadioFolderDialog), keyEquivalent: "")
         addFolderItem.target = self
         menu.addItem(addFolderItem)
-        
+
         menu.addItem(NSMenuItem.separator())
-        
+
         let addPlaylistItem = NSMenuItem(title: "Import Playlist URL...", action: #selector(showAddRadioPlaylistDialog), keyEquivalent: "")
         addPlaylistItem.target = self
         menu.addItem(addPlaylistItem)
@@ -8662,7 +8847,21 @@ class PlexBrowserView: NSView {
     @objc private func selectRadioSource() {
         currentSource = .radio
     }
-    
+
+    @objc private func selectYouTubeSource() {
+        currentSource = .youtube
+    }
+
+    private func showYouTubeAddMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let addItem = NSMenuItem(title: "Add Channel...", action: #selector(showAddYouTubeChannelDialog), keyEquivalent: "")
+        addItem.target = self
+        menu.addItem(addItem)
+        let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
+        menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
+    }
+
+
     @objc private func showAddRadioStationDialog() {
         activeRadioStationSheet = AddRadioStationSheet(station: nil)
         activeRadioStationSheet?.showDialog { [weak self] station in
@@ -8695,7 +8894,22 @@ class PlexBrowserView: NSView {
         }
         reloadInternetRadioForCurrentMode()
     }
-    
+
+    @objc private func showAddYouTubeChannelDialog() {
+        activeYouTubeChannelSheet = AddYouTubeChannelSheet()
+        activeYouTubeChannelSheet?.showDialog { [weak self] channel in
+            self?.activeYouTubeChannelSheet = nil
+            guard let self = self else { return }
+            if channel != nil {
+                if case .youtube = self.currentSource {
+                    self.rebuildCurrentModeItems()
+                } else {
+                    self.currentSource = .youtube
+                }
+            }
+        }
+    }
+
     @objc private func addMissingRadioDefaults() {
         RadioManager.shared.addMissingDefaults()
         if case .radio = currentSource {
@@ -10173,7 +10387,28 @@ class PlexBrowserView: NSView {
             }
 
             if menu.items.isEmpty { return }
-            
+
+        case .youtubeChannel(let channel):
+            let expandTitle = expandedYouTubeChannels.contains(channel.id) ? "Collapse" : "Expand"
+            let expandItem = NSMenuItem(title: expandTitle, action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
+            menu.addItem(NSMenuItem.separator())
+            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(contextMenuRefreshYouTubeChannel(_:)), keyEquivalent: "")
+            refreshItem.target = self; refreshItem.representedObject = channel; menu.addItem(refreshItem)
+            let removeItem = NSMenuItem(title: "Remove Channel", action: #selector(contextMenuRemoveYouTubeChannel(_:)), keyEquivalent: "")
+            removeItem.target = self; removeItem.representedObject = channel; menu.addItem(removeItem)
+
+        case .youtubeVideo(let video):
+            let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
+            let actionTitle = isDownloaded ? "Play" : "Download & Play"
+            let actionItem = NSMenuItem(title: actionTitle, action: #selector(contextMenuPlayYouTubeVideo(_:)), keyEquivalent: "")
+            actionItem.target = self; actionItem.representedObject = video; menu.addItem(actionItem)
+            if isDownloaded {
+                menu.addItem(NSMenuItem.separator())
+                let removeDownloadItem = NSMenuItem(title: "Remove Download", action: #selector(contextMenuRemoveYouTubeDownload(_:)), keyEquivalent: "")
+                removeDownloadItem.target = self; removeDownloadItem.representedObject = video; menu.addItem(removeDownloadItem)
+            }
+
         case .plexRadioStation(let radioType):
             let playItem = NSMenuItem(title: "Play \(radioType.displayName)", action: #selector(contextMenuPlayPlexRadioStation(_:)), keyEquivalent: "")
             playItem.target = self
@@ -10793,6 +11028,64 @@ class PlexBrowserView: NSView {
             _ = RadioManager.shared.addStation(action.station, toUserFolderID: action.folderID)
         }
         reloadInternetRadioForCurrentMode()
+    }
+
+    @objc private func contextMenuRefreshYouTubeChannel(_ sender: NSMenuItem) {
+        guard let channel = sender.representedObject as? YouTubeChannel else { return }
+        youtubeChannelVideos.removeValue(forKey: channel.id)
+        expandedYouTubeChannels.insert(channel.id)
+        youtubeExpandTask?.cancel()
+        youtubeExpandTask = Task.detached { @MainActor [weak self] in
+            guard let self = self else { return }
+            do {
+                let videos = try await YouTubeManager.shared.videos(forChannel: channel)
+                youtubeChannelVideos[channel.id] = videos
+                rebuildCurrentModeItems()
+            } catch is CancellationError { }
+            catch where Task.isCancelled { }
+            catch {
+                NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription)
+            }
+        }
+    }
+
+    @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
+        guard let channel = sender.representedObject as? YouTubeChannel else { return }
+        YouTubeManager.shared.removeChannel(channel)
+        expandedYouTubeChannels.remove(channel.id)
+        youtubeChannelVideos.removeValue(forKey: channel.id)
+        rebuildCurrentModeItems()
+    }
+
+    @objc private func contextMenuPlayYouTubeVideo(_ sender: NSMenuItem) {
+        guard let video = sender.representedObject as? YouTubeVideo else { return }
+        if YouTubeManager.shared.isDownloaded(video.videoId) {
+            if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
+                let track = Track(url: url, isYouTubeOrigin: true)
+                WindowManager.shared.audioEngine.playNow([track])
+            }
+        } else {
+            startLoadingAnimation()
+            youtubeDownloadTask?.cancel()
+            youtubeDownloadTask = Task.detached { @MainActor [weak self] in
+                guard let self = self else { return }
+                do {
+                    let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                    let track = Track(url: downloadedURL, isYouTubeOrigin: true)
+                    WindowManager.shared.audioEngine.playNow([track])
+                    rebuildCurrentModeItems()
+                } catch {
+                    NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                }
+                self.stopLoadingAnimation()
+            }
+        }
+    }
+
+    @objc private func contextMenuRemoveYouTubeDownload(_ sender: NSMenuItem) {
+        guard let video = sender.representedObject as? YouTubeVideo else { return }
+        YouTubeManager.shared.removeDownload(videoId: video.videoId)
+        rebuildCurrentModeItems()
     }
 
     @objc private func contextMenuAssignStationSmartGenre(_ sender: NSMenuItem) {
@@ -12873,6 +13166,28 @@ class PlexBrowserView: NSView {
             return
         }
         
+        if case .youtube = currentSource {
+            // YouTube content lives only in the Radio tab slot. The slot toggles
+            // between YouTube channels and Internet Radio stations; other tabs are
+            // empty (matching how the Internet Radio source treats its tabs).
+            if browseMode == .radio {
+                if radioSlotShowsChannels {
+                    loadYouTubeChannels()
+                } else {
+                    loadRadioStations()
+                }
+            } else if browseMode == .search {
+                loadRadioSearchResults()
+            } else {
+                isLoading = false
+                errorMessage = nil
+                stopLoadingAnimation()
+                displayItems = []
+                needsDisplay = true
+            }
+            return
+        }
+
         if case .radio = currentSource {
             if browseMode == .radio {
                 loadRadioStations()
@@ -12887,7 +13202,7 @@ class PlexBrowserView: NSView {
             }
             return
         }
-        
+
         if browseMode == .radio {
             switch currentSource {
             case .plex:
@@ -12902,11 +13217,13 @@ class PlexBrowserView: NSView {
                 loadLocalRadioStations()
             case .radio:
                 displayItems = []
+            case .youtube:
+                displayItems = []
             }
             needsDisplay = true
             return
         }
-        
+
         switch currentSource {
         case .local:
             loadLocalData()
@@ -12918,6 +13235,8 @@ class PlexBrowserView: NSView {
             loadJellyfinData(serverId: serverId, generation: generation)
         case .emby(let serverId):
             loadEmbyData(serverId: serverId, generation: generation)
+        case .youtube:
+            break
         case .radio:
             break
         }
@@ -13705,8 +14024,14 @@ class PlexBrowserView: NSView {
         needsDisplay = true
     }
 
+    private var isShowingInternetRadioContent: Bool {
+        currentSource.isRadio ||
+            (currentSource.isYouTube &&
+             (browseMode == .search || (browseMode == .radio && !radioSlotShowsChannels)))
+    }
+
     private func reloadInternetRadioForCurrentMode() {
-        guard case .radio = currentSource else { return }
+        guard isShowingInternetRadioContent else { return }
         if browseMode == .radio {
             loadRadioStations()
         } else if browseMode == .search {
@@ -13734,6 +14059,43 @@ class PlexBrowserView: NSView {
 
         for root in roots {
             appendRadioFolderRow(root, level: 0, childrenByParent: childrenByParent)
+        }
+    }
+
+    // MARK: - YouTube (shares the Radio tab UI as its own source)
+
+    private func loadYouTubeChannels() {
+        isLoading = false
+        errorMessage = nil
+        stopLoadingAnimation()
+        buildYouTubeChannelItems()
+        needsDisplay = true
+    }
+
+    private func buildYouTubeChannelItems() {
+        displayItems.removeAll()
+        for channel in YouTubeManager.shared.channels {
+            displayItems.append(PlexDisplayItem(
+                id: "youtube-channel-\(channel.id)",
+                title: channel.title,
+                info: nil,
+                indentLevel: 0,
+                hasChildren: true,
+                type: .youtubeChannel(channel)
+            ))
+            guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { continue }
+            for video in videos {
+                let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
+                let marker = isDownloaded ? "⬇ " : ""
+                displayItems.append(PlexDisplayItem(
+                    id: "youtube-video-\(video.videoId)",
+                    title: marker + video.title,
+                    info: video.formattedDuration,
+                    indentLevel: 1,
+                    hasChildren: false,
+                    type: .youtubeVideo(video)
+                ))
+            }
         }
     }
 
@@ -14274,7 +14636,7 @@ class PlexBrowserView: NSView {
     
     @objc private func radioStationsDidChange() {
         // Only reload if we're showing radio content
-        guard case .radio = currentSource else { return }
+        guard isShowingInternetRadioContent else { return }
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -15862,6 +16224,23 @@ class PlexBrowserView: NSView {
         // Reset horizontal scroll when items change
         horizontalScrollOffset = 0
         
+        // YouTube source reuses the radio tab to list its channels.
+        if case .youtube = currentSource {
+            if browseMode == .radio {
+                if radioSlotShowsChannels { buildYouTubeChannelItems() }
+                else { buildRadioStationItems() }
+            } else if browseMode == .search {
+                buildRadioSearchItems()
+            } else {
+                displayItems = []
+            }
+            if columnSortId != nil {
+                applyColumnSort()
+            }
+            needsDisplay = true
+            return
+        }
+
         // Radio source supports Radio tab and Search tab.
         if case .radio = currentSource {
             if browseMode == .radio {
@@ -16689,13 +17068,38 @@ class PlexBrowserView: NSView {
             }
             rebuildCurrentModeItems()
 
+        case .youtubeChannel(let channel):
+            if expandedYouTubeChannels.contains(channel.id) {
+                expandedYouTubeChannels.remove(channel.id)
+            } else {
+                expandedYouTubeChannels.insert(channel.id)
+                if youtubeChannelVideos[channel.id] == nil {
+                    youtubeExpandTask?.cancel()
+                    youtubeExpandTask = Task.detached { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            let videos = try await YouTubeManager.shared.videos(forChannel: channel)
+                            youtubeChannelVideos[channel.id] = videos
+                            rebuildCurrentModeItems()
+                        } catch is CancellationError { }
+                        catch where Task.isCancelled { }
+                        catch {
+                            NSLog("Failed to load YouTube videos for channel '%@': %@", channel.title, error.localizedDescription)
+                        }
+                    }
+                    needsDisplay = true
+                    return
+                }
+            }
+            rebuildCurrentModeItems()
+
         default:
             break
         }
 
         needsDisplay = true
     }
-    
+
     // MARK: - Playback
     
     private func playTrack(_ item: PlexDisplayItem) {
@@ -16927,7 +17331,32 @@ class PlexBrowserView: NSView {
             if folder.hasChildren {
                 toggleExpand(item)
             }
-            
+
+        case .youtubeChannel(let channel):
+            toggleExpand(item)
+        case .youtubeVideo(let video):
+            if YouTubeManager.shared.isDownloaded(video.videoId) {
+                if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
+                    let track = Track(url: url, isYouTubeOrigin: true)
+                    WindowManager.shared.audioEngine.playNow([track])
+                }
+            } else {
+                startLoadingAnimation()
+                youtubeDownloadTask?.cancel()
+                youtubeDownloadTask = Task.detached { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    do {
+                        let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                        let track = Track(url: downloadedURL, isYouTubeOrigin: true)
+                        WindowManager.shared.audioEngine.playNow([track])
+                        rebuildCurrentModeItems()
+                    } catch {
+                        NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                    }
+                    self.stopLoadingAnimation()
+                }
+            }
+
         case .plexRadioStation(let radioType):
             playPlexRadioStation(radioType)
         case .subsonicRadioStation(let radioType):
@@ -17623,6 +18052,9 @@ private struct PlexDisplayItem {
         // Radio station type (Internet Radio - Shoutcast/Icecast)
         case radioStation(RadioStation)
         case radioFolder(RadioFolderDescriptor)
+        // YouTube channels and videos
+        case youtubeChannel(YouTubeChannel)
+        case youtubeVideo(YouTubeVideo)
         // Plex Radio station type (dynamic playlists from Plex library)
         case plexRadioStation(PlexRadioType)
         case subsonicRadioStation(SubsonicRadioType)

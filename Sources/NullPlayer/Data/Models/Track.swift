@@ -13,6 +13,7 @@ enum PlayHistorySource: String, CaseIterable, Sendable {
     case subsonic
     case jellyfin
     case emby
+    case youtube
     case radio
 
     var displayName: String {
@@ -22,6 +23,7 @@ enum PlayHistorySource: String, CaseIterable, Sendable {
         case .subsonic: return "Subsonic"
         case .jellyfin: return "Jellyfin"
         case .emby: return "Emby"
+        case .youtube: return "YouTube"
         case .radio: return "Radio"
         }
     }
@@ -97,7 +99,12 @@ struct Track: Identifiable, Equatable {
     /// classification stays correct even when the playback URL is local.
     let isRadioOrigin: Bool
 
-    init(url: URL) {
+    /// True when this track originated from a YouTube download (a downloaded `file://`
+    /// audio file). Lets play-history analytics attribute it to the YouTube source
+    /// instead of generic local files. See `playHistorySource`.
+    let isYouTubeOrigin: Bool
+
+    init(url: URL, isYouTubeOrigin: Bool = false) {
         self.id = UUID()
         self.url = url
         
@@ -233,6 +240,7 @@ struct Track: Identifiable, Equatable {
         self.cueEndOffset = nil
         self.cueSourceURL = nil
         self.isRadioOrigin = false
+        self.isYouTubeOrigin = isYouTubeOrigin
     }
 
     /// Fast path for bulk imports: avoid AVFoundation metadata parsing up-front.
@@ -263,6 +271,7 @@ struct Track: Identifiable, Equatable {
         self.cueEndOffset = nil
         self.cueSourceURL = nil
         self.isRadioOrigin = false
+        self.isYouTubeOrigin = false
     }
 
     init(id: UUID = UUID(),
@@ -290,7 +299,8 @@ struct Track: Identifiable, Equatable {
          cueStartOffset: TimeInterval? = nil,
          cueEndOffset: TimeInterval? = nil,
          cueSourceURL: URL? = nil,
-         isRadioOrigin: Bool = false) {
+         isRadioOrigin: Bool = false,
+         isYouTubeOrigin: Bool = false) {
         self.id = id
         self.url = url
         self.title = title
@@ -317,6 +327,7 @@ struct Track: Identifiable, Equatable {
         self.cueEndOffset = cueEndOffset
         self.cueSourceURL = cueSourceURL
         self.isRadioOrigin = isRadioOrigin
+        self.isYouTubeOrigin = isYouTubeOrigin
     }
     
     /// Display title (artist - title or just title)
@@ -399,6 +410,7 @@ struct Track: Identifiable, Equatable {
         if embyId != nil { return .emby }
         if isRadioOrigin { return .radio }
         if !url.isFileURL { return .radio }
+        if isYouTubeOrigin { return .youtube }
         return .local
     }
 
@@ -421,7 +433,7 @@ struct Track: Identifiable, Equatable {
             return jellyfinId
         case .emby:
             return embyId
-        case .local, .radio:
+        case .local, .radio, .youtube:
             return nil
         }
     }

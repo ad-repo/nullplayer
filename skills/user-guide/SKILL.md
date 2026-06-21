@@ -22,6 +22,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Playlist Editor** | Track list and playlist management | PL button or context menu |
 | **Equalizer** | Classic 10-band EQ or modern 21-band EQ with presets | EQ button or context menu |
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
+| **Audio Analyzer** | Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay) | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **ProjectM** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art | Menu button or context menu |
 
@@ -67,6 +68,15 @@ Windows automatically snap together when dragged near each other:
 - **Hold then drag** (hold ≥ 400 ms before moving): all connected windows move together as a group
 - **When connected windows are locked**: hold timing is bypassed and drags always move the whole connected group
 - Connected peers show a brief highlight overlay at mouseDown to preview which windows will move together
+
+### Compact Mode
+
+**Compact Mode** collapses NullPlayer to a single menu-bar app. Toggle it from the main window's right-click context menu (**Compact Mode**) or the `Windows` top menu — available in **both classic and modern UI**. When enabled:
+
+- The Dock icon is hidden (the app switches to an accessory/menu-bar app) and a **NullPlayer status-bar item** appears in the menu bar. Clicking it reveals the single compact window; its menu also has **Exit Compact Mode**.
+- The sole window is the **Library Browser** with a stripped-down player bar embedded across the top (transport, seek + time, a scrolling title marquee, and volume), built from the active UI's own components (classic skin sprites in classic, modern controls in modern).
+- All other windows (Main, EQ, Playlist, Spectrum, etc.) are hidden; their prior visibility is remembered and restored when you exit.
+- Exiting restores the Dock icon, the macOS menu bar, and the previously open windows.
 
 ### Main Window Elements
 
@@ -263,6 +273,17 @@ Accessible via **Playback > Sleep Timer** (or the right-click context menu).
 - **Dynamic**: Per-region normalization (bass/mid/treble)
 
 ## Visualizations
+
+### Audio Analyzer Window
+A multi-pane real-time analyzer (Friture-style), available in both classic and modern UI. Right-click the window to pick a pane:
+- **Scope** — oscilloscope waveform of the live signal.
+- **Levels** — per-channel Peak and RMS meters (green/yellow/red) in dBFS.
+- **Spectrogram** — scrolling waterfall of the spectrum over time.
+- **Octave** — 1/3-octave bar spectrum (20 Hz–20 kHz) with peak-hold markers.
+- **Pitch** — detected note, frequency, and how sharp/flat it is (best for vocals/single notes; unreliable on deep bass).
+- **Delay** — stereo left/right timing offset in ms and samples (resolves up to ±~5.8 ms).
+
+Only the visible pane runs, so the window is light on CPU and idles when closed.
 
 ### Main Window GPU Modes
 Off, Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow, EKG. Double-click cycles visual modes; choose Off from Visuals > Spectrum Analyzer > Main Window > Mode.

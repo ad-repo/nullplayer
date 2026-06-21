@@ -19,6 +19,10 @@ extension WindowManager {
         videoPlayerWindowController
     }
 
+    var debugTargetVideoCastDeviceForTesting: CastDevice? {
+        targetVideoCastDevice
+    }
+
     func debugSetVideoPlayerWindowControllerForTesting(_ controller: VideoPlayerWindowController?) {
         videoPlayerWindowController = controller
     }
@@ -201,6 +205,21 @@ class WindowManager {
         set { UserDefaults.standard.set(newValue, forKey: "hideTitleBars") }
     }
 
+    /// Whether Compact Mode (menu-bar app: one window = library browser + embedded player) is
+    /// currently active. Works in both classic and modern UI; toggled live at runtime. The
+    /// persisted preference key `compactModeEnabled` mirrors this so the mode can be restored
+    /// on the next launch.
+    private(set) var compactModeEnabled = false
+
+    /// Status-bar item shown while Compact Mode is active.
+    private var compactStatusItem: NSStatusItem?
+
+    /// Window visibility captured when entering Compact Mode, restored on exit.
+    private var savedWindowVisibility: [String: Bool] = [:]
+
+    /// Library Browser frame before Compact Mode repositioned it under the status item.
+    private var savedPlexBrowserFrameForCompactMode: NSRect?
+
     /// Ensure modern main window keeps full-height geometry in HT mode at startup/restore.
     /// Keeps the top edge fixed so legacy compact HT frames are expanded.
     @discardableResult
@@ -245,6 +264,7 @@ class WindowManager {
             let subWindows = [equalizerWindowController?.window,
                               playlistWindowController?.window,
                               spectrumWindowController?.window,
+                              audioAnalysisWindowController?.window,
                               waveformWindowController?.window].compactMap { $0 }
             var windowsBelow: [NSWindow] = []
             var frontier: [NSRect] = [mainWindow.frame]
@@ -305,6 +325,7 @@ class WindowManager {
                            equalizerWindowController as? NSWindowController,
                            playlistWindowController as? NSWindowController,
                            spectrumWindowController as? NSWindowController,
+                           audioAnalysisWindowController as? NSWindowController,
                            waveformWindowController as? NSWindowController,
                            projectMWindowController as? NSWindowController,
                            plexBrowserWindowController as? NSWindowController] {
@@ -331,7 +352,8 @@ class WindowManager {
         let isSubWindow = window === equalizerWindowController?.window ||
                           window === playlistWindowController?.window ||
                           window === spectrumWindowController?.window ||
-                          window === waveformWindowController?.window
+                          window === waveformWindowController?.window ||
+                          window === audioAnalysisWindowController?.window
         if isSubWindow && isWindowDocked(window) {
             return true
         }
@@ -362,6 +384,9 @@ class WindowManager {
     
     /// Spectrum analyzer window controller (classic or modern, accessed via protocol)
     private var spectrumWindowController: SpectrumWindowProviding?
+
+    /// Audio analysis window controller for the active UI mode, accessed via protocol.
+    private var audioAnalysisWindowController: AudioAnalysisWindowProviding?
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
@@ -497,7 +522,8 @@ class WindowManager {
             "isWindowLayoutLocked": false,
             "hideTitleBars": true,
             "waveformShowCuePoints": false,
-            "waveformHideTooltip": false
+            "waveformHideTooltip": false,
+            "compactModeEnabled": false
         ])
     }
     
@@ -678,6 +704,7 @@ class WindowManager {
         if let w = equalizerWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = playlistWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
+        if let w = audioAnalysisWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         
         // Sort top-to-bottom (highest minY first, since macOS Y increases upward)
@@ -727,6 +754,7 @@ class WindowManager {
         let subWindows = [equalizerWindowController?.window,
                           playlistWindowController?.window,
                           spectrumWindowController?.window,
+                          audioAnalysisWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
 
         // BFS: find windows directly docked below closingFrame, then those below them
@@ -886,6 +914,321 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
+    // MARK: - Compact Mode
+
+    /// Toggle the menu-bar Compact Mode (works in both classic and modern UI). Live — no restart.
+    func toggleCompactMode() {
+        if compactModeEnabled {
+            exitCompactMode()
+        } else {
+            enterCompactMode()
+        }
+    }
+
+    /// - Parameter revealWindow: When `true` (live toggle from the menu) the compact window is
+    ///   shown and positioned under the status item. When `false` (restore on launch) the window
+    ///   is left hidden behind the status item so the *first* click reveals it — otherwise the
+    ///   status item starts in a "visible" state and the first click would just hide it.
+    func enterCompactMode(revealWindow: Bool = true) {
+        guard !compactModeEnabled else { return }
+        compactModeEnabled = true
+        UserDefaults.standard.set(true, forKey: "compactModeEnabled")
+
+        // Remember which windows are visible so we can restore them on exit.
+        saveWindowVisibilityForCompactMode()
+        // Hide everything except the library browser, which becomes the sole window.
+        hideAllWindowsForCompactMode()
+
+        // Ensure the library browser exists and shows the embedded player bar.
+        showPlexBrowser()
+        if savedWindowVisibility["plexBrowserShade"] == true {
+            // Capture the normal frame restored by leaving shade mode. Restoring this before
+            // re-entering shade mode on exit preserves both the shade frame and its normal frame.
+            plexBrowserWindowController?.setShadeMode(false)
+            savedPlexBrowserFrameForCompactMode = plexBrowserWindowController?.window?.frame
+        }
+        plexBrowserWindowController?.setCompactMode(true)
+
+        // Menu-bar app behaviour: hide the Dock icon, add a status-bar item.
+        NSApp.setActivationPolicy(.accessory)
+        createCompactStatusItem()
+
+        if revealWindow {
+            plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
+            positionCompactWindowUnderStatusItem()
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            // showPlexBrowser() ordered the window front; tuck it away until the first click.
+            plexBrowserWindowController?.window?.orderOut(nil)
+        }
+        postLayoutChangeNotification()
+    }
+
+    /// Anchor the compact window so its top edge hangs just below the status-bar item,
+    /// horizontally centred under the item (clamped to the screen) — like a menu-bar dropdown.
+    private func positionCompactWindowUnderStatusItem() {
+        guard let window = plexBrowserWindowController?.window,
+              let button = compactStatusItem?.button,
+              let buttonWindow = button.window else { return }
+
+        let buttonRectInWindow = button.convert(button.bounds, to: nil)
+        let buttonScreenRect = buttonWindow.convertToScreen(buttonRectInWindow)
+        let gap: CGFloat = 4
+
+        var frame = window.frame
+        var originX = buttonScreenRect.midX - frame.width / 2
+        let topY = buttonScreenRect.minY - gap
+
+        let screen = buttonWindow.screen ?? NSScreen.screens.first { $0.frame.contains(buttonScreenRect.origin) } ?? NSScreen.main
+        if let visible = screen?.visibleFrame {
+            let m = isRunningModernUI ? ModernSkinElements.sizeMultiplier : 1.0
+            originX = min(max(originX, visible.minX + 8), visible.maxX - frame.width - 8)
+
+            // Available vertical space below the status item (top stays anchored to the item).
+            let available = topY - visible.minY - 8
+            // Ensure a usable width and a tall, dropdown-style height. Don't shrink a window the
+            // user has already grown; only grow a too-small one. Always clamp to fit the screen.
+            // Floor at the width needed to keep all tab labels inside their outlines.
+            let tabFloor = plexBrowserWindowController?.minimumCompactContentWidth ?? (360 * m)
+            frame.size.width = max(frame.width, max(360 * m, tabFloor))
+            frame.size.height = max(frame.height, min(available, 620 * m))
+            frame.size.height = min(frame.height, available)
+            originX = min(max(originX, visible.minX + 8), visible.maxX - frame.width - 8)
+        }
+        frame.origin = NSPoint(x: originX, y: topY - frame.height)
+        window.setFrame(frame, display: true)
+    }
+
+    func exitCompactMode() {
+        guard compactModeEnabled else { return }
+        compactModeEnabled = false
+        UserDefaults.standard.set(false, forKey: "compactModeEnabled")
+
+        plexBrowserWindowController?.setCompactMode(false)
+
+        // Restore the Dock icon and remove the status-bar item.
+        NSApp.setActivationPolicy(.regular)
+        restoreDockIconImage()
+        removeCompactStatusItem()
+
+        // Switching `.accessory` → `.regular` makes macOS drop the main menu bar, so rebuild it.
+        (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
+
+        restoreWindowVisibilityAfterCompactMode()
+        NSApp.activate(ignoringOtherApps: true)
+        postLayoutChangeNotification()
+    }
+
+    private func saveWindowVisibilityForCompactMode() {
+        savedPlexBrowserFrameForCompactMode = plexBrowserWindowController?.window?.frame
+        savedWindowVisibility = [
+            "main": mainWindowController?.window?.isVisible ?? false,
+            "equalizer": equalizerWindowController?.window?.isVisible ?? false,
+            "playlist": playlistWindowController?.window?.isVisible ?? false,
+            "spectrum": spectrumWindowController?.window?.isVisible ?? false,
+            "audioAnalysis": audioAnalysisWindowController?.window?.isVisible ?? false,
+            "waveform": waveformWindowController?.window?.isVisible ?? false,
+            "projectM": projectMWindowController?.window?.isVisible ?? false,
+            "video": videoPlayerWindowController?.window?.isVisible ?? false,
+            "debug": debugWindowController?.window?.isVisible ?? false,
+            "plexBrowserShade": plexBrowserWindowController?.isShadeMode ?? false,
+            // The library browser becomes the sole compact window, so remember whether it
+            // was open beforehand — otherwise it lingers on screen after exiting Compact Mode.
+            "plexBrowser": plexBrowserWindowController?.window?.isVisible ?? false
+        ]
+    }
+
+    private func hideAllWindowsForCompactMode() {
+        for window in [mainWindowController?.window,
+                       equalizerWindowController?.window,
+                       playlistWindowController?.window,
+                       spectrumWindowController?.window,
+                       audioAnalysisWindowController?.window,
+                       waveformWindowController?.window,
+                       projectMWindowController?.window,
+                       videoPlayerWindowController?.window,
+                       debugWindowController?.window].compactMap({ $0 }) {
+            window.orderOut(nil)
+        }
+    }
+
+    private func restoreWindowVisibilityAfterCompactMode() {
+        if let frame = savedPlexBrowserFrameForCompactMode {
+            plexBrowserWindowController?.window?.setFrame(frame, display: true)
+        }
+
+        // The library browser hosted the compact UI. Restore its prior visibility even if
+        // the user hid the compact window before choosing Exit Compact Mode.
+        if savedWindowVisibility["plexBrowser"] == true {
+            plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
+        } else {
+            plexBrowserWindowController?.window?.orderOut(nil)
+        }
+        if savedWindowVisibility["main"] == true {
+            mainWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["equalizer"] == true {
+            equalizerWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["playlist"] == true {
+            playlistWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["spectrum"] == true {
+            spectrumWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["audioAnalysis"] == true {
+            audioAnalysisWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["waveform"] == true {
+            waveformWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["projectM"] == true {
+            projectMWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["video"] == true {
+            videoPlayerWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["debug"] == true {
+            debugWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["plexBrowserShade"] == true {
+            plexBrowserWindowController?.setShadeMode(true)
+        }
+        savedPlexBrowserFrameForCompactMode = nil
+        savedWindowVisibility.removeAll()
+    }
+
+    /// While Compact Mode is active, state persistence must record the windows that were
+    /// visible before entry rather than the intentionally hidden compact-mode window set.
+    func visibilityForStateSaving(_ key: String, current: Bool) -> Bool {
+        guard compactModeEnabled else { return current }
+        return savedWindowVisibility[key] ?? current
+    }
+
+    /// Switching activation policy `.accessory` → `.regular` makes macOS forget the bundle's
+    /// CFBundleIconFile and show the generic executable icon in the Dock. Re-apply the app icon
+    /// explicitly so the NullPlayer logo returns when leaving Compact Mode.
+    private func restoreDockIconImage() {
+        let image: NSImage?
+        if let icnsURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") {
+            image = NSImage(contentsOf: icnsURL)
+        } else if let pngURL = BundleHelper.url(forResource: "AppIcon", withExtension: "png"),
+                  let png = NSImage(contentsOf: pngURL) {
+            png.size = NSSize(width: 128, height: 128)
+            image = png
+        } else {
+            image = nil
+        }
+        if let image { NSApp.applicationIconImage = image }
+    }
+
+    /// Draws the NullPlayer brand mark (a circle with a slash through it) as a monochrome
+    /// template image sized for the menu bar. As a template, macOS tints it automatically to
+    /// match light/dark menu bars and selection state.
+    private static func makeCompactStatusItemImage() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let lineWidth: CGFloat = 1.6
+            let inset = lineWidth + 1.5
+            let circleRect = rect.insetBy(dx: inset, dy: inset)
+            NSColor.black.setStroke()
+
+            let circle = NSBezierPath(ovalIn: circleRect)
+            circle.lineWidth = lineWidth
+            circle.stroke()
+
+            // Diagonal slash from lower-left to upper-right, extending slightly past the circle.
+            let slash = NSBezierPath()
+            let pad: CGFloat = 1.0
+            slash.move(to: NSPoint(x: circleRect.minX - pad, y: circleRect.minY - pad))
+            slash.line(to: NSPoint(x: circleRect.maxX + pad, y: circleRect.maxY + pad))
+            slash.lineWidth = lineWidth
+            slash.lineCapStyle = .round
+            slash.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    private func createCompactStatusItem() {
+        guard compactStatusItem == nil else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = item.button {
+            button.image = WindowManager.makeCompactStatusItemImage()
+            button.image?.isTemplate = true
+            button.target = self
+            button.action = #selector(compactStatusItemClicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        compactStatusItem = item
+    }
+
+    private func removeCompactStatusItem() {
+        if let item = compactStatusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            compactStatusItem = nil
+        }
+    }
+
+    @objc private func compactStatusItemClicked() {
+        let event = NSApp.currentEvent
+        let isContextClick = event?.type == .rightMouseUp || (event?.modifierFlags.contains(.control) ?? false)
+        if isContextClick {
+            presentCompactStatusMenu()
+        } else {
+            toggleCompactWindowVisibility()
+        }
+    }
+
+    private func presentCompactStatusMenu() {
+        guard let item = compactStatusItem else { return }
+        let menu = NSMenu()
+        let toggle = NSMenuItem(title: "Show/Hide Window", action: #selector(toggleCompactWindowVisibility), keyEquivalent: "")
+        toggle.target = self
+        menu.addItem(toggle)
+        menu.addItem(.separator())
+        let exit = NSMenuItem(title: "Exit Compact Mode", action: #selector(exitCompactModeMenuAction), keyEquivalent: "")
+        exit.target = self
+        menu.addItem(exit)
+        // Temporarily attach the menu so the button presents it, then detach so plain
+        // left-clicks keep toggling the window.
+        item.menu = menu
+        item.button?.performClick(nil)
+        item.menu = nil
+    }
+
+    @objc private func toggleCompactWindowVisibility() {
+        guard let window = plexBrowserWindowController?.window else { return }
+        if window.isVisible {
+            window.orderOut(nil)
+        } else {
+            window.makeKeyAndOrderFront(nil)
+            positionCompactWindowUnderStatusItem()
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    @objc private func exitCompactModeMenuAction() {
+        exitCompactMode()
+    }
+
+    // Forwarders from the AudioEngine broadcast hub to the embedded compact player bar.
+    func compactBarUpdateTime(current: TimeInterval, duration: TimeInterval) {
+        guard compactModeEnabled else { return }
+        plexBrowserWindowController?.updateCompactBarTime(current: current, duration: duration)
+    }
+
+    func compactBarUpdateTrack(_ track: Track?) {
+        guard compactModeEnabled else { return }
+        plexBrowserWindowController?.updateCompactBarTrack(track)
+    }
+
+    func compactBarUpdatePlaybackState() {
+        guard compactModeEnabled else { return }
+        plexBrowserWindowController?.updateCompactBarPlaybackState()
+    }
+
     // MARK: - Library History
 
     func showLibraryHistory() {
@@ -1015,21 +1358,20 @@ class WindowManager {
     // MARK: - Video Player Window
 
     private var targetVideoCastDevice: CastDevice? {
-        if let activeDevice = CastManager.shared.activeSession?.device,
+        let castManager = CastManager.shared
+        if castManager.currentCast == .video,
+           let activeDevice = castManager.activeSession?.device,
            activeDevice.supportsVideo {
             return activeDevice
         }
-        // Only auto-route to cast when the user has *explicitly* chosen a preferred
-        // video cast device. `preferredVideoCastDevice` otherwise falls back to the
-        // first discovered video-capable device, which would silently cast every
-        // video instead of playing it locally whenever a TV/Chromecast is on the
-        // network. (Regressed in 0d0aac7; original guard restored.)
-        guard CastManager.shared.preferredVideoCastDeviceID != nil else { return nil }
-        if let preferredDevice = CastManager.shared.preferredVideoCastDevice,
-           preferredDevice.supportsVideo {
-            return preferredDevice
+        // Auto-route only to the exact device the user explicitly selected. The general
+        // preferredVideoCastDevice getter intentionally falls back to the first available
+        // video device when the preference is missing/offline for cast-button convenience;
+        // that fallback must not silently redirect normal video playback.
+        guard let preferredID = castManager.preferredVideoCastDeviceID else { return nil }
+        return castManager.discoveredDevices.first {
+            $0.id == preferredID && $0.supportsVideo
         }
-        return nil
     }
 
     private func routeToVideoCastIfNeeded(title: String, artworkTrack: Track?, operation: @escaping (CastDevice) async throws -> Void) -> Bool {
@@ -1657,6 +1999,68 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
+    // MARK: - Audio Analysis Window
+
+    func showAudioAnalysis(at restoredFrame: NSRect? = nil) {
+        let runningModernMode = isRunningModernUI
+        if audioAnalysisWindowController == nil {
+            if runningModernMode {
+                audioAnalysisWindowController = ModernAudioAnalysisWindowController()
+            } else {
+                audioAnalysisWindowController = AudioAnalysisWindowController()
+            }
+        }
+
+        if let window = audioAnalysisWindowController?.window {
+            applyCenterStackSizingConstraints(window, kind: .audioAnalysis)
+            if let frame = restoredFrame, frame != .zero {
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .audioAnalysis), display: true)
+            } else {
+                if runningModernMode {
+                    applyDefaultCenterStackFrameForCurrentHT(window, kind: .audioAnalysis)
+                } else {
+                    (audioAnalysisWindowController as? AudioAnalysisWindowController)?.resetToDefaultFrame()
+                }
+                positionSubWindow(window)
+            }
+        }
+
+        audioAnalysisWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(audioAnalysisWindowController?.window)
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+    }
+
+    var isAudioAnalysisVisible: Bool {
+        audioAnalysisWindowController?.window?.isVisible == true
+    }
+
+    /// Get the Audio Analysis window frame (for state saving)
+    var audioAnalysisWindowFrame: NSRect? {
+        return audioAnalysisWindowController?.window?.frame
+    }
+
+    var audioAnalysisWindow: NSWindow? {
+        audioAnalysisWindowController?.window
+    }
+
+    func toggleAudioAnalysis() {
+        if let controller = audioAnalysisWindowController,
+           let window = controller.window,
+           window.isVisible {
+            let closingFrame = window.frame
+            controller.stopRenderingForHide()
+            window.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
+        } else {
+            showAudioAnalysis()
+        }
+        notifyMainWindowVisibilityChanged()
+        _ = tightenClassicCenterStackIfNeeded()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
     // MARK: - Waveform Window
 
     func showWaveform(at restoredFrame: NSRect? = nil) {
@@ -1985,6 +2389,12 @@ class WindowManager {
     }
 
     private func applyClassicVisualizationDefaults(notify: Bool) {
+        // Classic and modern skins are independent. WindowManager still loads the
+        // remembered classic skin at startup so it is ready if the user switches UI
+        // modes, but its visualization defaults must not overwrite modern scoped
+        // profile preferences while the modern UI is active.
+        guard !isRunningModernUI else { return }
+
         let defaults = UserDefaults.standard
         let visClassicMode = MainWindowVisMode.visClassicExact.rawValue
         let classicProfile = "Purple Neon"
@@ -2036,6 +2446,7 @@ class WindowManager {
         plexBrowserWindowController?.skinDidChange()
         projectMWindowController?.skinDidChange()
         spectrumWindowController?.skinDidChange()
+        audioAnalysisWindowController?.skinDidChange()
         waveformWindowController?.skinDidChange()
     }
     
@@ -2269,6 +2680,39 @@ class WindowManager {
             }
         }
         
+        // Audio Analysis window - position below previous stack window.
+        if let audioAnalysisWindow = audioAnalysisWindowController?.window {
+            let baseMinSize: NSSize = runningModernMode
+                ? ModernSkinElements.spectrumMinSize
+                : SkinElements.SpectrumWindow.minSize
+            let minHeight = runningModernMode
+                ? expectedMainHeightForCurrentHT(mainWindowController?.window)
+                : baseMinSize.height * scale
+            let minWidth = runningModernMode
+                ? ModernSkinElements.spectrumMinSize.width
+                : baseMinSize.width * scale
+            audioAnalysisWindow.minSize = NSSize(width: minWidth, height: minHeight)
+            audioAnalysisWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+            let currentFrame = audioAnalysisWindow.frame
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
+            if audioAnalysisWindow.isVisible {
+                let analysisFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - newHeight,
+                    width: newWidth,
+                    height: newHeight
+                )
+                audioAnalysisWindow.setFrame(analysisFrame, display: true, animate: false)
+                nextY = analysisFrame.minY
+            } else {
+                audioAnalysisWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
+            }
+        }
+
         // Side windows - match the vertical stack height and reposition
         let stackTopY = mainFrame.maxY
         let stackHeight = stackTopY - nextY
@@ -2311,6 +2755,7 @@ class WindowManager {
         videoPlayerWindowController?.window?.level = level
         projectMWindowController?.window?.level = level
         spectrumWindowController?.window?.level = level
+        audioAnalysisWindowController?.window?.level = level
         waveformWindowController?.window?.level = level
     }
     
@@ -2330,6 +2775,7 @@ class WindowManager {
             equalizerWindowController?.window,
             playlistWindowController?.window,
             spectrumWindowController?.window,
+            audioAnalysisWindowController?.window,
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
@@ -2355,6 +2801,7 @@ class WindowManager {
         let subWindows = [equalizerWindowController?.window,
                           playlistWindowController?.window,
                           spectrumWindowController?.window,
+                          audioAnalysisWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
         var docked: [NSWindow] = []
         var frontier: [NSRect] = [mainFrame]
@@ -2410,6 +2857,7 @@ class WindowManager {
         case playlist
         case spectrum
         case waveform
+        case audioAnalysis
     }
 
     private func centerStackWindowKind(for window: NSWindow) -> CenterStackWindowKind? {
@@ -2417,6 +2865,7 @@ class WindowManager {
         if window === playlistWindowController?.window { return .playlist }
         if window === spectrumWindowController?.window { return .spectrum }
         if window === waveformWindowController?.window { return .waveform }
+        if window === audioAnalysisWindowController?.window { return .audioAnalysis }
         return nil
     }
 
@@ -2452,6 +2901,10 @@ class WindowManager {
         case .waveform:
             window.minSize = NSSize(width: ModernSkinElements.waveformMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        case .audioAnalysis:
+            // Matches the center-stack width; stretchable in height like spectrum/playlist.
+            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
     }
 
@@ -2482,7 +2935,7 @@ class WindowManager {
         switch kind {
         case .equalizer, .spectrum:
             normalized.size.height = target
-        case .playlist, .waveform:
+        case .playlist, .waveform, .audioAnalysis:
             // Accept legacy compact saved frames but normalize to current full-height minimum.
             normalized.size.height = max(target, normalized.height)
         }
@@ -2516,6 +2969,7 @@ class WindowManager {
         let playlistWindow = playlistWindowController?.window
         let spectrumWindow = spectrumWindowController?.window
         let waveformWindow = waveformWindowController?.window
+        let audioAnalysisWindow = audioAnalysisWindowController?.window
 
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
@@ -2523,6 +2977,7 @@ class WindowManager {
             playlistFrame: (playlistWindow?.isVisible == true) ? playlistWindow?.frame : nil,
             spectrumFrame: (spectrumWindow?.isVisible == true) ? spectrumWindow?.frame : nil,
             waveformFrame: (waveformWindow?.isVisible == true) ? waveformWindow?.frame : nil,
+            audioAnalysisFrame: (audioAnalysisWindow?.isVisible == true) ? audioAnalysisWindow?.frame : nil,
             scale: scale
         )
 
@@ -2563,6 +3018,12 @@ class WindowManager {
            repairedFrame != waveformWindow.frame {
             waveformWindow.setFrame(repairedFrame, display: true, animate: false)
         }
+        if let audioAnalysisWindow,
+           audioAnalysisWindow.isVisible,
+           let repairedFrame = repaired.audioAnalysisFrame,
+           repairedFrame != audioAnalysisWindow.frame {
+            audioAnalysisWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
 
         return true
     }
@@ -2591,7 +3052,8 @@ class WindowManager {
         // Each window preserves its current size and aligns left with main
         var nextY = mainFrame.minY  // Bottom of previous window in stack
         
-        // Collect frames for visible stack windows (order: EQ, Playlist, Spectrum, Waveform)
+        // Collect frames for visible stack windows
+        // (order: EQ, Playlist, Spectrum, Waveform, Audio Analysis).
         var eqFrame: NSRect?
         var playlistFrame: NSRect?
         var spectrumFrame: NSRect?
@@ -2623,6 +3085,14 @@ class WindowManager {
             let w = waveformWindow.frame.width
             nextY -= h
             waveformFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
+        }
+
+        var audioAnalysisFrame: NSRect?
+        if let audioAnalysisWindow = audioAnalysisWindowController?.window, audioAnalysisWindow.isVisible {
+            let h = audioAnalysisWindow.frame.height
+            let w = audioAnalysisWindow.frame.width
+            nextY -= h
+            audioAnalysisFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
         }
         
         // Side windows span the full stack height
@@ -2672,6 +3142,9 @@ class WindowManager {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = waveformFrame, let window = waveformWindowController?.window {
+            window.setFrame(frame, display: true, animate: false)
+        }
+        if let frame = audioAnalysisFrame, let window = audioAnalysisWindowController?.window {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
@@ -3570,10 +4043,11 @@ class WindowManager {
         if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
-    
+
     /// Get windows that participate in docking/snapping together (classic skin windows)
     private func dockableWindows() -> [NSWindow] {
         var windows: [NSWindow] = []
@@ -3581,6 +4055,7 @@ class WindowManager {
         if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
@@ -3606,6 +4081,7 @@ class WindowManager {
                window === playlistWindowController?.window ||
                window === equalizerWindowController?.window ||
                window === spectrumWindowController?.window ||
+               window === audioAnalysisWindowController?.window ||
                window === waveformWindowController?.window
     }
     

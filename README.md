@@ -23,6 +23,7 @@
 - Emby media server integration with music and video streaming, scrobbling, and library browsing
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - Stream Ripper — paste a URL and rip it to lossless FLAC, MP3, or an MP4 video file (via yt-dlp), with metadata tags, embedded cover art, metadata-based filenames, and a `.cue` sheet generated from chapter timestamps
+- YouTube source — subscribe to channels in the Radio tab, browse uploads, and download audio (FLAC / MP3) ad-free to a folder you choose (via yt-dlp); downloads play locally and cast like any track
 - `.cue` sheet support — open a `.cue` (or an audio file with a sibling `.cue`) to virtually split one backing file into per-track, gapless playlist rows; an optional library setting (off by default, needs ffmpeg) physically splits cue albums on import into per-track FLACs, organized into a per-album folder named from the source's metadata
 - Inteligent radio mix generation for all sources
 - Navidrome/Subsonic server integration with scrobbling support
@@ -36,9 +37,11 @@
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
 - Modern V2 UI skin system, many v2 skins included. Open format, users can easily make new v2 skins via json
 - Original Spenctrum analysis visualization system
+- Audio Analysis window — Friture-style multi-pane analyzer with a live oscilloscope, stereo peak/RMS level meters, and a scrolling Metal spectrogram (Viridis colormap)
 - Album art visualization system with user selected effects
 - Modern mode with 21-band EQ implementation, Classic mode with standard 10-band EQ
 - Reference Tuning for pitch-shifting local playback and HTTP streams to a different reference frequency, with 432 Hz, 440 Hz, and custom source/target Hz options
+- Compact Mode — collapse to a single menu-bar app (Dock icon hidden, status-bar item) showing the Library Browser with an embedded mini player bar; works in both classic and modern UI
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (KSPlayer/FFmpeg)
@@ -56,14 +59,28 @@
 ## Installation
 
     brew install --cask ad-repo/nullplayer/nullplayer
+    brew tap ad-repo/nullplayer        # one-time configuration  
 
-Or download the latest DMG from [Releases](https://github.com/ad-repo/nullplayer/releases).
-
-The Homebrew cask strips the quarantine attribute on install because the app is currently ad-hoc signed (Apple Developer ID notarization is on the roadmap). `brew uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
+    brew install --cask ad-repo/nullplayer/nullplayer  
+    or if already installed manually
+    brew install --cask --force ad-repo/nullplayer/nullplayer 
+    
+    To upgrade to a new release:   
+    brew update   
+    brew upgrade --cask ad-repo/nullplayer/nullplayer   
+    
+    To verify the tap is picking up the latest version:   
+    brew livecheck --cask ad-repo/nullplayer/nullplayer   
+    
+    Notes from the cask:   
+    - App is ad-hoc signed (not notarized). 
+    The cask's postflight runs xattr -cr to strip the quarantine bit so Gatekeeper allows first launch.   
+    - Requires macOS Sonoma or newer.   
+    - brew uninstall --cask --zap nullplayer removes app support/caches/prefs, but Keychain tokens (service com.nullplayer.app) must be removed manually: security 
+    
+    The Homebrew cask strips the quarantine attribute on install because the app is currently ad-hoc signed (Apple Developer ID notarization is on the roadmap). `brew     uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
 
     security delete-generic-password -s com.nullplayer.app
-
-Follow [r/NullPlayer](https://www.reddit.com/r/NullPlayer/) for release notifications. Report bugs on [GitHub Issues](https://github.com/ad-repo/nullplayer/issues) or the subreddit.
 
 ### Optional command-line launcher
 
@@ -345,4 +362,5 @@ Bundled third-party components:
 **Fonts & assets**
 - **Departure Mono** (SIL OFL-1.1) — bundled font
 - **MilkDrop / projectM presets** — community-authored (attribution in preset filenames)
+- **Viridis colormap** (CC0 / public domain) — spectrogram color ramp, by Stéfan van der Walt and Nathaniel Smith
 - **Bundled skins** — original NullPlayer assets

@@ -14,9 +14,17 @@ extension Notification.Name {
     /// userInfo contains: "pcm" ([Float]), "sampleRate" (Double)
     static let audioPCMDataUpdated = Notification.Name("audioPCMDataUpdated")
 
+    /// Posted when new stereo PCM audio data is available for analysis
+    /// userInfo contains: "left" ([Float]), "right" ([Float]), "sampleRate" (Double)
+    static let audioStereoPCMDataUpdated = Notification.Name("audioStereoPCMDataUpdated")
+
     /// Posted when new spectrum data is available for visualization
     /// userInfo contains: "spectrum" ([Float]) - 75 bands normalized 0-1
     static let audioSpectrumDataUpdated = Notification.Name("audioSpectrumDataUpdated")
+
+    /// Posted when raw FFT magnitudes are available for octave band analysis
+    /// userInfo contains: "magnitudes" ([Float]) - linear magnitudes (fftSize/2 elements), "sampleRate" (Double), "fftSize" (Int)
+    static let audioFFTMagnitudesUpdated = Notification.Name("audioFFTMagnitudesUpdated")
 
     /// Posted when playback state changes (playing, paused, stopped)
     /// userInfo contains: "state" (PlaybackState)
@@ -461,9 +469,15 @@ class AudioEngine {
 
     /// Spectrum consumers — FFT is skipped entirely when this set is empty
     private var spectrumConsumers = Set<String>()
-    
+
     /// Live waveform consumers — 576-sample waveform chunk generation is skipped entirely when this set is empty.
     private var waveformConsumers = Set<String>()
+
+    /// Stereo PCM consumers — stereo tap is skipped entirely when this set is empty
+    private var stereoConsumers = Set<String>()
+
+    /// Magnitudes consumers — raw FFT magnitude posting is skipped entirely when this set is empty
+    private var magnitudesConsumers = Set<String>()
 
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
     private var isModernUIEnabled: Bool
@@ -496,6 +510,30 @@ class AudioEngine {
 
     var waveformNeeded: Bool { !waveformConsumers.isEmpty }
 
+    func addStereoConsumer(_ id: String) {
+        stereoConsumers.insert(id)
+        streamingPlayer?.stereoNeeded = !stereoConsumers.isEmpty
+    }
+
+    func removeStereoConsumer(_ id: String) {
+        stereoConsumers.remove(id)
+        streamingPlayer?.stereoNeeded = !stereoConsumers.isEmpty
+    }
+
+    var stereoNeeded: Bool { !stereoConsumers.isEmpty }
+
+    func addMagnitudesConsumer(_ id: String) {
+        magnitudesConsumers.insert(id)
+        streamingPlayer?.magnitudesNeeded = !magnitudesConsumers.isEmpty
+    }
+
+    func removeMagnitudesConsumer(_ id: String) {
+        magnitudesConsumers.remove(id)
+        streamingPlayer?.magnitudesNeeded = !magnitudesConsumers.isEmpty
+    }
+
+    var magnitudesNeeded: Bool { !magnitudesConsumers.isEmpty }
+
     // MARK: - Pre-allocated FFT Buffers (Memory Optimization)
 
     /// Pre-allocated buffers to avoid per-callback allocations
@@ -509,7 +547,10 @@ class AudioEngine {
     private var fftLogMagnitudes = [Float](repeating: 0, count: 1024)
     private var fftNewSpectrum = [Float](repeating: 0, count: 75)
     private var fftPcmSamples = [Float](repeating: 0, count: 512)
-    
+    /// Pre-allocated stereo PCM buffers (512 samples each for left and right channels)
+    private var stereoPcmLeft = [Float](repeating: 0, count: 512)
+    private var stereoPcmRight = [Float](repeating: 0, count: 512)
+
     /// Pre-computed frequency weights for spectrum analyzer (light compensation)
     private let spectrumFrequencyWeights: [Float] = {
         // Generate weights for 75 bands spanning 20Hz-20kHz logarithmically
@@ -1450,7 +1491,7 @@ class AudioEngine {
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard spectrumNeeded || waveformNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || magnitudesNeeded else { return }
         guard let channelData = buffer.floatChannelData else { return }
 
         let frameCount = Int(buffer.frameLength)
@@ -1467,14 +1508,51 @@ class AudioEngine {
             )
         }
 
-        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
-        
+        // Publish stereo PCM data when needed (independent of spectrum)
+        if stereoNeeded && frameCount >= 512 {
+            let pcmSize = 512
+            let pcmStride = frameCount / pcmSize
+            // Extract and downsample left and right channels
+            if channelCount == 1 {
+                // Mono: duplicate to both channels
+                for i in 0..<pcmSize {
+                    let sample = channelData[0][i * pcmStride]
+                    stereoPcmLeft[i] = sample
+                    stereoPcmRight[i] = sample
+                }
+            } else {
+                // Stereo: separate channels
+                for i in 0..<pcmSize {
+                    stereoPcmLeft[i] = channelData[0][i * pcmStride]
+                    stereoPcmRight[i] = channelData[1][i * pcmStride]
+                }
+            }
+
+            // Post notification with left/right copies
+            let leftCopy = Array(stereoPcmLeft)
+            let rightCopy = Array(stereoPcmRight)
+            NotificationCenter.default.post(
+                name: .audioStereoPCMDataUpdated,
+                object: self,
+                userInfo: [
+                    "left": leftCopy,
+                    "right": rightCopy,
+                    "sampleRate": bufferSampleRate
+                ]
+            )
+        }
+
+        // The FFT runs when spectrum OR raw magnitudes are demanded; the 75-band spectrum
+        // work below is gated separately by `spectrumNeeded` so an octave-only (magnitudes)
+        // consumer does not pay for it.
+        guard spectrumNeeded || magnitudesNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
+
         // Throttle updates to 60Hz max to prevent memory buildup
         let now = CFAbsoluteTimeGetCurrent()
         let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
         guard shouldUpdate else { return }
         lastSpectrumUpdateTime = now
-        
+
         // Get audio samples (mono mix if stereo) - use pre-allocated buffer
         if channelCount == 1 {
             memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
@@ -1484,14 +1562,14 @@ class AudioEngine {
                 fftSamples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
             }
         }
-        
+
         // Feed BPM detector with raw mono samples before windowing.
         fftSamples.withUnsafeBufferPointer { ptr in
             if let base = ptr.baseAddress {
                 bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
             }
         }
-        
+
         // Store raw PCM data for waveform visualization (before windowing)
         // Downsample to 512 samples for efficient storage and lowest latency
         let pcmSize = 512
@@ -1499,7 +1577,7 @@ class AudioEngine {
         for i in 0..<pcmSize {
             fftPcmSamples[i] = fftSamples[i * pcmStride]
         }
-        
+
         // Post notification for low-latency visualization (direct from audio tap)
         // Copy to avoid data races since we reuse the buffer
         let pcmCopy = Array(fftPcmSamples)
@@ -1522,7 +1600,7 @@ class AudioEngine {
                 self.pcmData = pcmForMain
             }
         }
-        
+
         // Apply Hann window - use pre-allocated buffers
         vDSP_hann_window(&fftWindow, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
         vDSP_vmul(fftSamples, 1, fftWindow, 1, &fftSamples, 1, vDSP_Length(fftSize))
@@ -1538,7 +1616,24 @@ class AudioEngine {
         for i in 0..<fftSize / 2 {
             fftMagnitudes[i] = sqrt(fftRealOut[i] * fftRealOut[i] + fftImagOut[i] * fftImagOut[i])
         }
-        
+
+        // Post raw linear magnitudes for octave band analysis (gated by magnitudesNeeded)
+        if magnitudesNeeded {
+            let magnitudesCopy = Array(fftMagnitudes.prefix(fftSize / 2))
+            NotificationCenter.default.post(
+                name: .audioFFTMagnitudesUpdated,
+                object: self,
+                userInfo: [
+                    "magnitudes": magnitudesCopy,
+                    "sampleRate": buffer.format.sampleRate,
+                    "fftSize": fftSize
+                ]
+            )
+        }
+
+        // Everything below is the 75-band spectrum path; skip it for magnitudes-only consumers.
+        guard spectrumNeeded else { return }
+
         // Convert to dB and normalize - use pre-allocated buffer
         var one: Float = 1.0
         vDSP_vdbcon(fftMagnitudes, 1, &one, &fftLogMagnitudes, 1, vDSP_Length(fftSize / 2), 0)
@@ -3043,7 +3138,7 @@ class AudioEngine {
             case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
-            case .local, .radio:
+            case .local, .radio, .youtube:
                 LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
             }
         }
@@ -4277,9 +4372,11 @@ class AudioEngine {
             streamingPlayer?.delegate = self
             streamingPlayer?.spectrumNeeded = spectrumNeeded
             streamingPlayer?.waveformNeeded = waveformNeeded
+            streamingPlayer?.stereoNeeded = stereoNeeded
+            streamingPlayer?.magnitudesNeeded = magnitudesNeeded
             streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         }
-        
+
         // Sync EQ settings from main EQ to streaming player
         syncEQToStreamingPlayer()
         
@@ -4407,7 +4504,7 @@ class AudioEngine {
             case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
-            case .local, .radio:
+            case .local, .radio, .youtube:
                 LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
             }
         }
@@ -4986,7 +5083,7 @@ class AudioEngine {
             case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
-            case .local, .radio:
+            case .local, .radio, .youtube:
                 LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             }
         }
@@ -5094,6 +5191,8 @@ class AudioEngine {
         streamingPlayer?.delegate = self
         streamingPlayer?.spectrumNeeded = spectrumNeeded
         streamingPlayer?.waveformNeeded = waveformNeeded
+        streamingPlayer?.stereoNeeded = stereoNeeded
+        streamingPlayer?.magnitudesNeeded = magnitudesNeeded
         streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         
@@ -5107,7 +5206,7 @@ class AudioEngine {
             case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
-            case .local, .radio:
+            case .local, .radio, .youtube:
                 LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             }
         }
@@ -5561,7 +5660,10 @@ class AudioEngine {
         if let siblingCueURL = CueSheet.siblingCue(for: url) {
             do {
                 let cue = try CueSheet.parse(from: siblingCueURL)
-                return CueSheet.expandToTracks(cue: cue, cueFileURL: siblingCueURL)
+                // The opened audio file IS the backing for a sibling cue — use it directly
+                // rather than the cue's FILE line, which may be stale or a leftover
+                // placeholder pointing at a nonexistent file.
+                return CueSheet.expandToTracks(cue: cue, cueFileURL: siblingCueURL, backingOverride: url)
             } catch {
                 NSLog("AudioEngine: Failed to parse sibling .cue for '%@': %@", url.lastPathComponent, error.localizedDescription)
                 return nil
@@ -5959,7 +6061,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         for i in copyCount..<pcmData.count {
             pcmData[i] = 0
         }
-        
+
         // Post notification for low-latency visualization
         // Use pcmData (not samples) to ensure consistency with stored property
         pcmUserInfo["pcm"] = pcmData
@@ -5970,7 +6072,20 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             userInfo: pcmUserInfo
         )
     }
-    
+
+    func streamingPlayerDidUpdateStereoPCM(left: [Float], right: [Float], sampleRate: Double) {
+        // Forward stereo PCM data from streaming player for analysis
+        NotificationCenter.default.post(
+            name: .audioStereoPCMDataUpdated,
+            object: self,
+            userInfo: [
+                "left": left,
+                "right": right,
+                "sampleRate": sampleRate
+            ]
+        )
+    }
+
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int) {
         // Update current track with format info detected from the stream
         // This fills in sample rate for Plex tracks which don't have it in metadata

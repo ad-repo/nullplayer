@@ -23,11 +23,13 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations
 - **sonos-casting**, **chromecast-casting**: Casting protocols and debugging
 - **stream-ripper**: Rip a URL to FLAC/MP3/MP4 via yt-dlp — format selection, tagging, cover art, .cue from chapters, activity band
+- **youtube-source**: YouTube channel uploads in the Radio tab — browse channels, download audio (FLAC / MP3) ad-free, store in a user folder, and play/cast locally
 - **cue-sheets**: .cue playback — direct-play virtual split (one backing file → N gapless playlist rows) + library physical split-on-import (ffmpeg per-track FLACs, off by default)
 - **radio-streaming**: Internet radio + library radio support
 - **visualizations**: Index/router across all visualization sub-skills (comparison table, when-to-use)
 - **main-window-visualization**: Main window's 76×16 vis area — modes, switching, settings
 - **spectrum-analyzer-window**: Dedicated 84-bar spectrum window — docking, geometry, analyzer curve, vis_classic waveform demand
+- **audio-analysis-window**: Friture-style multi-pane Audio Analysis window — Scope/Levels/Spectrogram panes, stereo PCM path, per-pane consumer gating, AudioAnalysisDSP module
 - **gpu-vis-modes**: Per-mode shader internals (Fire/JWST/Lightning/Matrix/Snow/EKG) shared by both windows
 - **album-art-visualizer**: Library Browser ART-mode Core Image effects
 - **projectm-milkdrop**: ProjectM/MilkDrop preset engine + drag-suspend behavior

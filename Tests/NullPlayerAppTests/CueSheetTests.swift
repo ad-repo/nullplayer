@@ -388,6 +388,58 @@ final class CueSheetTests: XCTestCase {
         XCTAssertEqual(tracks[0].url.path, absPath)
     }
 
+    func testExpandToTracksBackingOverrideTakesPrecedenceOverFileLine() throws {
+        // The cue's FILE line points at a stale/placeholder name that does not exist.
+        // The sibling-cue path passes the audio file the user actually opened as the
+        // override, which must win so rows never pin to the bogus FILE-line path.
+        let cueContent = """
+        PERFORMER "Artist"
+        TITLE "Album"
+        FILE "Placeholder Name.flac" WAVE
+        TRACK 01 AUDIO
+            TITLE "Track One"
+            INDEX 01 00:00:00
+        TRACK 02 AUDIO
+            TITLE "Track Two"
+            INDEX 01 02:00:00
+        """
+
+        let cueURL = tempDirectory.appendingPathComponent("real-audio.cue")
+        try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
+        let openedAudioURL = tempDirectory.appendingPathComponent("real-audio.flac")
+
+        let cue = try CueSheet.parse(from: cueURL)
+        let tracks = CueSheet.expandToTracks(cue: cue, cueFileURL: cueURL, backingOverride: openedAudioURL)
+
+        XCTAssertEqual(tracks.count, 2)
+        // Every row points at the opened audio file, NOT the cue's FILE line.
+        for track in tracks {
+            XCTAssertEqual(track.url, openedAudioURL)
+        }
+        // Cue offsets are still applied so playback splits within the real backing.
+        XCTAssertEqual(tracks[0].cueStartOffset, 0)
+        XCTAssertEqual(tracks[1].cueStartOffset, 120)
+    }
+
+    func testExpandToTracksWithoutOverrideStillUsesFileLine() throws {
+        // Direct .cue open (no override) must keep honoring the FILE line.
+        let cueContent = """
+        TITLE "Album"
+        FILE "backing.flac" WAVE
+        TRACK 01 AUDIO
+            TITLE "Track One"
+            INDEX 01 00:00:00
+        """
+
+        let cueURL = tempDirectory.appendingPathComponent("direct.cue")
+        try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
+
+        let cue = try CueSheet.parse(from: cueURL)
+        let tracks = CueSheet.expandToTracks(cue: cue, cueFileURL: cueURL)
+
+        XCTAssertEqual(tracks[0].url, tempDirectory.appendingPathComponent("backing.flac"))
+    }
+
     func testExpandToTracksEmptyEntriesReturnsEmpty() throws {
         let cueContent = """
         PERFORMER "Artist"

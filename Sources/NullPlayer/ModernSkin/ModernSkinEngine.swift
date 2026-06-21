@@ -43,16 +43,20 @@ class ModernSkinEngine {
     /// Load the preferred skin (from UserDefaults) or the default
     func loadPreferredSkin() {
         if let name = UserDefaults.standard.string(forKey: skinNameKey) {
-            if loadSkin(named: name) { return }
+            if loadSkin(named: name, preservePersistedProfiles: true) { return }
         }
-        loadDefaultSkin()
+        loadDefaultSkin(preservePersistedProfiles: true)
     }
     
     /// Load the default bundled skin (NeonWave)
     func loadDefaultSkin() {
+        loadDefaultSkin(preservePersistedProfiles: false)
+    }
+
+    private func loadDefaultSkin(preservePersistedProfiles: Bool) {
         currentSkin = loader.loadDefault()
         currentSkinName = currentSkin?.config.meta.name ?? "NeonWave"
-        configureSkinDependencies()
+        configureSkinDependencies(preservePersistedProfiles: preservePersistedProfiles)
         notifySkinChanged()
         NSLog("ModernSkinEngine: Loaded default skin")
     }
@@ -60,6 +64,11 @@ class ModernSkinEngine {
     /// Load a skin by name (searches bundled and user skins)
     @discardableResult
     func loadSkin(named name: String) -> Bool {
+        loadSkin(named: name, preservePersistedProfiles: false)
+    }
+
+    @discardableResult
+    private func loadSkin(named name: String, preservePersistedProfiles: Bool) -> Bool {
         let available = loader.availableSkins()
         let resolvedName = resolvedSkinName(for: name)
 
@@ -78,7 +87,7 @@ class ModernSkinEngine {
             }
             currentSkinName = skinInfo.name
             UserDefaults.standard.set(skinInfo.name, forKey: skinNameKey)
-            configureSkinDependencies()
+            configureSkinDependencies(preservePersistedProfiles: preservePersistedProfiles)
             notifySkinChanged()
             NSLog("ModernSkinEngine: Loaded skin '%@'", skinInfo.name)
             return true
@@ -93,7 +102,7 @@ class ModernSkinEngine {
         do {
             currentSkin = try loader.load(from: url)
             currentSkinName = currentSkin?.config.meta.name ?? url.lastPathComponent
-            configureSkinDependencies()
+            configureSkinDependencies(preservePersistedProfiles: false)
             notifySkinChanged()
             return true
         } catch {
@@ -186,7 +195,7 @@ class ModernSkinEngine {
     
     // MARK: - Private
     
-    private func configureSkinDependencies() {
+    private func configureSkinDependencies(preservePersistedProfiles: Bool = false) {
         guard let skin = currentSkin else { return }
         
         // Apply base scale factor from skin config (sizeMultiplier is preserved independently)
@@ -196,7 +205,8 @@ class ModernSkinEngine {
         // window.spectrumTransparentBackground seeds the spectrum transparent state;
         // visualization.visClassic.spectrumWindowTransparentBackground overrides it if both are set.
         applyVisualizationDefaults(from: skin.config.visualization,
-                                   windowSpectrumTransparentBackground: skin.config.window.spectrumTransparentBackground)
+                                   windowSpectrumTransparentBackground: skin.config.window.spectrumTransparentBackground,
+                                   preservePersistedProfiles: preservePersistedProfiles)
         
         // Configure bloom processor
         bloomProcessor.configure(with: skin.config.glow)
@@ -211,7 +221,8 @@ class ModernSkinEngine {
     }
 
     private func applyVisualizationDefaults(from config: VisualizationConfig?,
-                                             windowSpectrumTransparentBackground: Bool? = nil) {
+                                             windowSpectrumTransparentBackground: Bool? = nil,
+                                             preservePersistedProfiles: Bool = false) {
         guard config != nil || windowSpectrumTransparentBackground != nil else { return }
 
         let defaults = UserDefaults.standard
@@ -260,12 +271,22 @@ class ModernSkinEngine {
         }
 
         if let visClassic = config?.visClassic {
-            if let profile = visClassic.mainWindowProfile {
+            if let profile = visClassic.mainWindowProfile,
+               Self.shouldApplyProfileDefault(
+                   forKey: VisClassicBridge.PreferenceScope.mainWindow.lastProfileNameKey,
+                   preservePersistedProfiles: preservePersistedProfiles,
+                   defaults: defaults
+               ) {
                 defaults.set(profile, forKey: "visClassicLastProfileName.mainWindow")
                 visClassicMainProfileToLoad = profile
                 mainVisChanged = true
             }
-            if let profile = visClassic.spectrumWindowProfile {
+            if let profile = visClassic.spectrumWindowProfile,
+               Self.shouldApplyProfileDefault(
+                   forKey: VisClassicBridge.PreferenceScope.spectrumWindow.lastProfileNameKey,
+                   preservePersistedProfiles: preservePersistedProfiles,
+                   defaults: defaults
+               ) {
                 defaults.set(profile, forKey: "visClassicLastProfileName.spectrumWindow")
                 visClassicSpectrumProfileToLoad = profile
                 spectrumSettingsChanged = true
@@ -453,6 +474,17 @@ class ModernSkinEngine {
                 userInfo: ["command": "opacity", "value": opacity, "target": "spectrumWindow"]
             )
         }
+    }
+
+    /// On app launch, a skin's profile acts as a first-use default rather than
+    /// replacing a profile the user selected during an earlier session. Explicit
+    /// skin changes still apply the newly selected skin's profile defaults.
+    static func shouldApplyProfileDefault(
+        forKey key: String,
+        preservePersistedProfiles: Bool,
+        defaults: UserDefaults
+    ) -> Bool {
+        !preservePersistedProfiles || defaults.object(forKey: key) == nil
     }
     
     private func notifySkinChanged() {

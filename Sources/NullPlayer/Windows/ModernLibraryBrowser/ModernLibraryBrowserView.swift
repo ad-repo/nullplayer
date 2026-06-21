@@ -29,6 +29,7 @@ enum ModernBrowserSource: Equatable, Codable {
     case jellyfin(serverId: String)
     case emby(serverId: String)
     case radio
+    case youtube
 
     var displayName: String {
         switch self {
@@ -54,6 +55,7 @@ enum ModernBrowserSource: Equatable, Codable {
             }
             return "EMBY"
         case .radio: return "INTERNET RADIO"
+        case .youtube: return "YOUTUBE"
         }
     }
 
@@ -81,6 +83,7 @@ enum ModernBrowserSource: Equatable, Codable {
             }
             return "Emby"
         case .radio: return "Radio"
+        case .youtube: return "YouTube"
         }
     }
 
@@ -89,8 +92,11 @@ enum ModernBrowserSource: Equatable, Codable {
     var isEmby: Bool { if case .emby = self { return true }; return false }
     var isPlex: Bool { if case .plex = self { return true }; return false }
     var isRadio: Bool { if case .radio = self { return true }; return false }
+    var isYouTube: Bool { if case .youtube = self { return true }; return false }
+    /// YouTube reuses the Internet Radio tab's UI to list its channels/videos.
+    var usesRadioTab: Bool { isRadio || isYouTube }
     var isRemote: Bool {
-        switch self { case .local, .radio: return false; case .plex, .subsonic, .jellyfin, .emby: return true }
+        switch self { case .local, .radio, .youtube: return false; case .plex, .subsonic, .jellyfin, .emby: return true }
     }
 
     private static let userDefaultsKey = "BrowserSource"
@@ -180,8 +186,32 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Properties
     
     weak var controller: ModernLibraryBrowserWindowController?
-    
+
     private var renderer: ModernSkinRenderer!
+
+    /// Compact Mode: when true, a stripped-down player bar is embedded across the top
+    /// (just below the title bar) and all content below shifts down to make room.
+    /// The window itself is never resized — only the list/content region shrinks.
+    var compactMode: Bool = false {
+        didSet {
+            guard compactMode != oldValue else { return }
+            needsLayout = true
+            needsDisplay = true
+        }
+    }
+    private var compactPlayerBar: CompactPlayerBarView?
+
+    /// Height of the embedded compact player bar (0 when not in compact mode).
+    private var compactPlayerBarHeight: CGFloat {
+        compactMode ? CompactPlayerBarView.preferredHeight(for: ModernSkinElements.sizeMultiplier) : 0
+    }
+
+    /// Y coordinate of the bottom of the top chrome (title bar + optional compact player bar).
+    /// All content below the title bar measures down from here, so inserting the player bar
+    /// shifts the server bar / tabs / search / list down without resizing the window.
+    private var topChromeBottomY: CGFloat {
+        bounds.height - Layout.titleBarHeight - compactPlayerBarHeight
+    }
     
     // Browse state
     private var currentSource: ModernBrowserSource = .local {
@@ -330,6 +360,18 @@ class ModernLibraryBrowserView: NSView {
         return .plists
     }
 
+    /// The Radio tab slot toggles between Internet Radio stations and YouTube
+    /// channels (YouTube source only), mirroring the Plists/Folders toggle.
+    /// Defaults to showing channels so the YouTube source opens on "Channels".
+    private var radioSlotShowsChannels: Bool {
+        get { UserDefaults.standard.object(forKey: "RadioSlotShowsChannels") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "RadioSlotShowsChannels") }
+    }
+    /// Whether the Radio tab slot is currently displaying YouTube channels.
+    private var radioSlotShowingChannels: Bool {
+        currentSource.isYouTube && radioSlotShowsChannels
+    }
+
     private var isLocalSource: Bool {
         if case .local = currentSource { return true }
         return false
@@ -377,6 +419,13 @@ class ModernLibraryBrowserView: NSView {
     private var cachedRadioFolders: [RadioFolderDescriptor] = []
     private var expandedRadioFolders: Set<String> = []
     private var activeRadioStationSheet: AddRadioStationSheet?
+    private var activeYouTubeChannelSheet: AddYouTubeChannelSheet?
+
+    // Cached data - YouTube
+    private var expandedYouTubeChannels: Set<String> = []
+    private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
+    private var youtubeExpandTask: Task<Void, Never>?
+    private var youtubeDownloadTask: Task<Void, Never>?
     
     // Cached data - Video (Plex)
     private var cachedMovies: [PlexMovie] = []
@@ -459,11 +508,19 @@ class ModernLibraryBrowserView: NSView {
     // Art-only mode
     private var isArtOnlyMode: Bool = false {
         didSet {
+            artModeLifecycleGeneration &+= 1
             needsDisplay = true
             if isArtOnlyMode { fetchCurrentTrackRating(); loadAllArtworkForCurrentTrack() }
-            else { isVisualizingArt = false; artworkImages = []; artworkIndex = 0 }
+            else {
+                isVisualizingArt = false
+                artworkCyclingTask?.cancel()
+                artworkCyclingTask = nil
+                artworkImages = []
+                artworkIndex = 0
+            }
         }
     }
+    private var artModeLifecycleGeneration = 0
     private var isVisualizingArt: Bool = false {
         didSet {
             if isVisualizingArt { startVisualizerTimer() } else { stopVisualizerTimer() }
@@ -662,6 +719,8 @@ class ModernLibraryBrowserView: NSView {
                 }
             case .radio:
                 currentSource = .radio
+            case .youtube:
+                currentSource = .youtube
             }
         } else {
             if PlexManager.shared.isLinked, let firstServer = PlexManager.shared.servers.first {
@@ -708,6 +767,8 @@ class ModernLibraryBrowserView: NSView {
                                                name: MediaLibrary.libraryDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(radioStationsDidChange),
                                                name: RadioManager.stationsDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(youtubeChannelsDidChange),
+                                               name: YouTubeManager.youtubeChannelsDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackDidChange),
                                                name: .audioTrackDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(playHistoryDidChange),
@@ -854,7 +915,7 @@ class ModernLibraryBrowserView: NSView {
 
     private func embeddedHistoryContentRect() -> NSRect {
         guard !isShadeMode else { return .zero }
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let statusBarHeight = Layout.statusBarHeight
         return NSRect(
@@ -870,6 +931,50 @@ class ModernLibraryBrowserView: NSView {
         if !isRatingOverlayVisible {
             ratingOverlay.frame = bounds
         }
+        updateCompactPlayerBarFrame()
+    }
+
+    /// Create/position/remove the embedded compact player bar to match the current mode.
+    private func updateCompactPlayerBarFrame() {
+        guard compactMode && !isShadeMode else {
+            compactPlayerBar?.removeFromSuperview()
+            compactPlayerBar = nil
+            return
+        }
+        let bar: CompactPlayerBarView
+        if let existing = compactPlayerBar {
+            bar = existing
+        } else {
+            bar = CompactPlayerBarView(frame: .zero)
+            addSubview(bar)
+            compactPlayerBar = bar
+            seedCompactPlayerBar(bar)
+        }
+        bar.frame = NSRect(x: Layout.borderWidth, y: topChromeBottomY,
+                           width: bounds.width - Layout.borderWidth * 2,
+                           height: compactPlayerBarHeight)
+    }
+
+    /// Seed the bar with the engine's current state so it isn't blank until the next update tick.
+    private func seedCompactPlayerBar(_ bar: CompactPlayerBarView) {
+        let engine = WindowManager.shared.audioEngine
+        bar.updateTrackInfo(engine.currentTrack)
+        bar.updateTime(current: engine.currentTime, duration: engine.duration)
+        bar.updatePlaybackState()
+    }
+
+    // MARK: - Compact Player Bar Forwarding
+
+    func compactBarUpdateTime(current: TimeInterval, duration: TimeInterval) {
+        compactPlayerBar?.updateTime(current: current, duration: duration)
+    }
+
+    func compactBarUpdateTrack(_ track: Track?) {
+        compactPlayerBar?.updateTrackInfo(track)
+    }
+
+    func compactBarUpdatePlaybackState() {
+        compactPlayerBar?.updatePlaybackState()
     }
     
     // MARK: - Drawing
@@ -926,7 +1031,7 @@ class ModernLibraryBrowserView: NSView {
         // Fast path: scroll timer marks only server bar dirty — skip full window redraw.
         // Always fill the full background first (copy blend mode) so the layer is never
         // left partially transparent from accumulated alpha on repeated scroll-tick draws.
-        let serverBarY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let serverBarY = topChromeBottomY - Layout.serverBarHeight
         let sbRect = NSRect(x: 0, y: serverBarY, width: bounds.width, height: Layout.serverBarHeight)
         if sbRect.contains(dirtyRect) {
             renderer.drawWindowBackground(
@@ -1004,7 +1109,7 @@ class ModernLibraryBrowserView: NSView {
         let statusBarHeight = Layout.statusBarHeight
 
         // Offline volume banner (local source only, above list content)
-        let showOfflineBanner = !currentSource.isRemote && !currentSource.isRadio && !offlineWatchFolders.isEmpty
+        let showOfflineBanner = isLocalSource && !offlineWatchFolders.isEmpty
         let bannerHeight = showOfflineBanner ? Layout.offlineBannerHeight : 0
 
         // List area (between content top and status bar bottom)
@@ -1050,6 +1155,46 @@ class ModernLibraryBrowserView: NSView {
 
     // MARK: - Tab Bar Drawing (Modern Boxed Toggle Style)
     
+    /// Per-tab widths across the tab bar. Normally every tab is equal width, but when the
+    /// radio slot displays "Channels" (YouTube source) that label needs more room than the
+    /// short "Data" label, so we shift some width from the Data tab to the Channels tab.
+    private func tabBarWidths(totalWidth: CGFloat) -> [CGFloat] {
+        let modes = ModernBrowseMode.allCases
+        let base = totalWidth / CGFloat(modes.count)
+        var widths = [CGFloat](repeating: base, count: modes.count)
+        if radioSlotShowingChannels,
+           let radioIdx = modes.firstIndex(of: .radio),
+           let dataIdx = modes.firstIndex(of: .history) {
+            let shift = 14 * ModernSkinElements.sizeMultiplier
+            widths[radioIdx] += shift
+            widths[dataIdx] -= shift
+        }
+        return widths
+    }
+
+    /// Smallest window width at which every tab label still fits inside its outline.
+    /// Mirrors the layout math in `drawTabBar`: tabs share `bounds.width - borders - sortWidth`
+    /// equally, so the narrowest label-fit is driven by the widest label ("Channels" in the
+    /// YouTube radio slot). Used to floor the Compact Mode window so labels never spill out.
+    var minimumCompactContentWidth: CGFloat {
+        let skin = currentSkin()
+        let m = ModernSkinElements.sizeMultiplier
+        let font = skin.sideWindowFont(size: 11)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+
+        // Widest possible tab label across all sources (includes the YouTube "Channels" slot).
+        var labels = ModernBrowseMode.allCases.map { $0.title }
+        labels.append("Channels")
+        labels.append("Folders")
+        let maxLabelWidth = labels.map { $0.size(withAttributes: attrs).width }.max() ?? 0
+
+        let sortWidth = "Sort".size(withAttributes: attrs).width + 16 * m
+        // Per-tab outline keeps a 2pt inset each side; add a little breathing room.
+        let perTab = maxLabelWidth + 12 * m
+        let tabsWidth = perTab * CGFloat(ModernBrowseMode.allCases.count)
+        return ceil(tabsWidth + sortWidth + Layout.borderWidth * 2)
+    }
+
     private func drawTabBar(in context: CGContext, tabBarY: CGFloat, skin: ModernSkin) {
         let tabBarRect = NSRect(x: Layout.borderWidth, y: tabBarY,
                                 width: bounds.width - Layout.borderWidth * 2, height: Layout.tabBarHeight)
@@ -1067,14 +1212,17 @@ class ModernLibraryBrowserView: NSView {
             .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
         ]
         let sortSize = sortText.size(withAttributes: sortAttrs)
-        let sortWidth = sortSize.width + 16
+        let sortWidth = sortSize.width + 16 * ModernSkinElements.sizeMultiplier
         
         let tabsWidth = tabBarRect.width - sortWidth
-        let tabWidth = tabsWidth / CGFloat(ModernBrowseMode.allCases.count)
-        
+        let widths = tabBarWidths(totalWidth: tabsWidth)
+        var tabX = tabBarRect.minX
+
         for (index, mode) in ModernBrowseMode.allCases.enumerated() {
-            let tabRect = NSRect(x: tabBarRect.minX + CGFloat(index) * tabWidth, y: tabBarY,
+            let tabWidth = widths[index]
+            let tabRect = NSRect(x: tabX, y: tabBarY,
                                  width: tabWidth, height: Layout.tabBarHeight)
+            tabX += tabWidth
             // Special handling for plists slot: show "Folders" if toggled, and highlight if browseMode is .folders
             var label = mode.title
             var isSelected = mode == browseMode
@@ -1094,7 +1242,13 @@ class ModernLibraryBrowserView: NSView {
                     }
                 }
             }
-            drawToggleTab(label: label, isActive: isSelected, rect: tabRect.insetBy(dx: 2, dy: 2),
+            // Radio slot shows "Channels" when the YouTube source is displaying channels.
+            if mode == .radio, radioSlotShowingChannels {
+                label = "Channels"
+            }
+            let tabInset = 2 * ModernSkinElements.sizeMultiplier
+            drawToggleTab(label: label, isActive: isSelected,
+                          rect: tabRect.insetBy(dx: tabInset, dy: tabInset),
                           font: font, skin: skin, context: context)
         }
         
@@ -1515,14 +1669,31 @@ class ModernLibraryBrowserView: NSView {
             let sourceText = "Internet Radio"
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
-            
+
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
-            
+
             // Item count (only in list mode)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) stations"
+                let countWidth = countText.size(withAttributes: dataAttrs).width
+                let countX = visEndX - countWidth - 24 * m
+                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
+            }
+
+        case .youtube:
+            let sourceText = "YouTube"
+            drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
+            let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
+
+            let addText = "+ADD"
+            let addX = sourceNameStartX + sourceTextWidth + 28 * m
+            drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
+
+            // Item count (only in list mode)
+            if !isArtOnlyMode {
+                let countText = "\(displayItems.count) items"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
                 drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
@@ -2461,9 +2632,22 @@ class ModernLibraryBrowserView: NSView {
         return false
     }
 
+    /// YouTube channel uploads render through the resizable column path (title + time),
+    /// gated on the "Channels" view actually containing video rows.
+    private var hasYouTubeColumns: Bool {
+        guard radioSlotShowingChannels else { return false }
+        return displayItems.contains {
+            if case .youtubeVideo = $0.type { return true }
+            return false
+        }
+    }
+
     private func headerColumnsForCurrentContent() -> [ModernBrowserColumn]? {
         if hasInternetRadioColumns {
             return ModernBrowserColumn.internetRadioColumns
+        }
+        if hasYouTubeColumns {
+            return ModernBrowserColumn.youtubeColumns
         }
         let columns = currentVisibleColumns()
         guard !columns.isEmpty else { return nil }
@@ -2514,12 +2698,15 @@ class ModernLibraryBrowserView: NSView {
             return .album
         case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist:
             return item.indentLevel == 0 ? .artist : nil
+        case .youtubeVideo:
+            return .youtube
         default:
             return nil
         }
     }
 
     private func currentColumnGroup() -> LibraryColumnVisibilityGroup? {
+        if hasYouTubeColumns { return .youtube }
         if hasTrackRows() { return .track }
         if hasAlbumRows() { return .album }
         if hasArtistRows() { return .artist }
@@ -2534,6 +2721,8 @@ class ModernLibraryBrowserView: NSView {
             return visibleColumns(allColumns: ModernBrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
         case .artist:
             return visibleColumns(allColumns: ModernBrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
+        case .youtube:
+            return ModernBrowserColumn.youtubeColumns
         case nil:
             break
         }
@@ -2664,6 +2853,9 @@ class ModernLibraryBrowserView: NSView {
         if hasInternetRadioColumns {
             return ModernBrowserColumn.internetRadioColumns
         }
+        if hasYouTubeColumns {
+            return ModernBrowserColumn.youtubeColumns
+        }
         if hasTrackRows() {
             return visibleColumns(allColumns: ModernBrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
         }
@@ -2708,7 +2900,11 @@ class ModernLibraryBrowserView: NSView {
         if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: columnSortAscending) {
             needsDisplay = true; return
         }
-        
+
+        if applyYouTubeColumnSort(sortColumn: sortColumn) {
+            needsDisplay = true; return
+        }
+
         // When rows are expanded, the build order comes from the store (SQLite BINARY
         // collation), which diverges from the in-memory column sort (LibraryTextSorter:
         // diacritic-insensitive, numeric, article-stripping) precisely around special
@@ -2868,6 +3064,29 @@ class ModernLibraryBrowserView: NSView {
         return didSort
     }
 
+    /// Sorts the videos within each expanded YouTube channel (contiguous runs of video rows)
+    /// by the clicked column, leaving the channel leaders in place. Mirrors the internet-radio
+    /// in-place run sort so the "Channels" view supports sortable column headers like other tabs.
+    private func applyYouTubeColumnSort(sortColumn: ModernBrowserColumn) -> Bool {
+        guard radioSlotShowingChannels,
+              ModernBrowserColumn.youtubeColumns.contains(where: { $0.id == sortColumn.id }),
+              displayItems.contains(where: { if case .youtubeVideo = $0.type { return true }; return false }) else {
+            return false
+        }
+
+        var index = 0
+        while index < displayItems.count {
+            guard case .youtubeVideo = displayItems[index].type else { index += 1; continue }
+            let start = index
+            while index < displayItems.count, case .youtubeVideo = displayItems[index].type {
+                index += 1
+            }
+            let sorted = stableColumnSortedItems(Array(displayItems[start..<index]), sortColumn: sortColumn)
+            displayItems.replaceSubrange(start..<index, with: sorted)
+        }
+        return true
+    }
+
     private func sortedInternetRadioItems(_ items: [ModernDisplayItem], sortColumn: ModernBrowserColumn, ascending: Bool) -> [ModernDisplayItem] {
         let ratingsByItemId = Dictionary(uniqueKeysWithValues: items.map { item in
             (item.id, internetRadioRating(for: item))
@@ -2970,12 +3189,12 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestServerBar(at point: NSPoint) -> Bool {
-        let serverBarY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
-        return point.y >= serverBarY && point.y < bounds.height - Layout.titleBarHeight
+        let serverBarY = topChromeBottomY - Layout.serverBarHeight
+        return point.y >= serverBarY && point.y < topChromeBottomY
     }
     
     private func hitTestTabBar(at point: NSPoint) -> ModernBrowseMode? {
-        let tabBarTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let tabBarTopY = topChromeBottomY - Layout.serverBarHeight
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return nil }
 
@@ -2986,18 +3205,23 @@ class ModernLibraryBrowserView: NSView {
         let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
 
         let tabsWidth = bounds.width - Layout.borderWidth * 2 - sortWidth
-        let tabWidth = tabsWidth / CGFloat(ModernBrowseMode.allCases.count)
+        let widths = tabBarWidths(totalWidth: tabsWidth)
         let relativeX = point.x - Layout.borderWidth
 
         if relativeX >= 0 && relativeX < tabsWidth {
-            let index = Int(relativeX / tabWidth)
-            if index < ModernBrowseMode.allCases.count { return ModernBrowseMode.allCases[index] }
+            var x: CGFloat = 0
+            for (index, width) in widths.enumerated() {
+                if relativeX < x + width {
+                    return ModernBrowseMode.allCases[index]
+                }
+                x += width
+            }
         }
         return nil
     }
     
     private func hitTestSortIndicator(at point: NSPoint) -> Bool {
-        let tabBarTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let tabBarTopY = topChromeBottomY - Layout.serverBarHeight
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return false }
         
@@ -3013,13 +3237,13 @@ class ModernLibraryBrowserView: NSView {
     
     private func hitTestSearchBar(at point: NSPoint) -> Bool {
         guard browseMode == .search else { return false }
-        let tabBarBottomY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        let tabBarBottomY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         let searchBarBottomY = tabBarBottomY - Layout.searchBarHeight
         return point.y >= searchBarBottomY && point.y < tabBarBottomY
     }
     
     private func hitTestListArea(at point: NSPoint) -> Int? {
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -3050,7 +3274,7 @@ class ModernLibraryBrowserView: NSView {
         let item = displayItems[itemIndex]
         guard case .radioStation = item.type, let columns = columnsForItem(item) else { return nil }
 
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         if hasColumns { contentTopY -= columnHeaderHeight }
@@ -3089,7 +3313,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestAlphabetIndex(at point: NSPoint) -> Bool {
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -3100,7 +3324,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestContentArea(at point: NSPoint) -> Bool {
-        let contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let contentTopY = topChromeBottomY - Layout.serverBarHeight
         let contentBottomY = Layout.statusBarHeight
         let contentRect = NSRect(x: Layout.borderWidth, y: contentBottomY,
                                  width: bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth,
@@ -3113,7 +3337,7 @@ class ModernLibraryBrowserView: NSView {
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return nil }
         
-        var headerTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { headerTopY -= Layout.searchBarHeight }
         let headerBottomY = headerTopY - columnHeaderHeight
         
@@ -3152,7 +3376,7 @@ class ModernLibraryBrowserView: NSView {
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return nil }
         
-        var headerTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { headerTopY -= Layout.searchBarHeight }
         let headerBottomY = headerTopY - columnHeaderHeight
         
@@ -3176,7 +3400,7 @@ class ModernLibraryBrowserView: NSView {
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return false }
         
-        var headerTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { headerTopY -= Layout.searchBarHeight }
         let headerBottomY = headerTopY - columnHeaderHeight
         
@@ -3285,6 +3509,14 @@ class ModernLibraryBrowserView: NSView {
                     loadDataForCurrentMode(); window?.makeFirstResponder(self)
                     return
                 }
+            }
+            // Double-click the radio slot while the YouTube source toggles Radio/Channels.
+            if event.clickCount == 2 && tabMode == .radio && currentSource.isYouTube {
+                radioSlotShowsChannels.toggle()
+                browseMode = .radio
+                selectedIndices.removeAll(); scrollOffset = 0
+                loadDataForCurrentMode(); window?.makeFirstResponder(self)
+                return
             }
             // Single-click selects whatever the slot currently shows (Plists or Folders)
             browseMode = (tabMode == .plists) ? effectivePlistsSlotMode : tabMode
@@ -3461,7 +3693,7 @@ class ModernLibraryBrowserView: NSView {
             super.scrollWheel(with: event)
             return
         }
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let totalHeight = CGFloat(displayItems.count) * itemHeight
@@ -3690,7 +3922,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func ensureVisible(index: Int) {
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -3783,7 +4015,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func handleServerBarClick(at point: NSPoint, event: NSEvent) {
         let m = ModernSkinElements.sizeMultiplier
-        let barRect = NSRect(x: Layout.borderWidth, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
+        let barRect = NSRect(x: Layout.borderWidth, y: topChromeBottomY - Layout.serverBarHeight,
                             width: bounds.width - Layout.borderWidth * 2, height: Layout.serverBarHeight)
         let relativeX = point.x - barRect.minX
         let barWidth = barRect.width
@@ -3882,12 +4114,36 @@ class ModernLibraryBrowserView: NSView {
             let addZoneEnd = addZoneStart + 50 * m
             if relativeX >= addZoneStart && relativeX <= addZoneEnd { showRadioAddMenu(at: event) }
             else if relativeX < sourceZoneEnd { showSourceMenu(at: event) }
+        case .youtube:
+            let ytNameWidth = "YouTube".size(withAttributes: fontAttrs).width
+            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
+            let sourceZoneEnd = sourcePrefix + ytNameWidth
+            let addZoneStart = sourceZoneEnd + 28 * m
+            let addZoneEnd = addZoneStart + 50 * m
+            if relativeX >= addZoneStart && relativeX <= addZoneEnd { showYouTubeAddMenu(at: event) }
+            else if relativeX < sourceZoneEnd { showSourceMenu(at: event) }
         }
     }
-    
+
     private func handleRefreshClick() {
         if browseMode.isHistoryMode {
             historyAgent.scheduleRefresh()
+            return
+        }
+        if case .youtube = currentSource {
+            switch browseMode {
+            case .radio:
+                if radioSlotShowsChannels { loadYouTubeChannels() }
+                else { loadRadioStations() }
+            case .search:
+                loadRadioSearchResults()
+            default:
+                isLoading = false
+                errorMessage = nil
+                stopLoadingAnimation()
+                displayItems = []
+                needsDisplay = true
+            }
             return
         }
         if case .radio = currentSource {
@@ -3953,13 +4209,14 @@ class ModernLibraryBrowserView: NSView {
                 self.refreshData()
             }
         case .radio: break
+        case .youtube: loadYouTubeChannels()
         }
     }
     
     // MARK: - Alphabet Click
     
     private func handleAlphabetClick(at point: NSPoint) {
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -4017,7 +4274,7 @@ class ModernLibraryBrowserView: NSView {
         }
         for (index, item) in displayItems.enumerated() {
             if effectiveSortLetter(for: item) == letter {
-                var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+                var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
                 if browseMode == .search { contentTopY -= Layout.searchBarHeight }
                 let listHeight = contentTopY - Layout.statusBarHeight
                 let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -4121,6 +4378,10 @@ class ModernLibraryBrowserView: NSView {
         let radioItem = NSMenuItem(title: "Internet Radio", action: #selector(selectRadioSource), keyEquivalent: "")
         radioItem.target = self; if case .radio = currentSource { radioItem.state = .on }
         menu.addItem(radioItem)
+        menu.addItem(NSMenuItem.separator())
+        let youtubeItem = NSMenuItem(title: "YouTube", action: #selector(selectYouTubeSource), keyEquivalent: "")
+        youtubeItem.target = self; if case .youtube = currentSource { youtubeItem.state = .on }
+        menu.addItem(youtubeItem)
 
         if case .local = currentSource {
             let store = MediaLibraryStore.shared
@@ -4578,7 +4839,10 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func columnGroupsForCurrentMenu() -> [LibraryColumnVisibilityGroup] {
-        LibraryColumnVisibility.menuGroups(
+        if hasYouTubeColumns {
+            return [.youtube]
+        }
+        return LibraryColumnVisibility.menuGroups(
             isArtistsMode: browseMode == .artists,
             isAlbumsMode: browseMode == .albums,
             hasTrackRows: hasTrackRows(),
@@ -4602,7 +4866,7 @@ class ModernLibraryBrowserView: NSView {
             item.view = ColumnVisibilityCheckboxView(
                 title: column.title,
                 isChecked: column.id == "title" || visibleIds.contains(column.id),
-                isEnabled: column.id != "title"
+                isEnabled: group != .youtube && column.id != "title"
             ) { [weak self] isVisible in
                 self?.toggleColumnVisibility(group: group, columnId: column.id, visible: isVisible)
             }
@@ -4620,6 +4884,7 @@ class ModernLibraryBrowserView: NSView {
         case .artist: return ModernBrowserColumn.allArtistColumns
         case .album: return ModernBrowserColumn.allAlbumColumns
         case .track: return ModernBrowserColumn.allTrackColumns
+        case .youtube: return ModernBrowserColumn.youtubeColumns
         }
     }
 
@@ -4628,6 +4893,7 @@ class ModernLibraryBrowserView: NSView {
         case .artist: return ModernBrowserColumn.defaultArtistColumnIds
         case .album: return ModernBrowserColumn.defaultAlbumColumnIds
         case .track: return ModernBrowserColumn.defaultTrackColumnIds
+        case .youtube: return ModernBrowserColumn.defaultYouTubeColumnIds
         }
     }
 
@@ -4636,6 +4902,8 @@ class ModernLibraryBrowserView: NSView {
         case .artist: return normalizedColumnIds(visibleArtistColumnIds, allColumns: ModernBrowserColumn.allArtistColumns)
         case .album: return normalizedColumnIds(visibleAlbumColumnIds, allColumns: ModernBrowserColumn.allAlbumColumns)
         case .track: return normalizedColumnIds(visibleTrackColumnIds, allColumns: ModernBrowserColumn.allTrackColumns)
+        // YouTube columns are fixed (not user-hideable); always the full set.
+        case .youtube: return ModernBrowserColumn.defaultYouTubeColumnIds
         }
     }
 
@@ -4647,6 +4915,8 @@ class ModernLibraryBrowserView: NSView {
             visibleAlbumColumnIds = normalizedColumnIds(ids, allColumns: ModernBrowserColumn.allAlbumColumns)
         case .track:
             visibleTrackColumnIds = normalizedColumnIds(ids, allColumns: ModernBrowserColumn.allTrackColumns)
+        case .youtube:
+            break  // fixed column set, nothing to persist
         }
     }
 
@@ -4927,6 +5197,25 @@ class ModernLibraryBrowserView: NSView {
                 break
             }
             if menu.items.isEmpty { return }
+        case .youtubeChannel(let channel):
+            let expandTitle = expandedYouTubeChannels.contains(channel.id) ? "Collapse" : "Expand"
+            let expandItem = NSMenuItem(title: expandTitle, action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
+            menu.addItem(NSMenuItem.separator())
+            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(contextMenuRefreshYouTubeChannel(_:)), keyEquivalent: "")
+            refreshItem.target = self; refreshItem.representedObject = channel; menu.addItem(refreshItem)
+            let removeItem = NSMenuItem(title: "Remove Channel", action: #selector(contextMenuRemoveYouTubeChannel(_:)), keyEquivalent: "")
+            removeItem.target = self; removeItem.representedObject = channel; menu.addItem(removeItem)
+        case .youtubeVideo(let video):
+            let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
+            let actionTitle = isDownloaded ? "Play" : "Download & Play"
+            let actionItem = NSMenuItem(title: actionTitle, action: #selector(contextMenuPlayYouTubeVideo(_:)), keyEquivalent: "")
+            actionItem.target = self; actionItem.representedObject = video; menu.addItem(actionItem)
+            if isDownloaded {
+                menu.addItem(NSMenuItem.separator())
+                let removeDownloadItem = NSMenuItem(title: "Remove Download", action: #selector(contextMenuRemoveYouTubeDownload(_:)), keyEquivalent: "")
+                removeDownloadItem.target = self; removeDownloadItem.representedObject = video; menu.addItem(removeDownloadItem)
+            }
         case .plexRadioStation:
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayPlexRadioStation(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
@@ -5118,6 +5407,15 @@ class ModernLibraryBrowserView: NSView {
     
     @objc private func selectLocalSource() { currentSource = .local }
     @objc private func selectRadioSource() { currentSource = .radio }
+    @objc private func selectYouTubeSource() { currentSource = .youtube }
+
+    private func showYouTubeAddMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let addItem = NSMenuItem(title: "Add Channel...", action: #selector(showAddYouTubeChannelDialog), keyEquivalent: "")
+        addItem.target = self; menu.addItem(addItem)
+        let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
+        menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
+    }
     @objc private func clearLocalMusicFromSourceMenu() {
         MenuActions.shared.clearLocalMusic()
         if case .local = currentSource { loadLocalData() }
@@ -5292,6 +5590,21 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         reloadInternetRadioForCurrentMode()
+    }
+
+    @objc private func showAddYouTubeChannelDialog() {
+        activeYouTubeChannelSheet = AddYouTubeChannelSheet()
+        activeYouTubeChannelSheet?.showDialog { [weak self] channel in
+            self?.activeYouTubeChannelSheet = nil
+            guard let self = self else { return }
+            if channel != nil {
+                if case .youtube = self.currentSource {
+                    self.rebuildCurrentModeItems()
+                } else {
+                    self.currentSource = .youtube
+                }
+            }
+        }
     }
     @objc private func addMissingRadioDefaults() { RadioManager.shared.addMissingDefaults(); if case .radio = currentSource { reloadInternetRadioForCurrentMode() } }
     @objc private func resetRadioToDefaults() {
@@ -5723,6 +6036,64 @@ class ModernLibraryBrowserView: NSView {
         _ = RadioManager.shared.deleteUserFolder(id: action.folderID)
         reloadInternetRadioForCurrentMode()
     }
+    @objc private func contextMenuRefreshYouTubeChannel(_ sender: NSMenuItem) {
+        guard let channel = sender.representedObject as? YouTubeChannel else { return }
+        youtubeChannelVideos.removeValue(forKey: channel.id)
+        expandedYouTubeChannels.insert(channel.id)
+        youtubeExpandTask?.cancel()
+        youtubeExpandTask = Task.detached { @MainActor [weak self] in
+            guard let self = self else { return }
+            do {
+                let videos = try await YouTubeManager.shared.videos(forChannel: channel)
+                youtubeChannelVideos[channel.id] = videos
+                rebuildCurrentModeItems()
+            } catch is CancellationError { }
+            catch where Task.isCancelled { }
+            catch {
+                NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription)
+            }
+        }
+    }
+
+    @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
+        guard let channel = sender.representedObject as? YouTubeChannel else { return }
+        YouTubeManager.shared.removeChannel(channel)
+        expandedYouTubeChannels.remove(channel.id)
+        youtubeChannelVideos.removeValue(forKey: channel.id)
+        rebuildCurrentModeItems()
+    }
+
+    @objc private func contextMenuPlayYouTubeVideo(_ sender: NSMenuItem) {
+        guard let video = sender.representedObject as? YouTubeVideo else { return }
+        if YouTubeManager.shared.isDownloaded(video.videoId) {
+            if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
+                let track = Track(url: url, isYouTubeOrigin: true)
+                WindowManager.shared.audioEngine.playNow([track])
+            }
+        } else {
+            startLoadingAnimation()
+            youtubeDownloadTask?.cancel()
+            youtubeDownloadTask = Task.detached { @MainActor [weak self] in
+                guard let self = self else { return }
+                do {
+                    let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                    let track = Track(url: downloadedURL, isYouTubeOrigin: true)
+                    WindowManager.shared.audioEngine.playNow([track])
+                    rebuildCurrentModeItems()
+                } catch {
+                    NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                }
+                self.stopLoadingAnimation()
+            }
+        }
+    }
+
+    @objc private func contextMenuRemoveYouTubeDownload(_ sender: NSMenuItem) {
+        guard let video = sender.representedObject as? YouTubeVideo else { return }
+        YouTubeManager.shared.removeDownload(videoId: video.videoId)
+        rebuildCurrentModeItems()
+    }
+
     @objc private func contextMenuToggleStationFolderMembership(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioFolderMembershipAction else { return }
         if RadioManager.shared.isStation(action.station, inUserFolderID: action.folderID) {
@@ -6697,6 +7068,7 @@ class ModernLibraryBrowserView: NSView {
         invalidateServerBarFontCache()
         updateCornerMask()
         updateEmbeddedSubviewFrames()
+        compactPlayerBar?.skinDidChange()
         needsDisplay = true
     }
     
@@ -6748,7 +7120,11 @@ class ModernLibraryBrowserView: NSView {
         needsDisplay = true
     }
     
-    private func toggleShadeMode() { isShadeMode.toggle(); controller?.setShadeMode(isShadeMode) }
+    private func toggleShadeMode() {
+        guard !compactMode else { return }
+        isShadeMode.toggle()
+        controller?.setShadeMode(isShadeMode)
+    }
     
     @objc private func plexStateDidChange() {
         DispatchQueue.main.async { [weak self] in
@@ -6783,6 +7159,7 @@ class ModernLibraryBrowserView: NSView {
                     else if let first = EmbyManager.shared.servers.first { self.currentSource = .emby(serverId: first.id); return }
                 case .local: break
                 case .radio: self.currentSource = .radio; return
+                case .youtube: self.currentSource = .youtube; return
                 }
             }
             self.clearAllCachedData(); self.reloadData()
@@ -6860,8 +7237,14 @@ class ModernLibraryBrowserView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: workItem)
     }
     
+    private var isShowingInternetRadioContent: Bool {
+        currentSource.isRadio ||
+            (currentSource.isYouTube &&
+             (browseMode == .search || (browseMode == .radio && !radioSlotShowsChannels)))
+    }
+
     @objc private func radioStationsDidChange() {
-        guard case .radio = currentSource else { return }
+        guard isShowingInternetRadioContent else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             switch self.browseMode {
@@ -6875,9 +7258,32 @@ class ModernLibraryBrowserView: NSView {
             self.needsDisplay = true
         }
     }
-    
+
+    @objc private func youtubeChannelsDidChange() {
+        guard case .youtube = currentSource else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.rebuildCurrentModeItems()
+        }
+    }
+
     @objc private func trackDidChange(_ notification: Notification) {
+        artModeLifecycleGeneration &+= 1
+        let generation = artModeLifecycleGeneration
+        let track = notification.userInfo?["track"] as? Track
+
         if isArtOnlyMode {
+            guard track != nil else {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self,
+                          self.artModeLifecycleGeneration == generation,
+                          self.isArtOnlyMode,
+                          WindowManager.shared.audioEngine.currentTrack == nil else { return }
+                    self.exitArtOnlyModeForMissingArtwork()
+                }
+                return
+            }
+
             // Art-only mode uses loadAllArtworkForCurrentTrack exclusively.
             // Don't also call loadArtwork(for:) to avoid a race where loadArtwork
             // finishes last with nil and overwrites valid artwork.
@@ -6888,7 +7294,6 @@ class ModernLibraryBrowserView: NSView {
         guard WindowManager.shared.showBrowserArtworkBackground else {
             if currentArtwork != nil { currentArtwork = nil; artworkTrackId = nil; needsDisplay = true }; return
         }
-        let track = notification.userInfo?["track"] as? Track
         loadArtwork(for: track)
     }
     
@@ -6902,9 +7307,10 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfin(let serverId): currentSource = .jellyfin(serverId: serverId)
         case .emby(let serverId): currentSource = .emby(serverId: serverId)
         case .radio: currentSource = .radio
+        case .youtube: currentSource = .youtube
         }
     }
-    
+
     @objc private func windowDidMiniaturize(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
         stopServerNameScroll()
@@ -6977,7 +7383,8 @@ class ModernLibraryBrowserView: NSView {
         scrollOffset = 0; errorMessage = nil; isLoading = false; stopLoadingAnimation()
         // Internet Radio only has radio/search content, but every library
         // source supports the Radio tab. Preserve Radio across source changes.
-        if !browseMode.isHistoryMode, case .radio = currentSource {
+        // YouTube reuses the Radio tab to list its channels, so force it too.
+        if !browseMode.isHistoryMode, currentSource.usesRadioTab {
             browseMode = .radio
         }
         reloadData()
@@ -7030,7 +7437,7 @@ class ModernLibraryBrowserView: NSView {
                 self.needsDisplay = true
             } else if self.isLibraryScanning {
                 // Redraw server bar only for the scan spinner
-                let serverBarY = self.bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+                let serverBarY = self.topChromeBottomY - Layout.serverBarHeight
                 self.setNeedsDisplay(NSRect(x: 0, y: serverBarY, width: self.bounds.width, height: Layout.serverBarHeight))
             } else {
                 self.stopLoadingAnimation()
@@ -7184,7 +7591,7 @@ class ModernLibraryBrowserView: NSView {
 
     /// Returns the rect of the server bar for targeted redraws.
     private func serverBarRect() -> NSRect {
-        let barY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let barY = topChromeBottomY - Layout.serverBarHeight
         return NSRect(x: 0, y: barY, width: bounds.width, height: Layout.serverBarHeight)
     }
 
@@ -7781,7 +8188,12 @@ class ModernLibraryBrowserView: NSView {
                 image = await self.loadRemoteArtwork(urlString: thumb, cacheNamespace: "generic")
             }
             guard !Task.isCancelled else { return }
-            await MainActor.run { self.currentArtwork = image; self.artworkTrackId = track.id; self.needsDisplay = true }
+            await MainActor.run {
+                guard WindowManager.shared.audioEngine.currentTrack?.id == track.id else { return }
+                self.currentArtwork = image
+                self.artworkTrackId = track.id
+                self.needsDisplay = true
+            }
         }
     }
 
@@ -7915,8 +8327,12 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func loadAllArtworkForCurrentTrack() {
+        artworkLoadTask?.cancel(); artworkLoadTask = nil
         artworkCyclingTask?.cancel(); artworkCyclingTask = nil
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { artworkImages = []; artworkIndex = 0; currentArtwork = nil; needsDisplay = true; return }
+        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
+            exitArtOnlyModeForMissingArtwork()
+            return
+        }
         artworkImages = []; artworkIndex = 0
         artworkCyclingTask = Task { [weak self] in
             guard let self = self else { return }
@@ -7938,11 +8354,32 @@ class ModernLibraryBrowserView: NSView {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
+                guard self.isArtOnlyMode,
+                      WindowManager.shared.audioEngine.currentTrack?.id == currentTrack.id else { return }
+                guard !images.isEmpty else {
+                    self.exitArtOnlyModeForMissingArtwork()
+                    return
+                }
+
                 self.artworkImages = images; self.artworkIndex = 0
                 self.currentArtwork = images.first
+                self.artworkTrackId = currentTrack.id
                 self.needsDisplay = true
             }
         }
+    }
+
+    private func exitArtOnlyModeForMissingArtwork() {
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+        artworkCyclingTask?.cancel()
+        artworkCyclingTask = nil
+        artworkImages = []
+        artworkIndex = 0
+        currentArtwork = nil
+        artworkTrackId = nil
+        isArtOnlyMode = false
+        needsDisplay = true
     }
     
     private func cycleToNextArtwork() {
@@ -8109,6 +8546,27 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         
+        if case .youtube = currentSource {
+            // YouTube content lives only in the Radio tab slot. The slot toggles
+            // between YouTube channels and Internet Radio stations; other tabs are
+            // empty (matching how the Internet Radio source treats its tabs).
+            switch browseMode {
+            case .radio:
+                if radioSlotShowsChannels {
+                    loadYouTubeChannels()
+                } else {
+                    loadRadioStations()
+                }
+            case .search:
+                loadRadioSearchResults()
+            default:
+                displayItems = []
+                isLoading = false
+                needsDisplay = true
+            }
+            return
+        }
+
         if case .radio = currentSource {
             switch browseMode {
             case .radio:
@@ -8124,7 +8582,7 @@ class ModernLibraryBrowserView: NSView {
             }
             return
         }
-        
+
         if browseMode == .radio {
             switch currentSource {
             case .plex:
@@ -8139,11 +8597,13 @@ class ModernLibraryBrowserView: NSView {
                 loadLocalRadioStations()
             case .radio:
                 displayItems = []
+            case .youtube:
+                displayItems = []
             }
             needsDisplay = true
             return
         }
-        
+
         switch currentSource {
         case .local:
             loadLocalData()
@@ -8156,6 +8616,8 @@ class ModernLibraryBrowserView: NSView {
         case .emby(let serverId):
             loadEmbyData(serverId: serverId, generation: generation)
         case .radio:
+            break
+        case .youtube:
             break
         }
     }
@@ -8234,7 +8696,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func reloadInternetRadioForCurrentMode() {
-        guard case .radio = currentSource else { return }
+        guard isShowingInternetRadioContent else { return }
         switch browseMode {
         case .radio:
             loadRadioStations()
@@ -9052,6 +9514,47 @@ class ModernLibraryBrowserView: NSView {
 
         for root in roots {
             appendRadioFolderRow(root, level: 0, childrenByParent: childrenByParent)
+        }
+    }
+
+    // MARK: - YouTube (shares the Radio tab UI as its own source)
+
+    private func loadYouTubeChannels() {
+        isLoading = false
+        errorMessage = nil
+        stopLoadingAnimation()
+        buildYouTubeChannelItems()
+        needsDisplay = true
+    }
+
+    private func buildYouTubeChannelItems() {
+        displayItems.removeAll()
+        for channel in YouTubeManager.shared.channels {
+            displayItems.append(
+                ModernDisplayItem(
+                    id: "youtube-channel-\(channel.id)",
+                    title: channel.title,
+                    info: nil,
+                    indentLevel: 0,
+                    hasChildren: true,
+                    type: .youtubeChannel(channel)
+                )
+            )
+            guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { continue }
+            for video in videos {
+                let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
+                let marker = isDownloaded ? "⬇ " : ""
+                displayItems.append(
+                    ModernDisplayItem(
+                        id: "youtube-video-\(video.videoId)",
+                        title: marker + video.title,
+                        info: video.formattedDuration,
+                        indentLevel: 1,
+                        hasChildren: false,
+                        type: .youtubeVideo(video)
+                    )
+                )
+            }
         }
     }
 
@@ -10106,6 +10609,20 @@ class ModernLibraryBrowserView: NSView {
     
     private func rebuildCurrentModeItems() {
         horizontalScrollOffset = 0
+        if case .youtube = currentSource {
+            switch browseMode {
+            case .radio:
+                if radioSlotShowsChannels { buildYouTubeChannelItems() }
+                else { buildRadioStationItems() }
+            case .search:
+                buildRadioSearchItems()
+            default:
+                displayItems = []
+            }
+            if columnSortId != nil { applyColumnSort() }
+            needsDisplay = true
+            return
+        }
         if case .radio = currentSource {
             switch browseMode {
             case .radio:
@@ -10206,6 +10723,7 @@ class ModernLibraryBrowserView: NSView {
         case .embySeason(let s): return expandedEmbySeasons.contains(s.id)
         case .plexPlaylist(let p): return expandedPlexPlaylists.contains(p.id)
         case .radioFolder(let folder): return expandedRadioFolders.contains(folder.id)
+        case .youtubeChannel(let ch): return expandedYouTubeChannels.contains(ch.id)
         case .localPlaylist(let p): return expandedLocalPlaylists.contains(p.url.path)
         default: return false
         }
@@ -10522,6 +11040,27 @@ class ModernLibraryBrowserView: NSView {
                     return
                 }
                 rebuildCurrentModeItems()
+            }
+        case .youtubeChannel(let ch):
+            if expandedYouTubeChannels.contains(ch.id) {
+                expandedYouTubeChannels.remove(ch.id)
+            } else {
+                expandedYouTubeChannels.insert(ch.id)
+                if youtubeChannelVideos[ch.id] == nil {
+                    let id = ch.id; youtubeExpandTask?.cancel()
+                    youtubeExpandTask = Task.detached { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            let videos = try await YouTubeManager.shared.videos(forChannel: ch)
+                            youtubeChannelVideos[id] = videos
+                            rebuildCurrentModeItems()
+                        } catch is CancellationError { }
+                        catch where Task.isCancelled { }
+                        catch {
+                            NSLog("Failed to load YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
+                        }
+                    }; return
+                }
             }
         default: break
         }
@@ -10926,6 +11465,29 @@ class ModernLibraryBrowserView: NSView {
             if folder.hasChildren {
                 toggleExpand(item)
             }
+        case .youtubeChannel(let channel): toggleExpand(item)
+        case .youtubeVideo(let video):
+            if YouTubeManager.shared.isDownloaded(video.videoId) {
+                if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
+                    let track = Track(url: url, isYouTubeOrigin: true)
+                    WindowManager.shared.audioEngine.playNow([track])
+                }
+            } else {
+                startLoadingAnimation()
+                youtubeDownloadTask?.cancel()
+                youtubeDownloadTask = Task.detached { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    do {
+                        let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                        let track = Track(url: downloadedURL, isYouTubeOrigin: true)
+                        WindowManager.shared.audioEngine.playNow([track])
+                        rebuildCurrentModeItems()
+                    } catch {
+                        NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                    }
+                    self.stopLoadingAnimation()
+                }
+            }
         case .plexRadioStation(let r): playPlexRadioStation(r)
         case .subsonicRadioStation(let r): playSubsonicRadioStation(r)
         case .jellyfinRadioStation(let r): playJellyfinRadioStation(r)
@@ -11021,6 +11583,8 @@ private struct ModernDisplayItem {
         case plexPlaylist(PlexPlaylist)
         case radioStation(RadioStation)
         case radioFolder(RadioFolderDescriptor)
+        case youtubeChannel(YouTubeChannel)
+        case youtubeVideo(YouTubeVideo)
         case plexRadioStation(PlexRadioType)
         case subsonicRadioStation(SubsonicRadioType)
         case jellyfinRadioStation(JellyfinRadioType)
@@ -11201,6 +11765,9 @@ private struct ModernBrowserColumn {
     static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
     static let defaultArtistColumnIds: [String] = ["title", "rating", "albums", "genre"]
     static let internetRadioColumns: [ModernBrowserColumn] = [.title, .genre, .rating]
+    // YouTube channel uploads (Radio tab "Channels" view): title + a resizable time column.
+    static let youtubeColumns: [ModernBrowserColumn] = [.title, .duration]
+    static let defaultYouTubeColumnIds: [String] = ["title", "duration"]
     
     // Legacy arrays kept for backwards compatibility with sort lookup
     static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount]
@@ -11212,6 +11779,7 @@ private struct ModernBrowserColumn {
         if let c = allAlbumColumns.first(where: { $0.id == id }) { return c }
         if let c = allArtistColumns.first(where: { $0.id == id }) { return c }
         if let c = internetRadioColumns.first(where: { $0.id == id }) { return c }
+        if let c = youtubeColumns.first(where: { $0.id == id }) { return c }
         return nil
     }
 }
@@ -11267,6 +11835,11 @@ extension ModernDisplayItem {
             default:
                 return ""
             }
+        case .youtubeVideo(let video):
+            if column.id == "duration" {
+                return video.formattedDuration ?? ""
+            }
+            return ""
         default: return ""
         }
     }

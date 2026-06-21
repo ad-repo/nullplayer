@@ -47,6 +47,12 @@ class ContextMenuBuilder {
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
 
+        // Compact Mode works in both classic and modern UI.
+        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+        compactMode.target = MenuActions.shared
+        compactMode.state = wm.compactModeEnabled ? .on : .off
+        menu.addItem(compactMode)
+
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
         doubleSize.state = wm.isDoubleSize ? .on : .off
@@ -85,6 +91,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
         menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum)))
+        menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis)))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         if wm.isRunningModernUI {
@@ -110,6 +117,12 @@ class ContextMenuBuilder {
             hideTitleBars.state = wm.hideTitleBars ? .on : .off
             menu.addItem(hideTitleBars)
         }
+
+        // Compact Mode works in both classic and modern UI.
+        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+        compactMode.target = MenuActions.shared
+        compactMode.state = wm.compactModeEnabled ? .on : .off
+        menu.addItem(compactMode)
 
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
@@ -1567,6 +1580,7 @@ class ContextMenuBuilder {
         librariesMenu.addItem(buildSubsonicMenuItem())
         librariesMenu.addItem(buildJellyfinMenuItem())
         librariesMenu.addItem(buildEmbyMenuItem())
+        librariesMenu.addItem(buildYouTubeMenuItem())
         return librariesMenu
     }
 
@@ -2193,6 +2207,47 @@ class ContextMenuBuilder {
 
         embyItem.submenu = embyMenu
         return embyItem
+    }
+
+    // MARK: - YouTube Submenu
+
+    private static func buildYouTubeMenuItem() -> NSMenuItem {
+        let youtubeItem = NSMenuItem(title: "YouTube", action: nil, keyEquivalent: "")
+        let youtubeMenu = NSMenu()
+        youtubeMenu.autoenablesItems = false
+
+        // Download folder path header
+        let folderPath = YouTubeManager.shared.downloadRoot.path
+        let infoItem = NSMenuItem(title: folderPath, action: nil, keyEquivalent: "")
+        youtubeMenu.addItem(infoItem)
+
+        youtubeMenu.addItem(NSMenuItem.separator())
+
+        // Set Download Folder
+        let setFolderItem = NSMenuItem(title: "Set Download Folder…", action: #selector(MenuActions.setYouTubeDownloadFolder), keyEquivalent: "")
+        setFolderItem.target = MenuActions.shared
+        youtubeMenu.addItem(setFolderItem)
+
+        youtubeMenu.addItem(NSMenuItem.separator())
+
+        // Quality submenu
+        let qualityItem = NSMenuItem(title: "Quality", action: nil, keyEquivalent: "")
+        let qualityMenu = NSMenu()
+        qualityMenu.autoenablesItems = false
+
+        for quality in YouTubeQuality.allCases {
+            let item = NSMenuItem(title: quality.displayName, action: #selector(MenuActions.setYouTubeQuality(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = quality.rawValue
+            item.state = quality == YouTubeManager.shared.quality ? .on : .off
+            qualityMenu.addItem(item)
+        }
+
+        qualityItem.submenu = qualityMenu
+        youtubeMenu.addItem(qualityItem)
+
+        youtubeItem.submenu = youtubeMenu
+        return youtubeItem
     }
 
     // MARK: - Output Devices Submenu (Unified)
@@ -2894,6 +2949,10 @@ class MenuActions: NSObject {
     
     @objc func toggleSpectrum() {
         WindowManager.shared.toggleSpectrum()
+    }
+
+    @objc func toggleAudioAnalysis() {
+        WindowManager.shared.toggleAudioAnalysis()
     }
 
     @objc func toggleWaveform() {
@@ -4505,7 +4564,11 @@ class MenuActions: NSObject {
     @objc func toggleHideTitleBars() {
         WindowManager.shared.toggleHideTitleBars()
     }
-    
+
+    @objc func toggleCompactMode() {
+        WindowManager.shared.toggleCompactMode()
+    }
+
     @objc func toggleDoubleSize() {
         let wm = WindowManager.shared
         if wm.isModernUIEnabled {
@@ -5634,7 +5697,29 @@ class MenuActions: NSObject {
         let url = URL(fileURLWithPath: bundledPath)
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
     }
-    
+
+    // MARK: - YouTube Actions
+
+    @objc func setYouTubeDownloadFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Set YouTube Download Folder"
+        panel.prompt = "Select"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = YouTubeManager.shared.downloadRoot
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        YouTubeManager.shared.downloadRoot = url
+    }
+
+    @objc func setYouTubeQuality(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let quality = YouTubeQuality(rawValue: rawValue) else { return }
+        YouTubeManager.shared.quality = quality
+    }
+
     // MARK: - Exit
     
     @objc func exit() {
