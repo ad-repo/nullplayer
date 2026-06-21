@@ -4367,6 +4367,7 @@ class ModernLibraryBrowserView: NSView {
         let radioItem = NSMenuItem(title: "Internet Radio", action: #selector(selectRadioSource), keyEquivalent: "")
         radioItem.target = self; if case .radio = currentSource { radioItem.state = .on }
         menu.addItem(radioItem)
+        menu.addItem(NSMenuItem.separator())
         let youtubeItem = NSMenuItem(title: "YouTube", action: #selector(selectYouTubeSource), keyEquivalent: "")
         youtubeItem.target = self; if case .youtube = currentSource { youtubeItem.state = .on }
         menu.addItem(youtubeItem)
