@@ -293,7 +293,8 @@ final class ClassicCompactPlayerBarView: NSView {
         }
 
         let rects = transportRects
-        let buttons: [ButtonType] = [.previous, .play, .stop, .next]
+        let playButton: ButtonType = isPlaying ? .pause : .play
+        let buttons: [ButtonType] = [.previous, playButton, .stop, .next]
         for (button, rect) in zip(buttons, rects) where rect.contains(p) {
             pressedButton = button
             needsDisplay = true
@@ -325,7 +326,8 @@ final class ClassicCompactPlayerBarView: NSView {
         } else if let button = pressedButton {
             switch button {
             case .previous: engine.previous()
-            case .play: isPlaying ? engine.pause() : engine.play()
+            case .play: engine.play()
+            case .pause: engine.pause()
             case .stop: engine.stop()
             case .next: engine.next()
             default: break
@@ -352,7 +354,11 @@ final class ClassicCompactPlayerBarView: NSView {
     private func startMarquee() {
         marqueeTimer?.invalidate()
         let timer = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
-            guard let self, self.window != nil, !(self.currentTrack?.displayTitle ?? "").isEmpty else { return }
+            guard let self, self.window?.isVisible == true else { return }
+            let title = (self.currentTrack?.displayTitle ?? "").uppercased()
+            guard !title.isEmpty else { return }
+            let textWidth = CGFloat(title.count) * SkinElements.TextFont.charWidth
+            guard self.titleRect.width > 0, textWidth > self.titleRect.width else { return }
             self.marqueeOffset += 1
             self.needsDisplay = true
         }

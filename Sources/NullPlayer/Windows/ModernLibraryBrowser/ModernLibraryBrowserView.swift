@@ -1178,6 +1178,7 @@ class ModernLibraryBrowserView: NSView {
     /// YouTube radio slot). Used to floor the Compact Mode window so labels never spill out.
     var minimumCompactContentWidth: CGFloat {
         let skin = currentSkin()
+        let m = ModernSkinElements.sizeMultiplier
         let font = skin.sideWindowFont(size: 11)
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
 
@@ -1187,9 +1188,9 @@ class ModernLibraryBrowserView: NSView {
         labels.append("Folders")
         let maxLabelWidth = labels.map { $0.size(withAttributes: attrs).width }.max() ?? 0
 
-        let sortWidth = "Sort".size(withAttributes: attrs).width + 16
+        let sortWidth = "Sort".size(withAttributes: attrs).width + 16 * m
         // Per-tab outline keeps a 2pt inset each side; add a little breathing room.
-        let perTab = maxLabelWidth + 4 + 8
+        let perTab = maxLabelWidth + 12 * m
         let tabsWidth = perTab * CGFloat(ModernBrowseMode.allCases.count)
         return ceil(tabsWidth + sortWidth + Layout.borderWidth * 2)
     }
@@ -1211,7 +1212,7 @@ class ModernLibraryBrowserView: NSView {
             .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
         ]
         let sortSize = sortText.size(withAttributes: sortAttrs)
-        let sortWidth = sortSize.width + 16
+        let sortWidth = sortSize.width + 16 * ModernSkinElements.sizeMultiplier
         
         let tabsWidth = tabBarRect.width - sortWidth
         let widths = tabBarWidths(totalWidth: tabsWidth)
@@ -1245,7 +1246,9 @@ class ModernLibraryBrowserView: NSView {
             if mode == .radio, radioSlotShowingChannels {
                 label = "Channels"
             }
-            drawToggleTab(label: label, isActive: isSelected, rect: tabRect.insetBy(dx: 2, dy: 2),
+            let tabInset = 2 * ModernSkinElements.sizeMultiplier
+            drawToggleTab(label: label, isActive: isSelected,
+                          rect: tabRect.insetBy(dx: tabInset, dy: tabInset),
                           font: font, skin: skin, context: context)
         }
         

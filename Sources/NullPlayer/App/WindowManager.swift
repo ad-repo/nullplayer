@@ -1026,6 +1026,7 @@ class WindowManager {
             "waveform": waveformWindowController?.window?.isVisible ?? false,
             "projectM": projectMWindowController?.window?.isVisible ?? false,
             "video": videoPlayerWindowController?.window?.isVisible ?? false,
+            "debug": debugWindowController?.window?.isVisible ?? false,
             "plexBrowserShade": plexBrowserWindowController?.isShadeMode ?? false,
             // The library browser becomes the sole compact window, so remember whether it
             // was open beforehand — otherwise it lingers on screen after exiting Compact Mode.
@@ -1041,7 +1042,8 @@ class WindowManager {
                        audioAnalysisWindowController?.window,
                        waveformWindowController?.window,
                        projectMWindowController?.window,
-                       videoPlayerWindowController?.window].compactMap({ $0 }) {
+                       videoPlayerWindowController?.window,
+                       debugWindowController?.window].compactMap({ $0 }) {
             window.orderOut(nil)
         }
     }
@@ -1058,15 +1060,32 @@ class WindowManager {
         } else {
             plexBrowserWindowController?.window?.orderOut(nil)
         }
-        if savedWindowVisibility["main"] == true { showMainWindow() }
-        if savedWindowVisibility["equalizer"] == true { showEqualizer() }
-        if savedWindowVisibility["playlist"] == true { showPlaylist() }
-        if savedWindowVisibility["spectrum"] == true { showSpectrum() }
-        if savedWindowVisibility["audioAnalysis"] == true { showAudioAnalysis() }
-        if savedWindowVisibility["waveform"] == true { showWaveform() }
-        if savedWindowVisibility["projectM"] == true { showProjectM() }
+        if savedWindowVisibility["main"] == true {
+            mainWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["equalizer"] == true {
+            equalizerWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["playlist"] == true {
+            playlistWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["spectrum"] == true {
+            spectrumWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["audioAnalysis"] == true {
+            audioAnalysisWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["waveform"] == true {
+            waveformWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["projectM"] == true {
+            projectMWindowController?.window?.orderFront(nil)
+        }
         if savedWindowVisibility["video"] == true {
-            videoPlayerWindowController?.showWindow(nil)
+            videoPlayerWindowController?.window?.orderFront(nil)
+        }
+        if savedWindowVisibility["debug"] == true {
+            debugWindowController?.window?.orderFront(nil)
         }
         if savedWindowVisibility["plexBrowserShade"] == true {
             plexBrowserWindowController?.setShadeMode(true)
