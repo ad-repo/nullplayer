@@ -1019,6 +1019,12 @@ class WindowManager {
            activeDevice.supportsVideo {
             return activeDevice
         }
+        // Only auto-route to cast when the user has *explicitly* chosen a preferred
+        // video cast device. `preferredVideoCastDevice` otherwise falls back to the
+        // first discovered video-capable device, which would silently cast every
+        // video instead of playing it locally whenever a TV/Chromecast is on the
+        // network. (Regressed in 0d0aac7; original guard restored.)
+        guard CastManager.shared.preferredVideoCastDeviceID != nil else { return nil }
         if let preferredDevice = CastManager.shared.preferredVideoCastDevice,
            preferredDevice.supportsVideo {
             return preferredDevice

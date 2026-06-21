@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.26.0
+
+### Bug Fixes
+
+- **Video no longer auto-casts in the classic UI** — playing a movie/episode (or any video) in the classic UI silently routed to a Chromecast/DLNA TV instead of opening the local video player whenever a video-capable device was discovered on the network; the modern UI appeared unaffected only because it hadn't discovered a device yet. `targetVideoCastDevice` now auto-routes to cast only when a video cast is already active or the user has *explicitly* picked a preferred video cast device, rather than falling back to the first discovered device.
+
 ## 0.25.0
 
 ### New Features
