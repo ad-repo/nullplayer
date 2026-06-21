@@ -14,6 +14,10 @@
 
 - **Classic utility-window titles** — the classic Spectrum Analyzer, Waveform, Library, and ProjectM windows now draw explicit bitmap-font titles into their skinned title bars, matching the Audio Analysis window. ProjectM is labeled **VISUALIZATIONS**.
 
+### Bug Fixes
+
+- **kHz display now shows for streamed tracks without a visualization open (#285)** — the classic skin's sample-rate (kHz) readout stayed blank for streaming tracks (e.g. a Plex MP3) whose server metadata omits the sample rate. The streaming player only reported the decoded format — which fills in the missing sample rate — while a spectrum/oscilloscope/waveform consumer was active, so with no visualization showing the kHz never appeared. Format detection now runs as soon as the first audio buffer arrives, independent of visualization demand.
+
 ## 0.25.0
 
 ### New Features
