@@ -52,9 +52,6 @@ class StreamingAudioPlayer {
     /// Whether raw FFT magnitudes should be posted — bridged from AudioEngine.magnitudesNeeded
     var magnitudesNeeded: Bool = false
 
-    /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
-    var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
-
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 2048

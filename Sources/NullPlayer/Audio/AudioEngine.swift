@@ -479,9 +479,6 @@ class AudioEngine {
     /// Magnitudes consumers — raw FFT magnitude posting is skipped entirely when this set is empty
     private var magnitudesConsumers = Set<String>()
 
-    /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
-    private var isModernUIEnabled: Bool
-
     var eqConfiguration: EQConfiguration {
         activeEQConfiguration
     }
@@ -640,7 +637,6 @@ class AudioEngine {
     
     init() {
         let modernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
-        isModernUIEnabled = modernUIEnabled
         activeEQConfiguration = EQConfiguration.forModernUI(modernUIEnabled)
         eqNode = AVAudioUnitEQ(numberOfBands: activeEQConfiguration.bandCount)
 
@@ -664,14 +660,6 @@ class AudioEngine {
             self,
             selector: #selector(handleSpectrumSettingsChanged),
             name: NSNotification.Name("SpectrumSettingsChanged"),
-            object: nil
-        )
-
-        // Keep cached isModernUIEnabled in sync when user toggles UI mode
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleModernUIChanged),
-            name: UserDefaults.didChangeNotification,
             object: nil
         )
 
@@ -1045,10 +1033,6 @@ class AudioEngine {
         if shouldRestartTimeUpdates {
             startTimeUpdates()
         }
-    }
-
-    @objc private func handleModernUIChanged() {
-        isModernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
     }
 
     // MARK: - Setup
@@ -4374,7 +4358,6 @@ class AudioEngine {
             streamingPlayer?.waveformNeeded = waveformNeeded
             streamingPlayer?.stereoNeeded = stereoNeeded
             streamingPlayer?.magnitudesNeeded = magnitudesNeeded
-            streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         }
 
         // Sync EQ settings from main EQ to streaming player
@@ -5193,7 +5176,6 @@ class AudioEngine {
         streamingPlayer?.waveformNeeded = waveformNeeded
         streamingPlayer?.stereoNeeded = stereoNeeded
         streamingPlayer?.magnitudesNeeded = magnitudesNeeded
-        streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         
         // Restore primary player to master volume (crossfade ended at masterVolume * 1.0)
