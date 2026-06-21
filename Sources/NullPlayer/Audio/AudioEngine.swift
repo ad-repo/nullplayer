@@ -152,9 +152,18 @@ class AudioEngine {
     private let playerNode = AVAudioPlayerNode()
     
     /// Active EQ layout. Classic mode keeps the legacy 10-band layout; modern mode uses 21 bands.
-    private let activeEQConfiguration: EQConfiguration
+    /// The underlying `eqNode` is always a fixed 21-band node; this describes which layout's
+    /// bands are currently active. Switching layouts reprograms the live node in place.
+    private var activeEQConfiguration: EQConfiguration
 
-    /// Equalizer
+    /// Canonical per-layout gain arrays keyed by `EQConfiguration.name`.
+    /// Each layout keeps its own exact gains so a round-trip switch
+    /// (classic→modern→classic) restores bit-identical gains instead of repeatedly
+    /// remapping through the lossy `EQBandRemapper`. The remapper seeds a layout only
+    /// the first time it is used.
+    private var canonicalGains: [String: [Float]] = [:]
+
+    /// Equalizer — a fixed 21-band node that hosts either layout (never rebuilt).
     private let eqNode: AVAudioUnitEQ
     
     /// Mixer node to combine player nodes (class property for graph rebuilding)
@@ -638,7 +647,9 @@ class AudioEngine {
     init() {
         let modernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
         activeEQConfiguration = EQConfiguration.forModernUI(modernUIEnabled)
-        eqNode = AVAudioUnitEQ(numberOfBands: activeEQConfiguration.bandCount)
+        // Always build the node with the full physical band count so it can host
+        // either layout without being rebuilt when the UI mode switches at runtime.
+        eqNode = AVAudioUnitEQ(numberOfBands: EQBandProgram.physicalBandCount)
 
         // Initialize cached normalization mode from UserDefaults
         if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
@@ -1427,30 +1438,69 @@ class AudioEngine {
     }
     
     private func setupEqualizer() {
-        // Configure each EQ band for graphic EQ behavior
-        // Use low shelf for bass, high shelf for treble, and parametric for mids
-        for (index, frequency) in activeEQConfiguration.frequencies.enumerated() {
-            let band = eqNode.bands[index]
-            
-            // First band: low shelf for bass control
-            // Last band: high shelf for treble control
-            // Middle bands: parametric for 1/3-octave shaping
-            if index == 0 {
-                band.filterType = .lowShelf
-            } else if index == activeEQConfiguration.bandCount - 1 {
-                band.filterType = .highShelf
-            } else {
-                band.filterType = .parametric
-            }
-            
-            band.frequency = frequency
-            band.bandwidth = band.filterType == .parametric ? activeEQConfiguration.parametricBandwidth : 1.0
-            band.gain = 0.0       // Flat by default
-            band.bypass = false   // Individual bands active when EQ is enabled
-        }
-        
-        // EQ node is bypassed by default - user must enable via EQ window
+        // Program the live node for the boot layout (applies any canonical gains,
+        // which start flat). EQ node is bypassed by default — user must enable via EQ window.
+        programEQNode(for: activeEQConfiguration)
         eqNode.bypass = true
+    }
+
+    /// Program the shared 21-band EQ node for `config`: frequency, filter type,
+    /// bandwidth, and bypass for every physical band, then apply that layout's
+    /// canonical gains to its active bands. Re-runnable for live layout switching.
+    ///
+    /// Thread-safety: this mutates `frequency`/`filterType`/`bandwidth`/`bypass` on the
+    /// live node while the render thread may be reading it. Layout switches are
+    /// user-initiated and rare, so we accept a brief (~1 ms) reprogram artifact rather
+    /// than gating on a buffer boundary. If it ever proves audible, pause/bypass the
+    /// node around this call.
+    private func programEQNode(for config: EQConfiguration) {
+        let program = EQBandProgram.program(for: config)
+        for (index, setting) in program.enumerated() {
+            let band = eqNode.bands[index]
+            switch setting.role {
+            case .lowShelf: band.filterType = .lowShelf
+            case .highShelf: band.filterType = .highShelf
+            case .parametric, .bypassed: band.filterType = .parametric
+            }
+            band.frequency = setting.frequency
+            band.bandwidth = setting.bandwidth
+            band.bypass = setting.bypass
+        }
+
+        activeEQConfiguration = config
+
+        // Apply this layout's canonical gains to its active bands (flat if unseeded).
+        let gains = canonicalGains[config.name] ?? Array(repeating: 0, count: config.bandCount)
+        for index in 0..<config.bandCount where index < gains.count {
+            eqNode.bands[index].gain = gains[index]
+        }
+    }
+
+    /// Switch the active EQ layout (modern ↔ classic) on the live node without
+    /// rebuilding it. Saves the outgoing layout's exact gains, programs the new
+    /// layout, restores its canonical gains (seeding from the previous layout via
+    /// `EQBandRemapper` only the first time a layout is used), and mirrors the change
+    /// to the streaming player. Used by the live UI-mode switch.
+    func applyEQLayout(forModernUI isModernUI: Bool) {
+        let target = EQConfiguration.forModernUI(isModernUI)
+        guard target != activeEQConfiguration else { return }
+
+        let previous = activeEQConfiguration
+        // Save the outgoing layout's exact gains, read from the live node.
+        var previousGains: [Float] = []
+        for i in 0..<previous.bandCount { previousGains.append(eqNode.bands[i].gain) }
+        canonicalGains[previous.name] = previousGains
+
+        // Seed the target layout's canonical gains only if it has never been used.
+        if canonicalGains[target.name] == nil {
+            canonicalGains[target.name] = EQBandRemapper.remap(gains: previousGains, from: previous, to: target)
+        }
+
+        programEQNode(for: target)
+
+        // Mirror the structural switch to the streaming player, then re-push gains.
+        streamingPlayer?.applyEQLayout(forModernUI: isModernUI)
+        syncEQToStreamingPlayer()
     }
     
     private func setupSpectrumAnalyzer() {
@@ -5482,8 +5532,21 @@ class AudioEngine {
         guard band >= 0 && band < activeEQConfiguration.bandCount else { return }
         let clampedGain = max(-12, min(12, gain))
         eqNode.bands[band].gain = clampedGain
+        recordCanonicalGain(band, gain: clampedGain)
         // Sync to streaming player
         streamingPlayer?.setEQBand(band, gain: clampedGain)
+    }
+
+    /// Keep the active layout's canonical gain array in sync with live band edits so a
+    /// later layout switch can restore exact gains without re-remapping.
+    private func recordCanonicalGain(_ band: Int, gain: Float) {
+        var gains = canonicalGains[activeEQConfiguration.name] ?? Array(repeating: 0, count: activeEQConfiguration.bandCount)
+        if gains.count != activeEQConfiguration.bandCount {
+            gains = Array(repeating: 0, count: activeEQConfiguration.bandCount)
+        }
+        guard band >= 0 && band < gains.count else { return }
+        gains[band] = gain
+        canonicalGains[activeEQConfiguration.name] = gains
     }
     
     /// Get EQ band gain

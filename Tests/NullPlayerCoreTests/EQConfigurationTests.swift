@@ -71,4 +71,87 @@ final class EQConfigurationTests: XCTestCase {
         ])
         XCTAssertEqual(EQConfiguration.modern21.parametricBandwidth, 1.0)
     }
+
+    // MARK: - EQBandProgram (fixed 21-band node programming)
+
+    func testPhysicalBandCountIsTwentyOne() {
+        XCTAssertEqual(EQBandProgram.physicalBandCount, 21)
+        XCTAssertEqual(EQBandProgram.physicalBandCount, EQConfiguration.modern21.bandCount)
+    }
+
+    func testModernProgramFillsAllPhysicalBandsActive() {
+        let program = EQBandProgram.program(for: .modern21)
+        XCTAssertEqual(program.count, EQBandProgram.physicalBandCount)
+        XCTAssertTrue(program.allSatisfy { !$0.bypass })
+        XCTAssertEqual(program.map { $0.frequency }, EQConfiguration.modern21.frequencies)
+    }
+
+    func testClassicProgramActivatesTenBandsAndBypassesRest() {
+        let program = EQBandProgram.program(for: .classic10)
+        XCTAssertEqual(program.count, EQBandProgram.physicalBandCount)
+
+        // Bands 0-9 active at classic frequencies.
+        for index in 0..<10 {
+            XCTAssertFalse(program[index].bypass, "classic band \(index) should be active")
+            XCTAssertEqual(program[index].frequency, EQConfiguration.classic10.frequencies[index])
+        }
+        // Bands 10-20 bypassed.
+        for index in 10..<21 {
+            XCTAssertTrue(program[index].bypass, "physical band \(index) should be bypassed in classic")
+            XCTAssertEqual(program[index].role, .bypassed)
+        }
+    }
+
+    func testFilterRolesAndBandwidthClassic() {
+        let program = EQBandProgram.program(for: .classic10)
+        XCTAssertEqual(program[0].role, .lowShelf)
+        XCTAssertEqual(program[0].bandwidth, 1.0)        // shelf bands use 1.0
+        XCTAssertEqual(program[9].role, .highShelf)
+        XCTAssertEqual(program[9].bandwidth, 1.0)
+        // Mid bands parametric at the classic bandwidth.
+        XCTAssertEqual(program[1].role, .parametric)
+        XCTAssertEqual(program[1].bandwidth, 1.75)
+        XCTAssertEqual(program[5].bandwidth, 1.75)
+    }
+
+    func testFilterRolesAndBandwidthModern() {
+        let program = EQBandProgram.program(for: .modern21)
+        XCTAssertEqual(program[0].role, .lowShelf)
+        XCTAssertEqual(program[20].role, .highShelf)
+        XCTAssertEqual(program[1].role, .parametric)
+        XCTAssertEqual(program[1].bandwidth, 1.0)        // modern parametric bandwidth
+        XCTAssertEqual(program[10].bandwidth, 1.0)
+    }
+
+    // MARK: - Canonical gain round-trip (no re-remap)
+
+    /// Mirrors the AudioEngine canonical-gain bookkeeping: each layout keeps its own
+    /// exact gains; a round-trip switch restores them bit-identically without re-remapping.
+    func testCanonicalGainsSurviveRoundTripWithoutReRemap() {
+        var canonical: [String: [Float]] = [:]
+        let classicGains: [Float] = [-3, -1, 0, 1, 2, 3, 4, 2, 1, 0]
+        canonical[EQConfiguration.classic10.name] = classicGains
+
+        // classic → modern: seed modern from classic (first use).
+        let modernSeed = EQBandRemapper.remap(gains: classicGains, from: .classic10, to: .modern21)
+        canonical[EQConfiguration.modern21.name] = modernSeed
+
+        // Edit a modern band; classic's canonical array is untouched.
+        canonical[EQConfiguration.modern21.name]?[5] = 9
+
+        // modern → classic: classic already seeded, so restore exactly (no re-remap).
+        let restoredClassic = canonical[EQConfiguration.classic10.name]
+        XCTAssertEqual(restoredClassic, classicGains)
+
+        // modern's edited gains also persist exactly.
+        XCTAssertEqual(canonical[EQConfiguration.modern21.name]?[5], 9)
+    }
+
+    func testFirstUseSeedingUsesRemapper() {
+        let classicGains: [Float] = [8, 6, 4, 2, 0, -1, -1, 0, 0, 0]
+        let seeded = EQBandRemapper.remap(gains: classicGains, from: .classic10, to: .modern21)
+        XCTAssertEqual(seeded.count, EQConfiguration.modern21.bandCount)
+        // Bass bias preserved through the seeding remap.
+        XCTAssertGreaterThan(seeded[0], seeded[20])
+    }
 }

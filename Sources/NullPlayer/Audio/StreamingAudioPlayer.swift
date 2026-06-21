@@ -27,8 +27,9 @@ class StreamingAudioPlayer {
     /// The underlying AudioStreaming player
     private let player: AudioPlayer
     
-    /// Active EQ layout for this player's internal AVAudioUnitEQ.
-    private let eqConfiguration: EQConfiguration
+    /// Active EQ layout for this player's internal AVAudioUnitEQ. The node itself is a
+    /// fixed 21-band node; this describes which layout's bands are currently active.
+    private var eqConfiguration: EQConfiguration
 
     /// Equalizer attached to the player
     private let eqNode: AVAudioUnitEQ
@@ -207,8 +208,9 @@ class StreamingAudioPlayer {
         // Create the player
         player = AudioPlayer()
 
-        // Create and configure the EQ
-        eqNode = AVAudioUnitEQ(numberOfBands: eqConfiguration.bandCount)
+        // Create and configure the EQ. Always build the node with the full physical band
+        // count so it can host either layout without being rebuilt on a UI-mode switch.
+        eqNode = AVAudioUnitEQ(numberOfBands: EQBandProgram.physicalBandCount)
         setupEQ()
 
         // Attach EQ to the player's audio graph
@@ -254,29 +256,38 @@ class StreamingAudioPlayer {
     // MARK: - Setup
     
     private func setupEQ() {
-        // Configure each EQ band for graphic EQ behavior
-        for (index, frequency) in eqConfiguration.frequencies.enumerated() {
-            let band = eqNode.bands[index]
-            
-            // First band: low shelf for bass control
-            // Last band: high shelf for treble control
-            // Middle bands: parametric for tighter 1/3-octave shaping
-            if index == 0 {
-                band.filterType = .lowShelf
-            } else if index == eqConfiguration.bandCount - 1 {
-                band.filterType = .highShelf
-            } else {
-                band.filterType = .parametric
-            }
-            
-            band.frequency = frequency
-            band.bandwidth = band.filterType == .parametric ? eqConfiguration.parametricBandwidth : 1.0
-            band.gain = 0.0
-            band.bypass = false   // Individual bands active when EQ is enabled
-        }
-        
+        programEQNode(for: eqConfiguration)
         // EQ is bypassed by default - user must enable it
         eqNode.bypass = true
+    }
+
+    /// Program the shared 21-band EQ node for `config`: frequency, filter type,
+    /// bandwidth, and bypass for every physical band. Gains are reset flat here and
+    /// re-pushed by the main engine via `syncEQSettings` after a layout switch.
+    private func programEQNode(for config: EQConfiguration) {
+        let program = EQBandProgram.program(for: config)
+        for (index, setting) in program.enumerated() {
+            let band = eqNode.bands[index]
+            switch setting.role {
+            case .lowShelf: band.filterType = .lowShelf
+            case .highShelf: band.filterType = .highShelf
+            case .parametric, .bypassed: band.filterType = .parametric
+            }
+            band.frequency = setting.frequency
+            band.bandwidth = setting.bandwidth
+            band.gain = 0.0
+            band.bypass = setting.bypass
+        }
+    }
+
+    /// Switch the active EQ layout (modern ↔ classic) on the live node without
+    /// rebuilding it. Gains are re-pushed by the main engine via `syncEQSettings`
+    /// immediately after this call.
+    func applyEQLayout(forModernUI isModernUI: Bool) {
+        let target = EQConfiguration.forModernUI(isModernUI)
+        guard target != eqConfiguration else { return }
+        eqConfiguration = target
+        programEQNode(for: target)
     }
     
     private func setupSpectrumAnalyzer() {
