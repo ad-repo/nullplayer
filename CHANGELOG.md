@@ -14,6 +14,10 @@
 
 - **Classic utility-window titles** — the classic Spectrum Analyzer, Waveform, Library, and ProjectM windows now draw explicit bitmap-font titles into their skinned title bars, matching the Audio Analysis window. ProjectM is labeled **VISUALIZATIONS**.
 
+### Bug Fixes
+
+- **Library Browser ART mode no longer traps you after clearing the playlist (#283)** — clearing the playlist while ART mode is open now exits ART mode and restores the normal browser controls in both classic and modern UI. Artwork loading is also guarded against stale asynchronous results, while transient track replacement after removing the currently playing playlist row keeps ART mode active.
+
 ## 0.25.0
 
 ### New Features

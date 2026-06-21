@@ -1145,6 +1145,7 @@ class PlexBrowserView: NSView {
     /// Art-only mode - hides tabs and list, shows just album art (session only, not persisted)
     private var isArtOnlyMode: Bool = false {
         didSet {
+            artModeLifecycleGeneration &+= 1
             updateHistoryHostingVisibility()
             needsDisplay = true
             if isArtOnlyMode {
@@ -1155,12 +1156,15 @@ class PlexBrowserView: NSView {
             } else {
                 // Stop visualization when exiting art-only mode
                 isVisualizingArt = false
+                artworkCyclingTask?.cancel()
+                artworkCyclingTask = nil
                 // Clear cycling state
                 artworkImages = []
                 artworkIndex = 0
             }
         }
     }
+    private var artModeLifecycleGeneration = 0
     
     /// Visualization mode - applies audio-reactive effects to album art
     private var isVisualizingArt: Bool = false {
@@ -5981,7 +5985,22 @@ class PlexBrowserView: NSView {
     // MARK: - Artwork Background
     
     @objc private func trackDidChange(_ notification: Notification) {
+        artModeLifecycleGeneration &+= 1
+        let generation = artModeLifecycleGeneration
+        let track = notification.userInfo?["track"] as? Track
+
         if isArtOnlyMode {
+            guard track != nil else {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self,
+                          self.artModeLifecycleGeneration == generation,
+                          self.isArtOnlyMode,
+                          WindowManager.shared.audioEngine.currentTrack == nil else { return }
+                    self.exitArtOnlyModeForMissingArtwork()
+                }
+                return
+            }
+
             // Art-only mode uses loadAllArtworkForCurrentTrack exclusively.
             // Don't also call loadArtwork(for:) to avoid a race where loadArtwork
             // finishes last with nil and overwrites valid artwork.
@@ -6000,7 +6019,6 @@ class PlexBrowserView: NSView {
             return
         }
         
-        let track = notification.userInfo?["track"] as? Track
         loadArtwork(for: track)
     }
     
@@ -6090,6 +6108,7 @@ class PlexBrowserView: NSView {
             guard !Task.isCancelled else { return }
             
             await MainActor.run {
+                guard WindowManager.shared.audioEngine.currentTrack?.id == track.id else { return }
                 self.currentArtwork = image
                 self.artworkTrackId = track.id
                 self.needsDisplay = true
@@ -6513,15 +6532,16 @@ class PlexBrowserView: NSView {
     
     /// Load all available artwork for the currently playing track
     private func loadAllArtworkForCurrentTrack() {
+        // ART mode owns the displayed artwork while active.
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+
         // Cancel any pending artwork cycling task
         artworkCyclingTask?.cancel()
         artworkCyclingTask = nil
         
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
-            artworkImages = []
-            artworkIndex = 0
-            currentArtwork = nil
-            needsDisplay = true
+            exitArtOnlyModeForMissingArtwork()
             return
         }
         
@@ -6568,12 +6588,33 @@ class PlexBrowserView: NSView {
             guard !Task.isCancelled else { return }
             
             await MainActor.run {
+                guard self.isArtOnlyMode,
+                      WindowManager.shared.audioEngine.currentTrack?.id == currentTrack.id else { return }
+                guard !images.isEmpty else {
+                    self.exitArtOnlyModeForMissingArtwork()
+                    return
+                }
+
                 self.artworkImages = images
                 self.artworkIndex = 0
                 self.currentArtwork = images.first
+                self.artworkTrackId = currentTrack.id
                 self.needsDisplay = true
             }
         }
+    }
+
+    private func exitArtOnlyModeForMissingArtwork() {
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+        artworkCyclingTask?.cancel()
+        artworkCyclingTask = nil
+        artworkImages = []
+        artworkIndex = 0
+        currentArtwork = nil
+        artworkTrackId = nil
+        isArtOnlyMode = false
+        needsDisplay = true
     }
     
     /// Load artwork based on the currently selected item in the browser
