@@ -685,8 +685,10 @@ class AppStateManager {
         NSLog("AppStateManager: Restoring isAlwaysOnTop = %d", state.isAlwaysOnTop ? 1 : 0)
         wm.isAlwaysOnTop = state.isAlwaysOnTop
         
-        // Restore skin (custom skin path only; base skins no longer bundled)
-        if let skinPath = state.customSkinPath {
+        // Restore the classic skin only while running the classic UI. Loading it in
+        // modern mode applies classic visualization defaults and couples the two
+        // otherwise-independent skin systems.
+        if !runningModernMode, let skinPath = state.customSkinPath {
             let skinURL = URL(fileURLWithPath: skinPath)
             if FileManager.default.fileExists(atPath: skinPath) {
                 wm.loadSkin(from: skinURL)
