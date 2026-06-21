@@ -2023,6 +2023,42 @@ class PlexBrowserView: NSView {
         stopServerNameScroll()
         stopVisualizerTimer()
     }
+
+    /// Synchronously cancel every in-flight task, work item, and timer this view owns so it can
+    /// be deallocated immediately when the controller is torn down for a UI reload — rather than
+    /// being pinned alive (and mutating dead UI state) by a detached `@MainActor` expand/load task
+    /// or a self-retaining repeating timer. `deinit` is deferred by AppKit's autorelease pool, so
+    /// `WindowManager.teardownModeDependentWindows()` calls this *before* closing the window.
+    func prepareForUITeardown() {
+        // Async tasks — the detached @MainActor expand/load tasks don't inherit cancellation and
+        // strongly capture self, so an in-flight one would survive teardown without this.
+        for task in [localFolderBuildTask,
+                     subsonicLoadTask, subsonicExpandTask,
+                     plexLoadTask, sourceConnectTask,
+                     jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
+                     youtubeExpandTask, youtubeDownloadTask,
+                     embyLoadTask, embyExpandTask,
+                     ratingSubmitTask, artworkLoadTask, artworkCyclingTask,
+                     radioLoadTask, radioPlayTask] {
+            task?.cancel()
+        }
+        localFolderBuildTask = nil
+        subsonicLoadTask = nil; subsonicExpandTask = nil
+        plexLoadTask = nil; sourceConnectTask = nil
+        jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
+        youtubeExpandTask = nil; youtubeDownloadTask = nil
+        embyLoadTask = nil; embyExpandTask = nil
+        ratingSubmitTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
+        radioLoadTask = nil; radioPlayTask = nil
+
+        // Work items + timers (timers with a target/captured self can also pin the view alive).
+        cancelPendingArtSingleClickAction()
+        localLibraryReloadWorkItem?.cancel(); localLibraryReloadWorkItem = nil
+        typeAheadTimer?.invalidate(); typeAheadTimer = nil
+        stopLoadingAnimation()
+        stopServerNameScroll()
+        stopVisualizerTimer()
+    }
     
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)

@@ -173,6 +173,12 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
         compactBar?.skinDidChange()
     }
 
+    /// Mode-dependent teardown: forward to the view so it cancels its in-flight tasks/timers
+    /// before this controller is closed and niled for a UI reload.
+    func prepareForUITeardown() {
+        browserView?.prepareForUITeardown()
+    }
+
     // MARK: - Compact Mode
 
     /// Smallest content width to keep the window usable in Compact Mode.
