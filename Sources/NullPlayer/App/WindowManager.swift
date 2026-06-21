@@ -19,6 +19,10 @@ extension WindowManager {
         videoPlayerWindowController
     }
 
+    var debugTargetVideoCastDeviceForTesting: CastDevice? {
+        targetVideoCastDevice
+    }
+
     func debugSetVideoPlayerWindowControllerForTesting(_ controller: VideoPlayerWindowController?) {
         videoPlayerWindowController = controller
     }
@@ -1354,15 +1358,20 @@ class WindowManager {
     // MARK: - Video Player Window
 
     private var targetVideoCastDevice: CastDevice? {
-        if let activeDevice = CastManager.shared.activeSession?.device,
+        let castManager = CastManager.shared
+        if castManager.currentCast == .video,
+           let activeDevice = castManager.activeSession?.device,
            activeDevice.supportsVideo {
             return activeDevice
         }
-        if let preferredDevice = CastManager.shared.preferredVideoCastDevice,
-           preferredDevice.supportsVideo {
-            return preferredDevice
+        // Auto-route only to the exact device the user explicitly selected. The general
+        // preferredVideoCastDevice getter intentionally falls back to the first available
+        // video device when the preference is missing/offline for cast-button convenience;
+        // that fallback must not silently redirect normal video playback.
+        guard let preferredID = castManager.preferredVideoCastDeviceID else { return nil }
+        return castManager.discoveredDevices.first {
+            $0.id == preferredID && $0.supportsVideo
         }
-        return nil
     }
 
     private func routeToVideoCastIfNeeded(title: String, artworkTrack: Track?, operation: @escaping (CastDevice) async throws -> Void) -> Bool {

@@ -62,6 +62,44 @@ final class CastingTests: XCTestCase {
         XCTAssertEqual(CastManager.shared.preferredVideoCastDeviceID, videoDevice.id)
     }
 
+    func testVideoRoutingDoesNotUseFirstDiscoveredDeviceWithoutExplicitPreference() {
+        let device = CastDevice(id: "video-device", name: "Living Room Chromecast", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugDiscoveredDevices = [device]
+
+        XCTAssertNil(WindowManager.shared.debugTargetVideoCastDeviceForTesting)
+    }
+
+    func testVideoRoutingDoesNotFallBackWhenExplicitPreferenceIsOffline() {
+        let availableDevice = CastDevice(id: "available-device", name: "Bedroom TV", type: .chromecast, address: "192.168.1.11", port: 8009)
+        CastManager.shared.debugDiscoveredDevices = [availableDevice]
+        CastManager.shared.setPreferredVideoCastDevice("offline-device")
+
+        XCTAssertNil(WindowManager.shared.debugTargetVideoCastDeviceForTesting)
+    }
+
+    func testVideoRoutingDoesNotReuseVideoCapableDeviceFromActiveAudioCast() {
+        let device = CastDevice(id: "audio-cast-device", name: "Living Room TV", type: .chromecast, address: "192.168.1.12", port: 8009)
+        CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
+
+        XCTAssertNil(WindowManager.shared.debugTargetVideoCastDeviceForTesting)
+    }
+
+    func testVideoRoutingUsesExactOnlinePreference() {
+        let preferredDevice = CastDevice(id: "preferred-device", name: "Living Room TV", type: .chromecast, address: "192.168.1.13", port: 8009)
+        let otherDevice = CastDevice(id: "other-device", name: "Bedroom TV", type: .chromecast, address: "192.168.1.14", port: 8009)
+        CastManager.shared.debugDiscoveredDevices = [otherDevice, preferredDevice]
+        CastManager.shared.setPreferredVideoCastDevice(preferredDevice.id)
+
+        XCTAssertEqual(WindowManager.shared.debugTargetVideoCastDeviceForTesting?.id, preferredDevice.id)
+    }
+
+    func testVideoRoutingReusesDeviceFromActiveVideoCast() {
+        let activeDevice = CastDevice(id: "active-video-device", name: "Living Room TV", type: .chromecast, address: "192.168.1.15", port: 8009)
+        CastManager.shared.debugSetActiveCastSessionForTesting(device: activeDevice, startPosition: 0, duration: 120)
+
+        XCTAssertEqual(WindowManager.shared.debugTargetVideoCastDeviceForTesting?.id, activeDevice.id)
+    }
+
     func testDiscoveryRefreshSkipReasonLabelsLocalPlayback() {
         let track = Track(url: URL(fileURLWithPath: "/tmp/local.flac"), title: "Local")
 

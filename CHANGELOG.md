@@ -20,6 +20,7 @@
 
 - **kHz display now shows for streamed tracks without a visualization open (#285)** — the classic skin's sample-rate (kHz) readout stayed blank for streaming tracks (e.g. a Plex MP3) whose server metadata omits the sample rate. The streaming player only reported the decoded format — which fills in the missing sample rate — while a spectrum/oscilloscope/waveform consumer was active, so with no visualization showing the kHz never appeared. Format detection now runs as soon as the first audio buffer arrives, independent of visualization demand.
 - **Library Browser ART mode no longer traps you after clearing the playlist (#283)** — clearing the playlist while ART mode is open now exits ART mode and restores the normal browser controls in both classic and modern UI. Artwork loading is also guarded against stale asynchronous results, while transient track replacement after removing the currently playing playlist row keeps ART mode active.
+- **Video no longer auto-casts in the classic UI** — playing a movie/episode (or any video) in the classic UI silently routed to a Chromecast/DLNA TV instead of opening the local video player whenever a video-capable device was discovered on the network; the modern UI appeared unaffected only because it hadn't discovered a device yet. Videos now auto-route only to the device in an active video-cast session or to the exact currently discoverable device the user explicitly selected.
 
 ## 0.25.0
 
