@@ -1055,11 +1055,40 @@ class WindowManager {
         if let image { NSApp.applicationIconImage = image }
     }
 
+    /// Draws the NullPlayer brand mark (a circle with a slash through it) as a monochrome
+    /// template image sized for the menu bar. As a template, macOS tints it automatically to
+    /// match light/dark menu bars and selection state.
+    private static func makeCompactStatusItemImage() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let lineWidth: CGFloat = 1.6
+            let inset = lineWidth + 1.5
+            let circleRect = rect.insetBy(dx: inset, dy: inset)
+            NSColor.black.setStroke()
+
+            let circle = NSBezierPath(ovalIn: circleRect)
+            circle.lineWidth = lineWidth
+            circle.stroke()
+
+            // Diagonal slash from lower-left to upper-right, extending slightly past the circle.
+            let slash = NSBezierPath()
+            let pad: CGFloat = 1.0
+            slash.move(to: NSPoint(x: circleRect.minX - pad, y: circleRect.minY - pad))
+            slash.line(to: NSPoint(x: circleRect.maxX + pad, y: circleRect.maxY + pad))
+            slash.lineWidth = lineWidth
+            slash.lineCapStyle = .round
+            slash.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
     private func createCompactStatusItem() {
         guard compactStatusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "NullPlayer")
+            button.image = WindowManager.makeCompactStatusItemImage()
             button.image?.isTemplate = true
             button.target = self
             button.action = #selector(compactStatusItemClicked)
