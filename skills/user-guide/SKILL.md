@@ -69,6 +69,15 @@ Windows automatically snap together when dragged near each other:
 - **When connected windows are locked**: hold timing is bypassed and drags always move the whole connected group
 - Connected peers show a brief highlight overlay at mouseDown to preview which windows will move together
 
+### Compact Mode
+
+**Compact Mode** collapses NullPlayer to a single menu-bar app. Toggle it from the main window's right-click context menu (**Compact Mode**) or the `Windows` top menu — available in **both classic and modern UI**. When enabled:
+
+- The Dock icon is hidden (the app switches to an accessory/menu-bar app) and a **NullPlayer status-bar item** appears in the menu bar. Clicking it reveals the single compact window; its menu also has **Exit Compact Mode**.
+- The sole window is the **Library Browser** with a stripped-down player bar embedded across the top (transport, seek + time, a scrolling title marquee, and volume), built from the active UI's own components (classic skin sprites in classic, modern controls in modern).
+- All other windows (Main, EQ, Playlist, Spectrum, etc.) are hidden; their prior visibility is remembered and restored when you exit.
+- Exiting restores the Dock icon, the macOS menu bar, and the previously open windows.
+
 ### Main Window Elements
 
 | Element | Description |

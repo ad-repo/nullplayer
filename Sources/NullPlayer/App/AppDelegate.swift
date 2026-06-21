@@ -78,8 +78,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start cast discovery from app lifecycle, not from menu construction.
         CastManager.shared.startDiscovery()
         
-        // Restore settings state (skin, volume, EQ, windows)
-        AppStateManager.shared.restoreSettingsState()
+        // Restore settings state (skin, volume, EQ, windows). Compact Mode must be
+        // entered only after the asynchronous window restoration has completed, so it
+        // can capture and hide the actual restored window set.
+        let shouldRestoreCompactMode = UserDefaults.standard.bool(forKey: "compactModeEnabled")
+        AppStateManager.shared.restoreSettingsState { [weak self] in
+            guard shouldRestoreCompactMode else { return }
+            self?.windowManager.enterCompactMode(revealWindow: false)
+        }
         
         // Mark app as ready for file opens
         isAppReady = true
@@ -91,6 +97,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Restore playlist state
             AppStateManager.shared.restorePlaylistState()
         }
+
     }
     
     // MARK: - UI Testing Mode
@@ -262,6 +269,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // MARK: - Menu Setup
     
+    /// Rebuilds and reinstalls the application's main menu.
+    ///
+    /// Switching the activation policy from `.accessory` (Compact Mode) back to `.regular`
+    /// makes macOS drop the menu bar, so it must be rebuilt when leaving Compact Mode.
+    func rebuildMainMenu() {
+        setupMainMenu()
+    }
+
     private func setupMainMenu() {
         let mainMenu = NSMenu()
         
@@ -498,20 +513,23 @@ extension AppDelegate: NSMenuDelegate {
 extension AppDelegate: AudioEngineDelegate {
     func audioEngineDidChangeState(_ state: PlaybackState) {
         windowManager.mainWindowController?.updatePlaybackState()
+        windowManager.compactBarUpdatePlaybackState()
     }
-    
+
     func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
         // Don't update main window time if video session is active (video has its own time source)
         guard !windowManager.isVideoActivePlayback else { return }
         windowManager.mainWindowController?.updateTime(current: current, duration: duration)
         windowManager.updateWaveformTime(current: current, duration: duration)
+        windowManager.compactBarUpdateTime(current: current, duration: duration)
     }
-    
+
     func audioEngineDidChangeTrack(_ track: Track?) {
         windowManager.mainWindowController?.updateTrackInfo(track)
         windowManager.updateWaveformTrack(track)
+        windowManager.compactBarUpdateTrack(track)
     }
-    
+
     func audioEngineDidUpdateSpectrum(_ levels: [Float]) {
         windowManager.mainWindowController?.updateSpectrum(levels)
     }

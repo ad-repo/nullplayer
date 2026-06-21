@@ -112,6 +112,7 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     
     func setShadeMode(_ enabled: Bool) {
         guard let window = window else { return }
+        guard !(isCompactMode && enabled) else { return }
         
         isShadeMode = enabled
         
@@ -163,6 +164,41 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
         
         browserView.setShadeMode(enabled)
     }
+
+    // MARK: - Compact Mode
+
+    /// Whether the browser is showing the embedded compact player bar.
+    private(set) var isCompactMode = false
+
+    /// Smallest width that keeps the tab labels inside their outlines. Used to floor the
+    /// Compact Mode window so it never launches too thin.
+    var minimumCompactContentWidth: CGFloat {
+        browserView.minimumCompactContentWidth
+    }
+
+    /// Enable/disable Compact Mode. Unlike shade mode this does NOT resize or size-lock the
+    /// window — the full, resizable library window is kept; only the embedded player bar is
+    /// toggled and the list/content region shifts to make room.
+    func setCompactMode(_ enabled: Bool) {
+        if enabled && isShadeMode {
+            setShadeMode(false)
+        }
+        isCompactMode = enabled
+        browserView.compactMode = enabled
+        browserView.needsDisplay = true
+    }
+
+    func updateCompactBarTime(current: TimeInterval, duration: TimeInterval) {
+        browserView.compactBarUpdateTime(current: current, duration: duration)
+    }
+
+    func updateCompactBarTrack(_ track: Track?) {
+        browserView.compactBarUpdateTrack(track)
+    }
+
+    func updateCompactBarPlaybackState() {
+        browserView.compactBarUpdatePlaybackState()
+    }
 }
 
 // MARK: - NSWindowDelegate
@@ -190,5 +226,16 @@ extension ModernLibraryBrowserWindowController: NSWindowDelegate {
     
     func windowWillClose(_ notification: Notification) {
         WindowManager.shared.notifyMainWindowVisibilityChanged()
+    }
+
+    /// In Compact Mode the window is the app's only surface, so closing it just hides it
+    /// (the status-bar item brings it back). Exiting Compact Mode is done from the menu.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if isCompactMode {
+            sender.orderOut(nil)
+            WindowManager.shared.notifyMainWindowVisibilityChanged()
+            return false
+        }
+        return true
     }
 }
