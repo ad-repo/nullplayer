@@ -417,14 +417,13 @@ class StreamingAudioPlayer {
     // MARK: - Spectrum Analysis
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        // Skip FFT processing when paused or stopped to save CPU
-        // The frame filter still receives buffers but we don't need to process them
         guard state == .playing else { return }
-        guard spectrumNeeded || waveformNeeded || stereoNeeded || magnitudesNeeded else { return }
 
-        guard let channelData = buffer.floatChannelData else { return }
-        
-        // Report format info once per track
+        // Report format info once per track. This must run regardless of whether any
+        // visualization/waveform consumer is active: it fills in the sample rate (and
+        // channels) for streaming tracks — e.g. Plex MP3s — whose server metadata omits
+        // it, so the classic skin's kHz display works even with no visualization showing.
+        // It only needs buffer.format, so report it before the consumer-demand guard below.
         if !hasReportedFormat {
             hasReportedFormat = true
             let sampleRate = Int(buffer.format.sampleRate)
@@ -433,7 +432,13 @@ class StreamingAudioPlayer {
                 self?.delegate?.streamingPlayerDidDetectFormat(sampleRate: sampleRate, channels: channels)
             }
         }
-        
+
+        // Skip FFT/waveform processing when no consumer needs the data to save CPU.
+        // The frame filter still receives buffers but we don't need to process them.
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || magnitudesNeeded else { return }
+
+        guard let channelData = buffer.floatChannelData else { return }
+
         let frameCount = Int(buffer.frameLength)
         guard frameCount > 0 else { return }
         
