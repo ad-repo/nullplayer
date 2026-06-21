@@ -476,65 +476,82 @@ class AudioEngine {
     
     // MARK: - Spectrum Consumer Tracking
 
-    /// Spectrum consumers — FFT is skipped entirely when this set is empty
-    private var spectrumConsumers = Set<String>()
+    /// Consumer registrations are **ref-counted** (id → live count), not a plain set.
+    /// This makes registration order-independent during a live UI teardown/rebuild: if an
+    /// old view (e.g. `"spectrumView"`) deinitializes — and removes its registration —
+    /// *after* its replacement has already registered the same id, the count merely drops
+    /// from 2→1 and the producer stays alive. A plain `Set` would have the late `remove`
+    /// wipe the new view's registration. See `WindowManager.teardownModeDependentWindows()`.
 
-    /// Live waveform consumers — 576-sample waveform chunk generation is skipped entirely when this set is empty.
-    private var waveformConsumers = Set<String>()
+    /// Spectrum consumers — FFT is skipped entirely when this is empty
+    private var spectrumConsumers: [String: Int] = [:]
 
-    /// Stereo PCM consumers — stereo tap is skipped entirely when this set is empty
-    private var stereoConsumers = Set<String>()
+    /// Live waveform consumers — 576-sample waveform chunk generation is skipped entirely when this is empty.
+    private var waveformConsumers: [String: Int] = [:]
 
-    /// Magnitudes consumers — raw FFT magnitude posting is skipped entirely when this set is empty
-    private var magnitudesConsumers = Set<String>()
+    /// Stereo PCM consumers — stereo tap is skipped entirely when this is empty
+    private var stereoConsumers: [String: Int] = [:]
+
+    /// Magnitudes consumers — raw FFT magnitude posting is skipped entirely when this is empty
+    private var magnitudesConsumers: [String: Int] = [:]
+
+    /// Decrement a ref-counted consumer id, removing the key when it reaches zero.
+    private func releaseConsumer(_ id: String, from consumers: inout [String: Int]) {
+        guard let count = consumers[id] else { return }
+        if count <= 1 {
+            consumers[id] = nil
+        } else {
+            consumers[id] = count - 1
+        }
+    }
 
     var eqConfiguration: EQConfiguration {
         activeEQConfiguration
     }
 
     func addSpectrumConsumer(_ id: String) {
-        spectrumConsumers.insert(id)
+        spectrumConsumers[id, default: 0] += 1
         streamingPlayer?.spectrumNeeded = !spectrumConsumers.isEmpty
     }
 
     func removeSpectrumConsumer(_ id: String) {
-        spectrumConsumers.remove(id)
+        releaseConsumer(id, from: &spectrumConsumers)
         streamingPlayer?.spectrumNeeded = !spectrumConsumers.isEmpty
     }
 
     var spectrumNeeded: Bool { !spectrumConsumers.isEmpty }
 
     func addWaveformConsumer(_ id: String) {
-        waveformConsumers.insert(id)
+        waveformConsumers[id, default: 0] += 1
         streamingPlayer?.waveformNeeded = !waveformConsumers.isEmpty
     }
 
     func removeWaveformConsumer(_ id: String) {
-        waveformConsumers.remove(id)
+        releaseConsumer(id, from: &waveformConsumers)
         streamingPlayer?.waveformNeeded = !waveformConsumers.isEmpty
     }
 
     var waveformNeeded: Bool { !waveformConsumers.isEmpty }
 
     func addStereoConsumer(_ id: String) {
-        stereoConsumers.insert(id)
+        stereoConsumers[id, default: 0] += 1
         streamingPlayer?.stereoNeeded = !stereoConsumers.isEmpty
     }
 
     func removeStereoConsumer(_ id: String) {
-        stereoConsumers.remove(id)
+        releaseConsumer(id, from: &stereoConsumers)
         streamingPlayer?.stereoNeeded = !stereoConsumers.isEmpty
     }
 
     var stereoNeeded: Bool { !stereoConsumers.isEmpty }
 
     func addMagnitudesConsumer(_ id: String) {
-        magnitudesConsumers.insert(id)
+        magnitudesConsumers[id, default: 0] += 1
         streamingPlayer?.magnitudesNeeded = !magnitudesConsumers.isEmpty
     }
 
     func removeMagnitudesConsumer(_ id: String) {
-        magnitudesConsumers.remove(id)
+        releaseConsumer(id, from: &magnitudesConsumers)
         streamingPlayer?.magnitudesNeeded = !magnitudesConsumers.isEmpty
     }
 

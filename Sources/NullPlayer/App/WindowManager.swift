@@ -4090,6 +4090,207 @@ class WindowManager {
         return allWindows()
     }
 
+    // MARK: - Mode-Dependent Window Teardown / Rebuild
+
+    /// Controllers whose window layer depends on the active UI mode (classic vs. modern).
+    /// This is the single source of truth for `teardownModeDependentWindows()`.
+    ///
+    /// It is intentionally **separate** from `allWindows()` / `dockableWindows()` /
+    /// `snapTargetWindows()` — those encode docking/snap *capabilities* and are not
+    /// interchangeable with "things to rebuild on a UI switch". The mode-independent
+    /// `videoPlayerWindowController` and the DEBUG console are deliberately excluded:
+    /// the video player must survive a switch (closing it stops playback / casts).
+    private var modeDependentWindowControllers: [ModeDependentWindow] {
+        [mainWindowController,
+         playlistWindowController,
+         equalizerWindowController,
+         plexBrowserWindowController,
+         projectMWindowController,
+         spectrumWindowController,
+         audioAnalysisWindowController,
+         waveformWindowController].compactMap { $0 }
+    }
+
+    /// Tear down only the mode-dependent window layer, leaving audio, casting, the video
+    /// player, and all application-level services untouched. After this returns, every
+    /// mode-dependent controller is `nil` and its window is closed; callers rebuild via
+    /// `recreateModeDependentLayout(_:)` (or the individual `show*()` paths).
+    ///
+    /// This is the central primitive proven by the DEBUG "Recreate Windows" action and
+    /// reused by the live UI switch (PR4). It does **not** touch Compact Mode or the
+    /// `modernUIEnabled` flag — that orchestration belongs to the caller.
+    func teardownModeDependentWindows() {
+        NSLog("WindowManager: teardownModeDependentWindows — begin")
+
+        // End any in-flight drag so monitors and drag state never reference dead windows.
+        if let dragging = draggingWindow {
+            windowDidFinishDragging(dragging)
+        }
+        removeDragMouseUpMonitor()
+
+        // 1 + 2: order out, then let each controller/root view release its own resources
+        // (cancel tasks/timers, stop render loops, unregister observers + audio consumers).
+        for controller in modeDependentWindowControllers {
+            controller.window?.orderOut(nil)
+            controller.prepareForUITeardown()
+        }
+
+        // Detach docked child-window relationships before closing so AppKit does not retain
+        // soon-to-be-dead windows through the parent.
+        if let mainWindow = mainWindowController?.window {
+            for child in mainWindow.childWindows ?? [] {
+                mainWindow.removeChildWindow(child)
+            }
+        }
+
+        // 3: close() then nil the mode-dependent controllers. Preserve the video player.
+        mainWindowController?.window?.close()
+        mainWindowController = nil
+        playlistWindowController?.window?.close()
+        playlistWindowController = nil
+        equalizerWindowController?.window?.close()
+        equalizerWindowController = nil
+        plexBrowserWindowController?.window?.close()
+        plexBrowserWindowController = nil
+        projectMWindowController?.window?.close()
+        projectMWindowController = nil
+        spectrumWindowController?.window?.close()
+        spectrumWindowController = nil
+        audioAnalysisWindowController?.window?.close()
+        audioAnalysisWindowController = nil
+        waveformWindowController?.window?.close()
+        waveformWindowController = nil
+
+        // 4: clear drag/snap/dock state so stale ObjectIdentifier keys can't survive.
+        draggingWindow = nil
+        primedDragWindow = nil
+        dockedWindowsToMove.removeAll()
+        dockedWindowOffsets.removeAll()
+        dockedWindowOriginalOrigins.removeAll()
+        holdStartTime = nil
+        dragMode = .pending
+        highlightWasPosted = false
+
+        // 5: synchronously flush the ObjectIdentifier-keyed geometry caches (otherwise new
+        // controllers can collide with dead entries — these are normally only cleared on
+        // layout-change notifications).
+        adjacencyCache.removeAll(keepingCapacity: true)
+        edgeOcclusionSegmentsCache.removeAll(keepingCapacity: true)
+        sharpCornersCache.removeAll(keepingCapacity: true)
+
+        NSLog("WindowManager: teardownModeDependentWindows — complete")
+    }
+
+    /// Visibility + frame of a single mode-dependent window, captured before teardown.
+    private struct UIWindowSnapshot {
+        let visible: Bool
+        let frame: NSRect
+    }
+
+    /// Snapshot of the mode-dependent window layer, used to restore which windows were open
+    /// (and where) after a teardown/rebuild.
+    private struct ModeDependentLayoutSnapshot {
+        var main: UIWindowSnapshot?
+        var playlist: UIWindowSnapshot?
+        var equalizer: UIWindowSnapshot?
+        var library: UIWindowSnapshot?
+        var projectM: UIWindowSnapshot?
+        var spectrum: UIWindowSnapshot?
+        var audioAnalysis: UIWindowSnapshot?
+        var waveform: UIWindowSnapshot?
+    }
+
+    private func captureModeDependentLayout() -> ModeDependentLayoutSnapshot {
+        func snap(_ controller: ModeDependentWindow?) -> UIWindowSnapshot? {
+            guard let window = controller?.window else { return nil }
+            return UIWindowSnapshot(visible: window.isVisible, frame: window.frame)
+        }
+        return ModeDependentLayoutSnapshot(
+            main: snap(mainWindowController),
+            playlist: snap(playlistWindowController),
+            equalizer: snap(equalizerWindowController),
+            library: snap(plexBrowserWindowController),
+            projectM: snap(projectMWindowController),
+            spectrum: snap(spectrumWindowController),
+            audioAnalysis: snap(audioAnalysisWindowController),
+            waveform: snap(waveformWindowController)
+        )
+    }
+
+    /// Rebuild the mode-dependent windows from a snapshot: the main window always returns;
+    /// each sub-window returns only if it was visible, restored to its captured frame.
+    /// Finally re-pushes current playback presentation state and makes the main window key.
+    private func recreateModeDependentLayout(_ snapshot: ModeDependentLayoutSnapshot) {
+        showMainWindow()
+        if let main = snapshot.main, main.frame != .zero {
+            mainWindowController?.window?.setFrame(main.frame, display: true)
+        }
+
+        if snapshot.playlist?.visible == true { showPlaylist(at: snapshot.playlist?.frame) }
+        if snapshot.equalizer?.visible == true { showEqualizer(at: snapshot.equalizer?.frame) }
+        if snapshot.library?.visible == true { showPlexBrowser(at: snapshot.library?.frame) }
+        if snapshot.spectrum?.visible == true { showSpectrum(at: snapshot.spectrum?.frame) }
+        if snapshot.audioAnalysis?.visible == true { showAudioAnalysis(at: snapshot.audioAnalysis?.frame) }
+        if snapshot.waveform?.visible == true { showWaveform(at: snapshot.waveform?.frame) }
+        if snapshot.projectM?.visible == true { showProjectM(at: snapshot.projectM?.frame) }
+
+        pushCurrentPresentationStateToRecreatedWindows()
+
+        mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        postWindowLayoutDidChange()
+        updateDockedChildWindows()
+    }
+
+    /// Re-seed freshly created windows with the current audio/video presentation state.
+    /// `AudioEngine` is alive across the rebuild, so this is purely a display refresh —
+    /// it does not start, stop, or seek playback.
+    private func pushCurrentPresentationStateToRecreatedWindows() {
+        let track = audioEngine.currentTrack
+        mainWindowController?.updateTrackInfo(track)
+        mainWindowController?.updatePlaybackState()
+        mainWindowController?.updateTime(current: audioEngine.currentTime, duration: audioEngine.duration)
+        updateWaveformTrack(track)
+        updateWaveformTime(current: audioEngine.currentTime, duration: audioEngine.duration)
+        playlistWindowController?.reloadPlaylist()
+
+        // If a video session is active, the video player survived teardown — restore its
+        // title/state on the new main window instead of the audio track display.
+        if isVideoActivePlayback, let title = videoPlayerWindowController?.currentTitle {
+            mainWindowController?.updateVideoTrackInfo(
+                title: title,
+                artworkTrack: videoPlayerWindowController?.currentArtworkTrack
+            )
+            mainWindowController?.updatePlaybackState()
+        }
+    }
+
+    #if DEBUG
+    /// DEBUG-only proof-of-concept: tear down and rebuild the mode-dependent windows in the
+    /// **same** UI mode (no `modernUIEnabled` flip, no runtime swap). This exercises the full
+    /// AppKit teardown/rebuild cycle so leaks and lifecycle bugs surface before the live mode
+    /// switch (PR4) layers mode-change semantics on top. Logs teardown/recreate timing.
+    func debugRecreateModeDependentWindows() {
+        NSLog("WindowManager: debugRecreateModeDependentWindows — start")
+        let snapshot = captureModeDependentLayout()
+
+        // Compact Mode hides the player windows behind a single browser window; exit it before
+        // teardown (snapshotting its prior state) so a clean rebuild + re-entry doesn't restore
+        // stale pre-teardown visibility.
+        let wasCompact = compactModeEnabled
+        if wasCompact { exitCompactMode() }
+
+        let t0 = CACurrentMediaTime()
+        teardownModeDependentWindows()
+        let tTorn = CACurrentMediaTime()
+        recreateModeDependentLayout(snapshot)
+        if wasCompact { enterCompactMode() }
+        let tDone = CACurrentMediaTime()
+
+        NSLog("WindowManager: debugRecreateModeDependentWindows — teardown %.1fms, recreate %.1fms",
+              (tTorn - t0) * 1000.0, (tDone - tTorn) * 1000.0)
+    }
+    #endif
+
     /// Miniaturize all visible, managed player windows.
     /// Main window is miniaturized first so existing docked-window miniaturize
     /// coordination remains intact, then any remaining visible windows follow.

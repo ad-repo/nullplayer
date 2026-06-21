@@ -3,7 +3,7 @@ import AppKit
 /// Protocol abstracting the waveform window.
 /// Both the classic `WaveformWindowController` and modern `ModernWaveformWindowController`
 /// conform to this protocol so `WindowManager` can manage them without knowing the UI mode.
-protocol WaveformWindowProviding: AnyObject {
+protocol WaveformWindowProviding: ModeDependentWindow {
     /// The underlying window.
     var window: NSWindow? { get }
 

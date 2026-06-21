@@ -7,7 +7,7 @@ import AppKit
 ///
 /// Follows the same pattern as `MainWindowProviding`, `PlaylistWindowProviding`,
 /// `EQWindowProviding`, and `SpectrumWindowProviding`.
-protocol LibraryBrowserWindowProviding: AnyObject {
+protocol LibraryBrowserWindowProviding: ModeDependentWindow {
     /// The underlying window
     var window: NSWindow? { get }
     

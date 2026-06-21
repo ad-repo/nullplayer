@@ -104,6 +104,12 @@ class ContextMenuBuilder {
                                      enabled: wm.currentVideoPlayerController != nil))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
 
+        #if DEBUG
+        let recreate = NSMenuItem(title: "Recreate Windows (Debug)", action: #selector(MenuActions.recreateWindows), keyEquivalent: "")
+        recreate.target = MenuActions.shared
+        menu.addItem(recreate)
+        #endif
+
         menu.addItem(NSMenuItem.separator())
 
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
@@ -2966,6 +2972,20 @@ class MenuActions: NSObject {
     @objc func toggleDebugConsole() {
         WindowManager.shared.toggleDebugWindow()
     }
+
+    #if DEBUG
+    /// DEBUG-only: tear down and rebuild the mode-dependent windows in the same UI mode.
+    /// Proof-of-concept for the live mode switch — exercises the AppKit teardown/rebuild cycle.
+    @objc func recreateWindows() {
+        let alert = NSAlert()
+        alert.messageText = "Recreate Windows?"
+        alert.informativeText = "Tears down and rebuilds all mode-dependent windows in the current UI mode. Audio, casting, and the video player keep running. For leak/lifecycle testing."
+        alert.addButton(withTitle: "Recreate")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        WindowManager.shared.debugRecreateModeDependentWindows()
+    }
+    #endif
 
     @objc func toggleLibraryHistory() {
         guard WindowManager.shared.isModernUIEnabled else { return }

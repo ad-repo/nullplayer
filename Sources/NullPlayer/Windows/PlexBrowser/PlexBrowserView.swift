@@ -16644,7 +16644,9 @@ class PlexBrowserView: NSView {
                 if subsonicArtistAlbums[artist.id] == nil {
                     let artistId = artist.id
                     subsonicExpandTask?.cancel()
-                    subsonicExpandTask = Task { @MainActor [weak self] in
+                    // Task.detached: a plain Task {} inherits main-actor cancellation, so a
+                    // main-actor teardown (e.g. reloadUI) can cancel the expand before it runs.
+                    subsonicExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
                             try Task.checkCancellation()
@@ -16673,7 +16675,9 @@ class PlexBrowserView: NSView {
                 if subsonicAlbumSongs[album.id] == nil {
                     let albumId = album.id
                     subsonicExpandTask?.cancel()
-                    subsonicExpandTask = Task { @MainActor [weak self] in
+                    // Task.detached: a plain Task {} inherits main-actor cancellation, so a
+                    // main-actor teardown (e.g. reloadUI) can cancel the expand before it runs.
+                    subsonicExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
                             try Task.checkCancellation()
@@ -16702,7 +16706,9 @@ class PlexBrowserView: NSView {
                 if subsonicPlaylistTracks[playlist.id] == nil {
                     let playlistId = playlist.id
                     subsonicExpandTask?.cancel()
-                    subsonicExpandTask = Task { @MainActor [weak self] in
+                    // Task.detached: a plain Task {} inherits main-actor cancellation, so a
+                    // main-actor teardown (e.g. reloadUI) can cancel the expand before it runs.
+                    subsonicExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
                             try Task.checkCancellation()
