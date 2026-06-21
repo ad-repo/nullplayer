@@ -104,6 +104,7 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     /// Set shade mode (called from view)
     func setShadeMode(_ enabled: Bool) {
         guard let window = window else { return }
+        guard !(isCompactMode && enabled) else { return }
         
         isShadeMode = enabled
         
@@ -184,6 +185,9 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     /// with an embedded classic player bar pinned across the top.
     func setCompactMode(_ enabled: Bool) {
         guard isCompactMode != enabled, let window = window else { return }
+        if enabled && isShadeMode {
+            setShadeMode(false)
+        }
         isCompactMode = enabled
 
         if enabled {

@@ -476,23 +476,27 @@ class AppStateManager {
         
         let wm = WindowManager.shared
         let engine = wm.audioEngine
+
+        func visibility(_ key: String, _ current: Bool) -> Bool {
+            wm.visibilityForStateSaving(key, current: current)
+        }
         
         // Capture browser browse mode from the active browser window (if visible)
         var browserBrowseMode: Int? = nil
-        if wm.isPlexBrowserVisible {
+        if visibility("plexBrowser", wm.isPlexBrowserVisible) {
             browserBrowseMode = wm.plexBrowserBrowseMode
         }
         
         // Capture window visibility
         let state = AppState(
             // Window visibility
-            isPlaylistVisible: wm.isPlaylistVisible,
-            isEqualizerVisible: wm.isEqualizerVisible,
-            isPlexBrowserVisible: wm.isPlexBrowserVisible,
-            isProjectMVisible: wm.isProjectMVisible,
-            isSpectrumVisible: wm.isSpectrumVisible,
-            isAudioAnalysisVisible: wm.isAudioAnalysisVisible,
-            isWaveformVisible: wm.isWaveformVisible,
+            isPlaylistVisible: visibility("playlist", wm.isPlaylistVisible),
+            isEqualizerVisible: visibility("equalizer", wm.isEqualizerVisible),
+            isPlexBrowserVisible: visibility("plexBrowser", wm.isPlexBrowserVisible),
+            isProjectMVisible: visibility("projectM", wm.isProjectMVisible),
+            isSpectrumVisible: visibility("spectrum", wm.isSpectrumVisible),
+            isAudioAnalysisVisible: visibility("audioAnalysis", wm.isAudioAnalysisVisible),
+            isWaveformVisible: visibility("waveform", wm.isWaveformVisible),
             
             // Window frames
             mainWindowFrame: wm.mainWindowController?.window.map { NSStringFromRect($0.frame) },
@@ -595,23 +599,26 @@ class AppStateManager {
     
     /// Restore only settings state (skin, volume, EQ, windows)
     /// Called early in launch before playlist state is restored
-    func restoreSettingsState() {
+    func restoreSettingsState(completion: (() -> Void)? = nil) {
         guard isEnabled else {
             NSLog("AppStateManager: Remember State disabled, skipping settings restore")
+            DispatchQueue.main.async { completion?() }
             return
         }
         
         guard let data = UserDefaults.standard.data(forKey: Keys.savedAppState) else {
             NSLog("AppStateManager: No saved state found for settings restore")
+            DispatchQueue.main.async { completion?() }
             return
         }
         
         do {
             let decoder = JSONDecoder()
             let state = try decoder.decode(AppState.self, from: data)
-            applySettingsState(state)
+            applySettingsState(state, completion: completion)
         } catch {
             NSLog("AppStateManager: Failed to restore settings state: %@", error.localizedDescription)
+            DispatchQueue.main.async { completion?() }
         }
     }
     
@@ -650,7 +657,7 @@ class AppStateManager {
     }
     
     /// Apply settings state (skin, volume, EQ, windows) - no playlist
-    private func applySettingsState(_ state: AppState) {
+    private func applySettingsState(_ state: AppState, completion: (() -> Void)? = nil) {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
         let runningModernMode = wm.isRunningModernUI
@@ -797,6 +804,7 @@ class AppStateManager {
 
             // One-time self-heal for classic sessions affected by cross-mode frame contamination.
             self.repairClassicDockedStackWidthsIfNeeded()
+            completion?()
         }
         
         NSLog("AppStateManager: Settings state restored (eqAutoEnabled: %d, doubleSize: %d)", state.eqAutoEnabled ? 1 : 0, state.isDoubleSize ? 1 : 0)

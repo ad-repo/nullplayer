@@ -213,6 +213,9 @@ class WindowManager {
     /// Window visibility captured when entering Compact Mode, restored on exit.
     private var savedWindowVisibility: [String: Bool] = [:]
 
+    /// Library Browser frame before Compact Mode repositioned it under the status item.
+    private var savedPlexBrowserFrameForCompactMode: NSRect?
+
     /// Ensure modern main window keeps full-height geometry in HT mode at startup/restore.
     /// Keeps the top edge fixed so legacy compact HT frames are expanded.
     @discardableResult
@@ -934,6 +937,12 @@ class WindowManager {
 
         // Ensure the library browser exists and shows the embedded player bar.
         showPlexBrowser()
+        if savedWindowVisibility["plexBrowserShade"] == true {
+            // Capture the normal frame restored by leaving shade mode. Restoring this before
+            // re-entering shade mode on exit preserves both the shade frame and its normal frame.
+            plexBrowserWindowController?.setShadeMode(false)
+            savedPlexBrowserFrameForCompactMode = plexBrowserWindowController?.window?.frame
+        }
         plexBrowserWindowController?.setCompactMode(true)
 
         // Menu-bar app behaviour: hide the Dock icon, add a status-bar item.
@@ -1007,6 +1016,7 @@ class WindowManager {
     }
 
     private func saveWindowVisibilityForCompactMode() {
+        savedPlexBrowserFrameForCompactMode = plexBrowserWindowController?.window?.frame
         savedWindowVisibility = [
             "main": mainWindowController?.window?.isVisible ?? false,
             "equalizer": equalizerWindowController?.window?.isVisible ?? false,
@@ -1015,6 +1025,8 @@ class WindowManager {
             "audioAnalysis": audioAnalysisWindowController?.window?.isVisible ?? false,
             "waveform": waveformWindowController?.window?.isVisible ?? false,
             "projectM": projectMWindowController?.window?.isVisible ?? false,
+            "video": videoPlayerWindowController?.window?.isVisible ?? false,
+            "plexBrowserShade": plexBrowserWindowController?.isShadeMode ?? false,
             // The library browser becomes the sole compact window, so remember whether it
             // was open beforehand — otherwise it lingers on screen after exiting Compact Mode.
             "plexBrowser": plexBrowserWindowController?.window?.isVisible ?? false
@@ -1028,15 +1040,22 @@ class WindowManager {
                        spectrumWindowController?.window,
                        audioAnalysisWindowController?.window,
                        waveformWindowController?.window,
-                       projectMWindowController?.window].compactMap({ $0 }) {
+                       projectMWindowController?.window,
+                       videoPlayerWindowController?.window].compactMap({ $0 }) {
             window.orderOut(nil)
         }
     }
 
     private func restoreWindowVisibilityAfterCompactMode() {
-        // The library browser hosted the compact UI; if it wasn't open before entering
-        // Compact Mode, order it out so it doesn't linger as a second window on exit.
-        if savedWindowVisibility["plexBrowser"] != true {
+        if let frame = savedPlexBrowserFrameForCompactMode {
+            plexBrowserWindowController?.window?.setFrame(frame, display: true)
+        }
+
+        // The library browser hosted the compact UI. Restore its prior visibility even if
+        // the user hid the compact window before choosing Exit Compact Mode.
+        if savedWindowVisibility["plexBrowser"] == true {
+            plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
+        } else {
             plexBrowserWindowController?.window?.orderOut(nil)
         }
         if savedWindowVisibility["main"] == true { showMainWindow() }
@@ -1046,7 +1065,21 @@ class WindowManager {
         if savedWindowVisibility["audioAnalysis"] == true { showAudioAnalysis() }
         if savedWindowVisibility["waveform"] == true { showWaveform() }
         if savedWindowVisibility["projectM"] == true { showProjectM() }
+        if savedWindowVisibility["video"] == true {
+            videoPlayerWindowController?.showWindow(nil)
+        }
+        if savedWindowVisibility["plexBrowserShade"] == true {
+            plexBrowserWindowController?.setShadeMode(true)
+        }
+        savedPlexBrowserFrameForCompactMode = nil
         savedWindowVisibility.removeAll()
+    }
+
+    /// While Compact Mode is active, state persistence must record the windows that were
+    /// visible before entry rather than the intentionally hidden compact-mode window set.
+    func visibilityForStateSaving(_ key: String, current: Bool) -> Bool {
+        guard compactModeEnabled else { return current }
+        return savedWindowVisibility[key] ?? current
     }
 
     /// Switching activation policy `.accessory` → `.regular` makes macOS forget the bundle's

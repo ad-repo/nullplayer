@@ -78,8 +78,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start cast discovery from app lifecycle, not from menu construction.
         CastManager.shared.startDiscovery()
         
-        // Restore settings state (skin, volume, EQ, windows)
-        AppStateManager.shared.restoreSettingsState()
+        // Restore settings state (skin, volume, EQ, windows). Compact Mode must be
+        // entered only after the asynchronous window restoration has completed, so it
+        // can capture and hide the actual restored window set.
+        let shouldRestoreCompactMode = UserDefaults.standard.bool(forKey: "compactModeEnabled")
+        AppStateManager.shared.restoreSettingsState { [weak self] in
+            guard shouldRestoreCompactMode else { return }
+            self?.windowManager.enterCompactMode(revealWindow: false)
+        }
         
         // Mark app as ready for file opens
         isAppReady = true
@@ -92,13 +98,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             AppStateManager.shared.restorePlaylistState()
         }
 
-        // Restore Compact Mode if it was active when the app last quit (classic or modern UI).
-        // Deferred a tick so windows and restored state are fully in place first.
-        if UserDefaults.standard.bool(forKey: "compactModeEnabled") {
-            DispatchQueue.main.async { [weak self] in
-                self?.windowManager.enterCompactMode(revealWindow: false)
-            }
-        }
     }
     
     // MARK: - UI Testing Mode

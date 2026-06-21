@@ -112,6 +112,7 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     
     func setShadeMode(_ enabled: Bool) {
         guard let window = window else { return }
+        guard !(isCompactMode && enabled) else { return }
         
         isShadeMode = enabled
         
@@ -179,6 +180,9 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     /// window — the full, resizable library window is kept; only the embedded player bar is
     /// toggled and the list/content region shifts to make room.
     func setCompactMode(_ enabled: Bool) {
+        if enabled && isShadeMode {
+            setShadeMode(false)
+        }
         isCompactMode = enabled
         browserView.compactMode = enabled
         browserView.needsDisplay = true
