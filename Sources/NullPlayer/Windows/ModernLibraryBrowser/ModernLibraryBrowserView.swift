@@ -186,8 +186,32 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Properties
     
     weak var controller: ModernLibraryBrowserWindowController?
-    
+
     private var renderer: ModernSkinRenderer!
+
+    /// Compact Mode: when true, a stripped-down player bar is embedded across the top
+    /// (just below the title bar) and all content below shifts down to make room.
+    /// The window itself is never resized — only the list/content region shrinks.
+    var compactMode: Bool = false {
+        didSet {
+            guard compactMode != oldValue else { return }
+            needsLayout = true
+            needsDisplay = true
+        }
+    }
+    private var compactPlayerBar: CompactPlayerBarView?
+
+    /// Height of the embedded compact player bar (0 when not in compact mode).
+    private var compactPlayerBarHeight: CGFloat {
+        compactMode ? CompactPlayerBarView.preferredHeight(for: ModernSkinElements.sizeMultiplier) : 0
+    }
+
+    /// Y coordinate of the bottom of the top chrome (title bar + optional compact player bar).
+    /// All content below the title bar measures down from here, so inserting the player bar
+    /// shifts the server bar / tabs / search / list down without resizing the window.
+    private var topChromeBottomY: CGFloat {
+        bounds.height - Layout.titleBarHeight - compactPlayerBarHeight
+    }
     
     // Browse state
     private var currentSource: ModernBrowserSource = .local {
@@ -883,7 +907,7 @@ class ModernLibraryBrowserView: NSView {
 
     private func embeddedHistoryContentRect() -> NSRect {
         guard !isShadeMode else { return .zero }
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let statusBarHeight = Layout.statusBarHeight
         return NSRect(
@@ -899,6 +923,50 @@ class ModernLibraryBrowserView: NSView {
         if !isRatingOverlayVisible {
             ratingOverlay.frame = bounds
         }
+        updateCompactPlayerBarFrame()
+    }
+
+    /// Create/position/remove the embedded compact player bar to match the current mode.
+    private func updateCompactPlayerBarFrame() {
+        guard compactMode && !isShadeMode else {
+            compactPlayerBar?.removeFromSuperview()
+            compactPlayerBar = nil
+            return
+        }
+        let bar: CompactPlayerBarView
+        if let existing = compactPlayerBar {
+            bar = existing
+        } else {
+            bar = CompactPlayerBarView(frame: .zero)
+            addSubview(bar)
+            compactPlayerBar = bar
+            seedCompactPlayerBar(bar)
+        }
+        bar.frame = NSRect(x: Layout.borderWidth, y: topChromeBottomY,
+                           width: bounds.width - Layout.borderWidth * 2,
+                           height: compactPlayerBarHeight)
+    }
+
+    /// Seed the bar with the engine's current state so it isn't blank until the next update tick.
+    private func seedCompactPlayerBar(_ bar: CompactPlayerBarView) {
+        let engine = WindowManager.shared.audioEngine
+        bar.updateTrackInfo(engine.currentTrack)
+        bar.updateTime(current: engine.currentTime, duration: engine.duration)
+        bar.updatePlaybackState()
+    }
+
+    // MARK: - Compact Player Bar Forwarding
+
+    func compactBarUpdateTime(current: TimeInterval, duration: TimeInterval) {
+        compactPlayerBar?.updateTime(current: current, duration: duration)
+    }
+
+    func compactBarUpdateTrack(_ track: Track?) {
+        compactPlayerBar?.updateTrackInfo(track)
+    }
+
+    func compactBarUpdatePlaybackState() {
+        compactPlayerBar?.updatePlaybackState()
     }
     
     // MARK: - Drawing
@@ -955,7 +1023,7 @@ class ModernLibraryBrowserView: NSView {
         // Fast path: scroll timer marks only server bar dirty — skip full window redraw.
         // Always fill the full background first (copy blend mode) so the layer is never
         // left partially transparent from accumulated alpha on repeated scroll-tick draws.
-        let serverBarY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let serverBarY = topChromeBottomY - Layout.serverBarHeight
         let sbRect = NSRect(x: 0, y: serverBarY, width: bounds.width, height: Layout.serverBarHeight)
         if sbRect.contains(dirtyRect) {
             renderer.drawWindowBackground(
@@ -3088,12 +3156,12 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestServerBar(at point: NSPoint) -> Bool {
-        let serverBarY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
-        return point.y >= serverBarY && point.y < bounds.height - Layout.titleBarHeight
+        let serverBarY = topChromeBottomY - Layout.serverBarHeight
+        return point.y >= serverBarY && point.y < topChromeBottomY
     }
     
     private func hitTestTabBar(at point: NSPoint) -> ModernBrowseMode? {
-        let tabBarTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let tabBarTopY = topChromeBottomY - Layout.serverBarHeight
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return nil }
 
@@ -3120,7 +3188,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestSortIndicator(at point: NSPoint) -> Bool {
-        let tabBarTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let tabBarTopY = topChromeBottomY - Layout.serverBarHeight
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return false }
         
@@ -3136,13 +3204,13 @@ class ModernLibraryBrowserView: NSView {
     
     private func hitTestSearchBar(at point: NSPoint) -> Bool {
         guard browseMode == .search else { return false }
-        let tabBarBottomY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        let tabBarBottomY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         let searchBarBottomY = tabBarBottomY - Layout.searchBarHeight
         return point.y >= searchBarBottomY && point.y < tabBarBottomY
     }
     
     private func hitTestListArea(at point: NSPoint) -> Int? {
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -3173,7 +3241,7 @@ class ModernLibraryBrowserView: NSView {
         let item = displayItems[itemIndex]
         guard case .radioStation = item.type, let columns = columnsForItem(item) else { return nil }
 
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         if hasColumns { contentTopY -= columnHeaderHeight }
@@ -3212,7 +3280,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestAlphabetIndex(at point: NSPoint) -> Bool {
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -3223,7 +3291,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestContentArea(at point: NSPoint) -> Bool {
-        let contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let contentTopY = topChromeBottomY - Layout.serverBarHeight
         let contentBottomY = Layout.statusBarHeight
         let contentRect = NSRect(x: Layout.borderWidth, y: contentBottomY,
                                  width: bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth,
@@ -3236,7 +3304,7 @@ class ModernLibraryBrowserView: NSView {
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return nil }
         
-        var headerTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { headerTopY -= Layout.searchBarHeight }
         let headerBottomY = headerTopY - columnHeaderHeight
         
@@ -3275,7 +3343,7 @@ class ModernLibraryBrowserView: NSView {
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return nil }
         
-        var headerTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { headerTopY -= Layout.searchBarHeight }
         let headerBottomY = headerTopY - columnHeaderHeight
         
@@ -3299,7 +3367,7 @@ class ModernLibraryBrowserView: NSView {
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return false }
         
-        var headerTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { headerTopY -= Layout.searchBarHeight }
         let headerBottomY = headerTopY - columnHeaderHeight
         
@@ -3592,7 +3660,7 @@ class ModernLibraryBrowserView: NSView {
             super.scrollWheel(with: event)
             return
         }
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let totalHeight = CGFloat(displayItems.count) * itemHeight
@@ -3821,7 +3889,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func ensureVisible(index: Int) {
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -3914,7 +3982,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func handleServerBarClick(at point: NSPoint, event: NSEvent) {
         let m = ModernSkinElements.sizeMultiplier
-        let barRect = NSRect(x: Layout.borderWidth, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
+        let barRect = NSRect(x: Layout.borderWidth, y: topChromeBottomY - Layout.serverBarHeight,
                             width: bounds.width - Layout.borderWidth * 2, height: Layout.serverBarHeight)
         let relativeX = point.x - barRect.minX
         let barWidth = barRect.width
@@ -4115,7 +4183,7 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Alphabet Click
     
     private func handleAlphabetClick(at point: NSPoint) {
-        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -4173,7 +4241,7 @@ class ModernLibraryBrowserView: NSView {
         }
         for (index, item) in displayItems.enumerated() {
             if effectiveSortLetter(for: item) == letter {
-                var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+                var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
                 if browseMode == .search { contentTopY -= Layout.searchBarHeight }
                 let listHeight = contentTopY - Layout.statusBarHeight
                 let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -6966,6 +7034,7 @@ class ModernLibraryBrowserView: NSView {
         invalidateServerBarFontCache()
         updateCornerMask()
         updateEmbeddedSubviewFrames()
+        compactPlayerBar?.skinDidChange()
         needsDisplay = true
     }
     
@@ -7316,7 +7385,7 @@ class ModernLibraryBrowserView: NSView {
                 self.needsDisplay = true
             } else if self.isLibraryScanning {
                 // Redraw server bar only for the scan spinner
-                let serverBarY = self.bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+                let serverBarY = self.topChromeBottomY - Layout.serverBarHeight
                 self.setNeedsDisplay(NSRect(x: 0, y: serverBarY, width: self.bounds.width, height: Layout.serverBarHeight))
             } else {
                 self.stopLoadingAnimation()
@@ -7470,7 +7539,7 @@ class ModernLibraryBrowserView: NSView {
 
     /// Returns the rect of the server bar for targeted redraws.
     private func serverBarRect() -> NSRect {
-        let barY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let barY = topChromeBottomY - Layout.serverBarHeight
         return NSRect(x: 0, y: barY, width: bounds.width, height: Layout.serverBarHeight)
     }
 

@@ -91,6 +91,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Restore playlist state
             AppStateManager.shared.restorePlaylistState()
         }
+
+        // Restore Compact Mode if it was active when the app last quit (modern UI only).
+        // Deferred a tick so windows and restored state are fully in place first.
+        if windowManager.isRunningModernUI && UserDefaults.standard.bool(forKey: "compactModeEnabled") {
+            DispatchQueue.main.async { [weak self] in
+                self?.windowManager.enterCompactMode()
+            }
+        }
     }
     
     // MARK: - UI Testing Mode
@@ -498,20 +506,23 @@ extension AppDelegate: NSMenuDelegate {
 extension AppDelegate: AudioEngineDelegate {
     func audioEngineDidChangeState(_ state: PlaybackState) {
         windowManager.mainWindowController?.updatePlaybackState()
+        windowManager.compactBarUpdatePlaybackState()
     }
-    
+
     func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
         // Don't update main window time if video session is active (video has its own time source)
         guard !windowManager.isVideoActivePlayback else { return }
         windowManager.mainWindowController?.updateTime(current: current, duration: duration)
         windowManager.updateWaveformTime(current: current, duration: duration)
+        windowManager.compactBarUpdateTime(current: current, duration: duration)
     }
-    
+
     func audioEngineDidChangeTrack(_ track: Track?) {
         windowManager.mainWindowController?.updateTrackInfo(track)
         windowManager.updateWaveformTrack(track)
+        windowManager.compactBarUpdateTrack(track)
     }
-    
+
     func audioEngineDidUpdateSpectrum(_ levels: [Float]) {
         windowManager.mainWindowController?.updateSpectrum(levels)
     }

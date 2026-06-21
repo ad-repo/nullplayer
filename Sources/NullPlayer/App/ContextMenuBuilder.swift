@@ -110,6 +110,11 @@ class ContextMenuBuilder {
             hideTitleBars.target = MenuActions.shared
             hideTitleBars.state = wm.hideTitleBars ? .on : .off
             menu.addItem(hideTitleBars)
+
+            let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+            compactMode.target = MenuActions.shared
+            compactMode.state = wm.compactModeEnabled ? .on : .off
+            menu.addItem(compactMode)
         }
 
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
@@ -4552,7 +4557,12 @@ class MenuActions: NSObject {
     @objc func toggleHideTitleBars() {
         WindowManager.shared.toggleHideTitleBars()
     }
-    
+
+    @objc func toggleCompactMode() {
+        guard WindowManager.shared.isModernUIEnabled else { return }
+        WindowManager.shared.toggleCompactMode()
+    }
+
     @objc func toggleDoubleSize() {
         let wm = WindowManager.shared
         if wm.isModernUIEnabled {
