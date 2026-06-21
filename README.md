@@ -23,6 +23,7 @@
 - Emby media server integration with music and video streaming, scrobbling, and library browsing
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - Stream Ripper — paste a URL and rip it to lossless FLAC, MP3, or an MP4 video file (via yt-dlp), with metadata tags, embedded cover art, metadata-based filenames, and a `.cue` sheet generated from chapter timestamps
+- YouTube source — subscribe to channels in the Radio tab, browse uploads, and download audio (FLAC / MP3) ad-free to a folder you choose (via yt-dlp); downloads play locally and cast like any track
 - `.cue` sheet support — open a `.cue` (or an audio file with a sibling `.cue`) to virtually split one backing file into per-track, gapless playlist rows; an optional library setting (off by default, needs ffmpeg) physically splits cue albums on import into per-track FLACs, organized into a per-album folder named from the source's metadata
 - Inteligent radio mix generation for all sources
 - Navidrome/Subsonic server integration with scrobbling support

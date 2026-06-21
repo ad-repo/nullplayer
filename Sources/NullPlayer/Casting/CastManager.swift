@@ -670,7 +670,7 @@ class CastManager {
         }
 
         switch currentTrack.playHistorySource {
-        case .local:
+        case .local, .youtube:
             return "local audio is playing"
         case .radio:
             return "radio stream is playing"

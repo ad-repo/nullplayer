@@ -1568,6 +1568,7 @@ class ContextMenuBuilder {
         librariesMenu.addItem(buildSubsonicMenuItem())
         librariesMenu.addItem(buildJellyfinMenuItem())
         librariesMenu.addItem(buildEmbyMenuItem())
+        librariesMenu.addItem(buildYouTubeMenuItem())
         return librariesMenu
     }
 
@@ -2194,6 +2195,47 @@ class ContextMenuBuilder {
 
         embyItem.submenu = embyMenu
         return embyItem
+    }
+
+    // MARK: - YouTube Submenu
+
+    private static func buildYouTubeMenuItem() -> NSMenuItem {
+        let youtubeItem = NSMenuItem(title: "YouTube", action: nil, keyEquivalent: "")
+        let youtubeMenu = NSMenu()
+        youtubeMenu.autoenablesItems = false
+
+        // Download folder path header
+        let folderPath = YouTubeManager.shared.downloadRoot.path
+        let infoItem = NSMenuItem(title: folderPath, action: nil, keyEquivalent: "")
+        youtubeMenu.addItem(infoItem)
+
+        youtubeMenu.addItem(NSMenuItem.separator())
+
+        // Set Download Folder
+        let setFolderItem = NSMenuItem(title: "Set Download Folder…", action: #selector(MenuActions.setYouTubeDownloadFolder), keyEquivalent: "")
+        setFolderItem.target = MenuActions.shared
+        youtubeMenu.addItem(setFolderItem)
+
+        youtubeMenu.addItem(NSMenuItem.separator())
+
+        // Quality submenu
+        let qualityItem = NSMenuItem(title: "Quality", action: nil, keyEquivalent: "")
+        let qualityMenu = NSMenu()
+        qualityMenu.autoenablesItems = false
+
+        for quality in YouTubeQuality.allCases {
+            let item = NSMenuItem(title: quality.displayName, action: #selector(MenuActions.setYouTubeQuality(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = quality.rawValue
+            item.state = quality == YouTubeManager.shared.quality ? .on : .off
+            qualityMenu.addItem(item)
+        }
+
+        qualityItem.submenu = qualityMenu
+        youtubeMenu.addItem(qualityItem)
+
+        youtubeItem.submenu = youtubeMenu
+        return youtubeItem
     }
 
     // MARK: - Output Devices Submenu (Unified)
@@ -5639,7 +5681,29 @@ class MenuActions: NSObject {
         let url = URL(fileURLWithPath: bundledPath)
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
     }
-    
+
+    // MARK: - YouTube Actions
+
+    @objc func setYouTubeDownloadFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Set YouTube Download Folder"
+        panel.prompt = "Select"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = YouTubeManager.shared.downloadRoot
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        YouTubeManager.shared.downloadRoot = url
+    }
+
+    @objc func setYouTubeQuality(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let quality = YouTubeQuality(rawValue: rawValue) else { return }
+        YouTubeManager.shared.quality = quality
+    }
+
     // MARK: - Exit
     
     @objc func exit() {

@@ -104,12 +104,13 @@ final class StreamRipper {
     }
 
     /// Directories searched for `yt-dlp` / `ffmpeg` (Homebrew arm64, Homebrew
-    /// x86, MacPorts, system).
-    private static let searchPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin"]
+    /// x86, MacPorts, system). Made nonisolated for use in async/await contexts.
+    nonisolated private static let searchPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin"]
 
     /// Resolves a tool executable path from the known system locations, or nil.
-    static func resolveTool(_ name: String) -> String? {
-        for dir in searchPaths {
+    /// This is nonisolated since it doesn't depend on MainActor state.
+    nonisolated static func resolveTool(_ name: String) -> String? {
+        for dir in Self.searchPaths {
             let candidate = "\(dir)/\(name)"
             if FileManager.default.isExecutableFile(atPath: candidate) {
                 return candidate
@@ -119,7 +120,107 @@ final class StreamRipper {
     }
 
     /// Resolves the `yt-dlp` executable path, or nil if it is not installed.
-    static func resolveYtDlp() -> String? { resolveTool("yt-dlp") }
+    /// This is nonisolated since it doesn't depend on MainActor state.
+    nonisolated static func resolveYtDlp() -> String? { resolveTool("yt-dlp") }
+
+    /// Download audio from a URL using yt-dlp, with specified format arguments and output template.
+    /// This is a low-level, stateless function suitable for embedding in other tools (e.g., YouTube manager).
+    /// It does not handle UI (spinners, alerts) — callers provide their own.
+    /// This function is nonisolated and can be called from any actor context.
+    ///
+    /// - Parameters:
+    ///   - sourceURL: The URL to download audio from
+    ///   - formatArgs: yt-dlp audio format arguments (e.g., `["--audio-format","flac","--audio-quality","0"]`)
+    ///   - outputTemplate: yt-dlp output filename template (e.g., `"/path/to/downloads/%(id)s.%(ext)s"`)
+    /// - Returns: A file:// URL to the downloaded audio file
+    /// - Throws: If yt-dlp is not found, the download fails, or the output path cannot be resolved
+    nonisolated static func downloadAudio(
+        from sourceURL: URL,
+        formatArgs: [String],
+        outputTemplate: String
+    ) async throws -> URL {
+        guard let ytdlp = Self.resolveTool("yt-dlp") else {
+            throw DownloadAudioError.toolNotFound("yt-dlp is not installed. Install via Homebrew: brew install yt-dlp")
+        }
+
+        let pathFile = NSTemporaryDirectory() + "nullplayer-yt-audio-\(UUID().uuidString).txt"
+        defer { try? FileManager.default.removeItem(atPath: pathFile) }
+        let errorFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-yt-audio-error-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: errorFile.path, contents: nil)
+        guard let errorHandle = try? FileHandle(forWritingTo: errorFile) else {
+            throw DownloadAudioError.processStartFailed("Could not create temporary error output")
+        }
+        defer {
+            try? errorHandle.close()
+            try? FileManager.default.removeItem(at: errorFile)
+        }
+
+        var args = ["-f", "bestaudio/best", "-x"]
+        args += formatArgs
+        args += [
+            "--no-playlist",
+            "--embed-metadata",
+            "--print-to-file", "after_move:filepath", pathFile,
+            "-o", outputTemplate,
+            sourceURL.absoluteString
+        ]
+
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = (Self.searchPaths + [env["PATH"] ?? ""]).joined(separator: ":")
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: ytdlp)
+        task.arguments = args
+        task.environment = env
+        task.standardError = errorHandle
+        task.standardOutput = FileHandle.nullDevice
+
+        do {
+            try task.run()
+        } catch {
+            throw DownloadAudioError.processStartFailed(error.localizedDescription)
+        }
+
+        task.waitUntilExit()
+        try? errorHandle.close()
+        let status = task.terminationStatus
+
+        let reported = (try? String(contentsOfFile: pathFile, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let outputPath = (reported?.isEmpty == false) ? reported : nil
+
+        if status != 0 || outputPath == nil {
+            let stderr = (try? String(contentsOf: errorFile, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallback = outputPath == nil
+                ? "yt-dlp did not report output path"
+                : "yt-dlp exited with code \(status)"
+            let errMsg = stderr.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+            throw DownloadAudioError.downloadFailed(errMsg)
+        }
+
+        guard let finalPath = outputPath else {
+            throw DownloadAudioError.downloadFailed("Output path is empty")
+        }
+
+        return URL(fileURLWithPath: finalPath)
+    }
+
+    /// Error type for downloadAudio
+    enum DownloadAudioError: LocalizedError {
+        case toolNotFound(String)
+        case processStartFailed(String)
+        case downloadFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .toolNotFound(let msg): return msg
+            case .processStartFailed(let msg): return "Failed to start yt-dlp: \(msg)"
+            case .downloadFailed(let msg): return msg
+            }
+        }
+    }
 
     // MARK: - Entry point
 
