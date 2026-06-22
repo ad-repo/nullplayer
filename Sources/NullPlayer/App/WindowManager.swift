@@ -1050,6 +1050,31 @@ class WindowManager {
                        debugWindowController?.window].compactMap({ $0 }) {
             window.orderOut(nil)
         }
+
+        // Phase 2: defensive sweep for orphaned windows from prior UI mode toggles
+        orderOutOrphanedAppWindows()
+    }
+
+    private func orderOutOrphanedAppWindows() {
+        let compactWindow = plexBrowserWindowController?.window
+        for window in NSApp.windows where window.isVisible {
+            if window === compactWindow { continue }
+            if isSystemOrTransientWindow(window) { continue }
+            NSLog("WindowManager: compact mode hiding orphaned window class=%@",
+                  NSStringFromClass(type(of: window)))
+            window.orderOut(nil)
+        }
+    }
+
+    /// Windows the compact-mode sweep must never touch: the status-bar item window,
+    /// popovers/tooltips, floating palettes (NSPanel), and attached modal sheets.
+    private func isSystemOrTransientWindow(_ window: NSWindow) -> Bool {
+        if window is NSPanel { return true }            // color/font panels, popovers, tooltips
+        if window.sheetParent != nil { return true }    // attached modal sheet
+        let className = NSStringFromClass(type(of: window))
+        let systemClasses = ["NSStatusBarWindow", "_NSPopoverWindow",
+                             "NSToolTipPanel", "NSCarbonMenuWindow", "NSMenuWindowManagerWindow"]
+        return systemClasses.contains(className)
     }
 
     private func restoreWindowVisibilityAfterCompactMode() {
@@ -4271,6 +4296,31 @@ class WindowManager {
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
         postWindowLayoutDidChange()
         updateDockedChildWindows()
+
+        #if DEBUG
+        // Log any visible orphaned windows that survived the rebuild
+        var trackedWindows = Set<ObjectIdentifier>()
+        for window in [mainWindowController?.window,
+                       playlistWindowController?.window,
+                       equalizerWindowController?.window,
+                       plexBrowserWindowController?.window,
+                       projectMWindowController?.window,
+                       spectrumWindowController?.window,
+                       audioAnalysisWindowController?.window,
+                       waveformWindowController?.window,
+                       videoPlayerWindowController?.window,
+                       debugWindowController?.window].compactMap({ $0 }) {
+            trackedWindows.insert(ObjectIdentifier(window))
+        }
+
+        for window in NSApp.windows where window.isVisible {
+            guard !trackedWindows.contains(ObjectIdentifier(window)) else { continue }
+            guard window !== plexBrowserWindowController?.window else { continue }
+            guard !isSystemOrTransientWindow(window) else { continue }
+            NSLog("WindowManager: DEBUG orphan survived rebuild class=%@",
+                  NSStringFromClass(type(of: window)))
+        }
+        #endif
     }
 
     /// Re-seed freshly created windows with the current audio/video presentation state.
