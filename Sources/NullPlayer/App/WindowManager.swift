@@ -220,6 +220,15 @@ class WindowManager {
     /// Library Browser frame before Compact Mode repositioned it under the status item.
     private var savedPlexBrowserFrameForCompactMode: NSRect?
 
+    /// Visible app-owned windows outside WindowManager's controller set. Compact Mode hides
+    /// these temporarily and restores them on exit; orphaned mode-dependent windows are excluded.
+    private var savedAdditionalWindowsForCompactMode: [NSWindow] = []
+
+    /// Marks mode-dependent player windows so stale instances can be distinguished from
+    /// legitimate standalone dialogs when sweeping NSApp.windows.
+    private static let modeDependentWindowIdentifier =
+        NSUserInterfaceItemIdentifier("nullPlayer.modeDependentWindow")
+
     /// Ensure modern main window keeps full-height geometry in HT mode at startup/restore.
     /// Keeps the top edge fixed so legacy compact HT frames are expanded.
     @discardableResult
@@ -563,6 +572,7 @@ class WindowManager {
                 mainWindowController = MainWindowController()
             }
         }
+        markModeDependentWindow(mainWindowController?.window)
         // Enforce HT compact height on both first show and subsequent re-shows.
         if isRunningModernUI {
             normalizeModernMainWindowForHTIfNeeded()
@@ -588,6 +598,7 @@ class WindowManager {
                 playlistWindowController = PlaylistWindowController()
             }
         }
+        markModeDependentWindow(playlistWindowController?.window)
         
         // Position BEFORE showing (unless restoring from saved state)
         if let playlistWindow = playlistWindowController?.window {
@@ -645,6 +656,7 @@ class WindowManager {
                 equalizerWindowController = EQWindowController()
             }
         }
+        markModeDependentWindow(equalizerWindowController?.window)
         
         // Position BEFORE showing (unless restoring from saved state)
         if let eqWindow = equalizerWindowController?.window {
@@ -827,6 +839,7 @@ class WindowManager {
                 plexBrowserWindowController = PlexBrowserWindowController()
             }
         }
+        markModeDependentWindow(plexBrowserWindowController?.window)
         plexBrowserWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
         // Position window to match the vertical stack
@@ -1020,6 +1033,7 @@ class WindowManager {
     }
 
     private func saveWindowVisibilityForCompactMode() {
+        savedAdditionalWindowsForCompactMode.removeAll()
         savedPlexBrowserFrameForCompactMode = plexBrowserWindowController?.window?.frame
         savedWindowVisibility = [
             "main": mainWindowController?.window?.isVisible ?? false,
@@ -1050,6 +1064,38 @@ class WindowManager {
                        debugWindowController?.window].compactMap({ $0 }) {
             window.orderOut(nil)
         }
+
+        // Phase 2: defensive sweep for orphaned windows from prior UI mode toggles
+        orderOutOrphanedAppWindows()
+    }
+
+    private func orderOutOrphanedAppWindows() {
+        let compactWindow = plexBrowserWindowController?.window
+        for window in NSApp.windows where window.isVisible {
+            if window === compactWindow { continue }
+            if isSystemOrTransientWindow(window) { continue }
+            let isOrphanedPlayerWindow =
+                window.identifier == Self.modeDependentWindowIdentifier
+            if !isOrphanedPlayerWindow {
+                savedAdditionalWindowsForCompactMode.append(window)
+            }
+            NSLog("WindowManager: compact mode hiding %@ window class=%@",
+                  isOrphanedPlayerWindow ? "orphaned" : "additional",
+                  NSStringFromClass(type(of: window)))
+            window.orderOut(nil)
+        }
+    }
+
+    /// Windows the compact-mode sweep must never touch: the status-bar item window,
+    /// system popovers/tooltips/palettes, and attached modal sheets. App-owned NSPanel
+    /// instances (such as About) are not exempt.
+    private func isSystemOrTransientWindow(_ window: NSWindow) -> Bool {
+        if window is NSColorPanel || window is NSFontPanel { return true }
+        if window.sheetParent != nil { return true }    // attached modal sheet
+        let className = NSStringFromClass(type(of: window))
+        let systemClasses = ["NSStatusBarWindow", "_NSPopoverWindow",
+                             "NSToolTipPanel", "NSCarbonMenuWindow", "NSMenuWindowManagerWindow"]
+        return systemClasses.contains(className)
     }
 
     private func restoreWindowVisibilityAfterCompactMode() {
@@ -1094,8 +1140,16 @@ class WindowManager {
         if savedWindowVisibility["plexBrowserShade"] == true {
             plexBrowserWindowController?.setShadeMode(true)
         }
+        for window in savedAdditionalWindowsForCompactMode {
+            window.orderFront(nil)
+        }
+        savedAdditionalWindowsForCompactMode.removeAll()
         savedPlexBrowserFrameForCompactMode = nil
         savedWindowVisibility.removeAll()
+    }
+
+    private func markModeDependentWindow(_ window: NSWindow?) {
+        window?.identifier = Self.modeDependentWindowIdentifier
     }
 
     /// While Compact Mode is active, state persistence must record the windows that were
@@ -1856,6 +1910,7 @@ class WindowManager {
                 projectMWindowController = ProjectMWindowController()
             }
         }
+        markModeDependentWindow(projectMWindowController?.window)
         projectMWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(projectMWindowController?.window)
         // Position window to match the vertical stack
@@ -1943,6 +1998,7 @@ class WindowManager {
                 spectrumWindowController = SpectrumWindowController()
             }
         }
+        markModeDependentWindow(spectrumWindowController?.window)
         
         // Position BEFORE showing (unless restoring from saved state)
         if let window = spectrumWindowController?.window {
@@ -2010,6 +2066,7 @@ class WindowManager {
                 audioAnalysisWindowController = AudioAnalysisWindowController()
             }
         }
+        markModeDependentWindow(audioAnalysisWindowController?.window)
 
         if let window = audioAnalysisWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .audioAnalysis)
@@ -2072,6 +2129,7 @@ class WindowManager {
                 waveformWindowController = WaveformWindowController()
             }
         }
+        markModeDependentWindow(waveformWindowController?.window)
 
         if let window = waveformWindowController?.window {
             let classicController = waveformWindowController as? WaveformWindowController
@@ -4271,6 +4329,30 @@ class WindowManager {
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
         postWindowLayoutDidChange()
         updateDockedChildWindows()
+
+        #if DEBUG
+        // Log any visible orphaned windows that survived the rebuild
+        var trackedWindows = Set<ObjectIdentifier>()
+        for window in [mainWindowController?.window,
+                       playlistWindowController?.window,
+                       equalizerWindowController?.window,
+                       plexBrowserWindowController?.window,
+                       projectMWindowController?.window,
+                       spectrumWindowController?.window,
+                       audioAnalysisWindowController?.window,
+                       waveformWindowController?.window,
+                       videoPlayerWindowController?.window,
+                       debugWindowController?.window].compactMap({ $0 }) {
+            trackedWindows.insert(ObjectIdentifier(window))
+        }
+
+        for window in NSApp.windows where window.isVisible {
+            guard !trackedWindows.contains(ObjectIdentifier(window)) else { continue }
+            guard window.identifier == Self.modeDependentWindowIdentifier else { continue }
+            NSLog("WindowManager: DEBUG orphan survived rebuild class=%@",
+                  NSStringFromClass(type(of: window)))
+        }
+        #endif
     }
 
     /// Re-seed freshly created windows with the current audio/video presentation state.
