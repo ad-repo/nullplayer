@@ -86,18 +86,25 @@ If a timer character has no matching sprite, the modern renderer falls back to d
 }
 ```
 
-## Window Toggle Buttons
+## Main Window Toggle Row
 
-These buttons appear between the seek bar and transport row, toggling window visibility.
+These 16×14 buttons appear between the seek bar and transport row. They are
+dynamically spaced from x=93 through x=269 at y=42.
 
-| Element ID | Default Rect | States | Description |
-|-----------|-------------|--------|-------------|
-| `btn_2x` | 140,42,20,14 | off, on, off_pressed, on_pressed | Large UI (1.5x) toggle |
-| `btn_eq` | 152,42,20,14 | off, on, off_pressed, on_pressed | EQ window toggle |
-| `btn_playlist` | 174,42,20,14 | off, on, off_pressed, on_pressed | Playlist window toggle |
-| `btn_library` | 196,42,20,14 | off, on, off_pressed, on_pressed | Library browser toggle |
-| `btn_projectm` | 218,42,22,14 | off, on, off_pressed, on_pressed | ProjectM window toggle |
-| `btn_spectrum` | 242,42,22,14 | off, on, off_pressed, on_pressed | Spectrum window toggle |
+| Order | Element ID | Label | Description |
+|------:|------------|-------|-------------|
+| 1 | `btn_shuffle` | SH | Shuffle toggle |
+| 2 | `btn_repeat` | RP | Repeat toggle |
+| 3 | `btn_cast` | CA | Output devices menu and casting status |
+| 4 | `btn_projectm` | VZ | Visualizer window toggle |
+| 5 | `btn_eq` | EQ | Equalizer window toggle |
+| 6 | `btn_playlist` | PL | Playlist window toggle |
+| 7 | `btn_spectrum` | SP | Spectrum Analyzer window toggle |
+| 8 | `btn_audioanalysis` | AA | Audio Analyzer window toggle |
+| 9 | `btn_waveform` | WV | Waveform window toggle |
+| 10 | `btn_library` | LB | Library Browser window toggle |
+
+All buttons support `off`, `on`, `off_pressed`, and `on_pressed` image states.
 
 **Color:** Use `minicontrol_buttons` in `elements` to control the ON state color for all main window toggle buttons. Falls back to `palette.accent`.
 
