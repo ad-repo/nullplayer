@@ -225,6 +225,10 @@ enum CastError: Error, LocalizedError {
     case authenticationRequired
     case operationInProgress
     case contentTypeConflict(String)
+    /// A SOAP control action returned an HTTP error. Carries the status code explicitly so
+    /// callers can classify recoverable 5xx failures (the detail is overwritten with the SOAP
+    /// faultstring when present, so the code is not reliably in the message).
+    case soapError(statusCode: Int, detail: String)
 
     var errorDescription: String? {
         switch self {
@@ -256,6 +260,8 @@ enum CastError: Error, LocalizedError {
             return "A cast operation is already in progress"
         case .contentTypeConflict(let reason):
             return "Content type conflict: \(reason)"
+        case .soapError(_, let detail):
+            return detail
         }
     }
 }
