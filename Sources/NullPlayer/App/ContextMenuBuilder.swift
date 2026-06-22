@@ -5093,6 +5093,9 @@ class MenuActions: NSObject {
                 // Start casting to first room
                 NSLog("MenuActions: Starting cast to '%@' (id: %@)", device.name, device.id)
                 try await castManager.castCurrentTrack(to: device)
+                guard let coordinatorUDN = castManager.activeSession?.device.id else {
+                    throw CastError.sessionNotActive
+                }
                 
                 // Join additional selected rooms to the group
                 let otherUDNs = selectedUDNs.filter { $0 != firstUDN }
@@ -5101,8 +5104,8 @@ class MenuActions: NSObject {
                     try? await Task.sleep(nanoseconds: 500_000_000)
                     
                     for udn in otherUDNs {
-                        NSLog("MenuActions: Joining room %@ to cast group (coordinator: %@)", udn, device.id)
-                        try await castManager.joinSonosToGroup(zoneUDN: udn, coordinatorUDN: device.id)
+                        NSLog("MenuActions: Joining room %@ to cast group (coordinator: %@)", udn, coordinatorUDN)
+                        try await castManager.joinSonosToGroup(zoneUDN: udn, coordinatorUDN: coordinatorUDN)
                         try? await Task.sleep(nanoseconds: 200_000_000)
                     }
                 }

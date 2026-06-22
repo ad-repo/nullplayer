@@ -172,17 +172,46 @@ class UPnPManager {
     func sonosCastDevice(forZoneUDN udn: String) -> CastDevice? {
         stateQueue.sync {
             guard let zone = sonosZones[udn], zone.avTransportURL != nil else { return nil }
-            return CastDevice(
-                id: zone.udn,
-                name: zone.roomName,
-                type: .sonos,
-                address: zone.address,
-                port: zone.port,
-                manufacturer: "Sonos",
-                avTransportControlURL: zone.avTransportURL,
-                descriptionURL: zone.descriptionURL
-            )
+            return makeSonosCastDevice(from: zone)
         }
+    }
+
+    /// Resolve a zone to the coordinator from the most recently fetched topology.
+    /// This handles a previously-cached coordinator becoming a group member after reboot.
+    func sonosCoordinatorCastDevice(forZoneUDN udn: String) -> CastDevice? {
+        stateQueue.sync {
+            let groups = lastFetchedGroups.map {
+                (coordinatorUDN: $0.coordinatorUDN, memberUDNs: $0.memberUDNs)
+            }
+            guard let coordinatorUDN = Self.sonosCoordinatorUDN(forZoneUDN: udn, groups: groups),
+                  let zone = sonosZones[coordinatorUDN],
+                  zone.avTransportURL != nil else {
+                return nil
+            }
+            return makeSonosCastDevice(from: zone)
+        }
+    }
+
+    static func sonosCoordinatorUDN(
+        forZoneUDN udn: String,
+        groups: [(coordinatorUDN: String, memberUDNs: [String])]
+    ) -> String? {
+        groups.first {
+            $0.coordinatorUDN == udn || $0.memberUDNs.contains(udn)
+        }?.coordinatorUDN
+    }
+
+    private func makeSonosCastDevice(from zone: SonosZoneInfo) -> CastDevice {
+        CastDevice(
+            id: zone.udn,
+            name: zone.roomName,
+            type: .sonos,
+            address: zone.address,
+            port: zone.port,
+            manufacturer: "Sonos",
+            avTransportControlURL: zone.avTransportURL,
+            descriptionURL: zone.descriptionURL
+        )
     }
     
     /// Summary of a room for the simplified grouping UI
@@ -1114,28 +1143,48 @@ class UPnPManager {
     /// (returns before the response arrives), this awaits the SOAP response and rebuilds the
     /// device/coordinator list before returning, so the caller can immediately re-resolve the
     /// coordinator and retry the cast.
-    func refreshSonosGroupTopologyAwait() async {
+    func refreshSonosGroupTopologyAwait() async -> Bool {
         // sonosGroupsFetched is guarded by stateQueue (mirrors resetDiscoveryState / refresh).
         stateQueue.sync { sonosGroupsFetched = false }
 
-        let zones = stateQueue.sync { Array(sonosZones.values) }
-        guard let zone = zones.first, let request = sonosGroupStateRequest(for: zone) else {
+        let zones = stateQueue.sync { sonosZones.values.sorted { $0.udn < $1.udn } }
+        guard !zones.isEmpty else {
             NSLog("UPnPManager: refreshSonosGroupTopologyAwait - no Sonos zones to query")
-            rebuildSonosDevicesAndWait(groups: nil)
-            return
+            return false
         }
 
-        NSLog("UPnPManager: refreshSonosGroupTopologyAwait - fetching group topology from %@", zone.address)
+        for zone in zones {
+            guard let request = sonosGroupStateRequest(for: zone) else { continue }
+            NSLog("UPnPManager: refreshSonosGroupTopologyAwait - fetching group topology from %@", zone.address)
 
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let responseString = String(data: data, encoding: .utf8) else {
-            NSLog("UPnPManager: refreshSonosGroupTopologyAwait - request failed, falling back to individual zones")
-            rebuildSonosDevicesAndWait(groups: nil)
-            return
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode) else {
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned HTTP %d", zone.address, status)
+                    continue
+                }
+                guard let responseString = String(data: data, encoding: .utf8) else {
+                    NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned invalid text", zone.address)
+                    continue
+                }
+
+                let groups = parseSonosGroupState(responseString)
+                guard !groups.isEmpty else {
+                    NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned no valid groups", zone.address)
+                    continue
+                }
+
+                rebuildSonosDevicesAndWait(groups: groups)
+                return true
+            } catch {
+                NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ failed: %@", zone.address, error.localizedDescription)
+            }
         }
 
-        let groups = parseSonosGroupState(responseString)
-        rebuildSonosDevicesAndWait(groups: groups)
+        NSLog("UPnPManager: refreshSonosGroupTopologyAwait - all Sonos zones failed; preserving cached topology")
+        return false
     }
 
     /// Rebuild the Sonos device list and block until it has been applied. `createSonosDevicesFromZones`
@@ -1844,7 +1893,13 @@ class UPnPManager {
         request.httpBody = soapBody.data(using: .utf8)
         request.timeoutInterval = 10
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw CastError.networkError(error)
+        }
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CastError.networkError(NSError(domain: "UPnP", code: -1))

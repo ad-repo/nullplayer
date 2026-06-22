@@ -817,12 +817,15 @@ class CastManager {
                 // (typically the cached group coordinator went stale after a speaker reboot) is
                 // retried once against a freshly re-fetched topology — the automatic equivalent
                 // of a manual device-list refresh. See the sonos-casting skill.
-                guard device.type == .sonos, isRecoverableSonosCastError(error) else {
+                guard device.type == .sonos, Self.isRecoverableSonosCastError(error) else {
                     throw error
                 }
 
                 NSLog("CastManager: Sonos cast failed with recoverable error — refreshing group topology and retrying once")
-                await upnpManager.refreshSonosGroupTopologyAwait()
+                guard await upnpManager.refreshSonosGroupTopologyAwait() else {
+                    NSLog("CastManager: Sonos topology refresh failed — rethrowing original error")
+                    throw error
+                }
 
                 guard let refreshed = resolvedSonosCoordinator(for: device) else {
                     NSLog("CastManager: No Sonos coordinator found after topology refresh — rethrowing original error")
@@ -950,19 +953,22 @@ class CastManager {
     /// Whether a failed Sonos cast is worth a topology-refresh + single retry. A 5xx SOAP error
     /// usually means the cached group coordinator went stale (e.g. after a speaker reboot); a
     /// network error can mean the rebooted coordinator timed out.
-    private func isRecoverableSonosCastError(_ error: Error) -> Bool {
+    static func isRecoverableSonosCastError(_ error: Error) -> Bool {
         if case CastError.soapError(let statusCode, _) = error, statusCode >= 500 { return true }
         if case CastError.networkError = error { return true }
+        if error is URLError { return true }
         return false
     }
 
     /// Re-resolve the coordinator serving the same room as `device` from the freshly-rebuilt
-    /// device list. Prefer the coordinator UDN, then a room-name match (coordinator names can
-    /// carry group suffixes, mirroring `castToSonosRoom`'s `hasPrefix` matching), then fall back
-    /// to building a device straight from the zone UDN.
+    /// device list. First map the old UDN through fresh group membership, then try a room-name
+    /// match (coordinator names can carry group suffixes, mirroring `castToSonosRoom`'s
+    /// `hasPrefix` matching), then fall back to building a device straight from the zone UDN.
     private func resolvedSonosCoordinator(for device: CastDevice) -> CastDevice? {
+        if let coordinator = upnpManager.sonosCoordinatorCastDevice(forZoneUDN: device.id) {
+            return coordinator
+        }
         let devices = sonosDevices
-        if let exact = devices.first(where: { $0.id == device.id }) { return exact }
         if let byName = devices.first(where: { $0.name.hasPrefix(device.name) || device.name.hasPrefix($0.name) }) {
             return byName
         }

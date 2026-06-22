@@ -541,6 +541,39 @@ final class CastingTests: XCTestCase {
         XCTAssertTrue(CastManager.isSonosCompatible(track))
     }
 
+    func testSonosCastRecoveryClassifiesNetworkAndServerErrorsOnly() {
+        XCTAssertTrue(CastManager.isRecoverableSonosCastError(
+            CastError.soapError(statusCode: 500, detail: "Internal Server Error")
+        ))
+        XCTAssertTrue(CastManager.isRecoverableSonosCastError(
+            CastError.networkError(URLError(.timedOut))
+        ))
+        XCTAssertTrue(CastManager.isRecoverableSonosCastError(URLError(.cannotConnectToHost)))
+        XCTAssertFalse(CastManager.isRecoverableSonosCastError(
+            CastError.soapError(statusCode: 403, detail: "Forbidden")
+        ))
+        XCTAssertFalse(CastManager.isRecoverableSonosCastError(
+            CastError.playbackFailed("Unsupported format")
+        ))
+    }
+
+    func testSonosCoordinatorResolutionMapsGroupMembersToCoordinator() {
+        let groups = [
+            (coordinatorUDN: "living-room", memberUDNs: ["living-room", "kitchen"]),
+            (coordinatorUDN: "bedroom", memberUDNs: ["bedroom"])
+        ]
+
+        XCTAssertEqual(
+            UPnPManager.sonosCoordinatorUDN(forZoneUDN: "kitchen", groups: groups),
+            "living-room"
+        )
+        XCTAssertEqual(
+            UPnPManager.sonosCoordinatorUDN(forZoneUDN: "bedroom", groups: groups),
+            "bedroom"
+        )
+        XCTAssertNil(UPnPManager.sonosCoordinatorUDN(forZoneUDN: "office", groups: groups))
+    }
+
     func testPlexContentTypeInferencePreservesLosslessCodecs() {
         XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "flac")), "audio/flac")
         XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "alac")), "audio/alac")
