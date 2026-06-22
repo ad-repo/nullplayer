@@ -363,6 +363,7 @@ class PlexBrowserView: NSView {
     /// Column being resized (id) and resize state
     private var resizingColumnId: String?
     private var resizingColumnGroup: LibraryColumnVisibilityGroup?
+    private var resizingColumnFromLeadingEdge = false
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0
     
@@ -798,8 +799,8 @@ class PlexBrowserView: NSView {
             return ascending ? aDate < bDate : aDate > bDate
         }
 
-        let aVal = a.columnValue(for: sortColumn)
-        let bVal = b.columnValue(for: sortColumn)
+        let aVal = columnSortValue(for: a, column: sortColumn)
+        let bVal = columnSortValue(for: b, column: sortColumn)
 
         // Try numeric comparison for numeric columns
         if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
@@ -846,6 +847,13 @@ class PlexBrowserView: NSView {
 
         // Default text comparison
         return compareNameStrings(aVal, bVal, ascending: ascending)
+    }
+
+    private func columnSortValue(for item: PlexDisplayItem, column: BrowserColumn) -> String {
+        if column.id == "title", case .youtubeVideo(let video) = item.type {
+            return video.title
+        }
+        return item.columnValue(for: column)
     }
 
     private func applyInternetRadioColumnSort(sortColumn: BrowserColumn, ascending: Bool) -> Bool {
@@ -7338,9 +7346,15 @@ class PlexBrowserView: NSView {
             let width = widthForColumn(column, availableWidth: headerRect.width, columns: columns, group: group)
             let separatorX = x + width
             
-            // Check if click is near the separator (except for last column)
-            if index < columns.count - 1 && column.id != "title" {
-                if abs(skinPoint.x - separatorX) < hitMargin {
+            // YouTube's Time column is the final column, so resize it from its leading
+            // edge (the separator after Title). Other groups keep their existing
+            // trailing-edge resize behavior.
+            if index < columns.count - 1,
+               abs(skinPoint.x - separatorX) < hitMargin {
+                if hasYouTubeColumns, column.id == "title" {
+                    return columns[index + 1].id
+                }
+                if column.id != "title" {
                     return column.id
                 }
             }
@@ -7963,6 +7977,7 @@ class PlexBrowserView: NSView {
         if let columnId = hitTestColumnResize(at: skinPoint) {
             resizingColumnId = columnId
             resizingColumnGroup = currentColumnGroup()
+            resizingColumnFromLeadingEdge = hasYouTubeColumns && columnId == "duration"
             resizeStartX = skinPoint.x
             let group = resizingColumnGroup
             let columns = currentVisibleColumns()
@@ -9374,7 +9389,8 @@ class PlexBrowserView: NSView {
         if let columnId = resizingColumnId, let group = resizingColumnGroup {
             let point = convert(event.locationInWindow, from: nil)
             let skinPoint = convertToSkinCoordinates(point)
-            let deltaX = skinPoint.x - resizeStartX
+            let rawDeltaX = skinPoint.x - resizeStartX
+            let deltaX = resizingColumnFromLeadingEdge ? -rawDeltaX : rawDeltaX
             let minWidth = BrowserColumn.findColumn(id: columnId)?.minWidth ?? 30
             let newWidth = max(minWidth, resizeStartWidth + deltaX)
             setColumnWidth(newWidth, for: columnId, group: group)
@@ -9436,6 +9452,7 @@ class PlexBrowserView: NSView {
         if resizingColumnId != nil {
             resizingColumnId = nil
             resizingColumnGroup = nil
+            resizingColumnFromLeadingEdge = false
             NSCursor.pop()
         }
         
