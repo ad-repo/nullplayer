@@ -421,9 +421,22 @@ class PlexBrowserView: NSView {
         return false
     }
 
+    /// YouTube channel uploads render through the resizable column path (title + time),
+    /// gated on the "Channels" view actually containing video rows.
+    private var hasYouTubeColumns: Bool {
+        guard radioSlotShowingChannels else { return false }
+        return displayItems.contains {
+            if case .youtubeVideo = $0.type { return true }
+            return false
+        }
+    }
+
     private func headerColumnsForCurrentContent() -> [BrowserColumn]? {
         if hasInternetRadioColumns {
             return BrowserColumn.internetRadioColumns
+        }
+        if hasYouTubeColumns {
+            return BrowserColumn.youtubeColumns
         }
         let columns = currentVisibleColumns()
         guard !columns.isEmpty else { return nil }
@@ -474,12 +487,15 @@ class PlexBrowserView: NSView {
             return .album
         case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist:
             return item.indentLevel == 0 ? .artist : nil
+        case .youtubeVideo:
+            return .youtube
         default:
             return nil
         }
     }
 
     private func currentColumnGroup() -> LibraryColumnVisibilityGroup? {
+        if hasYouTubeColumns { return .youtube }
         if hasTrackRows() { return .track }
         if hasAlbumRows() { return .album }
         if hasArtistRows() { return .artist }
@@ -495,7 +511,9 @@ class PlexBrowserView: NSView {
             return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
         case .artist:
             return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
-        case .youtube, nil:  // classic UI has no resizable YouTube column group
+        case .youtube:
+            return BrowserColumn.youtubeColumns
+        case nil:
             break
         }
 
@@ -609,6 +627,9 @@ class PlexBrowserView: NSView {
         if hasInternetRadioColumns {
             return BrowserColumn.internetRadioColumns
         }
+        if hasYouTubeColumns {
+            return BrowserColumn.youtubeColumns
+        }
         if hasTrackRows() {
             return visibleColumns(allColumns: BrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
         }
@@ -671,7 +692,12 @@ class PlexBrowserView: NSView {
             needsDisplay = true
             return
         }
-        
+
+        if applyYouTubeColumnSort(sortColumn: sortColumn) {
+            needsDisplay = true
+            return
+        }
+
         // When rows are expanded, the build order comes from the store (SQLite BINARY
         // collation), which diverges from the in-memory column sort (LibraryTextSorter:
         // diacritic-insensitive, numeric, article-stripping) precisely around special
@@ -847,6 +873,29 @@ class PlexBrowserView: NSView {
             didSort = true
         }
         return didSort
+    }
+
+    /// Sorts the videos within each expanded YouTube channel (contiguous runs of video rows)
+    /// by the clicked column, leaving the channel leaders in place. Mirrors the internet-radio
+    /// in-place run sort so the "Channels" view supports sortable column headers like other tabs.
+    private func applyYouTubeColumnSort(sortColumn: BrowserColumn) -> Bool {
+        guard radioSlotShowingChannels,
+              BrowserColumn.youtubeColumns.contains(where: { $0.id == sortColumn.id }),
+              displayItems.contains(where: { if case .youtubeVideo = $0.type { return true }; return false }) else {
+            return false
+        }
+
+        var index = 0
+        while index < displayItems.count {
+            guard case .youtubeVideo = displayItems[index].type else { index += 1; continue }
+            let start = index
+            while index < displayItems.count, case .youtubeVideo = displayItems[index].type {
+                index += 1
+            }
+            let sorted = stableColumnSortedItems(Array(displayItems[start..<index]), sortColumn: sortColumn)
+            displayItems.replaceSubrange(start..<index, with: sorted)
+        }
+        return true
     }
 
     private func sortedInternetRadioItems(_ items: [PlexDisplayItem], sortColumn: BrowserColumn, ascending: Bool) -> [PlexDisplayItem] {
@@ -3593,15 +3642,7 @@ class PlexBrowserView: NSView {
             } else {
                 // Original rendering for artists, playlists, headers, etc.
                 let indent = CGFloat(item.indentLevel) * 16
-                var textX = itemRect.minX + indent + 4
-
-                // Per-row download spinner for a downloading YouTube video
-                if case .youtubeVideo(let video) = item.type, downloadingVideoIds.contains(video.videoId) {
-                    let spinnerRadius = min(itemHeight * 0.3, 6)
-                    drawRowSpinner(in: context, center: CGPoint(x: textX + spinnerRadius, y: itemRect.midY),
-                                   radius: spinnerRadius, colors: colors)
-                    textX += spinnerRadius * 2 + 4
-                }
+                let textX = itemRect.minX + indent + 4
 
                 // Expand/collapse indicator for hierarchical items
                 if item.hasChildren {
@@ -3793,12 +3834,22 @@ class PlexBrowserView: NSView {
                 .font: useFont,
                 .foregroundColor: color
             ]
-            
+
+            // Per-row download spinner on the title column of a downloading YouTube video.
+            var titleSpinnerInset: CGFloat = 0
+            if column.id == "title", case .youtubeVideo(let video) = item.type,
+               downloadingVideoIds.contains(video.videoId) {
+                let spinnerRadius = min(rect.height * 0.3, 6)
+                let cx = x + 4 + spinnerRadius
+                drawRowSpinner(in: context, center: CGPoint(x: cx, y: rect.midY), radius: spinnerRadius, colors: colors)
+                titleSpinnerInset = spinnerRadius * 2 + 4
+            }
+
             let textSize = value.size(withAttributes: attrs)
             let textY = rect.minY + (rect.height - textSize.height) / 2
-            
-            let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
-            let maxTextWidth = width - 8  // Padding on both sides
+
+            let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4 + titleSpinnerInset)
+            let maxTextWidth = width - 8 - titleSpinnerInset  // Padding on both sides
             
             // Draw with truncation if needed
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
@@ -7506,7 +7557,7 @@ class PlexBrowserView: NSView {
         case .artist: return BrowserColumn.allArtistColumns
         case .album: return BrowserColumn.allAlbumColumns
         case .track: return BrowserColumn.allTrackColumns
-        case .youtube: return []  // classic UI has no resizable YouTube column group
+        case .youtube: return BrowserColumn.youtubeColumns
         }
     }
 
@@ -7515,7 +7566,7 @@ class PlexBrowserView: NSView {
         case .artist: return BrowserColumn.defaultArtistColumnIds
         case .album: return BrowserColumn.defaultAlbumColumnIds
         case .track: return BrowserColumn.defaultTrackColumnIds
-        case .youtube: return []
+        case .youtube: return BrowserColumn.defaultYouTubeColumnIds
         }
     }
 
@@ -7524,7 +7575,8 @@ class PlexBrowserView: NSView {
         case .artist: return normalizedColumnIds(visibleArtistColumnIds, allColumns: BrowserColumn.allArtistColumns)
         case .album: return normalizedColumnIds(visibleAlbumColumnIds, allColumns: BrowserColumn.allAlbumColumns)
         case .track: return normalizedColumnIds(visibleTrackColumnIds, allColumns: BrowserColumn.allTrackColumns)
-        case .youtube: return []
+        // YouTube columns are fixed (not user-hideable); always the full set.
+        case .youtube: return BrowserColumn.defaultYouTubeColumnIds
         }
     }
 
@@ -18283,13 +18335,18 @@ private struct BrowserColumn {
     static let internetRadioColumns: [BrowserColumn] = [
         .title, .genre, .rating
     ]
-    
+
+    /// Fixed columns shown for YouTube channel uploads (not user-hideable).
+    static let youtubeColumns: [BrowserColumn] = [.title, .duration]
+    static let defaultYouTubeColumnIds: [String] = ["title", "duration"]
+
     /// Find a column by ID across all column types
     static func findColumn(id: String) -> BrowserColumn? {
         if let c = allTrackColumns.first(where: { $0.id == id }) { return c }
         if let c = allAlbumColumns.first(where: { $0.id == id }) { return c }
         if let c = allArtistColumns.first(where: { $0.id == id }) { return c }
         if let c = internetRadioColumns.first(where: { $0.id == id }) { return c }
+        if let c = youtubeColumns.first(where: { $0.id == id }) { return c }
         return nil
     }
 }
@@ -18337,6 +18394,11 @@ extension PlexDisplayItem {
             return embyArtistValue(artist, for: column)
         case .radioStation(let station):
             return radioStationValue(station, for: column)
+        case .youtubeVideo(let video):
+            if column.id == "duration" {
+                return video.formattedDuration ?? ""
+            }
+            return ""
         default:
             return ""
         }
