@@ -37,6 +37,9 @@ protocol MainWindowProviding: ModeDependentWindow {
     
     /// Toggle shade (compact) mode
     func toggleShadeMode()
+
+    /// Set shade mode explicitly when restoring a recreated window.
+    func setShadeMode(_ enabled: Bool)
     
     /// Notify that the skin has changed and views should redraw
     func skinDidChange()

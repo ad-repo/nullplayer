@@ -431,6 +431,7 @@ class SpectrumAnalyzerView: NSView {
     }
 
     private let waveformConsumerID = "visClassicWaveform.\(UUID().uuidString)"
+    private var isWaveformConsumerRegistered = false
 
     private var visClassicPreferenceScope: VisClassicBridge.PreferenceScope {
         isEmbedded ? .mainWindow : .spectrumWindow
@@ -997,9 +998,12 @@ class SpectrumAnalyzerView: NSView {
     }
     
     deinit {
-        WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
-        NotificationCenter.default.removeObserver(self)
         stopRendering()
+        if isWaveformConsumerRegistered {
+            isWaveformConsumerRegistered = false
+            WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
+        }
+        NotificationCenter.default.removeObserver(self)
     }
     
     // MARK: - Window Occlusion Handling
@@ -4031,7 +4035,10 @@ class SpectrumAnalyzerView: NSView {
     }
 
     private func updateWaveformConsumerRegistration() {
-        if qualityMode == .visClassicExact && isRendering {
+        let shouldRegister = qualityMode == .visClassicExact && isRendering
+        guard shouldRegister != isWaveformConsumerRegistered else { return }
+        isWaveformConsumerRegistered = shouldRegister
+        if shouldRegister {
             WindowManager.shared.audioEngine.addWaveformConsumer(waveformConsumerID)
         } else {
             WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)

@@ -3,6 +3,7 @@ import AppKit
 /// Shared waveform state and interaction helpers used by both classic and modern waveform windows.
 class BaseWaveformView: NSView {
     private let waveformConsumerID = "waveformWindow.\(UUID().uuidString)"
+    private var isWaveformConsumerRegistered = false
 
     weak var waveformController: WaveformWindowProviding?
 
@@ -460,11 +461,12 @@ class BaseWaveformView: NSView {
     }
 
     private func updateWaveformConsumerRegistration(enabled: Bool) {
-        guard let track = currentTrack, track.mediaType == .audio, !track.url.isFileURL else {
-            WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
-            return
-        }
-        if enabled {
+        let shouldRegister = enabled
+            && currentTrack?.mediaType == .audio
+            && currentTrack?.url.isFileURL == false
+        guard shouldRegister != isWaveformConsumerRegistered else { return }
+        isWaveformConsumerRegistered = shouldRegister
+        if shouldRegister {
             WindowManager.shared.audioEngine.addWaveformConsumer(waveformConsumerID)
         } else {
             WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
@@ -474,7 +476,9 @@ class BaseWaveformView: NSView {
     deinit {
         loadTask?.cancel()
         cueLoadTask?.cancel()
-        WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
+        if isWaveformConsumerRegistered {
+            WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
+        }
         if let streamWaveformObserver {
             NotificationCenter.default.removeObserver(streamWaveformObserver)
         }

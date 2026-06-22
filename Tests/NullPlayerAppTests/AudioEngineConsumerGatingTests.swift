@@ -39,4 +39,18 @@ final class AudioEngineConsumerGatingTests: XCTestCase {
         XCTAssertFalse(engine.waveformNeeded)
         XCTAssertFalse(engine.stereoNeeded)
     }
+
+    func testDuplicateConsumerRegistrationsAreReferenceCounted() {
+        let engine = AudioEngine()
+
+        engine.addWaveformConsumer("replacement-safe")
+        engine.addWaveformConsumer("replacement-safe")
+        XCTAssertTrue(engine.waveformNeeded)
+
+        engine.removeWaveformConsumer("replacement-safe")
+        XCTAssertTrue(engine.waveformNeeded)
+
+        engine.removeWaveformConsumer("replacement-safe")
+        XCTAssertFalse(engine.waveformNeeded)
+    }
 }

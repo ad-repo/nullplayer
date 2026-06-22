@@ -1515,9 +1515,14 @@ class AudioEngine {
 
         programEQNode(for: target)
 
-        // Mirror the structural switch to the streaming player, then re-push gains.
+        // Mirror the structural switch to both streaming graphs. The secondary player may be
+        // actively fading in and can become primary immediately after this switch.
         streamingPlayer?.applyEQLayout(forModernUI: isModernUI)
         syncEQToStreamingPlayer()
+        if let crossfadeStreamingPlayer {
+            crossfadeStreamingPlayer.applyEQLayout(forModernUI: isModernUI)
+            syncEQToStreamingPlayer(crossfadeStreamingPlayer)
+        }
     }
     
     private func setupSpectrumAnalyzer() {

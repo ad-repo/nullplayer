@@ -1273,6 +1273,7 @@ class PlexBrowserView: NSView {
     
     /// Timer for visualization animation
     private var visualizerTimer: Timer?
+    private var isVisualizerConsumerRegistered = false
     
     /// Current visualization time
     private var visualizerTime: TimeInterval = 0
@@ -1581,7 +1582,7 @@ class PlexBrowserView: NSView {
         visualizerTime = 0
         silenceFrames = 0
         visualizerTimer?.invalidate()
-        WindowManager.shared.audioEngine.addSpectrumConsumer("plexBrowserVisualizer")
+        setVisualizerConsumerRegistered(true)
         // 30fps for smooth effects (reduced from 60fps for CPU efficiency - still looks great)
         // Use .common run loop mode so timer continues during context menu display
         let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
@@ -1697,7 +1698,17 @@ class PlexBrowserView: NSView {
         visualizerTimer = nil
         cycleTimer?.invalidate()
         cycleTimer = nil
-        WindowManager.shared.audioEngine.removeSpectrumConsumer("plexBrowserVisualizer")
+        setVisualizerConsumerRegistered(false)
+    }
+
+    private func setVisualizerConsumerRegistered(_ registered: Bool) {
+        guard registered != isVisualizerConsumerRegistered else { return }
+        isVisualizerConsumerRegistered = registered
+        if registered {
+            WindowManager.shared.audioEngine.addSpectrumConsumer("plexBrowserVisualizer")
+        } else {
+            WindowManager.shared.audioEngine.removeSpectrumConsumer("plexBrowserVisualizer")
+        }
     }
     
     /// Start cycle mode timer

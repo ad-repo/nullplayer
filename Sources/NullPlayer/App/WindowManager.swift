@@ -4185,6 +4185,7 @@ class WindowManager {
     private struct UIWindowSnapshot {
         let visible: Bool
         let frame: NSRect
+        let isShadeMode: Bool
     }
 
     /// Snapshot of the mode-dependent window layer, used to restore which windows were open
@@ -4203,7 +4204,11 @@ class WindowManager {
     private func captureModeDependentLayout() -> ModeDependentLayoutSnapshot {
         func snap(_ controller: ModeDependentWindow?) -> UIWindowSnapshot? {
             guard let window = controller?.window else { return nil }
-            return UIWindowSnapshot(visible: window.isVisible, frame: window.frame)
+            return UIWindowSnapshot(
+                visible: window.isVisible,
+                frame: window.frame,
+                isShadeMode: controller?.isShadeMode ?? false
+            )
         }
         return ModeDependentLayoutSnapshot(
             main: snap(mainWindowController),
@@ -4222,17 +4227,44 @@ class WindowManager {
     /// Finally re-pushes current playback presentation state and makes the main window key.
     private func recreateModeDependentLayout(_ snapshot: ModeDependentLayoutSnapshot) {
         showMainWindow()
-        if let main = snapshot.main, main.frame != .zero {
-            mainWindowController?.window?.setFrame(main.frame, display: true)
+        if let main = snapshot.main {
+            mainWindowController?.setShadeMode(main.isShadeMode)
+            if main.frame != .zero {
+                mainWindowController?.window?.setFrame(main.frame, display: true)
+            }
         }
 
-        if snapshot.playlist?.visible == true { showPlaylist(at: snapshot.playlist?.frame) }
-        if snapshot.equalizer?.visible == true { showEqualizer(at: snapshot.equalizer?.frame) }
-        if snapshot.library?.visible == true { showPlexBrowser(at: snapshot.library?.frame) }
-        if snapshot.spectrum?.visible == true { showSpectrum(at: snapshot.spectrum?.frame) }
+        if let playlist = snapshot.playlist, playlist.visible {
+            showPlaylist(at: playlist.isShadeMode ? nil : playlist.frame)
+            playlistWindowController?.setShadeMode(playlist.isShadeMode)
+            if playlist.isShadeMode { playlistWindowController?.window?.setFrame(playlist.frame, display: true) }
+        }
+        if let equalizer = snapshot.equalizer, equalizer.visible {
+            showEqualizer(at: equalizer.isShadeMode ? nil : equalizer.frame)
+            equalizerWindowController?.setShadeMode(equalizer.isShadeMode)
+            if equalizer.isShadeMode { equalizerWindowController?.window?.setFrame(equalizer.frame, display: true) }
+        }
+        if let library = snapshot.library, library.visible {
+            showPlexBrowser(at: library.isShadeMode ? nil : library.frame)
+            plexBrowserWindowController?.setShadeMode(library.isShadeMode)
+            if library.isShadeMode { plexBrowserWindowController?.window?.setFrame(library.frame, display: true) }
+        }
+        if let spectrum = snapshot.spectrum, spectrum.visible {
+            showSpectrum(at: spectrum.isShadeMode ? nil : spectrum.frame)
+            spectrumWindowController?.setShadeMode(spectrum.isShadeMode)
+            if spectrum.isShadeMode { spectrumWindowController?.window?.setFrame(spectrum.frame, display: true) }
+        }
         if snapshot.audioAnalysis?.visible == true { showAudioAnalysis(at: snapshot.audioAnalysis?.frame) }
-        if snapshot.waveform?.visible == true { showWaveform(at: snapshot.waveform?.frame) }
-        if snapshot.projectM?.visible == true { showProjectM(at: snapshot.projectM?.frame) }
+        if let waveform = snapshot.waveform, waveform.visible {
+            showWaveform(at: waveform.isShadeMode ? nil : waveform.frame)
+            waveformWindowController?.setShadeMode(waveform.isShadeMode)
+            if waveform.isShadeMode { waveformWindowController?.window?.setFrame(waveform.frame, display: true) }
+        }
+        if let projectM = snapshot.projectM, projectM.visible {
+            showProjectM(at: projectM.isShadeMode ? nil : projectM.frame)
+            projectMWindowController?.setShadeMode(projectM.isShadeMode)
+            if projectM.isShadeMode { projectMWindowController?.window?.setFrame(projectM.frame, display: true) }
+        }
 
         pushCurrentPresentationStateToRecreatedWindows()
 
@@ -4271,13 +4303,11 @@ class WindowManager {
     /// switch (PR4) layers mode-change semantics on top. Logs teardown/recreate timing.
     func debugRecreateModeDependentWindows() {
         NSLog("WindowManager: debugRecreateModeDependentWindows — start")
-        let snapshot = captureModeDependentLayout()
-
-        // Compact Mode hides the player windows behind a single browser window; exit it before
-        // teardown (snapshotting its prior state) so a clean rebuild + re-entry doesn't restore
-        // stale pre-teardown visibility.
         let wasCompact = compactModeEnabled
         if wasCompact { exitCompactMode() }
+        // Compact Mode hides the underlying player layout. Capture only after exiting so the
+        // snapshot contains the windows that must be restored behind the rebuilt compact UI.
+        let snapshot = captureModeDependentLayout()
 
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
@@ -4313,9 +4343,11 @@ class WindowManager {
         guard targetModern != isRunningModernUI else { return }
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetModern ? "modern" : "classic")
 
-        let snapshot = captureModeDependentLayout()
         let wasCompact = compactModeEnabled
         if wasCompact { exitCompactMode() }
+        // Compact Mode's visible browser is only a temporary presentation of the underlying
+        // layout. Capture after exit so re-entering Compact Mode preserves that real layout.
+        let snapshot = captureModeDependentLayout()
 
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()

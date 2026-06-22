@@ -574,6 +574,7 @@ class ModernLibraryBrowserView: NSView {
     private var lastBeatTime: TimeInterval = 0
     private var visEffectIntensity: CGFloat = 1.0
     private var visualizerTimer: Timer?
+    private var isVisualizerConsumerRegistered = false
     private var visualizerTime: TimeInterval = 0
     private var lastAudioLevel: Float = 0
     private var silenceFrames: Int = 0
@@ -7635,7 +7636,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func startVisualizerTimer() {
         visualizerTime = 0; silenceFrames = 0; visualizerTimer?.invalidate()
-        WindowManager.shared.audioEngine.addSpectrumConsumer("modernLibraryBrowserVisualizer")
+        setVisualizerConsumerRegistered(true)
         let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in self?.handleVisualizerTimerTick() }
         RunLoop.main.add(timer, forMode: .common); visualizerTimer = timer
         if visMode == .cycle { startCycleTimer() }
@@ -7670,7 +7671,17 @@ class ModernLibraryBrowserView: NSView {
     private func stopVisualizerTimer() {
         visualizerTimer?.invalidate(); visualizerTimer = nil
         cycleTimer?.invalidate(); cycleTimer = nil
-        WindowManager.shared.audioEngine.removeSpectrumConsumer("modernLibraryBrowserVisualizer")
+        setVisualizerConsumerRegistered(false)
+    }
+
+    private func setVisualizerConsumerRegistered(_ registered: Bool) {
+        guard registered != isVisualizerConsumerRegistered else { return }
+        isVisualizerConsumerRegistered = registered
+        if registered {
+            WindowManager.shared.audioEngine.addSpectrumConsumer("modernLibraryBrowserVisualizer")
+        } else {
+            WindowManager.shared.audioEngine.removeSpectrumConsumer("modernLibraryBrowserVisualizer")
+        }
     }
     
     private func startCycleTimer() {
