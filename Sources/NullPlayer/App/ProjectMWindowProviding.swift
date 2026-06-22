@@ -6,7 +6,7 @@ import AppKit
 /// allowing the rest of the app to be agnostic about which UI system is in use.
 ///
 /// Follows the same pattern as `MainWindowProviding` and `SpectrumWindowProviding`.
-protocol ProjectMWindowProviding: AnyObject {
+protocol ProjectMWindowProviding: ModeDependentWindow {
     /// The underlying window
     var window: NSWindow? { get }
     

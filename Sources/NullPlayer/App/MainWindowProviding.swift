@@ -4,7 +4,7 @@ import AppKit
 /// Both the classic `MainWindowController` and modern `ModernMainWindowController`
 /// conform to this protocol. `WindowManager` holds a reference to whichever is active,
 /// allowing the rest of the app to be agnostic about which UI system is in use.
-protocol MainWindowProviding: AnyObject {
+protocol MainWindowProviding: ModeDependentWindow {
     /// The underlying window
     var window: NSWindow? { get }
     
@@ -37,6 +37,9 @@ protocol MainWindowProviding: AnyObject {
     
     /// Toggle shade (compact) mode
     func toggleShadeMode()
+
+    /// Set shade mode explicitly when restoring a recreated window.
+    func setShadeMode(_ enabled: Bool)
     
     /// Notify that the skin has changed and views should redraw
     func skinDidChange()

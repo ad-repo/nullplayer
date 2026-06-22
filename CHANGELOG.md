@@ -14,6 +14,8 @@
 
 ### Improvements
 
+- **Live Modern ↔ Classic UI switching — no restart** — switching UI mode (Skins menu → **Switch to Modern/Classic**, or picking a modern/classic skin while in the other mode) now happens instantly in-process instead of prompting for an app restart. Only the mode-dependent window layer is torn down and rebuilt in the target mode; audio and video playback, casting sessions, the open playlist, current track, seek position, and play/pause state all continue uninterrupted across the switch. The shared 21-band equalizer node is reprogrammed live to the target layout (preserving each layout's own gains), the menu bar and any open sub-windows (EQ, Playlist, Spectrum, Waveform, ProjectM, Library, Audio Analysis) are recreated at their previous positions, and Compact Mode is preserved. Only classic **Large UI** (Double Size) still uses the restart dialog, as it's a size change rather than a mode switch.
+
 - **Classic utility-window titles** — the classic Spectrum Analyzer, Waveform, Library, and ProjectM windows now draw explicit bitmap-font titles into their skinned title bars, matching the Audio Analysis window. ProjectM is labeled **VISUALIZATIONS**.
 
 ### Bug Fixes

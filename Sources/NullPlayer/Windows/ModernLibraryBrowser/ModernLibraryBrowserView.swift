@@ -574,6 +574,7 @@ class ModernLibraryBrowserView: NSView {
     private var lastBeatTime: TimeInterval = 0
     private var visEffectIntensity: CGFloat = 1.0
     private var visualizerTimer: Timer?
+    private var isVisualizerConsumerRegistered = false
     private var visualizerTime: TimeInterval = 0
     private var lastAudioLevel: Float = 0
     private var silenceFrames: Int = 0
@@ -831,6 +832,42 @@ class ModernLibraryBrowserView: NSView {
         cancelPendingArtSingleClickAction()
         localLibraryReloadWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
+        stopLoadingAnimation(force: true)
+        stopServerNameScroll()
+        stopVisualizerTimer()
+    }
+
+    /// Synchronously cancel every in-flight task, work item, and timer this view owns so it can
+    /// be deallocated immediately when the controller is torn down for a UI reload — rather than
+    /// being pinned alive (and mutating dead UI state) by a detached `@MainActor` expand/load task
+    /// or a self-retaining repeating timer. `deinit` is deferred by AppKit's autorelease pool, so
+    /// `WindowManager.teardownModeDependentWindows()` calls this *before* closing the window.
+    func prepareForUITeardown() {
+        // Async tasks — the detached @MainActor expand/load tasks don't inherit cancellation and
+        // strongly capture self, so an in-flight one would survive teardown without this.
+        for task in [localFolderBuildTask,
+                     subsonicLoadTask, subsonicExpandTask,
+                     plexLoadTask, sourceConnectTask,
+                     jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
+                     youtubeExpandTask, youtubeDownloadTask,
+                     embyLoadTask, embyExpandTask,
+                     ratingSubmitTask, artworkLoadTask, artworkCyclingTask,
+                     radioLoadTask, radioPlayTask] {
+            task?.cancel()
+        }
+        localFolderBuildTask = nil
+        subsonicLoadTask = nil; subsonicExpandTask = nil
+        plexLoadTask = nil; sourceConnectTask = nil
+        jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
+        youtubeExpandTask = nil; youtubeDownloadTask = nil
+        embyLoadTask = nil; embyExpandTask = nil
+        ratingSubmitTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
+        radioLoadTask = nil; radioPlayTask = nil
+
+        // Work items + timers (timers with a target/captured self can also pin the view alive).
+        cancelPendingArtSingleClickAction()
+        localLibraryReloadWorkItem?.cancel(); localLibraryReloadWorkItem = nil
+        typeAheadTimer?.invalidate(); typeAheadTimer = nil
         stopLoadingAnimation(force: true)
         stopServerNameScroll()
         stopVisualizerTimer()
@@ -7599,7 +7636,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func startVisualizerTimer() {
         visualizerTime = 0; silenceFrames = 0; visualizerTimer?.invalidate()
-        WindowManager.shared.audioEngine.addSpectrumConsumer("modernLibraryBrowserVisualizer")
+        setVisualizerConsumerRegistered(true)
         let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in self?.handleVisualizerTimerTick() }
         RunLoop.main.add(timer, forMode: .common); visualizerTimer = timer
         if visMode == .cycle { startCycleTimer() }
@@ -7634,7 +7671,17 @@ class ModernLibraryBrowserView: NSView {
     private func stopVisualizerTimer() {
         visualizerTimer?.invalidate(); visualizerTimer = nil
         cycleTimer?.invalidate(); cycleTimer = nil
-        WindowManager.shared.audioEngine.removeSpectrumConsumer("modernLibraryBrowserVisualizer")
+        setVisualizerConsumerRegistered(false)
+    }
+
+    private func setVisualizerConsumerRegistered(_ registered: Bool) {
+        guard registered != isVisualizerConsumerRegistered else { return }
+        isVisualizerConsumerRegistered = registered
+        if registered {
+            WindowManager.shared.audioEngine.addSpectrumConsumer("modernLibraryBrowserVisualizer")
+        } else {
+            WindowManager.shared.audioEngine.removeSpectrumConsumer("modernLibraryBrowserVisualizer")
+        }
     }
     
     private func startCycleTimer() {

@@ -82,7 +82,13 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     }
     
     // MARK: - Public Methods
-    
+
+    /// Mode-dependent teardown: forward to the view so it cancels its in-flight tasks/timers
+    /// before this controller is closed and niled for a UI reload.
+    func prepareForUITeardown() {
+        browserView?.prepareForUITeardown()
+    }
+
     func skinDidChange() {
         browserView.skinDidChange()
     }

@@ -1273,6 +1273,7 @@ class PlexBrowserView: NSView {
     
     /// Timer for visualization animation
     private var visualizerTimer: Timer?
+    private var isVisualizerConsumerRegistered = false
     
     /// Current visualization time
     private var visualizerTime: TimeInterval = 0
@@ -1581,7 +1582,7 @@ class PlexBrowserView: NSView {
         visualizerTime = 0
         silenceFrames = 0
         visualizerTimer?.invalidate()
-        WindowManager.shared.audioEngine.addSpectrumConsumer("plexBrowserVisualizer")
+        setVisualizerConsumerRegistered(true)
         // 30fps for smooth effects (reduced from 60fps for CPU efficiency - still looks great)
         // Use .common run loop mode so timer continues during context menu display
         let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
@@ -1697,7 +1698,17 @@ class PlexBrowserView: NSView {
         visualizerTimer = nil
         cycleTimer?.invalidate()
         cycleTimer = nil
-        WindowManager.shared.audioEngine.removeSpectrumConsumer("plexBrowserVisualizer")
+        setVisualizerConsumerRegistered(false)
+    }
+
+    private func setVisualizerConsumerRegistered(_ registered: Bool) {
+        guard registered != isVisualizerConsumerRegistered else { return }
+        isVisualizerConsumerRegistered = registered
+        if registered {
+            WindowManager.shared.audioEngine.addSpectrumConsumer("plexBrowserVisualizer")
+        } else {
+            WindowManager.shared.audioEngine.removeSpectrumConsumer("plexBrowserVisualizer")
+        }
     }
     
     /// Start cycle mode timer
@@ -2019,6 +2030,42 @@ class PlexBrowserView: NSView {
         cancelPendingArtSingleClickAction()
         localLibraryReloadWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
+        stopLoadingAnimation()
+        stopServerNameScroll()
+        stopVisualizerTimer()
+    }
+
+    /// Synchronously cancel every in-flight task, work item, and timer this view owns so it can
+    /// be deallocated immediately when the controller is torn down for a UI reload — rather than
+    /// being pinned alive (and mutating dead UI state) by a detached `@MainActor` expand/load task
+    /// or a self-retaining repeating timer. `deinit` is deferred by AppKit's autorelease pool, so
+    /// `WindowManager.teardownModeDependentWindows()` calls this *before* closing the window.
+    func prepareForUITeardown() {
+        // Async tasks — the detached @MainActor expand/load tasks don't inherit cancellation and
+        // strongly capture self, so an in-flight one would survive teardown without this.
+        for task in [localFolderBuildTask,
+                     subsonicLoadTask, subsonicExpandTask,
+                     plexLoadTask, sourceConnectTask,
+                     jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
+                     youtubeExpandTask, youtubeDownloadTask,
+                     embyLoadTask, embyExpandTask,
+                     ratingSubmitTask, artworkLoadTask, artworkCyclingTask,
+                     radioLoadTask, radioPlayTask] {
+            task?.cancel()
+        }
+        localFolderBuildTask = nil
+        subsonicLoadTask = nil; subsonicExpandTask = nil
+        plexLoadTask = nil; sourceConnectTask = nil
+        jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
+        youtubeExpandTask = nil; youtubeDownloadTask = nil
+        embyLoadTask = nil; embyExpandTask = nil
+        ratingSubmitTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
+        radioLoadTask = nil; radioPlayTask = nil
+
+        // Work items + timers (timers with a target/captured self can also pin the view alive).
+        cancelPendingArtSingleClickAction()
+        localLibraryReloadWorkItem?.cancel(); localLibraryReloadWorkItem = nil
+        typeAheadTimer?.invalidate(); typeAheadTimer = nil
         stopLoadingAnimation()
         stopServerNameScroll()
         stopVisualizerTimer()
@@ -16644,7 +16691,9 @@ class PlexBrowserView: NSView {
                 if subsonicArtistAlbums[artist.id] == nil {
                     let artistId = artist.id
                     subsonicExpandTask?.cancel()
-                    subsonicExpandTask = Task { @MainActor [weak self] in
+                    // Task.detached: a plain Task {} inherits main-actor cancellation, so a
+                    // main-actor teardown (e.g. reloadUI) can cancel the expand before it runs.
+                    subsonicExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
                             try Task.checkCancellation()
@@ -16673,7 +16722,9 @@ class PlexBrowserView: NSView {
                 if subsonicAlbumSongs[album.id] == nil {
                     let albumId = album.id
                     subsonicExpandTask?.cancel()
-                    subsonicExpandTask = Task { @MainActor [weak self] in
+                    // Task.detached: a plain Task {} inherits main-actor cancellation, so a
+                    // main-actor teardown (e.g. reloadUI) can cancel the expand before it runs.
+                    subsonicExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
                             try Task.checkCancellation()
@@ -16702,7 +16753,9 @@ class PlexBrowserView: NSView {
                 if subsonicPlaylistTracks[playlist.id] == nil {
                     let playlistId = playlist.id
                     subsonicExpandTask?.cancel()
-                    subsonicExpandTask = Task { @MainActor [weak self] in
+                    // Task.detached: a plain Task {} inherits main-actor cancellation, so a
+                    // main-actor teardown (e.g. reloadUI) can cancel the expand before it runs.
+                    subsonicExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
                             try Task.checkCancellation()
