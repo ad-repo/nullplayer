@@ -6148,9 +6148,13 @@ class ModernLibraryBrowserView: NSView {
                 defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                 do {
                     let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                    // A newer download may have superseded this one; don't auto-play a stale result.
+                    try Task.checkCancellation()
                     let track = Track(url: downloadedURL, isYouTubeOrigin: true)
                     WindowManager.shared.audioEngine.playNow([track])
                     rebuildCurrentModeItems()
+                } catch is CancellationError {
+                    // Superseded by a newer download request; skip side effects.
                 } catch {
                     NSLog("Failed to download YouTube video: %@", error.localizedDescription)
                 }
@@ -11565,9 +11569,13 @@ class ModernLibraryBrowserView: NSView {
                     defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                     do {
                         let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                        // A newer download may have superseded this one; don't auto-play a stale result.
+                        try Task.checkCancellation()
                         let track = Track(url: downloadedURL, isYouTubeOrigin: true)
                         WindowManager.shared.audioEngine.playNow([track])
                         rebuildCurrentModeItems()
+                    } catch is CancellationError {
+                        // Superseded by a newer download request; skip side effects.
                     } catch {
                         NSLog("Failed to download YouTube video: %@", error.localizedDescription)
                     }
