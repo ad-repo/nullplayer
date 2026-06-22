@@ -937,7 +937,8 @@ class ModernSkinRenderer {
                              id == "btn_library" ||
                              id == "btn_projectm" ||
                              id == "btn_spectrum" ||
-                             id == "btn_waveform")
+                             id == "btn_waveform" ||
+                             id == "btn_audioanalysis")
         if isBoxedButton {
             let boxColor = isOn ? onColor : offColor
             context.saveGState()

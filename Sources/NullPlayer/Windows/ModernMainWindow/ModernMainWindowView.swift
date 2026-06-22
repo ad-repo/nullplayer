@@ -778,11 +778,11 @@ class ModernMainWindowView: NSView {
             ("btn_shuffle", "SH", audioEngine.shuffleEnabled),
             ("btn_repeat", "RP", audioEngine.repeatEnabled),
             ("btn_cast", "CA", CastManager.shared.isCasting),
-            ("btn_sk", "SK", false),
-            ("btn_projectm", "pM", WindowManager.shared.isProjectMVisible),
+            ("btn_projectm", "VZ", WindowManager.shared.isProjectMVisible),
             ("btn_eq", "EQ", WindowManager.shared.isEqualizerVisible),
             ("btn_playlist", "PL", WindowManager.shared.isPlaylistVisible),
             ("btn_spectrum", "SP", WindowManager.shared.isSpectrumVisible),
+            ("btn_audioanalysis", "AA", WindowManager.shared.isAudioAnalysisVisible),
             ("btn_waveform", "WV", WindowManager.shared.isWaveformVisible),
             ("btn_library", "LB", WindowManager.shared.isPlexBrowserVisible),
         ]
@@ -1478,8 +1478,9 @@ class ModernMainWindowView: NSView {
             let rightEdge: CGFloat = 269
             let bw: CGFloat = 16
             let bs = (rightEdge - leftEdge - 10 * bw) / 9
-            let ids = ["btn_shuffle", "btn_repeat", "btn_cast", "btn_sk",
-                       "btn_projectm", "btn_eq", "btn_playlist", "btn_spectrum", "btn_waveform", "btn_library"]
+            let ids = ["btn_shuffle", "btn_repeat", "btn_cast", "btn_projectm",
+                       "btn_eq", "btn_playlist", "btn_spectrum", "btn_audioanalysis",
+                       "btn_waveform", "btn_library"]
             for (i, id) in ids.enumerated() {
                 hitTargets.append((id, NSRect(x: leftEdge + CGFloat(i) * (bw + bs), y: 42, width: bw, height: 14)))
             }
@@ -1722,9 +1723,9 @@ class ModernMainWindowView: NSView {
                 audioEngine.next()
             }
             
-        case "btn_sk":
-            showModernSkinsMenu()
-            
+        case "btn_audioanalysis":
+            WindowManager.shared.toggleAudioAnalysis()
+
         case "btn_shuffle":
             audioEngine.shuffleEnabled.toggle()
             
@@ -1778,13 +1779,6 @@ class ModernMainWindowView: NSView {
         menu.popUp(positioning: nil, at: menuPoint, in: self)
     }
 
-    private func showModernSkinsMenu() {
-        let menu = ContextMenuBuilder.buildModernSkinsMenu()
-        let btnRect = scaledRect(NSRect(x: 163, y: 42, width: 18, height: 14))
-        let menuPoint = NSPoint(x: btnRect.minX, y: btnRect.maxY)
-        menu.popUp(positioning: nil, at: menuPoint, in: self)
-    }
-    
     // MARK: - Keyboard Events
     
     override var acceptsFirstResponder: Bool { true }
