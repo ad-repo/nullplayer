@@ -245,6 +245,12 @@ NullPlayer polls Sonos every 5 seconds during casting:
 - During casting, group topology refreshed every 60 seconds
 - Detects external group changes
 
+**Cast-failure auto-recovery (stale coordinator after reboot):**
+- Casts target the group *coordinator* via the control URL cached in `sonosZones` + `lastFetchedGroups`. Topology is only re-fetched on a local-IP change or every 60s *while a cast is already active* — never before initiating a new cast. A speaker reboot is not an IP change, so the cached coordinator can go stale and `SetAVTransportURI`/`Play` returns HTTP 500. Manually refreshing the device list used to be the only fix.
+- Both AVTransport SOAP error sites now throw `CastError.soapError(statusCode:detail:)` instead of `playbackFailed`, so the status code is reliably available to callers (`UPnPManager.sendSetAVTransportURI` fails fast with no retry; `sendSOAPAction` still retries transient 5xx first).
+- `CastManager.cast(...)` `.sonos` branch: on a recoverable failure (`soapError` ≥ 500, `networkError`, or a raw URL-loading error) it `disconnect()`s, calls the awaitable `UPnPManager.refreshSonosGroupTopologyAwait()`. The refresh validates the HTTP response, tries each cached zone until one returns a valid topology, and **blocks until** the device/coordinator list is rebuilt. It then maps the old zone UDN through fresh group membership to the current coordinator (falling back to room-name matching) and retries the cast **once**. If no zone returns valid topology, it preserves the cached topology and does not retry the stale endpoint.
+- Recovery is Sonos-only and retries at most once; a genuinely fatal error (401/403 Connection Security, unsupported format) is not retried and surfaces its existing message.
+
 ### Group Management
 
 **Join a group** - `SetAVTransportURI` with `x-rincon:{coordinator_uid}`:

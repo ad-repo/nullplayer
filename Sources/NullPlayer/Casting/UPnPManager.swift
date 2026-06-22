@@ -172,17 +172,46 @@ class UPnPManager {
     func sonosCastDevice(forZoneUDN udn: String) -> CastDevice? {
         stateQueue.sync {
             guard let zone = sonosZones[udn], zone.avTransportURL != nil else { return nil }
-            return CastDevice(
-                id: zone.udn,
-                name: zone.roomName,
-                type: .sonos,
-                address: zone.address,
-                port: zone.port,
-                manufacturer: "Sonos",
-                avTransportControlURL: zone.avTransportURL,
-                descriptionURL: zone.descriptionURL
-            )
+            return makeSonosCastDevice(from: zone)
         }
+    }
+
+    /// Resolve a zone to the coordinator from the most recently fetched topology.
+    /// This handles a previously-cached coordinator becoming a group member after reboot.
+    func sonosCoordinatorCastDevice(forZoneUDN udn: String) -> CastDevice? {
+        stateQueue.sync {
+            let groups = lastFetchedGroups.map {
+                (coordinatorUDN: $0.coordinatorUDN, memberUDNs: $0.memberUDNs)
+            }
+            guard let coordinatorUDN = Self.sonosCoordinatorUDN(forZoneUDN: udn, groups: groups),
+                  let zone = sonosZones[coordinatorUDN],
+                  zone.avTransportURL != nil else {
+                return nil
+            }
+            return makeSonosCastDevice(from: zone)
+        }
+    }
+
+    static func sonosCoordinatorUDN(
+        forZoneUDN udn: String,
+        groups: [(coordinatorUDN: String, memberUDNs: [String])]
+    ) -> String? {
+        groups.first {
+            $0.coordinatorUDN == udn || $0.memberUDNs.contains(udn)
+        }?.coordinatorUDN
+    }
+
+    private func makeSonosCastDevice(from zone: SonosZoneInfo) -> CastDevice {
+        CastDevice(
+            id: zone.udn,
+            name: zone.roomName,
+            type: .sonos,
+            address: zone.address,
+            port: zone.port,
+            manufacturer: "Sonos",
+            avTransportControlURL: zone.avTransportURL,
+            descriptionURL: zone.descriptionURL
+        )
     }
     
     /// Summary of a room for the simplified grouping UI
@@ -1058,27 +1087,9 @@ class UPnPManager {
         }
         
         NSLog("UPnPManager: Fetching Sonos group topology from %@", zone.address)
-        
-        // Build SOAP request for GetZoneGroupState
-        let soapAction = "urn:schemas-upnp-org:service:ZoneGroupTopology:1#GetZoneGroupState"
-        let soapBody = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-                <s:Body>
-                    <u:GetZoneGroupState xmlns:u="urn:schemas-upnp-org:service:ZoneGroupTopology:1"></u:GetZoneGroupState>
-                </s:Body>
-            </s:Envelope>
-            """
-        
-        guard let url = URL(string: "http://\(zone.address):\(zone.port)/ZoneGroupTopology/Control") else { return }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        request.setValue(soapAction, forHTTPHeaderField: "SOAPAction")
-        request.httpBody = soapBody.data(using: .utf8)
-        request.timeoutInterval = 5
-        
+
+        guard let request = sonosGroupStateRequest(for: zone) else { return }
+
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
             
@@ -1101,7 +1112,89 @@ class UPnPManager {
         }
         task.resume()
     }
-    
+
+    /// Build the `GetZoneGroupState` SOAP request against a zone's topology control endpoint.
+    /// Shared by the fire-and-forget `fetchSonosGroupTopology()` and the awaitable
+    /// `refreshSonosGroupTopologyAwait()`.
+    private func sonosGroupStateRequest(for zone: SonosZoneInfo) -> URLRequest? {
+        let soapAction = "urn:schemas-upnp-org:service:ZoneGroupTopology:1#GetZoneGroupState"
+        let soapBody = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+                <s:Body>
+                    <u:GetZoneGroupState xmlns:u="urn:schemas-upnp-org:service:ZoneGroupTopology:1"></u:GetZoneGroupState>
+                </s:Body>
+            </s:Envelope>
+            """
+
+        guard let url = URL(string: "http://\(zone.address):\(zone.port)/ZoneGroupTopology/Control") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.setValue(soapAction, forHTTPHeaderField: "SOAPAction")
+        request.httpBody = soapBody.data(using: .utf8)
+        request.timeoutInterval = 5
+        return request
+    }
+
+    /// Awaitable group-topology re-fetch used by cast auto-recovery. Unlike
+    /// `fetchSonosGroupTopology()` (fire-and-forget `dataTask`) and `refreshSonosGroupTopology()`
+    /// (returns before the response arrives), this awaits the SOAP response and rebuilds the
+    /// device/coordinator list before returning, so the caller can immediately re-resolve the
+    /// coordinator and retry the cast.
+    func refreshSonosGroupTopologyAwait() async -> Bool {
+        // sonosGroupsFetched is guarded by stateQueue (mirrors resetDiscoveryState / refresh).
+        stateQueue.sync { sonosGroupsFetched = false }
+
+        let zones = stateQueue.sync { sonosZones.values.sorted { $0.udn < $1.udn } }
+        guard !zones.isEmpty else {
+            NSLog("UPnPManager: refreshSonosGroupTopologyAwait - no Sonos zones to query")
+            return false
+        }
+
+        for zone in zones {
+            guard let request = sonosGroupStateRequest(for: zone) else { continue }
+            NSLog("UPnPManager: refreshSonosGroupTopologyAwait - fetching group topology from %@", zone.address)
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode) else {
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned HTTP %d", zone.address, status)
+                    continue
+                }
+                guard let responseString = String(data: data, encoding: .utf8) else {
+                    NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned invalid text", zone.address)
+                    continue
+                }
+
+                let groups = parseSonosGroupState(responseString)
+                guard !groups.isEmpty else {
+                    NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned no valid groups", zone.address)
+                    continue
+                }
+
+                rebuildSonosDevicesAndWait(groups: groups)
+                return true
+            } catch {
+                NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ failed: %@", zone.address, error.localizedDescription)
+            }
+        }
+
+        NSLog("UPnPManager: refreshSonosGroupTopologyAwait - all Sonos zones failed; preserving cached topology")
+        return false
+    }
+
+    /// Rebuild the Sonos device list and block until it has been applied. `createSonosDevicesFromZones`
+    /// dispatches its work onto the serial `stateQueue`, so a following `stateQueue.sync {}` acts as a
+    /// barrier guaranteeing `_devices` / `lastFetchedGroups` are rebuilt before this returns.
+    private func rebuildSonosDevicesAndWait(groups: [SonosGroup]?) {
+        createSonosDevicesFromZones(groups: groups)
+        stateQueue.sync {}
+    }
+
     /// Parse Sonos zone group state XML
     private func parseSonosGroupState(_ xml: String) -> [SonosGroup] {
         var groups: [SonosGroup] = []
@@ -1800,7 +1893,13 @@ class UPnPManager {
         request.httpBody = soapBody.data(using: .utf8)
         request.timeoutInterval = 10
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw CastError.networkError(error)
+        }
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CastError.networkError(NSError(domain: "UPnP", code: -1))
@@ -1822,7 +1921,7 @@ class UPnPManager {
             }
             
             NSLog("UPnPManager: SetAVTransportURI SOAP error %d: %@", httpResponse.statusCode, errorBody)
-            throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+            throw CastError.soapError(statusCode: httpResponse.statusCode, detail: "SOAP error \(httpResponse.statusCode)")
         }
         
         return String(data: data, encoding: .utf8) ?? ""
@@ -2406,7 +2505,7 @@ class UPnPManager {
                     // Always log SOAP errors with full detail for debugging
                     NSLog("UPnPManager: SOAP ERROR for %@ - Status: %d, Detail: %@", action, httpResponse.statusCode, errorDetail)
                     NSLog("UPnPManager: SOAP ERROR body: %@", errorBody)
-                    throw CastError.playbackFailed(errorDetail)
+                    throw CastError.soapError(statusCode: httpResponse.statusCode, detail: errorDetail)
                 }
                 
                 // Success
