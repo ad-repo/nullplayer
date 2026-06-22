@@ -426,7 +426,9 @@ class ModernLibraryBrowserView: NSView {
     private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
     private var youtubeExpandTask: Task<Void, Never>?
     private var youtubeDownloadTask: Task<Void, Never>?
-    
+    /// Video IDs currently downloading — drives a per-row spinner on the video entry.
+    private var downloadingVideoIds: Set<String> = []
+
     // Cached data - Video (Plex)
     private var cachedMovies: [PlexMovie] = []
     private var cachedShows: [PlexShow] = []
@@ -2140,10 +2142,20 @@ class ModernLibraryBrowserView: NSView {
                 .font: useFont,
                 .foregroundColor: skin.applyTextOpacity(to: color)
             ]
+            // Per-row download spinner on the title column of a downloading YouTube video.
+            var titleSpinnerInset: CGFloat = 0
+            if column.id == "title", case .youtubeVideo(let video) = item.type,
+               downloadingVideoIds.contains(video.videoId) {
+                let spinnerRadius = min(rect.height * 0.3, 6)
+                let cx = x + 4 + spinnerRadius
+                drawRowSpinner(in: context, center: CGPoint(x: cx, y: rect.midY), radius: spinnerRadius, skin: skin)
+                titleSpinnerInset = spinnerRadius * 2 + 4
+            }
+
             let textSize = value.size(withAttributes: attrs)
             let textY = rect.minY + (rect.height - textSize.height) / 2
-            let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
-            let maxTextWidth = width - 8
+            let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4 + titleSpinnerInset)
+            let maxTextWidth = width - 8 - titleSpinnerInset
 
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
             if column.id == "rating" && !isSelected && value.contains("★") {
@@ -2220,7 +2232,26 @@ class ModernLibraryBrowserView: NSView {
         
         startLoadingAnimation()
     }
-    
+
+    /// Small inline spinner used on a downloading YouTube video row.
+    private func drawRowSpinner(in context: CGContext, center: CGPoint, radius: CGFloat, skin: ModernSkin) {
+        let innerRadius = radius * 0.45
+        let outerRadius = radius
+        let numSegments = 8
+        let segmentAngle = CGFloat.pi * 2 / CGFloat(numSegments)
+        context.saveGState()
+        for i in 0..<numSegments {
+            let angle = CGFloat(i) * segmentAngle - CGFloat.pi / 2 + CGFloat(loadingAnimationFrame) * segmentAngle
+            let alpha = CGFloat(i + 1) / CGFloat(numSegments)
+            skin.applyTextOpacity(to: skin.textColor).withAlphaComponent(alpha).setStroke()
+            context.setLineWidth(1.5)
+            context.move(to: CGPoint(x: center.x + cos(angle) * innerRadius, y: center.y + sin(angle) * innerRadius))
+            context.addLine(to: CGPoint(x: center.x + cos(angle) * outerRadius, y: center.y + sin(angle) * outerRadius))
+            context.strokePath()
+        }
+        context.restoreGState()
+    }
+
     private func drawErrorState(in context: CGContext, message: String, listRect: NSRect, skin: ModernSkin) {
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor),
@@ -6108,10 +6139,13 @@ class ModernLibraryBrowserView: NSView {
                 WindowManager.shared.audioEngine.playNow([track])
             }
         } else {
+            downloadingVideoIds.insert(video.videoId)
             startLoadingAnimation()
+            needsDisplay = true
             youtubeDownloadTask?.cancel()
             youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                 guard let self = self else { return }
+                defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                 do {
                     let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
                     let track = Track(url: downloadedURL, isYouTubeOrigin: true)
@@ -6120,7 +6154,6 @@ class ModernLibraryBrowserView: NSView {
                 } catch {
                     NSLog("Failed to download YouTube video: %@", error.localizedDescription)
                 }
-                self.stopLoadingAnimation()
             }
         }
     }
@@ -7472,6 +7505,9 @@ class ModernLibraryBrowserView: NSView {
             self.loadingAnimationFrame += 1
             if self.isLoading {
                 self.needsDisplay = true
+            } else if !self.downloadingVideoIds.isEmpty {
+                // Redraw the list area for the per-row download spinner(s)
+                self.needsDisplay = true
             } else if self.isLibraryScanning {
                 // Redraw server bar only for the scan spinner
                 let serverBarY = self.topChromeBottomY - Layout.serverBarHeight
@@ -7484,7 +7520,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func stopLoadingAnimation(force: Bool = false) {
-        guard force || !isLibraryScanning else { return }
+        guard force || (!isLibraryScanning && downloadingVideoIds.isEmpty) else { return }
         loadingAnimationTimer?.invalidate(); loadingAnimationTimer = nil; loadingAnimationFrame = 0
     }
 
@@ -11520,10 +11556,13 @@ class ModernLibraryBrowserView: NSView {
                     WindowManager.shared.audioEngine.playNow([track])
                 }
             } else {
+                downloadingVideoIds.insert(video.videoId)
                 startLoadingAnimation()
+                needsDisplay = true
                 youtubeDownloadTask?.cancel()
                 youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                     guard let self = self else { return }
+                    defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                     do {
                         let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
                         let track = Track(url: downloadedURL, isYouTubeOrigin: true)
@@ -11532,7 +11571,6 @@ class ModernLibraryBrowserView: NSView {
                     } catch {
                         NSLog("Failed to download YouTube video: %@", error.localizedDescription)
                     }
-                    self.stopLoadingAnimation()
                 }
             }
         case .plexRadioStation(let r): playPlexRadioStation(r)

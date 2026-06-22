@@ -1076,6 +1076,8 @@ class PlexBrowserView: NSView {
     private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
     private var youtubeExpandTask: Task<Void, Never>?
     private var youtubeDownloadTask: Task<Void, Never>?
+    /// Video IDs currently downloading — drives a per-row spinner on the video entry.
+    private var downloadingVideoIds: Set<String> = []
 
     private let historyAgent = PlayHistoryAgent()
     private var historyHostingView: NSHostingView<StatsContentView>?
@@ -3373,7 +3375,26 @@ class PlexBrowserView: NSView {
         // Start animation timer if not running
         startLoadingAnimation()
     }
-    
+
+    /// Small inline spinner used on a downloading YouTube video row.
+    private func drawRowSpinner(in context: CGContext, center: CGPoint, radius: CGFloat, colors: PlaylistColors) {
+        let innerRadius = radius * 0.45
+        let outerRadius = radius
+        let numSegments = 8
+        let segmentAngle = CGFloat.pi * 2 / CGFloat(numSegments)
+        context.saveGState()
+        for i in 0..<numSegments {
+            let angle = CGFloat(i) * segmentAngle - CGFloat.pi / 2 + CGFloat(loadingAnimationFrame) * segmentAngle
+            let alpha = CGFloat(i + 1) / CGFloat(numSegments)
+            colors.normalText.withAlphaComponent(alpha).setStroke()
+            context.setLineWidth(1.5)
+            context.move(to: CGPoint(x: center.x + cos(angle) * innerRadius, y: center.y + sin(angle) * innerRadius))
+            context.addLine(to: CGPoint(x: center.x + cos(angle) * outerRadius, y: center.y + sin(angle) * outerRadius))
+            context.strokePath()
+        }
+        context.restoreGState()
+    }
+
     private func drawErrorState(in context: CGContext, drawBounds: NSRect, message: String, colors: PlaylistColors, renderer: SkinRenderer) {
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         if browseMode == .search {
@@ -3572,8 +3593,16 @@ class PlexBrowserView: NSView {
             } else {
                 // Original rendering for artists, playlists, headers, etc.
                 let indent = CGFloat(item.indentLevel) * 16
-                let textX = itemRect.minX + indent + 4
-                
+                var textX = itemRect.minX + indent + 4
+
+                // Per-row download spinner for a downloading YouTube video
+                if case .youtubeVideo(let video) = item.type, downloadingVideoIds.contains(video.videoId) {
+                    let spinnerRadius = min(itemHeight * 0.3, 6)
+                    drawRowSpinner(in: context, center: CGPoint(x: textX + spinnerRadius, y: itemRect.midY),
+                                   radius: spinnerRadius, colors: colors)
+                    textX += spinnerRadius * 2 + 4
+                }
+
                 // Expand/collapse indicator for hierarchical items
                 if item.hasChildren {
                     let expanded = isExpanded(item)
@@ -5596,7 +5625,7 @@ class PlexBrowserView: NSView {
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.loadingAnimationFrame += 1
-            if self.isLoading {
+            if self.isLoading || !self.downloadingVideoIds.isEmpty {
                 // Only redraw the list area where the loading spinner is displayed
                 // This prevents menu items from shimmering on non-Retina displays
                 var listY = self.Layout.titleBarHeight + self.Layout.serverBarHeight + self.Layout.tabBarHeight
@@ -5621,7 +5650,7 @@ class PlexBrowserView: NSView {
     }
 
     private func stopLoadingAnimation() {
-        guard !isLibraryScanning else { return }
+        guard !isLibraryScanning && downloadingVideoIds.isEmpty else { return }
         loadingAnimationTimer?.invalidate()
         loadingAnimationTimer = nil
         loadingAnimationFrame = 0
@@ -11112,10 +11141,13 @@ class PlexBrowserView: NSView {
                 WindowManager.shared.audioEngine.playNow([track])
             }
         } else {
+            downloadingVideoIds.insert(video.videoId)
             startLoadingAnimation()
+            needsDisplay = true
             youtubeDownloadTask?.cancel()
             youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                 guard let self = self else { return }
+                defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                 do {
                     let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
                     let track = Track(url: downloadedURL, isYouTubeOrigin: true)
@@ -11124,7 +11156,6 @@ class PlexBrowserView: NSView {
                 } catch {
                     NSLog("Failed to download YouTube video: %@", error.localizedDescription)
                 }
-                self.stopLoadingAnimation()
             }
         }
     }
@@ -17394,10 +17425,13 @@ class PlexBrowserView: NSView {
                     WindowManager.shared.audioEngine.playNow([track])
                 }
             } else {
+                downloadingVideoIds.insert(video.videoId)
                 startLoadingAnimation()
+                needsDisplay = true
                 youtubeDownloadTask?.cancel()
                 youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                     guard let self = self else { return }
+                    defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                     do {
                         let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
                         let track = Track(url: downloadedURL, isYouTubeOrigin: true)
@@ -17406,7 +17440,6 @@ class PlexBrowserView: NSView {
                     } catch {
                         NSLog("Failed to download YouTube video: %@", error.localizedDescription)
                     }
-                    self.stopLoadingAnimation()
                 }
             }
 
