@@ -2764,6 +2764,35 @@ class SkinRenderer {
         }
     }
 
+    /// Continue the classic Library/playlist side rails through an embedded compact player row.
+    func drawCompactPlayerSideBorders(in context: CGContext, bounds: NSRect,
+                                      titleHeight: CGFloat, viewScale: CGFloat) {
+        let displaySideWidth = SkinElements.PlexBrowser.Layout.leftBorder
+        let sideWidth = displaySideWidth / max(viewScale, 1)
+        let contentTop = titleHeight
+        let contentHeight = max(0, bounds.height - contentTop)
+        let leftDest = NSRect(x: 0, y: contentTop, width: sideWidth, height: contentHeight)
+        let rightDest = NSRect(x: bounds.width - sideWidth, y: contentTop,
+                               width: sideWidth, height: contentHeight)
+
+        guard let pleditImage = skin.pledit else {
+            NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
+            context.fill(leftDest)
+            context.fill(rightDest)
+            return
+        }
+
+        let source = SkinElements.Playlist.leftSideTile
+        drawSprite(from: pleditImage, sourceRect: source, to: leftDest, in: context)
+
+        context.saveGState()
+        context.translateBy(x: rightDest.midX, y: 0)
+        context.scaleBy(x: -1, y: 1)
+        context.translateBy(x: -rightDest.midX, y: 0)
+        drawSprite(from: pleditImage, sourceRect: source, to: rightDest, in: context)
+        context.restoreGState()
+    }
+
     /// Draw playlist side borders
     private func drawPlaylistSideBorders(in context: CGContext, bounds: NSRect) {
         drawPlaylistStyleSideBorders(in: context, bounds: bounds,

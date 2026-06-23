@@ -26,7 +26,10 @@ final class ClassicCompactPlayerBarView: NSView {
     private var designHeight: CGFloat { titleBarHeight + controlRowHeight }
     private let controlRowTopPad: CGFloat = 3
     private var rowHeight: CGFloat { controlRowHeight - controlRowTopPad }
-    private let pad: CGFloat = 5
+    /// Match the Library side rails in display points, accounting for this view's scale.
+    private var pad: CGFloat {
+        SkinElements.PlexBrowser.Layout.leftBorder / nativeScale + 3
+    }
     private let buttonHeight: CGFloat = 18
     /// Native widths of the CBUTTONS transport sprites: prev, play/pause, stop, next.
     private let buttonWidths: [CGFloat] = [23, 23, 23, 22]
@@ -222,6 +225,14 @@ final class ClassicCompactPlayerBarView: NSView {
         // Volume slider (classic volume sprite + thumb).
         let volume = CGFloat(WindowManager.shared.audioEngine.volume)
         drawVolumeBar(fraction: volume, renderer: renderer, skin: skin, context: context)
+
+        // Continue the Library Browser's decorative side rails through the player row.
+        renderer.drawCompactPlayerSideBorders(
+            in: context,
+            bounds: NSRect(x: 0, y: 0, width: designWidth, height: designHeight),
+            titleHeight: titleBarHeight,
+            viewScale: scale
+        )
 
         context.restoreGState()
     }
