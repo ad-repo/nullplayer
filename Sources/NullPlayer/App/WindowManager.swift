@@ -214,6 +214,10 @@ class WindowManager {
     /// Status-bar item shown while Compact Mode is active.
     private var compactStatusItem: NSStatusItem?
 
+    /// The first reveal after entering Compact Mode opens at the minimum usable dimensions.
+    /// Subsequent status-item hide/show cycles preserve any user resize.
+    private var compactWindowNeedsInitialSizing = false
+
     /// Window visibility captured when entering Compact Mode, restored on exit.
     private var savedWindowVisibility: [String: Bool] = [:]
 
@@ -946,6 +950,7 @@ class WindowManager {
         guard !compactModeEnabled else { return }
         compactModeEnabled = true
         UserDefaults.standard.set(true, forKey: "compactModeEnabled")
+        compactWindowNeedsInitialSizing = true
 
         // Remember which windows are visible so we can restore them on exit.
         saveWindowVisibilityForCompactMode()
@@ -999,12 +1004,19 @@ class WindowManager {
 
             // Available vertical space below the status item (top stays anchored to the item).
             let available = topY - visible.minY - 8
-            // Ensure a usable width and a tall, dropdown-style height. Don't shrink a window the
-            // user has already grown; only grow a too-small one. Always clamp to fit the screen.
-            // Floor at the width needed to keep all tab labels inside their outlines.
             let tabFloor = plexBrowserWindowController?.minimumCompactContentWidth ?? (360 * m)
-            frame.size.width = max(frame.width, max(360 * m, tabFloor))
-            frame.size.height = max(frame.height, min(available, 620 * m))
+            let minimumWidth = max(window.minSize.width, max(360 * m, tabFloor))
+            let minimumHeight = window.minSize.height
+
+            if compactWindowNeedsInitialSizing {
+                // Enter Compact Mode at the smallest usable frame. Do this only on the first
+                // reveal so resizing is preserved when the status item hides and shows it.
+                frame.size.width = min(minimumWidth, visible.width - 16)
+                frame.size.height = min(minimumHeight, available)
+                compactWindowNeedsInitialSizing = false
+            } else {
+                frame.size.width = max(frame.width, minimumWidth)
+            }
             frame.size.height = min(frame.height, available)
             originX = min(max(originX, visible.minX + 8), visible.maxX - frame.width - 8)
         }
