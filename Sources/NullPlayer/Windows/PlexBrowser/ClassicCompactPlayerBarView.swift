@@ -446,6 +446,7 @@ final class ClassicCompactPlayerBarView: NSView {
             case .minimize:
                 if minimizeHitRect.contains(nativePoint(event)) {
                     window?.orderOut(nil)
+                    WindowManager.shared.compactSurfaceDidHide()
                     WindowManager.shared.notifyMainWindowVisibilityChanged()
                 }
             case .close:

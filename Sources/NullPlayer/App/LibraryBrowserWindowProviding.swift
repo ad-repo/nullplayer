@@ -33,21 +33,4 @@ protocol LibraryBrowserWindowProviding: ModeDependentWindow {
     /// Used by AppStateManager to save/restore the active tab
     var browseModeRawValue: Int { get set }
 
-    // MARK: - Compact Mode
-
-    /// Smallest content width that keeps the window usable when launched in Compact Mode.
-    var minimumCompactContentWidth: CGFloat { get }
-
-    /// Enable/disable Compact Mode: embed a stripped-down player bar across the top of the
-    /// browser window so it can act as the app's sole window in menu-bar (Compact) mode.
-    func setCompactMode(_ enabled: Bool)
-
-    /// Forward the engine's playback time to the embedded compact player bar.
-    func updateCompactBarTime(current: TimeInterval, duration: TimeInterval)
-
-    /// Forward the current track to the embedded compact player bar.
-    func updateCompactBarTrack(_ track: Track?)
-
-    /// Tell the embedded compact player bar that the playback state changed.
-    func updateCompactBarPlaybackState()
 }

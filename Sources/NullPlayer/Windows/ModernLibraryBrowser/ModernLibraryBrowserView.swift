@@ -191,7 +191,7 @@ class ModernLibraryBrowserView: NSView {
 
     /// Compact Mode: when true, a stripped-down player bar is embedded across the top
     /// (just below the title bar) and all content below shifts down to make room.
-    /// The window itself is never resized — only the list/content region shrinks.
+    /// The window itself is never resized -- only the list/content region shrinks.
     var compactMode: Bool = false {
         didSet {
             guard compactMode != oldValue else { return }

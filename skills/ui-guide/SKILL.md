@@ -1,6 +1,6 @@
 ---
 name: ui-guide
-description: Coordinate systems, scaling architecture, hit testing, and skin sprite rendering for NullPlayer's UI. Use when working on window scaling, skin rendering, coordinate transforms, visual layout, or playlist/marquee text rendering.
+description: Coordinate systems, scaling architecture, hit testing, skin sprite rendering, window layout, and Compact Mode for NullPlayer's UI. Use when working on window scaling, skin rendering, coordinate transforms, visual layout, compact/status-item windows, or playlist/marquee text rendering.
 ---
 
 # UI & Skin Rendering Guide
@@ -603,6 +603,26 @@ view's deferred `deinit` cannot wipe a same-id registration the replacement alre
 **DEBUG-only** `debugRecreateModeDependentWindows()` (Window menu → "Recreate Windows
 (Debug)") runs the same teardown/rebuild in the *same* mode — the leak/lifecycle test that
 de-risks the live switch. Requires a debug build: `./scripts/kill_build_run.sh --debug`.
+
+## Compact Mode
+
+Compact Mode is a WindowManager state transition, not a second main window style.
+
+Key implementation details:
+- `WindowManager.enterCompactMode(revealWindow:)` snapshots regular windows, detaches docked child windows, orders regular windows out, switches the app to `.accessory`, creates the status item, and owns the Compact Mode state (`regular`, `compactVisible`, `compactHidden`).
+- `Windows/CompactMode/CompactModeWindowController.swift` owns a private browser controller (`PlexBrowserWindowController` or `ModernLibraryBrowserWindowController`) and calls `setCompactMode(true)`. Do not replace this with a custom compact-only view; Compact Mode must keep the same browser compact surface and embedded compact player bar behavior as the old implementation.
+- Compact updates are forwarded through the compact controller (`updateCompactBarTime`, `updateCompactBarTrack`, `updateCompactBarPlaybackState`) so playback state stays live while the regular windows are hidden.
+- The status item left-click toggles compact visibility. Right-click opens the compact menu. Hidden compact mode remains in `.accessory` until explicitly exited.
+- Exiting Compact Mode removes the status item, switches back to `.regular`, rebuilds the main menu asynchronously, restores the regular window snapshot, then reattaches/restores docked windows.
+
+Placement rules:
+- The compact window is positioned by `CompactModeWindowController.position(anchoredTo:)`.
+- On show, align the compact window's top edge to the current screen `visibleFrame.maxY`; do not leave a top margin/gap below the menu bar.
+- Use side/bottom margins only. Do not clamp the top edge with the same edge margin used for the sides.
+- When the status item button is not available yet, fall back to top-right placement on the main screen, then reassert positioning shortly after entry once AppKit has created the status item window.
+- Keep the compact width based on the browser surface's `minimumCompactContentWidth`. Do not force a narrower hard-coded width, and do not abbreviate/truncate browser tab labels just to make the window thinner.
+- Use `.moveToActiveSpace` for the compact window, not `.canJoinAllSpaces`. Showing/hiding from the status item should reveal the compact window on the user's current desktop/Space, not stick to a previous Space or appear everywhere.
+- Avoid transition flashes by giving the compact window a top-right fallback frame during setup, using `display: false` for hidden frame changes, and delaying shadow/key/display until the final frame is applied on reveal.
 
 ## Window Docking
 

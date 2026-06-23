@@ -278,6 +278,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupMainMenu() {
+        dynamicMenuBuilders.removeAll(keepingCapacity: true)
         let mainMenu = NSMenu()
         
         // Application menu (NullPlayer menu)

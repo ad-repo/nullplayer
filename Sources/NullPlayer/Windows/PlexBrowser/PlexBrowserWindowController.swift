@@ -198,9 +198,8 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
 
         if enabled {
             let size = browserView.frame.size
-            // Tuck the browser's own "LIBRARY" title bar up behind the (opaque) player bar so it
-            // disappears in this view — the player bar becomes the window's top chrome. The
-            // container lays both children out deterministically on every resize.
+            // Tuck the browser's own "LIBRARY" title bar up behind the opaque player bar so it
+            // disappears in this view; the player bar becomes the compact window's top chrome.
             let container = ClassicCompactContainerView(frame: NSRect(origin: .zero, size: size))
             container.autoresizingMask = [.width, .height]
             container.barHeight = ClassicCompactPlayerBarView.preferredHeight()
@@ -210,8 +209,8 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
             let bar = ClassicCompactPlayerBarView(frame: .zero)
             bar.autoresizingMask = []
 
-            container.addSubview(browserView)   // below
-            container.addSubview(bar)           // on top (opaque, covers the title bar)
+            container.addSubview(browserView)
+            container.addSubview(bar)
             container.browser = browserView
             container.playerBar = bar
             window.contentView = container
@@ -300,6 +299,7 @@ extension PlexBrowserWindowController: NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if isCompactMode {
             sender.orderOut(nil)
+            WindowManager.shared.compactSurfaceDidHide()
             WindowManager.shared.notifyMainWindowVisibilityChanged()
             return false
         }
