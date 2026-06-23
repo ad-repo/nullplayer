@@ -972,9 +972,12 @@ class WindowManager {
         createCompactStatusItem()
 
         if revealWindow {
-            plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
-            positionCompactWindowUnderStatusItem()
-            NSApp.activate(ignoringOtherApps: true)
+            // Changing activation policy is asynchronous. Present on the next main-loop turn
+            // so AppKit cannot order the modern borderless window back out as the transition
+            // completes.
+            DispatchQueue.main.async { [weak self] in
+                self?.showCompactWindow()
+            }
         } else {
             // showPlexBrowser() ordered the window front; tuck it away until the first click.
             plexBrowserWindowController?.window?.orderOut(nil)
@@ -1030,6 +1033,7 @@ class WindowManager {
         UserDefaults.standard.set(false, forKey: "compactModeEnabled")
 
         plexBrowserWindowController?.setCompactMode(false)
+        applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
 
         // Restore the Dock icon and remove the status-bar item.
         NSApp.setActivationPolicy(.regular)
@@ -1269,10 +1273,16 @@ class WindowManager {
         if window.isVisible {
             window.orderOut(nil)
         } else {
-            window.makeKeyAndOrderFront(nil)
-            positionCompactWindowUnderStatusItem()
-            NSApp.activate(ignoringOtherApps: true)
+            showCompactWindow()
         }
+    }
+
+    private func showCompactWindow() {
+        guard compactModeEnabled, let window = plexBrowserWindowController?.window else { return }
+        window.level = .statusBar
+        positionCompactWindowUnderStatusItem()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func exitCompactModeMenuAction() {
