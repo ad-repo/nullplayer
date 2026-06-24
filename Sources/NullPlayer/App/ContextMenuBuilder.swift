@@ -2236,21 +2236,21 @@ class ContextMenuBuilder {
 
         youtubeMenu.addItem(NSMenuItem.separator())
 
-        // Quality submenu
-        let qualityItem = NSMenuItem(title: "Quality", action: nil, keyEquivalent: "")
-        let qualityMenu = NSMenu()
-        qualityMenu.autoenablesItems = false
+        // Format submenu
+        let formatItem = NSMenuItem(title: "Format", action: nil, keyEquivalent: "")
+        let formatMenu = NSMenu()
+        formatMenu.autoenablesItems = false
 
         for quality in YouTubeQuality.allCases {
             let item = NSMenuItem(title: quality.displayName, action: #selector(MenuActions.setYouTubeQuality(_:)), keyEquivalent: "")
             item.target = MenuActions.shared
             item.representedObject = quality.rawValue
             item.state = quality == YouTubeManager.shared.quality ? .on : .off
-            qualityMenu.addItem(item)
+            formatMenu.addItem(item)
         }
 
-        qualityItem.submenu = qualityMenu
-        youtubeMenu.addItem(qualityItem)
+        formatItem.submenu = formatMenu
+        youtubeMenu.addItem(formatItem)
 
         // Videos per Channel submenu (how many recent uploads to list per channel)
         let limitItem = NSMenuItem(title: "Videos per Channel", action: nil, keyEquivalent: "")

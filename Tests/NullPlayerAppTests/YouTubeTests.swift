@@ -330,10 +330,37 @@ final class YouTubeTests: XCTestCase {
     func testYouTubeQualityAllCases() {
         let allCases = YouTubeQuality.allCases
 
-        XCTAssertEqual(allCases.count, 3)
+        XCTAssertEqual(allCases.count, 5)
         XCTAssertTrue(allCases.contains(.flac))
         XCTAssertTrue(allCases.contains(.mp3High))
         XCTAssertTrue(allCases.contains(.mp3Low))
+        XCTAssertTrue(allCases.contains(.video720))
+        XCTAssertTrue(allCases.contains(.video1080))
+    }
+
+    func testYouTubeQualityVideo720() {
+        let quality = YouTubeQuality.video720
+
+        XCTAssertEqual(quality.displayName, "Video (720p)")
+        XCTAssertEqual(quality.fileExtension, "mp4")
+        XCTAssertTrue(quality.isVideo)
+        XCTAssertEqual(quality.videoMaxHeight, 720)
+    }
+
+    func testYouTubeQualityVideo1080() {
+        let quality = YouTubeQuality.video1080
+
+        XCTAssertEqual(quality.displayName, "Video (1080p)")
+        XCTAssertEqual(quality.fileExtension, "mp4")
+        XCTAssertTrue(quality.isVideo)
+        XCTAssertEqual(quality.videoMaxHeight, 1080)
+    }
+
+    func testYouTubeQualityAudioFormats() {
+        for quality in [YouTubeQuality.flac, .mp3High, .mp3Low] {
+            XCTAssertFalse(quality.isVideo)
+            XCTAssertNil(quality.videoMaxHeight)
+        }
     }
 
     func testYouTubeQualityRawValues() {

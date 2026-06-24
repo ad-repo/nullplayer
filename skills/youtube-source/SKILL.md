@@ -1,20 +1,20 @@
 ---
 name: youtube-source
-description: YouTube channel uploads in the Radio tab — browse channels, download audio (FLAC / MP3) ad-free, store in a user folder, and play/cast locally. Use when working on YouTube source UI, channel/video listing, downloads, manifest tracking, or quality settings.
+description: YouTube channel uploads in the Radio tab — browse channels, download audio (FLAC / MP3) or video (720p / 1080p) ad-free, store in a user folder, and play/cast locally. Use when working on YouTube source UI, channel/video listing, downloads, manifest tracking, or format settings.
 ---
 
 # YouTube Source
 
-Subscribe to YouTube channels in the **Radio tab** and browse their uploads. Double-click a video to **download its audio** (ad-free, via `yt-dlp`) and play immediately. Downloads are stored in a **user-chosen folder** (reachability checked before downloading), organized per channel as `<Channel Name>/<Title> [<videoId>].<ext>` and tracked in a manifest; a **quality setting** (FLAC / MP3 High / MP3 Low) is in the Library menu. Downloaded files are local `file://` tracks, so they play locally and cast to Sonos, Chromecast, DLNA like any other track.
+Subscribe to YouTube channels in the **Radio tab** and browse their uploads. Double-click a video to **download its audio or video** (ad-free, via `yt-dlp`) and play immediately. Downloads are stored in a **user-chosen folder** (reachability checked before downloading), organized per channel as `<Channel Name>/<Title> [<videoId>].<ext>` and tracked in a manifest; a **format setting** (FLAC / MP3 High / MP3 Low / Video 720p / Video 1080p) is in the Library menu. Downloaded audio files are local `file://` tracks that play locally and cast to Sonos, Chromecast, DLNA; downloaded videos open in the video player window.
 
 ## Quick Start (user)
 
 1. **Radio tab** → **+ Add YouTube Channel**
 2. Paste a YouTube channel URL (e.g., `https://www.youtube.com/@channel_name`)
 3. Channel appears as a folder; expand to see uploads
-4. Double-click a video to download its audio and play
+4. Double-click a video to download its audio or video and play
 5. **Library → YouTube → Set Download Folder…** to choose where downloads live
-6. **Library → YouTube → Quality** to pick FLAC, MP3 High, or MP3 Low
+6. **Library → YouTube → Format** to pick FLAC, MP3 High, MP3 Low, Video 720p, or Video 1080p
 7. **Library → YouTube → Videos per Channel** to pick how many recent uploads to list (50 / 100 / 200 / 500)
 
 ## Architecture
@@ -42,7 +42,7 @@ Singleton (`YouTubeManager.shared`) that manages:
 ```swift
 private(set) var channels: [YouTubeChannel]  // All subscribed channels
 var downloadRoot: URL                        // User-chosen folder (reachability checked before download)
-var quality: YouTubeQuality                  // .flac / .mp3High / .mp3Low (persisted under "YouTubeQuality")
+var quality: YouTubeQuality                  // .flac / .mp3High / .mp3Low / .video720 / .video1080 (persisted under "YouTubeQuality")
 ```
 
 **Notifications:**

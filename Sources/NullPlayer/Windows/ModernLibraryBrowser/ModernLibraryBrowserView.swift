@@ -6173,7 +6173,7 @@ class ModernLibraryBrowserView: NSView {
                 guard let self = self else { return }
                 defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                 do {
-                    let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                    let downloadedURL = try await YouTubeManager.shared.download(video: video)
                     // A newer download may have superseded this one; don't auto-play a stale result.
                     try Task.checkCancellation()
                     let track = Track(url: downloadedURL, isYouTubeOrigin: true)
@@ -11627,7 +11627,7 @@ class ModernLibraryBrowserView: NSView {
                     guard let self = self else { return }
                     defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                     do {
-                        let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                        let downloadedURL = try await YouTubeManager.shared.download(video: video)
                         // A newer download may have superseded this one; don't auto-play a stale result.
                         try Task.checkCancellation()
                         let track = Track(url: downloadedURL, isYouTubeOrigin: true)

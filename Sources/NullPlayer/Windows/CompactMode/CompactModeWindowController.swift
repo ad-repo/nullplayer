@@ -102,6 +102,15 @@ final class CompactModeWindowController: NSWindowController {
         window.level = (keyWindow === window) ? .statusBar : .normal
     }
 
+    /// Drop the compact window below normal window level so a just-shown video player window
+    /// (which floats at `.normal`/`.floating`, lower than the compact window's `.statusBar`)
+    /// can sit in front of it. Ordering a window front never crosses level bands, so without
+    /// this the video would launch *behind* the floating mini-player. The compact window
+    /// returns to its floating level the next time it becomes key (see handleWindowDidBecomeKey).
+    func yieldFrontForVideoPlayer() {
+        window?.level = .normal
+    }
+
     func seedFromAudioEngine() {
         let engine = WindowManager.shared.audioEngine
         browserController.updateCompactBarTrack(engine.currentTrack)

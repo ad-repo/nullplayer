@@ -183,13 +183,14 @@ final class YouTubeManager {
 
     // MARK: - Downloads API
 
-    /// Download audio from a YouTube video.
+    /// Download audio or video from a YouTube video.
     ///
     /// Files are organized as `<downloadRoot>/<Channel Name>/<Title> [<videoId>].<ext>`
     /// so the on-disk layout mirrors the channel/video hierarchy and filenames are
     /// human-readable while staying unique (the bracketed video ID disambiguates
-    /// videos that share a title).
-    func downloadAudio(video: YouTubeVideo) async throws -> URL {
+    /// videos that share a title). The output format (audio FLAC/MP3 or video MP4)
+    /// is determined by the current quality setting.
+    func download(video: YouTubeVideo) async throws -> URL {
         guard isDownloadFolderReachable() else {
             throw YouTubeManagerError.downloadFolderNotReachable("Download folder is not accessible")
         }
@@ -199,15 +200,19 @@ final class YouTubeManager {
         let channelDir = downloadRoot.appendingPathComponent(channelFolder, isDirectory: true)
         try FileManager.default.createDirectory(at: channelDir, withIntermediateDirectories: true)
 
-        let formatArgs = quality.ytdlpArgs + ["-x", "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg", "--no-playlist"]
         // Let yt-dlp sanitize the title and pick the final extension after conversion.
         let outputTemplate = "\(channelDir.path)/%(title)s [%(id)s].%(ext)s"
 
-        let fileURL = try await StreamRipper.downloadAudio(
-            from: video.watchURL,
-            formatArgs: formatArgs,
-            outputTemplate: outputTemplate
-        )
+        let fileURL: URL
+        if quality.isVideo, let h = quality.videoMaxHeight {
+            fileURL = try await StreamRipper.downloadVideo(
+                from: video.watchURL, maxHeight: h, outputTemplate: outputTemplate)
+        } else {
+            let formatArgs = quality.ytdlpArgs + ["-x", "--embed-metadata",
+                "--embed-thumbnail", "--convert-thumbnails", "jpg", "--no-playlist"]
+            fileURL = try await StreamRipper.downloadAudio(
+                from: video.watchURL, formatArgs: formatArgs, outputTemplate: outputTemplate)
+        }
 
         // Record in manifest as a path relative to downloadRoot (channel/file).
         let relativePath = "\(channelFolder)/\(fileURL.lastPathComponent)"

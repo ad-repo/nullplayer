@@ -91,6 +91,22 @@ enum YouTubeQuality: String, Codable, CaseIterable {
     case flac = "flac"
     case mp3High = "mp3High"
     case mp3Low = "mp3Low"
+    case video720 = "video720"
+    case video1080 = "video1080"
+
+    /// Whether this is a video format
+    var isVideo: Bool {
+        self == .video720 || self == .video1080
+    }
+
+    /// Height cap for video formats; nil for audio formats.
+    var videoMaxHeight: Int? {
+        switch self {
+        case .video720: return 720
+        case .video1080: return 1080
+        default: return nil
+        }
+    }
 
     /// yt-dlp command-line arguments for this quality
     var ytdlpArgs: [String] {
@@ -101,6 +117,8 @@ enum YouTubeQuality: String, Codable, CaseIterable {
             return ["--audio-format", "mp3", "--audio-quality", "0"]
         case .mp3Low:
             return ["--audio-format", "mp3", "--audio-quality", "5"]
+        case .video720, .video1080:
+            return []
         }
     }
 
@@ -110,6 +128,8 @@ enum YouTubeQuality: String, Codable, CaseIterable {
         case .flac: return "FLAC"
         case .mp3High: return "MP3 (High)"
         case .mp3Low: return "MP3 (Low)"
+        case .video720: return "Video (720p)"
+        case .video1080: return "Video (1080p)"
         }
     }
 
@@ -118,6 +138,7 @@ enum YouTubeQuality: String, Codable, CaseIterable {
         switch self {
         case .flac: return "flac"
         case .mp3High, .mp3Low: return "mp3"
+        case .video720, .video1080: return "mp4"
         }
     }
 }
