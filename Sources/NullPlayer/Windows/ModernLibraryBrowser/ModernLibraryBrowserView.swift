@@ -3076,7 +3076,7 @@ class ModernLibraryBrowserView: NSView {
     /// an identical top-level order. `a` and `b` are level-0 rows.
     private func columnSortAreInOrder(_ a: ModernDisplayItem, _ b: ModernDisplayItem, sortColumn: ModernBrowserColumn, ascending: Bool) -> Bool {
         // Date columns: sort by raw date, not formatted string
-        if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" {
+        if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" || sortColumn.id == "youtubeDate" {
             let aDate = a.columnDateValue(for: sortColumn) ?? .distantPast
             let bDate = b.columnDateValue(for: sortColumn) ?? .distantPast
             return ascending ? aDate < bDate : aDate > bDate
@@ -11866,6 +11866,7 @@ private struct ModernBrowserColumn {
     static let channels = ModernBrowserColumn(id: "channels", title: "Channels", minWidth: 50)
     static let dateAdded = ModernBrowserColumn(id: "dateAdded", title: "Date Added", minWidth: 80)
     static let lastPlayed = ModernBrowserColumn(id: "lastPlayed", title: "Last Played", minWidth: 80)
+    static let youtubeDate = ModernBrowserColumn(id: "youtubeDate", title: "Date", minWidth: 70)
     static let filePath = ModernBrowserColumn(id: "path", title: "Path", minWidth: 150)
     
     // All available columns (superset for each view type)
@@ -11882,9 +11883,9 @@ private struct ModernBrowserColumn {
     static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
     static let defaultArtistColumnIds: [String] = ["title", "rating", "albums", "genre"]
     static let internetRadioColumns: [ModernBrowserColumn] = [.title, .genre, .rating]
-    // YouTube channel uploads (Radio tab "Channels" view): title + a resizable time column.
-    static let youtubeColumns: [ModernBrowserColumn] = [.title, .duration]
-    static let defaultYouTubeColumnIds: [String] = ["title", "duration"]
+    // YouTube channel uploads (Radio tab "Channels" view): title + (approximate) date + resizable time.
+    static let youtubeColumns: [ModernBrowserColumn] = [.title, .youtubeDate, .duration]
+    static let defaultYouTubeColumnIds: [String] = ["title", "youtubeDate", "duration"]
     
     // Legacy arrays kept for backwards compatibility with sort lookup
     static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount]
@@ -11956,11 +11957,14 @@ extension ModernDisplayItem {
             if column.id == "duration" {
                 return video.formattedDuration ?? ""
             }
+            if column.id == "youtubeDate" {
+                return video.formattedDate ?? ""
+            }
             return ""
         default: return ""
         }
     }
-    
+
     private func plexTrackValue(_ track: PlexTrack, for column: ModernBrowserColumn) -> String {
         switch column.id {
         case "trackNum":
@@ -12221,6 +12225,9 @@ extension ModernDisplayItem {
             case .localTrack(let t): return t.lastPlayed
             default: return nil
             }
+        case "youtubeDate":
+            if case .youtubeVideo(let video) = type { return video.publishedAt }
+            return nil
         default: return nil
         }
     }

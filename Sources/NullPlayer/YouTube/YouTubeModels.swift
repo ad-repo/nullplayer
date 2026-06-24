@@ -33,8 +33,10 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     /// Video duration in seconds (nil if unknown)
     let duration: TimeInterval?
 
-    /// Upload date string (format varies from API, e.g., "2024-01-15")
-    let uploadDate: String?
+    /// Approximate upload date. yt-dlp only exposes relative dates ("3 weeks ago") on
+    /// the channel grid, so this is an estimate that coarsens for older uploads. nil when
+    /// unavailable (e.g. a flat fetch without the approximate-date extractor arg).
+    let publishedAt: Date?
 
     /// Video ID is used as the Identifiable id
     var id: String { videoId }
@@ -52,8 +54,20 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
         }
     }
 
+    /// Compact upload date for the channels list (e.g. "Jun 23, 2026"), nil if unknown.
+    var formattedDate: String? {
+        publishedAt.map { Self.dateFormatter.string(from: $0) }
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, yyyy"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
     enum CodingKeys: String, CodingKey {
-        case videoId, title, channelId, duration, uploadDate
+        case videoId, title, channelId, duration, publishedAt
     }
 }
 

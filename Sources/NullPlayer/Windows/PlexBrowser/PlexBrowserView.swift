@@ -809,7 +809,7 @@ class PlexBrowserView: NSView {
     /// an identical top-level order. `a` and `b` are level-0 rows.
     private func columnSortAreInOrder(_ a: PlexDisplayItem, _ b: PlexDisplayItem, sortColumn: BrowserColumn, ascending: Bool) -> Bool {
         // Date columns: sort by raw date, not formatted string
-        if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" {
+        if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" || sortColumn.id == "youtubeDate" {
             let aDate = a.columnDateValue(for: sortColumn) ?? .distantPast
             let bDate = b.columnDateValue(for: sortColumn) ?? .distantPast
             return ascending ? aDate < bDate : aDate > bDate
@@ -18337,6 +18337,7 @@ private struct BrowserColumn {
     static let playCount = BrowserColumn(id: "plays", title: "Plays", minWidth: 45)
     static let dateAdded = BrowserColumn(id: "dateAdded", title: "Date Added", minWidth: 80)
     static let lastPlayed = BrowserColumn(id: "lastPlayed", title: "Last Played", minWidth: 80)
+    static let youtubeDate = BrowserColumn(id: "youtubeDate", title: "Date", minWidth: 70)
     static let discNumber = BrowserColumn(id: "discNum", title: "Disc", minWidth: 35)
     static let albumArtist = BrowserColumn(id: "albumArtist", title: "Album Artist", minWidth: 100)
     static let sampleRate = BrowserColumn(id: "sampleRate", title: "Sample Rate", minWidth: 60)
@@ -18379,8 +18380,8 @@ private struct BrowserColumn {
     ]
 
     /// Fixed columns shown for YouTube channel uploads (not user-hideable).
-    static let youtubeColumns: [BrowserColumn] = [.title, .duration]
-    static let defaultYouTubeColumnIds: [String] = ["title", "duration"]
+    static let youtubeColumns: [BrowserColumn] = [.title, .youtubeDate, .duration]
+    static let defaultYouTubeColumnIds: [String] = ["title", "youtubeDate", "duration"]
 
     /// Find a column by ID across all column types
     static func findColumn(id: String) -> BrowserColumn? {
@@ -18440,6 +18441,9 @@ extension PlexDisplayItem {
             if column.id == "duration" {
                 return video.formattedDuration ?? ""
             }
+            if column.id == "youtubeDate" {
+                return video.formattedDate ?? ""
+            }
             return ""
         default:
             return ""
@@ -18463,6 +18467,9 @@ extension PlexDisplayItem {
             case .localTrack(let t): return t.lastPlayed
             default: return nil
             }
+        case "youtubeDate":
+            if case .youtubeVideo(let video) = type { return video.publishedAt }
+            return nil
         default:
             return nil
         }

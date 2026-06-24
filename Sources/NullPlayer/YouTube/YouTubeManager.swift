@@ -146,12 +146,14 @@ final class YouTubeManager {
     // MARK: - Videos API
 
     /// Fetch videos from a channel (up to the specified limit)
-    func videos(forChannel channel: YouTubeChannel, limit: Int = 50) async throws -> [YouTubeVideo] {
+    func videos(forChannel channel: YouTubeChannel, limit: Int = 200) async throws -> [YouTubeVideo] {
         guard let videosURL = Self.channelVideosURL(channel: channel) else {
             throw YouTubeManagerError.invalidChannelURL("Cannot construct videos URL")
         }
 
-        let jsonData = try await Self.fetchYtDlpJSON(from: videosURL, playlistEnd: limit)
+        // Request approximate upload dates so the channels list can show/sort a Date column;
+        // they come back as a per-entry `timestamp` in the same single flat-playlist call.
+        let jsonData = try await Self.fetchYtDlpJSON(from: videosURL, playlistEnd: limit, approximateDate: true)
         let videos = try Self.parseFlatPlaylist(jsonData, channelId: channel.id)
         return videos
     }
@@ -391,13 +393,13 @@ final class YouTubeManager {
                 title: entry.title ?? "Unknown",
                 channelId: channelId,
                 duration: entry.duration.map(TimeInterval.init),
-                uploadDate: entry.upload_date
+                publishedAt: entry.timestamp.map { Date(timeIntervalSince1970: TimeInterval($0)) }
             )
         }
     }
 
     /// Call yt-dlp -J to get flat playlist metadata
-    nonisolated private static func fetchYtDlpJSON(from url: URL, playlistEnd: Int) async throws -> Data {
+    nonisolated private static func fetchYtDlpJSON(from url: URL, playlistEnd: Int, approximateDate: Bool = false) async throws -> Data {
         guard let ytdlp = StreamRipper.resolveTool("yt-dlp") else {
             throw YouTubeManagerError.toolNotFound("yt-dlp is not installed")
         }
@@ -408,7 +410,13 @@ final class YouTubeManager {
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: ytdlp)
-        task.arguments = ["--flat-playlist", "-J", "--playlist-end", "\(playlistEnd)", url.absoluteString]
+        var arguments = ["--flat-playlist", "-J", "--playlist-end", "\(playlistEnd)"]
+        if approximateDate {
+            // Populates each entry's `timestamp` with an approximate upload date.
+            arguments += ["--extractor-args", "youtubetab:approximate_date"]
+        }
+        arguments.append(url.absoluteString)
+        task.arguments = arguments
         task.environment = env
 
         let tempDirectory = FileManager.default.temporaryDirectory
@@ -499,5 +507,6 @@ private struct YtDlpEntry: Decodable {
     let title: String?
     let duration: Int?
     let upload_date: String?
+    let timestamp: Int?
     let uploader: String?
 }

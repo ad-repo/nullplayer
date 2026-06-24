@@ -135,13 +135,13 @@ final class YouTubeTests: XCTestCase {
                     "id": "dQw4w9WgXcQ",
                     "title": "Never Gonna Give You Up",
                     "duration": 212,
-                    "upload_date": "2009-10-25"
+                    "timestamp": 1256428800
                 },
                 {
                     "id": "9bZkp7q19f0",
                     "title": "Rick Astley - Together Forever",
                     "duration": 240,
-                    "upload_date": "1987-11-02"
+                    "timestamp": 562809600
                 }
             ]
         }
@@ -155,7 +155,7 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(videos[0].title, "Never Gonna Give You Up")
         XCTAssertEqual(videos[0].channelId, "test-channel")
         XCTAssertEqual(videos[0].duration, 212)
-        XCTAssertEqual(videos[0].uploadDate, "2009-10-25")
+        XCTAssertEqual(videos[0].publishedAt, Date(timeIntervalSince1970: 1256428800))
         XCTAssertEqual(videos[0].watchURL, URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
 
         XCTAssertEqual(videos[1].videoId, "9bZkp7q19f0")
@@ -225,7 +225,7 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(videos[0].videoId, "minimalvideo")
         XCTAssertEqual(videos[0].title, "Minimal Entry")
         XCTAssertNil(videos[0].duration)
-        XCTAssertNil(videos[0].uploadDate)
+        XCTAssertNil(videos[0].publishedAt)
     }
 
     func testParseFlatPlaylistFiltersOutEntriesWithoutID() throws {
@@ -350,7 +350,7 @@ final class YouTubeTests: XCTestCase {
             title: "Test Video",
             channelId: "channel123",
             duration: 180,
-            uploadDate: "2024-01-01"
+            publishedAt: Date(timeIntervalSince1970: 1704067200)
         )
 
         XCTAssertEqual(video.id, "test123")
@@ -362,7 +362,7 @@ final class YouTubeTests: XCTestCase {
             title: "Test",
             channelId: "channel123",
             duration: nil,
-            uploadDate: nil
+            publishedAt: nil
         )
 
         XCTAssertEqual(video.watchURL, URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
@@ -374,7 +374,7 @@ final class YouTubeTests: XCTestCase {
             title: "Duration",
             channelId: "channel",
             duration: 119,
-            uploadDate: nil
+            publishedAt: nil
         )
 
         XCTAssertEqual(video.formattedDuration, "1:59")

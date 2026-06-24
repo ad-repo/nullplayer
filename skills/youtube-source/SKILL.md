@@ -62,9 +62,10 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     let title: String
     let channelId: String
     let duration: TimeInterval?
-    let uploadDate: String?
+    let publishedAt: Date?          // approximate upload date (see "Approximate dates" below)
     var id: String { videoId }      // Identifiable
     var watchURL: URL { ... }       // https://www.youtube.com/watch?v=<videoId>
+    var formattedDate: String?      // "MMM d, yyyy", nil when publishedAt is nil
 }
 
 struct YouTubeDownload: Codable {
@@ -97,11 +98,14 @@ A JSON dictionary keyed by `videoId`, each value a `YouTubeDownload`. `fileName`
 Both `ModernLibraryBrowserView` and `PlexBrowserView` (classic UI) integrate YouTube as a **source branch** alongside internet radio stations. Channels appear as expandable folders; expanding a channel calls `YouTubeManager.videos(forChannel:limit:)` which shells out to `yt-dlp --flat-playlist` with no API key:
 
 ```bash
-yt-dlp --flat-playlist -J --playlist-end 50 \
+yt-dlp --flat-playlist -J --playlist-end 200 \
+  --extractor-args "youtubetab:approximate_date" \
   "https://www.youtube.com/@channel_name/videos"
 ```
 
-`-J` dumps a single JSON object; `parseFlatPlaylist` decodes its `entries` (each `id`/`title`/`duration`/`upload_date`) into `YouTubeVideo`s. Channel title on add comes from a separate `--playlist-end 1` fetch (`fetchChannelTitle`).
+`-J` dumps a single JSON object; `parseFlatPlaylist` decodes its `entries` (each `id`/`title`/`duration`/`timestamp`) into `YouTubeVideo`s. The default `limit` is **200** (was 50). Channel title on add comes from a separate `--playlist-end 1` fetch (`fetchChannelTitle`, no extractor arg).
+
+**Approximate dates**: plain `--flat-playlist` returns **no** `upload_date`/`timestamp` — the channel grid only exposes relative dates ("3 weeks ago"). The `youtubetab:approximate_date` extractor arg (passed via `fetchYtDlpJSON(…, approximateDate: true)`, videos call only) makes yt-dlp populate each entry's `timestamp` with an **estimated** epoch, decoded into `YouTubeVideo.publishedAt`. Accurate to the day for recent uploads, coarsening for older ones (older videos can share a timestamp). Unsupported/old yt-dlp just omits it → `publishedAt` nil → empty Date column, natural newest-first order preserved.
 
 Videos appear as indented child rows. Double-clicking a video triggers `YouTubeManager.downloadAudio(video:)` (then the browser loads the returned local file into the audio engine and plays it).
 
@@ -110,10 +114,11 @@ Videos appear as indented child rows. Double-clicking a video triggers `YouTubeM
 Video (leaf) rows render through the **established resizable-column path** (`drawColumnRow`), not the simple list path, so a long title truncates inside its column instead of printing over the time. The column set is:
 
 ```swift
-static let youtubeColumns: [ModernBrowserColumn] = [.title, .duration]  // .duration is titled "Time"
+static let youtubeColumns: [ModernBrowserColumn] = [.title, .youtubeDate, .duration]  // .youtubeDate titled "Date", .duration titled "Time"
 ```
 
-- A dedicated **`.youtube` case in `LibraryColumnVisibilityGroup`** namespaces the persisted widths (`youtube:title`, `youtube:duration`) so they survive `migrateColumnWidths`. This is why the internet-radio column path can't be reused: `internetRadioColumns` are deliberately **non-resizable** (`hitTestColumnResize` early-returns when `hasInternetRadioColumns`), and the requirement here is a movable Time column like the library tabs.
+- A dedicated **`.youtube` case in `LibraryColumnVisibilityGroup`** namespaces the persisted widths (`youtube:title`, `youtube:youtubeDate`, `youtube:duration`) so they survive `migrateColumnWidths`. This is why the internet-radio column path can't be reused: `internetRadioColumns` are deliberately **non-resizable** (`hitTestColumnResize` early-returns when `hasInternetRadioColumns`), and the requirement here is a movable Time column like the library tabs.
+- The **`youtubeDate`** column shows `video.formattedDate`; sorting it goes through the **raw-`Date` branch** of `columnSortAreInOrder` (via `columnDateValue`, alongside `dateAdded`/`lastPlayed`), not string compare, so it orders by actual date.
 - **Channel (parent) rows stay on the simple-list path** so they keep their ▶/▼ expand arrows; only video rows use columns — mirroring radio folders vs. stations.
 - Column headers appear only once a channel is expanded (video rows exist), gated by `hasYouTubeColumns` (`radioSlotShowingChannels` + any `.youtubeVideo` in `displayItems`).
 - Clicking a header sorts via **`applyYouTubeColumnSort`** — an in-place sort of each contiguous run of video rows (leaving channel leaders put), mirroring `applyInternetRadioColumnSort`.
