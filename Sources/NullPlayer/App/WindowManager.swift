@@ -990,12 +990,24 @@ class WindowManager {
         if treatMainAsVisible {
             regularWindowSnapshot?.main?.wasVisible = true
         }
+
+        // Put an (invisible) compact window on the current Space *before* hiding the regular
+        // windows and dropping to .accessory, so NullPlayer always has a window here for the
+        // re-activation below to focus. See CompactModeWindowController.establishPresenceOnActiveSpace().
+        createCompactWindowControllerIfNeeded()
+        compactWindowController?.establishPresenceOnActiveSpace()
+
         detachManagedChildWindowsForCompactMode()
         orderOutRegularWindows()
 
         NSApp.setActivationPolicy(.accessory)
+        // Going .accessory makes macOS resign NullPlayer and activate the next app in the stack.
+        // If that app is fullscreen on another Space (e.g. Console), the user gets switched to that
+        // Space (and the .moveToActiveSpace compact window follows). Immediately re-activate so
+        // NullPlayer stays frontmost on the *current* Space — the compact window is already ordered
+        // front here. Mirrors the NSApp.activate the exit path uses to reclaim focus.
+        NSApp.activate(ignoringOtherApps: true)
         createCompactStatusItem()
-        createCompactWindowControllerIfNeeded()
 
         DispatchQueue.main.async { [weak self] in
             guard let self, self.compactModeState == .entering else { return }
@@ -1012,10 +1024,29 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
-    func exitCompactMode() {
+    /// Exit Compact Mode and restore the regular window layout.
+    ///
+    /// The restore is deferred to the next runloop tick (after the compact window/status item
+    /// are torn down) so AppKit settles before the regular windows are re-shown — this is what
+    /// keeps the transition artifact-free. Callers that must run work only *after* the layout is
+    /// fully restored and `compactModeState` is back to `.regular` (e.g. live UI-mode switching,
+    /// which re-enters Compact Mode afterward) MUST pass `completion`; it runs at the very end of
+    /// that deferred restore. It also fires if the guard rejects the call, so a completion is
+    /// never silently dropped.
+    ///
+    /// Pass `restoreRegularWindows: false` when the caller is about to tear down and rebuild the
+    /// regular windows anyway (the live UI switch). The pre-compact windows are `.managed` and
+    /// assigned to whatever Space they were created on; re-showing them here would activate the
+    /// app on *that* Space and yank the user away from the Space they're currently viewing. Skip
+    /// the restore and the dock/activation-policy churn so the rebuilt-fresh windows (and the
+    /// re-entered compact window) land on the current Space instead.
+    func exitCompactMode(restoreRegularWindows: Bool = true, completion: (() -> Void)? = nil) {
         guard compactModeState == .compactVisible ||
               compactModeState == .compactHidden ||
-              compactModeState == .entering else { return }
+              compactModeState == .entering else {
+            completion?()
+            return
+        }
         compactModeState = .exiting
         compactModeEnabled = false
         UserDefaults.standard.set(false, forKey: "compactModeEnabled")
@@ -1024,17 +1055,22 @@ class WindowManager {
         compactWindowController = nil
         removeCompactStatusItem()
 
-        NSApp.setActivationPolicy(.regular)
-        restoreDockIconImage()
+        if restoreRegularWindows {
+            NSApp.setActivationPolicy(.regular)
+            restoreDockIconImage()
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
-            self.restoreRegularWindowSnapshot()
-            self.updateDockedChildWindows()
-            NSApp.activate(ignoringOtherApps: true)
+            if restoreRegularWindows {
+                self.restoreRegularWindowSnapshot()
+                self.updateDockedChildWindows()
+                NSApp.activate(ignoringOtherApps: true)
+            }
             self.compactModeState = .regular
             self.postLayoutChangeNotification()
+            completion?()
         }
     }
 
@@ -1067,6 +1103,14 @@ class WindowManager {
         )
     }
 
+    /// A window in native fullscreen occupies its own Space. Calling `orderOut` (or `orderFront`)
+    /// on it forces macOS to switch to that Space to run the transition animation — which, when
+    /// the user is viewing a different Space, yanks them away from the desktop they're on. Compact
+    /// Mode must leave such windows untouched: they simply stay on their own Space, out of view.
+    private func isInNativeFullScreen(_ window: NSWindow?) -> Bool {
+        window?.styleMask.contains(.fullScreen) ?? false
+    }
+
     private func orderOutRegularWindows() {
         for window in [mainWindowController?.window,
                        equalizerWindowController?.window,
@@ -1077,7 +1121,8 @@ class WindowManager {
                        projectMWindowController?.window,
                        plexBrowserWindowController?.window,
                        videoPlayerWindowController?.window,
-                       debugWindowController?.window].compactMap({ $0 }) {
+                       debugWindowController?.window].compactMap({ $0 })
+        where !isInNativeFullScreen(window) {
             window.orderOut(nil)
         }
 
@@ -1109,6 +1154,8 @@ class WindowManager {
         for window in NSApp.windows where window.isVisible {
             if window === compactWindow { continue }
             if isSystemOrTransientWindow(window) { continue }
+            // Leave fullscreen windows on their own Space — hiding them would switch Spaces.
+            if isInNativeFullScreen(window) { continue }
             let isOrphanedPlayerWindow =
                 window.identifier == Self.modeDependentWindowIdentifier
             if !isOrphanedPlayerWindow {
@@ -1138,6 +1185,9 @@ class WindowManager {
 
         func restore(_ snapshot: WindowSnapshot?, controller: ModeDependentWindow?) {
             guard let snapshot, let window = controller?.window else { return }
+            // Never touched on entry (see isInNativeFullScreen); leave it on its own Space so
+            // exiting Compact Mode doesn't switch away from the user's current desktop.
+            if isInNativeFullScreen(window) { return }
             if snapshot.frame != .zero {
                 window.setFrame(snapshot.frame, display: true)
             }
@@ -1153,6 +1203,7 @@ class WindowManager {
 
         func restoreWindow(_ snapshot: WindowSnapshot?, window: NSWindow?) {
             guard let snapshot, let window else { return }
+            if isInNativeFullScreen(window) { return }
             if snapshot.frame != .zero {
                 window.setFrame(snapshot.frame, display: true)
             }
@@ -1170,7 +1221,7 @@ class WindowManager {
         restoreWindow(snapshot.video, window: videoPlayerWindowController?.window)
         restoreWindow(snapshot.debug, window: debugWindowController?.window)
 
-        for window in snapshot.additionalWindows {
+        for window in snapshot.additionalWindows where !isInNativeFullScreen(window) {
             window.orderFront(nil)
         }
         regularWindowSnapshot = nil
@@ -4450,17 +4501,28 @@ class WindowManager {
     /// switch (PR4) layers mode-change semantics on top. Logs teardown/recreate timing.
     func debugRecreateModeDependentWindows() {
         NSLog("WindowManager: debugRecreateModeDependentWindows — start")
-        let wasCompact = compactModeEnabled
-        if wasCompact { exitCompactMode() }
-        // Compact Mode hides the underlying player layout. Capture only after exiting so the
-        // snapshot contains the windows that must be restored behind the rebuilt compact UI.
-        let snapshot = captureModeDependentLayout()
+        // Compact Mode restores the underlying layout asynchronously on exit; defer the rebuild
+        // until that completes so the snapshot captures the real windows and the re-enter is not
+        // swallowed by the `.exiting` guard. Mirrors the production reloadUI path.
+        if compactModeEnabled {
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot)
+            let preSwitchSnapshot = regularWindowSnapshot
+            exitCompactMode(restoreRegularWindows: false) { [weak self] in
+                guard let self else { return }
+                self.performDebugRecreateModeDependentWindows(snapshot: snapshot, reenterCompact: true)
+                self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
+            }
+        } else {
+            performDebugRecreateModeDependentWindows(snapshot: captureModeDependentLayout(), reenterCompact: false)
+        }
+    }
 
+    private func performDebugRecreateModeDependentWindows(snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
         recreateModeDependentLayout(snapshot)
-        if wasCompact { enterCompactMode() }
+        if reenterCompact { enterCompactMode() }
         let tDone = CACurrentMediaTime()
 
         NSLog("WindowManager: debugRecreateModeDependentWindows — teardown %.1fms, recreate %.1fms",
@@ -4490,12 +4552,66 @@ class WindowManager {
         guard targetModern != isRunningModernUI else { return }
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetModern ? "modern" : "classic")
 
-        let wasCompact = compactModeEnabled
-        if wasCompact { exitCompactMode() }
-        // Compact Mode's visible browser is only a temporary presentation of the underlying
-        // layout. Capture after exit so re-entering Compact Mode preserves that real layout.
-        let snapshot = captureModeDependentLayout()
+        // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
+        // on exit. When in Compact Mode, derive the layout to rebuild from the pre-compact capture
+        // (`regularWindowSnapshot`) rather than the live windows — they're still hidden, and
+        // re-showing them would pull the user to whatever Space those `.managed` windows live on.
+        // Defer the swap until the compact teardown completes so the re-enter sees
+        // `compactModeState == .regular` instead of a no-op `.exiting` guard.
+        if compactModeEnabled {
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot)
+            // The mode-independent windows (video, debug, app panels) survive teardown but were
+            // hidden on compact entry and are not re-shown here. enterCompactMode() will re-capture
+            // the snapshot from the live (still-hidden) windows, losing their visibility — so carry
+            // their pre-switch state forward afterward. See reapplyModeIndependentWindows(from:).
+            let preSwitchSnapshot = regularWindowSnapshot
+            exitCompactMode(restoreRegularWindows: false) { [weak self] in
+                guard let self else { return }
+                self.performReloadUI(toModernUI: targetModern, snapshot: snapshot, reenterCompact: true)
+                self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
+            }
+        } else {
+            performReloadUI(toModernUI: targetModern, snapshot: captureModeDependentLayout(), reenterCompact: false)
+        }
+    }
 
+    /// A Compact-Mode-preserving UI switch leaves the mode-independent windows (video player, debug
+    /// console, app-owned panels) hidden without re-showing them, then `enterCompactMode()`
+    /// re-captures `regularWindowSnapshot` from those still-hidden windows — recording them as not
+    /// visible and dropping `additionalWindows`. Carry the mode-independent fields forward from the
+    /// pre-switch capture so a later Compact-Mode exit restores them. The mode-dependent fields in
+    /// the fresh capture are correct (rebuilt then captured) and are left untouched.
+    private func reapplyModeIndependentWindows(from previous: CompactWindowSnapshot?) {
+        guard let previous, regularWindowSnapshot != nil else { return }
+        regularWindowSnapshot?.video = previous.video
+        regularWindowSnapshot?.debug = previous.debug
+        regularWindowSnapshot?.additionalWindows = previous.additionalWindows
+    }
+
+    /// Build a mode-dependent layout snapshot from a Compact-Mode capture, so the live UI switch
+    /// can rebuild the regular windows without first re-showing them. Falls back to a live capture
+    /// if no Compact snapshot exists.
+    private func modeDependentLayout(from snapshot: CompactWindowSnapshot?) -> ModeDependentLayoutSnapshot {
+        guard let snapshot else { return captureModeDependentLayout() }
+        func conv(_ w: WindowSnapshot?) -> UIWindowSnapshot? {
+            guard let w else { return nil }
+            return UIWindowSnapshot(visible: w.wasVisible, frame: w.frame, isShadeMode: w.wasShadeMode)
+        }
+        return ModeDependentLayoutSnapshot(
+            main: conv(snapshot.main),
+            playlist: conv(snapshot.playlist),
+            equalizer: conv(snapshot.equalizer),
+            library: conv(snapshot.library),
+            projectM: conv(snapshot.projectM),
+            spectrum: conv(snapshot.spectrum),
+            audioAnalysis: conv(snapshot.audioAnalysis),
+            waveform: conv(snapshot.waveform)
+        )
+    }
+
+    /// The actual mode-dependent window swap. Runs synchronously when not in Compact Mode, or as
+    /// the `exitCompactMode` completion when it was — see `reloadUI(toModernUI:)`.
+    private func performReloadUI(toModernUI targetModern: Bool, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
@@ -4510,7 +4626,7 @@ class WindowManager {
         recreateModeDependentLayout(snapshot)
 
         // Restore Compact Mode last so it captures the freshly rebuilt window set, not stale state.
-        if wasCompact { enterCompactMode() }
+        if reenterCompact { enterCompactMode() }
         let tDone = CACurrentMediaTime()
 
         NSLog("WindowManager: reloadUI — teardown %.1fms, recreate %.1fms (now %@ UI)",

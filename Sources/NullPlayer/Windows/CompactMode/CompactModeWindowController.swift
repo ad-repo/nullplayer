@@ -109,6 +109,21 @@ final class CompactModeWindowController: NSWindowController {
         browserController.updateCompactBarPlaybackState()
     }
 
+    /// Order the compact window front on the *current* Space while still invisible (alpha 0),
+    /// without revealing or repositioning it. Called at Compact-Mode entry **before** the regular
+    /// windows are hidden and the app drops to `.accessory`, so NullPlayer always has a window on
+    /// the user's current Space for the entry path's `NSApp.activate(ignoringOtherApps:)` to focus.
+    /// Without this, re-activation after `.accessory` has no current-Space window to land on. The
+    /// real fade-in/positioning still happens later in `show`.
+    func establishPresenceOnActiveSpace() {
+        guard let window else { return }
+        window.alphaValue = 0
+        window.hasShadow = false
+        window.collectionBehavior = [.moveToActiveSpace, .transient, .ignoresCycle]
+        window.orderFrontRegardless()
+        window.makeKey()
+    }
+
     func show(anchoredTo button: NSStatusBarButton?) {
         guard let window else { return }
         revealWorkItem?.cancel()
@@ -166,11 +181,19 @@ final class CompactModeWindowController: NSWindowController {
             ?? NSScreen.screens.first { $0.frame.contains(buttonScreenRect.origin) }
             ?? NSScreen.main
         guard let screen else { return false }
-        // The only reliable readiness signal is menu-bar proximity: NSStatusBar creates the
-        // button's window eagerly (so button.window/.screen are non-nil before layout), but a
-        // not-yet-laid-out item sits near the origin. Compare against screen.frame.maxY (the
-        // menu-bar edge), not visibleFrame.maxY which excludes the menu bar.
-        return abs(buttonScreenRect.maxY - screen.frame.maxY) < statusAnchorReadyThreshold
+        // NSStatusBar creates the button's window eagerly (so button.window/.screen are non-nil
+        // before layout), but a not-yet-laid-out item sits near the origin. Two independent
+        // signals must both hold before the anchor is trustworthy:
+        //   (1) Menu-bar proximity (Y): the laid-out item sits at the top edge. Compare against
+        //       screen.frame.maxY (the menu-bar edge), not visibleFrame.maxY which excludes it.
+        let nearMenuBar = abs(buttonScreenRect.maxY - screen.frame.maxY) < statusAnchorReadyThreshold
+        //   (2) Horizontal validity (X): a still-settling item reports an x near the screen's left
+        //       origin, which would center the compact window hard against the left margin (the
+        //       intermittent "left-aligned" bug). Real status items live in the right portion of
+        //       the menu bar — the left is occupied by the app menus — so treat any anchor whose
+        //       center lands in the left quarter of the screen as not yet laid out and retry.
+        let validX = (buttonScreenRect.midX - screen.frame.minX) > screen.frame.width * 0.25
+        return nearMenuBar && validX
     }
 
     func hide() {

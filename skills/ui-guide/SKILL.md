@@ -609,7 +609,7 @@ de-risks the live switch. Requires a debug build: `./scripts/kill_build_run.sh -
 Compact Mode is a WindowManager state transition, not a second main window style.
 
 Key implementation details:
-- `WindowManager.enterCompactMode(revealWindow:)` snapshots regular windows, detaches docked child windows, orders regular windows out, switches the app to `.accessory`, creates the status item, and owns the Compact Mode state (`regular`, `compactVisible`, `compactHidden`).
+- `WindowManager.enterCompactMode(revealWindow:)` snapshots regular windows, establishes the compact window's presence on the current Space, detaches docked child windows, orders regular windows out, switches the app to `.accessory`, **re-activates NullPlayer** (`NSApp.activate`) so the `.accessory` transition doesn't hand the Space to a fullscreen app, creates the status item, and owns the Compact Mode state (`regular`, `compactVisible`, `compactHidden`). See the Spaces gotchas below.
 - `Windows/CompactMode/CompactModeWindowController.swift` owns a private browser controller (`PlexBrowserWindowController` or `ModernLibraryBrowserWindowController`) and calls `setCompactMode(true)`. Do not replace this with a custom compact-only view; Compact Mode must keep the same browser compact surface and embedded compact player bar behavior as the old implementation.
 - Compact updates are forwarded through the compact controller (`updateCompactBarTime`, `updateCompactBarTrack`, `updateCompactBarPlaybackState`) so playback state stays live while the regular windows are hidden.
 - The status item left-click toggles compact visibility. Right-click opens the compact menu. Hidden compact mode remains in `.accessory` until explicitly exited.
@@ -623,6 +623,26 @@ Placement rules:
 - Keep the compact width based on the browser surface's `minimumCompactContentWidth`. Do not force a narrower hard-coded width, and do not abbreviate/truncate browser tab labels just to make the window thinner.
 - Use `.moveToActiveSpace` for the compact window, not `.canJoinAllSpaces`. Showing/hiding from the status item should reveal the compact window on the user's current desktop/Space, not stick to a previous Space or appear everywhere.
 - Avoid transition flashes by giving the compact window a top-right fallback frame during setup, using `display: false` for hidden frame changes, and delaying shadow/key/display until the final frame is applied on reveal.
+
+### Spaces / virtual-desktop gotchas (hard-won)
+
+These are subtle and only reproduce with multiple Spaces / a fullscreen app on another desktop. Verify any change to the enter/exit sequence against that setup.
+
+- **`.accessory` transition steals the Space.** `NSApp.setActivationPolicy(.accessory)` makes macOS resign NullPlayer and **activate the next app in the stack**. If that app is in native fullscreen on another Space (e.g. Console), macOS switches the user to that Space, and the `.moveToActiveSpace` compact window then follows. The diagnostic signature is a `NSWorkspace.didActivateApplicationNotification` for another app firing immediately after the policy change. Fix: call `NSApp.activate(ignoringOtherApps:)` right after `setActivationPolicy(.accessory)` so NullPlayer stays frontmost on the current Space. The exit path already does this after `setActivationPolicy(.regular)`; entry must mirror it. (Merely ordering the compact window front/key does **not** prevent the handoff — the policy change yields activation regardless.)
+- **Re-activation needs a current-Space window to land on.** Because the regular windows are ordered out before the policy change, call `compactWindowController?.establishPresenceOnActiveSpace()` (orders the invisible alpha-0 compact window front on the current Space) *before* `orderOutRegularWindows()`, so the `NSApp.activate` above has a NullPlayer window on the current Space to focus.
+- **Never `orderOut`/`orderFront` a native-fullscreen window.** Doing so forces macOS to switch to that window's own Space to run the show/hide animation. `orderOutRegularWindows`, `orderOutOrphanedAppWindows`, and `restoreRegularWindowSnapshot` all skip windows where `isInNativeFullScreen(_:)` (`styleMask.contains(.fullScreen)`); leave them untouched on their Space.
+
+### Live UI switch (Classic↔Modern) while in Compact Mode
+
+`reloadUI(toModernUI:)` must not naively call `exitCompactMode()` then `enterCompactMode()`:
+
+- `exitCompactMode` restores asynchronously (state stays `.exiting` until a deferred block), so a synchronous re-enter hits the `.regular` guard and is silently dropped. `exitCompactMode` is **completion-based**; run the teardown/rebuild/re-enter inside the completion.
+- Pass `exitCompactMode(restoreRegularWindows: false)` on this path: re-showing the still-hidden `.managed` regular windows would pull the user to whatever Space they live on. Derive the rebuild snapshot from the pre-compact capture (`modeDependentLayout(from: regularWindowSnapshot)`) instead of the live (hidden) windows.
+- `enterCompactMode()` re-captures `regularWindowSnapshot` from the live windows, which **loses the mode-independent windows** (video player, debug console, app panels — they survive teardown but stay hidden). Carry those fields forward with `reapplyModeIndependentWindows(from:)` after the rebuild, or a video player open before the switch won't restore on the eventual Compact-Mode exit.
+
+### Compact window reveal positioning
+
+- Reveal readiness (`isStatusAnchorReady`) must validate **both** the status item's Y (menu-bar proximity) **and** X. A freshly created status item can report a settled Y while its X is still near the screen origin; centering on that X clamps the window hard against the left margin (intermittent "left-aligned" bug). Require the anchor's center to be right of the screen's left quarter before revealing, and retry until it is.
 
 ## Window Docking
 
