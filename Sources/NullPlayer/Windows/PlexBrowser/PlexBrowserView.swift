@@ -1151,6 +1151,8 @@ class PlexBrowserView: NSView {
     private var youtubeDownloadTask: Task<Void, Never>?
     /// Video IDs currently downloading — drives a per-row spinner on the video entry.
     private var downloadingVideoIds: Set<String> = []
+    /// Channel IDs whose uploads are currently being fetched — drives a per-row spinner on the channel entry.
+    private var loadingChannelIds: Set<String> = []
 
     private let historyAgent = PlayHistoryAgent()
     private var historyHostingView: NSHostingView<StatsContentView>?
@@ -3675,24 +3677,35 @@ class PlexBrowserView: NSView {
                 let indent = CGFloat(item.indentLevel) * 16
                 let textX = itemRect.minX + indent + 4
 
-                // Expand/collapse indicator for hierarchical items
-                if item.hasChildren {
+                // Expand/collapse indicator for hierarchical items — or an inline spinner
+                // while a YouTube channel's uploads load.
+                let isLoadingChannel: Bool = {
+                    if case .youtubeChannel(let channel) = item.type { return loadingChannelIds.contains(channel.id) }
+                    return false
+                }()
+                var titleSpinnerInset: CGFloat = 0
+                if isLoadingChannel {
+                    let spinnerRadius = min(itemRect.height * 0.3, 6)
+                    drawRowSpinner(in: context, center: CGPoint(x: textX + spinnerRadius, y: itemRect.midY),
+                                   radius: spinnerRadius, colors: colors)
+                    titleSpinnerInset = spinnerRadius * 2 + 4
+                } else if item.hasChildren {
                     let expanded = isExpanded(item)
                     let indicator = expanded ? "▼" : "▶"
-                    
+
                     // Counter-flip for indicator
                     context.saveGState()
                     let indicatorY = itemRect.midY
                     context.translateBy(x: 0, y: indicatorY)
                     context.scaleBy(x: 1, y: -1)
                     context.translateBy(x: 0, y: -indicatorY)
-                    
+
                     let indicatorAttrs: [NSAttributedString.Key: Any] = [
                         .foregroundColor: colors.normalText.withAlphaComponent(0.6),
                         .font: NSFont.systemFont(ofSize: 8)
                     ]
                     indicator.draw(at: NSPoint(x: textX - 12, y: itemRect.midY - 5), withAttributes: indicatorAttrs)
-                    
+
                     context.restoreGState()
                 }
                 
@@ -3709,8 +3722,8 @@ class PlexBrowserView: NSView {
                     .font: NSFont.systemFont(ofSize: 10)
                 ]
                 
-                let textRect = NSRect(x: textX, y: itemRect.minY + 2,
-                                     width: itemRect.width - indent - 60, height: itemHeight - 4)
+                let textRect = NSRect(x: textX + titleSpinnerInset, y: itemRect.minY + 2,
+                                     width: itemRect.width - indent - 60 - titleSpinnerInset, height: itemHeight - 4)
                 item.title.draw(in: textRect, withAttributes: attrs)
                 
                 // Secondary info (only for non-column view)
@@ -5707,7 +5720,7 @@ class PlexBrowserView: NSView {
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.loadingAnimationFrame += 1
-            if self.isLoading || !self.downloadingVideoIds.isEmpty {
+            if self.isLoading || !self.downloadingVideoIds.isEmpty || !self.loadingChannelIds.isEmpty {
                 // Only redraw the list area where the loading spinner is displayed
                 // This prevents menu items from shimmering on non-Retina displays
                 var listY = self.Layout.titleBarHeight + self.Layout.serverBarHeight + self.Layout.tabBarHeight
@@ -5732,7 +5745,7 @@ class PlexBrowserView: NSView {
     }
 
     private func stopLoadingAnimation() {
-        guard !isLibraryScanning && downloadingVideoIds.isEmpty else { return }
+        guard !isLibraryScanning && downloadingVideoIds.isEmpty && loadingChannelIds.isEmpty else { return }
         loadingAnimationTimer?.invalidate()
         loadingAnimationTimer = nil
         loadingAnimationFrame = 0
@@ -11212,8 +11225,10 @@ class PlexBrowserView: NSView {
         youtubeChannelVideos.removeValue(forKey: channel.id)
         expandedYouTubeChannels.insert(channel.id)
         youtubeExpandTask?.cancel()
+        loadingChannelIds.insert(channel.id); startLoadingAnimation()
         youtubeExpandTask = Task.detached { @MainActor [weak self] in
             guard let self = self else { return }
+            defer { self.loadingChannelIds.remove(channel.id); self.stopLoadingAnimation(); self.needsDisplay = true }
             do {
                 let videos = try await YouTubeManager.shared.videos(forChannel: channel)
                 youtubeChannelVideos[channel.id] = videos
@@ -11224,6 +11239,7 @@ class PlexBrowserView: NSView {
                 NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription)
             }
         }
+        rebuildCurrentModeItems(); needsDisplay = true
     }
 
     @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
@@ -14849,20 +14865,28 @@ class PlexBrowserView: NSView {
         let channels = YouTubeManager.shared.channels.filter { expandedYouTubeChannels.contains($0.id) }
         guard !channels.isEmpty else { rebuildCurrentModeItems(); return }
         youtubeExpandTask?.cancel()
+        loadingChannelIds.formUnion(channels.map { $0.id }); startLoadingAnimation()
         youtubeExpandTask = Task.detached { @MainActor [weak self] in
             guard let self = self else { return }
+            defer {
+                for ch in channels { self.loadingChannelIds.remove(ch.id) }
+                self.stopLoadingAnimation(); self.needsDisplay = true
+            }
             for ch in channels {
                 do {
                     let videos = try await YouTubeManager.shared.videos(forChannel: ch)
                     youtubeChannelVideos[ch.id] = videos
+                    loadingChannelIds.remove(ch.id)
                     rebuildCurrentModeItems()
                 } catch is CancellationError { return }
                 catch where Task.isCancelled { return }
                 catch {
+                    loadingChannelIds.remove(ch.id)
                     NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
                 }
             }
         }
+        rebuildCurrentModeItems(); needsDisplay = true
     }
     
     /// Load Subsonic data for the current mode
@@ -17297,8 +17321,10 @@ class PlexBrowserView: NSView {
                 expandedYouTubeChannels.insert(channel.id)
                 if youtubeChannelVideos[channel.id] == nil {
                     youtubeExpandTask?.cancel()
+                    loadingChannelIds.insert(channel.id); startLoadingAnimation()
                     youtubeExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
+                        defer { self.loadingChannelIds.remove(channel.id); self.stopLoadingAnimation(); self.needsDisplay = true }
                         do {
                             let videos = try await YouTubeManager.shared.videos(forChannel: channel)
                             youtubeChannelVideos[channel.id] = videos
@@ -17309,6 +17335,7 @@ class PlexBrowserView: NSView {
                             NSLog("Failed to load YouTube videos for channel '%@': %@", channel.title, error.localizedDescription)
                         }
                     }
+                    rebuildCurrentModeItems()
                     needsDisplay = true
                     return
                 }
