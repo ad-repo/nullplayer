@@ -990,12 +990,24 @@ class WindowManager {
         if treatMainAsVisible {
             regularWindowSnapshot?.main?.wasVisible = true
         }
+
+        // Put an (invisible) compact window on the current Space *before* hiding the regular
+        // windows and dropping to .accessory, so NullPlayer always has a window here for the
+        // re-activation below to focus. See CompactModeWindowController.establishPresenceOnActiveSpace().
+        createCompactWindowControllerIfNeeded()
+        compactWindowController?.establishPresenceOnActiveSpace()
+
         detachManagedChildWindowsForCompactMode()
         orderOutRegularWindows()
 
         NSApp.setActivationPolicy(.accessory)
+        // Going .accessory makes macOS resign NullPlayer and activate the next app in the stack.
+        // If that app is fullscreen on another Space (e.g. Console), the user gets switched to that
+        // Space (and the .moveToActiveSpace compact window follows). Immediately re-activate so
+        // NullPlayer stays frontmost on the *current* Space — the compact window is already ordered
+        // front here. Mirrors the NSApp.activate the exit path uses to reclaim focus.
+        NSApp.activate(ignoringOtherApps: true)
         createCompactStatusItem()
-        createCompactWindowControllerIfNeeded()
 
         DispatchQueue.main.async { [weak self] in
             guard let self, self.compactModeState == .entering else { return }

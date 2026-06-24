@@ -109,6 +109,21 @@ final class CompactModeWindowController: NSWindowController {
         browserController.updateCompactBarPlaybackState()
     }
 
+    /// Order the compact window front on the *current* Space while still invisible (alpha 0),
+    /// without revealing or repositioning it. Called at Compact-Mode entry **before** the regular
+    /// windows are hidden and the app drops to `.accessory`, so NullPlayer always has a window on
+    /// the user's current Space for the entry path's `NSApp.activate(ignoringOtherApps:)` to focus.
+    /// Without this, re-activation after `.accessory` has no current-Space window to land on. The
+    /// real fade-in/positioning still happens later in `show`.
+    func establishPresenceOnActiveSpace() {
+        guard let window else { return }
+        window.alphaValue = 0
+        window.hasShadow = false
+        window.collectionBehavior = [.moveToActiveSpace, .transient, .ignoresCycle]
+        window.orderFrontRegardless()
+        window.makeKey()
+    }
+
     func show(anchoredTo button: NSStatusBarButton?) {
         guard let window else { return }
         revealWorkItem?.cancel()
