@@ -19,15 +19,17 @@ final class ClassicCompactPlayerBarView: NSView {
 
     // MARK: - Layout constants (classic native pixels)
 
-    /// Design height in native units. Tall enough for transport buttons (18) plus a two-row
-    /// title/seek middle column, with `topPad` of breathing room above so the controls don't
-    /// sit jammed against the macOS menu bar.
-    private let designHeight: CGFloat = 24
-    /// Empty space (native units) reserved above the control row.
-    private let topPad: CGFloat = 4
-    /// Height of the interactive control row, below `topPad`.
-    private var rowHeight: CGFloat { designHeight - topPad }
-    private let pad: CGFloat = 5
+    /// Main-window titlebar followed by a dedicated player-control row. Keeping these as
+    /// separate vertical regions prevents the titlebar from covering transport controls.
+    private let titleBarHeight: CGFloat = SkinElements.titleBarHeight
+    private let controlRowHeight: CGFloat = 24
+    private var designHeight: CGFloat { titleBarHeight + controlRowHeight }
+    private let controlRowTopPad: CGFloat = 3
+    private var rowHeight: CGFloat { controlRowHeight - controlRowTopPad }
+    /// Match the Library side rails in display points, accounting for this view's scale.
+    private var pad: CGFloat {
+        SkinElements.PlexBrowser.Layout.leftBorder / nativeScale + 3
+    }
     private let buttonHeight: CGFloat = 18
     /// Native widths of the CBUTTONS transport sprites: prev, play/pause, stop, next.
     private let buttonWidths: [CGFloat] = [23, 23, 23, 22]
@@ -36,8 +38,11 @@ final class ClassicCompactPlayerBarView: NSView {
     private let posThumbSize = NSSize(width: 29, height: 10)
     private let volThumbSize = NSSize(width: 14, height: 11)
 
-    /// Suggested on-screen bar height.
-    static func preferredHeight() -> CGFloat { 33 }
+    /// Suggested on-screen bar height. Match the rest of the classic UI's scaling exactly so
+    /// bitmap sprites are not resampled at an arbitrary compact-bar-only scale.
+    static func preferredHeight() -> CGFloat {
+        (SkinElements.titleBarHeight + 24) * Skin.scaleFactor
+    }
 
     // MARK: - State
 
@@ -96,7 +101,7 @@ final class ClassicCompactPlayerBarView: NSView {
 
     /// Transport button rects keyed prev/play/stop/next.
     private var transportRects: [NSRect] {
-        let y = topPad + (rowHeight - buttonHeight) / 2
+        let y = titleBarHeight + controlRowTopPad + (rowHeight - buttonHeight) / 2
         var rects: [NSRect] = []
         var x = pad
         for w in buttonWidths {
@@ -112,7 +117,7 @@ final class ClassicCompactPlayerBarView: NSView {
 
     private var volumeRect: NSRect {
         NSRect(x: designWidth - pad - volumeSize.width,
-               y: topPad + (rowHeight - volumeSize.height) / 2,
+               y: titleBarHeight + controlRowTopPad + (rowHeight - volumeSize.height) / 2,
                width: volumeSize.width, height: volumeSize.height)
     }
 
@@ -120,7 +125,8 @@ final class ClassicCompactPlayerBarView: NSView {
         // "00:00 / 00:00" = 13 chars × 5px native.
         let w = 13 * SkinElements.TextFont.charWidth
         return NSRect(x: volumeRect.minX - 6 - w,
-                      y: topPad + (rowHeight - SkinElements.TextFont.charHeight) / 2,
+                      y: titleBarHeight + controlRowTopPad
+                        + (rowHeight - SkinElements.TextFont.charHeight) / 2,
                       width: w, height: SkinElements.TextFont.charHeight)
     }
 
@@ -128,16 +134,34 @@ final class ClassicCompactPlayerBarView: NSView {
     private var middleRect: NSRect {
         let left = transportEndX
         let right = timeRect.minX - 4
-        return NSRect(x: left, y: 0, width: max(0, right - left), height: designHeight)
+        return NSRect(x: left, y: titleBarHeight,
+                      width: max(0, right - left), height: controlRowHeight)
     }
 
     private var titleRect: NSRect {
-        NSRect(x: middleRect.minX, y: topPad + 1, width: middleRect.width, height: SkinElements.TextFont.charHeight)
+        NSRect(x: middleRect.minX, y: titleBarHeight + controlRowTopPad + 1,
+               width: middleRect.width, height: SkinElements.TextFont.charHeight)
     }
 
     private var seekRect: NSRect {
         NSRect(x: middleRect.minX, y: designHeight - seekHeight - 1,
                width: middleRect.width, height: seekHeight)
+    }
+
+    private var minimizeRect: NSRect {
+        NSRect(x: designWidth - 31, y: 3, width: 9, height: 9)
+    }
+
+    private var closeRect: NSRect {
+        NSRect(x: designWidth - 11, y: 3, width: 9, height: 9)
+    }
+
+    private var minimizeHitRect: NSRect {
+        NSRect(x: designWidth - 33, y: 0, width: 14, height: titleBarHeight)
+    }
+
+    private var closeHitRect: NSRect {
+        NSRect(x: designWidth - 15, y: 0, width: 15, height: titleBarHeight)
     }
 
     // MARK: - Drawing
@@ -154,16 +178,26 @@ final class ClassicCompactPlayerBarView: NSView {
         context.scaleBy(x: 1, y: -1)
         context.scaleBy(x: scale, y: scale)
 
-        let designRect = NSRect(x: 0, y: 0, width: designWidth, height: designHeight)
-
-        // Background strip + faint bottom separator so the bar reads as its own surface.
+        // Player surface below the titlebar.
         context.setFillColor(NSColor(calibratedWhite: 0.07, alpha: 1.0).cgColor)
-        context.fill(designRect)
+        context.fill(NSRect(x: 0, y: titleBarHeight,
+                            width: designWidth, height: controlRowHeight))
         context.setStrokeColor(NSColor(calibratedWhite: 0.0, alpha: 0.6).cgColor)
         context.setLineWidth(1)
         context.move(to: CGPoint(x: 0, y: designHeight - 0.5))
         context.addLine(to: CGPoint(x: designWidth, y: designHeight - 0.5))
         context.strokePath()
+
+        // Use the active classic main-window titlebar as the menu-bar-facing top border.
+        // Preserve its end caps instead of stretching the 275px bitmap across the browser.
+        drawResizableMainTitleBar(renderer: renderer, skin: skin, context: context,
+                                  isActive: window?.isKeyWindow ?? true)
+        renderer.drawButton(.minimize,
+                            state: pressedButton == .minimize ? .pressed : .normal,
+                            at: minimizeRect, in: context)
+        renderer.drawButton(.close,
+                            state: pressedButton == .close ? .pressed : .normal,
+                            at: closeRect, in: context)
 
         // Transport buttons (prev, play/pause, stop, next).
         let rects = transportRects
@@ -192,7 +226,76 @@ final class ClassicCompactPlayerBarView: NSView {
         let volume = CGFloat(WindowManager.shared.audioEngine.volume)
         drawVolumeBar(fraction: volume, renderer: renderer, skin: skin, context: context)
 
+        // Continue the Library Browser's decorative side rails through the player row.
+        renderer.drawCompactPlayerSideBorders(
+            in: context,
+            bounds: NSRect(x: 0, y: 0, width: designWidth, height: designHeight),
+            titleHeight: titleBarHeight,
+            viewScale: scale
+        )
+
         context.restoreGState()
+    }
+
+    private func drawResizableMainTitleBar(renderer: SkinRenderer, skin: Skin,
+                                           context: CGContext, isActive: Bool) {
+        guard let image = skin.titlebar else {
+            // Skins missing TITLEBAR.BMP (or the empty fallback skin) would otherwise leave the
+            // top strip transparent. Fill it with the same surface color as the control row.
+            context.setFillColor(NSColor(calibratedWhite: 0.07, alpha: 1.0).cgColor)
+            context.fill(NSRect(x: 0, y: 0, width: designWidth, height: titleBarHeight))
+            return
+        }
+        let source = isActive ? SkinElements.TitleBar.active : SkinElements.TitleBar.inactive
+        let destination = NSRect(x: 0, y: 0, width: designWidth, height: titleBarHeight)
+
+        guard destination.width > source.width else {
+            renderer.drawSprite(from: image, sourceRect: source, to: destination, in: context)
+            return
+        }
+
+        // A skin may bake its title anywhere in the bitmap (centered, left-aligned, or custom
+        // artwork). Keep the entire section before the controls intact so that artwork is never
+        // sliced. Extend only the neutral rail immediately before the right-side controls.
+        let rightWidth: CGFloat = 37
+        let intactWidth = source.width - rightWidth
+        let extensionWidth = destination.width - source.width
+        let railWidth: CGFloat = 8
+        let railSource = NSRect(x: source.maxX - rightWidth - railWidth,
+                                y: source.minY, width: railWidth, height: source.height)
+
+        renderer.drawSprite(
+            from: image,
+            sourceRect: NSRect(x: source.minX, y: source.minY,
+                               width: intactWidth, height: source.height),
+            to: NSRect(x: destination.minX, y: destination.minY,
+                       width: intactWidth, height: destination.height),
+            in: context
+        )
+
+        var railX = intactWidth
+        let railEnd = railX + extensionWidth
+        while railX < railEnd {
+            let width = min(railWidth, railEnd - railX)
+            renderer.drawSprite(
+                from: image,
+                sourceRect: NSRect(x: railSource.minX, y: railSource.minY,
+                                   width: width, height: railSource.height),
+                to: NSRect(x: railX, y: destination.minY,
+                           width: width, height: destination.height),
+                in: context
+            )
+            railX += width
+        }
+
+        renderer.drawSprite(
+            from: image,
+            sourceRect: NSRect(x: source.maxX - rightWidth, y: source.minY,
+                               width: rightWidth, height: source.height),
+            to: NSRect(x: destination.maxX - rightWidth, y: destination.minY,
+                       width: rightWidth, height: destination.height),
+            in: context
+        )
     }
 
     private func drawTitle(renderer: SkinRenderer, context: CGContext) {
@@ -279,6 +382,22 @@ final class ClassicCompactPlayerBarView: NSView {
     override func mouseDown(with event: NSEvent) {
         let p = nativePoint(event)
 
+        if closeHitRect.contains(p) {
+            pressedButton = .close
+            needsDisplay = true
+            return
+        }
+        if minimizeHitRect.contains(p) {
+            pressedButton = .minimize
+            needsDisplay = true
+            return
+        }
+        if p.y < titleBarHeight {
+            // Compact Mode is anchored beneath the status item. Consume titlebar clicks
+            // without initiating a window drag so it cannot be detached from the menu bar.
+            return
+        }
+
         if seekRect.insetBy(dx: 0, dy: -6).contains(p) {
             isDraggingSeek = true
             updateSeekPosition(from: p)
@@ -330,6 +449,16 @@ final class ClassicCompactPlayerBarView: NSView {
             case .pause: engine.pause()
             case .stop: engine.stop()
             case .next: engine.next()
+            case .minimize:
+                if minimizeHitRect.contains(nativePoint(event)) {
+                    window?.orderOut(nil)
+                    WindowManager.shared.compactSurfaceDidHide()
+                    WindowManager.shared.notifyMainWindowVisibilityChanged()
+                }
+            case .close:
+                if closeHitRect.contains(nativePoint(event)) {
+                    window?.performClose(nil)
+                }
             default: break
             }
         }
@@ -391,5 +520,9 @@ final class ClassicCompactPlayerBarView: NSView {
 
     func skinDidChange() {
         needsDisplay = true
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false)
     }
 }

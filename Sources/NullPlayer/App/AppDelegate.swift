@@ -65,26 +65,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ModernSkinEngine.shared.loadPreferredSkin()
         }
         
-        // Show the main player window
-        windowManager.showMainWindow()
-        
-        // Bring app to foreground after windows are created
-        NSApp.activate(ignoringOtherApps: true)
-        windowManager.mainWindowController?.window?.makeKeyAndOrderFront(nil)
-        
+        // Restore settings state (skin, volume, EQ, windows). Compact Mode must be
+        // entered only after the asynchronous window restoration has completed, so it
+        // can capture and hide the actual restored window set.
+        let shouldRestoreCompactMode = UserDefaults.standard.bool(forKey: "compactModeEnabled")
+
+        // Create the main window, but only reveal it when we are NOT launching straight into
+        // the menu-bar Compact Mode — otherwise the regular window flashes onscreen before
+        // compact mode hides it (~0.1s later, after async restore completes).
+        windowManager.showMainWindow(reveal: !shouldRestoreCompactMode)
+
+        // Bring app to foreground after windows are created (skip when starting in Compact
+        // Mode, where the app is a menu-bar accessory and the main window stays hidden).
+        if !shouldRestoreCompactMode {
+            NSApp.activate(ignoringOtherApps: true)
+            windowManager.mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        }
+
         // Set up the application menu
         setupMainMenu()
 
         // Start cast discovery from app lifecycle, not from menu construction.
         CastManager.shared.startDiscovery()
-        
-        // Restore settings state (skin, volume, EQ, windows). Compact Mode must be
-        // entered only after the asynchronous window restoration has completed, so it
-        // can capture and hide the actual restored window set.
-        let shouldRestoreCompactMode = UserDefaults.standard.bool(forKey: "compactModeEnabled")
+
         AppStateManager.shared.restoreSettingsState { [weak self] in
             guard shouldRestoreCompactMode else { return }
-            self?.windowManager.enterCompactMode(revealWindow: false)
+            // The main window was created but never revealed, so force its snapshot to
+            // "visible" — exiting Compact Mode must restore it onscreen.
+            self?.windowManager.enterCompactMode(revealWindow: false, treatMainAsVisible: true)
         }
         
         // Mark app as ready for file opens
@@ -278,6 +286,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupMainMenu() {
+        dynamicMenuBuilders.removeAll(keepingCapacity: true)
         let mainMenu = NSMenu()
         
         // Application menu (NullPlayer menu)

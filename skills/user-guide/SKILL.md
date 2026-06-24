@@ -74,6 +74,8 @@ Windows automatically snap together when dragged near each other:
 **Compact Mode** collapses NullPlayer to a single menu-bar app. Toggle it from the main window's right-click context menu (**Compact Mode**) or the `Windows` top menu — available in **both classic and modern UI**. When enabled:
 
 - The Dock icon is hidden (the app switches to an accessory/menu-bar app) and a **NullPlayer status-bar item** appears in the menu bar. Clicking it reveals the single compact window; its menu also has **Exit Compact Mode**.
+- Left-clicking the status-bar item toggles the compact window shown/hidden. Right-clicking opens the Compact Mode menu.
+- The compact window opens at the top-right of the screen, aligned directly below the menu bar with no extra gap.
 - The sole window is the **Library Browser** with a stripped-down player bar embedded across the top (transport, seek + time, a scrolling title marquee, and volume), built from the active UI's own components (classic skin sprites in classic, modern controls in modern).
 - All other windows (Main, EQ, Playlist, Spectrum, etc.) are hidden; their prior visibility is remembered and restored when you exit.
 - Exiting restores the Dock icon, the macOS menu bar, and the previously open windows.

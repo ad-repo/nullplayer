@@ -80,6 +80,34 @@ enum DragMode {
     case group     // holdThreshold elapsed before drag — connected windows move together
 }
 
+private enum CompactModeState {
+    case regular
+    case entering
+    case compactHidden
+    case compactVisible
+    case exiting
+}
+
+private struct WindowSnapshot {
+    var wasVisible: Bool
+    var frame: NSRect
+    var wasShadeMode: Bool
+}
+
+private struct CompactWindowSnapshot {
+    var main: WindowSnapshot?
+    var equalizer: WindowSnapshot?
+    var playlist: WindowSnapshot?
+    var spectrum: WindowSnapshot?
+    var audioAnalysis: WindowSnapshot?
+    var waveform: WindowSnapshot?
+    var projectM: WindowSnapshot?
+    var library: WindowSnapshot?
+    var video: WindowSnapshot?
+    var debug: WindowSnapshot?
+    var additionalWindows: [NSWindow] = []
+}
+
 /// Joined edge intervals for seamless modern window border suppression.
 /// Top/bottom ranges are in local X coordinates; left/right ranges are in local Y coordinates.
 struct EdgeOcclusionSegments: Equatable {
@@ -205,24 +233,19 @@ class WindowManager {
         set { UserDefaults.standard.set(newValue, forKey: "hideTitleBars") }
     }
 
-    /// Whether Compact Mode (menu-bar app: one window = library browser + embedded player) is
-    /// currently active. Works in both classic and modern UI; toggled live at runtime. The
-    /// persisted preference key `compactModeEnabled` mirrors this so the mode can be restored
-    /// on the next launch.
+    /// Whether Compact Mode (menu-bar mini-player) is currently active. Works in both
+    /// classic and modern UI; toggled live at runtime. The persisted preference key
+    /// `compactModeEnabled` mirrors this so the mode can be restored on the next launch.
     private(set) var compactModeEnabled = false
+
+    private var compactModeState: CompactModeState = .regular
+
+    private var regularWindowSnapshot: CompactWindowSnapshot?
 
     /// Status-bar item shown while Compact Mode is active.
     private var compactStatusItem: NSStatusItem?
 
-    /// Window visibility captured when entering Compact Mode, restored on exit.
-    private var savedWindowVisibility: [String: Bool] = [:]
-
-    /// Library Browser frame before Compact Mode repositioned it under the status item.
-    private var savedPlexBrowserFrameForCompactMode: NSRect?
-
-    /// Visible app-owned windows outside WindowManager's controller set. Compact Mode hides
-    /// these temporarily and restores them on exit; orphaned mode-dependent windows are excluded.
-    private var savedAdditionalWindowsForCompactMode: [NSWindow] = []
+    private var compactWindowController: CompactModeWindowController?
 
     /// Marks mode-dependent player windows so stale instances can be distinguished from
     /// legitimate standalone dialogs when sweeping NSApp.windows.
@@ -562,7 +585,10 @@ class WindowManager {
     
     // MARK: - Window Management
     
-    func showMainWindow() {
+    /// - Parameter reveal: When `false`, the controller (and its window) are created and
+    ///   configured but the window is never ordered onscreen. Used at launch when starting
+    ///   straight into Compact Mode, so the regular window doesn't flash before it is hidden.
+    func showMainWindow(reveal: Bool = true) {
         let isNew = mainWindowController == nil
         if isNew {
             if isModernUIEnabled {
@@ -577,7 +603,9 @@ class WindowManager {
         if isRunningModernUI {
             normalizeModernMainWindowForHTIfNeeded()
         }
-        mainWindowController?.showWindow(nil)
+        if reveal {
+            mainWindowController?.showWindow(nil)
+        }
         applyAlwaysOnTopToWindow(mainWindowController?.window)
     }
     
@@ -833,11 +861,7 @@ class WindowManager {
     func showPlexBrowser(at restoredFrame: NSRect? = nil) {
         let isNewWindow = plexBrowserWindowController == nil
         if isNewWindow {
-            if isModernUIEnabled {
-                plexBrowserWindowController = ModernLibraryBrowserWindowController()
-            } else {
-                plexBrowserWindowController = PlexBrowserWindowController()
-            }
+            createPlexBrowserWindowController()
         }
         markModeDependentWindow(plexBrowserWindowController?.window)
         plexBrowserWindowController?.showWindow(nil)
@@ -886,7 +910,16 @@ class WindowManager {
         }
         postLayoutChangeNotification()
     }
-    
+
+    private func createPlexBrowserWindowController() {
+        if isModernUIEnabled {
+            plexBrowserWindowController = ModernLibraryBrowserWindowController()
+        } else {
+            plexBrowserWindowController = PlexBrowserWindowController()
+        }
+        markModeDependentWindow(plexBrowserWindowController?.window)
+    }
+
     var isPlexBrowserVisible: Bool {
         plexBrowserWindowController?.window?.isVisible == true
     }
@@ -942,117 +975,99 @@ class WindowManager {
     ///   shown and positioned under the status item. When `false` (restore on launch) the window
     ///   is left hidden behind the status item so the *first* click reveals it — otherwise the
     ///   status item starts in a "visible" state and the first click would just hide it.
-    func enterCompactMode(revealWindow: Bool = true) {
-        guard !compactModeEnabled else { return }
+    /// - Parameter treatMainAsVisible: When `true` (launch-into-compact path), the captured
+    ///   snapshot records the main window as visible even though it was never revealed, so
+    ///   exiting Compact Mode later restores it onscreen. The main window is always part of the
+    ///   regular layout, so this matches the live-toggle behavior. Defaults to `false` so the
+    ///   live menu toggle keeps recording the main window's actual visibility.
+    func enterCompactMode(revealWindow: Bool = true, treatMainAsVisible: Bool = false) {
+        guard compactModeState == .regular else { return }
+        compactModeState = .entering
         compactModeEnabled = true
         UserDefaults.standard.set(true, forKey: "compactModeEnabled")
 
-        // Remember which windows are visible so we can restore them on exit.
-        saveWindowVisibilityForCompactMode()
-        // Hide everything except the library browser, which becomes the sole window.
-        hideAllWindowsForCompactMode()
-
-        // Ensure the library browser exists and shows the embedded player bar.
-        showPlexBrowser()
-        if savedWindowVisibility["plexBrowserShade"] == true {
-            // Capture the normal frame restored by leaving shade mode. Restoring this before
-            // re-entering shade mode on exit preserves both the shade frame and its normal frame.
-            plexBrowserWindowController?.setShadeMode(false)
-            savedPlexBrowserFrameForCompactMode = plexBrowserWindowController?.window?.frame
+        regularWindowSnapshot = captureRegularWindowSnapshot()
+        if treatMainAsVisible {
+            regularWindowSnapshot?.main?.wasVisible = true
         }
-        plexBrowserWindowController?.setCompactMode(true)
+        detachManagedChildWindowsForCompactMode()
+        orderOutRegularWindows()
 
-        // Menu-bar app behaviour: hide the Dock icon, add a status-bar item.
         NSApp.setActivationPolicy(.accessory)
         createCompactStatusItem()
+        createCompactWindowControllerIfNeeded()
 
-        if revealWindow {
-            plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
-            positionCompactWindowUnderStatusItem()
-            NSApp.activate(ignoringOtherApps: true)
-        } else {
-            // showPlexBrowser() ordered the window front; tuck it away until the first click.
-            plexBrowserWindowController?.window?.orderOut(nil)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.compactModeState == .entering else { return }
+            if revealWindow {
+                // showCompactWindow() self-defers its reveal until the status-item anchor is
+                // ready, so a single call is enough — no second show needed.
+                self.showCompactWindow()
+                self.compactModeState = .compactVisible
+            } else {
+                self.hideCompactWindow()
+                self.compactModeState = .compactHidden
+            }
         }
         postLayoutChangeNotification()
-    }
-
-    /// Anchor the compact window so its top edge hangs just below the status-bar item,
-    /// horizontally centred under the item (clamped to the screen) — like a menu-bar dropdown.
-    private func positionCompactWindowUnderStatusItem() {
-        guard let window = plexBrowserWindowController?.window,
-              let button = compactStatusItem?.button,
-              let buttonWindow = button.window else { return }
-
-        let buttonRectInWindow = button.convert(button.bounds, to: nil)
-        let buttonScreenRect = buttonWindow.convertToScreen(buttonRectInWindow)
-        let gap: CGFloat = 4
-
-        var frame = window.frame
-        var originX = buttonScreenRect.midX - frame.width / 2
-        let topY = buttonScreenRect.minY - gap
-
-        let screen = buttonWindow.screen ?? NSScreen.screens.first { $0.frame.contains(buttonScreenRect.origin) } ?? NSScreen.main
-        if let visible = screen?.visibleFrame {
-            let m = isRunningModernUI ? ModernSkinElements.sizeMultiplier : 1.0
-            originX = min(max(originX, visible.minX + 8), visible.maxX - frame.width - 8)
-
-            // Available vertical space below the status item (top stays anchored to the item).
-            let available = topY - visible.minY - 8
-            // Ensure a usable width and a tall, dropdown-style height. Don't shrink a window the
-            // user has already grown; only grow a too-small one. Always clamp to fit the screen.
-            // Floor at the width needed to keep all tab labels inside their outlines.
-            let tabFloor = plexBrowserWindowController?.minimumCompactContentWidth ?? (360 * m)
-            frame.size.width = max(frame.width, max(360 * m, tabFloor))
-            frame.size.height = max(frame.height, min(available, 620 * m))
-            frame.size.height = min(frame.height, available)
-            originX = min(max(originX, visible.minX + 8), visible.maxX - frame.width - 8)
-        }
-        frame.origin = NSPoint(x: originX, y: topY - frame.height)
-        window.setFrame(frame, display: true)
     }
 
     func exitCompactMode() {
-        guard compactModeEnabled else { return }
+        guard compactModeState == .compactVisible ||
+              compactModeState == .compactHidden ||
+              compactModeState == .entering else { return }
+        compactModeState = .exiting
         compactModeEnabled = false
         UserDefaults.standard.set(false, forKey: "compactModeEnabled")
 
-        plexBrowserWindowController?.setCompactMode(false)
-
-        // Restore the Dock icon and remove the status-bar item.
-        NSApp.setActivationPolicy(.regular)
-        restoreDockIconImage()
+        hideCompactWindow()
+        compactWindowController = nil
         removeCompactStatusItem()
 
-        // Switching `.accessory` → `.regular` makes macOS drop the main menu bar, so rebuild it.
-        (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
+        NSApp.setActivationPolicy(.regular)
+        restoreDockIconImage()
 
-        restoreWindowVisibilityAfterCompactMode()
-        NSApp.activate(ignoringOtherApps: true)
-        postLayoutChangeNotification()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
+            self.restoreRegularWindowSnapshot()
+            self.updateDockedChildWindows()
+            NSApp.activate(ignoringOtherApps: true)
+            self.compactModeState = .regular
+            self.postLayoutChangeNotification()
+        }
     }
 
-    private func saveWindowVisibilityForCompactMode() {
-        savedAdditionalWindowsForCompactMode.removeAll()
-        savedPlexBrowserFrameForCompactMode = plexBrowserWindowController?.window?.frame
-        savedWindowVisibility = [
-            "main": mainWindowController?.window?.isVisible ?? false,
-            "equalizer": equalizerWindowController?.window?.isVisible ?? false,
-            "playlist": playlistWindowController?.window?.isVisible ?? false,
-            "spectrum": spectrumWindowController?.window?.isVisible ?? false,
-            "audioAnalysis": audioAnalysisWindowController?.window?.isVisible ?? false,
-            "waveform": waveformWindowController?.window?.isVisible ?? false,
-            "projectM": projectMWindowController?.window?.isVisible ?? false,
-            "video": videoPlayerWindowController?.window?.isVisible ?? false,
-            "debug": debugWindowController?.window?.isVisible ?? false,
-            "plexBrowserShade": plexBrowserWindowController?.isShadeMode ?? false,
-            // The library browser becomes the sole compact window, so remember whether it
-            // was open beforehand — otherwise it lingers on screen after exiting Compact Mode.
-            "plexBrowser": plexBrowserWindowController?.window?.isVisible ?? false
-        ]
+    private func captureRegularWindowSnapshot() -> CompactWindowSnapshot {
+        func snap(_ controller: ModeDependentWindow?) -> WindowSnapshot? {
+            guard let window = controller?.window else { return nil }
+            return WindowSnapshot(
+                wasVisible: window.isVisible,
+                frame: window.frame,
+                wasShadeMode: controller?.isShadeMode ?? false
+            )
+        }
+
+        func snapWindow(_ window: NSWindow?) -> WindowSnapshot? {
+            guard let window else { return nil }
+            return WindowSnapshot(wasVisible: window.isVisible, frame: window.frame, wasShadeMode: false)
+        }
+
+        return CompactWindowSnapshot(
+            main: snap(mainWindowController),
+            equalizer: snap(equalizerWindowController),
+            playlist: snap(playlistWindowController),
+            spectrum: snap(spectrumWindowController),
+            audioAnalysis: snap(audioAnalysisWindowController),
+            waveform: snap(waveformWindowController),
+            projectM: snap(projectMWindowController),
+            library: snap(plexBrowserWindowController),
+            video: snapWindow(videoPlayerWindowController?.window),
+            debug: snapWindow(debugWindowController?.window)
+        )
     }
 
-    private func hideAllWindowsForCompactMode() {
+    private func orderOutRegularWindows() {
         for window in [mainWindowController?.window,
                        equalizerWindowController?.window,
                        playlistWindowController?.window,
@@ -1060,24 +1075,44 @@ class WindowManager {
                        audioAnalysisWindowController?.window,
                        waveformWindowController?.window,
                        projectMWindowController?.window,
+                       plexBrowserWindowController?.window,
                        videoPlayerWindowController?.window,
                        debugWindowController?.window].compactMap({ $0 }) {
             window.orderOut(nil)
         }
 
-        // Phase 2: defensive sweep for orphaned windows from prior UI mode toggles
         orderOutOrphanedAppWindows()
     }
 
+    /// Break persistent AppKit parent/child relationships before hiding the normal window set.
+    /// Docking is recomputed on Compact Mode exit after all prior windows are visible again.
+    private func detachManagedChildWindowsForCompactMode() {
+        guard let mainWindow = mainWindowController?.window else { return }
+        let managedWindows = [
+            equalizerWindowController?.window,
+            playlistWindowController?.window,
+            spectrumWindowController?.window,
+            audioAnalysisWindowController?.window,
+            waveformWindowController?.window,
+            projectMWindowController?.window,
+            plexBrowserWindowController?.window
+        ].compactMap { $0 }
+
+        for child in mainWindow.childWindows ?? []
+        where managedWindows.contains(where: { $0 === child }) {
+            mainWindow.removeChildWindow(child)
+        }
+    }
+
     private func orderOutOrphanedAppWindows() {
-        let compactWindow = plexBrowserWindowController?.window
+        let compactWindow = compactWindowController?.window
         for window in NSApp.windows where window.isVisible {
             if window === compactWindow { continue }
             if isSystemOrTransientWindow(window) { continue }
             let isOrphanedPlayerWindow =
                 window.identifier == Self.modeDependentWindowIdentifier
             if !isOrphanedPlayerWindow {
-                savedAdditionalWindowsForCompactMode.append(window)
+                regularWindowSnapshot?.additionalWindows.append(window)
             }
             NSLog("WindowManager: compact mode hiding %@ window class=%@",
                   isOrphanedPlayerWindow ? "orphaned" : "additional",
@@ -1098,54 +1133,47 @@ class WindowManager {
         return systemClasses.contains(className)
     }
 
-    private func restoreWindowVisibilityAfterCompactMode() {
-        if let frame = savedPlexBrowserFrameForCompactMode {
-            plexBrowserWindowController?.window?.setFrame(frame, display: true)
+    private func restoreRegularWindowSnapshot() {
+        guard let snapshot = regularWindowSnapshot else { return }
+
+        func restore(_ snapshot: WindowSnapshot?, controller: ModeDependentWindow?) {
+            guard let snapshot, let window = controller?.window else { return }
+            if snapshot.frame != .zero {
+                window.setFrame(snapshot.frame, display: true)
+            }
+            if controller?.isShadeMode != snapshot.wasShadeMode {
+                controller?.setShadeMode(snapshot.wasShadeMode)
+            }
+            if snapshot.wasVisible {
+                window.orderFront(nil)
+            } else {
+                window.orderOut(nil)
+            }
         }
 
-        // The library browser hosted the compact UI. Restore its prior visibility even if
-        // the user hid the compact window before choosing Exit Compact Mode.
-        if savedWindowVisibility["plexBrowser"] == true {
-            plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
-        } else {
-            plexBrowserWindowController?.window?.orderOut(nil)
+        func restoreWindow(_ snapshot: WindowSnapshot?, window: NSWindow?) {
+            guard let snapshot, let window else { return }
+            if snapshot.frame != .zero {
+                window.setFrame(snapshot.frame, display: true)
+            }
+            snapshot.wasVisible ? window.orderFront(nil) : window.orderOut(nil)
         }
-        if savedWindowVisibility["main"] == true {
-            mainWindowController?.window?.orderFront(nil)
-        }
-        if savedWindowVisibility["equalizer"] == true {
-            equalizerWindowController?.window?.orderFront(nil)
-        }
-        if savedWindowVisibility["playlist"] == true {
-            playlistWindowController?.window?.orderFront(nil)
-        }
-        if savedWindowVisibility["spectrum"] == true {
-            spectrumWindowController?.window?.orderFront(nil)
-        }
-        if savedWindowVisibility["audioAnalysis"] == true {
-            audioAnalysisWindowController?.window?.orderFront(nil)
-        }
-        if savedWindowVisibility["waveform"] == true {
-            waveformWindowController?.window?.orderFront(nil)
-        }
-        if savedWindowVisibility["projectM"] == true {
-            projectMWindowController?.window?.orderFront(nil)
-        }
-        if savedWindowVisibility["video"] == true {
-            videoPlayerWindowController?.window?.orderFront(nil)
-        }
-        if savedWindowVisibility["debug"] == true {
-            debugWindowController?.window?.orderFront(nil)
-        }
-        if savedWindowVisibility["plexBrowserShade"] == true {
-            plexBrowserWindowController?.setShadeMode(true)
-        }
-        for window in savedAdditionalWindowsForCompactMode {
+
+        restore(snapshot.main, controller: mainWindowController)
+        restore(snapshot.equalizer, controller: equalizerWindowController)
+        restore(snapshot.playlist, controller: playlistWindowController)
+        restore(snapshot.spectrum, controller: spectrumWindowController)
+        restore(snapshot.audioAnalysis, controller: audioAnalysisWindowController)
+        restore(snapshot.waveform, controller: waveformWindowController)
+        restore(snapshot.projectM, controller: projectMWindowController)
+        restore(snapshot.library, controller: plexBrowserWindowController)
+        restoreWindow(snapshot.video, window: videoPlayerWindowController?.window)
+        restoreWindow(snapshot.debug, window: debugWindowController?.window)
+
+        for window in snapshot.additionalWindows {
             window.orderFront(nil)
         }
-        savedAdditionalWindowsForCompactMode.removeAll()
-        savedPlexBrowserFrameForCompactMode = nil
-        savedWindowVisibility.removeAll()
+        regularWindowSnapshot = nil
     }
 
     private func markModeDependentWindow(_ window: NSWindow?) {
@@ -1155,8 +1183,20 @@ class WindowManager {
     /// While Compact Mode is active, state persistence must record the windows that were
     /// visible before entry rather than the intentionally hidden compact-mode window set.
     func visibilityForStateSaving(_ key: String, current: Bool) -> Bool {
-        guard compactModeEnabled else { return current }
-        return savedWindowVisibility[key] ?? current
+        guard compactModeState != .regular, let snapshot = regularWindowSnapshot else { return current }
+        switch key {
+        case "main": return snapshot.main?.wasVisible ?? current
+        case "equalizer": return snapshot.equalizer?.wasVisible ?? current
+        case "playlist": return snapshot.playlist?.wasVisible ?? current
+        case "spectrum": return snapshot.spectrum?.wasVisible ?? current
+        case "audioAnalysis": return snapshot.audioAnalysis?.wasVisible ?? current
+        case "waveform": return snapshot.waveform?.wasVisible ?? current
+        case "projectM": return snapshot.projectM?.wasVisible ?? current
+        case "plexBrowser": return snapshot.library?.wasVisible ?? current
+        case "video": return snapshot.video?.wasVisible ?? current
+        case "debug": return snapshot.debug?.wasVisible ?? current
+        default: return current
+        }
     }
 
     /// Switching activation policy `.accessory` → `.regular` makes macOS forget the bundle's
@@ -1238,7 +1278,8 @@ class WindowManager {
     private func presentCompactStatusMenu() {
         guard let item = compactStatusItem else { return }
         let menu = NSMenu()
-        let toggle = NSMenuItem(title: "Show/Hide Window", action: #selector(toggleCompactWindowVisibility), keyEquivalent: "")
+        let title = compactModeState == .compactVisible ? "Hide Compact Window" : "Show Compact Window"
+        let toggle = NSMenuItem(title: title, action: #selector(toggleCompactWindowVisibility), keyEquivalent: "")
         toggle.target = self
         menu.addItem(toggle)
         menu.addItem(.separator())
@@ -1253,14 +1294,38 @@ class WindowManager {
     }
 
     @objc private func toggleCompactWindowVisibility() {
-        guard let window = plexBrowserWindowController?.window else { return }
-        if window.isVisible {
-            window.orderOut(nil)
-        } else {
-            window.makeKeyAndOrderFront(nil)
-            positionCompactWindowUnderStatusItem()
-            NSApp.activate(ignoringOtherApps: true)
+        switch compactModeState {
+        case .compactVisible:
+            hideCompactWindow()
+            compactModeState = .compactHidden
+        case .compactHidden:
+            showCompactWindow()
+            compactModeState = .compactVisible
+        default:
+            break
         }
+    }
+
+    private func createCompactWindowControllerIfNeeded() {
+        if compactWindowController == nil {
+            compactWindowController = CompactModeWindowController(modernUI: isRunningModernUI)
+        }
+        compactWindowController?.seedFromAudioEngine()
+    }
+
+    private func hideCompactWindow() {
+        compactWindowController?.hide()
+    }
+
+    private func showCompactWindow() {
+        guard compactModeEnabled else { return }
+        createCompactWindowControllerIfNeeded()
+        compactWindowController?.show(anchoredTo: compactStatusItem?.button)
+    }
+
+    func compactSurfaceDidHide() {
+        guard compactModeState == .compactVisible || compactModeState == .entering else { return }
+        compactModeState = .compactHidden
     }
 
     @objc private func exitCompactModeMenuAction() {
@@ -1270,17 +1335,17 @@ class WindowManager {
     // Forwarders from the AudioEngine broadcast hub to the embedded compact player bar.
     func compactBarUpdateTime(current: TimeInterval, duration: TimeInterval) {
         guard compactModeEnabled else { return }
-        plexBrowserWindowController?.updateCompactBarTime(current: current, duration: duration)
+        compactWindowController?.updateTime(current: current, duration: duration)
     }
 
     func compactBarUpdateTrack(_ track: Track?) {
         guard compactModeEnabled else { return }
-        plexBrowserWindowController?.updateCompactBarTrack(track)
+        compactWindowController?.updateTrack(track)
     }
 
     func compactBarUpdatePlaybackState() {
         guard compactModeEnabled else { return }
-        plexBrowserWindowController?.updateCompactBarPlaybackState()
+        compactWindowController?.updatePlaybackState()
     }
 
     // MARK: - Library History

@@ -239,6 +239,7 @@ extension ModernLibraryBrowserWindowController: NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if isCompactMode {
             sender.orderOut(nil)
+            WindowManager.shared.compactSurfaceDidHide()
             WindowManager.shared.notifyMainWindowVisibilityChanged()
             return false
         }
