@@ -585,7 +585,10 @@ class WindowManager {
     
     // MARK: - Window Management
     
-    func showMainWindow() {
+    /// - Parameter reveal: When `false`, the controller (and its window) are created and
+    ///   configured but the window is never ordered onscreen. Used at launch when starting
+    ///   straight into Compact Mode, so the regular window doesn't flash before it is hidden.
+    func showMainWindow(reveal: Bool = true) {
         let isNew = mainWindowController == nil
         if isNew {
             if isModernUIEnabled {
@@ -600,7 +603,9 @@ class WindowManager {
         if isRunningModernUI {
             normalizeModernMainWindowForHTIfNeeded()
         }
-        mainWindowController?.showWindow(nil)
+        if reveal {
+            mainWindowController?.showWindow(nil)
+        }
         applyAlwaysOnTopToWindow(mainWindowController?.window)
     }
     
@@ -970,13 +975,21 @@ class WindowManager {
     ///   shown and positioned under the status item. When `false` (restore on launch) the window
     ///   is left hidden behind the status item so the *first* click reveals it — otherwise the
     ///   status item starts in a "visible" state and the first click would just hide it.
-    func enterCompactMode(revealWindow: Bool = true) {
+    /// - Parameter treatMainAsVisible: When `true` (launch-into-compact path), the captured
+    ///   snapshot records the main window as visible even though it was never revealed, so
+    ///   exiting Compact Mode later restores it onscreen. The main window is always part of the
+    ///   regular layout, so this matches the live-toggle behavior. Defaults to `false` so the
+    ///   live menu toggle keeps recording the main window's actual visibility.
+    func enterCompactMode(revealWindow: Bool = true, treatMainAsVisible: Bool = false) {
         guard compactModeState == .regular else { return }
         compactModeState = .entering
         compactModeEnabled = true
         UserDefaults.standard.set(true, forKey: "compactModeEnabled")
 
         regularWindowSnapshot = captureRegularWindowSnapshot()
+        if treatMainAsVisible {
+            regularWindowSnapshot?.main?.wasVisible = true
+        }
         detachManagedChildWindowsForCompactMode()
         orderOutRegularWindows()
 
