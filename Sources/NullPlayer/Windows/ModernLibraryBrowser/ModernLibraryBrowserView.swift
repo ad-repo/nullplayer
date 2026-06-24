@@ -788,6 +788,8 @@ class ModernLibraryBrowserView: NSView {
                                                name: RadioManager.stationsDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(youtubeChannelsDidChange),
                                                name: YouTubeManager.youtubeChannelsDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(youtubeVideoLimitDidChange),
+                                               name: YouTubeManager.youtubeVideoLimitDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackDidChange),
                                                name: .audioTrackDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(playHistoryDidChange),
@@ -7362,6 +7364,39 @@ class ModernLibraryBrowserView: NSView {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.rebuildCurrentModeItems()
+        }
+    }
+
+    @objc private func youtubeVideoLimitDidChange() {
+        // Drop cached video lists so the new limit applies. Re-fetch the channels that are
+        // currently expanded; otherwise just collapse them so a later expand fetches fresh.
+        youtubeChannelVideos.removeAll()
+        if case .youtube = currentSource {
+            reloadExpandedYouTubeChannels()
+        } else {
+            expandedYouTubeChannels.removeAll()
+        }
+    }
+
+    /// Re-fetch the uploads for every currently-expanded YouTube channel (sequentially, in
+    /// one task) and rebuild as each arrives. Used when the per-channel video limit changes.
+    private func reloadExpandedYouTubeChannels() {
+        let channels = YouTubeManager.shared.channels.filter { expandedYouTubeChannels.contains($0.id) }
+        guard !channels.isEmpty else { rebuildCurrentModeItems(); return }
+        youtubeExpandTask?.cancel()
+        youtubeExpandTask = Task.detached { @MainActor [weak self] in
+            guard let self = self else { return }
+            for ch in channels {
+                do {
+                    let videos = try await YouTubeManager.shared.videos(forChannel: ch)
+                    youtubeChannelVideos[ch.id] = videos
+                    rebuildCurrentModeItems()
+                } catch is CancellationError { return }
+                catch where Task.isCancelled { return }
+                catch {
+                    NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
+                }
+            }
         }
     }
 

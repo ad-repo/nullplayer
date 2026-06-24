@@ -2252,6 +2252,22 @@ class ContextMenuBuilder {
         qualityItem.submenu = qualityMenu
         youtubeMenu.addItem(qualityItem)
 
+        // Videos per Channel submenu (how many recent uploads to list per channel)
+        let limitItem = NSMenuItem(title: "Videos per Channel", action: nil, keyEquivalent: "")
+        let limitMenu = NSMenu()
+        limitMenu.autoenablesItems = false
+
+        for limit in YouTubeManager.videoLimitChoices {
+            let item = NSMenuItem(title: "\(limit)", action: #selector(MenuActions.setYouTubeVideoLimit(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = limit
+            item.state = limit == YouTubeManager.shared.videoLimit ? .on : .off
+            limitMenu.addItem(item)
+        }
+
+        limitItem.submenu = limitMenu
+        youtubeMenu.addItem(limitItem)
+
         youtubeItem.submenu = youtubeMenu
         return youtubeItem
     }
@@ -5685,6 +5701,11 @@ class MenuActions: NSObject {
         guard let rawValue = sender.representedObject as? String,
               let quality = YouTubeQuality(rawValue: rawValue) else { return }
         YouTubeManager.shared.quality = quality
+    }
+
+    @objc func setYouTubeVideoLimit(_ sender: NSMenuItem) {
+        guard let limit = sender.representedObject as? Int else { return }
+        YouTubeManager.shared.videoLimit = limit
     }
 
     // MARK: - Exit

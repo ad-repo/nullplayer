@@ -13,8 +13,9 @@ Subscribe to YouTube channels in the **Radio tab** and browse their uploads. Dou
 2. Paste a YouTube channel URL (e.g., `https://www.youtube.com/@channel_name`)
 3. Channel appears as a folder; expand to see uploads
 4. Double-click a video to download its audio and play
-5. **Library → Set Download Folder…** to choose where downloads live
-6. **Library → YouTube Quality** to pick FLAC, MP3 High, or MP3 Low
+5. **Library → YouTube → Set Download Folder…** to choose where downloads live
+6. **Library → YouTube → Quality** to pick FLAC, MP3 High, or MP3 Low
+7. **Library → YouTube → Videos per Channel** to pick how many recent uploads to list (50 / 100 / 200 / 500)
 
 ## Architecture
 
@@ -103,7 +104,7 @@ yt-dlp --flat-playlist -J --playlist-end 200 \
   "https://www.youtube.com/@channel_name/videos"
 ```
 
-`-J` dumps a single JSON object; `parseFlatPlaylist` decodes its `entries` (each `id`/`title`/`duration`/`timestamp`) into `YouTubeVideo`s. The default `limit` is **200** (was 50). Channel title on add comes from a separate `--playlist-end 1` fetch (`fetchChannelTitle`, no extractor arg).
+`-J` dumps a single JSON object; `parseFlatPlaylist` decodes its `entries` (each `id`/`title`/`duration`/`timestamp`) into `YouTubeVideo`s. The `limit` defaults to `YouTubeManager.videoLimit` (a user setting, **default 200**, persisted under `YouTubeVideoLimit`, chosen via **Library → YouTube → Videos per Channel**: 50/100/200/500). Changing it posts `youtubeVideoLimitDidChangeNotification`; both browser views drop their cached `youtubeChannelVideos` and re-fetch expanded channels (`reloadExpandedYouTubeChannels`) so it applies without a restart. Channel title on add comes from a separate `--playlist-end 1` fetch (`fetchChannelTitle`, no extractor arg).
 
 **Approximate dates**: plain `--flat-playlist` returns **no** `upload_date`/`timestamp` — the channel grid only exposes relative dates ("3 weeks ago"). The `youtubetab:approximate_date` extractor arg (passed via `fetchYtDlpJSON(…, approximateDate: true)`, videos call only) makes yt-dlp populate each entry's `timestamp` with an **estimated** epoch, decoded into `YouTubeVideo.publishedAt`. Accurate to the day for recent uploads, coarsening for older ones (older videos can share a timestamp). Unsupported/old yt-dlp just omits it → `publishedAt` nil → empty Date column, natural newest-first order preserved.
 

@@ -10,12 +10,16 @@ final class YouTubeManager {
     private init() {
         loadChannels()
         loadQuality()
+        loadVideoLimit()
         setupDownloadRoot()
     }
 
     // MARK: - Notifications
 
     static let youtubeChannelsDidChangeNotification = Notification.Name("YouTubeChannelsDidChange")
+    /// Posted when the per-channel video limit changes; browser views drop their cached
+    /// video lists and re-fetch expanded channels so the new limit applies without a restart.
+    static let youtubeVideoLimitDidChangeNotification = Notification.Name("YouTubeVideoLimitDidChange")
 
     // MARK: - Channels
 
@@ -31,6 +35,20 @@ final class YouTubeManager {
     var quality: YouTubeQuality = .flac {
         didSet {
             UserDefaults.standard.set(quality.rawValue, forKey: "YouTubeQuality")
+        }
+    }
+
+    // MARK: - Video Limit
+
+    /// How many recent uploads to list per channel (the `--playlist-end` value).
+    /// Presets exposed in the Library → YouTube menu.
+    static let videoLimitChoices = [50, 100, 200, 500]
+
+    var videoLimit: Int = 200 {
+        didSet {
+            guard videoLimit != oldValue else { return }
+            UserDefaults.standard.set(videoLimit, forKey: "YouTubeVideoLimit")
+            NotificationCenter.default.post(name: Self.youtubeVideoLimitDidChangeNotification, object: self)
         }
     }
 
@@ -78,6 +96,11 @@ final class YouTubeManager {
     private func loadQuality() {
         let rawValue = UserDefaults.standard.string(forKey: "YouTubeQuality") ?? YouTubeQuality.flac.rawValue
         quality = YouTubeQuality(rawValue: rawValue) ?? .flac
+    }
+
+    private func loadVideoLimit() {
+        let saved = UserDefaults.standard.integer(forKey: "YouTubeVideoLimit")
+        videoLimit = saved > 0 ? saved : 200
     }
 
     private func setupDownloadRoot() {
@@ -146,14 +169,14 @@ final class YouTubeManager {
     // MARK: - Videos API
 
     /// Fetch videos from a channel (up to the specified limit)
-    func videos(forChannel channel: YouTubeChannel, limit: Int = 200) async throws -> [YouTubeVideo] {
+    func videos(forChannel channel: YouTubeChannel, limit: Int? = nil) async throws -> [YouTubeVideo] {
         guard let videosURL = Self.channelVideosURL(channel: channel) else {
             throw YouTubeManagerError.invalidChannelURL("Cannot construct videos URL")
         }
 
         // Request approximate upload dates so the channels list can show/sort a Date column;
         // they come back as a per-entry `timestamp` in the same single flat-playlist call.
-        let jsonData = try await Self.fetchYtDlpJSON(from: videosURL, playlistEnd: limit, approximateDate: true)
+        let jsonData = try await Self.fetchYtDlpJSON(from: videosURL, playlistEnd: limit ?? videoLimit, approximateDate: true)
         let videos = try Self.parseFlatPlaylist(jsonData, channelId: channel.id)
         return videos
     }
