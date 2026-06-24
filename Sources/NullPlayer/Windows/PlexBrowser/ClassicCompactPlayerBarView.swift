@@ -239,7 +239,13 @@ final class ClassicCompactPlayerBarView: NSView {
 
     private func drawResizableMainTitleBar(renderer: SkinRenderer, skin: Skin,
                                            context: CGContext, isActive: Bool) {
-        guard let image = skin.titlebar else { return }
+        guard let image = skin.titlebar else {
+            // Skins missing TITLEBAR.BMP (or the empty fallback skin) would otherwise leave the
+            // top strip transparent. Fill it with the same surface color as the control row.
+            context.setFillColor(NSColor(calibratedWhite: 0.07, alpha: 1.0).cgColor)
+            context.fill(NSRect(x: 0, y: 0, width: designWidth, height: titleBarHeight))
+            return
+        }
         let source = isActive ? SkinElements.TitleBar.active : SkinElements.TitleBar.inactive
         let destination = NSRect(x: 0, y: 0, width: designWidth, height: titleBarHeight)
 
