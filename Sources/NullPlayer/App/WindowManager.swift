@@ -4494,8 +4494,11 @@ class WindowManager {
         // swallowed by the `.exiting` guard. Mirrors the production reloadUI path.
         if compactModeEnabled {
             let snapshot = modeDependentLayout(from: regularWindowSnapshot)
+            let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
-                self?.performDebugRecreateModeDependentWindows(snapshot: snapshot, reenterCompact: true)
+                guard let self else { return }
+                self.performDebugRecreateModeDependentWindows(snapshot: snapshot, reenterCompact: true)
+                self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
             }
         } else {
             performDebugRecreateModeDependentWindows(snapshot: captureModeDependentLayout(), reenterCompact: false)
@@ -4545,12 +4548,32 @@ class WindowManager {
         // `compactModeState == .regular` instead of a no-op `.exiting` guard.
         if compactModeEnabled {
             let snapshot = modeDependentLayout(from: regularWindowSnapshot)
+            // The mode-independent windows (video, debug, app panels) survive teardown but were
+            // hidden on compact entry and are not re-shown here. enterCompactMode() will re-capture
+            // the snapshot from the live (still-hidden) windows, losing their visibility — so carry
+            // their pre-switch state forward afterward. See reapplyModeIndependentWindows(from:).
+            let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
-                self?.performReloadUI(toModernUI: targetModern, snapshot: snapshot, reenterCompact: true)
+                guard let self else { return }
+                self.performReloadUI(toModernUI: targetModern, snapshot: snapshot, reenterCompact: true)
+                self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
             }
         } else {
             performReloadUI(toModernUI: targetModern, snapshot: captureModeDependentLayout(), reenterCompact: false)
         }
+    }
+
+    /// A Compact-Mode-preserving UI switch leaves the mode-independent windows (video player, debug
+    /// console, app-owned panels) hidden without re-showing them, then `enterCompactMode()`
+    /// re-captures `regularWindowSnapshot` from those still-hidden windows — recording them as not
+    /// visible and dropping `additionalWindows`. Carry the mode-independent fields forward from the
+    /// pre-switch capture so a later Compact-Mode exit restores them. The mode-dependent fields in
+    /// the fresh capture are correct (rebuilt then captured) and are left untouched.
+    private func reapplyModeIndependentWindows(from previous: CompactWindowSnapshot?) {
+        guard let previous, regularWindowSnapshot != nil else { return }
+        regularWindowSnapshot?.video = previous.video
+        regularWindowSnapshot?.debug = previous.debug
+        regularWindowSnapshot?.additionalWindows = previous.additionalWindows
     }
 
     /// Build a mode-dependent layout snapshot from a Compact-Mode capture, so the live UI switch
