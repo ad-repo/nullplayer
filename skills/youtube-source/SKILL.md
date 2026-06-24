@@ -123,7 +123,8 @@ static let youtubeColumns: [ModernBrowserColumn] = [.title, .youtubeDate, .durat
 - **Channel (parent) rows stay on the simple-list path** so they keep their ▶/▼ expand arrows; only video rows use columns — mirroring radio folders vs. stations.
 - Column headers appear only once a channel is expanded (video rows exist), gated by `hasYouTubeColumns` (`radioSlotShowingChannels` + any `.youtubeVideo` in `displayItems`).
 - Clicking a header sorts via **`applyYouTubeColumnSort`** — an in-place sort of each contiguous run of video rows (leaving channel leaders put), mirroring `applyInternetRadioColumnSort`.
-- Plumbing touched: `columnGroup(for:)`, `currentColumnGroup()`, `columnsForItem`, `currentVisibleColumns`, `headerColumnsForCurrentContent`, `columnValue`, plus the four `allColumns`/`defaultColumnIds`/`visibleColumnIds`/`setVisibleColumnIds` group switches. Adding the `.youtube` enum case also forces the exhaustive switches in classic `PlexBrowserView` to handle it (return empty / no-op — YouTube is modern-UI only).
+- Plumbing touched: `columnGroup(for:)`, `currentColumnGroup()`, `columnsForItem`, `currentVisibleColumns`, `headerColumnsForCurrentContent`, `columnValue`, plus the four `allColumns`/`defaultColumnIds`/`visibleColumnIds`/`setVisibleColumnIds` group switches.
+- **Both UIs implement this independently**: the classic `PlexBrowserView` mirrors the whole column set (its own `BrowserColumn.youtubeColumns`, `columnValue`, `columnDateValue`, `applyYouTubeColumnSort`, session sort, etc.). Any change to YouTube columns/sorting must be made in **both** `ModernLibraryBrowserView` and `PlexBrowserView` — they share no code.
 
 ### Download Flow
 
@@ -136,17 +137,22 @@ static let youtubeColumns: [ModernBrowserColumn] = [.title, .youtubeDate, .durat
 
 ### Library Menu Integration
 
-Both menus are built in `ContextMenuBuilder.swift` (`setYouTubeQuality(_:)`, `setYouTubeDownloadFolder`).
+All items live under a single **Library → YouTube** submenu, built in `ContextMenuBuilder.buildYouTubeMenuItem()` (actions `setYouTubeDownloadFolder`, `setYouTubeQuality(_:)`, `setYouTubeVideoLimit(_:)`). The submenu reads current values at build time, so checkmarks update whenever the menu is rebuilt on open.
 
-**Library → YouTube Quality**
-- Three-way FLAC / MP3 High / MP3 Low setting, persisted in UserDefaults under `YouTubeQuality`
-- Consulted before each download (`quality.ytdlpArgs`); shapes the format args passed to `StreamRipper.downloadAudio`
-
-**Library → Set Download Folder…**
+**Library → YouTube → Set Download Folder…**
 - Opens `NSOpenPanel` for directory selection
 - Validates reachability before storing
 - `youtube_downloads.json` is written lazily on the first recorded download, not on folder selection
 - Persists in UserDefaults under `YouTubeDownloadRoot` (the folder path)
+
+**Library → YouTube → Quality**
+- Three-way FLAC / MP3 High / MP3 Low setting, persisted in UserDefaults under `YouTubeQuality`
+- Consulted before each download (`quality.ytdlpArgs`); shapes the format args passed to `StreamRipper.downloadAudio`
+
+**Library → YouTube → Videos per Channel**
+- How many recent uploads to list per channel (`--playlist-end`); presets `YouTubeManager.videoLimitChoices` = 50/100/200/500, default 200, persisted under `YouTubeVideoLimit`
+- `videos(forChannel:limit:)` defaults `limit` to `videoLimit`
+- Changing it posts `youtubeVideoLimitDidChangeNotification`; both browser views clear `youtubeChannelVideos` and re-fetch expanded channels (`reloadExpandedYouTubeChannels`) so it applies live (no restart)
 
 ### UI Mode Support
 
@@ -172,4 +178,6 @@ Downloaded files are local `file://` tracks. After download completes, the `Trac
 - **Quality setting is global**: One `quality` setting applies to all future downloads; past downloads retain their own `quality` field in the manifest
 - **Streaming playback not offered**: YouTube streams (live, members-only, age-restricted) may fail silently if yt-dlp can't extract them; only downloadable videos are listed
 - **Video titles from yt-dlp**: Source of truth is yt-dlp's title extraction; titles are not synced with YouTube's API and may differ from what the web UI shows
-- **Channels tab uses the `.youtube` column group, not the radio column path**: Don't route YouTube videos through `internetRadioColumns` — those columns are fixed-width by design. Video rows use `youtubeColumns` (`[.title, .duration]`) via the resizable `LibraryColumnVisibilityGroup.youtube` group; adding/changing that enum requires updating every exhaustive `switch group` in both `ModernLibraryBrowserView` and `PlexBrowserView`
+- **YouTube has its own session sort (default date order)**: The channels tab must NOT inherit the persisted library column sort (`columnSortId`), or every rebuild — including after a download — re-sorts videos to A–Z. Both views keep session-only `youtubeColumnSortId`/`youtubeColumnSortAscending` (default nil = yt-dlp's newest-first order), read through `activeColumnSortId`/`activeColumnSortAscending` by every sort/header-draw path. A header click in the YouTube tab sets the session sort only; it never writes the library sort. This state resets to date order on relaunch (intended).
+- **Downloaded marker is rebuild-driven**: A downloading video draws a per-row spinner gated on `downloadingVideoIds`; the **`⬇ ` prefix** for a finished download is added in `buildYouTubeChannelItems` from `isDownloaded`. The download handler calls `rebuildCurrentModeItems()` on success (adds the marker) and a `defer` clears `downloadingVideoIds` (drops the spinner) — so the spinner→icon transition only works because the row stays put, which is why the session-sort fix above matters (an A–Z re-sort would relocate the row mid-transition).
+- **Channels tab uses the `.youtube` column group, not the radio column path**: Don't route YouTube videos through `internetRadioColumns` — those columns are fixed-width by design. Video rows use `youtubeColumns` (`[.title, .youtubeDate, .duration]`) via the resizable `LibraryColumnVisibilityGroup.youtube` group; adding/changing that enum requires updating every exhaustive `switch group` in both `ModernLibraryBrowserView` and `PlexBrowserView`
