@@ -26,8 +26,11 @@ final class CompactModeWindowController: NSWindowController {
     private let maxRetryAttempts = 15                    // ~0.3s budget for status-item layout
     private let statusAnchorReadyThreshold: CGFloat = 40 // menu bar ≈ 24–28pt + jitter
 
+    // Render the compact window ~1/5 narrower than the browser's label-fit minimum.
+    private let compactWidthFactor: CGFloat = 0.8
+
     private var compactBaseWidth: CGFloat {
-        browserController.minimumCompactContentWidth
+        browserController.minimumCompactContentWidth * compactWidthFactor
     }
 
     init(modernUI: Bool) {
