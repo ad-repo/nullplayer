@@ -84,6 +84,34 @@ struct YouTubeDownload: Codable {
 
     /// Local filename (relative to downloadRoot)
     let fileName: String
+
+    /// Format this file was downloaded in. A video can be downloaded in more than
+    /// one format, so identity in the manifest is (videoId, quality), not videoId.
+    let quality: YouTubeQuality
+
+    init(videoId: String, title: String, channelId: String, fileName: String, quality: YouTubeQuality) {
+        self.videoId = videoId
+        self.title = title
+        self.channelId = channelId
+        self.fileName = fileName
+        self.quality = quality
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        videoId = try c.decode(String.self, forKey: .videoId)
+        title = try c.decode(String.self, forKey: .title)
+        channelId = try c.decode(String.self, forKey: .channelId)
+        fileName = try c.decode(String.self, forKey: .fileName)
+        // Manifests written before per-format downloads have no `quality`; infer it
+        // from the file extension so existing downloads stay addressable.
+        quality = try c.decodeIfPresent(YouTubeQuality.self, forKey: .quality)
+            ?? YouTubeQuality.inferred(fromFileName: fileName)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case videoId, title, channelId, fileName, quality
+    }
 }
 
 /// Output quality for YouTube downloads
@@ -105,6 +133,19 @@ enum YouTubeQuality: String, Codable, CaseIterable {
         case .video720: return 720
         case .video1080: return 1080
         default: return nil
+        }
+    }
+
+    /// Best-effort quality for a download whose manifest entry predates the
+    /// `quality` field, inferred from its file extension. Resolution-only
+    /// distinctions (720 vs 1080, mp3 high vs low) can't be recovered, so we
+    /// pick a representative value; the file still plays either way.
+    static func inferred(fromFileName name: String) -> YouTubeQuality {
+        switch (name as NSString).pathExtension.lowercased() {
+        case "flac": return .flac
+        case "mp3": return .mp3High
+        case "mp4", "mkv", "webm", "mov", "m4v": return .video720
+        default: return .flac
         }
     }
 

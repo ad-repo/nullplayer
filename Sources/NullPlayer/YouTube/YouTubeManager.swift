@@ -72,9 +72,16 @@ final class YouTubeManager {
 
     // MARK: - Download Manifest
 
-    /// In-memory cache of downloaded videos, keyed by videoId
+    /// In-memory cache of downloaded videos, keyed by `manifestKey(videoId:quality:)`
+    /// so the same video can be downloaded in more than one format.
     private var downloadManifest: [String: YouTubeDownload] = [:]
     private var manifestLoaded = false
+
+    /// Composite manifest key. `#` can't appear in a YouTube video ID
+    /// ([A-Za-z0-9_-]), so it cleanly separates the two parts.
+    private static func manifestKey(videoId: String, quality: YouTubeQuality) -> String {
+        "\(videoId)#\(quality.rawValue)"
+    }
 
     // MARK: - Initialization
 
@@ -220,7 +227,8 @@ final class YouTubeManager {
             videoId: video.videoId,
             title: video.title,
             channelId: video.channelId,
-            fileName: relativePath
+            fileName: relativePath,
+            quality: quality
         )
         recordDownload(download)
 
@@ -246,36 +254,50 @@ final class YouTubeManager {
         return cleaned.isEmpty ? "Unknown Channel" : cleaned
     }
 
-    /// Get the local URL for a downloaded video (if it exists)
-    func downloadedFileURL(for videoId: String) -> URL? {
+    /// Get the local URL for a downloaded video in a specific format (if it exists)
+    func downloadedFileURL(for videoId: String, quality: YouTubeQuality) -> URL? {
         loadManifestIfNeeded()
-        guard let download = downloadManifest[videoId],
+        guard let download = downloadManifest[Self.manifestKey(videoId: videoId, quality: quality)],
               let fileURL = manifestFileURL(for: download) else { return nil }
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         return fileURL
     }
 
-    /// Check if a video has been downloaded
-    func isDownloaded(_ videoId: String) -> Bool {
-        downloadedFileURL(for: videoId) != nil
+    /// Check if a video has been downloaded in a specific format
+    func isDownloaded(_ videoId: String, quality: YouTubeQuality) -> Bool {
+        downloadedFileURL(for: videoId, quality: quality) != nil
     }
 
-    /// Remove a downloaded video (deletes file and manifest entry)
-    func removeDownload(videoId: String) {
+    /// Remove a downloaded video in a specific format (deletes file and manifest entry)
+    func removeDownload(videoId: String, quality: YouTubeQuality) {
         loadManifestIfNeeded()
-        guard let download = downloadManifest[videoId] else { return }
+        let key = Self.manifestKey(videoId: videoId, quality: quality)
+        guard let download = downloadManifest[key] else { return }
         if let fileURL = manifestFileURL(for: download) {
             try? FileManager.default.removeItem(at: fileURL)
         }
-        downloadManifest.removeValue(forKey: videoId)
+        downloadManifest.removeValue(forKey: key)
         saveManifest()
+    }
+
+    // Convenience overloads that target the currently selected download format.
+    // Browser UIs offer Play/Download and the downloaded marker against whatever
+    // format the user has chosen, so "is it downloaded" means "in this format".
+    func downloadedFileURL(for videoId: String) -> URL? {
+        downloadedFileURL(for: videoId, quality: quality)
+    }
+    func isDownloaded(_ videoId: String) -> Bool {
+        isDownloaded(videoId, quality: quality)
+    }
+    func removeDownload(videoId: String) {
+        removeDownload(videoId: videoId, quality: quality)
     }
 
     // MARK: - Manifest Persistence
 
     private func recordDownload(_ download: YouTubeDownload) {
         loadManifestIfNeeded()
-        downloadManifest[download.videoId] = download
+        downloadManifest[Self.manifestKey(videoId: download.videoId, quality: download.quality)] = download
         saveManifest()
     }
 
@@ -285,8 +307,14 @@ final class YouTubeManager {
 
         let manifestURL = downloadRoot.appendingPathComponent("youtube_downloads.json")
         guard let data = try? Data(contentsOf: manifestURL) else { return }
-        let decoded = try? JSONDecoder().decode([String: YouTubeDownload].self, from: data)
-        downloadManifest = decoded ?? [:]
+        guard let decoded = try? JSONDecoder().decode([String: YouTubeDownload].self, from: data) else { return }
+        // Re-key by (videoId, quality) from the entry values so multiple formats of
+        // one video coexist. Older manifests keyed by bare videoId migrate here.
+        var rebuilt: [String: YouTubeDownload] = [:]
+        for download in decoded.values {
+            rebuilt[Self.manifestKey(videoId: download.videoId, quality: download.quality)] = download
+        }
+        downloadManifest = rebuilt
     }
 
     private func saveManifest() {
