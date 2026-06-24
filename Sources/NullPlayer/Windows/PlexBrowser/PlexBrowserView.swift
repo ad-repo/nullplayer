@@ -380,7 +380,23 @@ class PlexBrowserView: NSView {
             applyColumnSort(collapseExpanded: true)
         }
     }
-    
+
+    // YouTube channels keep their own sort state (session-only, default = none → date
+    // order as returned by yt-dlp). This keeps the persisted library column sort from
+    // leaking in and re-ordering videos to A–Z on every rebuild (e.g. after a download).
+    // Only an explicit header click in the YouTube tab sets this.
+    private var youtubeColumnSortId: String? = nil
+    private var youtubeColumnSortAscending: Bool = true
+
+    /// Column sort that applies to the current source. YouTube uses its own session
+    /// state (default date order) instead of the persisted library sort.
+    private var activeColumnSortId: String? {
+        currentSource.isYouTube ? youtubeColumnSortId : columnSortId
+    }
+    private var activeColumnSortAscending: Bool {
+        currentSource.isYouTube ? youtubeColumnSortAscending : columnSortAscending
+    }
+
     /// Save column sort to UserDefaults
     private func saveColumnSort() {
         if let id = columnSortId {
@@ -646,11 +662,11 @@ class PlexBrowserView: NSView {
     /// Apply column sort to display items
     /// - Parameter collapseExpanded: If true, collapse all expanded items before sorting (used when sort changes)
     private func applyColumnSort(collapseExpanded: Bool = false) {
-        guard let sortColumnId = columnSortId, !displayItems.isEmpty else {
+        guard let sortColumnId = activeColumnSortId, !displayItems.isEmpty else {
             needsDisplay = true
             return
         }
-        
+
         // Collapse all expanded items before sorting to avoid orphaned children
         // (expanded albums would otherwise stay in place while parents move)
         // Only do this when the sort is actively changed, not on every rebuild
@@ -689,7 +705,7 @@ class PlexBrowserView: NSView {
             return
         }
 
-        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: columnSortAscending) {
+        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: activeColumnSortAscending) {
             needsDisplay = true
             return
         }
@@ -764,10 +780,10 @@ class PlexBrowserView: NSView {
     /// Sorts column-capable rows while preserving their current order for equal keys.
     private func stableColumnSortedItems(_ items: [PlexDisplayItem], sortColumn: BrowserColumn) -> [PlexDisplayItem] {
         items.enumerated().sorted { lhs, rhs in
-            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return true
             }
-            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return false
             }
             return lhs.offset < rhs.offset
@@ -779,10 +795,10 @@ class PlexBrowserView: NSView {
         groups.enumerated().sorted { lhs, rhs in
             let leftLeader = lhs.element[0]
             let rightLeader = rhs.element[0]
-            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return true
             }
-            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return false
             }
             return lhs.offset < rhs.offset
@@ -3758,7 +3774,7 @@ class PlexBrowserView: NSView {
                 (hasInternetRadioColumns && column.id == "rating")
             
             // Check if this column is the sort column
-            let isSortColumn = columnSortId == column.id
+            let isSortColumn = activeColumnSortId == column.id
             
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: headerFont,
@@ -3773,7 +3789,7 @@ class PlexBrowserView: NSView {
             
             // Draw sort indicator if this is the sorted column
             if isSortColumn {
-                let indicator = columnSortAscending ? "▲" : "▼"
+                let indicator = activeColumnSortAscending ? "▲" : "▼"
                 let indicatorAttrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: 7),
                     .foregroundColor: sortedHeaderColor
@@ -7994,7 +8010,16 @@ class PlexBrowserView: NSView {
         
         // Check for column header click (for sorting)
         if let columnId = hitTestColumnHeader(at: skinPoint) {
-            if columnSortId == columnId {
+            if currentSource.isYouTube {
+                // YouTube uses its own session sort (not persisted to the library sort).
+                if youtubeColumnSortId == columnId {
+                    youtubeColumnSortAscending.toggle()
+                } else {
+                    youtubeColumnSortId = columnId
+                    youtubeColumnSortAscending = true
+                }
+                applyColumnSort(collapseExpanded: true)
+            } else if columnSortId == columnId {
                 // Same column - toggle direction
                 columnSortAscending.toggle()
             } else {
@@ -16385,7 +16410,7 @@ class PlexBrowserView: NSView {
             } else {
                 displayItems = []
             }
-            if columnSortId != nil {
+            if activeColumnSortId != nil {
                 applyColumnSort()
             }
             needsDisplay = true

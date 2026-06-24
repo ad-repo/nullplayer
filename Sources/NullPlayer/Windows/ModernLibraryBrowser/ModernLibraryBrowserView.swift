@@ -288,6 +288,22 @@ class ModernLibraryBrowserView: NSView {
     private var resizeStartWidth: CGFloat = 0
     private var columnSortId: String? { didSet { saveColumnSort(); applyColumnSort(collapseExpanded: true) } }
     private var columnSortAscending: Bool = true { didSet { saveColumnSort(); applyColumnSort(collapseExpanded: true) } }
+
+    // YouTube channels keep their own sort state (session-only, default = none → date
+    // order as returned by yt-dlp). This keeps the persisted library column sort from
+    // leaking in and re-ordering videos to A–Z on every rebuild (e.g. after a download).
+    // Only an explicit header click in the YouTube tab sets this.
+    private var youtubeColumnSortId: String? = nil
+    private var youtubeColumnSortAscending: Bool = true
+
+    /// Column sort that applies to the current source. YouTube uses its own session
+    /// state (default date order) instead of the persisted library sort.
+    private var activeColumnSortId: String? {
+        currentSource.isYouTube ? youtubeColumnSortId : columnSortId
+    }
+    private var activeColumnSortAscending: Bool {
+        currentSource.isYouTube ? youtubeColumnSortAscending : columnSortAscending
+    }
     
     // Visible columns (ordered lists of column IDs; persisted to UserDefaults)
     private var visibleTrackColumnIds: [String] = ModernBrowserColumn.defaultTrackColumnIds { didSet { saveVisibleColumns() } }
@@ -2073,7 +2089,7 @@ class ModernLibraryBrowserView: NSView {
         let group = currentColumnGroup()
         for (index, column) in columns.enumerated() {
             let width = widthForColumn(column, availableWidth: rect.width, columns: columns, group: group)
-            let isSortColumn = columnSortId == column.id
+            let isSortColumn = activeColumnSortId == column.id
             let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
                 (hasInternetRadioColumns && column.id == "rating")
             
@@ -2088,7 +2104,7 @@ class ModernLibraryBrowserView: NSView {
             drawText(column.title, at: NSPoint(x: textX, y: textY), withAttributes: attrs, context: context)
             
             if isSortColumn {
-                let indicator = columnSortAscending ? "▲" : "▼"
+                let indicator = activeColumnSortAscending ? "▲" : "▼"
                 let indicatorAttrs: [NSAttributedString.Key: Any] = [
                     .font: skin.scaledSystemFont(size: 5.6),
                     .foregroundColor: skin.applyTextOpacity(to: sortedHeaderColor)
@@ -2937,7 +2953,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func applyColumnSort(collapseExpanded: Bool = false) {
-        guard let sortColumnId = columnSortId, !displayItems.isEmpty else {
+        guard let sortColumnId = activeColumnSortId, !displayItems.isEmpty else {
             needsDisplay = true
             return
         }
@@ -2965,7 +2981,7 @@ class ModernLibraryBrowserView: NSView {
             needsDisplay = true; return
         }
 
-        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: columnSortAscending) {
+        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: activeColumnSortAscending) {
             needsDisplay = true; return
         }
 
@@ -3031,10 +3047,10 @@ class ModernLibraryBrowserView: NSView {
     /// Sorts column-capable rows while preserving their current order for equal keys.
     private func stableColumnSortedItems(_ items: [ModernDisplayItem], sortColumn: ModernBrowserColumn) -> [ModernDisplayItem] {
         items.enumerated().sorted { lhs, rhs in
-            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return true
             }
-            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return false
             }
             return lhs.offset < rhs.offset
@@ -3046,10 +3062,10 @@ class ModernLibraryBrowserView: NSView {
         groups.enumerated().sorted { lhs, rhs in
             let leftLeader = lhs.element[0]
             let rightLeader = rhs.element[0]
-            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return true
             }
-            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return false
             }
             return lhs.offset < rhs.offset
@@ -3626,8 +3642,16 @@ class ModernLibraryBrowserView: NSView {
         
         // Column header click for sorting
         if let columnId = hitTestColumnHeader(at: point) {
-            if columnSortId == columnId { columnSortAscending.toggle() }
-            else { columnSortId = columnId; columnSortAscending = true }
+            if currentSource.isYouTube {
+                // YouTube uses its own session sort (not persisted to the library sort).
+                if youtubeColumnSortId == columnId { youtubeColumnSortAscending.toggle() }
+                else { youtubeColumnSortId = columnId; youtubeColumnSortAscending = true }
+                applyColumnSort(collapseExpanded: true)
+            } else if columnSortId == columnId {
+                columnSortAscending.toggle()
+            } else {
+                columnSortId = columnId; columnSortAscending = true
+            }
             return
         }
         
@@ -10706,7 +10730,7 @@ class ModernLibraryBrowserView: NSView {
             default:
                 displayItems = []
             }
-            if columnSortId != nil { applyColumnSort() }
+            if activeColumnSortId != nil { applyColumnSort() }
             needsDisplay = true
             return
         }
