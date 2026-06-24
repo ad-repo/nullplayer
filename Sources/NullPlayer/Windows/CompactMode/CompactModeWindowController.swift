@@ -65,6 +65,7 @@ final class CompactModeWindowController: NSWindowController {
     }
 
     deinit {
+        NotificationCenter.default.removeObserver(self)
         browserController.prepareForUITeardown()
     }
 
@@ -83,6 +84,22 @@ final class CompactModeWindowController: NSWindowController {
         window.alphaValue = 0
         position(anchoredTo: nil, display: false)
         window.orderOut(nil)
+
+        // The compact window floats at `.statusBar` level (above `.modalPanel`), so dialogs
+        // such as the Add Folder / Add YouTube Channel panels would open *behind* it. Drop
+        // below modal level whenever one of our own windows takes key focus, and restore the
+        // floating level when the compact window itself regains key. Keyed-by-our-windows
+        // only, so switching to another app doesn't sink the window.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleWindowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification, object: nil)
+    }
+
+    @objc private func handleWindowDidBecomeKey(_ note: Notification) {
+        guard let window, window.isVisible else { return }
+        guard let keyWindow = note.object as? NSWindow else { return }
+        // A dialog/panel from our app took key — let it sit above the floating compact window.
+        window.level = (keyWindow === window) ? .statusBar : .normal
     }
 
     func seedFromAudioEngine() {
