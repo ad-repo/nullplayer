@@ -21,6 +21,10 @@ final class CompactModeWindowController: NSWindowController {
     private let modernUI: Bool
     private var needsInitialSizing = true
     private var revealWorkItem: DispatchWorkItem?
+    /// Screen-space center X of the status-item icon from the last time it resolved.
+    /// Reused to keep the window middle-aligned when the live anchor is momentarily
+    /// unavailable, instead of snapping to the screen edge.
+    private var lastAnchorCenterX: CGFloat?
 
     private let retryInterval: TimeInterval = 0.02       // ~1–2 AppKit layout passes per tick
     private let maxRetryAttempts = 15                    // ~0.3s budget for status-item layout
@@ -189,6 +193,15 @@ final class CompactModeWindowController: NSWindowController {
             visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
             topY = visibleFrame.maxY - gap
             centerX = buttonScreenRect.midX
+            lastAnchorCenterX = centerX
+            hasStatusAnchor = true
+        } else if let cachedCenterX = lastAnchorCenterX {
+            // Anchor briefly unavailable (e.g. a relayout): reuse the last known icon
+            // center so the window stays middle-aligned rather than jumping to the edge.
+            let screen = NSScreen.main
+            visibleFrame = screen?.visibleFrame ?? .zero
+            topY = visibleFrame.maxY - gap
+            centerX = cachedCenterX
             hasStatusAnchor = true
         } else {
             let screen = NSScreen.main
