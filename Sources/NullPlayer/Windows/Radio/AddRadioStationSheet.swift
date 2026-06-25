@@ -11,6 +11,7 @@ class AddRadioStationSheet: NSWindowController, NSWindowDelegate {
     private var testButton: NSButton!
     
     private var editingStation: RadioStation?
+    private var streamProbe: StreamProbe?
     var completionHandler: ((RadioStation?) -> Void)?
     
     convenience init(station: RadioStation? = nil) {
@@ -160,35 +161,32 @@ class AddRadioStationSheet: NSWindowController, NSWindowDelegate {
         
         status("Testing connection...")
         buttons(false)
-        
-        // Test by making a HEAD request to check if URL is accessible
-        var request = URLRequest(url: url)
-        request.httpMethod = "HEAD"
-        request.timeoutInterval = 10
-        
-        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+
+        // Probe the way the audio player actually connects: a GET with Icy-MetaData, cancelled
+        // as soon as the response headers arrive (so the endless stream body is never pulled).
+        // A HEAD request is unreliable here — many Icecast/SHOUTcast servers reject HEAD with
+        // 400/405 yet stream fine over GET, which made the old test report a failure for
+        // stations that play perfectly.
+        streamProbe = StreamProbe()
+        streamProbe?.probe(url: url, timeout: 10) { [weak self] outcome in
             DispatchQueue.main.async {
-                self?.buttons(true)
-                
-                if let error = error {
-                    self?.status("Connection failed: \(error.localizedDescription)", err: true)
-                    return
-                }
-                
-                if let httpResponse = response as? HTTPURLResponse {
-                    if httpResponse.statusCode == 200 || httpResponse.statusCode == 206 {
-                        self?.status("Connection successful!", err: false)
-                    } else if httpResponse.statusCode == 405 {
-                        // Some streaming servers don't support HEAD, but this is OK
-                        self?.status("Stream appears accessible", err: false)
-                    } else {
-                        self?.status("Server returned status \(httpResponse.statusCode)", err: true)
-                    }
-                } else {
-                    self?.status("Could not verify stream", err: true)
+                guard let self = self else { return }
+                self.buttons(true)
+                self.streamProbe = nil
+                switch outcome {
+                case .ok:
+                    self.status("Connection successful!", err: false)
+                case .notFound:
+                    self.status("Stream not found (404) — check the URL", err: true)
+                case .otherStatus(let code):
+                    // Server is reachable but answered the probe with a non-2xx status; don't
+                    // block saving — stream servers often respond oddly to probes yet play fine.
+                    self.status("Stream appears reachable (status \(code))", err: false)
+                case .failed(let message):
+                    self.status("Connection failed: \(message)", err: true)
                 }
             }
-        }.resume()
+        }
     }
     
     @objc private func save() {
@@ -227,5 +225,65 @@ class AddRadioStationSheet: NSWindowController, NSWindowDelegate {
         completionHandler = nil
         window?.close()
         handler?(station)
+    }
+}
+
+/// Probes a radio stream URL the way the audio player connects (`GET` + `Icy-MetaData`),
+/// cancelling as soon as the response headers arrive so the endless stream body is never
+/// downloaded. HEAD is deliberately avoided: many Icecast/SHOUTcast servers reject it with
+/// 400/405 even though the stream plays fine over GET.
+private final class StreamProbe: NSObject, URLSessionDataDelegate {
+    enum Outcome {
+        case ok                  // 2xx (incl. ICY 200 and 206 Partial Content)
+        case notFound            // 404 — wrong mount/path
+        case otherStatus(Int)    // reachable but non-2xx
+        case failed(String)      // transport-level failure
+    }
+
+    private var completion: ((Outcome) -> Void)?
+    private var session: URLSession?
+    private var finished = false
+
+    func probe(url: URL, timeout: TimeInterval, completion: @escaping (Outcome) -> Void) {
+        self.completion = completion
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = timeout
+        request.setValue("1", forHTTPHeaderField: "Icy-MetaData")
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        request.setValue("bytes=0-1", forHTTPHeaderField: "Range")
+        let session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
+        self.session = session
+        session.dataTask(with: request).resume()
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                    didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        // Headers are all we need — cancel before the endless body arrives.
+        completionHandler(.cancel)
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case .some(200...299), .none: finish(.ok)   // .none = non-HTTP response we still reached
+        case .some(404):              finish(.notFound)
+        case .some(let code):         finish(.otherStatus(code))
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let error = error as NSError? else {
+            finish(.ok)   // completed without ever surfacing a response (rare) — treat as reachable
+            return
+        }
+        if error.code == NSURLErrorCancelled { return }   // our own cancel after reading headers
+        finish(.failed(error.localizedDescription))
+    }
+
+    private func finish(_ outcome: Outcome) {
+        guard !finished else { return }
+        finished = true
+        completion?(outcome)
+        completion = nil
+        session?.invalidateAndCancel()
+        session = nil
     }
 }
