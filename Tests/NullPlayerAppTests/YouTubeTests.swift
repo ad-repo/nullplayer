@@ -473,75 +473,20 @@ final class YouTubeTests: XCTestCase {
 
         try writeManifest(
             root: rootA,
-            download: YouTubeDownload(videoId: "video-a", title: "A", channelId: "channel", fileName: "A.flac", quality: .flac)
+            download: YouTubeDownload(videoId: "video-a", title: "A", channelId: "channel", fileName: "A.flac")
         )
         try writeManifest(
             root: rootB,
-            download: YouTubeDownload(videoId: "video-b", title: "B", channelId: "channel", fileName: "B.flac", quality: .flac)
+            download: YouTubeDownload(videoId: "video-b", title: "B", channelId: "channel", fileName: "B.flac")
         )
 
         manager.downloadRoot = rootA
-        XCTAssertNotNil(manager.downloadedFileURL(for: "video-a", quality: .flac))
-        XCTAssertNil(manager.downloadedFileURL(for: "video-b", quality: .flac))
+        XCTAssertNotNil(manager.downloadedFileURL(for: "video-a"))
+        XCTAssertNil(manager.downloadedFileURL(for: "video-b"))
 
         manager.downloadRoot = rootB
-        XCTAssertNil(manager.downloadedFileURL(for: "video-a", quality: .flac))
-        XCTAssertNotNil(manager.downloadedFileURL(for: "video-b", quality: .flac))
-    }
-
-    func testSameVideoCanBeDownloadedInMultipleFormats() throws {
-        let manager = YouTubeManager.shared
-        let originalRoot = manager.downloadRoot
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nullplayer-youtube-test-multi-\(UUID().uuidString)", isDirectory: true)
-        defer {
-            manager.downloadRoot = originalRoot
-            try? FileManager.default.removeItem(at: root)
-        }
-
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try Data().write(to: root.appendingPathComponent("vid.flac"))
-        try Data().write(to: root.appendingPathComponent("vid.mp4"))
-        let manifest: [String: YouTubeDownload] = [
-            "vid#flac": YouTubeDownload(videoId: "vid", title: "V", channelId: "c", fileName: "vid.flac", quality: .flac),
-            "vid#video1080": YouTubeDownload(videoId: "vid", title: "V", channelId: "c", fileName: "vid.mp4", quality: .video1080),
-        ]
-        let data = try JSONEncoder().encode(manifest)
-        try data.write(to: root.appendingPathComponent("youtube_downloads.json"))
-
-        manager.downloadRoot = root
-        // Both formats resolve independently; one does not mask the other.
-        XCTAssertNotNil(manager.downloadedFileURL(for: "vid", quality: .flac))
-        XCTAssertNotNil(manager.downloadedFileURL(for: "vid", quality: .video1080))
-        // A format that wasn't downloaded is reported as missing, so the UI offers a download.
-        XCTAssertNil(manager.downloadedFileURL(for: "vid", quality: .video720))
-
-        // Removing one format leaves the other intact.
-        manager.removeDownload(videoId: "vid", quality: .flac)
-        XCTAssertNil(manager.downloadedFileURL(for: "vid", quality: .flac))
-        XCTAssertNotNil(manager.downloadedFileURL(for: "vid", quality: .video1080))
-    }
-
-    func testLegacyManifestWithoutQualityMigratesByExtension() throws {
-        let manager = YouTubeManager.shared
-        let originalRoot = manager.downloadRoot
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nullplayer-youtube-test-legacy-\(UUID().uuidString)", isDirectory: true)
-        defer {
-            manager.downloadRoot = originalRoot
-            try? FileManager.default.removeItem(at: root)
-        }
-
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try Data().write(to: root.appendingPathComponent("legacy.flac"))
-        // Old manifest shape: keyed by bare videoId, entry has no `quality` field.
-        let legacyJSON = """
-        {"legacy":{"videoId":"legacy","title":"L","channelId":"c","fileName":"legacy.flac"}}
-        """
-        try legacyJSON.data(using: .utf8)!.write(to: root.appendingPathComponent("youtube_downloads.json"))
-
-        manager.downloadRoot = root
-        XCTAssertNotNil(manager.downloadedFileURL(for: "legacy", quality: .flac))
+        XCTAssertNil(manager.downloadedFileURL(for: "video-a"))
+        XCTAssertNotNil(manager.downloadedFileURL(for: "video-b"))
     }
 
     func testManifestEntryCannotEscapeDownloadRoot() throws {
@@ -562,15 +507,14 @@ final class YouTubeTests: XCTestCase {
             videoId: "outside",
             title: "Outside",
             channelId: "channel",
-            fileName: "../outside.flac",
-            quality: .flac
+            fileName: "../outside.flac"
         )
-        let manifest = try JSONEncoder().encode(["outside#flac": download])
+        let manifest = try JSONEncoder().encode(["outside": download])
         try manifest.write(to: root.appendingPathComponent("youtube_downloads.json"))
 
         manager.downloadRoot = root
-        XCTAssertNil(manager.downloadedFileURL(for: "outside", quality: .flac))
-        manager.removeDownload(videoId: "outside", quality: .flac)
+        XCTAssertNil(manager.downloadedFileURL(for: "outside"))
+        manager.removeDownload(videoId: "outside")
         XCTAssertTrue(FileManager.default.fileExists(atPath: outsideFile.path))
     }
 
