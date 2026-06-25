@@ -33,8 +33,10 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     /// Video duration in seconds (nil if unknown)
     let duration: TimeInterval?
 
-    /// Upload date string (format varies from API, e.g., "2024-01-15")
-    let uploadDate: String?
+    /// Approximate upload date. yt-dlp only exposes relative dates ("3 weeks ago") on
+    /// the channel grid, so this is an estimate that coarsens for older uploads. nil when
+    /// unavailable (e.g. a flat fetch without the approximate-date extractor arg).
+    let publishedAt: Date?
 
     /// Video ID is used as the Identifiable id
     var id: String { videoId }
@@ -52,8 +54,20 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
         }
     }
 
+    /// Compact upload date for the channels list (e.g. "Jun 23, 2026"), nil if unknown.
+    var formattedDate: String? {
+        publishedAt.map { Self.dateFormatter.string(from: $0) }
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, yyyy"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
     enum CodingKeys: String, CodingKey {
-        case videoId, title, channelId, duration, uploadDate
+        case videoId, title, channelId, duration, publishedAt
     }
 }
 
@@ -77,6 +91,22 @@ enum YouTubeQuality: String, Codable, CaseIterable {
     case flac = "flac"
     case mp3High = "mp3High"
     case mp3Low = "mp3Low"
+    case video720 = "video720"
+    case video1080 = "video1080"
+
+    /// Whether this is a video format
+    var isVideo: Bool {
+        self == .video720 || self == .video1080
+    }
+
+    /// Height cap for video formats; nil for audio formats.
+    var videoMaxHeight: Int? {
+        switch self {
+        case .video720: return 720
+        case .video1080: return 1080
+        default: return nil
+        }
+    }
 
     /// yt-dlp command-line arguments for this quality
     var ytdlpArgs: [String] {
@@ -87,6 +117,8 @@ enum YouTubeQuality: String, Codable, CaseIterable {
             return ["--audio-format", "mp3", "--audio-quality", "0"]
         case .mp3Low:
             return ["--audio-format", "mp3", "--audio-quality", "5"]
+        case .video720, .video1080:
+            return []
         }
     }
 
@@ -96,6 +128,8 @@ enum YouTubeQuality: String, Codable, CaseIterable {
         case .flac: return "FLAC"
         case .mp3High: return "MP3 (High)"
         case .mp3Low: return "MP3 (Low)"
+        case .video720: return "Video (720p)"
+        case .video1080: return "Video (1080p)"
         }
     }
 
@@ -104,6 +138,7 @@ enum YouTubeQuality: String, Codable, CaseIterable {
         switch self {
         case .flac: return "flac"
         case .mp3High, .mp3Low: return "mp3"
+        case .video720, .video1080: return "mp4"
         }
     }
 }

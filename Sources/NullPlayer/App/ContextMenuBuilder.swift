@@ -2236,21 +2236,37 @@ class ContextMenuBuilder {
 
         youtubeMenu.addItem(NSMenuItem.separator())
 
-        // Quality submenu
-        let qualityItem = NSMenuItem(title: "Quality", action: nil, keyEquivalent: "")
-        let qualityMenu = NSMenu()
-        qualityMenu.autoenablesItems = false
+        // Format submenu
+        let formatItem = NSMenuItem(title: "Format", action: nil, keyEquivalent: "")
+        let formatMenu = NSMenu()
+        formatMenu.autoenablesItems = false
 
         for quality in YouTubeQuality.allCases {
             let item = NSMenuItem(title: quality.displayName, action: #selector(MenuActions.setYouTubeQuality(_:)), keyEquivalent: "")
             item.target = MenuActions.shared
             item.representedObject = quality.rawValue
             item.state = quality == YouTubeManager.shared.quality ? .on : .off
-            qualityMenu.addItem(item)
+            formatMenu.addItem(item)
         }
 
-        qualityItem.submenu = qualityMenu
-        youtubeMenu.addItem(qualityItem)
+        formatItem.submenu = formatMenu
+        youtubeMenu.addItem(formatItem)
+
+        // Videos per Channel submenu (how many recent uploads to list per channel)
+        let limitItem = NSMenuItem(title: "Videos per Channel", action: nil, keyEquivalent: "")
+        let limitMenu = NSMenu()
+        limitMenu.autoenablesItems = false
+
+        for limit in YouTubeManager.videoLimitChoices {
+            let item = NSMenuItem(title: "\(limit)", action: #selector(MenuActions.setYouTubeVideoLimit(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = limit
+            item.state = limit == YouTubeManager.shared.videoLimit ? .on : .off
+            limitMenu.addItem(item)
+        }
+
+        limitItem.submenu = limitMenu
+        youtubeMenu.addItem(limitItem)
 
         youtubeItem.submenu = youtubeMenu
         return youtubeItem
@@ -5685,6 +5701,11 @@ class MenuActions: NSObject {
         guard let rawValue = sender.representedObject as? String,
               let quality = YouTubeQuality(rawValue: rawValue) else { return }
         YouTubeManager.shared.quality = quality
+    }
+
+    @objc func setYouTubeVideoLimit(_ sender: NSMenuItem) {
+        guard let limit = sender.representedObject as? Int else { return }
+        YouTubeManager.shared.videoLimit = limit
     }
 
     // MARK: - Exit

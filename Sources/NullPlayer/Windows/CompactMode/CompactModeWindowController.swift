@@ -102,6 +102,23 @@ final class CompactModeWindowController: NSWindowController {
         window.level = (keyWindow === window) ? .statusBar : .normal
     }
 
+    /// Drop the compact window below normal window level so a just-shown video player window
+    /// (which floats at `.normal`/`.floating`, lower than the compact window's `.statusBar`)
+    /// can sit in front of it. Ordering a window front never crosses level bands, so without
+    /// this the video would launch *behind* the floating mini-player. The compact window
+    /// returns to its floating level the next time it becomes key (see handleWindowDidBecomeKey).
+    func yieldFrontForVideoPlayer() {
+        window?.level = .normal
+    }
+
+    /// Restore the compact window's floating level after the video player goes away. Without this
+    /// the mini-player stays sunk at `.normal` (and can be covered by other apps' windows) until the
+    /// user happens to click it. Called when video playback stops/closes so always-on-top behavior
+    /// returns automatically.
+    func restoreFloatingLevelAfterVideoPlayer() {
+        window?.level = .statusBar
+    }
+
     func seedFromAudioEngine() {
         let engine = WindowManager.shared.audioEngine
         browserController.updateCompactBarTrack(engine.currentTrack)

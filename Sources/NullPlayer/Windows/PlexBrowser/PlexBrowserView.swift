@@ -380,7 +380,23 @@ class PlexBrowserView: NSView {
             applyColumnSort(collapseExpanded: true)
         }
     }
-    
+
+    // YouTube channels keep their own sort state (session-only, default = none → date
+    // order as returned by yt-dlp). This keeps the persisted library column sort from
+    // leaking in and re-ordering videos to A–Z on every rebuild (e.g. after a download).
+    // Only an explicit header click in the YouTube tab sets this.
+    private var youtubeColumnSortId: String? = nil
+    private var youtubeColumnSortAscending: Bool = true
+
+    /// Column sort that applies to the current source. YouTube uses its own session
+    /// state (default date order) instead of the persisted library sort.
+    private var activeColumnSortId: String? {
+        currentSource.isYouTube ? youtubeColumnSortId : columnSortId
+    }
+    private var activeColumnSortAscending: Bool {
+        currentSource.isYouTube ? youtubeColumnSortAscending : columnSortAscending
+    }
+
     /// Save column sort to UserDefaults
     private func saveColumnSort() {
         if let id = columnSortId {
@@ -646,11 +662,11 @@ class PlexBrowserView: NSView {
     /// Apply column sort to display items
     /// - Parameter collapseExpanded: If true, collapse all expanded items before sorting (used when sort changes)
     private func applyColumnSort(collapseExpanded: Bool = false) {
-        guard let sortColumnId = columnSortId, !displayItems.isEmpty else {
+        guard let sortColumnId = activeColumnSortId, !displayItems.isEmpty else {
             needsDisplay = true
             return
         }
-        
+
         // Collapse all expanded items before sorting to avoid orphaned children
         // (expanded albums would otherwise stay in place while parents move)
         // Only do this when the sort is actively changed, not on every rebuild
@@ -689,7 +705,7 @@ class PlexBrowserView: NSView {
             return
         }
 
-        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: columnSortAscending) {
+        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: activeColumnSortAscending) {
             needsDisplay = true
             return
         }
@@ -764,10 +780,10 @@ class PlexBrowserView: NSView {
     /// Sorts column-capable rows while preserving their current order for equal keys.
     private func stableColumnSortedItems(_ items: [PlexDisplayItem], sortColumn: BrowserColumn) -> [PlexDisplayItem] {
         items.enumerated().sorted { lhs, rhs in
-            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return true
             }
-            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return false
             }
             return lhs.offset < rhs.offset
@@ -779,10 +795,10 @@ class PlexBrowserView: NSView {
         groups.enumerated().sorted { lhs, rhs in
             let leftLeader = lhs.element[0]
             let rightLeader = rhs.element[0]
-            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return true
             }
-            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return false
             }
             return lhs.offset < rhs.offset
@@ -793,7 +809,7 @@ class PlexBrowserView: NSView {
     /// an identical top-level order. `a` and `b` are level-0 rows.
     private func columnSortAreInOrder(_ a: PlexDisplayItem, _ b: PlexDisplayItem, sortColumn: BrowserColumn, ascending: Bool) -> Bool {
         // Date columns: sort by raw date, not formatted string
-        if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" {
+        if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" || sortColumn.id == "youtubeDate" {
             let aDate = a.columnDateValue(for: sortColumn) ?? .distantPast
             let bDate = b.columnDateValue(for: sortColumn) ?? .distantPast
             return ascending ? aDate < bDate : aDate > bDate
@@ -1135,6 +1151,8 @@ class PlexBrowserView: NSView {
     private var youtubeDownloadTask: Task<Void, Never>?
     /// Video IDs currently downloading — drives a per-row spinner on the video entry.
     private var downloadingVideoIds: Set<String> = []
+    /// Channel IDs whose uploads are currently being fetched — drives a per-row spinner on the channel entry.
+    private var loadingChannelIds: Set<String> = []
 
     private let historyAgent = PlayHistoryAgent()
     private var historyHostingView: NSHostingView<StatsContentView>?
@@ -1566,6 +1584,13 @@ class PlexBrowserView: NSView {
             self,
             selector: #selector(radioStationsDidChange),
             name: RadioManager.stationsDidChangeNotification,
+            object: nil
+        )
+        // Re-fetch YouTube uploads when the per-channel video limit changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(youtubeVideoLimitDidChange),
+            name: YouTubeManager.youtubeVideoLimitDidChangeNotification,
             object: nil
         )
         NotificationCenter.default.addObserver(
@@ -3652,24 +3677,35 @@ class PlexBrowserView: NSView {
                 let indent = CGFloat(item.indentLevel) * 16
                 let textX = itemRect.minX + indent + 4
 
-                // Expand/collapse indicator for hierarchical items
-                if item.hasChildren {
+                // Expand/collapse indicator for hierarchical items — or an inline spinner
+                // while a YouTube channel's uploads load.
+                let isLoadingChannel: Bool = {
+                    if case .youtubeChannel(let channel) = item.type { return loadingChannelIds.contains(channel.id) }
+                    return false
+                }()
+                var titleSpinnerInset: CGFloat = 0
+                if isLoadingChannel {
+                    let spinnerRadius = min(itemRect.height * 0.3, 6)
+                    drawRowSpinner(in: context, center: CGPoint(x: textX + spinnerRadius, y: itemRect.midY),
+                                   radius: spinnerRadius, colors: colors)
+                    titleSpinnerInset = spinnerRadius * 2 + 4
+                } else if item.hasChildren {
                     let expanded = isExpanded(item)
                     let indicator = expanded ? "▼" : "▶"
-                    
+
                     // Counter-flip for indicator
                     context.saveGState()
                     let indicatorY = itemRect.midY
                     context.translateBy(x: 0, y: indicatorY)
                     context.scaleBy(x: 1, y: -1)
                     context.translateBy(x: 0, y: -indicatorY)
-                    
+
                     let indicatorAttrs: [NSAttributedString.Key: Any] = [
                         .foregroundColor: colors.normalText.withAlphaComponent(0.6),
                         .font: NSFont.systemFont(ofSize: 8)
                     ]
                     indicator.draw(at: NSPoint(x: textX - 12, y: itemRect.midY - 5), withAttributes: indicatorAttrs)
-                    
+
                     context.restoreGState()
                 }
                 
@@ -3686,8 +3722,8 @@ class PlexBrowserView: NSView {
                     .font: NSFont.systemFont(ofSize: 10)
                 ]
                 
-                let textRect = NSRect(x: textX, y: itemRect.minY + 2,
-                                     width: itemRect.width - indent - 60, height: itemHeight - 4)
+                let textRect = NSRect(x: textX + titleSpinnerInset, y: itemRect.minY + 2,
+                                     width: itemRect.width - indent - 60 - titleSpinnerInset, height: itemHeight - 4)
                 item.title.draw(in: textRect, withAttributes: attrs)
                 
                 // Secondary info (only for non-column view)
@@ -3758,7 +3794,7 @@ class PlexBrowserView: NSView {
                 (hasInternetRadioColumns && column.id == "rating")
             
             // Check if this column is the sort column
-            let isSortColumn = columnSortId == column.id
+            let isSortColumn = activeColumnSortId == column.id
             
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: headerFont,
@@ -3773,7 +3809,7 @@ class PlexBrowserView: NSView {
             
             // Draw sort indicator if this is the sorted column
             if isSortColumn {
-                let indicator = columnSortAscending ? "▲" : "▼"
+                let indicator = activeColumnSortAscending ? "▲" : "▼"
                 let indicatorAttrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: 7),
                     .foregroundColor: sortedHeaderColor
@@ -5684,7 +5720,7 @@ class PlexBrowserView: NSView {
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.loadingAnimationFrame += 1
-            if self.isLoading || !self.downloadingVideoIds.isEmpty {
+            if self.isLoading || !self.downloadingVideoIds.isEmpty || !self.loadingChannelIds.isEmpty {
                 // Only redraw the list area where the loading spinner is displayed
                 // This prevents menu items from shimmering on non-Retina displays
                 var listY = self.Layout.titleBarHeight + self.Layout.serverBarHeight + self.Layout.tabBarHeight
@@ -5709,7 +5745,7 @@ class PlexBrowserView: NSView {
     }
 
     private func stopLoadingAnimation() {
-        guard !isLibraryScanning && downloadingVideoIds.isEmpty else { return }
+        guard !isLibraryScanning && downloadingVideoIds.isEmpty && loadingChannelIds.isEmpty else { return }
         loadingAnimationTimer?.invalidate()
         loadingAnimationTimer = nil
         loadingAnimationFrame = 0
@@ -7994,7 +8030,16 @@ class PlexBrowserView: NSView {
         
         // Check for column header click (for sorting)
         if let columnId = hitTestColumnHeader(at: skinPoint) {
-            if columnSortId == columnId {
+            if currentSource.isYouTube {
+                // YouTube uses its own session sort (not persisted to the library sort).
+                if youtubeColumnSortId == columnId {
+                    youtubeColumnSortAscending.toggle()
+                } else {
+                    youtubeColumnSortId = columnId
+                    youtubeColumnSortAscending = true
+                }
+                applyColumnSort(collapseExpanded: true)
+            } else if columnSortId == columnId {
                 // Same column - toggle direction
                 columnSortAscending.toggle()
             } else {
@@ -11180,8 +11225,10 @@ class PlexBrowserView: NSView {
         youtubeChannelVideos.removeValue(forKey: channel.id)
         expandedYouTubeChannels.insert(channel.id)
         youtubeExpandTask?.cancel()
+        loadingChannelIds.insert(channel.id); startLoadingAnimation()
         youtubeExpandTask = Task.detached { @MainActor [weak self] in
             guard let self = self else { return }
+            defer { self.loadingChannelIds.remove(channel.id); self.stopLoadingAnimation(); self.needsDisplay = true }
             do {
                 let videos = try await YouTubeManager.shared.videos(forChannel: channel)
                 youtubeChannelVideos[channel.id] = videos
@@ -11192,6 +11239,7 @@ class PlexBrowserView: NSView {
                 NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription)
             }
         }
+        rebuildCurrentModeItems(); needsDisplay = true
     }
 
     @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
@@ -11218,7 +11266,7 @@ class PlexBrowserView: NSView {
                 guard let self = self else { return }
                 defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                 do {
-                    let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                    let downloadedURL = try await YouTubeManager.shared.download(video: video)
                     // A newer download may have superseded this one; don't auto-play a stale result.
                     try Task.checkCancellation()
                     let track = Track(url: downloadedURL, isYouTubeOrigin: true)
@@ -14788,7 +14836,7 @@ class PlexBrowserView: NSView {
     @objc private func radioStationsDidChange() {
         // Only reload if we're showing radio content
         guard isShowingInternetRadioContent else { return }
-        
+
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if self.browseMode == .radio {
@@ -14798,6 +14846,47 @@ class PlexBrowserView: NSView {
             }
             self.needsDisplay = true
         }
+    }
+
+    @objc private func youtubeVideoLimitDidChange() {
+        // Drop cached video lists so the new limit applies. Re-fetch the channels that are
+        // currently expanded; otherwise just collapse them so a later expand fetches fresh.
+        youtubeChannelVideos.removeAll()
+        if currentSource.isYouTube {
+            reloadExpandedYouTubeChannels()
+        } else {
+            expandedYouTubeChannels.removeAll()
+        }
+    }
+
+    /// Re-fetch the uploads for every currently-expanded YouTube channel (sequentially, in
+    /// one task) and rebuild as each arrives. Used when the per-channel video limit changes.
+    private func reloadExpandedYouTubeChannels() {
+        let channels = YouTubeManager.shared.channels.filter { expandedYouTubeChannels.contains($0.id) }
+        guard !channels.isEmpty else { rebuildCurrentModeItems(); return }
+        youtubeExpandTask?.cancel()
+        loadingChannelIds.formUnion(channels.map { $0.id }); startLoadingAnimation()
+        youtubeExpandTask = Task.detached { @MainActor [weak self] in
+            guard let self = self else { return }
+            defer {
+                for ch in channels { self.loadingChannelIds.remove(ch.id) }
+                self.stopLoadingAnimation(); self.needsDisplay = true
+            }
+            for ch in channels {
+                do {
+                    let videos = try await YouTubeManager.shared.videos(forChannel: ch)
+                    youtubeChannelVideos[ch.id] = videos
+                    loadingChannelIds.remove(ch.id)
+                    rebuildCurrentModeItems()
+                } catch is CancellationError { return }
+                catch where Task.isCancelled { return }
+                catch {
+                    loadingChannelIds.remove(ch.id)
+                    NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
+                }
+            }
+        }
+        rebuildCurrentModeItems(); needsDisplay = true
     }
     
     /// Load Subsonic data for the current mode
@@ -16385,7 +16474,7 @@ class PlexBrowserView: NSView {
             } else {
                 displayItems = []
             }
-            if columnSortId != nil {
+            if activeColumnSortId != nil {
                 applyColumnSort()
             }
             needsDisplay = true
@@ -17232,8 +17321,10 @@ class PlexBrowserView: NSView {
                 expandedYouTubeChannels.insert(channel.id)
                 if youtubeChannelVideos[channel.id] == nil {
                     youtubeExpandTask?.cancel()
+                    loadingChannelIds.insert(channel.id); startLoadingAnimation()
                     youtubeExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
+                        defer { self.loadingChannelIds.remove(channel.id); self.stopLoadingAnimation(); self.needsDisplay = true }
                         do {
                             let videos = try await YouTubeManager.shared.videos(forChannel: channel)
                             youtubeChannelVideos[channel.id] = videos
@@ -17244,6 +17335,7 @@ class PlexBrowserView: NSView {
                             NSLog("Failed to load YouTube videos for channel '%@': %@", channel.title, error.localizedDescription)
                         }
                     }
+                    rebuildCurrentModeItems()
                     needsDisplay = true
                     return
                 }
@@ -17506,7 +17598,7 @@ class PlexBrowserView: NSView {
                     guard let self = self else { return }
                     defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                     do {
-                        let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                        let downloadedURL = try await YouTubeManager.shared.download(video: video)
                         // A newer download may have superseded this one; don't auto-play a stale result.
                         try Task.checkCancellation()
                         let track = Track(url: downloadedURL, isYouTubeOrigin: true)
@@ -18312,6 +18404,7 @@ private struct BrowserColumn {
     static let playCount = BrowserColumn(id: "plays", title: "Plays", minWidth: 45)
     static let dateAdded = BrowserColumn(id: "dateAdded", title: "Date Added", minWidth: 80)
     static let lastPlayed = BrowserColumn(id: "lastPlayed", title: "Last Played", minWidth: 80)
+    static let youtubeDate = BrowserColumn(id: "youtubeDate", title: "Date", minWidth: 70)
     static let discNumber = BrowserColumn(id: "discNum", title: "Disc", minWidth: 35)
     static let albumArtist = BrowserColumn(id: "albumArtist", title: "Album Artist", minWidth: 100)
     static let sampleRate = BrowserColumn(id: "sampleRate", title: "Sample Rate", minWidth: 60)
@@ -18354,8 +18447,8 @@ private struct BrowserColumn {
     ]
 
     /// Fixed columns shown for YouTube channel uploads (not user-hideable).
-    static let youtubeColumns: [BrowserColumn] = [.title, .duration]
-    static let defaultYouTubeColumnIds: [String] = ["title", "duration"]
+    static let youtubeColumns: [BrowserColumn] = [.title, .youtubeDate, .duration]
+    static let defaultYouTubeColumnIds: [String] = ["title", "youtubeDate", "duration"]
 
     /// Find a column by ID across all column types
     static func findColumn(id: String) -> BrowserColumn? {
@@ -18415,6 +18508,9 @@ extension PlexDisplayItem {
             if column.id == "duration" {
                 return video.formattedDuration ?? ""
             }
+            if column.id == "youtubeDate" {
+                return video.formattedDate ?? ""
+            }
             return ""
         default:
             return ""
@@ -18438,6 +18534,9 @@ extension PlexDisplayItem {
             case .localTrack(let t): return t.lastPlayed
             default: return nil
             }
+        case "youtubeDate":
+            if case .youtubeVideo(let video) = type { return video.publishedAt }
+            return nil
         default:
             return nil
         }

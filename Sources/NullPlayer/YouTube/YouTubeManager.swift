@@ -10,12 +10,16 @@ final class YouTubeManager {
     private init() {
         loadChannels()
         loadQuality()
+        loadVideoLimit()
         setupDownloadRoot()
     }
 
     // MARK: - Notifications
 
     static let youtubeChannelsDidChangeNotification = Notification.Name("YouTubeChannelsDidChange")
+    /// Posted when the per-channel video limit changes; browser views drop their cached
+    /// video lists and re-fetch expanded channels so the new limit applies without a restart.
+    static let youtubeVideoLimitDidChangeNotification = Notification.Name("YouTubeVideoLimitDidChange")
 
     // MARK: - Channels
 
@@ -31,6 +35,20 @@ final class YouTubeManager {
     var quality: YouTubeQuality = .flac {
         didSet {
             UserDefaults.standard.set(quality.rawValue, forKey: "YouTubeQuality")
+        }
+    }
+
+    // MARK: - Video Limit
+
+    /// How many recent uploads to list per channel (the `--playlist-end` value).
+    /// Presets exposed in the Library → YouTube menu.
+    static let videoLimitChoices = [50, 100, 200, 500]
+
+    var videoLimit: Int = 200 {
+        didSet {
+            guard videoLimit != oldValue else { return }
+            UserDefaults.standard.set(videoLimit, forKey: "YouTubeVideoLimit")
+            NotificationCenter.default.post(name: Self.youtubeVideoLimitDidChangeNotification, object: self)
         }
     }
 
@@ -78,6 +96,11 @@ final class YouTubeManager {
     private func loadQuality() {
         let rawValue = UserDefaults.standard.string(forKey: "YouTubeQuality") ?? YouTubeQuality.flac.rawValue
         quality = YouTubeQuality(rawValue: rawValue) ?? .flac
+    }
+
+    private func loadVideoLimit() {
+        let saved = UserDefaults.standard.integer(forKey: "YouTubeVideoLimit")
+        videoLimit = saved > 0 ? saved : 200
     }
 
     private func setupDownloadRoot() {
@@ -146,25 +169,28 @@ final class YouTubeManager {
     // MARK: - Videos API
 
     /// Fetch videos from a channel (up to the specified limit)
-    func videos(forChannel channel: YouTubeChannel, limit: Int = 50) async throws -> [YouTubeVideo] {
+    func videos(forChannel channel: YouTubeChannel, limit: Int? = nil) async throws -> [YouTubeVideo] {
         guard let videosURL = Self.channelVideosURL(channel: channel) else {
             throw YouTubeManagerError.invalidChannelURL("Cannot construct videos URL")
         }
 
-        let jsonData = try await Self.fetchYtDlpJSON(from: videosURL, playlistEnd: limit)
+        // Request approximate upload dates so the channels list can show/sort a Date column;
+        // they come back as a per-entry `timestamp` in the same single flat-playlist call.
+        let jsonData = try await Self.fetchYtDlpJSON(from: videosURL, playlistEnd: limit ?? videoLimit, approximateDate: true)
         let videos = try Self.parseFlatPlaylist(jsonData, channelId: channel.id)
         return videos
     }
 
     // MARK: - Downloads API
 
-    /// Download audio from a YouTube video.
+    /// Download audio or video from a YouTube video.
     ///
     /// Files are organized as `<downloadRoot>/<Channel Name>/<Title> [<videoId>].<ext>`
     /// so the on-disk layout mirrors the channel/video hierarchy and filenames are
     /// human-readable while staying unique (the bracketed video ID disambiguates
-    /// videos that share a title).
-    func downloadAudio(video: YouTubeVideo) async throws -> URL {
+    /// videos that share a title). The output format (audio FLAC/MP3 or video MP4)
+    /// is determined by the current quality setting.
+    func download(video: YouTubeVideo) async throws -> URL {
         guard isDownloadFolderReachable() else {
             throw YouTubeManagerError.downloadFolderNotReachable("Download folder is not accessible")
         }
@@ -174,15 +200,19 @@ final class YouTubeManager {
         let channelDir = downloadRoot.appendingPathComponent(channelFolder, isDirectory: true)
         try FileManager.default.createDirectory(at: channelDir, withIntermediateDirectories: true)
 
-        let formatArgs = quality.ytdlpArgs + ["-x", "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg", "--no-playlist"]
         // Let yt-dlp sanitize the title and pick the final extension after conversion.
         let outputTemplate = "\(channelDir.path)/%(title)s [%(id)s].%(ext)s"
 
-        let fileURL = try await StreamRipper.downloadAudio(
-            from: video.watchURL,
-            formatArgs: formatArgs,
-            outputTemplate: outputTemplate
-        )
+        let fileURL: URL
+        if quality.isVideo, let h = quality.videoMaxHeight {
+            fileURL = try await StreamRipper.downloadVideo(
+                from: video.watchURL, maxHeight: h, outputTemplate: outputTemplate)
+        } else {
+            let formatArgs = quality.ytdlpArgs + ["-x", "--embed-metadata",
+                "--embed-thumbnail", "--convert-thumbnails", "jpg", "--no-playlist"]
+            fileURL = try await StreamRipper.downloadAudio(
+                from: video.watchURL, formatArgs: formatArgs, outputTemplate: outputTemplate)
+        }
 
         // Record in manifest as a path relative to downloadRoot (channel/file).
         let relativePath = "\(channelFolder)/\(fileURL.lastPathComponent)"
@@ -255,8 +285,14 @@ final class YouTubeManager {
 
         let manifestURL = downloadRoot.appendingPathComponent("youtube_downloads.json")
         guard let data = try? Data(contentsOf: manifestURL) else { return }
-        let decoded = try? JSONDecoder().decode([String: YouTubeDownload].self, from: data)
-        downloadManifest = decoded ?? [:]
+        guard let decoded = try? JSONDecoder().decode([String: YouTubeDownload].self, from: data) else { return }
+        // Re-key by each entry's videoId rather than trusting the dictionary key, so
+        // a manifest written with any other key scheme still resolves by videoId.
+        var byVideoId: [String: YouTubeDownload] = [:]
+        for download in decoded.values {
+            byVideoId[download.videoId] = download
+        }
+        downloadManifest = byVideoId
     }
 
     private func saveManifest() {
@@ -391,13 +427,13 @@ final class YouTubeManager {
                 title: entry.title ?? "Unknown",
                 channelId: channelId,
                 duration: entry.duration.map(TimeInterval.init),
-                uploadDate: entry.upload_date
+                publishedAt: entry.timestamp.map { Date(timeIntervalSince1970: TimeInterval($0)) }
             )
         }
     }
 
     /// Call yt-dlp -J to get flat playlist metadata
-    nonisolated private static func fetchYtDlpJSON(from url: URL, playlistEnd: Int) async throws -> Data {
+    nonisolated private static func fetchYtDlpJSON(from url: URL, playlistEnd: Int, approximateDate: Bool = false) async throws -> Data {
         guard let ytdlp = StreamRipper.resolveTool("yt-dlp") else {
             throw YouTubeManagerError.toolNotFound("yt-dlp is not installed")
         }
@@ -408,7 +444,13 @@ final class YouTubeManager {
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: ytdlp)
-        task.arguments = ["--flat-playlist", "-J", "--playlist-end", "\(playlistEnd)", url.absoluteString]
+        var arguments = ["--flat-playlist", "-J", "--playlist-end", "\(playlistEnd)"]
+        if approximateDate {
+            // Populates each entry's `timestamp` with an approximate upload date.
+            arguments += ["--extractor-args", "youtubetab:approximate_date"]
+        }
+        arguments.append(url.absoluteString)
+        task.arguments = arguments
         task.environment = env
 
         let tempDirectory = FileManager.default.temporaryDirectory
@@ -499,5 +541,6 @@ private struct YtDlpEntry: Decodable {
     let title: String?
     let duration: Int?
     let upload_date: String?
+    let timestamp: Int?
     let uploader: String?
 }

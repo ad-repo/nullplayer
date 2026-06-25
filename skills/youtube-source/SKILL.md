@@ -1,20 +1,21 @@
 ---
 name: youtube-source
-description: YouTube channel uploads in the Radio tab — browse channels, download audio (FLAC / MP3) ad-free, store in a user folder, and play/cast locally. Use when working on YouTube source UI, channel/video listing, downloads, manifest tracking, or quality settings.
+description: YouTube channel uploads in the Radio tab — browse channels, download audio (FLAC / MP3) or video (720p / 1080p) ad-free, store in a user folder, and play/cast locally. Use when working on YouTube source UI, channel/video listing, downloads, manifest tracking, or format settings.
 ---
 
 # YouTube Source
 
-Subscribe to YouTube channels in the **Radio tab** and browse their uploads. Double-click a video to **download its audio** (ad-free, via `yt-dlp`) and play immediately. Downloads are stored in a **user-chosen folder** (reachability checked before downloading), organized per channel as `<Channel Name>/<Title> [<videoId>].<ext>` and tracked in a manifest; a **quality setting** (FLAC / MP3 High / MP3 Low) is in the Library menu. Downloaded files are local `file://` tracks, so they play locally and cast to Sonos, Chromecast, DLNA like any other track.
+Subscribe to YouTube channels in the **Radio tab** and browse their uploads. Double-click a video to **download its audio or video** (ad-free, via `yt-dlp`) and play immediately. Downloads are stored in a **user-chosen folder** (reachability checked before downloading), organized per channel as `<Channel Name>/<Title> [<videoId>].<ext>` and tracked in a manifest; a **format setting** (FLAC / MP3 High / MP3 Low / Video 720p / Video 1080p) is in the Library menu. Downloaded audio files are local `file://` tracks that play locally and cast to Sonos, Chromecast, DLNA; downloaded videos open in the video player window.
 
 ## Quick Start (user)
 
 1. **Radio tab** → **+ Add YouTube Channel**
 2. Paste a YouTube channel URL (e.g., `https://www.youtube.com/@channel_name`)
 3. Channel appears as a folder; expand to see uploads
-4. Double-click a video to download its audio and play
-5. **Library → Set Download Folder…** to choose where downloads live
-6. **Library → YouTube Quality** to pick FLAC, MP3 High, or MP3 Low
+4. Double-click a video to download its audio or video and play
+5. **Library → YouTube → Set Download Folder…** to choose where downloads live
+6. **Library → YouTube → Format** to pick FLAC, MP3 High, MP3 Low, Video 720p, or Video 1080p
+7. **Library → YouTube → Videos per Channel** to pick how many recent uploads to list (50 / 100 / 200 / 500)
 
 ## Architecture
 
@@ -41,7 +42,7 @@ Singleton (`YouTubeManager.shared`) that manages:
 ```swift
 private(set) var channels: [YouTubeChannel]  // All subscribed channels
 var downloadRoot: URL                        // User-chosen folder (reachability checked before download)
-var quality: YouTubeQuality                  // .flac / .mp3High / .mp3Low (persisted under "YouTubeQuality")
+var quality: YouTubeQuality                  // .flac / .mp3High / .mp3Low / .video720 / .video1080 (persisted under "YouTubeQuality")
 ```
 
 **Notifications:**
@@ -62,9 +63,10 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     let title: String
     let channelId: String
     let duration: TimeInterval?
-    let uploadDate: String?
+    let publishedAt: Date?          // approximate upload date (see "Approximate dates" below)
     var id: String { videoId }      // Identifiable
     var watchURL: URL { ... }       // https://www.youtube.com/watch?v=<videoId>
+    var formattedDate: String?      // "MMM d, yyyy", nil when publishedAt is nil
 }
 
 struct YouTubeDownload: Codable {
@@ -97,32 +99,37 @@ A JSON dictionary keyed by `videoId`, each value a `YouTubeDownload`. `fileName`
 Both `ModernLibraryBrowserView` and `PlexBrowserView` (classic UI) integrate YouTube as a **source branch** alongside internet radio stations. Channels appear as expandable folders; expanding a channel calls `YouTubeManager.videos(forChannel:limit:)` which shells out to `yt-dlp --flat-playlist` with no API key:
 
 ```bash
-yt-dlp --flat-playlist -J --playlist-end 50 \
+yt-dlp --flat-playlist -J --playlist-end 200 \
+  --extractor-args "youtubetab:approximate_date" \
   "https://www.youtube.com/@channel_name/videos"
 ```
 
-`-J` dumps a single JSON object; `parseFlatPlaylist` decodes its `entries` (each `id`/`title`/`duration`/`upload_date`) into `YouTubeVideo`s. Channel title on add comes from a separate `--playlist-end 1` fetch (`fetchChannelTitle`).
+`-J` dumps a single JSON object; `parseFlatPlaylist` decodes its `entries` (each `id`/`title`/`duration`/`timestamp`) into `YouTubeVideo`s. The `limit` defaults to `YouTubeManager.videoLimit` (a user setting, **default 200**, persisted under `YouTubeVideoLimit`, chosen via **Library → YouTube → Videos per Channel**: 50/100/200/500). Changing it posts `youtubeVideoLimitDidChangeNotification`; both browser views drop their cached `youtubeChannelVideos` and re-fetch expanded channels (`reloadExpandedYouTubeChannels`) so it applies without a restart. Channel title on add comes from a separate `--playlist-end 1` fetch (`fetchChannelTitle`, no extractor arg).
 
-Videos appear as indented child rows. Double-clicking a video triggers `YouTubeManager.downloadAudio(video:)` (then the browser loads the returned local file into the audio engine and plays it).
+**Approximate dates**: plain `--flat-playlist` returns **no** `upload_date`/`timestamp` — the channel grid only exposes relative dates ("3 weeks ago"). The `youtubetab:approximate_date` extractor arg (passed via `fetchYtDlpJSON(…, approximateDate: true)`, videos call only) makes yt-dlp populate each entry's `timestamp` with an **estimated** epoch, decoded into `YouTubeVideo.publishedAt`. Accurate to the day for recent uploads, coarsening for older ones (older videos can share a timestamp). Unsupported/old yt-dlp just omits it → `publishedAt` nil → empty Date column, natural newest-first order preserved.
+
+Videos appear as indented child rows. Double-clicking a video triggers `YouTubeManager.download(video:)` (audio or video MP4 depending on the current Quality setting; then the browser loads the returned local file and plays it).
 
 #### Column rendering (Channels tab)
 
 Video (leaf) rows render through the **established resizable-column path** (`drawColumnRow`), not the simple list path, so a long title truncates inside its column instead of printing over the time. The column set is:
 
 ```swift
-static let youtubeColumns: [ModernBrowserColumn] = [.title, .duration]  // .duration is titled "Time"
+static let youtubeColumns: [ModernBrowserColumn] = [.title, .youtubeDate, .duration]  // .youtubeDate titled "Date", .duration titled "Time"
 ```
 
-- A dedicated **`.youtube` case in `LibraryColumnVisibilityGroup`** namespaces the persisted widths (`youtube:title`, `youtube:duration`) so they survive `migrateColumnWidths`. This is why the internet-radio column path can't be reused: `internetRadioColumns` are deliberately **non-resizable** (`hitTestColumnResize` early-returns when `hasInternetRadioColumns`), and the requirement here is a movable Time column like the library tabs.
+- A dedicated **`.youtube` case in `LibraryColumnVisibilityGroup`** namespaces the persisted widths (`youtube:title`, `youtube:youtubeDate`, `youtube:duration`) so they survive `migrateColumnWidths`. This is why the internet-radio column path can't be reused: `internetRadioColumns` are deliberately **non-resizable** (`hitTestColumnResize` early-returns when `hasInternetRadioColumns`), and the requirement here is a movable Time column like the library tabs.
+- The **`youtubeDate`** column shows `video.formattedDate`; sorting it goes through the **raw-`Date` branch** of `columnSortAreInOrder` (via `columnDateValue`, alongside `dateAdded`/`lastPlayed`), not string compare, so it orders by actual date.
 - **Channel (parent) rows stay on the simple-list path** so they keep their ▶/▼ expand arrows; only video rows use columns — mirroring radio folders vs. stations.
 - Column headers appear only once a channel is expanded (video rows exist), gated by `hasYouTubeColumns` (`radioSlotShowingChannels` + any `.youtubeVideo` in `displayItems`).
 - Clicking a header sorts via **`applyYouTubeColumnSort`** — an in-place sort of each contiguous run of video rows (leaving channel leaders put), mirroring `applyInternetRadioColumnSort`.
-- Plumbing touched: `columnGroup(for:)`, `currentColumnGroup()`, `columnsForItem`, `currentVisibleColumns`, `headerColumnsForCurrentContent`, `columnValue`, plus the four `allColumns`/`defaultColumnIds`/`visibleColumnIds`/`setVisibleColumnIds` group switches. Adding the `.youtube` enum case also forces the exhaustive switches in classic `PlexBrowserView` to handle it (return empty / no-op — YouTube is modern-UI only).
+- Plumbing touched: `columnGroup(for:)`, `currentColumnGroup()`, `columnsForItem`, `currentVisibleColumns`, `headerColumnsForCurrentContent`, `columnValue`, plus the four `allColumns`/`defaultColumnIds`/`visibleColumnIds`/`setVisibleColumnIds` group switches.
+- **Both UIs implement this independently**: the classic `PlexBrowserView` mirrors the whole column set (its own `BrowserColumn.youtubeColumns`, `columnValue`, `columnDateValue`, `applyYouTubeColumnSort`, session sort, etc.). Any change to YouTube columns/sorting must be made in **both** `ModernLibraryBrowserView` and `PlexBrowserView` — they share no code.
 
 ### Download Flow
 
 1. **Reachability Check**: Verify `downloadRoot` is accessible (mounted NAS, etc.)
-2. **Download**: `YouTubeManager.downloadAudio(video:)` builds the format/output args and delegates to `StreamRipper.downloadAudio(from:formatArgs:outputTemplate:)` to download the video's best audio
+2. **Download**: `YouTubeManager.download(video:)` builds the format/output args and, for audio qualities, delegates to `StreamRipper.downloadAudio(from:formatArgs:outputTemplate:)` to download the video's best audio. For video qualities (`quality.isVideo`) it instead delegates to `StreamRipper.downloadVideo(from:maxHeight:outputTemplate:)` to download an MP4 capped at `quality.videoMaxHeight` (720/1080)
 3. **Channel folder + readable name**: Save under a per-channel subfolder as `<Channel Name>/<Title> [<videoId>].<ext>` (yt-dlp sanitizes the title and picks the extension; the bracketed video ID keeps names unique). The manifest stores this as a `fileName` path relative to `downloadRoot`.
 4. **Manifest Update**: Append entry to `youtube_downloads.json`
 5. **Track Creation**: Construct a local `Track(url:)` from the manifest entry
@@ -130,17 +137,22 @@ static let youtubeColumns: [ModernBrowserColumn] = [.title, .duration]  // .dura
 
 ### Library Menu Integration
 
-Both menus are built in `ContextMenuBuilder.swift` (`setYouTubeQuality(_:)`, `setYouTubeDownloadFolder`).
+All items live under a single **Library → YouTube** submenu, built in `ContextMenuBuilder.buildYouTubeMenuItem()` (actions `setYouTubeDownloadFolder`, `setYouTubeQuality(_:)`, `setYouTubeVideoLimit(_:)`). The submenu reads current values at build time, so checkmarks update whenever the menu is rebuilt on open.
 
-**Library → YouTube Quality**
-- Three-way FLAC / MP3 High / MP3 Low setting, persisted in UserDefaults under `YouTubeQuality`
-- Consulted before each download (`quality.ytdlpArgs`); shapes the format args passed to `StreamRipper.downloadAudio`
-
-**Library → Set Download Folder…**
+**Library → YouTube → Set Download Folder…**
 - Opens `NSOpenPanel` for directory selection
 - Validates reachability before storing
 - `youtube_downloads.json` is written lazily on the first recorded download, not on folder selection
 - Persists in UserDefaults under `YouTubeDownloadRoot` (the folder path)
+
+**Library → YouTube → Quality**
+- Five-way FLAC / MP3 High / MP3 Low / Video (720p) / Video (1080p) setting (`YouTubeQuality`), persisted in UserDefaults under `YouTubeQuality`
+- Consulted before each download in `YouTubeManager.download(video:)`: audio qualities pass `quality.ytdlpArgs` to `StreamRipper.downloadAudio`; video qualities (`quality.isVideo`) route to `StreamRipper.downloadVideo` with `quality.videoMaxHeight`
+
+**Library → YouTube → Videos per Channel**
+- How many recent uploads to list per channel (`--playlist-end`); presets `YouTubeManager.videoLimitChoices` = 50/100/200/500, default 200, persisted under `YouTubeVideoLimit`
+- `videos(forChannel:limit:)` defaults `limit` to `videoLimit`
+- Changing it posts `youtubeVideoLimitDidChangeNotification`; both browser views clear `youtubeChannelVideos` and re-fetch expanded channels (`reloadExpandedYouTubeChannels`) so it applies live (no restart)
 
 ### UI Mode Support
 
@@ -166,4 +178,6 @@ Downloaded files are local `file://` tracks. After download completes, the `Trac
 - **Quality setting is global**: One `quality` setting applies to all future downloads; past downloads retain their own `quality` field in the manifest
 - **Streaming playback not offered**: YouTube streams (live, members-only, age-restricted) may fail silently if yt-dlp can't extract them; only downloadable videos are listed
 - **Video titles from yt-dlp**: Source of truth is yt-dlp's title extraction; titles are not synced with YouTube's API and may differ from what the web UI shows
-- **Channels tab uses the `.youtube` column group, not the radio column path**: Don't route YouTube videos through `internetRadioColumns` — those columns are fixed-width by design. Video rows use `youtubeColumns` (`[.title, .duration]`) via the resizable `LibraryColumnVisibilityGroup.youtube` group; adding/changing that enum requires updating every exhaustive `switch group` in both `ModernLibraryBrowserView` and `PlexBrowserView`
+- **YouTube has its own session sort (default date order)**: The channels tab must NOT inherit the persisted library column sort (`columnSortId`), or every rebuild — including after a download — re-sorts videos to A–Z. Both views keep session-only `youtubeColumnSortId`/`youtubeColumnSortAscending` (default nil = yt-dlp's newest-first order), read through `activeColumnSortId`/`activeColumnSortAscending` by every sort/header-draw path. A header click in the YouTube tab sets the session sort only; it never writes the library sort. This state resets to date order on relaunch (intended).
+- **Downloaded marker is rebuild-driven**: A downloading video draws a per-row spinner gated on `downloadingVideoIds`; the **`⬇ ` prefix** for a finished download is added in `buildYouTubeChannelItems` from `isDownloaded`. The download handler calls `rebuildCurrentModeItems()` on success (adds the marker) and a `defer` clears `downloadingVideoIds` (drops the spinner) — so the spinner→icon transition only works because the row stays put, which is why the session-sort fix above matters (an A–Z re-sort would relocate the row mid-transition).
+- **Channels tab uses the `.youtube` column group, not the radio column path**: Don't route YouTube videos through `internetRadioColumns` — those columns are fixed-width by design. Video rows use `youtubeColumns` (`[.title, .youtubeDate, .duration]`) via the resizable `LibraryColumnVisibilityGroup.youtube` group; adding/changing that enum requires updating every exhaustive `switch group` in both `ModernLibraryBrowserView` and `PlexBrowserView`

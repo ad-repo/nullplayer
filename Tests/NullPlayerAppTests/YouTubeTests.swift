@@ -135,13 +135,13 @@ final class YouTubeTests: XCTestCase {
                     "id": "dQw4w9WgXcQ",
                     "title": "Never Gonna Give You Up",
                     "duration": 212,
-                    "upload_date": "2009-10-25"
+                    "timestamp": 1256428800
                 },
                 {
                     "id": "9bZkp7q19f0",
                     "title": "Rick Astley - Together Forever",
                     "duration": 240,
-                    "upload_date": "1987-11-02"
+                    "timestamp": 562809600
                 }
             ]
         }
@@ -155,7 +155,7 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(videos[0].title, "Never Gonna Give You Up")
         XCTAssertEqual(videos[0].channelId, "test-channel")
         XCTAssertEqual(videos[0].duration, 212)
-        XCTAssertEqual(videos[0].uploadDate, "2009-10-25")
+        XCTAssertEqual(videos[0].publishedAt, Date(timeIntervalSince1970: 1256428800))
         XCTAssertEqual(videos[0].watchURL, URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
 
         XCTAssertEqual(videos[1].videoId, "9bZkp7q19f0")
@@ -225,7 +225,7 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(videos[0].videoId, "minimalvideo")
         XCTAssertEqual(videos[0].title, "Minimal Entry")
         XCTAssertNil(videos[0].duration)
-        XCTAssertNil(videos[0].uploadDate)
+        XCTAssertNil(videos[0].publishedAt)
     }
 
     func testParseFlatPlaylistFiltersOutEntriesWithoutID() throws {
@@ -330,10 +330,37 @@ final class YouTubeTests: XCTestCase {
     func testYouTubeQualityAllCases() {
         let allCases = YouTubeQuality.allCases
 
-        XCTAssertEqual(allCases.count, 3)
+        XCTAssertEqual(allCases.count, 5)
         XCTAssertTrue(allCases.contains(.flac))
         XCTAssertTrue(allCases.contains(.mp3High))
         XCTAssertTrue(allCases.contains(.mp3Low))
+        XCTAssertTrue(allCases.contains(.video720))
+        XCTAssertTrue(allCases.contains(.video1080))
+    }
+
+    func testYouTubeQualityVideo720() {
+        let quality = YouTubeQuality.video720
+
+        XCTAssertEqual(quality.displayName, "Video (720p)")
+        XCTAssertEqual(quality.fileExtension, "mp4")
+        XCTAssertTrue(quality.isVideo)
+        XCTAssertEqual(quality.videoMaxHeight, 720)
+    }
+
+    func testYouTubeQualityVideo1080() {
+        let quality = YouTubeQuality.video1080
+
+        XCTAssertEqual(quality.displayName, "Video (1080p)")
+        XCTAssertEqual(quality.fileExtension, "mp4")
+        XCTAssertTrue(quality.isVideo)
+        XCTAssertEqual(quality.videoMaxHeight, 1080)
+    }
+
+    func testYouTubeQualityAudioFormats() {
+        for quality in [YouTubeQuality.flac, .mp3High, .mp3Low] {
+            XCTAssertFalse(quality.isVideo)
+            XCTAssertNil(quality.videoMaxHeight)
+        }
     }
 
     func testYouTubeQualityRawValues() {
@@ -350,7 +377,7 @@ final class YouTubeTests: XCTestCase {
             title: "Test Video",
             channelId: "channel123",
             duration: 180,
-            uploadDate: "2024-01-01"
+            publishedAt: Date(timeIntervalSince1970: 1704067200)
         )
 
         XCTAssertEqual(video.id, "test123")
@@ -362,7 +389,7 @@ final class YouTubeTests: XCTestCase {
             title: "Test",
             channelId: "channel123",
             duration: nil,
-            uploadDate: nil
+            publishedAt: nil
         )
 
         XCTAssertEqual(video.watchURL, URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
@@ -374,7 +401,7 @@ final class YouTubeTests: XCTestCase {
             title: "Duration",
             channelId: "channel",
             duration: 119,
-            uploadDate: nil
+            publishedAt: nil
         )
 
         XCTAssertEqual(video.formattedDuration, "1:59")

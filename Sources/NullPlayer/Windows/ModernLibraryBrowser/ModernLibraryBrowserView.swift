@@ -288,6 +288,22 @@ class ModernLibraryBrowserView: NSView {
     private var resizeStartWidth: CGFloat = 0
     private var columnSortId: String? { didSet { saveColumnSort(); applyColumnSort(collapseExpanded: true) } }
     private var columnSortAscending: Bool = true { didSet { saveColumnSort(); applyColumnSort(collapseExpanded: true) } }
+
+    // YouTube channels keep their own sort state (session-only, default = none → date
+    // order as returned by yt-dlp). This keeps the persisted library column sort from
+    // leaking in and re-ordering videos to A–Z on every rebuild (e.g. after a download).
+    // Only an explicit header click in the YouTube tab sets this.
+    private var youtubeColumnSortId: String? = nil
+    private var youtubeColumnSortAscending: Bool = true
+
+    /// Column sort that applies to the current source. YouTube uses its own session
+    /// state (default date order) instead of the persisted library sort.
+    private var activeColumnSortId: String? {
+        currentSource.isYouTube ? youtubeColumnSortId : columnSortId
+    }
+    private var activeColumnSortAscending: Bool {
+        currentSource.isYouTube ? youtubeColumnSortAscending : columnSortAscending
+    }
     
     // Visible columns (ordered lists of column IDs; persisted to UserDefaults)
     private var visibleTrackColumnIds: [String] = ModernBrowserColumn.defaultTrackColumnIds { didSet { saveVisibleColumns() } }
@@ -428,6 +444,8 @@ class ModernLibraryBrowserView: NSView {
     private var youtubeDownloadTask: Task<Void, Never>?
     /// Video IDs currently downloading — drives a per-row spinner on the video entry.
     private var downloadingVideoIds: Set<String> = []
+    /// Channel IDs whose uploads are currently being fetched — drives a per-row spinner on the channel entry.
+    private var loadingChannelIds: Set<String> = []
 
     // Cached data - Video (Plex)
     private var cachedMovies: [PlexMovie] = []
@@ -772,6 +790,8 @@ class ModernLibraryBrowserView: NSView {
                                                name: RadioManager.stationsDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(youtubeChannelsDidChange),
                                                name: YouTubeManager.youtubeChannelsDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(youtubeVideoLimitDidChange),
+                                               name: YouTubeManager.youtubeVideoLimitDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackDidChange),
                                                name: .audioTrackDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(playHistoryDidChange),
@@ -1993,8 +2013,18 @@ class ModernLibraryBrowserView: NSView {
                 let indent = CGFloat(item.indentLevel) * 16
                 let textX = itemRect.minX + indent + 4
 
-                // Expand/collapse indicator
-                if item.hasChildren {
+                // Expand/collapse indicator — or an inline spinner while a YouTube channel's uploads load.
+                let isLoadingChannel: Bool = {
+                    if case .youtubeChannel(let channel) = item.type { return loadingChannelIds.contains(channel.id) }
+                    return false
+                }()
+                var titleSpinnerInset: CGFloat = 0
+                if isLoadingChannel {
+                    let spinnerRadius = min(itemHeight * 0.3, 6)
+                    drawRowSpinner(in: context, center: CGPoint(x: textX + spinnerRadius, y: itemRect.midY),
+                                   radius: spinnerRadius, skin: skin)
+                    titleSpinnerInset = spinnerRadius * 2 + 4
+                } else if item.hasChildren {
                     let expanded = isExpanded(item)
                     let indicator = expanded ? "▼" : "▶"
                     let indicatorAttrs: [NSAttributedString.Key: Any] = [
@@ -2010,8 +2040,8 @@ class ModernLibraryBrowserView: NSView {
                     .foregroundColor: skin.applyTextOpacity(to: textColor),
                     .font: font
                 ]
-                let textRect = NSRect(x: textX, y: itemRect.minY + 2,
-                                     width: itemRect.width - indent - 60, height: itemHeight - 4)
+                let textRect = NSRect(x: textX + titleSpinnerInset, y: itemRect.minY + 2,
+                                     width: itemRect.width - indent - 60 - titleSpinnerInset, height: itemHeight - 4)
                 drawText(item.title, in: textRect, withAttributes: attrs, context: context)
 
                 // Secondary info
@@ -2073,7 +2103,7 @@ class ModernLibraryBrowserView: NSView {
         let group = currentColumnGroup()
         for (index, column) in columns.enumerated() {
             let width = widthForColumn(column, availableWidth: rect.width, columns: columns, group: group)
-            let isSortColumn = columnSortId == column.id
+            let isSortColumn = activeColumnSortId == column.id
             let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
                 (hasInternetRadioColumns && column.id == "rating")
             
@@ -2088,7 +2118,7 @@ class ModernLibraryBrowserView: NSView {
             drawText(column.title, at: NSPoint(x: textX, y: textY), withAttributes: attrs, context: context)
             
             if isSortColumn {
-                let indicator = columnSortAscending ? "▲" : "▼"
+                let indicator = activeColumnSortAscending ? "▲" : "▼"
                 let indicatorAttrs: [NSAttributedString.Key: Any] = [
                     .font: skin.scaledSystemFont(size: 5.6),
                     .foregroundColor: skin.applyTextOpacity(to: sortedHeaderColor)
@@ -2937,7 +2967,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func applyColumnSort(collapseExpanded: Bool = false) {
-        guard let sortColumnId = columnSortId, !displayItems.isEmpty else {
+        guard let sortColumnId = activeColumnSortId, !displayItems.isEmpty else {
             needsDisplay = true
             return
         }
@@ -2965,7 +2995,7 @@ class ModernLibraryBrowserView: NSView {
             needsDisplay = true; return
         }
 
-        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: columnSortAscending) {
+        if applyInternetRadioColumnSort(sortColumn: sortColumn, ascending: activeColumnSortAscending) {
             needsDisplay = true; return
         }
 
@@ -3031,10 +3061,10 @@ class ModernLibraryBrowserView: NSView {
     /// Sorts column-capable rows while preserving their current order for equal keys.
     private func stableColumnSortedItems(_ items: [ModernDisplayItem], sortColumn: ModernBrowserColumn) -> [ModernDisplayItem] {
         items.enumerated().sorted { lhs, rhs in
-            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(lhs.element, rhs.element, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return true
             }
-            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(rhs.element, lhs.element, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return false
             }
             return lhs.offset < rhs.offset
@@ -3046,10 +3076,10 @@ class ModernLibraryBrowserView: NSView {
         groups.enumerated().sorted { lhs, rhs in
             let leftLeader = lhs.element[0]
             let rightLeader = rhs.element[0]
-            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(leftLeader, rightLeader, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return true
             }
-            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: columnSortAscending) {
+            if columnSortAreInOrder(rightLeader, leftLeader, sortColumn: sortColumn, ascending: activeColumnSortAscending) {
                 return false
             }
             return lhs.offset < rhs.offset
@@ -3060,7 +3090,7 @@ class ModernLibraryBrowserView: NSView {
     /// an identical top-level order. `a` and `b` are level-0 rows.
     private func columnSortAreInOrder(_ a: ModernDisplayItem, _ b: ModernDisplayItem, sortColumn: ModernBrowserColumn, ascending: Bool) -> Bool {
         // Date columns: sort by raw date, not formatted string
-        if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" {
+        if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" || sortColumn.id == "youtubeDate" {
             let aDate = a.columnDateValue(for: sortColumn) ?? .distantPast
             let bDate = b.columnDateValue(for: sortColumn) ?? .distantPast
             return ascending ? aDate < bDate : aDate > bDate
@@ -3626,8 +3656,16 @@ class ModernLibraryBrowserView: NSView {
         
         // Column header click for sorting
         if let columnId = hitTestColumnHeader(at: point) {
-            if columnSortId == columnId { columnSortAscending.toggle() }
-            else { columnSortId = columnId; columnSortAscending = true }
+            if currentSource.isYouTube {
+                // YouTube uses its own session sort (not persisted to the library sort).
+                if youtubeColumnSortId == columnId { youtubeColumnSortAscending.toggle() }
+                else { youtubeColumnSortId = columnId; youtubeColumnSortAscending = true }
+                applyColumnSort(collapseExpanded: true)
+            } else if columnSortId == columnId {
+                columnSortAscending.toggle()
+            } else {
+                columnSortId = columnId; columnSortAscending = true
+            }
             return
         }
         
@@ -6109,8 +6147,10 @@ class ModernLibraryBrowserView: NSView {
         youtubeChannelVideos.removeValue(forKey: channel.id)
         expandedYouTubeChannels.insert(channel.id)
         youtubeExpandTask?.cancel()
+        loadingChannelIds.insert(channel.id); startLoadingAnimation()
         youtubeExpandTask = Task.detached { @MainActor [weak self] in
             guard let self = self else { return }
+            defer { self.loadingChannelIds.remove(channel.id); self.stopLoadingAnimation(); self.needsDisplay = true }
             do {
                 let videos = try await YouTubeManager.shared.videos(forChannel: channel)
                 youtubeChannelVideos[channel.id] = videos
@@ -6121,6 +6161,7 @@ class ModernLibraryBrowserView: NSView {
                 NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription)
             }
         }
+        rebuildCurrentModeItems(); needsDisplay = true
     }
 
     @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
@@ -6147,7 +6188,7 @@ class ModernLibraryBrowserView: NSView {
                 guard let self = self else { return }
                 defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                 do {
-                    let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                    let downloadedURL = try await YouTubeManager.shared.download(video: video)
                     // A newer download may have superseded this one; don't auto-play a stale result.
                     try Task.checkCancellation()
                     let track = Track(url: downloadedURL, isYouTubeOrigin: true)
@@ -7341,6 +7382,47 @@ class ModernLibraryBrowserView: NSView {
         }
     }
 
+    @objc private func youtubeVideoLimitDidChange() {
+        // Drop cached video lists so the new limit applies. Re-fetch the channels that are
+        // currently expanded; otherwise just collapse them so a later expand fetches fresh.
+        youtubeChannelVideos.removeAll()
+        if case .youtube = currentSource {
+            reloadExpandedYouTubeChannels()
+        } else {
+            expandedYouTubeChannels.removeAll()
+        }
+    }
+
+    /// Re-fetch the uploads for every currently-expanded YouTube channel (sequentially, in
+    /// one task) and rebuild as each arrives. Used when the per-channel video limit changes.
+    private func reloadExpandedYouTubeChannels() {
+        let channels = YouTubeManager.shared.channels.filter { expandedYouTubeChannels.contains($0.id) }
+        guard !channels.isEmpty else { rebuildCurrentModeItems(); return }
+        youtubeExpandTask?.cancel()
+        loadingChannelIds.formUnion(channels.map { $0.id }); startLoadingAnimation()
+        youtubeExpandTask = Task.detached { @MainActor [weak self] in
+            guard let self = self else { return }
+            defer {
+                for ch in channels { self.loadingChannelIds.remove(ch.id) }
+                self.stopLoadingAnimation(); self.needsDisplay = true
+            }
+            for ch in channels {
+                do {
+                    let videos = try await YouTubeManager.shared.videos(forChannel: ch)
+                    youtubeChannelVideos[ch.id] = videos
+                    loadingChannelIds.remove(ch.id)
+                    rebuildCurrentModeItems()
+                } catch is CancellationError { return }
+                catch where Task.isCancelled { return }
+                catch {
+                    loadingChannelIds.remove(ch.id)
+                    NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
+                }
+            }
+        }
+        rebuildCurrentModeItems(); needsDisplay = true
+    }
+
     @objc private func trackDidChange(_ notification: Notification) {
         artModeLifecycleGeneration &+= 1
         let generation = artModeLifecycleGeneration
@@ -7509,8 +7591,8 @@ class ModernLibraryBrowserView: NSView {
             self.loadingAnimationFrame += 1
             if self.isLoading {
                 self.needsDisplay = true
-            } else if !self.downloadingVideoIds.isEmpty {
-                // Redraw the list area for the per-row download spinner(s)
+            } else if !self.downloadingVideoIds.isEmpty || !self.loadingChannelIds.isEmpty {
+                // Redraw the list area for the per-row download/channel-load spinner(s)
                 self.needsDisplay = true
             } else if self.isLibraryScanning {
                 // Redraw server bar only for the scan spinner
@@ -7524,7 +7606,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func stopLoadingAnimation(force: Bool = false) {
-        guard force || (!isLibraryScanning && downloadingVideoIds.isEmpty) else { return }
+        guard force || (!isLibraryScanning && downloadingVideoIds.isEmpty && loadingChannelIds.isEmpty) else { return }
         loadingAnimationTimer?.invalidate(); loadingAnimationTimer = nil; loadingAnimationFrame = 0
     }
 
@@ -10706,7 +10788,7 @@ class ModernLibraryBrowserView: NSView {
             default:
                 displayItems = []
             }
-            if columnSortId != nil { applyColumnSort() }
+            if activeColumnSortId != nil { applyColumnSort() }
             needsDisplay = true
             return
         }
@@ -11135,8 +11217,10 @@ class ModernLibraryBrowserView: NSView {
                 expandedYouTubeChannels.insert(ch.id)
                 if youtubeChannelVideos[ch.id] == nil {
                     let id = ch.id; youtubeExpandTask?.cancel()
+                    loadingChannelIds.insert(id); startLoadingAnimation()
                     youtubeExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
+                        defer { self.loadingChannelIds.remove(id); self.stopLoadingAnimation(); self.needsDisplay = true }
                         do {
                             let videos = try await YouTubeManager.shared.videos(forChannel: ch)
                             youtubeChannelVideos[id] = videos
@@ -11146,7 +11230,7 @@ class ModernLibraryBrowserView: NSView {
                         catch {
                             NSLog("Failed to load YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
                         }
-                    }; return
+                    }; rebuildCurrentModeItems(); needsDisplay = true; return
                 }
             }
         default: break
@@ -11568,7 +11652,7 @@ class ModernLibraryBrowserView: NSView {
                     guard let self = self else { return }
                     defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
                     do {
-                        let downloadedURL = try await YouTubeManager.shared.downloadAudio(video: video)
+                        let downloadedURL = try await YouTubeManager.shared.download(video: video)
                         // A newer download may have superseded this one; don't auto-play a stale result.
                         try Task.checkCancellation()
                         let track = Track(url: downloadedURL, isYouTubeOrigin: true)
@@ -11842,6 +11926,7 @@ private struct ModernBrowserColumn {
     static let channels = ModernBrowserColumn(id: "channels", title: "Channels", minWidth: 50)
     static let dateAdded = ModernBrowserColumn(id: "dateAdded", title: "Date Added", minWidth: 80)
     static let lastPlayed = ModernBrowserColumn(id: "lastPlayed", title: "Last Played", minWidth: 80)
+    static let youtubeDate = ModernBrowserColumn(id: "youtubeDate", title: "Date", minWidth: 70)
     static let filePath = ModernBrowserColumn(id: "path", title: "Path", minWidth: 150)
     
     // All available columns (superset for each view type)
@@ -11858,9 +11943,9 @@ private struct ModernBrowserColumn {
     static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
     static let defaultArtistColumnIds: [String] = ["title", "rating", "albums", "genre"]
     static let internetRadioColumns: [ModernBrowserColumn] = [.title, .genre, .rating]
-    // YouTube channel uploads (Radio tab "Channels" view): title + a resizable time column.
-    static let youtubeColumns: [ModernBrowserColumn] = [.title, .duration]
-    static let defaultYouTubeColumnIds: [String] = ["title", "duration"]
+    // YouTube channel uploads (Radio tab "Channels" view): title + (approximate) date + resizable time.
+    static let youtubeColumns: [ModernBrowserColumn] = [.title, .youtubeDate, .duration]
+    static let defaultYouTubeColumnIds: [String] = ["title", "youtubeDate", "duration"]
     
     // Legacy arrays kept for backwards compatibility with sort lookup
     static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount]
@@ -11932,11 +12017,14 @@ extension ModernDisplayItem {
             if column.id == "duration" {
                 return video.formattedDuration ?? ""
             }
+            if column.id == "youtubeDate" {
+                return video.formattedDate ?? ""
+            }
             return ""
         default: return ""
         }
     }
-    
+
     private func plexTrackValue(_ track: PlexTrack, for column: ModernBrowserColumn) -> String {
         switch column.id {
         case "trackNum":
@@ -12197,6 +12285,9 @@ extension ModernDisplayItem {
             case .localTrack(let t): return t.lastPlayed
             default: return nil
             }
+        case "youtubeDate":
+            if case .youtubeVideo(let video) = type { return video.publishedAt }
+            return nil
         default: return nil
         }
     }
