@@ -274,11 +274,12 @@ class PlexBrowserView: NSView {
     private var browseMode: PlexBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            // Switching tabs always exits Art view.
+            isArtOnlyMode = false
             if oldValue == .folders, browseMode != .folders {
                 cancelLocalFolderBuild()
             }
             if browseMode.isHistoryMode {
-                isArtOnlyMode = false
                 if isRatingOverlayVisible {
                     hideRatingOverlay()
                 }
@@ -2082,6 +2083,8 @@ class PlexBrowserView: NSView {
     }
     
     private func onSourceChanged() {
+        // Changing source always exits Art view.
+        isArtOnlyMode = false
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
             browseMode = .plists

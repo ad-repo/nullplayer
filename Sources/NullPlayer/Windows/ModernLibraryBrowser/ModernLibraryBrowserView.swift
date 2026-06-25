@@ -221,11 +221,12 @@ class ModernLibraryBrowserView: NSView {
     private var browseMode: ModernBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            // Switching tabs always exits Art view.
+            isArtOnlyMode = false
             if oldValue == .folders, browseMode != .folders {
                 cancelLocalFolderBuild()
             }
             if browseMode.isHistoryMode {
-                isArtOnlyMode = false
                 if isRatingOverlayVisible {
                     hideRatingOverlay()
                 }
@@ -7542,6 +7543,8 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func onSourceChanged() {
+        // Changing source always exits Art view.
+        isArtOnlyMode = false
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
             browseMode = .plists
