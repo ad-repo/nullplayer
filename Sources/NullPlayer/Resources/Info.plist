@@ -47,9 +47,13 @@
 	<string>14.0</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<!-- NSAllowsArbitraryLoads MUST be the only key here. On macOS 10.12+, pairing it
+		     with a granular key (NSAllowsLocalNetworking / NSAllowsArbitraryLoadsForMedia /
+		     NSAllowsArbitraryLoadsInWebContent) makes the system ignore NSAllowsArbitraryLoads
+		     and block public cleartext http:// loads (-1022) — which broke http internet-radio
+		     streams (issue #310). NSAllowsArbitraryLoads alone is a superset that also permits
+		     local-network casting, so Sonos/Chromecast/DLNA are unaffected. -->
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>NSBonjourServices</key>

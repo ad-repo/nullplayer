@@ -490,7 +490,7 @@ Priority order:
 
 **Internet radio:**
 - [ ] Add station with direct stream URL and with .pls/.m3u URL
-- [ ] Add a cleartext `http://` station (e.g. Icecast on a custom port) → it actually plays, not just buffers forever (ATS regression guard, #255)
+- [ ] Add a cleartext `http://` station (e.g. Icecast on a custom port) → it actually plays, not just buffers forever (ATS regression guard, #255 / #310 — no CFNetwork `-1022`; clock advances past `0:00`)
 - [ ] Metadata displays in marquee (ICY when present, Soma fallback when ICY absent)
 - [ ] Stop → no auto-reconnect; disconnect network → auto-reconnect attempts
 - [ ] Cast to Sonos, time resets to 0:00
@@ -512,11 +512,15 @@ Priority order:
 
 ## Implementation Gotchas
 
-### App Transport Security — cleartext HTTP streams need `NSAllowsArbitraryLoads`
+### App Transport Security — cleartext HTTP streams need `NSAllowsArbitraryLoads` **alone**
 
 Internet radio plays through the **AudioStreaming** library, which fetches the stream over **`URLSession`** (not AVFoundation). ATS therefore applies to it. The ATS exception key `NSAllowsArbitraryLoadsForMedia` only covers **AVFoundation** media loads — it does **not** cover `URLSession`. With only that key set, every cleartext `http://` station was silently blocked: the stream stayed in `bufferring` at `progress 0.0` and never reached `playing`, while `https://` stations worked.
 
-`Sources/NullPlayer/Resources/Info.plist` sets `NSAllowsArbitraryLoads` so http-only Icecast/SHOUTcast stations connect (issue #255). Radio stations are arbitrary user-supplied hosts, so `NSExceptionDomains` can't be enumerated — arbitrary loads is the correct key. **MAS note:** `NSAllowsArbitraryLoads` requires a justification in App Store review notes (media player playing user-provided HTTP-only radio streams). Both `build_dmg.sh` and `build_mas.sh` read this same Info.plist. Do **not** rely on the symptom "`.mp3` works / others fail" — that is a scheme coincidence (http vs https), not a format issue.
+`Sources/NullPlayer/Resources/Info.plist` sets `NSAllowsArbitraryLoads` so http-only Icecast/SHOUTcast stations connect (issue #255). Radio stations are arbitrary user-supplied hosts, so `NSExceptionDomains` can't be enumerated — arbitrary loads is the correct key.
+
+**`NSAllowsArbitraryLoads` MUST be the ONLY key in the `NSAppTransportSecurity` dict (issue #310).** On macOS 10.12+, if you pair it with *any* granular key — `NSAllowsLocalNetworking`, `NSAllowsArbitraryLoadsForMedia`, or `NSAllowsArbitraryLoadsInWebContent` — the system **ignores `NSAllowsArbitraryLoads`** and honors only the granular keys. In #310, a co-present `NSAllowsLocalNetworking` (it had been added for casting) silently re-enabled ATS for public hosts: cleartext radio failed with CFNetwork **`-1022`** ("requires a secure connection") even though the global key was `true`, while local-network casting kept working (so it looked fine). The library fires `didStartPlaying` optimistically before the data task dies, so the UI shows "connected" but the clock never advances past `0:00`. Fix was to **delete `NSAllowsLocalNetworking`** — `NSAllowsArbitraryLoads` alone is a superset that already permits local-network casting (Sonos/Chromecast/DLNA), so nothing regressed. Do not re-add any granular ATS key.
+
+**MAS note:** `NSAllowsArbitraryLoads` requires a justification in App Store review notes (media player playing user-provided HTTP-only radio streams). Both `build_dmg.sh` and `build_mas.sh` copy this same Info.plist to the bundle's top-level `Contents/Info.plist` (`scripts/lib/assemble_app.sh`), which is the plist CFNetwork reads for ATS. Do **not** rely on the symptom "`.mp3` works / others fail" — that is a scheme coincidence (http vs https), not a format issue. **Debug caveat:** `kill_build_run.sh` runs the bare `swift build` executable, not an `.app` bundle, so its ATS behavior does not match a shipped build — verify ATS against `dist/NullPlayer.app` (built by `build_dmg.sh`).
 
 ### State Management — Use `stopLocalOnly()` not `stop()`
 
