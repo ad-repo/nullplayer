@@ -5561,6 +5561,12 @@ class ModernLibraryBrowserView: NSView {
     @objc private func linkPlexAccount() { controller?.showLinkSheet() }
     @objc private func selectSortOption(_ sender: NSMenuItem) {
         guard let option = sender.representedObject as? ModernBrowserSortOption else { return }
+        // The Sort menu and column-header sorts are two routes to the same ordering, and a
+        // lingering column sort (which overrides currentSort) would silently re-order the list
+        // on the next rebuild — e.g. snapping a date-sorted tab back to name order the moment a
+        // row is expanded, leaving the selection on the wrong item. Picking from the menu makes
+        // it the sole sort, so drop any active column sort first.
+        if columnSortId != nil { columnSortId = nil }
         currentSort = option
     }
     @objc private func selectLibrary(_ sender: NSMenuItem) {
@@ -7528,6 +7534,10 @@ class ModernLibraryBrowserView: NSView {
         isLoading = false
         stopLoadingAnimation()
         errorMessage = nil
+        // Apply any active column-header sort so a fresh server load matches what an
+        // expand-driven rebuild produces — otherwise expanding a row would re-order the
+        // list. (Mirrors rebuildCurrentModeItems.)
+        if columnSortId != nil { applyColumnSort() }
         needsDisplay = true
     }
     
@@ -8830,6 +8840,10 @@ class ModernLibraryBrowserView: NSView {
         case .radio: loadLocalRadioStations()
         case .history: break
         }
+        // Apply any active column-header sort so a fresh load matches what an expand-driven
+        // rebuild produces — otherwise expanding a row would re-order the list. (Mirrors
+        // rebuildCurrentModeItems.)
+        if columnSortId != nil { applyColumnSort() }
         needsDisplay = true
     }
 
