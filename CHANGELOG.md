@@ -22,6 +22,10 @@
 
 - **Classic utility-window titles** — the classic Spectrum Analyzer, Waveform, Library, and ProjectM windows now draw explicit bitmap-font titles into their skinned title bars, matching the Audio Analysis window. ProjectM is labeled **VISUALIZATIONS**.
 
+- **Classic Library tabs are now boxed** — the classic Library window's tab names (Artists, Albums, Plists, etc.) are drawn inside rounded-rectangle outlines, matching the modern Library's boxed toggle tabs: the selected tab gets a brighter, subtly filled box and the rest a dim outline.
+
+- **Library tabs sized to their labels, plus tweaks (classic & modern)** — both Library tab bars now size each tab to its own label and share the leftover space equally, so every tab gets breathing room inside its box instead of being squeezed into equal slots (short labels no longer hog width, and the long **Channels** label fits cleanly). The **Shows** tab is renamed **TV**, and the **Radio/Channels** and **Search** tabs swap places (order is now Artists, Albums, Plists, Movies, TV, Radio, Search, Data).
+
 ### Bug Fixes
 
 - **kHz display now shows for streamed tracks without a visualization open (#285)** — the classic skin's sample-rate (kHz) readout stayed blank for streaming tracks (e.g. a Plex MP3) whose server metadata omits the sample rate. The streaming player only reported the decoded format — which fills in the missing sample rate — while a spectrum/oscilloscope/waveform consumer was active, so with no visualization showing the kHz never appeared. Format detection now runs as soon as the first audio buffer arrives, independent of visualization demand.
