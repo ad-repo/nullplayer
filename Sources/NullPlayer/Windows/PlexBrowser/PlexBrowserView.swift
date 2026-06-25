@@ -165,7 +165,7 @@ enum PlexBrowseMode: Int, CaseIterable {
         case .folders: return "Folders"
         case .plists: return "Plists"
         case .movies: return "Movies"
-        case .shows: return "Shows"
+        case .shows: return "TV"
         case .search: return "Search"
         case .radio: return "Radio"
         case .history: return "Data"
@@ -191,7 +191,7 @@ enum PlexBrowseMode: Int, CaseIterable {
     // .folders is excluded: it occupies the same tab slot as .plists and is reached
     // only by toggling that slot (local source only), never as its own tab.
     static var allCases: [PlexBrowseMode] {
-        [.artists, .albums, .plists, .movies, .shows, .search, .radio, .history]
+        [.artists, .albums, .plists, .movies, .shows, .radio, .search, .history]
     }
 }
 
@@ -274,11 +274,12 @@ class PlexBrowserView: NSView {
     private var browseMode: PlexBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            // Switching tabs always exits Art view.
+            isArtOnlyMode = false
             if oldValue == .folders, browseMode != .folders {
                 cancelLocalFolderBuild()
             }
             if browseMode.isHistoryMode {
-                isArtOnlyMode = false
                 if isRatingOverlayVisible {
                     hideRatingOverlay()
                 }
@@ -1429,6 +1430,38 @@ class PlexBrowserView: NSView {
         return ceil(tabsWidth + sortWidth + insets + Layout.leftBorder + Layout.rightBorder)
     }
 
+    /// The label shown in each tab slot (some slots are dynamic), in `allCases` order.
+    private func currentTabLabels() -> [String] {
+        PlexBrowseMode.allCases.map { mode in
+            // plists slot shows "Folders" when toggled on a local source.
+            if mode == .plists, localPlistsSlotShowsFolders, case .local = currentSource {
+                return "Folders"
+            }
+            // radio slot shows "Channels" when the YouTube source is displaying channels.
+            if mode == .radio, radioSlotShowingChannels {
+                return "Channels"
+            }
+            return mode.title
+        }
+    }
+
+    /// Per-tab widths across the tab area (which excludes the Sort indicator). Content-aware:
+    /// each tab is sized to its own label plus padding, then leftover space is shared equally
+    /// so every tab gets breathing room and short labels (e.g. "TV", "Data") don't hog width.
+    /// Shared by `drawTabBar` and `hitTestTabBar` so they stay in sync.
+    private func tabBarWidths(tabsWidth: CGFloat) -> [CGFloat] {
+        let scaledCharWidth = SkinElements.TextFont.charWidth * 1.5
+        let boxPadding: CGFloat = 18
+        let natural = currentTabLabels().map { CGFloat($0.count) * scaledCharWidth + boxPadding }
+        let naturalSum = natural.reduce(0, +)
+        if naturalSum > tabsWidth {
+            let scale = tabsWidth / naturalSum
+            return natural.map { $0 * scale }
+        }
+        let extra = (tabsWidth - naturalSum) / CGFloat(natural.count)
+        return natural.map { $0 + extra }
+    }
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -2040,10 +2073,18 @@ class PlexBrowserView: NSView {
         isLoading = false
         stopLoadingAnimation()
         errorMessage = nil
+        // Apply any active column-header sort so a fresh server load matches what an
+        // expand-driven rebuild produces — otherwise expanding a row would re-order the
+        // list. (Mirrors rebuildCurrentModeItems.)
+        if columnSortId != nil {
+            applyColumnSort()
+        }
         needsDisplay = true
     }
     
     private func onSourceChanged() {
+        // Changing source always exits Art view.
+        isArtOnlyMode = false
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
             browseMode = .plists
@@ -3295,29 +3336,39 @@ class PlexBrowserView: NSView {
         let tabsStartX = tabBarRect.minX + tabLeftInset
 
         // Draw tabs (leave room for sort indicator)
+        let modes = PlexBrowseMode.allCases
         let tabsWidth = tabBarRect.width - sortWidth - tabLeftInset - tabRightInset
-        let tabWidth = tabsWidth / CGFloat(PlexBrowseMode.allCases.count)
-        
-        for (index, mode) in PlexBrowseMode.allCases.enumerated() {
-            let tabRect = NSRect(x: tabsStartX + CGFloat(index) * tabWidth, y: tabBarY,
-                                width: tabWidth, height: Layout.tabBarHeight)
 
-            // Special handling for plists slot: show "Folders" if toggled (local source only),
-            // and highlight it when browseMode is .folders.
-            var label = mode.title
+        // Content-aware widths and resolved (possibly dynamic) labels, shared with hit-testing.
+        let labels = currentTabLabels()
+        let tabWidths = tabBarWidths(tabsWidth: tabsWidth)
+
+        var tabX = tabsStartX
+        for (index, mode) in modes.enumerated() {
+            let tabWidth = tabWidths[index]
+            let tabRect = NSRect(x: tabX, y: tabBarY,
+                                width: tabWidth, height: Layout.tabBarHeight)
+            tabX += tabWidth
+
+            let label = labels[index]
             var isSelected = mode == browseMode
-            if mode == .plists {
-                if localPlistsSlotShowsFolders, case .local = currentSource {
-                    label = "Folders"
-                }
-                if browseMode == .folders, case .local = currentSource {
-                    isSelected = true
-                }
+            // Highlight the plists slot when browseMode is .folders (local source only).
+            if mode == .plists, browseMode == .folders, case .local = currentSource {
+                isSelected = true
             }
-            // Radio slot shows "Channels" when the YouTube source is displaying channels.
-            if mode == .radio, radioSlotShowingChannels {
-                label = "Channels"
+
+            // Boxed toggle outline around each tab, mirroring the modern library tabs.
+            let boxRect = tabRect.insetBy(dx: 3, dy: 3)
+            let boxPath = NSBezierPath(roundedRect: boxRect, xRadius: 3, yRadius: 3)
+            boxPath.lineWidth = 1
+            if isSelected {
+                colors.currentText.withAlphaComponent(0.12).setFill()
+                boxPath.fill()
+                colors.currentText.withAlphaComponent(0.8).setStroke()
+            } else {
+                colors.normalText.withAlphaComponent(0.4).setStroke()
             }
+            boxPath.stroke()
 
             if isSelected {
                 // Selected tab in WHITE skin text
@@ -7216,14 +7267,20 @@ class PlexBrowserView: NSView {
         let tabLeftInset = tabItemHorizontalEdgePadding
         let tabRightInset = tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
 
-        // Tabs area excludes sort indicator
+        // Tabs area excludes sort indicator. Widths are content-aware (see tabBarWidths),
+        // so walk the cumulative widths to find which tab the point falls in.
         let tabsWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - sortWidth - tabLeftInset - tabRightInset
-        let tabWidth = tabsWidth / CGFloat(PlexBrowseMode.allCases.count)
+        let widths = tabBarWidths(tabsWidth: tabsWidth)
         let relativeX = skinPoint.x - Layout.leftBorder - tabLeftInset
 
         if relativeX >= 0 && relativeX < tabsWidth {
-            let index = Int(relativeX / tabWidth)
-            if index < PlexBrowseMode.allCases.count { return PlexBrowseMode.allCases[index] }
+            var edge: CGFloat = 0
+            for (index, width) in widths.enumerated() {
+                edge += width
+                if relativeX < edge, index < PlexBrowseMode.allCases.count {
+                    return PlexBrowseMode.allCases[index]
+                }
+            }
         }
         return nil
     }
@@ -9211,6 +9268,12 @@ class PlexBrowserView: NSView {
     
     @objc private func selectSortOption(_ sender: NSMenuItem) {
         guard let option = sender.representedObject as? BrowserSortOption else { return }
+        // The Sort menu and column-header sorts are two routes to the same ordering, and a
+        // lingering column sort (which overrides currentSort) would silently re-order the list
+        // on the next rebuild — e.g. snapping a date-sorted tab back to name order the moment a
+        // row is expanded, leaving the selection on the wrong item. Picking from the menu makes
+        // it the sole sort, so drop any active column sort first.
+        if columnSortId != nil { columnSortId = nil }
         currentSort = option
     }
     
@@ -14173,6 +14236,13 @@ class PlexBrowserView: NSView {
 
         // Load artwork from browsed content
         loadLocalBrowseArtwork()
+
+        // Apply any active column-header sort so a fresh load matches what an expand-driven
+        // rebuild produces — otherwise expanding a row would re-order the list. (Mirrors
+        // rebuildCurrentModeItems.)
+        if columnSortId != nil {
+            applyColumnSort()
+        }
 
         needsDisplay = true
     }

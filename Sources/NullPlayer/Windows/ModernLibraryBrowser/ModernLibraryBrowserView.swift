@@ -126,7 +126,7 @@ enum ModernBrowseMode: Int, CaseIterable {
         case .folders: return "Folders"
         case .plists: return "Plists"
         case .movies: return "Movies"
-        case .shows: return "Shows"
+        case .shows: return "TV"
         case .search: return "Search"
         case .radio: return "Radio"
         case .history: return "Data"
@@ -138,7 +138,7 @@ enum ModernBrowseMode: Int, CaseIterable {
     var isHistoryMode: Bool { self == .history }
 
     static var allCases: [ModernBrowseMode] {
-        [.artists, .albums, .plists, .movies, .shows, .search, .radio, .history]
+        [.artists, .albums, .plists, .movies, .shows, .radio, .search, .history]
     }
 }
 
@@ -221,11 +221,12 @@ class ModernLibraryBrowserView: NSView {
     private var browseMode: ModernBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            // Switching tabs always exits Art view.
+            isArtOnlyMode = false
             if oldValue == .folders, browseMode != .folders {
                 cancelLocalFolderBuild()
             }
             if browseMode.isHistoryMode {
-                isArtOnlyMode = false
                 if isRatingOverlayVisible {
                     hideRatingOverlay()
                 }
@@ -1214,21 +1215,35 @@ class ModernLibraryBrowserView: NSView {
 
     // MARK: - Tab Bar Drawing (Modern Boxed Toggle Style)
     
-    /// Per-tab widths across the tab bar. Normally every tab is equal width, but when the
-    /// radio slot displays "Channels" (YouTube source) that label needs more room than the
-    /// short "Data" label, so we shift some width from the Data tab to the Channels tab.
-    private func tabBarWidths(totalWidth: CGFloat) -> [CGFloat] {
-        let modes = ModernBrowseMode.allCases
-        let base = totalWidth / CGFloat(modes.count)
-        var widths = [CGFloat](repeating: base, count: modes.count)
-        if radioSlotShowingChannels,
-           let radioIdx = modes.firstIndex(of: .radio),
-           let dataIdx = modes.firstIndex(of: .history) {
-            let shift = 14 * ModernSkinElements.sizeMultiplier
-            widths[radioIdx] += shift
-            widths[dataIdx] -= shift
+    /// The label shown in each tab slot (some slots are dynamic), in `allCases` order.
+    private func currentTabLabels() -> [String] {
+        ModernBrowseMode.allCases.map { mode in
+            // plists slot shows "Folders" when toggled on a local source.
+            if mode == .plists, localPlistsSlotShowsFolders, case .local = currentSource {
+                return "Folders"
+            }
+            // radio slot shows "Channels" when the YouTube source is displaying channels.
+            if mode == .radio, radioSlotShowingChannels {
+                return "Channels"
+            }
+            return mode.title
         }
-        return widths
+    }
+
+    /// Per-tab widths across the tab bar. Content-aware: each tab is sized to its own label
+    /// plus padding, then any leftover space is shared equally so every tab gets some
+    /// breathing room and short labels (e.g. "TV", "Data") don't hog equal width.
+    private func tabBarWidths(totalWidth: CGFloat, labels: [String], font: NSFont) -> [CGFloat] {
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let padding = 18 * ModernSkinElements.sizeMultiplier
+        let natural = labels.map { $0.size(withAttributes: attrs).width + padding }
+        let naturalSum = natural.reduce(0, +)
+        if naturalSum > totalWidth {
+            let scale = totalWidth / naturalSum
+            return natural.map { $0 * scale }
+        }
+        let extra = (totalWidth - naturalSum) / CGFloat(labels.count)
+        return natural.map { $0 + extra }
     }
 
     /// Smallest window width at which every tab label still fits inside its outline.
@@ -1274,36 +1289,24 @@ class ModernLibraryBrowserView: NSView {
         let sortWidth = sortSize.width + 16 * ModernSkinElements.sizeMultiplier
         
         let tabsWidth = tabBarRect.width - sortWidth
-        let widths = tabBarWidths(totalWidth: tabsWidth)
+
+        let modes = ModernBrowseMode.allCases
+        // Resolved (possibly dynamic) labels + content-aware widths, shared with hit-testing.
+        let labels = currentTabLabels()
+        let widths = tabBarWidths(totalWidth: tabsWidth, labels: labels, font: font)
         var tabX = tabBarRect.minX
 
-        for (index, mode) in ModernBrowseMode.allCases.enumerated() {
+        for (index, mode) in modes.enumerated() {
             let tabWidth = widths[index]
             let tabRect = NSRect(x: tabX, y: tabBarY,
                                  width: tabWidth, height: Layout.tabBarHeight)
             tabX += tabWidth
-            // Special handling for plists slot: show "Folders" if toggled, and highlight if browseMode is .folders
-            var label = mode.title
+
+            let label = labels[index]
             var isSelected = mode == browseMode
-            if mode == .plists {
-                if localPlistsSlotShowsFolders {
-                    if case .local = currentSource {
-                        label = "Folders"
-                    } else {
-                        label = "Plists"
-                    }
-                } else {
-                    label = "Plists"
-                }
-                if browseMode == .folders {
-                    if case .local = currentSource {
-                        isSelected = true
-                    }
-                }
-            }
-            // Radio slot shows "Channels" when the YouTube source is displaying channels.
-            if mode == .radio, radioSlotShowingChannels {
-                label = "Channels"
+            // Highlight the plists slot when browseMode is .folders (local source only).
+            if mode == .plists, browseMode == .folders, case .local = currentSource {
+                isSelected = true
             }
             let tabInset = 2 * ModernSkinElements.sizeMultiplier
             drawToggleTab(label: label, isActive: isSelected,
@@ -3303,7 +3306,7 @@ class ModernLibraryBrowserView: NSView {
         let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
 
         let tabsWidth = bounds.width - Layout.borderWidth * 2 - sortWidth
-        let widths = tabBarWidths(totalWidth: tabsWidth)
+        let widths = tabBarWidths(totalWidth: tabsWidth, labels: currentTabLabels(), font: font)
         let relativeX = point.x - Layout.borderWidth
 
         if relativeX >= 0 && relativeX < tabsWidth {
@@ -5559,6 +5562,12 @@ class ModernLibraryBrowserView: NSView {
     @objc private func linkPlexAccount() { controller?.showLinkSheet() }
     @objc private func selectSortOption(_ sender: NSMenuItem) {
         guard let option = sender.representedObject as? ModernBrowserSortOption else { return }
+        // The Sort menu and column-header sorts are two routes to the same ordering, and a
+        // lingering column sort (which overrides currentSort) would silently re-order the list
+        // on the next rebuild — e.g. snapping a date-sorted tab back to name order the moment a
+        // row is expanded, leaving the selection on the wrong item. Picking from the menu makes
+        // it the sole sort, so drop any active column sort first.
+        if columnSortId != nil { columnSortId = nil }
         currentSort = option
     }
     @objc private func selectLibrary(_ sender: NSMenuItem) {
@@ -7526,10 +7535,16 @@ class ModernLibraryBrowserView: NSView {
         isLoading = false
         stopLoadingAnimation()
         errorMessage = nil
+        // Apply any active column-header sort so a fresh server load matches what an
+        // expand-driven rebuild produces — otherwise expanding a row would re-order the
+        // list. (Mirrors rebuildCurrentModeItems.)
+        if columnSortId != nil { applyColumnSort() }
         needsDisplay = true
     }
     
     private func onSourceChanged() {
+        // Changing source always exits Art view.
+        isArtOnlyMode = false
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
             browseMode = .plists
@@ -8828,6 +8843,10 @@ class ModernLibraryBrowserView: NSView {
         case .radio: loadLocalRadioStations()
         case .history: break
         }
+        // Apply any active column-header sort so a fresh load matches what an expand-driven
+        // rebuild produces — otherwise expanding a row would re-order the list. (Mirrors
+        // rebuildCurrentModeItems.)
+        if columnSortId != nil { applyColumnSort() }
         needsDisplay = true
     }
 

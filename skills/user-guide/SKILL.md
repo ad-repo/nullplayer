@@ -131,7 +131,7 @@ Modern UI adds: **HT** (Hide Title Bars), **CA** (Cast), **pM** (ProjectM), **SP
 
 ### Jellyfin Integration
 - Browse music and video libraries
-- **Library selector** in status bar: click "Lib:" to switch library. Mode-aware — shows music library picker in music tabs (Artists/Albums/Tracks/Plists) and video library picker in Movies/Shows tabs. "All" option browses across all libraries.
+- **Library selector** in status bar: click "Lib:" to switch library. Mode-aware — shows music library picker in music tabs (Artists/Albums/Tracks/Plists) and video library picker in Movies/TV tabs. "All" option browses across all libraries.
 - Rating scale: 0-100% (0-10 internal)
 - Scrobbling (50% or 4 minutes for audio, 90% for video)
 
@@ -186,7 +186,7 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 - Duplicate detection and per-file signatures prevent unnecessary metadata re-parse for unchanged files
 - Progress updates are throttled/coarse during large imports to keep UI responsive
 
-**Tabs:** Artists, Albums, Playlists (`Plists` in the UI), Movies, Shows, Search, Radio, Data
+**Tabs:** Artists, Albums, Playlists (`Plists` in the UI), Movies, TV (the TV-shows tab, labeled `Shows` internally), Radio, Search, Data
 
 The **Data tab** is present in both the modern Library Browser and the classic library browser (`PlexBrowserView`). It shows play-history analytics for all sources (see the Data tab description at the top of this section).
 
@@ -384,7 +384,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **Right-click column headers**: Configure visible columns. Artists shows Artist, Album, and Track sections; Albums shows Album and Track sections. Checkbox clicks keep the menu open; each section has its own reset.
 - **Right Arrow**: Expand item (artists, albums, playlists, shows, seasons); if already expanded, move to first child
 - **Left Arrow**: Collapse expanded item; if not expanded, jump to parent item
-- **Tab / Shift+Tab**: Cycle forward/backward through tabs (Artists → Albums → Playlists (Plists in the UI) → Movies → Shows → Search → Radio → Data)
+- **Tab / Shift+Tab**: Cycle forward/backward through tabs (Artists → Albums → Playlists (Plists in the UI) → Movies → TV → Radio → Search → Data)
 - **Space**: Play/Pause
 - **Type letters**: Jump to first matching item by name (type-ahead, clears after ~1s); Backspace removes last character, Escape clears immediately
 - **Cmd+F**: Focus search field
