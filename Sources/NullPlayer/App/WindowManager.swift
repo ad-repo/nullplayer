@@ -1977,8 +1977,13 @@ class WindowManager {
         mainWindowController?.clearVideoTrackInfo()
         mainWindowController?.updateTime(current: 0, duration: 0)
         mainWindowController?.updatePlaybackState()
+        // Restore the compact window's floating level dropped in videoPlaybackDidStart(), so the
+        // mini-player returns to always-on-top even if the user never re-focuses it.
+        if compactModeEnabled {
+            compactWindowController?.restoreFloatingLevelAfterVideoPlayer()
+        }
     }
-    
+
     /// Called by video player to update time (for main window display)
     func videoDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
         videoCurrentTime = current

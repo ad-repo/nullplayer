@@ -108,7 +108,7 @@ yt-dlp --flat-playlist -J --playlist-end 200 \
 
 **Approximate dates**: plain `--flat-playlist` returns **no** `upload_date`/`timestamp` — the channel grid only exposes relative dates ("3 weeks ago"). The `youtubetab:approximate_date` extractor arg (passed via `fetchYtDlpJSON(…, approximateDate: true)`, videos call only) makes yt-dlp populate each entry's `timestamp` with an **estimated** epoch, decoded into `YouTubeVideo.publishedAt`. Accurate to the day for recent uploads, coarsening for older ones (older videos can share a timestamp). Unsupported/old yt-dlp just omits it → `publishedAt` nil → empty Date column, natural newest-first order preserved.
 
-Videos appear as indented child rows. Double-clicking a video triggers `YouTubeManager.downloadAudio(video:)` (then the browser loads the returned local file into the audio engine and plays it).
+Videos appear as indented child rows. Double-clicking a video triggers `YouTubeManager.download(video:)` (audio or video MP4 depending on the current Quality setting; then the browser loads the returned local file and plays it).
 
 #### Column rendering (Channels tab)
 
@@ -129,7 +129,7 @@ static let youtubeColumns: [ModernBrowserColumn] = [.title, .youtubeDate, .durat
 ### Download Flow
 
 1. **Reachability Check**: Verify `downloadRoot` is accessible (mounted NAS, etc.)
-2. **Download**: `YouTubeManager.downloadAudio(video:)` builds the format/output args and delegates to `StreamRipper.downloadAudio(from:formatArgs:outputTemplate:)` to download the video's best audio
+2. **Download**: `YouTubeManager.download(video:)` builds the format/output args and, for audio qualities, delegates to `StreamRipper.downloadAudio(from:formatArgs:outputTemplate:)` to download the video's best audio. For video qualities (`quality.isVideo`) it instead delegates to `StreamRipper.downloadVideo(from:maxHeight:outputTemplate:)` to download an MP4 capped at `quality.videoMaxHeight` (720/1080)
 3. **Channel folder + readable name**: Save under a per-channel subfolder as `<Channel Name>/<Title> [<videoId>].<ext>` (yt-dlp sanitizes the title and picks the extension; the bracketed video ID keeps names unique). The manifest stores this as a `fileName` path relative to `downloadRoot`.
 4. **Manifest Update**: Append entry to `youtube_downloads.json`
 5. **Track Creation**: Construct a local `Track(url:)` from the manifest entry
@@ -146,8 +146,8 @@ All items live under a single **Library → YouTube** submenu, built in `Context
 - Persists in UserDefaults under `YouTubeDownloadRoot` (the folder path)
 
 **Library → YouTube → Quality**
-- Three-way FLAC / MP3 High / MP3 Low setting, persisted in UserDefaults under `YouTubeQuality`
-- Consulted before each download (`quality.ytdlpArgs`); shapes the format args passed to `StreamRipper.downloadAudio`
+- Five-way FLAC / MP3 High / MP3 Low / Video (720p) / Video (1080p) setting (`YouTubeQuality`), persisted in UserDefaults under `YouTubeQuality`
+- Consulted before each download in `YouTubeManager.download(video:)`: audio qualities pass `quality.ytdlpArgs` to `StreamRipper.downloadAudio`; video qualities (`quality.isVideo`) route to `StreamRipper.downloadVideo` with `quality.videoMaxHeight`
 
 **Library → YouTube → Videos per Channel**
 - How many recent uploads to list per channel (`--playlist-end`); presets `YouTubeManager.videoLimitChoices` = 50/100/200/500, default 200, persisted under `YouTubeVideoLimit`

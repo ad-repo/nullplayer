@@ -111,6 +111,14 @@ final class CompactModeWindowController: NSWindowController {
         window?.level = .normal
     }
 
+    /// Restore the compact window's floating level after the video player goes away. Without this
+    /// the mini-player stays sunk at `.normal` (and can be covered by other apps' windows) until the
+    /// user happens to click it. Called when video playback stops/closes so always-on-top behavior
+    /// returns automatically.
+    func restoreFloatingLevelAfterVideoPlayer() {
+        window?.level = .statusBar
+    }
+
     func seedFromAudioEngine() {
         let engine = WindowManager.shared.audioEngine
         browserController.updateCompactBarTrack(engine.currentTrack)
