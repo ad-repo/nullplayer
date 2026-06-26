@@ -4,6 +4,8 @@ This guide walks you through creating custom skins for NullPlayer's modern UI mo
 
 > **Classic Mode skins**: NullPlayer also supports classic `.wsz` skins in Classic Mode. No skins are bundled -- load a `.wsz` file via **Skins > Load Skin...** or place files in `~/Library/Application Support/NullPlayer/Skins/`. Official skin packages are available in `dist/Skins/`. Use **Skins > Get More Skins...** to find community-created skins online.
 
+> **Metal mode skins**: Metal uses the modern skin engine, but it is a separate skin family. User-installed metal skins live in `~/Library/Application Support/NullPlayer/MetalSkins/`, the current selection is stored under `metalSkinName`, and the built-in default is `Brushed Steel`.
+
 ## Two Approaches
 
 There are two ways to skin NullPlayer's modern UI:
@@ -50,6 +52,46 @@ Both approaches use the same `skin.json` configuration file. The difference is w
 3. Right-click the player, go to **Skins > Modern**, and choose "My First Skin".
 
 That's it. Every button, slider, label, and window border now uses your orange palette.
+
+## Metal Skins
+
+Metal skins use the same `skin.json` format as modern skins, but they are tuned for a darker, lower-chroma look. The app loads them from a separate folder and applies different defaults for text and control colors.
+
+### Metal Skin Directory
+
+```
+MyMetalSkin/
+└── skin.json
+```
+
+Or install under:
+
+```
+~/Library/Application Support/NullPlayer/MetalSkins/MyMetalSkin/
+```
+
+### Updating a Metal Skin
+
+1. Edit the metal skin's `skin.json` or image assets.
+2. Save the files into the `MetalSkins` folder.
+3. Switch to the skin again from **Skins > Metal** or reselect it from the menu to reload it.
+
+### Metal Default Skin
+
+NullPlayer also ships a built-in metal fallback skin named `Brushed Steel`. It is not updated through `skin.json`; it is defined in code as the default when no user metal skin is selected.
+
+If you need to change the built-in default metal appearance, update:
+
+- `Sources/NullPlayer/ModernSkin/ModernSkinLoader.swift`
+- `Sources/NullPlayer/ModernSkin/ModernSkinRenderer.swift`
+- Any metal-specific view overrides in `Sources/NullPlayer/Windows/Modern*/`
+
+Keep metal defaults neutral:
+
+- use dark text colors
+- avoid the modern yellow time/data defaults
+- avoid bright blue accent colors
+- prefer graphite, steel, and muted bronze tones for controls and traces
 
 ---
 
