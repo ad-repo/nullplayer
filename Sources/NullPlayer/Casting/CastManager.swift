@@ -2222,9 +2222,20 @@ class CastManager {
     
     /// Poll Sonos transport state and sync position with AudioEngine
     private func pollSonosState() {
+        // Capture the session this poll belongs to. A failing poll takes ~5s (SOAP timeout)
+        // and the timer fires every 5s, so an in-flight poll can outlive a teardown + re-cast
+        // (stopSonosPolling only invalidates the timer; it can't cancel a running Task). Bind the
+        // result to this session so a stale failure can't increment/tear down a newer one, and a
+        // stale success can't write its position into it. CastSession is a class, so === is identity.
+        let polledSession = activeSession
         Task {
             guard let result = await upnpManager.pollSonosPlaybackState() else {
                 await MainActor.run {
+                    // Ignore results from a poll that belonged to an already-replaced session.
+                    guard self.activeSession === polledSession else {
+                        NSLog("CastManager: Sonos poll failure ignored — session changed since poll started")
+                        return
+                    }
                     // Ignore poll failures once we're no longer routing audio to a cast (post-stop races).
                     guard WindowManager.shared.audioEngine.isAudioCastRoutingActive else { return }
                     consecutiveSonosPollFailures += 1
@@ -2240,6 +2251,12 @@ class CastManager {
             }
 
             await MainActor.run {
+                // Ignore results from a poll that belonged to an already-replaced session, so a stale
+                // success can't reset the new session's failure counter or overwrite its position.
+                guard self.activeSession === polledSession else {
+                    NSLog("CastManager: Sonos poll result ignored — session changed since poll started")
+                    return
+                }
                 consecutiveSonosPollFailures = 0
                 let engine = WindowManager.shared.audioEngine
                 guard engine.isAudioCastRoutingActive else {
