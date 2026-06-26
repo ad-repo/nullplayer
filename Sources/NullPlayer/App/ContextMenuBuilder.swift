@@ -46,12 +46,14 @@ class ContextMenuBuilder {
         alwaysOnTop.target = MenuActions.shared
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
+        menu.addItem(NSMenuItem.separator())
 
-        // Compact Mode works in both classic and modern UI.
+        // Compact Mode works in both classic and modern UI. Set apart on its own.
         let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
         compactMode.target = MenuActions.shared
         compactMode.state = wm.compactModeEnabled ? .on : .off
         menu.addItem(compactMode)
+        menu.addItem(NSMenuItem.separator())
 
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
@@ -123,12 +125,14 @@ class ContextMenuBuilder {
             hideTitleBars.state = wm.hideTitleBars ? .on : .off
             menu.addItem(hideTitleBars)
         }
+        menu.addItem(NSMenuItem.separator())
 
-        // Compact Mode works in both classic and modern UI.
+        // Compact Mode works in both classic and modern UI. Set apart on its own.
         let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
         compactMode.target = MenuActions.shared
         compactMode.state = wm.compactModeEnabled ? .on : .off
         menu.addItem(compactMode)
+        menu.addItem(NSMenuItem.separator())
 
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
