@@ -1937,6 +1937,8 @@ class AudioEngine {
         
         // If audio casting is active, forward command to CastManager
         if isCastingActive {
+            NSLog("CastManager(#304 diag): play() cast gate — sessionState=%@ isCasting=%d isCastingActive=%d selectedSonosRooms=%d",
+                  String(describing: CastManager.shared.activeSession?.state), CastManager.shared.isCasting ? 1 : 0, isCastingActive ? 1 : 0, CastManager.shared.selectedSonosRooms.count)
             Task {
                 try? await CastManager.shared.resume()
             }

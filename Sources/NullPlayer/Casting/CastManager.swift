@@ -335,7 +335,11 @@ class CastManager {
     private var sonosHasSeenActivePlayback: Bool = false
     private var sonosTrackStartDate: Date?
     private let sonosStartupStopGraceInterval: TimeInterval = 25.0
-    
+
+    /// Consecutive Sonos poll failures — used to detect dead sessions (e.g., after speaker reboot)
+    @MainActor private var consecutiveSonosPollFailures = 0
+    private let maxConsecutiveSonosPollFailures = 3   // 3 × 5s poll interval ≈ 15s before teardown
+
     /// Timer for updating main window with video cast progress
     private var videoCastUpdateTimer: Timer?
     
@@ -804,6 +808,7 @@ class CastManager {
                     await MainActor.run {
                         sonosHasSeenActivePlayback = false
                         sonosTrackStartDate = Date()
+                        consecutiveSonosPollFailures = 0
                     }
                 }
                 try await upnpManager.cast(url: url, metadata: metadata)
@@ -837,6 +842,7 @@ class CastManager {
                     await MainActor.run {
                         sonosHasSeenActivePlayback = false
                         sonosTrackStartDate = Date()
+                        consecutiveSonosPollFailures = 0
                     }
                     try await upnpManager.cast(url: url, metadata: metadata)
                     NSLog("CastManager: Sonos cast succeeded after topology refresh + retry")
@@ -1902,8 +1908,11 @@ class CastManager {
         // Stop Sonos polling and topology refresh
         stopSonosPolling()
         stopTopologyRefresh()
+        await MainActor.run {
+            consecutiveSonosPollFailures = 0
+        }
         consecutiveFireAndForgetFailures = 0
-        
+
         // Ungroup all Sonos member rooms before stopping the coordinator.
         // This prevents stale group topology that causes SOAP errors on subsequent casts.
         if upnpManager.activeSession?.device.type == .sonos {
@@ -2213,13 +2222,48 @@ class CastManager {
     
     /// Poll Sonos transport state and sync position with AudioEngine
     private func pollSonosState() {
+        // Capture the session this poll belongs to. A failing poll takes ~5s (SOAP timeout)
+        // and the timer fires every 5s, so an in-flight poll can outlive a teardown + re-cast
+        // (stopSonosPolling only invalidates the timer; it can't cancel a running Task). Bind the
+        // result to this session so a stale failure can't increment/tear down a newer one, and a
+        // stale success can't write its position into it. CastSession is a class, so === is identity.
+        let polledSession = activeSession
         Task {
             guard let result = await upnpManager.pollSonosPlaybackState() else {
-                NSLog("CastManager: Sonos poll failed — no result")
+                await MainActor.run {
+                    // Ignore results from a poll that belonged to an already-replaced session.
+                    guard self.activeSession === polledSession else {
+                        NSLog("CastManager: Sonos poll failure ignored — session changed since poll started")
+                        return
+                    }
+                    // Ignore poll failures once we're no longer routing audio to a cast (post-stop races).
+                    guard WindowManager.shared.audioEngine.isAudioCastRoutingActive else { return }
+                    consecutiveSonosPollFailures += 1
+                    NSLog("CastManager: Sonos poll failed (%d consecutive) — %@",
+                          consecutiveSonosPollFailures, self.activeSession?.device.name ?? "nil")
+                    if consecutiveSonosPollFailures >= maxConsecutiveSonosPollFailures {
+                        NSLog("CastManager: Sonos unreachable after %d poll failures — tearing down session",
+                              consecutiveSonosPollFailures)
+                        // Teardown is enqueued async via the inflight serializer and may run later,
+                        // but the 5s timer keeps firing until _stopCastingCore() calls stopSonosPolling().
+                        // Stop the timer and reset the counter now so a poll in the meantime can't
+                        // re-trip the threshold and enqueue a second teardown.
+                        stopSonosPolling()
+                        consecutiveSonosPollFailures = 0
+                        _ = enqueueInflight { [self] in await _stopCastingCore() }
+                    }
+                }
                 return
             }
 
             await MainActor.run {
+                // Ignore results from a poll that belonged to an already-replaced session, so a stale
+                // success can't reset the new session's failure counter or overwrite its position.
+                guard self.activeSession === polledSession else {
+                    NSLog("CastManager: Sonos poll result ignored — session changed since poll started")
+                    return
+                }
+                consecutiveSonosPollFailures = 0
                 let engine = WindowManager.shared.audioEngine
                 guard engine.isAudioCastRoutingActive else {
                     NSLog("CastManager: Sonos poll result ignored — audio cast routing inactive")
