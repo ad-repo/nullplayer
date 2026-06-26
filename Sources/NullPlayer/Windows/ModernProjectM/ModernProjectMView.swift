@@ -280,7 +280,7 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
             let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - tbh / 2 - 5, width: 10, height: 10)
             
             // Draw title bar with projectm prefix (handles per-window titlebar image + title text)
-            renderer.drawTitleBar(in: titleBarRect, title: "projectM", prefix: "projectm_", context: context)
+            renderer.drawTitleBar(in: titleBarRect, title: "Visualizations", prefix: "projectm_", context: context)
             
             // Draw close button
             let closeState = (pressedButton == "projectm_btn_close") ? "pressed" : "normal"

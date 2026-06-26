@@ -41,19 +41,19 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Display toggles
-        let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
-        alwaysOnTop.target = MenuActions.shared
-        alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
-        menu.addItem(alwaysOnTop)
-        menu.addItem(NSMenuItem.separator())
-
-        // Compact Mode works in both classic and modern UI. Set apart on its own.
+        // Compact Mode works in both classic and modern UI. Set apart on its own, above the
+        // display toggles.
         let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
         compactMode.target = MenuActions.shared
         compactMode.state = wm.compactModeEnabled ? .on : .off
         menu.addItem(compactMode)
         menu.addItem(NSMenuItem.separator())
+
+        // Display toggles
+        let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
+        alwaysOnTop.target = MenuActions.shared
+        alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
+        menu.addItem(alwaysOnTop)
 
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
@@ -100,7 +100,7 @@ class ContextMenuBuilder {
             menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
                                          action: #selector(MenuActions.toggleLibraryHistory)))
         }
-        menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
+        menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
         menu.addItem(buildWindowItem("Video Player", visible: wm.isVideoPlayerVisible,
                                      action: #selector(MenuActions.toggleVideoPlayer),
                                      enabled: wm.currentVideoPlayerController != nil))
@@ -114,6 +114,14 @@ class ContextMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
+        // Compact Mode works in both classic and modern UI. Set apart on its own, above the
+        // display toggles.
+        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+        compactMode.target = MenuActions.shared
+        compactMode.state = wm.compactModeEnabled ? .on : .off
+        menu.addItem(compactMode)
+        menu.addItem(NSMenuItem.separator())
+
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
         alwaysOnTop.target = MenuActions.shared
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
@@ -125,14 +133,6 @@ class ContextMenuBuilder {
             hideTitleBars.state = wm.hideTitleBars ? .on : .off
             menu.addItem(hideTitleBars)
         }
-        menu.addItem(NSMenuItem.separator())
-
-        // Compact Mode works in both classic and modern UI. Set apart on its own.
-        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
-        compactMode.target = MenuActions.shared
-        compactMode.state = wm.compactModeEnabled ? .on : .off
-        menu.addItem(compactMode)
-        menu.addItem(NSMenuItem.separator())
 
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
