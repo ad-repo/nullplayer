@@ -49,7 +49,7 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
         window.isOpaque = false
         window.hasShadow = true
         window.minSize = SkinElements.ProjectM.minSize
-        window.title = "ProjectM"
+        window.title = "Visualizations"
         
         // Prevent window from being released when closed - we reuse the same controller
         window.isReleasedWhenClosed = false

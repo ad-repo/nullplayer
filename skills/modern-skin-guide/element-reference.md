@@ -95,7 +95,7 @@ dynamically spaced from x=93 through x=269 at y=42.
 |------:|------------|-------|-------------|
 | 1 | `btn_shuffle` | SH | Shuffle toggle |
 | 2 | `btn_repeat` | RP | Repeat toggle |
-| 3 | `btn_cast` | CA | Output devices menu and casting status |
+| 3 | `btn_compact` | CP | Compact Mode toggle (active-state highlight forced on click) |
 | 4 | `btn_projectm` | VZ | Visualizer window toggle |
 | 5 | `btn_eq` | EQ | Equalizer window toggle |
 | 6 | `btn_playlist` | PL | Playlist window toggle |

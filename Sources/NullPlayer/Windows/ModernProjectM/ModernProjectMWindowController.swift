@@ -56,7 +56,7 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
         window.hasShadow = true
         window.minSize = ModernSkinElements.projectMMinSize
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        window.title = "projectM"
+        window.title = "Visualizations"
         
         // Prevent window from being released when closed - we reuse the same controller
         window.isReleasedWhenClosed = false

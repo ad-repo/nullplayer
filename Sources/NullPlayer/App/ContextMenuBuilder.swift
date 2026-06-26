@@ -41,17 +41,19 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
+        // Compact Mode works in both classic and modern UI. Set apart on its own, above the
+        // display toggles.
+        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+        compactMode.target = MenuActions.shared
+        compactMode.state = wm.compactModeEnabled ? .on : .off
+        menu.addItem(compactMode)
+        menu.addItem(NSMenuItem.separator())
+
         // Display toggles
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
         alwaysOnTop.target = MenuActions.shared
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
-
-        // Compact Mode works in both classic and modern UI.
-        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
-        compactMode.target = MenuActions.shared
-        compactMode.state = wm.compactModeEnabled ? .on : .off
-        menu.addItem(compactMode)
 
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
@@ -98,7 +100,7 @@ class ContextMenuBuilder {
             menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
                                          action: #selector(MenuActions.toggleLibraryHistory)))
         }
-        menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
+        menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
         menu.addItem(buildWindowItem("Video Player", visible: wm.isVideoPlayerVisible,
                                      action: #selector(MenuActions.toggleVideoPlayer),
                                      enabled: wm.currentVideoPlayerController != nil))
@@ -112,6 +114,14 @@ class ContextMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
+        // Compact Mode works in both classic and modern UI. Set apart on its own, above the
+        // display toggles.
+        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+        compactMode.target = MenuActions.shared
+        compactMode.state = wm.compactModeEnabled ? .on : .off
+        menu.addItem(compactMode)
+        menu.addItem(NSMenuItem.separator())
+
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
         alwaysOnTop.target = MenuActions.shared
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
@@ -123,12 +133,6 @@ class ContextMenuBuilder {
             hideTitleBars.state = wm.hideTitleBars ? .on : .off
             menu.addItem(hideTitleBars)
         }
-
-        // Compact Mode works in both classic and modern UI.
-        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
-        compactMode.target = MenuActions.shared
-        compactMode.state = wm.compactModeEnabled ? .on : .off
-        menu.addItem(compactMode)
 
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
@@ -2222,6 +2226,13 @@ class ContextMenuBuilder {
         let youtubeMenu = NSMenu()
         youtubeMenu.autoenablesItems = false
 
+        // Rip URL (yt-dlp rip of any URL)
+        let ripItem = NSMenuItem(title: "Rip URL…", action: #selector(MenuActions.ripURL), keyEquivalent: "")
+        ripItem.target = MenuActions.shared
+        youtubeMenu.addItem(ripItem)
+
+        youtubeMenu.addItem(NSMenuItem.separator())
+
         // Download folder path header
         let folderPath = YouTubeManager.shared.downloadRoot.path
         let infoItem = NSMenuItem(title: folderPath, action: nil, keyEquivalent: "")
@@ -2278,17 +2289,6 @@ class ContextMenuBuilder {
     static func buildOutputDevicesMenu() -> NSMenu {
         let item = buildOutputDevicesMenuItem()
         return item.submenu ?? NSMenu()
-    }
-
-    private static func buildMenuBarStreamingSubmenu() -> NSMenu {
-        let streamingMenu = NSMenu()
-        streamingMenu.autoenablesItems = false
-
-        let ripItem = NSMenuItem(title: "Rip URL…", action: #selector(MenuActions.ripURL), keyEquivalent: "")
-        ripItem.target = MenuActions.shared
-        streamingMenu.addItem(ripItem)
-
-        return streamingMenu
     }
 
     private static func buildMenuBarOutputDevicesMenu() -> NSMenu {
@@ -2425,15 +2425,6 @@ class ContextMenuBuilder {
             sonosItem.submenu = sonosMenu
             outputMenu.addItem(sonosItem)
         }
-
-        // Streaming
-        if outputMenu.items.last?.isSeparatorItem != true {
-            outputMenu.addItem(NSMenuItem.separator())
-        }
-
-        let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
-        streamingItem.submenu = buildMenuBarStreamingSubmenu()
-        outputMenu.addItem(streamingItem)
 
         // Other cast devices
         let activeSession = castManager.activeSession
@@ -2682,15 +2673,6 @@ class ContextMenuBuilder {
             outputMenu.addItem(sonosItem)
         }
 
-        // ========== Streaming ==========
-        if outputMenu.items.last?.isSeparatorItem != true {
-            outputMenu.addItem(NSMenuItem.separator())
-        }
-
-        let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
-        streamingItem.submenu = buildMenuBarStreamingSubmenu()
-        outputMenu.addItem(streamingItem)
-        
         // ========== Other Cast Devices ==========
         let chromecastDevices = castManager.chromecastDevices
         let tvDevices = castManager.dlnaTVDevices
