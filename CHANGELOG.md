@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- **Metal UI default skin and contrast pass** — Metal mode now defaults to a built-in `Brushed Steel` skin with dark neutral text and muted control surfaces instead of inheriting modern skin neon defaults. The main window, EQ, library browser, compact player bar, transport controls, and waveform window were all tuned to avoid bright yellow/blue accents and black control wells that disappeared against the brushed metal palette.
+
 ## 0.26.0
 
 ### New Features

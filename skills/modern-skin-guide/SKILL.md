@@ -236,6 +236,8 @@ The simplest skin is just a `skin.json` with palette colors:
 
 All elements render programmatically using the palette colors.
 
+Metal mode uses the same modern skin engine but a separate family namespace. The built-in `Brushed Steel` fallback is the default metal skin, stored under `MetalSkins`, and it keeps the palette neutral: darker text, muted control wells, and no bright timer/data defaults from modern skins.
+
 ## Bundled Skins
 
 The following skins ship in `Sources/NullPlayer/Resources/Skins/`:
@@ -276,7 +278,7 @@ Users place `.nsz` files or folders in:
 
 Right-click the player → **Skins** → **Modern** → choose from the list (or use **Load Skin...** to import a `.nsz` bundle).
 
-Skin changes take effect immediately. Switching between Classic and Modern mode requires a restart.
+Skin changes take effect immediately. Switching between Classic, Modern, and Metal mode happens live in-process.
 
 ## Multi-Window Support
 

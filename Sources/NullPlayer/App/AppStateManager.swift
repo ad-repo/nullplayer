@@ -14,11 +14,11 @@ import NullPlayerCore
 /// - **Playlist**: all tracks (local, Plex, Subsonic, Jellyfin, radio) with metadata
 /// - **Playback state**: playlist only; the current track is intentionally not saved
 /// - **Skins**: timeDisplayMode, isAlwaysOnTop, double size mode (modern UI)
-/// - **Skin**: classic custom skin path, modern skin name
+/// - **Skin**: classic custom skin path, modern skin name, metal skin name
 /// - **Visualization**: engine type, ProjectM preset index, fullscreen state
 /// - **Audio output**: selected device UID
 /// - **Browser**: browse mode (artists/albums/tracks/etc.)
-/// - **UI mode**: which mode (modern/classic) the state was saved in
+/// - **UI mode**: which mode (classic/modern/metal) the state was saved in
 ///
 /// ## Restoration Flow
 /// 1. `restoreSettingsState()` - called early in launch (skin, volume, EQ, windows, v2 fields)
@@ -240,8 +240,9 @@ class AppStateManager {
         // Double size mode (both modes)
         var isDoubleSize: Bool = false
         
-        // Modern skin name
+        // Modern-family skin names
         var modernSkinName: String?
+        var metalSkinName: String?
         
         // Audio output device
         var selectedOutputDeviceUID: String?
@@ -250,10 +251,11 @@ class AppStateManager {
         var browserBrowseMode: Int?  // Raw value of PlexBrowseMode / ModernBrowseMode
         
         // UI mode the state was saved in (used to skip frame restoration on mode mismatch)
+        var uiMode: String?
         var savedInModernMode: Bool = false
         
         // Version for future compatibility
-        var stateVersion: Int = 2
+        var stateVersion: Int = 3
         
         // MARK: - Custom Decoding for Backward Compatibility
         
@@ -268,9 +270,16 @@ class AppStateManager {
             case customSkinPath
             case projectMPresetIndex
             // v2 fields
-            case isDoubleSize, modernSkinName, selectedOutputDeviceUID
-            case browserBrowseMode, savedInModernMode
+            case isDoubleSize, modernSkinName, metalSkinName, selectedOutputDeviceUID
+            case browserBrowseMode, uiMode, savedInModernMode
             case stateVersion
+        }
+
+        var restoredUIMode: PlayerUIMode {
+            if let uiMode, let mode = PlayerUIMode(rawValue: uiMode) {
+                return mode
+            }
+            return savedInModernMode ? .modern : .classic
         }
         
         init(from decoder: Decoder) throws {
@@ -344,8 +353,10 @@ class AppStateManager {
             // v2 fields - all use decodeIfPresent for backward compatibility
             isDoubleSize = try container.decodeIfPresent(Bool.self, forKey: .isDoubleSize) ?? false
             modernSkinName = try container.decodeIfPresent(String.self, forKey: .modernSkinName)
+            metalSkinName = try container.decodeIfPresent(String.self, forKey: .metalSkinName)
             selectedOutputDeviceUID = try container.decodeIfPresent(String.self, forKey: .selectedOutputDeviceUID)
             browserBrowseMode = try container.decodeIfPresent(Int.self, forKey: .browserBrowseMode)
+            uiMode = try container.decodeIfPresent(String.self, forKey: .uiMode)
             savedInModernMode = try container.decodeIfPresent(Bool.self, forKey: .savedInModernMode) ?? false
             
             // Version
@@ -392,10 +403,12 @@ class AppStateManager {
             projectMPresetIndex: Int? = nil,
             isDoubleSize: Bool = false,
             modernSkinName: String? = nil,
+            metalSkinName: String? = nil,
             selectedOutputDeviceUID: String? = nil,
             browserBrowseMode: Int? = nil,
+            uiMode: String? = nil,
             savedInModernMode: Bool = false,
-            stateVersion: Int = 2
+            stateVersion: Int = 3
         ) {
             self.isPlaylistVisible = isPlaylistVisible
             self.isEqualizerVisible = isEqualizerVisible
@@ -436,8 +449,10 @@ class AppStateManager {
             self.projectMPresetIndex = projectMPresetIndex
             self.isDoubleSize = isDoubleSize
             self.modernSkinName = modernSkinName
+            self.metalSkinName = metalSkinName
             self.selectedOutputDeviceUID = selectedOutputDeviceUID
             self.browserBrowseMode = browserBrowseMode
+            self.uiMode = uiMode
             self.savedInModernMode = savedInModernMode
             self.stateVersion = stateVersion
         }
@@ -550,10 +565,12 @@ class AppStateManager {
             
             // v2 fields
             isDoubleSize: wm.isDoubleSize,
-            modernSkinName: UserDefaults.standard.string(forKey: "modernSkinName"),
+            modernSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.modern.skinNameKey),
+            metalSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.metal.skinNameKey),
             selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
             browserBrowseMode: browserBrowseMode,
-            savedInModernMode: wm.isRunningModernUI
+            uiMode: wm.uiMode.rawValue,
+            savedInModernMode: wm.uiMode.usesModernControllers
         )
         
         // Encode and save
@@ -660,7 +677,14 @@ class AppStateManager {
     private func applySettingsState(_ state: AppState, completion: (() -> Void)? = nil) {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
-        let runningModernMode = wm.isRunningModernUI
+        let restoredMode = state.restoredUIMode
+
+        if wm.uiMode != restoredMode {
+            wm.reloadUI(to: restoredMode)
+        }
+
+        let runningModernMode = wm.isRunningModernFamilyUI
+        let runningMode = wm.uiMode
         
         NSLog("AppStateManager: Restoring settings state - volume: %.2f", state.volume)
         
@@ -702,11 +726,15 @@ class AppStateManager {
             }
         }
         
-        // Restore modern skin name (if saved and modern UI is active)
-        if runningModernMode, let modernSkin = state.modernSkinName {
-            UserDefaults.standard.set(modernSkin, forKey: "modernSkinName")
-            // ModernSkinEngine.loadPreferredSkin() is called in AppDelegate before state restore,
-            // but we set the UserDefaults value here so subsequent launches use it
+        // Restore modern-family skin names independently.
+        if let modernSkin = state.modernSkinName {
+            UserDefaults.standard.set(modernSkin, forKey: ModernSkinFamily.modern.skinNameKey)
+        }
+        if let metalSkin = state.metalSkinName {
+            UserDefaults.standard.set(metalSkin, forKey: ModernSkinFamily.metal.skinNameKey)
+        }
+        if let family = runningMode.modernSkinFamily {
+            ModernSkinEngine.shared.loadPreferredSkin(for: family)
         }
         
         // Restore audio output device
@@ -717,11 +745,12 @@ class AppStateManager {
         // Check if the saved state's UI mode matches the current mode.
         // If mismatched (e.g. saved in modern, now running classic), skip window frame
         // restoration since the windows have different sizes and constraints.
-        let modeMatches = state.savedInModernMode == runningModernMode
+        let savedMode = state.restoredUIMode
+        let modeMatches = savedMode.usesModernControllers == runningModernMode
         if !modeMatches {
             NSLog("AppStateManager: UI mode changed (saved=%@, current=%@) - skipping window frame restoration",
-                  state.savedInModernMode ? "modern" : "classic",
-                  runningModernMode ? "modern" : "classic")
+                  savedMode.displayName,
+                  runningMode.displayName)
         }
         
         // Restore window frames (only if mode matches)

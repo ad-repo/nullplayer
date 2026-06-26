@@ -29,6 +29,42 @@ class ModernSkinRenderer {
     
     /// Glow multiplier for element-level blur effects
     let glowMultiplier: CGFloat
+
+    private var renderStyle: ModernRenderStyle {
+        ModernSkinEngine.shared.currentRenderStyle
+    }
+
+    private var usesMetalAppearance: Bool {
+        renderStyle == .metal
+    }
+
+    private var metalInsetFillColor: NSColor {
+        NSColor(calibratedRed: 0.44, green: 0.49, blue: 0.52, alpha: 1.0)
+    }
+
+    private var metalInsetBorderColor: NSColor {
+        NSColor(calibratedRed: 0.22, green: 0.25, blue: 0.27, alpha: 1.0)
+    }
+
+    private var metalSliderTrackColor: NSColor {
+        NSColor(calibratedRed: 0.50, green: 0.56, blue: 0.59, alpha: 1.0)
+    }
+
+    private var metalSliderFillColor: NSColor {
+        NSColor(calibratedRed: 0.70, green: 0.76, blue: 0.78, alpha: 1.0)
+    }
+
+    private var metalSliderThumbColor: NSColor {
+        NSColor(calibratedRed: 0.18, green: 0.21, blue: 0.23, alpha: 1.0)
+    }
+
+    private var metalTransportButtonColor: NSColor {
+        NSColor(calibratedRed: 0.14, green: 0.17, blue: 0.19, alpha: 1.0)
+    }
+
+    private var metalTransportButtonPressedColor: NSColor {
+        NSColor(calibratedRed: 0.20, green: 0.23, blue: 0.25, alpha: 1.0)
+    }
     
     // MARK: - Initialization
     
@@ -101,6 +137,13 @@ class ModernSkinRenderer {
             context.addPath(clipPath)
             context.clip()
         }
+        if usesMetalAppearance {
+            drawMetalWindowBackground(in: bounds, context: context, opacity: resolvedBackgroundOpacity)
+            if cornerRadius > 0 {
+                context.restoreGState()
+            }
+            return
+        }
         context.saveGState()
         // Use copy for the base fill so repeated partial redraws do not accumulate alpha.
         // This keeps translucent modern backgrounds visually stable during timer-driven updates.
@@ -116,6 +159,61 @@ class ModernSkinRenderer {
         if cornerRadius > 0 {
             context.restoreGState()
         }
+    }
+
+    private func drawMetalWindowBackground(in bounds: NSRect, context: CGContext, opacity: CGFloat) {
+        context.saveGState()
+        context.setBlendMode(.copy)
+        context.setFillColor(NSColor(calibratedWhite: 0.73, alpha: opacity).cgColor)
+        context.fill(bounds)
+        context.setBlendMode(.normal)
+        context.setAlpha(opacity)
+
+        let colors = [
+            NSColor(calibratedWhite: 0.93, alpha: 1.0).cgColor,
+            NSColor(calibratedWhite: 0.73, alpha: 1.0).cgColor,
+            NSColor(calibratedWhite: 0.86, alpha: 1.0).cgColor,
+            NSColor(calibratedWhite: 0.66, alpha: 1.0).cgColor,
+            NSColor(calibratedWhite: 0.78, alpha: 1.0).cgColor,
+            NSColor(calibratedWhite: 0.54, alpha: 1.0).cgColor
+        ] as CFArray
+        let locations: [CGFloat] = [0.0, 0.08, 0.32, 0.58, 0.78, 1.0]
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locations) {
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: bounds.midX, y: bounds.maxY),
+                end: CGPoint(x: bounds.midX, y: bounds.minY),
+                options: []
+            )
+        }
+
+        let brushedLineWidth = max(0.5, 0.5 * scaleFactor)
+        var y = bounds.minY
+        var stripeIndex = 0
+        while y <= bounds.maxY {
+            let alpha: CGFloat = stripeIndex.isMultiple(of: 2) ? 0.14 : 0.07
+            context.setStrokeColor(NSColor.white.withAlphaComponent(alpha).cgColor)
+            context.setLineWidth(brushedLineWidth)
+            context.move(to: CGPoint(x: bounds.minX, y: y))
+            context.addLine(to: CGPoint(x: bounds.maxX, y: y))
+            context.strokePath()
+            y += max(1.0, 2.0 * scaleFactor)
+            stripeIndex += 1
+        }
+
+        context.setAlpha(1.0)
+        let accent = NSColor(calibratedRed: 0.86, green: 0.90, blue: 0.91, alpha: 0.18 * opacity)
+        context.setFillColor(accent.cgColor)
+        let accentHeight = max(2.0 * scaleFactor, min(bounds.height * 0.18, 14.0 * scaleFactor))
+        let accentRect = NSRect(
+            x: bounds.minX + 1.0 * scaleFactor,
+            y: bounds.maxY - accentHeight - 1.0 * scaleFactor,
+            width: max(0, bounds.width - 2.0 * scaleFactor),
+            height: accentHeight
+        )
+        context.fill(accentRect)
+
+        context.restoreGState()
     }
     
     private func normalizedSegments(_ segments: [ClosedRange<CGFloat>], limit: CGFloat) -> [ClosedRange<CGFloat>] {
@@ -266,6 +364,18 @@ class ModernSkinRenderer {
         let borderRect = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
         let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, sharpCorners: sharpCorners)
 
+        if usesMetalAppearance {
+            drawMetalWindowBorder(
+                in: bounds,
+                path: path,
+                borderWidth: borderWidth,
+                seamless: seamless,
+                segments: effectiveSegments,
+                context: context
+            )
+            return
+        }
+
         context.saveGState()
         context.beginTransparencyLayer(auxiliaryInfo: nil)
 
@@ -311,6 +421,50 @@ class ModernSkinRenderer {
         context.endTransparencyLayer()
         context.restoreGState()
     }
+
+    private func drawMetalWindowBorder(
+        in bounds: NSRect,
+        path: CGPath,
+        borderWidth: CGFloat,
+        seamless: CGFloat,
+        segments: EdgeOcclusionSegments,
+        context: CGContext
+    ) {
+        let outerWidth = max(1.0, borderWidth)
+        context.saveGState()
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+
+        context.setStrokeColor(NSColor.black.withAlphaComponent(0.62).cgColor)
+        context.setLineWidth(outerWidth)
+        context.addPath(path)
+        context.strokePath()
+
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.38).cgColor)
+        context.setLineWidth(max(0.5, outerWidth * 0.55))
+        context.addPath(path)
+        context.strokePath()
+
+        if seamless > 0 && !segments.isEmpty {
+            let strips = edgeStripRects(
+                for: bounds,
+                segments: segments,
+                thickness: outerWidth + 0.85,
+                endpointPadding: max(0.75, outerWidth * 0.9)
+            )
+            if !strips.isEmpty {
+                context.saveGState()
+                context.setBlendMode(.destinationOut)
+                context.setFillColor(NSColor.black.withAlphaComponent(seamless).cgColor)
+                for strip in strips {
+                    context.fill(strip)
+                }
+                context.restoreGState()
+            }
+        }
+
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
     
     /// Draw the title bar with per-window prefix support and three-tier text fallback.
     ///
@@ -332,7 +486,9 @@ class ModernSkinRenderer {
         
         // --- Title bar background image ---
         // Try per-window image first, then fall back to shared titlebar image
-        if let img = skin.image(for: "\(prefix)titlebar") ?? (prefix.isEmpty ? nil : skin.image(for: "titlebar")) {
+        if usesMetalAppearance {
+            drawMetalTitleBarBackground(in: scaledR, context: context)
+        } else if let img = skin.image(for: "\(prefix)titlebar") ?? (prefix.isEmpty ? nil : skin.image(for: "titlebar")) {
             drawImage(img, in: scaledR, context: context)
         }
         // No fallback fill -- title bar is transparent, showing the window background through
@@ -344,7 +500,10 @@ class ModernSkinRenderer {
             context.setShadow(offset: .zero, blur: 4 * scaleFactor * glowMultiplier,
                               color: skin.borderColor.withAlphaComponent(0.5).cgColor)
         }
-        context.setStrokeColor(skin.borderColor.withAlphaComponent(0.4).cgColor)
+        let separatorColor = usesMetalAppearance
+            ? NSColor.black.withAlphaComponent(0.34)
+            : skin.borderColor.withAlphaComponent(0.4)
+        context.setStrokeColor(separatorColor.cgColor)
         context.setLineWidth(0.5 * scaleFactor)
         context.move(to: CGPoint(x: scaledR.minX + 1, y: separatorY))
         context.addLine(to: CGPoint(x: scaledR.maxX - 1, y: separatorY))
@@ -391,6 +550,32 @@ class ModernSkinRenderer {
         
         // Tier 3: System font fallback (default behavior)
         drawTitleTextWithFont(title, in: scaledR, prefix: prefix, context: context)
+    }
+
+    private func drawMetalTitleBarBackground(in rect: NSRect, context: CGContext) {
+        guard rect.width > 0, rect.height > 0 else { return }
+
+        context.saveGState()
+        let colors = [
+            NSColor(calibratedWhite: 0.98, alpha: 0.40).cgColor,
+            NSColor(calibratedWhite: 0.78, alpha: 0.18).cgColor,
+            NSColor(calibratedWhite: 0.47, alpha: 0.16).cgColor
+        ] as CFArray
+        let locations: [CGFloat] = [0.0, 0.48, 1.0]
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locations) {
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: rect.midX, y: rect.maxY),
+                end: CGPoint(x: rect.midX, y: rect.minY),
+                options: []
+            )
+        }
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.34).cgColor)
+        context.setLineWidth(max(0.5, 0.5 * scaleFactor))
+        context.move(to: CGPoint(x: rect.minX + 1, y: rect.maxY - 1))
+        context.addLine(to: CGPoint(x: rect.maxX - 1, y: rect.maxY - 1))
+        context.strokePath()
+        context.restoreGState()
     }
     
     /// Composite a title string from individual character sprite images.
@@ -808,7 +993,9 @@ class ModernSkinRenderer {
         
         // Programmatic fallback: thin outlined icon (finer lines like reference)
         let isPressed = state == "pressed"
-        let baseColor = skin.elementColor(for: id, fallback: skin.elementColor(for: "play_controls", fallback: skin.primaryColor))
+        let baseColor = usesMetalAppearance
+            ? (isPressed ? metalTransportButtonPressedColor : metalTransportButtonColor)
+            : skin.elementColor(for: id, fallback: skin.elementColor(for: "play_controls", fallback: skin.primaryColor))
         let color = isPressed ? baseColor.withAlphaComponent(0.7) : baseColor
         
         context.saveGState()
@@ -849,8 +1036,13 @@ class ModernSkinRenderer {
         if let img = skin.image(for: trackId) {
             drawImage(img, in: scaledTrack, context: context)
         } else {
-            context.setFillColor(skin.surfaceColor.cgColor)
+            context.setFillColor((usesMetalAppearance ? metalSliderTrackColor : skin.surfaceColor).cgColor)
             context.fill(scaledTrack)
+            if usesMetalAppearance {
+                context.setStrokeColor(metalInsetBorderColor.withAlphaComponent(0.65).cgColor)
+                context.setLineWidth(max(0.5, 0.5 * scaleFactor))
+                context.stroke(scaledTrack.insetBy(dx: 0.25 * scaleFactor, dy: 0.25 * scaleFactor))
+            }
         }
         
         // Fill
@@ -875,17 +1067,17 @@ class ModernSkinRenderer {
         } else {
             // Solid fill with glow
             context.saveGState()
-            if skin.config.glow.enabled {
+            if skin.config.glow.enabled && !usesMetalAppearance {
                 context.setShadow(offset: .zero, blur: 4 * scaleFactor * glowMultiplier,
                                   color: skin.primaryColor.withAlphaComponent(0.6).cgColor)
             }
-            context.setFillColor(skin.primaryColor.cgColor)
+            context.setFillColor((usesMetalAppearance ? metalSliderFillColor : skin.primaryColor).cgColor)
             context.fill(fillRect)
             context.restoreGState()
         }
         
         // Thumb -- small dot at the current position, uses gradient end color if provided
-        let thumbColor = gradient?.1 ?? skin.primaryColor
+        let thumbColor = usesMetalAppearance ? metalSliderThumbColor : (gradient?.1 ?? skin.primaryColor)
         let thumbDiameter: CGFloat = 5 * scaleFactor
         let thumbX = scaledTrack.minX + (scaledTrack.width - thumbDiameter) * min(max(fillFraction, 0), 1)
         let thumbY = scaledTrack.midY - thumbDiameter / 2
@@ -896,7 +1088,7 @@ class ModernSkinRenderer {
         } else {
             // Fallback: tiny glowing circle
             context.saveGState()
-            if skin.config.glow.enabled {
+            if skin.config.glow.enabled && !usesMetalAppearance {
                 context.setShadow(offset: .zero, blur: 3 * scaleFactor * glowMultiplier,
                                   color: thumbColor.withAlphaComponent(0.8).cgColor)
             }
@@ -1260,10 +1452,29 @@ class ModernSkinRenderer {
         let resolvedBorderOpacity = min(1.0, max(0.0, borderOpacity))
         let corner = 4 * scaleFactor
         let path = CGPath(roundedRect: scaledR, cornerWidth: corner, cornerHeight: corner, transform: nil)
-        context.setFillColor(skin.surfaceColor.withAlphaComponent(resolvedBackgroundOpacity).cgColor)
-        context.addPath(path)
-        context.fillPath()
-        context.setStrokeColor(skin.borderColor.withAlphaComponent(resolvedBorderOpacity).cgColor)
+        if usesMetalAppearance {
+            context.addPath(path)
+            context.clip()
+            context.setFillColor(metalInsetFillColor.withAlphaComponent(resolvedBackgroundOpacity).cgColor)
+            context.fill(scaledR)
+            let colors = [
+                NSColor.white.withAlphaComponent(0.18 * resolvedBackgroundOpacity).cgColor,
+                metalInsetBorderColor.withAlphaComponent(0.16 * resolvedBackgroundOpacity).cgColor
+            ] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0.0, 1.0]) {
+                context.drawLinearGradient(
+                    gradient,
+                    start: CGPoint(x: scaledR.midX, y: scaledR.maxY),
+                    end: CGPoint(x: scaledR.midX, y: scaledR.minY),
+                    options: []
+                )
+            }
+        } else {
+            context.setFillColor(skin.surfaceColor.withAlphaComponent(resolvedBackgroundOpacity).cgColor)
+            context.addPath(path)
+            context.fillPath()
+        }
+        context.setStrokeColor((usesMetalAppearance ? metalInsetBorderColor : skin.borderColor).withAlphaComponent(resolvedBorderOpacity).cgColor)
         context.setLineWidth(0.5 * scaleFactor)
         context.addPath(path)
         context.strokePath()

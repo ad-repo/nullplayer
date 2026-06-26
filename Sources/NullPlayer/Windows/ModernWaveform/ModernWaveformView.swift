@@ -23,6 +23,10 @@ class ModernWaveformView: BaseWaveformView {
 
     private var borderWidth: CGFloat { ModernSkinElements.waveformBorderWidth }
 
+    private var isMetalRenderStyle: Bool {
+        ModernSkinEngine.shared.currentRenderStyle == .metal
+    }
+
     override var waveformRect: NSRect {
         NSRect(
             x: borderWidth,
@@ -34,7 +38,16 @@ class ModernWaveformView: BaseWaveformView {
 
     override var waveformColors: WaveformRenderColors {
         let skin = renderer.skin
-        let accent = skin.elementColor(for: "seek_fill")
+        let waveformColor: NSColor
+        let playedWaveformColor: NSColor
+        if isMetalRenderStyle {
+            waveformColor = NSColor(calibratedRed: 0.92, green: 0.95, blue: 0.96, alpha: 1.0)
+            playedWaveformColor = NSColor(calibratedRed: 0.36, green: 0.41, blue: 0.44, alpha: 1.0)
+        } else {
+            let accent = skin.elementColor(for: "seek_fill")
+            waveformColor = accent.withAlphaComponent(0.95)
+            playedWaveformColor = accent.withAlphaComponent(0.45)
+        }
         let cue = skin.elementColor(for: "info_cast").withAlphaComponent(0.65)
         let transparent = WindowManager.shared.isWaveformTransparentBackgroundEnabled()
         let waveformOpacity = skin.resolvedOpacity(for: .waveformArea)
@@ -66,8 +79,8 @@ class ModernWaveformView: BaseWaveformView {
             backgroundMode: backgroundMode,
             backgroundOpacity: backgroundOpacity,
             contentOpacity: contentOpacity,
-            waveform: accent.withAlphaComponent(0.95),
-            playedWaveform: accent.withAlphaComponent(0.45),
+            waveform: waveformColor,
+            playedWaveform: playedWaveformColor,
             cuePoint: cue,
             playhead: skin.textColor,
             text: skin.textColor,

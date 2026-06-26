@@ -512,6 +512,7 @@ class ModernLibraryBrowserView: NSView {
     private var cachedServerBarFont: NSFont?
     private var cachedServerBarFontSkinName: String?
     private var cachedServerBarFontScale: CGFloat?
+    private var cachedServerBarIsMetal: Bool?
     private var cachedPrefixAttrs: [NSAttributedString.Key: Any]?
     private var cachedDataAttrs: [NSAttributedString.Key: Any]?
     private var cachedActiveAttrs: [NSAttributedString.Key: Any]?
@@ -1036,6 +1037,30 @@ class ModernLibraryBrowserView: NSView {
     func compactBarUpdatePlaybackState() {
         compactPlayerBar?.updatePlaybackState()
     }
+
+    private var isMetalRenderStyle: Bool {
+        ModernSkinEngine.shared.currentRenderStyle == .metal
+    }
+
+    private var metalControlBandFill: NSColor {
+        NSColor(calibratedRed: 0.62, green: 0.67, blue: 0.69, alpha: 0.34)
+    }
+
+    private var metalControlFill: NSColor {
+        NSColor(calibratedRed: 0.70, green: 0.75, blue: 0.77, alpha: 0.30)
+    }
+
+    private var metalControlActiveFill: NSColor {
+        NSColor(calibratedRed: 0.80, green: 0.84, blue: 0.85, alpha: 0.38)
+    }
+
+    private var metalControlStroke: NSColor {
+        NSColor(calibratedRed: 0.24, green: 0.27, blue: 0.29, alpha: 0.58)
+    }
+
+    private var metalRatingColor: NSColor {
+        NSColor(calibratedRed: 0.34, green: 0.28, blue: 0.13, alpha: 1.0)
+    }
     
     // MARK: - Drawing
     
@@ -1274,7 +1299,7 @@ class ModernLibraryBrowserView: NSView {
                                 width: bounds.width - Layout.borderWidth * 2, height: Layout.tabBarHeight)
         
         // Background
-        skin.surfaceColor.withAlphaComponent(0.4).setFill()
+        (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(tabBarRect)
         
         let font = skin.sideWindowFont(size: 11)
@@ -1325,8 +1350,8 @@ class ModernLibraryBrowserView: NSView {
     private func drawToggleTab(label: String, isActive: Bool, rect: NSRect,
                                font: NSFont, skin: ModernSkin, context: CGContext) {
         let scale = ModernSkinElements.scaleFactor
-        let outlineColor = skin.elementColor(for: "tab_outline", fallback: skin.accentColor)
-        let activeTextColor = skin.elementColor(for: "tab_text", fallback: skin.accentColor)
+        let outlineColor = isMetalRenderStyle ? metalControlStroke : skin.elementColor(for: "tab_outline", fallback: skin.accentColor)
+        let activeTextColor = isMetalRenderStyle ? skin.textColor : skin.elementColor(for: "tab_text", fallback: skin.accentColor)
         let color = isActive ? activeTextColor : skin.textDimColor
         let strokeRect = rect.insetBy(dx: scale, dy: scale)
         let cornerRadius = 2 * scale
@@ -1339,11 +1364,13 @@ class ModernLibraryBrowserView: NSView {
         context.saveGState()
 
         if isActive {
-            context.setFillColor(outlineColor.withAlphaComponent(0.12).cgColor)
+            context.setFillColor((isMetalRenderStyle ? metalControlActiveFill : outlineColor.withAlphaComponent(0.12)).cgColor)
             context.addPath(strokePath)
             context.fillPath()
 
-            context.setShadow(offset: .zero, blur: 6, color: outlineColor.withAlphaComponent(0.6).cgColor)
+            if !isMetalRenderStyle {
+                context.setShadow(offset: .zero, blur: 6, color: outlineColor.withAlphaComponent(0.6).cgColor)
+            }
             context.setStrokeColor(outlineColor.withAlphaComponent(0.8).cgColor)
             context.setLineWidth(lineWidth)
             context.addPath(strokePath)
@@ -1356,7 +1383,7 @@ class ModernLibraryBrowserView: NSView {
             context.addPath(strokePath)
             context.strokePath()
         } else {
-            context.setStrokeColor(skin.textDimColor.withAlphaComponent(0.4).cgColor)
+            context.setStrokeColor((isMetalRenderStyle ? metalControlStroke : skin.textDimColor.withAlphaComponent(0.4)).cgColor)
             context.setLineWidth(lineWidth)
             context.addPath(strokePath)
             context.strokePath()
@@ -1393,7 +1420,7 @@ class ModernLibraryBrowserView: NSView {
                             width: bounds.width - Layout.borderWidth * 2,
                             height: Layout.serverBarHeight)
         
-        skin.surfaceColor.withAlphaComponent(0.4).setFill()
+        (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(barRect)
 
         let dimColor = skin.textDimColor
@@ -1402,16 +1429,19 @@ class ModernLibraryBrowserView: NSView {
 
         let skinName = ModernSkinEngine.shared.currentSkinName ?? "default"
         let currentScale = ModernSkinElements.sizeMultiplier
+        let isMetal = isMetalRenderStyle
         if cachedServerBarFont == nil ||
             cachedServerBarFontSkinName != skinName ||
-            cachedServerBarFontScale != currentScale {
+            cachedServerBarFontScale != currentScale ||
+            cachedServerBarIsMetal != isMetal {
             let font = skin.sideWindowFont(size: 11)
             cachedServerBarFont = font
             cachedServerBarFontSkinName = skinName
             cachedServerBarFontScale = currentScale
+            cachedServerBarIsMetal = isMetal
             cachedPrefixAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dimColor)]
             cachedDataAttrs   = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dataColor)]
-            cachedActiveAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: accentColor)]
+            cachedActiveAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: isMetal ? skin.textColor : accentColor)]
         }
         let font = cachedServerBarFont!
         let prefixAttrs = cachedPrefixAttrs!
@@ -1476,7 +1506,9 @@ class ModernLibraryBrowserView: NSView {
             let rating = currentTrackRating ?? 0
             let filledCount = rating / 2
             
-            let filledColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+            let filledColor = isMetalRenderStyle
+                ? metalRatingColor
+                : NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
             let emptyColor = dimColor.withAlphaComponent(0.3)
             
             for i in 0..<totalStars {
@@ -1529,7 +1561,8 @@ class ModernLibraryBrowserView: NSView {
                 let step = CGFloat.pi * 2 / CGFloat(n)
                 for i in 0..<n {
                     let angle = CGFloat(i) * step - CGFloat.pi / 2 + CGFloat(loadingAnimationFrame) * step
-                    skin.accentColor.withAlphaComponent(CGFloat(i + 1) / CGFloat(n) * 0.9).setStroke()
+                    let spinnerColor = isMetalRenderStyle ? skin.textColor : skin.accentColor
+                    spinnerColor.withAlphaComponent(CGFloat(i + 1) / CGFloat(n) * 0.9).setStroke()
                     context.setLineWidth(1.5 * m)
                     context.move(to: CGPoint(x: cx + cos(angle) * innerR, y: cy + sin(angle) * innerR))
                     context.addLine(to: CGPoint(x: cx + cos(angle) * outerR, y: cy + sin(angle) * outerR))
@@ -1871,15 +1904,20 @@ class ModernLibraryBrowserView: NSView {
                                height: Layout.searchBarHeight - 6)
         
         let isFocused = window?.firstResponder === self
-        let bgColor = isFocused
-            ? skin.accentColor.withAlphaComponent(0.15)
-            : skin.surfaceColor.withAlphaComponent(0.3)
+        let bgColor: NSColor
+        if isMetalRenderStyle {
+            bgColor = isFocused ? metalControlActiveFill : metalControlFill
+        } else {
+            bgColor = isFocused
+                ? skin.accentColor.withAlphaComponent(0.15)
+                : skin.surfaceColor.withAlphaComponent(0.3)
+        }
         bgColor.setFill()
         let path = NSBezierPath(roundedRect: searchRect, xRadius: 3, yRadius: 3)
         path.fill()
         
         if isFocused {
-            skin.accentColor.withAlphaComponent(0.5).setStroke()
+            (isMetalRenderStyle ? metalControlStroke : skin.accentColor.withAlphaComponent(0.5)).setStroke()
             path.lineWidth = 1
             path.stroke()
         }
@@ -2002,7 +2040,7 @@ class ModernLibraryBrowserView: NSView {
 
             // Selection background - subtle to keep accent text readable
             if isSelected {
-                skin.primaryColor.withAlphaComponent(0.06).setFill()
+                (isMetalRenderStyle ? metalControlActiveFill : skin.primaryColor.withAlphaComponent(0.06)).setFill()
                 context.fill(itemRect)
             }
 
@@ -2038,7 +2076,7 @@ class ModernLibraryBrowserView: NSView {
                 }
 
                 // Main text
-                let textColor = isSelected ? skin.accentColor : skin.textColor
+                let textColor = isSelected ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textColor
                 let attrs: [NSAttributedString.Key: Any] = [
                     .foregroundColor: skin.applyTextOpacity(to: textColor),
                     .font: font
@@ -2049,7 +2087,7 @@ class ModernLibraryBrowserView: NSView {
 
                 // Secondary info
                 if let info = item.info {
-                    let infoColor = isSelected ? skin.accentColor : skin.textDimColor
+                    let infoColor = isSelected ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textDimColor
                     let infoAttrs: [NSAttributedString.Key: Any] = [
                         .foregroundColor: skin.applyTextOpacity(to: infoColor),
                         .font: smallFont
@@ -2094,7 +2132,7 @@ class ModernLibraryBrowserView: NSView {
         context.saveGState()
         context.clip(to: rect)
         
-        skin.surfaceColor.withAlphaComponent(0.4).setFill()
+        (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(rect)
 
         let headerFont = skin.scaledSystemFont(size: 7.2, weight: .medium)
@@ -2155,8 +2193,8 @@ class ModernLibraryBrowserView: NSView {
     private func drawColumnRow(item: ModernDisplayItem, columns: [ModernBrowserColumn], in context: CGContext,
                                rect: NSRect, isSelected: Bool, skin: ModernSkin, indent: CGFloat = 0) {
         let totalWidth = rect.width - indent
-        let textColor = isSelected ? skin.accentColor : skin.textColor
-        let dimColor = isSelected ? skin.accentColor : skin.textDimColor
+        let textColor = isSelected ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textColor
+        let dimColor = isSelected ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textDimColor
         let font = skin.scaledSystemFont(size: 8)
         let smallFont = skin.scaledSystemFont(size: 7.2)
         
@@ -2192,7 +2230,9 @@ class ModernLibraryBrowserView: NSView {
 
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
             if column.id == "rating" && !isSelected && value.contains("★") {
-                let goldColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+                let goldColor = isMetalRenderStyle
+                    ? metalRatingColor
+                    : NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
                 let emptyColor = skin.applyTextOpacity(to: dimColor).withAlphaComponent(0.4)
                 let astr = NSMutableAttributedString(string: value, attributes: attrs)
                 for (i, ch) in value.enumerated() {
@@ -2229,8 +2269,9 @@ class ModernLibraryBrowserView: NSView {
         drawText(message, at: NSPoint(x: listRect.midX - size.width / 2, y: listRect.midY - size.height / 2), withAttributes: attrs, context: context)
         
         let hint = "Click the server bar above to link"
+        let hintColor = isMetalRenderStyle ? metalRatingColor : skin.warningColor
         let hintAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: skin.applyTextOpacity(to: skin.warningColor),
+            .foregroundColor: skin.applyTextOpacity(to: hintColor),
             .font: NSFont.systemFont(ofSize: 10)
         ]
         let hintSize = hint.size(withAttributes: hintAttrs)
@@ -2330,9 +2371,9 @@ class ModernLibraryBrowserView: NSView {
     
     private func drawArtOnlyArea(in context: CGContext, contentRect: NSRect, skin: ModernSkin, artwork: NSImage?) {
         if isVisualizingArt {
-            NSColor.black.setFill()
+            (isMetalRenderStyle ? NSColor(calibratedRed: 0.34, green: 0.38, blue: 0.40, alpha: 1.0) : NSColor.black).setFill()
         } else {
-            skin.surfaceColor.setFill()
+            (isMetalRenderStyle ? metalControlFill : skin.surfaceColor).setFill()
         }
         context.fill(contentRect)
         
@@ -2367,7 +2408,7 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Alphabet Index
     
     private func drawAlphabetIndex(in context: CGContext, rect: NSRect, skin: ModernSkin) {
-        skin.surfaceColor.withAlphaComponent(0.3).setFill()
+        (isMetalRenderStyle ? metalControlFill : skin.surfaceColor.withAlphaComponent(0.3)).setFill()
         context.fill(rect)
         
         let letterCount = CGFloat(alphabetLetters.count)
@@ -2391,7 +2432,7 @@ class ModernLibraryBrowserView: NSView {
             let letterRect = NSRect(x: rect.minX, y: y, width: rect.width, height: letterHeight)
             
             let hasItems = availableLetters.contains(letter)
-            let color = hasItems ? skin.accentColor : skin.textDimColor.withAlphaComponent(0.3)
+            let color = hasItems ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textDimColor.withAlphaComponent(0.3)
             
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: skin.applyTextOpacity(to: color),
@@ -7176,6 +7217,7 @@ class ModernLibraryBrowserView: NSView {
         cachedServerBarFont = nil
         cachedServerBarFontSkinName = nil
         cachedServerBarFontScale = nil
+        cachedServerBarIsMetal = nil
         cachedPrefixAttrs = nil
         cachedDataAttrs = nil
         cachedActiveAttrs = nil
@@ -7979,7 +8021,9 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Rate Submenus
 
     private static func goldStarAttributedTitle(_ label: String) -> NSAttributedString {
-        let goldColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+        let goldColor = ModernSkinEngine.shared.currentRenderStyle == .metal
+            ? NSColor(calibratedRed: 0.34, green: 0.28, blue: 0.13, alpha: 1.0)
+            : NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
         let emptyColor = NSColor.secondaryLabelColor
         let font = NSFont.menuFont(ofSize: 0)
         let astr = NSMutableAttributedString(string: label,

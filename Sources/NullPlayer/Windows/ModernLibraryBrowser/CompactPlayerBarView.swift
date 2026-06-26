@@ -129,9 +129,16 @@ final class CompactPlayerBarView: NSView {
 
         // Background + faint bottom separator so the bar reads as a distinct strip.
         let skin = renderer.skin
-        context.setFillColor(skin.surfaceColor.withAlphaComponent(0.18).cgColor)
+        let isMetal = ModernSkinEngine.shared.currentRenderStyle == .metal
+        let barFill = isMetal
+            ? NSColor(calibratedRed: 0.62, green: 0.67, blue: 0.69, alpha: 0.34)
+            : skin.surfaceColor.withAlphaComponent(0.18)
+        context.setFillColor(barFill.cgColor)
         context.fill(bounds)
-        context.setStrokeColor(skin.borderColor.withAlphaComponent(0.35).cgColor)
+        let separator = isMetal
+            ? NSColor(calibratedRed: 0.24, green: 0.27, blue: 0.29, alpha: 0.42)
+            : skin.borderColor.withAlphaComponent(0.35)
+        context.setStrokeColor(separator.cgColor)
         context.setLineWidth(0.5)
         context.move(to: CGPoint(x: bounds.minX, y: bounds.minY + 0.5))
         context.addLine(to: CGPoint(x: bounds.maxX, y: bounds.minY + 0.5))
@@ -156,9 +163,10 @@ final class CompactPlayerBarView: NSView {
 
         // Time label "elapsed / total"
         let timeText = "\(format(currentTime)) / \(format(duration))"
+        let timeColor = isMetal ? skin.textColor : skin.timeColor
         renderer.drawLabel(timeText, in: timeRect,
                            font: NSFont.monospacedDigitSystemFont(ofSize: 10 * m, weight: .regular),
-                           color: skin.timeColor, alignment: .right, context: context)
+                           color: timeColor, alignment: .right, context: context)
 
         // Volume slider
         let volume = CGFloat(WindowManager.shared.audioEngine.volume)

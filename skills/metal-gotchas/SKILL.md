@@ -51,3 +51,13 @@ Use `SpectrumAnalyzerView.isShaderAvailable(for:)` to check if a mode's shader f
 **Fix**: `AudioEngine` now uses the same coalescing pattern as `StreamingAudioPlayer` — a `pendingSpectrumUpdate` flag ensures at most one dispatch is ever queued, while `latestRawSpectrum` always holds the freshest frame so data is never lost. On the main thread the pending block reads `latestRawSpectrum` and posts the notification once, then clears the flag.
 
 **Why Classic/Spectrum are more sensitive**: The LED attack rate in Enhanced mode (`cellAttackRate = 0.5`) absorbs rapid-fire updates visually. Classic and CPU-Spectrum have no equivalent damping, so burst updates are directly visible as bar jumps.
+
+## Metal Default Colors
+
+When adding a metal-family fallback skin or metal-only drawing path, do not leave palette fields nil if the modern default is bright or saturated. Missing `timeColor`, `dataColor`, `warning`, or EQ colors will fall back to the modern neon defaults, which can make metal text or traces disappear against the brushed background.
+
+Recommended pattern:
+
+- Set metal-family fallback text to dark neutral values
+- Use muted graphite or steel fills for control wells and transport buttons
+- Choose a waveform/trace color with enough contrast to remain visible on black or near-black background fills

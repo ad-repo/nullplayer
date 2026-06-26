@@ -83,6 +83,16 @@ class ModernSkinLoader {
         throw ModernSkinError.configNotFound(url.path)
     }
     
+    /// Load the default bundled skin for a modern-family skin namespace.
+    func loadDefault(for family: ModernSkinFamily) -> ModernSkin {
+        switch family {
+        case .modern:
+            return loadDefault()
+        case .metal:
+            return createMetalFallbackSkin()
+        }
+    }
+
     /// Load the default bundled skin (NeonWave)
     func loadDefault() -> ModernSkin {
         // Try to find NeonWave in the resource bundle
@@ -103,8 +113,21 @@ class ModernSkinLoader {
     
     /// User skins directory
     var userSkinsDirectory: URL {
+        userSkinsDirectory(for: .modern)
+    }
+
+    var userMetalSkinsDirectory: URL {
+        userSkinsDirectory(for: .metal)
+    }
+
+    func userSkinsDirectory(for family: ModernSkinFamily) -> URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return appSupport.appendingPathComponent("NullPlayer").appendingPathComponent("ModernSkins")
+        let folderName: String
+        switch family {
+        case .modern: folderName = "ModernSkins"
+        case .metal: folderName = "MetalSkins"
+        }
+        return appSupport.appendingPathComponent("NullPlayer").appendingPathComponent(folderName)
     }
     
     /// Get all available modern skins (bundled + user by default).
@@ -151,6 +174,15 @@ class ModernSkinLoader {
         }
         
         return skins.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func availableSkins(for family: ModernSkinFamily) -> [(name: String, path: URL, isBundled: Bool)] {
+        switch family {
+        case .modern:
+            return availableSkins()
+        case .metal:
+            return availableSkins(includeBundled: false, userDirectory: userSkinsDirectory(for: .metal))
+        }
     }
     
     // MARK: - Image Loading
@@ -289,6 +321,62 @@ class ModernSkinLoader {
             animations: nil
         )
         
+        let skin = ModernSkin(config: config, bundlePath: nil)
+        let fonts = ModernSkinFont.resolve(config: config.fonts, skinBundle: nil)
+        skin.setFonts(primary: fonts.primary, time: fonts.time, small: fonts.small)
+        return skin
+    }
+
+    private func createMetalFallbackSkin() -> ModernSkin {
+        let config = ModernSkinConfig(
+            meta: SkinMeta(name: "Brushed Steel", author: "NullPlayer", version: "1.0", description: "Built-in metal skin"),
+            palette: ColorPalette(
+                primary: "#cbd3d8",
+                secondary: "#7f8c94",
+                accent: "#20272b",
+                highlight: "#f1f5f7",
+                background: "#9aa3a8",
+                surface: "#181d20",
+                text: "#080b0d",
+                textDim: "#252c31",
+                positive: nil,
+                negative: nil,
+                warning: "#4d3a18",
+                border: "#2f363a",
+                timeColor: "#080b0d",
+                marqueeColor: "#080b0d",
+                dataColor: "#252c31",
+                eqLow: "#252c31",
+                eqMid: "#3c464c",
+                eqHigh: "#080b0d"
+            ),
+            fonts: FontConfig(
+                primaryName: ModernSkinFont.defaultFontName,
+                fallbackName: "Menlo",
+                titleSize: 10,
+                bodySize: 11,
+                smallSize: 7,
+                timeSize: 24,
+                infoSize: nil,
+                eqLabelSize: nil,
+                eqValueSize: nil,
+                marqueeSize: nil,
+                playlistSize: nil
+            ),
+            background: BackgroundConfig(
+                image: nil,
+                grid: GridConfig(color: "#eef4f7", spacing: 22, angle: 90, opacity: 0.03, perspective: false)
+            ),
+            glow: GlowConfig(enabled: false, radius: 0, intensity: 0, threshold: 0.8, color: nil, elementBlur: nil),
+            window: WindowConfig(borderWidth: 2.0, borderColor: "#2f363a", cornerRadius: 5, scale: nil, opacity: 1.0, textOpacity: nil, mainSpectrumOpacity: 0.72, spectrumTransparentBackground: false, waveformWindowOpacity: 0.82, seamlessDocking: 1.0, areaOpacity: nil),
+            visualization: nil,
+            waveform: nil,
+            marquee: nil,
+            titleText: nil,
+            elements: nil,
+            animations: nil
+        )
+
         let skin = ModernSkin(config: config, bundlePath: nil)
         let fonts = ModernSkinFont.resolve(config: config.fonts, skinBundle: nil)
         skin.setFonts(primary: fonts.primary, time: fonts.time, small: fonts.small)
