@@ -210,7 +210,7 @@ NullPlayer polls Sonos every 5 seconds during casting:
 **What polling detects:**
 - Sonos stopped externally (paused via Sonos app, speaker went to sleep)
 - Track position drift (syncs local timer)
-- Device unreachable (SOAP timeout)
+- Device unreachable (SOAP timeout) — tears down the session after 3 consecutive poll failures (~15s)
 
 **Polling lifecycle:**
 - Started (`startSonosPolling`) when Sonos casting begins
@@ -219,7 +219,7 @@ NullPlayer polls Sonos every 5 seconds during casting:
 
 **Position sync:** Each PLAYING poll updates `activeSession.position` and sets `activeSession.playbackStartDate = Date()`. On PAUSED_PLAYBACK, `playbackStartDate` is set to `nil` so the timer freezes. `CastManager.currentTime` interpolates `session.position + elapsed(since: playbackStartDate)` — the same pattern used for Chromecast.
 
-**Poll failure logging:** `pollSonosPlaybackState()` logs explicitly when it returns `nil` due to no session, failed `GetTransportInfo`, or failed `GetPositionInfo`, so silent poll failures are visible in Console.
+**Poll failure tracking and teardown:** `pollSonosState()` counts consecutive `pollSonosPlaybackState()` failures (each returns `nil`). When the counter reaches 3 consecutive failures (~15s of poll timeouts), the cast session is torn down via `_stopCastingCore()`, returning audio playback to local. The counter is reset to 0 on every successful poll or when a new cast starts. Early post-stop race failures (detected by checking `isAudioCastRoutingActive`) are ignored so they don't trigger false teardowns.
 
 ### Resilience and Recovery
 
@@ -250,6 +250,10 @@ NullPlayer polls Sonos every 5 seconds during casting:
 - Both AVTransport SOAP error sites now throw `CastError.soapError(statusCode:detail:)` instead of `playbackFailed`, so the status code is reliably available to callers (`UPnPManager.sendSetAVTransportURI` fails fast with no retry; `sendSOAPAction` still retries transient 5xx first).
 - `CastManager.cast(...)` `.sonos` branch: on a recoverable failure (`soapError` ≥ 500, `networkError`, or a raw URL-loading error) it `disconnect()`s, calls the awaitable `UPnPManager.refreshSonosGroupTopologyAwait()`. The refresh validates the HTTP response, tries each cached zone until one returns a valid topology, and **blocks until** the device/coordinator list is rebuilt. It then maps the old zone UDN through fresh group membership to the current coordinator (falling back to room-name matching) and retries the cast **once**. If no zone returns valid topology, it preserves the cached topology and does not retry the stale endpoint.
 - Recovery is Sonos-only and retries at most once; a genuinely fatal error (401/403 Connection Security, unsupported format) is not retried and surfaces its existing message.
+
+**Mid-cast unreachability teardown (speaker reboot/power loss):**
+- While a cast is active, `pollSonosState()` continuously queries `GetTransportInfo` and `GetPositionInfo` every 5 seconds. If the poll fails 3 consecutive times (indicating the speaker is unreachable, e.g., due to a reboot or power loss), the session is automatically torn down via `_stopCastingCore()`, cleanly returning audio playback to local and clearing the UI. The counter is reset to 0 on every successful poll or when a new cast begins. Early post-stop poll failures (detected by `isAudioCastRoutingActive` check) are ignored to avoid false positives during normal teardown races.
+- This is distinct from the stale-coordinator auto-recovery above: stale-coordinator recovery fires **during** `cast()` before playback starts; mid-cast unreachability detection fires **during** active polling if the speaker becomes unreachable while casting.
 
 ### Group Management
 
