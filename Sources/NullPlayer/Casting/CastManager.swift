@@ -2244,6 +2244,12 @@ class CastManager {
                     if consecutiveSonosPollFailures >= maxConsecutiveSonosPollFailures {
                         NSLog("CastManager: Sonos unreachable after %d poll failures — tearing down session",
                               consecutiveSonosPollFailures)
+                        // Teardown is enqueued async via the inflight serializer and may run later,
+                        // but the 5s timer keeps firing until _stopCastingCore() calls stopSonosPolling().
+                        // Stop the timer and reset the counter now so a poll in the meantime can't
+                        // re-trip the threshold and enqueue a second teardown.
+                        stopSonosPolling()
+                        consecutiveSonosPollFailures = 0
                         _ = enqueueInflight { [self] in await _stopCastingCore() }
                     }
                 }
