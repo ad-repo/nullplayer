@@ -2222,6 +2222,13 @@ class ContextMenuBuilder {
         let youtubeMenu = NSMenu()
         youtubeMenu.autoenablesItems = false
 
+        // Rip URL (yt-dlp rip of any URL)
+        let ripItem = NSMenuItem(title: "Rip URL…", action: #selector(MenuActions.ripURL), keyEquivalent: "")
+        ripItem.target = MenuActions.shared
+        youtubeMenu.addItem(ripItem)
+
+        youtubeMenu.addItem(NSMenuItem.separator())
+
         // Download folder path header
         let folderPath = YouTubeManager.shared.downloadRoot.path
         let infoItem = NSMenuItem(title: folderPath, action: nil, keyEquivalent: "")
@@ -2278,17 +2285,6 @@ class ContextMenuBuilder {
     static func buildOutputDevicesMenu() -> NSMenu {
         let item = buildOutputDevicesMenuItem()
         return item.submenu ?? NSMenu()
-    }
-
-    private static func buildMenuBarStreamingSubmenu() -> NSMenu {
-        let streamingMenu = NSMenu()
-        streamingMenu.autoenablesItems = false
-
-        let ripItem = NSMenuItem(title: "Rip URL…", action: #selector(MenuActions.ripURL), keyEquivalent: "")
-        ripItem.target = MenuActions.shared
-        streamingMenu.addItem(ripItem)
-
-        return streamingMenu
     }
 
     private static func buildMenuBarOutputDevicesMenu() -> NSMenu {
@@ -2425,15 +2421,6 @@ class ContextMenuBuilder {
             sonosItem.submenu = sonosMenu
             outputMenu.addItem(sonosItem)
         }
-
-        // Streaming
-        if outputMenu.items.last?.isSeparatorItem != true {
-            outputMenu.addItem(NSMenuItem.separator())
-        }
-
-        let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
-        streamingItem.submenu = buildMenuBarStreamingSubmenu()
-        outputMenu.addItem(streamingItem)
 
         // Other cast devices
         let activeSession = castManager.activeSession
@@ -2682,15 +2669,6 @@ class ContextMenuBuilder {
             outputMenu.addItem(sonosItem)
         }
 
-        // ========== Streaming ==========
-        if outputMenu.items.last?.isSeparatorItem != true {
-            outputMenu.addItem(NSMenuItem.separator())
-        }
-
-        let streamingItem = NSMenuItem(title: "Streaming", action: nil, keyEquivalent: "")
-        streamingItem.submenu = buildMenuBarStreamingSubmenu()
-        outputMenu.addItem(streamingItem)
-        
         // ========== Other Cast Devices ==========
         let chromecastDevices = castManager.chromecastDevices
         let tvDevices = castManager.dlnaTVDevices
