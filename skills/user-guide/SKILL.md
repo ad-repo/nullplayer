@@ -24,7 +24,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
 | **Audio Analyzer** | Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay) | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
-| **ProjectM** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art | Menu button or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art (titled "Visualizations" in menus and window chrome; internally still the ProjectM window) | VZ button, Window menu, or context menu |
 
 In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab is also available in the classic library browser. The Data tab shows:
 - **Play Time** summary (day/week/month/year/all-time)
@@ -118,7 +118,7 @@ Previous, Play, Pause, Stop, Next
 - **EQ**: Show/hide Equalizer
 - **PL**: Show/hide Playlist
 
-Modern UI adds: **HT** (Hide Title Bars), **CA** (Cast), **pM** (ProjectM), **SP** (Spectrum), **WV** (Waveform), **LB** (Library)
+Modern UI adds: **HT** (Hide Title Bars), **CP** (Compact Mode), **VZ** (Visualizations), **SP** (Spectrum), **WV** (Waveform), **LB** (Library)
 
 ## Media Sources
 

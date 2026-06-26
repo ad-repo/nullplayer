@@ -614,6 +614,7 @@ Key implementation details:
 - Compact updates are forwarded through the compact controller (`updateCompactBarTime`, `updateCompactBarTrack`, `updateCompactBarPlaybackState`) so playback state stays live while the regular windows are hidden.
 - The status item left-click toggles compact visibility. Right-click opens the compact menu. Hidden compact mode remains in `.accessory` until explicitly exited.
 - Exiting Compact Mode removes the status item, switches back to `.regular`, rebuilds the main menu asynchronously, restores the regular window snapshot, then reattaches/restores docked windows.
+- Entry points: the **Compact Mode** item in the main-window right-click menu and the `Windows` menu (placed on its own line, separated, above Always On Top), plus the modern main window's **CP** toggle button (`btn_compact`). The CP button click forces the button's active (on) highlight and `display()`s it synchronously *before* deferring `toggleCompactMode()` to the next runloop — `enterCompactMode` is heavy synchronous AppKit work (activation-policy switch, window teardown, status-item creation) that, run inline in `mouseUp`, would block the press repaint and beachball. The fallback toggle-button renderer keys its highlight off the on-state only (not `isPressed`), so `compactButtonActivating` forces the on-look during the transition.
 
 Placement rules:
 - The compact window is positioned by `CompactModeWindowController.position(anchoredTo:)`.
