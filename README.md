@@ -23,7 +23,7 @@
 - Emby media server integration with music and video streaming, scrobbling, and library browsing
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - Stream Ripper — paste a URL and rip it to lossless FLAC, MP3, or an MP4 video file (via yt-dlp), with metadata tags, embedded cover art, metadata-based filenames, and a `.cue` sheet generated from chapter timestamps
-- YouTube source — subscribe to channels in the Radio tab, browse uploads, and download audio (FLAC / MP3) ad-free to a folder you choose (via yt-dlp); downloads play locally and cast like any track
+- YouTube source — subscribe to channels in the Radio tab, browse uploads, and download audio (FLAC / MP3) or video (720p / 1080p) ad-free to a folder you choose (via yt-dlp); downloads play locally and cast like any track
 - `.cue` sheet support — open a `.cue` (or an audio file with a sibling `.cue`) to virtually split one backing file into per-track, gapless playlist rows; an optional library setting (off by default, needs ffmpeg) physically splits cue albums on import into per-track FLACs, organized into a per-album folder named from the source's metadata
 - Inteligent radio mix generation for all sources
 - Navidrome/Subsonic server integration with scrobbling support
@@ -36,6 +36,8 @@
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
 - Modern V2 UI skin system, many v2 skins included. Open format, users can easily make new v2 skins via json
+- Metal mode — a hi-fi faceplate look with seven brushed-metal finishes (Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, Copper)
+- Switch between Classic, Modern, and Metal live, with no restart — playback, casting, and the open playlist continue uninterrupted while the windows rebuild
 - Original Spenctrum analysis visualization system
 - Audio Analysis window — Friture-style multi-pane analyzer with a live oscilloscope, stereo peak/RMS level meters, and a scrolling Metal spectrogram (Viridis colormap)
 - Album art visualization system with user selected effects
@@ -300,7 +302,7 @@ See [AGENTS.md](AGENTS.md) for documentation links and key source files.
 
 ## Skins
 
-NullPlayer has two UI modes, selectable from the right-click context menu under **Skins**. Switching between modes happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new mode:
+NullPlayer has three looks — Classic, Modern, and Metal — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
 
 ### Classic Mode
 
@@ -322,6 +324,10 @@ The bundled default skin ("NeonWave") is fully programmatic -- zero image assets
 **Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
 
 **Skin installation**: Place skin folders or `.nps` bundles in `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Skins > Modern > Select Skin**.
+
+### Metal Mode
+
+A hi-fi hardware faceplate look, selected from **Skins > Metal**, with seven finishes — Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, and Copper. Each finish restyles the whole player (chrome, panels, sliders, transport, and EQ) with a backlit-green LCD for the time and track displays and a spectrum analyzer matched to the finish.
 
 ## License
 
