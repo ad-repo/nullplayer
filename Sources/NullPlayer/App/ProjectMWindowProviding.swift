@@ -46,6 +46,10 @@ protocol ProjectMWindowProviding: ModeDependentWindow {
     
     /// Select preset at specific index
     func selectPreset(at index: Int, hardCut: Bool)
+
+    /// Restore a previously-active preset index after a window rebuild, deferring until the
+    /// engine is ready so the live selection survives a UI-system switch.
+    func restorePresetSelection(index: Int)
     
     /// Select a random preset
     func randomPreset(hardCut: Bool)

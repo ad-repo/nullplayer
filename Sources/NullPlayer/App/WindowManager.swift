@@ -4452,6 +4452,9 @@ class WindowManager {
         var spectrum: UIWindowSnapshot?
         var audioAnalysis: UIWindowSnapshot?
         var waveform: UIWindowSnapshot?
+        /// Live ProjectM preset index, carried across the rebuild so the visualization stays on the
+        /// exact preset the user was viewing rather than reverting to the saved startup default.
+        var projectMPresetIndex: Int?
     }
 
     private func captureModeDependentLayout() -> ModeDependentLayoutSnapshot {
@@ -4471,7 +4474,8 @@ class WindowManager {
             projectM: snap(projectMWindowController),
             spectrum: snap(spectrumWindowController),
             audioAnalysis: snap(audioAnalysisWindowController),
-            waveform: snap(waveformWindowController)
+            waveform: snap(waveformWindowController),
+            projectMPresetIndex: projectMWindowController?.currentPresetIndex
         )
     }
 
@@ -4532,6 +4536,11 @@ class WindowManager {
             if projectM.isShadeMode {
                 projectMWindowController?.setShadeMode(true)
                 projectMWindowController?.window?.setFrame(projectM.frame, display: true)
+            }
+            // Carry the live preset across the rebuild so the visualization stays put instead of
+            // reverting to the saved startup default. Deferred internally until the engine is ready.
+            if let presetIndex = snapshot.projectMPresetIndex, presetIndex >= 0 {
+                projectMWindowController?.restorePresetSelection(index: presetIndex)
             }
         }
 
@@ -4728,7 +4737,8 @@ class WindowManager {
             projectM: conv(snapshot.projectM),
             spectrum: conv(snapshot.spectrum),
             audioAnalysis: conv(snapshot.audioAnalysis),
-            waveform: conv(snapshot.waveform)
+            waveform: conv(snapshot.waveform),
+            projectMPresetIndex: projectMWindowController?.currentPresetIndex
         )
     }
 

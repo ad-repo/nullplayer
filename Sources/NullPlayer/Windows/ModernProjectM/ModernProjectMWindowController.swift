@@ -276,7 +276,11 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
     func selectPreset(at index: Int, hardCut: Bool = false) {
         projectMView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
     }
-    
+
+    func restorePresetSelection(index: Int) {
+        projectMView.visualizationGLView?.restorePresetSelection(index: index)
+    }
+
     func randomPreset(hardCut: Bool = false) {
         projectMView.visualizationGLView?.randomPreset(hardCut: hardCut)
     }

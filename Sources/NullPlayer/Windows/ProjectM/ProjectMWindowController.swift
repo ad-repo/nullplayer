@@ -288,7 +288,11 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     func selectPreset(at index: Int, hardCut: Bool = false) {
         projectMView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
     }
-    
+
+    func restorePresetSelection(index: Int) {
+        projectMView.visualizationGLView?.restorePresetSelection(index: index)
+    }
+
     /// Select a random preset
     /// - Parameter hardCut: If true, switch immediately without blending
     func randomPreset(hardCut: Bool = false) {
