@@ -2075,7 +2075,7 @@ class WindowManager {
     
     // MARK: - ProjectM Visualization Window
     
-    func showProjectM(at restoredFrame: NSRect? = nil) {
+    func showProjectM(at restoredFrame: NSRect? = nil, restoringPresetIndex presetIndex: Int? = nil) {
         let isNewWindow = projectMWindowController == nil
         if isNewWindow {
             if isModernUIEnabled {
@@ -2085,6 +2085,12 @@ class WindowManager {
             }
         }
         markModeDependentWindow(projectMWindowController?.window)
+        // When rebuilding the visualization window, stash the live preset before showWindow()
+        // starts the display link. Otherwise the first render can queue the saved startup preset
+        // and the immediate restore can be rejected by ProjectMWrapper's rapid-change guard.
+        if let presetIndex, presetIndex >= 0 {
+            projectMWindowController?.restorePresetSelection(index: presetIndex)
+        }
         projectMWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(projectMWindowController?.window)
         // Position window to match the vertical stack
@@ -4532,15 +4538,13 @@ class WindowManager {
             }
         }
         if let projectM = snapshot.projectM, projectM.visible {
-            showProjectM(at: projectM.isShadeMode ? nil : projectM.frame)
+            showProjectM(
+                at: projectM.isShadeMode ? nil : projectM.frame,
+                restoringPresetIndex: snapshot.projectMPresetIndex
+            )
             if projectM.isShadeMode {
                 projectMWindowController?.setShadeMode(true)
                 projectMWindowController?.window?.setFrame(projectM.frame, display: true)
-            }
-            // Carry the live preset across the rebuild so the visualization stays put instead of
-            // reverting to the saved startup default. Deferred internally until the engine is ready.
-            if let presetIndex = snapshot.projectMPresetIndex, presetIndex >= 0 {
-                projectMWindowController?.restorePresetSelection(index: presetIndex)
             }
         }
 
