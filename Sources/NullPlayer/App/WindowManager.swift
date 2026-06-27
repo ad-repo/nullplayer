@@ -1080,12 +1080,38 @@ class WindowManager {
             if restoreRegularWindows {
                 self.restoreRegularWindowSnapshot()
                 self.updateDockedChildWindows()
-                NSApp.activate(ignoringOtherApps: true)
+                self.reassertRegularActivation()
+
+                // The `.accessory → .regular` transition settles over a runloop turn or two on
+                // modern macOS: right after the activation above the menu bar can still show the
+                // stale (empty) menu — the menu options stay missing until the user manually
+                // minimizes and restores a window — and the Dock tile can show the generic
+                // executable icon. Re-assert activation, the rebuilt menu, and the icon once the
+                // transition has fully landed so none of them depends on winning that race.
+                DispatchQueue.main.async {
+                    guard self.compactModeState == .regular else { return }
+                    (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
+                    self.reassertRegularActivation()
+                }
             }
             self.compactModeState = .regular
             self.postLayoutChangeNotification()
             completion?()
         }
+    }
+
+    /// Reclaim foreground activation after leaving Compact Mode's `.accessory` policy: activate the
+    /// app, make the restored main window key, and re-apply the Dock icon. Establishing a key window
+    /// is what gives the app menu-bar ownership and first responder — without it the rebuilt menu can
+    /// stay missing until the user manually minimizes/restores a window. Re-applying the icon here
+    /// (after macOS has built the `.regular` Dock tile) keeps the NullPlayer logo from being replaced
+    /// by the generic executable icon.
+    private func reassertRegularActivation() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = mainWindowController?.window, window.isVisible, !isInNativeFullScreen(window) {
+            window.makeKey()
+        }
+        restoreDockIconImage()
     }
 
     private func captureRegularWindowSnapshot() -> CompactWindowSnapshot {
