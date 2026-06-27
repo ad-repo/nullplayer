@@ -1039,7 +1039,10 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private var isMetalRenderStyle: Bool {
-        ModernSkinEngine.shared.currentRenderStyle == .metal
+        // Read from the skin we actually draw with (currentSkin()), not the engine's global
+        // currentRenderStyle. The two can momentarily disagree across a skin swap, which let
+        // the modern darkened top-chrome band paint over the metal brushed surface.
+        currentSkin().renderStyle == .metal
     }
 
     /// Active metal finish (falls back to Brushed Steel). The control colors below are
@@ -1130,6 +1133,9 @@ class ModernLibraryBrowserView: NSView {
         let serverBarY = topChromeBottomY - Layout.serverBarHeight
         let sbRect = NSRect(x: 0, y: serverBarY, width: bounds.width, height: Layout.serverBarHeight)
         if sbRect.contains(dirtyRect) {
+            // Build the renderer from the current skin (not the cached instance) so the
+            // background can't lag a skin swap and render the wrong surface under the bands.
+            let renderer = ModernSkinRenderer(skin: skin)
             renderer.drawWindowBackground(
                 in: bounds,
                 context: context,

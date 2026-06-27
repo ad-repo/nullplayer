@@ -70,6 +70,13 @@ class ModernSkin {
     /// brushed-steel default.
     var metalMaterial: MetalMaterial = .brushedSteel
 
+    /// The render style this skin is drawn with. Stamped onto the instance when the engine
+    /// loads it (see `ModernSkinEngine.configureSkinDependencies`). Consumers must read this
+    /// rather than the engine's global `currentRenderStyle` so that "is this metal?" travels
+    /// with the skin being rendered — the window background and its top-chrome bands can then
+    /// never disagree (which used to leak the modern darkened band into metal mode).
+    var renderStyle: ModernRenderStyle = .standard
+
     // MARK: - Initialization
     
     init(config: ModernSkinConfig, bundlePath: URL?) {
@@ -441,7 +448,7 @@ class ModernSkin {
         // `accentColor` is a dark metal tone that would render the bars near-black.
         let bottom: NSColor
         let top: NSColor
-        if ModernSkinEngine.shared.currentRenderStyle == .metal {
+        if renderStyle == .metal {
             bottom = metalMaterial.spectrumLow
             top = metalMaterial.spectrumHigh
         } else {
