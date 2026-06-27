@@ -47,6 +47,8 @@ class VisualizationGLView: NSOpenGLView {
 
     /// Whether projectM is available and initialized (backward compatibility)
     var isProjectMAvailable: Bool {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard case .projectM = currentEngineType else { return false }
         return (engine as? ProjectMWrapper)?.isAvailable ?? false
     }
@@ -324,6 +326,11 @@ class VisualizationGLView: NSOpenGLView {
     /// Flag to defer engine initialization until first render (for correct GL context)
     private var engineNeedsSetup = true
 
+    /// ProjectM preset index to apply once the engine finishes its deferred render-thread setup,
+    /// overriding the saved startup default. Set by `restorePresetSelection(index:)` when the
+    /// engine isn't ready yet; consumed in `initializeEngineOnRenderThread`.
+    private var pendingRestorePresetIndex: Int?
+
     private func setupEngine() {
         // Mark that we want to initialize the engine - actual setup will happen on first render
         // This ensures the OpenGL context is properly initialized on the render thread
@@ -440,6 +447,7 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     /// Actually initialize the engine - must be called on render thread with GL context current
+    /// while holding `engineLock`.
     private func initializeEngineOnRenderThread() {
         guard engineNeedsSetup else { return }
         engineNeedsSetup = false
@@ -453,6 +461,14 @@ class VisualizationGLView: NSOpenGLView {
 
         // Create engine using factory
         engine = createEngine(type: currentEngineType, width: width, height: height)
+
+        // Override the saved startup default with a live selection carried across a window rebuild.
+        if let idx = pendingRestorePresetIndex {
+            pendingRestorePresetIndex = nil
+            if let pm = engine as? ProjectMWrapper, idx >= 0, idx < pm.presetCount {
+                pm.selectPreset(at: idx, hardCut: true)
+            }
+        }
 
         if engine != nil {
             NSLog("VisualizationGLView: %@ initialized successfully", currentEngineType.displayName)
@@ -1057,12 +1073,16 @@ class VisualizationGLView: NSOpenGLView {
 
     /// Number of available presets (ProjectM only)
     var presetCount: Int {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let pm = engine as? ProjectMWrapper else { return 0 }
         return pm.presetCount
     }
 
     /// Index of currently selected preset (ProjectM only)
     var currentPresetIndex: Int {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let pm = engine as? ProjectMWrapper else { return 0 }
         return pm.currentPresetIndex
     }
@@ -1113,6 +1133,21 @@ class VisualizationGLView: NSOpenGLView {
     func selectPreset(at index: Int, hardCut: Bool = false) {
         guard let pm = engine as? ProjectMWrapper else { return }
         pm.selectPreset(at: index, hardCut: hardCut)
+    }
+
+    /// Restore a previously-active ProjectM preset after a window rebuild (e.g. a live UI-system
+    /// switch). The engine is created lazily on the render thread, so if it isn't ready yet the
+    /// index is stashed and applied in `initializeEngineOnRenderThread`, overriding the saved
+    /// startup default so the visualization stays on the exact preset the user was viewing.
+    func restorePresetSelection(index: Int) {
+        guard index >= 0 else { return }
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        if !engineNeedsSetup, let pm = engine as? ProjectMWrapper, index < pm.presetCount {
+            pm.selectPreset(at: index, hardCut: true)
+        } else {
+            pendingRestorePresetIndex = index
+        }
     }
 
     /// Get preset name at index (ProjectM only)

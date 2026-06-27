@@ -27,6 +27,8 @@ class SpectrogramMetalView: NSView {
     private var historyBuffer: [Float] = []
     private var historyWidth = 1024
     private var historyHeight = 75  // Match spectrum band count
+    // Columns advanced per spectrum frame. >1 makes the waterfall scroll faster.
+    private let scrollStep = 4
 
     override func awakeFromNib() {
         super.awakeFromNib()
@@ -131,18 +133,20 @@ class SpectrogramMetalView: NSView {
               let spectrum = userInfo["spectrum"] as? [Float],
               let historyTexture = historyTexture else { return }
 
-        // Shift history left and add new spectrum data on the right
+        // Shift history left by `scrollStep` columns and fill the freed columns on
+        // the right with the new spectrum data. A larger step scrolls faster.
+        let step = max(1, min(scrollStep, historyWidth))
         let bandCount = min(spectrum.count, historyHeight)
         for i in 0..<historyHeight {
-            for x in 1..<historyWidth {
-                historyBuffer[i * historyWidth + (x - 1)] = historyBuffer[i * historyWidth + x]
+            let rowStart = i * historyWidth
+            for x in step..<historyWidth {
+                historyBuffer[rowStart + (x - step)] = historyBuffer[rowStart + x]
             }
-            if i < bandCount {
-                // `spectrum` bands are already normalized 0–1 magnitudes (see
-                // AudioEngine.audioSpectrumDataUpdated) — use them directly for colormapping.
-                historyBuffer[i * historyWidth + (historyWidth - 1)] = max(0, min(1, spectrum[i]))
-            } else {
-                historyBuffer[i * historyWidth + (historyWidth - 1)] = 0
+            // `spectrum` bands are already normalized 0–1 magnitudes (see
+            // AudioEngine.audioSpectrumDataUpdated) — use them directly for colormapping.
+            let value = i < bandCount ? max(0, min(1, spectrum[i])) : 0
+            for x in (historyWidth - step)..<historyWidth {
+                historyBuffer[rowStart + x] = value
             }
         }
 

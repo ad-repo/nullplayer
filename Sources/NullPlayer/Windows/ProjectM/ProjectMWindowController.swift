@@ -79,7 +79,11 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     func stopRenderingForHide() {
         projectMView.stopRendering()
     }
-    
+
+    func resumeRenderingAfterWindowTransition() {
+        projectMView.resumeRenderingAfterWindowTransition()
+    }
+
     /// Position the window to the LEFT of the main window
     /// Always positions on the left side, even if partially offscreen
     private func positionWindow() {
@@ -284,7 +288,11 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     func selectPreset(at index: Int, hardCut: Bool = false) {
         projectMView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
     }
-    
+
+    func restorePresetSelection(index: Int) {
+        projectMView.visualizationGLView?.restorePresetSelection(index: index)
+    }
+
     /// Select a random preset
     /// - Parameter hardCut: If true, switch immediately without blending
     func randomPreset(hardCut: Bool = false) {

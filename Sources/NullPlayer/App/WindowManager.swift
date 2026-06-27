@@ -2075,7 +2075,7 @@ class WindowManager {
     
     // MARK: - ProjectM Visualization Window
     
-    func showProjectM(at restoredFrame: NSRect? = nil) {
+    func showProjectM(at restoredFrame: NSRect? = nil, restoringPresetIndex presetIndex: Int? = nil) {
         let isNewWindow = projectMWindowController == nil
         if isNewWindow {
             if isModernUIEnabled {
@@ -2085,6 +2085,12 @@ class WindowManager {
             }
         }
         markModeDependentWindow(projectMWindowController?.window)
+        // When rebuilding the visualization window, stash the live preset before showWindow()
+        // starts the display link. Otherwise the first render can queue the saved startup preset
+        // and the immediate restore can be rejected by ProjectMWrapper's rapid-change guard.
+        if let presetIndex, presetIndex >= 0 {
+            projectMWindowController?.restorePresetSelection(index: presetIndex)
+        }
         projectMWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(projectMWindowController?.window)
         // Position window to match the vertical stack
@@ -3584,6 +3590,14 @@ class WindowManager {
     
     /// Called when a window is being dragged - handle snapping and move docked windows
     func windowWillMove(_ window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
+        // The Compact Mode window is a floating, status-item-anchored window positioned
+        // explicitly by CompactModeWindowController. It must never participate in snapping or
+        // docking against the regular window set — when extra regular windows are open, snapping
+        // pulls it off its menu-bar anchor. Always accept its programmatic origin verbatim.
+        if window === compactWindowController?.window {
+            return newOrigin
+        }
+
         // Programmatic frame changes should never re-enter snap logic.
         if isSnappingWindow {
             return newOrigin
@@ -4444,6 +4458,9 @@ class WindowManager {
         var spectrum: UIWindowSnapshot?
         var audioAnalysis: UIWindowSnapshot?
         var waveform: UIWindowSnapshot?
+        /// Live ProjectM preset index, carried across the rebuild so the visualization stays on the
+        /// exact preset the user was viewing rather than reverting to the saved startup default.
+        var projectMPresetIndex: Int?
     }
 
     private func captureModeDependentLayout() -> ModeDependentLayoutSnapshot {
@@ -4463,8 +4480,18 @@ class WindowManager {
             projectM: snap(projectMWindowController),
             spectrum: snap(spectrumWindowController),
             audioAnalysis: snap(audioAnalysisWindowController),
-            waveform: snap(waveformWindowController)
+            waveform: snap(waveformWindowController),
+            projectMPresetIndex: restorableProjectMPresetIndex()
         )
+    }
+
+    private func restorableProjectMPresetIndex() -> Int? {
+        guard let controller = projectMWindowController,
+              controller.isProjectMAvailable else { return nil }
+        let count = controller.presetCount
+        let index = controller.currentPresetIndex
+        guard count > 0, index >= 0, index < count else { return nil }
+        return index
     }
 
     /// Rebuild the mode-dependent windows from a snapshot: the main window always returns;
@@ -4479,36 +4506,55 @@ class WindowManager {
             }
         }
 
+        // Freshly recreated windows are always created in non-shade mode, so calling
+        // setShadeMode(false) here is not just redundant — it resizes the window to its
+        // *default* size (normalModeFrame is nil on a new window), discarding the full-height
+        // frame the show*() call just restored. Only re-enter shade mode when it was captured.
         if let playlist = snapshot.playlist, playlist.visible {
             showPlaylist(at: playlist.isShadeMode ? nil : playlist.frame)
-            playlistWindowController?.setShadeMode(playlist.isShadeMode)
-            if playlist.isShadeMode { playlistWindowController?.window?.setFrame(playlist.frame, display: true) }
+            if playlist.isShadeMode {
+                playlistWindowController?.setShadeMode(true)
+                playlistWindowController?.window?.setFrame(playlist.frame, display: true)
+            }
         }
         if let equalizer = snapshot.equalizer, equalizer.visible {
             showEqualizer(at: equalizer.isShadeMode ? nil : equalizer.frame)
-            equalizerWindowController?.setShadeMode(equalizer.isShadeMode)
-            if equalizer.isShadeMode { equalizerWindowController?.window?.setFrame(equalizer.frame, display: true) }
+            if equalizer.isShadeMode {
+                equalizerWindowController?.setShadeMode(true)
+                equalizerWindowController?.window?.setFrame(equalizer.frame, display: true)
+            }
         }
         if let library = snapshot.library, library.visible {
             showPlexBrowser(at: library.isShadeMode ? nil : library.frame)
-            plexBrowserWindowController?.setShadeMode(library.isShadeMode)
-            if library.isShadeMode { plexBrowserWindowController?.window?.setFrame(library.frame, display: true) }
+            if library.isShadeMode {
+                plexBrowserWindowController?.setShadeMode(true)
+                plexBrowserWindowController?.window?.setFrame(library.frame, display: true)
+            }
         }
         if let spectrum = snapshot.spectrum, spectrum.visible {
             showSpectrum(at: spectrum.isShadeMode ? nil : spectrum.frame)
-            spectrumWindowController?.setShadeMode(spectrum.isShadeMode)
-            if spectrum.isShadeMode { spectrumWindowController?.window?.setFrame(spectrum.frame, display: true) }
+            if spectrum.isShadeMode {
+                spectrumWindowController?.setShadeMode(true)
+                spectrumWindowController?.window?.setFrame(spectrum.frame, display: true)
+            }
         }
         if snapshot.audioAnalysis?.visible == true { showAudioAnalysis(at: snapshot.audioAnalysis?.frame) }
         if let waveform = snapshot.waveform, waveform.visible {
             showWaveform(at: waveform.isShadeMode ? nil : waveform.frame)
-            waveformWindowController?.setShadeMode(waveform.isShadeMode)
-            if waveform.isShadeMode { waveformWindowController?.window?.setFrame(waveform.frame, display: true) }
+            if waveform.isShadeMode {
+                waveformWindowController?.setShadeMode(true)
+                waveformWindowController?.window?.setFrame(waveform.frame, display: true)
+            }
         }
         if let projectM = snapshot.projectM, projectM.visible {
-            showProjectM(at: projectM.isShadeMode ? nil : projectM.frame)
-            projectMWindowController?.setShadeMode(projectM.isShadeMode)
-            if projectM.isShadeMode { projectMWindowController?.window?.setFrame(projectM.frame, display: true) }
+            showProjectM(
+                at: projectM.isShadeMode ? nil : projectM.frame,
+                restoringPresetIndex: snapshot.projectMPresetIndex
+            )
+            if projectM.isShadeMode {
+                projectMWindowController?.setShadeMode(true)
+                projectMWindowController?.window?.setFrame(projectM.frame, display: true)
+            }
         }
 
         pushCurrentPresentationStateToRecreatedWindows()
@@ -4516,6 +4562,17 @@ class WindowManager {
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
         postWindowLayoutDidChange()
         updateDockedChildWindows()
+
+        // The freshly rebuilt visualization window starts its CVDisplayLink, but the rapid
+        // window reordering during recreate (main window made key last) fires an occlusion-state
+        // change that pauses it (stoppedDueToOcclusion). Without an explicit kick the loop only
+        // resumes once the user clicks the window. Re-pin the GL drawable and restart on the next
+        // runloop, after AppKit's occlusion state has settled. Mirrors the fullscreen-transition path.
+        if isProjectMVisible {
+            DispatchQueue.main.async { [weak self] in
+                self?.projectMWindowController?.resumeRenderingAfterWindowTransition()
+            }
+        }
 
         #if DEBUG
         // Log any visible orphaned windows that survived the rebuild
@@ -4693,7 +4750,8 @@ class WindowManager {
             projectM: conv(snapshot.projectM),
             spectrum: conv(snapshot.spectrum),
             audioAnalysis: conv(snapshot.audioAnalysis),
-            waveform: conv(snapshot.waveform)
+            waveform: conv(snapshot.waveform),
+            projectMPresetIndex: restorableProjectMPresetIndex()
         )
     }
 

@@ -24,6 +24,11 @@ protocol ProjectMWindowProviding: ModeDependentWindow {
     
     /// Stop rendering when window is hidden via orderOut (saves CPU)
     func stopRenderingForHide()
+
+    /// Re-pin the GL drawable and restart the render loop after a window transition
+    /// (e.g. a live skin-system switch that tears down and rebuilds the window). Clears any
+    /// occlusion-induced pause so rendering resumes without needing the user to focus the window.
+    func resumeRenderingAfterWindowTransition()
     
     /// Toggle shade (compact) mode
     func setShadeMode(_ enabled: Bool)
@@ -41,6 +46,10 @@ protocol ProjectMWindowProviding: ModeDependentWindow {
     
     /// Select preset at specific index
     func selectPreset(at index: Int, hardCut: Bool)
+
+    /// Restore a previously-active preset index after a window rebuild, deferring until the
+    /// engine is ready so the live selection survives a UI-system switch.
+    func restorePresetSelection(index: Int)
     
     /// Select a random preset
     func randomPreset(hardCut: Bool)
