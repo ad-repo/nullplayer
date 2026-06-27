@@ -325,6 +325,10 @@ class PlexBrowserView: NSView {
     
     /// Selected item indices
     private var selectedIndices: Set<Int> = []
+    private var pendingScrollToArtistId: String?
+    private var pendingScrollToArtistName: String?
+    private var pendingScrollAttempts = 0
+    private var pendingArtistLoadUnfiltered = false
     
     /// Scroll offset
     private var scrollOffset: CGFloat = 0
@@ -2079,6 +2083,7 @@ class PlexBrowserView: NSView {
         if columnSortId != nil {
             applyColumnSort()
         }
+        applyPendingArtistScroll()
         needsDisplay = true
     }
     
@@ -9393,6 +9398,28 @@ class PlexBrowserView: NSView {
     private func handleListClick(at index: Int, event: NSEvent, skinPoint: NSPoint) {
         let item = displayItems[index]
 
+        if browseMode == .search {
+            switch item.type {
+            case .artist(let artist):
+                navigateToArtistFromSearch(id: artist.id, name: artist.title)
+                return
+            case .subsonicArtist(let artist):
+                navigateToArtistFromSearch(id: artist.id, name: artist.name)
+                return
+            case .jellyfinArtist(let artist):
+                navigateToArtistFromSearch(id: artist.id, name: artist.name)
+                return
+            case .embyArtist(let artist):
+                navigateToArtistFromSearch(id: artist.id, name: artist.name)
+                return
+            case .localArtist(let artist):
+                navigateToArtistFromSearch(id: item.id, name: artist.name)
+                return
+            default:
+                break
+            }
+        }
+
         if case .radioFolder(let folder) = item.type {
             let indent = CGFloat(item.indentLevel) * 16
             let inExpandZone = skinPoint.x < Layout.leftBorder + indent + 20
@@ -13408,6 +13435,66 @@ class PlexBrowserView: NSView {
             self?.typeAheadQuery = ""
         }
     }
+
+    private func applyPendingArtistScroll() {
+        guard let artistId = pendingScrollToArtistId else { return }
+        let name = pendingScrollToArtistName ?? ""
+        pendingScrollAttempts += 1
+        let idx = pendingArtistIndex(artistId: artistId, name: name)
+        if let idx = idx {
+            selectedIndices = [idx]
+            ensureVisible(index: idx)
+            pendingScrollToArtistId = nil
+            pendingScrollToArtistName = nil
+            pendingScrollAttempts = 0
+            pendingArtistLoadUnfiltered = false
+            needsDisplay = true
+        } else if pendingScrollAttempts >= 3 {
+            pendingScrollToArtistId = nil
+            pendingScrollToArtistName = nil
+            pendingScrollAttempts = 0
+            pendingArtistLoadUnfiltered = false
+        }
+    }
+
+    private func pendingArtistIndex(artistId: String, name: String) -> Int? {
+        let titleMatch = !name.isEmpty ? displayItems.firstIndex { item in
+            isArtistRow(item) && item.title.caseInsensitiveCompare(name) == .orderedSame
+        } : nil
+        return titleMatch ?? displayItems.firstIndex { item in
+            isArtistRow(item) && item.id == artistId
+        }
+    }
+
+    private func isArtistRow(_ item: PlexDisplayItem) -> Bool {
+        switch item.type {
+        case .artist, .localArtist, .subsonicArtist, .jellyfinArtist, .embyArtist:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func navigateToArtistFromSearch(id: String, name: String = "") {
+        let artistName = name.isEmpty ? id.replacingOccurrences(of: "local-artist-", with: "") : name
+        pendingScrollToArtistId = id
+        pendingScrollToArtistName = artistName
+        pendingScrollAttempts = 0
+        pendingArtistLoadUnfiltered = true
+        cachedArtists.removeAll()
+        cachedSubsonicArtists.removeAll()
+        cachedJellyfinArtists.removeAll()
+        cachedEmbyArtists.removeAll()
+        if currentSource == .local,
+           let artistOffset = MediaLibraryStore.shared.artistOffset(named: artistName, sort: currentSort.asModernSort) {
+            localArtistPageOffset = (artistOffset / localPageSize) * localPageSize
+        }
+        browseMode = .artists
+        selectedIndices.removeAll()
+        scrollOffset = 0
+        loadDataForCurrentMode()
+        needsDisplay = true
+    }
     
     // MARK: - Data Management
     
@@ -13557,7 +13644,14 @@ class PlexBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedArtists.isEmpty {
-                        if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
+                        if self.pendingArtistLoadUnfiltered {
+                            self.cachedArtists = try await plexManager.fetchArtists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                            if self.cachedAlbums.isEmpty {
+                                self.cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                            }
+                        } else if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
                             self.cachedArtists = plexManager.cachedArtists
                             self.cachedAlbums = plexManager.cachedAlbums
                         } else {
@@ -13570,6 +13664,7 @@ class PlexBrowserView: NSView {
                         }
                         self.buildArtistAlbumCounts()
                     }
+                    self.pendingArtistLoadUnfiltered = false
                     self.buildArtistItems()
                     
                 case .albums:
@@ -13748,7 +13843,7 @@ class PlexBrowserView: NSView {
             }
         }
     }
-    
+
     private func buildAlbumItems() {
         displayItems.removeAll()
         for album in sortPlexAlbums(cachedAlbums) {
@@ -14208,7 +14303,9 @@ class PlexBrowserView: NSView {
         // Build display items for current mode
         switch browseMode {
         case .artists:
-            localArtistPageOffset = 0
+            if !pendingArtistLoadUnfiltered {
+                localArtistPageOffset = 0
+            }
             localArtistTotal = store.artistCount()
             buildLocalArtistItems()
         case .albums:
@@ -14243,6 +14340,7 @@ class PlexBrowserView: NSView {
         if columnSortId != nil {
             applyColumnSort()
         }
+        applyPendingArtistScroll()
 
         needsDisplay = true
     }
@@ -15010,7 +15108,11 @@ class PlexBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedSubsonicArtists.isEmpty {
-                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                        if self.pendingArtistLoadUnfiltered {
+                            try Task.checkCancellation()
+                            self.cachedSubsonicArtists = try await manager.fetchArtistsUnfiltered()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                        } else if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
                             self.cachedSubsonicArtists = manager.cachedArtists
                             self.cachedSubsonicAlbums = manager.cachedAlbums
                         } else {
@@ -15022,6 +15124,7 @@ class PlexBrowserView: NSView {
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
+                    self.pendingArtistLoadUnfiltered = false
                     self.buildSubsonicArtistItems()
                     
                 case .albums:
@@ -15269,7 +15372,11 @@ class PlexBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedEmbyArtists.isEmpty {
-                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                        if self.pendingArtistLoadUnfiltered {
+                            try Task.checkCancellation()
+                            self.cachedEmbyArtists = try await manager.fetchArtistsUnfiltered()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                        } else if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
                             self.cachedEmbyArtists = manager.cachedArtists
                             self.cachedEmbyAlbums = manager.cachedAlbums
                         } else {
@@ -15281,6 +15388,7 @@ class PlexBrowserView: NSView {
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
+                    self.pendingArtistLoadUnfiltered = false
                     self.buildEmbyArtistItems()
 
                 case .albums:
@@ -15400,7 +15508,11 @@ class PlexBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedJellyfinArtists.isEmpty {
-                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                        if self.pendingArtistLoadUnfiltered {
+                            try Task.checkCancellation()
+                            self.cachedJellyfinArtists = try await manager.fetchArtistsUnfiltered()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                        } else if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
                             self.cachedJellyfinArtists = manager.cachedArtists
                             self.cachedJellyfinAlbums = manager.cachedAlbums
                         } else {
@@ -15412,6 +15524,7 @@ class PlexBrowserView: NSView {
                             }
                         }
                     }
+                    self.pendingArtistLoadUnfiltered = false
                     self.buildJellyfinArtistItems()
                     
                 case .albums:
@@ -16693,6 +16806,7 @@ class PlexBrowserView: NSView {
         if columnSortId != nil {
             applyColumnSort()
         }
+        applyPendingArtistScroll()
         
         // Ensure view updates
         needsDisplay = true
@@ -17538,8 +17652,8 @@ class PlexBrowserView: NSView {
         case .album(let album):
             playAlbum(album)
             
-        case .artist:
-            toggleExpand(item)
+        case .artist(let artist):
+            if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.title) } else { toggleExpand(item) }
             
         case .movie(let movie):
             playMovie(movie)
@@ -17562,8 +17676,8 @@ class PlexBrowserView: NSView {
         case .localAlbum(let album):
             playLocalAlbum(album)
 
-        case .localArtist:
-            toggleExpand(item)
+        case .localArtist(let artist):
+            if browseMode == .search { navigateToArtistFromSearch(id: item.id, name: artist.name) } else { toggleExpand(item) }
 
         case .localFolder:
             toggleExpand(item)
@@ -17586,8 +17700,8 @@ class PlexBrowserView: NSView {
         case .subsonicAlbum(let album):
             playSubsonicAlbum(album)
             
-        case .subsonicArtist:
-            toggleExpand(item)
+        case .subsonicArtist(let artist):
+            if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
             
         case .subsonicPlaylist(let playlist):
             playSubsonicPlaylist(playlist)
@@ -17598,8 +17712,8 @@ class PlexBrowserView: NSView {
         case .jellyfinAlbum(let album):
             playJellyfinAlbum(album)
             
-        case .jellyfinArtist:
-            toggleExpand(item)
+        case .jellyfinArtist(let artist):
+            if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
             
         case .jellyfinPlaylist(let playlist):
             playJellyfinPlaylist(playlist)
@@ -17622,8 +17736,8 @@ class PlexBrowserView: NSView {
         case .embyAlbum(let album):
             playEmbyAlbum(album)
 
-        case .embyArtist:
-            toggleExpand(item)
+        case .embyArtist(let artist):
+            if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
 
         case .embyPlaylist(let playlist):
             playEmbyPlaylist(playlist)
