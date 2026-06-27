@@ -38,33 +38,27 @@ class ModernSkinRenderer {
         renderStyle == .metal
     }
 
-    private var metalInsetFillColor: NSColor {
-        NSColor(calibratedRed: 0.44, green: 0.49, blue: 0.52, alpha: 1.0)
+    /// The active metal finish for the current skin. Only meaningful when `usesMetalAppearance`.
+    private var material: MetalMaterial {
+        skin.metalMaterial
     }
 
-    private var metalInsetBorderColor: NSColor {
-        NSColor(calibratedRed: 0.22, green: 0.25, blue: 0.27, alpha: 1.0)
-    }
+    private var metalInsetFillColor: NSColor { material.insetFill }
 
-    private var metalSliderTrackColor: NSColor {
-        NSColor(calibratedRed: 0.50, green: 0.56, blue: 0.59, alpha: 1.0)
-    }
+    /// Backlit hi-fi green used for the main window's time and track-display panels.
+    private var metalDisplayFillColor: NSColor { material.displayFill }
 
-    private var metalSliderFillColor: NSColor {
-        NSColor(calibratedRed: 0.70, green: 0.76, blue: 0.78, alpha: 1.0)
-    }
+    private var metalInsetBorderColor: NSColor { material.insetBorder }
 
-    private var metalSliderThumbColor: NSColor {
-        NSColor(calibratedRed: 0.18, green: 0.21, blue: 0.23, alpha: 1.0)
-    }
+    private var metalSliderTrackColor: NSColor { material.sliderTrack }
 
-    private var metalTransportButtonColor: NSColor {
-        NSColor(calibratedRed: 0.14, green: 0.17, blue: 0.19, alpha: 1.0)
-    }
+    private var metalSliderFillColor: NSColor { material.sliderFill }
 
-    private var metalTransportButtonPressedColor: NSColor {
-        NSColor(calibratedRed: 0.20, green: 0.23, blue: 0.25, alpha: 1.0)
-    }
+    private var metalSliderThumbColor: NSColor { material.sliderThumb }
+
+    private var metalTransportButtonColor: NSColor { material.transportButton }
+
+    private var metalTransportButtonPressedColor: NSColor { material.transportButtonPressed }
     
     // MARK: - Initialization
     
@@ -164,20 +158,13 @@ class ModernSkinRenderer {
     private func drawMetalWindowBackground(in bounds: NSRect, context: CGContext, opacity: CGFloat) {
         context.saveGState()
         context.setBlendMode(.copy)
-        context.setFillColor(NSColor(calibratedWhite: 0.73, alpha: opacity).cgColor)
+        context.setFillColor(material.backgroundBase.withAlphaComponent(opacity).cgColor)
         context.fill(bounds)
         context.setBlendMode(.normal)
         context.setAlpha(opacity)
 
-        let colors = [
-            NSColor(calibratedWhite: 0.93, alpha: 1.0).cgColor,
-            NSColor(calibratedWhite: 0.73, alpha: 1.0).cgColor,
-            NSColor(calibratedWhite: 0.86, alpha: 1.0).cgColor,
-            NSColor(calibratedWhite: 0.66, alpha: 1.0).cgColor,
-            NSColor(calibratedWhite: 0.78, alpha: 1.0).cgColor,
-            NSColor(calibratedWhite: 0.54, alpha: 1.0).cgColor
-        ] as CFArray
-        let locations: [CGFloat] = [0.0, 0.08, 0.32, 0.58, 0.78, 1.0]
+        let colors = material.backgroundStops.map { $0.color.cgColor } as CFArray
+        let locations = material.backgroundStops.map { $0.location }
         if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locations) {
             context.drawLinearGradient(
                 gradient,
@@ -191,7 +178,7 @@ class ModernSkinRenderer {
         var y = bounds.minY
         var stripeIndex = 0
         while y <= bounds.maxY {
-            let alpha: CGFloat = stripeIndex.isMultiple(of: 2) ? 0.14 : 0.07
+            let alpha: CGFloat = stripeIndex.isMultiple(of: 2) ? material.brushHighlightStrong : material.brushHighlightFaint
             context.setStrokeColor(NSColor.white.withAlphaComponent(alpha).cgColor)
             context.setLineWidth(brushedLineWidth)
             context.move(to: CGPoint(x: bounds.minX, y: y))
@@ -202,7 +189,7 @@ class ModernSkinRenderer {
         }
 
         context.setAlpha(1.0)
-        let accent = NSColor(calibratedRed: 0.86, green: 0.90, blue: 0.91, alpha: 0.18 * opacity)
+        let accent = material.accentStrip.withAlphaComponent(material.accentStrip.alphaComponent * opacity)
         context.setFillColor(accent.cgColor)
         let accentHeight = max(2.0 * scaleFactor, min(bounds.height * 0.18, 14.0 * scaleFactor))
         let accentRect = NSRect(
@@ -434,12 +421,12 @@ class ModernSkinRenderer {
         context.saveGState()
         context.beginTransparencyLayer(auxiliaryInfo: nil)
 
-        context.setStrokeColor(NSColor.black.withAlphaComponent(0.62).cgColor)
+        context.setStrokeColor(material.borderDark.cgColor)
         context.setLineWidth(outerWidth)
         context.addPath(path)
         context.strokePath()
 
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.38).cgColor)
+        context.setStrokeColor(material.borderLight.cgColor)
         context.setLineWidth(max(0.5, outerWidth * 0.55))
         context.addPath(path)
         context.strokePath()
@@ -501,7 +488,7 @@ class ModernSkinRenderer {
                               color: skin.borderColor.withAlphaComponent(0.5).cgColor)
         }
         let separatorColor = usesMetalAppearance
-            ? NSColor.black.withAlphaComponent(0.34)
+            ? material.separator
             : skin.borderColor.withAlphaComponent(0.4)
         context.setStrokeColor(separatorColor.cgColor)
         context.setLineWidth(0.5 * scaleFactor)
@@ -556,12 +543,8 @@ class ModernSkinRenderer {
         guard rect.width > 0, rect.height > 0 else { return }
 
         context.saveGState()
-        let colors = [
-            NSColor(calibratedWhite: 0.98, alpha: 0.40).cgColor,
-            NSColor(calibratedWhite: 0.78, alpha: 0.18).cgColor,
-            NSColor(calibratedWhite: 0.47, alpha: 0.16).cgColor
-        ] as CFArray
-        let locations: [CGFloat] = [0.0, 0.48, 1.0]
+        let colors = material.titleBarStops.map { $0.color.cgColor } as CFArray
+        let locations = material.titleBarStops.map { $0.location }
         if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locations) {
             context.drawLinearGradient(
                 gradient,
@@ -570,7 +553,7 @@ class ModernSkinRenderer {
                 options: []
             )
         }
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.34).cgColor)
+        context.setStrokeColor(material.titleBarHighlight.cgColor)
         context.setLineWidth(max(0.5, 0.5 * scaleFactor))
         context.move(to: CGPoint(x: rect.minX + 1, y: rect.maxY - 1))
         context.addLine(to: CGPoint(x: rect.maxX - 1, y: rect.maxY - 1))
@@ -1430,22 +1413,27 @@ class ModernSkinRenderer {
         in rect: NSRect,
         backgroundOpacity: CGFloat = 1.0,
         borderOpacity: CGFloat = 1.0,
+        displayFill: Bool = false,
         context: CGContext
     ) {
         drawInsetPanelScaled(
             scaledRect(rect),
             context: context,
             backgroundOpacity: backgroundOpacity,
-            borderOpacity: borderOpacity
+            borderOpacity: borderOpacity,
+            displayFill: displayFill
         )
     }
-    
+
     /// Same as drawInsetPanel but accepts an already-scaled rect (used from drawFallback).
+    /// When `displayFill` is set, the metal appearance fills with the hi-fi green
+    /// display color instead of the neutral steel inset color.
     private func drawInsetPanelScaled(
         _ scaledR: NSRect,
         context: CGContext,
         backgroundOpacity: CGFloat = 1.0,
-        borderOpacity: CGFloat = 1.0
+        borderOpacity: CGFloat = 1.0,
+        displayFill: Bool = false
     ) {
         context.saveGState()
         let resolvedBackgroundOpacity = min(1.0, max(0.0, backgroundOpacity))
@@ -1455,7 +1443,8 @@ class ModernSkinRenderer {
         if usesMetalAppearance {
             context.addPath(path)
             context.clip()
-            context.setFillColor(metalInsetFillColor.withAlphaComponent(resolvedBackgroundOpacity).cgColor)
+            let baseFill = displayFill ? metalDisplayFillColor : metalInsetFillColor
+            context.setFillColor(baseFill.withAlphaComponent(resolvedBackgroundOpacity).cgColor)
             context.fill(scaledR)
             let colors = [
                 NSColor.white.withAlphaComponent(0.18 * resolvedBackgroundOpacity).cgColor,

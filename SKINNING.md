@@ -76,22 +76,33 @@ Or install under:
 2. Save the files into the `MetalSkins` folder.
 3. Switch to the skin again from **Skins > Metal** or reselect it from the menu to reload it.
 
-### Metal Default Skin
+### Built-in Metal Finishes
 
-NullPlayer also ships a built-in metal fallback skin named `Brushed Steel`. It is not updated through `skin.json`; it is defined in code as the default when no user metal skin is selected.
+NullPlayer ships four built-in metal skins, defined in code (not through `skin.json`) and selectable from **Skins → Metal**:
 
-If you need to change the built-in default metal appearance, update:
+| Finish | Look |
+|--------|------|
+| **Brushed Steel** (default) | Cool brushed steel faceplate |
+| **Gunmetal** | Dark blue-gray satin |
+| **Anodized Black** | Near-matte charcoal |
+| **Champagne** | Warm silver-gold vintage receiver |
 
-- `Sources/NullPlayer/ModernSkin/ModernSkinLoader.swift`
-- `Sources/NullPlayer/ModernSkin/ModernSkinRenderer.swift`
-- Any metal-specific view overrides in `Sources/NullPlayer/Windows/Modern*/`
+Each finish is a `MetalMaterial` preset (`Sources/NullPlayer/ModernSkin/MetalMaterial.swift`) that supplies every code-driven metal color: window sheen gradient + brushed stripes + accent strip, title bar, border, inset panels, the backlit-green LCD display, sliders, transport icons, and the EQ panel/control/stroke + fader value ramp. The `ModernSkin` carries the chosen material; the renderer and EQ view read colors from it instead of constants.
 
-Keep metal defaults neutral:
+The main window time/track-display panels and the EQ curve graph render on a backlit-green LCD (`material.displayFill`). Text drawn on the LCD (digits, marquee, info labels, EQ curve) uses `material.lcdInk` so it stays dark on the green in every finish. On-chrome text (EQ labels/buttons, playlist/library rows, window controls) uses the skin **palette** (`text`/`textDim`/`dataColor`), which each finish tunes light (dark finishes) or dark (light finishes).
 
-- use dark text colors
-- avoid the modern yellow time/data defaults
-- avoid bright blue accent colors
-- prefer graphite, steel, and muted bronze tones for controls and traces
+To change or add a built-in metal finish, update:
+
+- `Sources/NullPlayer/ModernSkin/MetalMaterial.swift` — add/edit a preset
+- `Sources/NullPlayer/ModernSkin/ModernSkinLoader.swift` — `createBuiltInMetalSkin(named:)` (palette + material) and `builtInMetalSkinNames`
+- the renderer/EQ view only if you add a *new* metal surface (existing surfaces already read from the material)
+
+Design guidance for a metal finish:
+
+- pick a coherent base tint (cool steel, gunmetal blue-gray, charcoal, warm champagne)
+- set on-chrome palette `text`/`textDim`/`dataColor` light for dark finishes, dark for light finishes
+- keep `timeColor`/`marqueeColor` dark — they render on the green LCD
+- avoid the modern yellow time/data defaults and bright blue accents
 
 ---
 

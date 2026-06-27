@@ -236,7 +236,11 @@ The simplest skin is just a `skin.json` with palette colors:
 
 All elements render programmatically using the palette colors.
 
-Metal mode uses the same modern skin engine but a separate family namespace. The built-in `Brushed Steel` fallback is the default metal skin, stored under `MetalSkins`, and it keeps the palette neutral: darker text, muted control wells, and no bright timer/data defaults from modern skins.
+Metal mode uses the same modern skin engine but a separate family namespace (`.metal` render style, `metalSkinName` key, user skins under `MetalSkins`). Its appearance is **code-driven, not palette-driven**: every metal skin draws the same surfaces, with per-finish colors supplied by a `MetalMaterial` preset (`ModernSkin/MetalMaterial.swift`).
+
+Four built-in metal finishes ship in code (`ModernSkinLoader.createBuiltInMetalSkin(named:)`, listed by `builtInMetalSkinNames`): **Brushed Steel** (default), **Gunmetal**, **Anodized Black**, **Champagne**. They appear automatically in the Skins → Metal menu and load by name (path-nil `SkinInfo`).
+
+Display vs. chrome contrast: the main-window time/track panels and EQ curve graph render on a backlit-green LCD (`material.displayFill`); text on the LCD uses `material.lcdInk` (dark in every finish), while on-chrome text uses the skin palette `text`/`textDim`/`dataColor` (light on dark finishes, dark on light). `timeColor`/`marqueeColor` stay dark for all finishes since they sit on the green LCD. EQ faders use a brightness value ramp (`material.faderLow`/`faderMid`/`faderHigh`), not a hue scale.
 
 ## Bundled Skins
 

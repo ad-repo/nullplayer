@@ -432,6 +432,7 @@ class ModernMainWindowView: NSView {
                         in: timePanelRect,
                         backgroundOpacity: timeOpacity.background,
                         borderOpacity: timeOpacity.border,
+                        displayFill: true,
                         context: context
                     )
                     withContextAlpha(timeOpacity.content, context: context) {
@@ -472,6 +473,7 @@ class ModernMainWindowView: NSView {
                             in: effectiveMarqueePanelRect,
                             backgroundOpacity: trackOpacity.background,
                             borderOpacity: trackOpacity.border,
+                            displayFill: true,
                             context: context
                         )
                     }
@@ -661,8 +663,12 @@ class ModernMainWindowView: NSView {
         let skin = renderer.skin
         // Use an explicitly small font for info labels to match reference dot-matrix style
         let smallFont = skin.infoFont()
-        // Brighter dim color for info labels (more visible than textDim)
-        let infoColor = skin.textDimColor
+        // Brighter dim color for info labels (more visible than textDim).
+        // Metal: these labels sit on the green LCD panel, so use the finish's dark LCD ink
+        // instead of the (possibly light) palette textDim used by dark-chrome finishes.
+        let infoColor = ModernSkinEngine.shared.currentRenderStyle == .metal
+            ? skin.metalMaterial.lcdInk
+            : skin.textDimColor
         
         // Bitrate
         if let track = currentTrack, let bitrate = track.bitrate {

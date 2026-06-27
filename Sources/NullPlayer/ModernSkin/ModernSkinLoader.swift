@@ -327,29 +327,64 @@ class ModernSkinLoader {
         return skin
     }
 
+    /// Names of the built-in (code-defined) metal skins, in menu order. Each maps to a
+    /// `MetalMaterial` finish + a palette tuned for that finish in `createBuiltInMetalSkin`.
+    static let builtInMetalSkinNames = ["Brushed Steel", "Gunmetal", "Anodized Black", "Champagne"]
+
     private func createMetalFallbackSkin() -> ModernSkin {
+        createBuiltInMetalSkin(named: "Brushed Steel")
+    }
+
+    /// Build a code-defined metal skin by name. Unknown names fall back to Brushed Steel.
+    /// On-chrome palette text (`text`/`textDim`/`dataColor`) is light on dark finishes and dark on
+    /// light finishes; `timeColor`/`marqueeColor` stay dark because they render on the green LCD.
+    func createBuiltInMetalSkin(named name: String) -> ModernSkin {
+        let palette: ColorPalette
+        let material: MetalMaterial
+
+        switch name {
+        case "Gunmetal":
+            material = .gunmetal
+            palette = ColorPalette(
+                primary: "#cdd6dd", secondary: "#8a99a4", accent: "#9fb4c4", highlight: "#f1f5f7",
+                background: "#2a2f35", surface: "#20252b", text: "#e8eef2", textDim: "#b6c2cb",
+                positive: nil, negative: nil, warning: "#d6a35a", border: "#11151a",
+                timeColor: "#080b0d", marqueeColor: "#080b0d", dataColor: "#c2ccd4",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        case "Anodized Black":
+            material = .anodizedBlack
+            palette = ColorPalette(
+                primary: "#d2d4d8", secondary: "#8a8c90", accent: "#c8cace", highlight: "#f2f3f5",
+                background: "#161618", surface: "#101012", text: "#e6e7ea", textDim: "#aeb0b5",
+                positive: nil, negative: nil, warning: "#c9a25f", border: "#060607",
+                timeColor: "#080b0d", marqueeColor: "#080b0d", dataColor: "#bcbec3",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        case "Champagne":
+            material = .champagne
+            palette = ColorPalette(
+                primary: "#2a2212", secondary: "#6b5c3c", accent: "#6e521c", highlight: "#fff7e6",
+                background: "#b8ad95", surface: "#6a5f48", text: "#1c160c", textDim: "#4a3f2a",
+                positive: nil, negative: nil, warning: "#8a5a1e", border: "#2a2214",
+                timeColor: "#0a0f0a", marqueeColor: "#0a0f0a", dataColor: "#4a3f2a",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        default: // Brushed Steel
+            material = .brushedSteel
+            palette = ColorPalette(
+                primary: "#cbd3d8", secondary: "#7f8c94", accent: "#20272b", highlight: "#f1f5f7",
+                background: "#9aa3a8", surface: "#181d20", text: "#080b0d", textDim: "#252c31",
+                positive: nil, negative: nil, warning: "#4d3a18", border: "#2f363a",
+                timeColor: "#080b0d", marqueeColor: "#080b0d", dataColor: "#252c31",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        }
+
+        let resolvedName = ModernSkinLoader.builtInMetalSkinNames.contains(name) ? name : "Brushed Steel"
         let config = ModernSkinConfig(
-            meta: SkinMeta(name: "Brushed Steel", author: "NullPlayer", version: "1.0", description: "Built-in metal skin"),
-            palette: ColorPalette(
-                primary: "#cbd3d8",
-                secondary: "#7f8c94",
-                accent: "#20272b",
-                highlight: "#f1f5f7",
-                background: "#9aa3a8",
-                surface: "#181d20",
-                text: "#080b0d",
-                textDim: "#252c31",
-                positive: nil,
-                negative: nil,
-                warning: "#4d3a18",
-                border: "#2f363a",
-                timeColor: "#080b0d",
-                marqueeColor: "#080b0d",
-                dataColor: "#252c31",
-                eqLow: "#252c31",
-                eqMid: "#3c464c",
-                eqHigh: "#080b0d"
-            ),
+            meta: SkinMeta(name: resolvedName, author: "NullPlayer", version: "1.0", description: "Built-in metal skin"),
+            palette: palette,
             fonts: FontConfig(
                 primaryName: ModernSkinFont.defaultFontName,
                 fallbackName: "Menlo",
@@ -378,6 +413,7 @@ class ModernSkinLoader {
         )
 
         let skin = ModernSkin(config: config, bundlePath: nil)
+        skin.metalMaterial = material
         let fonts = ModernSkinFont.resolve(config: config.fonts, skinBundle: nil)
         skin.setFonts(primary: fonts.primary, time: fonts.time, small: fonts.small)
         return skin

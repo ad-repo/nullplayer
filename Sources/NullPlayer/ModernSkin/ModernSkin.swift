@@ -64,7 +64,12 @@ class ModernSkin {
     
     /// Multiplier for element-level glow blur (from glow.elementBlur, defaults to 1.0)
     let elementGlowMultiplier: CGFloat
-    
+
+    /// Metal-finish render material. Only consulted when the skin is rendered with the metal
+    /// render style; built-in metal skins assign a finish preset, everything else uses the
+    /// brushed-steel default.
+    var metalMaterial: MetalMaterial = .brushedSteel
+
     // MARK: - Initialization
     
     init(config: ModernSkinConfig, bundlePath: URL?) {

@@ -6,6 +6,10 @@
 
 - **Metal UI default skin and contrast pass** — Metal mode now defaults to a built-in `Brushed Steel` skin with dark neutral text and muted control surfaces instead of inheriting modern skin neon defaults. The main window, EQ, library browser, compact player bar, transport controls, and waveform window were all tuned to avoid bright yellow/blue accents and black control wells that disappeared against the brushed metal palette.
 
+- **Backlit green LCD display (Metal mode)** — the main window's time and track-display panels and the EQ curve graph now render on a hi-fi style backlit-green LCD background with dark "ink" digits, marquee, info labels, and curve. The EQ faders use a brightness-based value ramp (dark = cut, bright = boost) instead of the classic red/yellow/green, which washed out against the green display.
+
+- **New built-in Metal finishes — Gunmetal, Anodized Black, Champagne** — Metal mode ships three realistic faceplate finishes alongside Brushed Steel, selectable from **Skins → Metal**. Gunmetal is a dark blue-gray satin, Anodized Black a near-matte charcoal, and Champagne a warm silver-gold vintage receiver look. Each finish drives the window sheen, panels, sliders, transport icons, and EQ via a new per-finish `MetalMaterial` descriptor, with on-chrome text automatically light on the dark finishes and dark on the light ones, while the green LCD keeps dark text in every finish.
+
 ## 0.26.0
 
 ### New Features

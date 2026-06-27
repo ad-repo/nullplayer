@@ -104,6 +104,18 @@ class ModernSkinEngine {
         }
 
         guard let path = skinInfo.path else {
+            // Built-in (code-defined) skin: metal finishes are built by name; everything else
+            // falls back to the family default.
+            if family == .metal {
+                currentSkin = loader.createBuiltInMetalSkin(named: skinInfo.name)
+                currentSkinName = currentSkin?.config.meta.name ?? skinInfo.name
+                currentFamily = family
+                UserDefaults.standard.set(currentSkinName, forKey: family.skinNameKey)
+                configureSkinDependencies(preservePersistedProfiles: preservePersistedProfiles)
+                notifySkinChanged()
+                NSLog("ModernSkinEngine: Loaded built-in metal skin '%@'", currentSkinName ?? skinInfo.name)
+                return true
+            }
             loadDefaultSkin(for: family, preservePersistedProfiles: preservePersistedProfiles)
             return true
         }
@@ -192,9 +204,10 @@ class ModernSkinEngine {
         case .modern:
             return discovered
         case .metal:
-            let fallback = SkinInfo(name: family.defaultSkinName, path: nil, isBundled: true)
-            let filtered = discovered.filter { $0.name != family.defaultSkinName }
-            return [fallback] + filtered
+            let builtInNames = ModernSkinLoader.builtInMetalSkinNames
+            let builtIns = builtInNames.map { SkinInfo(name: $0, path: nil, isBundled: true) }
+            let filtered = discovered.filter { !builtInNames.contains($0.name) }
+            return builtIns + filtered
         }
     }
     
