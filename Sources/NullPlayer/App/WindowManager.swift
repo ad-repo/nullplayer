@@ -4487,36 +4487,52 @@ class WindowManager {
             }
         }
 
+        // Freshly recreated windows are always created in non-shade mode, so calling
+        // setShadeMode(false) here is not just redundant — it resizes the window to its
+        // *default* size (normalModeFrame is nil on a new window), discarding the full-height
+        // frame the show*() call just restored. Only re-enter shade mode when it was captured.
         if let playlist = snapshot.playlist, playlist.visible {
             showPlaylist(at: playlist.isShadeMode ? nil : playlist.frame)
-            playlistWindowController?.setShadeMode(playlist.isShadeMode)
-            if playlist.isShadeMode { playlistWindowController?.window?.setFrame(playlist.frame, display: true) }
+            if playlist.isShadeMode {
+                playlistWindowController?.setShadeMode(true)
+                playlistWindowController?.window?.setFrame(playlist.frame, display: true)
+            }
         }
         if let equalizer = snapshot.equalizer, equalizer.visible {
             showEqualizer(at: equalizer.isShadeMode ? nil : equalizer.frame)
-            equalizerWindowController?.setShadeMode(equalizer.isShadeMode)
-            if equalizer.isShadeMode { equalizerWindowController?.window?.setFrame(equalizer.frame, display: true) }
+            if equalizer.isShadeMode {
+                equalizerWindowController?.setShadeMode(true)
+                equalizerWindowController?.window?.setFrame(equalizer.frame, display: true)
+            }
         }
         if let library = snapshot.library, library.visible {
             showPlexBrowser(at: library.isShadeMode ? nil : library.frame)
-            plexBrowserWindowController?.setShadeMode(library.isShadeMode)
-            if library.isShadeMode { plexBrowserWindowController?.window?.setFrame(library.frame, display: true) }
+            if library.isShadeMode {
+                plexBrowserWindowController?.setShadeMode(true)
+                plexBrowserWindowController?.window?.setFrame(library.frame, display: true)
+            }
         }
         if let spectrum = snapshot.spectrum, spectrum.visible {
             showSpectrum(at: spectrum.isShadeMode ? nil : spectrum.frame)
-            spectrumWindowController?.setShadeMode(spectrum.isShadeMode)
-            if spectrum.isShadeMode { spectrumWindowController?.window?.setFrame(spectrum.frame, display: true) }
+            if spectrum.isShadeMode {
+                spectrumWindowController?.setShadeMode(true)
+                spectrumWindowController?.window?.setFrame(spectrum.frame, display: true)
+            }
         }
         if snapshot.audioAnalysis?.visible == true { showAudioAnalysis(at: snapshot.audioAnalysis?.frame) }
         if let waveform = snapshot.waveform, waveform.visible {
             showWaveform(at: waveform.isShadeMode ? nil : waveform.frame)
-            waveformWindowController?.setShadeMode(waveform.isShadeMode)
-            if waveform.isShadeMode { waveformWindowController?.window?.setFrame(waveform.frame, display: true) }
+            if waveform.isShadeMode {
+                waveformWindowController?.setShadeMode(true)
+                waveformWindowController?.window?.setFrame(waveform.frame, display: true)
+            }
         }
         if let projectM = snapshot.projectM, projectM.visible {
             showProjectM(at: projectM.isShadeMode ? nil : projectM.frame)
-            projectMWindowController?.setShadeMode(projectM.isShadeMode)
-            if projectM.isShadeMode { projectMWindowController?.window?.setFrame(projectM.frame, display: true) }
+            if projectM.isShadeMode {
+                projectMWindowController?.setShadeMode(true)
+                projectMWindowController?.window?.setFrame(projectM.frame, display: true)
+            }
         }
 
         pushCurrentPresentationStateToRecreatedWindows()
