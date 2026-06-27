@@ -4481,8 +4481,17 @@ class WindowManager {
             spectrum: snap(spectrumWindowController),
             audioAnalysis: snap(audioAnalysisWindowController),
             waveform: snap(waveformWindowController),
-            projectMPresetIndex: projectMWindowController?.currentPresetIndex
+            projectMPresetIndex: restorableProjectMPresetIndex()
         )
+    }
+
+    private func restorableProjectMPresetIndex() -> Int? {
+        guard let controller = projectMWindowController,
+              controller.isProjectMAvailable else { return nil }
+        let count = controller.presetCount
+        let index = controller.currentPresetIndex
+        guard count > 0, index >= 0, index < count else { return nil }
+        return index
     }
 
     /// Rebuild the mode-dependent windows from a snapshot: the main window always returns;
@@ -4742,7 +4751,7 @@ class WindowManager {
             spectrum: conv(snapshot.spectrum),
             audioAnalysis: conv(snapshot.audioAnalysis),
             waveform: conv(snapshot.waveform),
-            projectMPresetIndex: projectMWindowController?.currentPresetIndex
+            projectMPresetIndex: restorableProjectMPresetIndex()
         )
     }
 

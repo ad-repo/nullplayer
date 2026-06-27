@@ -47,6 +47,8 @@ class VisualizationGLView: NSOpenGLView {
 
     /// Whether projectM is available and initialized (backward compatibility)
     var isProjectMAvailable: Bool {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard case .projectM = currentEngineType else { return false }
         return (engine as? ProjectMWrapper)?.isAvailable ?? false
     }
@@ -445,6 +447,7 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     /// Actually initialize the engine - must be called on render thread with GL context current
+    /// while holding `engineLock`.
     private func initializeEngineOnRenderThread() {
         guard engineNeedsSetup else { return }
         engineNeedsSetup = false
@@ -1070,12 +1073,16 @@ class VisualizationGLView: NSOpenGLView {
 
     /// Number of available presets (ProjectM only)
     var presetCount: Int {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let pm = engine as? ProjectMWrapper else { return 0 }
         return pm.presetCount
     }
 
     /// Index of currently selected preset (ProjectM only)
     var currentPresetIndex: Int {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let pm = engine as? ProjectMWrapper else { return 0 }
         return pm.currentPresetIndex
     }
@@ -1134,6 +1141,8 @@ class VisualizationGLView: NSOpenGLView {
     /// startup default so the visualization stays on the exact preset the user was viewing.
     func restorePresetSelection(index: Int) {
         guard index >= 0 else { return }
+        engineLock.lock()
+        defer { engineLock.unlock() }
         if !engineNeedsSetup, let pm = engine as? ProjectMWrapper, index < pm.presetCount {
             pm.selectPreset(at: index, hardCut: true)
         } else {
