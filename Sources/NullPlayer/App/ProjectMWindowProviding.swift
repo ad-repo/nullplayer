@@ -24,6 +24,11 @@ protocol ProjectMWindowProviding: ModeDependentWindow {
     
     /// Stop rendering when window is hidden via orderOut (saves CPU)
     func stopRenderingForHide()
+
+    /// Re-pin the GL drawable and restart the render loop after a window transition
+    /// (e.g. a live skin-system switch that tears down and rebuilds the window). Clears any
+    /// occlusion-induced pause so rendering resumes without needing the user to focus the window.
+    func resumeRenderingAfterWindowTransition()
     
     /// Toggle shade (compact) mode
     func setShadeMode(_ enabled: Bool)

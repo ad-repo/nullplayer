@@ -4541,6 +4541,17 @@ class WindowManager {
         postWindowLayoutDidChange()
         updateDockedChildWindows()
 
+        // The freshly rebuilt visualization window starts its CVDisplayLink, but the rapid
+        // window reordering during recreate (main window made key last) fires an occlusion-state
+        // change that pauses it (stoppedDueToOcclusion). Without an explicit kick the loop only
+        // resumes once the user clicks the window. Re-pin the GL drawable and restart on the next
+        // runloop, after AppKit's occlusion state has settled. Mirrors the fullscreen-transition path.
+        if isProjectMVisible {
+            DispatchQueue.main.async { [weak self] in
+                self?.projectMWindowController?.resumeRenderingAfterWindowTransition()
+            }
+        }
+
         #if DEBUG
         // Log any visible orphaned windows that survived the rebuild
         var trackedWindows = Set<ObjectIdentifier>()

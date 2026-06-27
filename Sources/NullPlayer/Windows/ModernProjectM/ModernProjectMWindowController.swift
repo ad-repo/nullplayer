@@ -109,6 +109,10 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
     func stopRenderingForHide() {
         projectMView.stopRendering()
     }
+
+    func resumeRenderingAfterWindowTransition() {
+        projectMView.resumeRenderingAfterWindowTransition()
+    }
     
     // MARK: - Public Methods
     

@@ -79,7 +79,11 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     func stopRenderingForHide() {
         projectMView.stopRendering()
     }
-    
+
+    func resumeRenderingAfterWindowTransition() {
+        projectMView.resumeRenderingAfterWindowTransition()
+    }
+
     /// Position the window to the LEFT of the main window
     /// Always positions on the left side, even if partially offscreen
     private func positionWindow() {
