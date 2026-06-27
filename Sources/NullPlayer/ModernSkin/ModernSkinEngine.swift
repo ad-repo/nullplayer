@@ -356,9 +356,6 @@ class ModernSkinEngine {
                                              forceProfileDefaults: Bool = false) {
         guard config != nil || windowSpectrumTransparentBackground != nil else { return }
 
-        // When forcing (metal), the skin's profile defaults win even on a preserved launch.
-        let profilePreserve = preservePersistedProfiles && !forceProfileDefaults
-
         let defaults = UserDefaults.standard
         var mainVisChanged = false
         var spectrumSettingsChanged = false
@@ -408,7 +405,8 @@ class ModernSkinEngine {
             if let profile = visClassic.mainWindowProfile,
                Self.shouldApplyProfileDefault(
                    forKey: VisClassicBridge.PreferenceScope.mainWindow.lastProfileNameKey,
-                   preservePersistedProfiles: profilePreserve,
+                   preservePersistedProfiles: preservePersistedProfiles,
+                   forceProfileDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 defaults.set(profile, forKey: "visClassicLastProfileName.mainWindow")
@@ -419,6 +417,7 @@ class ModernSkinEngine {
                Self.shouldApplyProfileDefault(
                    forKey: VisClassicBridge.PreferenceScope.spectrumWindow.lastProfileNameKey,
                    preservePersistedProfiles: preservePersistedProfiles,
+                   forceProfileDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 defaults.set(profile, forKey: "visClassicLastProfileName.spectrumWindow")
@@ -616,9 +615,11 @@ class ModernSkinEngine {
     static func shouldApplyProfileDefault(
         forKey key: String,
         preservePersistedProfiles: Bool,
+        forceProfileDefaults: Bool = false,
         defaults: UserDefaults
     ) -> Bool {
-        !preservePersistedProfiles || defaults.object(forKey: key) == nil
+        let shouldPreserve = preservePersistedProfiles && !forceProfileDefaults
+        return !shouldPreserve || defaults.object(forKey: key) == nil
     }
     
     private func notifySkinChanged() {
