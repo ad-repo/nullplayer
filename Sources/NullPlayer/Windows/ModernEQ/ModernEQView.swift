@@ -67,6 +67,33 @@ class ModernEQView: NSView {
     /// Highlight state for drag-mode visual feedback
     private var isHighlighted = false
 
+    private var isMetalRenderStyle: Bool {
+        ModernSkinEngine.shared.currentRenderStyle == .metal
+    }
+
+    /// The active metal finish for the current skin. Only meaningful when `isMetalRenderStyle`.
+    private var material: MetalMaterial {
+        renderer.skin.metalMaterial
+    }
+
+    private var metalEQPanelFill: NSColor { material.eqPanelFill }
+
+    private var metalEQControlFill: NSColor { material.eqControlFill }
+
+    private var metalEQActiveFill: NSColor { material.eqActiveFill }
+
+    private var metalEQStroke: NSColor { material.eqStroke }
+
+    /// Backlit hi-fi green for the EQ curve graph background (matches the main display panels).
+    private var metalDisplayFill: NSColor { material.displayFill }
+
+    // Monochrome value ramp for metal faders. Hue-based scales (red/yellow/green or jewel tones)
+    // clash with the green LCD, so cut vs. boost is shown by brightness: dark at -12 (cut),
+    // mid at 0, bright at +12 (boost). Exact tones come from the finish material.
+    private var metalFaderLowColor: NSColor { material.faderLow }
+    private var metalFaderMidColor: NSColor { material.faderMid }
+    private var metalFaderHighColor: NSColor { material.faderHigh }
+
     // MARK: - Layout Constants
     
     private var titleBarHeight: CGFloat {
@@ -478,11 +505,17 @@ class ModernEQView: NSView {
         let faderOpacity = skin.resolvedOpacity(for: .eqFaderBackground)
         let curveOpacity = skin.resolvedOpacity(for: .curveBackground)
 
+        // `bands` and `eqConfiguration` can momentarily disagree on band count
+        // during a live UI/skin switch (e.g. modern 21-band -> classic 10-band),
+        // when a final draw fires before `syncFromEngine` re-sizes `bands`.
+        // Clamp every loop to the count they share to avoid an out-of-range crash.
+        let drawBandCount = min(bands.count, eqConfiguration.bandCount)
+
         // == 1. Sliders (clip so glow doesn't bleed up) ==
         context.saveGState()
         context.clip(to: NSRect(x: 0, y: 0, width: bounds.width, height: sliderTopY))
 
-        for i in bands.indices {
+        for i in 0..<drawBandCount {
             let x = bandX(i)
             drawSlider(index: i, x: x, opacityStyle: faderOpacity, context: context)
         }
@@ -528,14 +561,14 @@ class ModernEQView: NSView {
 
         // == 3. Frequency labels (bottom) ==
 
-        for i in bands.indices {
+        for i in 0..<drawBandCount {
             let x = bandX(i)
             let sliderCenterX = x + sliderWidth / 2
             let labelY = freqLabelY + (i.isMultiple(of: 2) ? freqLabelHeight * 0.72 : freqLabelHeight * 0.28)
             drawGlowText(eqConfiguration.displayLabels[i],
                          at: NSPoint(x: sliderCenterX, y: labelY),
                          font: tinyFont,
-                         color: skin.primaryColor.withAlphaComponent(0.55),
+                         color: (isMetalRenderStyle ? skin.textDimColor : skin.primaryColor).withAlphaComponent(0.55),
                          glow: false,
                          context: context)
         }
@@ -587,31 +620,31 @@ class ModernEQView: NSView {
     private func drawToggleButton(label: String, isActive: Bool, rect: NSRect,
                                    font: NSFont, context: CGContext) {
         let skin = renderer.skin
-        let color = isActive ? skin.accentColor : skin.textDimColor
+        let color = isActive ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textDimColor
         
         context.saveGState()
         
         if isActive {
-            // Glowing active state
-            context.setFillColor(skin.accentColor.withAlphaComponent(0.12).cgColor)
+            context.setFillColor((isMetalRenderStyle ? metalEQActiveFill : skin.accentColor.withAlphaComponent(0.12)).cgColor)
             context.fill(rect)
-            
-            // Glow border
-            context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
-                              color: skin.accentColor.withAlphaComponent(0.6).cgColor)
-            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
+
+            if !isMetalRenderStyle {
+                context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
+                                  color: skin.accentColor.withAlphaComponent(0.6).cgColor)
+            }
+            context.setStrokeColor((isMetalRenderStyle ? metalEQStroke : skin.accentColor.withAlphaComponent(0.8)).cgColor)
             context.setLineWidth(1.0)
             context.stroke(rect)
             context.restoreGState()
             
             // Crisp border on top
             context.saveGState()
-            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.6).cgColor)
+            context.setStrokeColor((isMetalRenderStyle ? metalEQStroke : skin.accentColor.withAlphaComponent(0.6)).cgColor)
             context.setLineWidth(1.0)
             context.stroke(rect)
         } else {
             // Dim inactive state
-            context.setStrokeColor(skin.textDimColor.withAlphaComponent(0.3).cgColor)
+            context.setStrokeColor((isMetalRenderStyle ? metalEQStroke : skin.textDimColor.withAlphaComponent(0.3)).cgColor)
             context.setLineWidth(0.5)
             context.stroke(rect)
         }
@@ -619,7 +652,7 @@ class ModernEQView: NSView {
         
         // Text with glow when active
         context.saveGState()
-        if isActive {
+        if isActive && !isMetalRenderStyle {
             context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
                               color: color.withAlphaComponent(0.8).cgColor)
         }
@@ -649,16 +682,19 @@ class ModernEQView: NSView {
     private func drawPushButton(label: String, isPressed: Bool, rect: NSRect,
                                  font: NSFont, context: CGContext) {
         let skin = renderer.skin
-        let color = isPressed ? skin.accentColor : skin.textDimColor
+        let color = isPressed ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textDimColor
         
         context.saveGState()
         if isPressed {
-            context.setFillColor(skin.accentColor.withAlphaComponent(0.15).cgColor)
+            context.setFillColor((isMetalRenderStyle ? metalEQActiveFill : skin.accentColor.withAlphaComponent(0.15)).cgColor)
             context.fill(rect)
-            context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier,
-                              color: skin.accentColor.withAlphaComponent(0.5).cgColor)
+            if !isMetalRenderStyle {
+                context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier,
+                                  color: skin.accentColor.withAlphaComponent(0.5).cgColor)
+            }
         }
-        context.setStrokeColor(color.withAlphaComponent(isPressed ? 0.8 : 0.3).cgColor)
+        let strokeColor = isMetalRenderStyle ? metalEQStroke : color.withAlphaComponent(isPressed ? 0.8 : 0.3)
+        context.setStrokeColor(strokeColor.cgColor)
         context.setLineWidth(isPressed ? 1.0 : 0.5)
         context.stroke(rect)
         context.restoreGState()
@@ -688,13 +724,15 @@ class ModernEQView: NSView {
         let capsulePath = CGPath(roundedRect: rect, cornerWidth: rect.height / 2, cornerHeight: rect.height / 2, transform: nil)
 
         context.saveGState()
-        context.setFillColor(NSColor(calibratedWhite: 0.02, alpha: 0.92).cgColor)
+        let panelFill = isMetalRenderStyle ? metalEQPanelFill.withAlphaComponent(0.84) : NSColor(calibratedWhite: 0.02, alpha: 0.92)
+        context.setFillColor(panelFill.cgColor)
         context.addPath(capsulePath)
         context.fillPath()
         context.restoreGState()
 
         context.saveGState()
-        context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.18).cgColor)
+        let panelStroke = isMetalRenderStyle ? metalEQStroke : skin.primaryColor.withAlphaComponent(0.18)
+        context.setStrokeColor(panelStroke.cgColor)
         context.setLineWidth(max(0.5, 0.75 * scale))
         context.addPath(capsulePath)
         context.strokePath()
@@ -710,7 +748,9 @@ class ModernEQView: NSView {
         context.saveGState()
         context.setLineWidth(max(1.2, 1.5 * scale))
         context.setLineCap(.round)
-        context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier, color: color.withAlphaComponent(0.75).cgColor)
+        if !isMetalRenderStyle {
+            context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier, color: color.withAlphaComponent(0.75).cgColor)
+        }
         context.setStrokeColor(color.withAlphaComponent(0.9).cgColor)
         context.addArc(center: center, radius: dialRect.width / 2, startAngle: startAngle, endAngle: indicatorAngle, clockwise: true)
         context.strokePath()
@@ -723,7 +763,9 @@ class ModernEQView: NSView {
         )
         let indicatorRect = NSRect(x: indicatorCenter.x - 1.5 * scale, y: indicatorCenter.y - 1.5 * scale, width: 3 * scale, height: 3 * scale)
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier, color: color.withAlphaComponent(0.8).cgColor)
+        if !isMetalRenderStyle {
+            context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier, color: color.withAlphaComponent(0.8).cgColor)
+        }
         context.setFillColor(color.cgColor)
         context.fillEllipse(in: indicatorRect)
         context.restoreGState()
@@ -731,7 +773,7 @@ class ModernEQView: NSView {
         drawGlowText("PRE",
                      at: NSPoint(x: rect.maxX - 10 * scale, y: rect.midY + 4 * scale),
                      font: font,
-                     color: skin.primaryColor.withAlphaComponent(0.75),
+                     color: (isMetalRenderStyle ? skin.textDimColor : skin.primaryColor).withAlphaComponent(0.75),
                      glow: false,
                      context: context)
 
@@ -757,14 +799,29 @@ class ModernEQView: NSView {
         let thumbY = sliderBottomY + normalizedValue * sliderHeight
         let fillColor = eqValueToColor(value)
         
-        // Track background - deep black
+        // Track background
         context.saveGState()
-        context.setFillColor(NSColor(calibratedWhite: 0.03, alpha: opacityStyle.background).cgColor)
+        let trackFill: NSColor
+        if isMetalRenderStyle {
+            // Tint the fader background toward its red/green value color once adjusted; stay
+            // neutral steel at 0 dB.
+            let metalBase: NSColor
+            if abs(value) > 0.3, let tinted = metalEQPanelFill.blended(withFraction: 0.30, of: fillColor) {
+                metalBase = tinted
+            } else {
+                metalBase = metalEQPanelFill
+            }
+            trackFill = metalBase.withAlphaComponent(opacityStyle.background)
+        } else {
+            trackFill = NSColor(calibratedWhite: 0.03, alpha: opacityStyle.background)
+        }
+        context.setFillColor(trackFill.cgColor)
         context.fill(trackRect)
         if opacityStyle.border > 0 {
             // Subtle vertical dividers only — no full rect border to avoid harsh grid look
             let dividerAlpha = opacityStyle.border * 0.4
-            context.setStrokeColor(skin.borderColor.withAlphaComponent(dividerAlpha).cgColor)
+            let dividerColor = isMetalRenderStyle ? metalEQStroke.withAlphaComponent(dividerAlpha) : skin.borderColor.withAlphaComponent(dividerAlpha)
+            context.setStrokeColor(dividerColor.cgColor)
             context.setLineWidth(max(0.5, 0.5 * scale))
             context.move(to: CGPoint(x: trackRect.minX, y: trackRect.minY))
             context.addLine(to: CGPoint(x: trackRect.minX, y: trackRect.maxY))
@@ -782,47 +839,55 @@ class ModernEQView: NSView {
                 } else {
                     fillRect = NSRect(x: x, y: thumbY, width: sliderWidth, height: centerY - thumbY)
                 }
-                
-                // Wide outer bloom
-                context.saveGState()
-                context.setShadow(offset: .zero, blur: 10 * scale * glowMultiplier,
-                                  color: fillColor.withAlphaComponent(0.5).cgColor)
-                context.setFillColor(fillColor.withAlphaComponent(0.4).cgColor)
-                context.fill(fillRect)
-                context.restoreGState()
+
+                if !isMetalRenderStyle {
+                    // Wide outer bloom
+                    context.saveGState()
+                    context.setShadow(offset: .zero, blur: 10 * scale * glowMultiplier,
+                                      color: fillColor.withAlphaComponent(0.5).cgColor)
+                    context.setFillColor(fillColor.withAlphaComponent(0.4).cgColor)
+                    context.fill(fillRect)
+                    context.restoreGState()
+                }
                 
                 // Inner fill
                 context.saveGState()
-                context.setFillColor(fillColor.withAlphaComponent(0.5).cgColor)
+                context.setFillColor(fillColor.withAlphaComponent(isMetalRenderStyle ? 0.38 : 0.5).cgColor)
                 context.fill(fillRect)
                 context.restoreGState()
                 
                 // Hot neon center line through fill
                 let lineX = x + sliderWidth / 2
                 context.saveGState()
-                context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier,
-                                  color: fillColor.withAlphaComponent(1.0).cgColor)
-                context.setStrokeColor(fillColor.withAlphaComponent(0.9).cgColor)
-                context.setLineWidth(2.0)
+                if !isMetalRenderStyle {
+                    context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier,
+                                      color: fillColor.withAlphaComponent(1.0).cgColor)
+                }
+                context.setStrokeColor(fillColor.withAlphaComponent(isMetalRenderStyle ? 0.65 : 0.9).cgColor)
+                context.setLineWidth(isMetalRenderStyle ? 1.0 : 2.0)
                 context.move(to: CGPoint(x: lineX, y: fillRect.minY))
                 context.addLine(to: CGPoint(x: lineX, y: fillRect.maxY))
                 context.strokePath()
-                // Second pass for extra brightness
-                context.setShadow(offset: .zero, blur: 2 * scale * glowMultiplier,
-                                  color: NSColor.white.withAlphaComponent(0.4).cgColor)
-                context.setStrokeColor(fillColor.withAlphaComponent(0.7).cgColor)
-                context.setLineWidth(1.0)
-                context.move(to: CGPoint(x: lineX, y: fillRect.minY))
-                context.addLine(to: CGPoint(x: lineX, y: fillRect.maxY))
-                context.strokePath()
+                if !isMetalRenderStyle {
+                    context.setShadow(offset: .zero, blur: 2 * scale * glowMultiplier,
+                                      color: NSColor.white.withAlphaComponent(0.4).cgColor)
+                    context.setStrokeColor(fillColor.withAlphaComponent(0.7).cgColor)
+                    context.setLineWidth(1.0)
+                    context.move(to: CGPoint(x: lineX, y: fillRect.minY))
+                    context.addLine(to: CGPoint(x: lineX, y: fillRect.maxY))
+                    context.strokePath()
+                }
                 context.restoreGState()
             }
             
-            // Center line (0 dB) - subtle glow
+            // Center line (0 dB)
             context.saveGState()
-            context.setShadow(offset: .zero, blur: 3 * scale * glowMultiplier,
-                              color: skin.primaryColor.withAlphaComponent(0.3).cgColor)
-            context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.35).cgColor)
+            if !isMetalRenderStyle {
+                context.setShadow(offset: .zero, blur: 3 * scale * glowMultiplier,
+                                  color: skin.primaryColor.withAlphaComponent(0.3).cgColor)
+            }
+            let centerLineColor = isMetalRenderStyle ? metalEQStroke.withAlphaComponent(0.75) : skin.primaryColor.withAlphaComponent(0.35)
+            context.setStrokeColor(centerLineColor.cgColor)
             context.setLineWidth(0.5)
             context.move(to: CGPoint(x: trackRect.minX, y: centerY))
             context.addLine(to: CGPoint(x: trackRect.maxX, y: centerY))
@@ -835,21 +900,23 @@ class ModernEQView: NSView {
             let thumbRect = NSRect(x: x - thumbOverhang, y: thumbY - thumbHeight / 2,
                                    width: sliderWidth + thumbOverhang * 2, height: thumbHeight)
             
-            // Massive outer bloom
-            context.saveGState()
-            context.setShadow(offset: .zero, blur: 12 * scale * glowMultiplier,
-                              color: fillColor.withAlphaComponent(0.8).cgColor)
-            context.setFillColor(fillColor.cgColor)
-            context.fill(thumbRect)
-            context.restoreGState()
-            
-            // Second bloom pass for intensity
-            context.saveGState()
-            context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
-                              color: fillColor.withAlphaComponent(0.9).cgColor)
-            context.setFillColor(fillColor.cgColor)
-            context.fill(thumbRect)
-            context.restoreGState()
+            if !isMetalRenderStyle {
+                // Massive outer bloom
+                context.saveGState()
+                context.setShadow(offset: .zero, blur: 12 * scale * glowMultiplier,
+                                  color: fillColor.withAlphaComponent(0.8).cgColor)
+                context.setFillColor(fillColor.cgColor)
+                context.fill(thumbRect)
+                context.restoreGState()
+
+                // Second bloom pass for intensity
+                context.saveGState()
+                context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
+                                  color: fillColor.withAlphaComponent(0.9).cgColor)
+                context.setFillColor(fillColor.cgColor)
+                context.fill(thumbRect)
+                context.restoreGState()
+            }
             
             // Solid thumb
             context.saveGState()
@@ -861,7 +928,7 @@ class ModernEQView: NSView {
             let hotLine = NSRect(x: thumbRect.minX + 2, y: thumbRect.midY - 0.5,
                                  width: thumbRect.width - 4, height: 1.0)
             context.saveGState()
-            context.setFillColor(NSColor.white.withAlphaComponent(0.6).cgColor)
+            context.setFillColor(NSColor.white.withAlphaComponent(isMetalRenderStyle ? 0.28 : 0.6).cgColor)
             context.fill(hotLine)
             context.restoreGState()
         }
@@ -874,18 +941,24 @@ class ModernEQView: NSView {
         let rect = graphRect
         let skin = renderer.skin
         
-        // Dark recessed background
+        // Recessed background
         context.saveGState()
-        context.setFillColor(NSColor(calibratedWhite: 0.01, alpha: opacityStyle.background).cgColor)
+        let graphFill = isMetalRenderStyle
+            ? metalDisplayFill.withAlphaComponent(opacityStyle.background)
+            : NSColor(calibratedWhite: 0.01, alpha: opacityStyle.background)
+        context.setFillColor(graphFill.cgColor)
         context.fill(rect)
         context.restoreGState()
         
-        // Glowing border
+        // Border
         withContextAlpha(opacityStyle.border, context: context) {
             context.saveGState()
-            context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
-                              color: skin.accentColor.withAlphaComponent(0.3).cgColor)
-            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.4).cgColor)
+            if !isMetalRenderStyle {
+                context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
+                                  color: skin.accentColor.withAlphaComponent(0.3).cgColor)
+            }
+            let graphStroke = isMetalRenderStyle ? material.lcdInk.withAlphaComponent(0.55) : skin.accentColor.withAlphaComponent(0.4)
+            context.setStrokeColor(graphStroke.cgColor)
             context.setLineWidth(1.0)
             context.stroke(rect)
             context.restoreGState()
@@ -934,14 +1007,18 @@ class ModernEQView: NSView {
 
                 context.saveGState()
                 context.clip(to: rect)
-                context.setFillColor(NSColor(calibratedWhite: 0.03, alpha: 0.85).cgColor)
+                let miniTrackFill = isMetalRenderStyle
+                    ? material.lcdInk.withAlphaComponent(0.16)
+                    : NSColor(calibratedWhite: 0.03, alpha: 0.85)
+                context.setFillColor(miniTrackFill.cgColor)
                 context.addPath(trackPath)
                 context.fillPath()
                 context.restoreGState()
 
                 context.saveGState()
                 context.clip(to: rect)
-                context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.18).cgColor)
+                let miniTrackStroke = isMetalRenderStyle ? material.lcdInk.withAlphaComponent(0.30) : skin.primaryColor.withAlphaComponent(0.18)
+                context.setStrokeColor(miniTrackStroke.cgColor)
                 context.setLineWidth(max(0.35, 0.45 * scale))
                 context.addPath(trackPath)
                 context.strokePath()
@@ -959,9 +1036,12 @@ class ModernEQView: NSView {
 
                 context.saveGState()
                 context.clip(to: rect)
-                context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
-                                  color: skin.accentColor.withAlphaComponent(0.45).cgColor)
-                context.setFillColor(skin.accentColor.withAlphaComponent(0.34).cgColor)
+                if !isMetalRenderStyle {
+                    context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
+                                      color: skin.accentColor.withAlphaComponent(0.45).cgColor)
+                }
+                let activeFillColor = isMetalRenderStyle ? material.lcdInk.withAlphaComponent(0.22) : skin.accentColor.withAlphaComponent(0.34)
+                context.setFillColor(activeFillColor.cgColor)
                 context.addPath(activePath)
                 context.fillPath()
                 context.restoreGState()
@@ -970,9 +1050,12 @@ class ModernEQView: NSView {
             // Curve - wide glow
             context.saveGState()
             context.clip(to: rect)
-            context.setShadow(offset: .zero, blur: 8 * scale * glowMultiplier,
-                              color: skin.accentColor.withAlphaComponent(0.8).cgColor)
-            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
+            if !isMetalRenderStyle {
+                context.setShadow(offset: .zero, blur: 8 * scale * glowMultiplier,
+                                  color: skin.accentColor.withAlphaComponent(0.8).cgColor)
+            }
+            let curveGlowColor = isMetalRenderStyle ? material.lcdInk.withAlphaComponent(0.42) : skin.accentColor.withAlphaComponent(0.8)
+            context.setStrokeColor(curveGlowColor.cgColor)
             context.setLineWidth(1.8 * scale)
             context.setLineJoin(.round)
             context.setLineCap(.round)
@@ -983,7 +1066,7 @@ class ModernEQView: NSView {
             // Curve - bright core
             context.saveGState()
             context.clip(to: rect)
-            context.setStrokeColor(skin.accentColor.cgColor)
+            context.setStrokeColor((isMetalRenderStyle ? material.lcdInk.withAlphaComponent(0.72) : skin.accentColor).cgColor)
             context.setLineWidth(1.1 * scale)
             context.setLineJoin(.round)
             context.setLineCap(.round)
@@ -1009,9 +1092,11 @@ class ModernEQView: NSView {
                                      width: dotR * 2, height: dotR * 2)
                 context.saveGState()
                 context.clip(to: rect)
-                context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
-                                  color: skin.accentColor.withAlphaComponent(0.9).cgColor)
-                context.setFillColor(skin.accentColor.cgColor)
+                if !isMetalRenderStyle {
+                    context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
+                                      color: skin.accentColor.withAlphaComponent(0.9).cgColor)
+                }
+                context.setFillColor((isMetalRenderStyle ? material.lcdInk.withAlphaComponent(0.82) : skin.accentColor).cgColor)
                 context.fillEllipse(in: dotRect)
                 context.restoreGState()
                 
@@ -1034,13 +1119,17 @@ class ModernEQView: NSView {
         let normalized = CGFloat((value + 12) / 24) // 0..1
         let skin = renderer.skin
         
-        // Extract RGB components from skin EQ colors
+        // Extract RGB components from EQ colors. Metal mode uses a fixed vivid red/yellow/green
+        // scale because the metal palette neutralizes eqLow/eqMid/eqHigh to steel tones.
+        let lowColor = isMetalRenderStyle ? metalFaderLowColor : skin.eqLowColor
+        let midColor = isMetalRenderStyle ? metalFaderMidColor : skin.eqMidColor
+        let highColor = isMetalRenderStyle ? metalFaderHighColor : skin.eqHighColor
         var lr: CGFloat = 0, lg: CGFloat = 0, lb: CGFloat = 0
         var mr: CGFloat = 0, mg: CGFloat = 0, mb: CGFloat = 0
         var hr: CGFloat = 0, hg: CGFloat = 0, hb: CGFloat = 0
-        (skin.eqLowColor.usingColorSpace(.sRGB) ?? skin.eqLowColor).getRed(&lr, green: &lg, blue: &lb, alpha: nil)
-        (skin.eqMidColor.usingColorSpace(.sRGB) ?? skin.eqMidColor).getRed(&mr, green: &mg, blue: &mb, alpha: nil)
-        (skin.eqHighColor.usingColorSpace(.sRGB) ?? skin.eqHighColor).getRed(&hr, green: &hg, blue: &hb, alpha: nil)
+        (lowColor.usingColorSpace(.sRGB) ?? lowColor).getRed(&lr, green: &lg, blue: &lb, alpha: nil)
+        (midColor.usingColorSpace(.sRGB) ?? midColor).getRed(&mr, green: &mg, blue: &mb, alpha: nil)
+        (highColor.usingColorSpace(.sRGB) ?? highColor).getRed(&hr, green: &hg, blue: &hb, alpha: nil)
         
         // 5-stop gradient derived from 3 skin colors with smooth interpolation
         let colorStops: [(position: CGFloat, r: CGFloat, g: CGFloat, b: CGFloat)] = [

@@ -60,9 +60,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
         }
 
-        // Initialize modern skin engine if modern mode is enabled
-        if windowManager.isModernUIEnabled {
-            ModernSkinEngine.shared.loadPreferredSkin()
+        // Initialize the shared modern-family skin engine when Modern or Metal is enabled.
+        if let family = windowManager.uiMode.modernSkinFamily {
+            ModernSkinEngine.shared.loadPreferredSkin(for: family)
         }
         
         // Restore settings state (skin, volume, EQ, windows). Compact Mode must be
@@ -139,6 +139,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Use default skin for consistent test results
         // Don't load custom skins from environment in test mode
+        if let family = windowManager.uiMode.modernSkinFamily {
+            ModernSkinEngine.shared.loadDefaultSkin(for: family)
+        }
         
         // Show the main player window
         windowManager.showMainWindow()

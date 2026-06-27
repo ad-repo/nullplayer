@@ -64,7 +64,12 @@ class ModernSkin {
     
     /// Multiplier for element-level glow blur (from glow.elementBlur, defaults to 1.0)
     let elementGlowMultiplier: CGFloat
-    
+
+    /// Metal-finish render material. Only consulted when the skin is rendered with the metal
+    /// render style; built-in metal skins assign a finish preset, everything else uses the
+    /// brushed-steel default.
+    var metalMaterial: MetalMaterial = .brushedSteel
+
     // MARK: - Initialization
     
     init(config: ModernSkinConfig, bundlePath: URL?) {
@@ -432,11 +437,22 @@ class ModernSkin {
     /// Generate spectrum visualization colors from the skin palette.
     /// Returns an array of NSColors suitable for the SpectrumAnalyzerView.
     func spectrumColors() -> [NSColor] {
+        // Metal finishes carry their own analyzer ramp in the material: the chrome
+        // `accentColor` is a dark metal tone that would render the bars near-black.
+        let bottom: NSColor
+        let top: NSColor
+        if ModernSkinEngine.shared.currentRenderStyle == .metal {
+            bottom = metalMaterial.spectrumLow
+            top = metalMaterial.spectrumHigh
+        } else {
+            bottom = accentColor
+            top = primaryColor
+        }
         var colors: [NSColor] = []
-        // Generate a 24-color gradient from accent (bottom) to primary (top)
+        // Generate a 24-color gradient from the low (bottom) to high (top) endpoint
         for i in 0..<24 {
             let t = CGFloat(i) / 23.0
-            colors.append(interpolateColor(from: accentColor, to: primaryColor, t: t))
+            colors.append(interpolateColor(from: bottom, to: top, t: t))
         }
         return colors
     }

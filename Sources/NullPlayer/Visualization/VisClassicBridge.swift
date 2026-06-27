@@ -332,7 +332,17 @@ final class VisClassicBridge {
     }
 
     static func transparentBgDefault(for scope: PreferenceScope = .spectrumWindow) -> Bool {
-        return UserDefaults.standard.bool(forKey: scope.transparentBgKey)
+        let defaults = UserDefaults.standard
+        if let scoped = defaults.object(forKey: scope.transparentBgKey) as? Bool {
+            return scoped
+        }
+        // Metal finishes default to a transparent vis_classic background so the analyzer
+        // bars sit on the brushed-metal chrome instead of an opaque black box. Only the
+        // main-window scope is defaulted; the dedicated spectrum window keeps its own seed.
+        if scope == .mainWindow && WindowManager.shared.uiMode == .metal {
+            return true
+        }
+        return false
     }
 
     static func opacityDefault(for scope: PreferenceScope = .spectrumWindow) -> Double? {

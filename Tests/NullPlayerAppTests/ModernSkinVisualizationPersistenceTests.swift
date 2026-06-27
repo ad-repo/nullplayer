@@ -56,4 +56,18 @@ final class ModernSkinVisualizationPersistenceTests: XCTestCase {
             )
         )
     }
+
+    func testForcedProfileDefaultOverridesExistingSelectionOnPreservedLaunch() {
+        let key = VisClassicBridge.PreferenceScope.spectrumWindow.lastProfileNameKey
+        defaults.set("Green", forKey: key)
+
+        XCTAssertTrue(
+            ModernSkinEngine.shouldApplyProfileDefault(
+                forKey: key,
+                preservePersistedProfiles: true,
+                forceProfileDefaults: true,
+                defaults: defaults
+            )
+        )
+    }
 }

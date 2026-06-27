@@ -115,37 +115,36 @@ final class ClassicCompactPlayerBarView: NSView {
         (transportRects.last?.maxX ?? pad) + 4
     }
 
+    private var midLeft: CGFloat { transportEndX }
+    private var contentRight: CGFloat { designWidth - pad }
+
+    // Bottom control row: seek bar on the left, volume to its right.
     private var volumeRect: NSRect {
-        NSRect(x: designWidth - pad - volumeSize.width,
-               y: titleBarHeight + controlRowTopPad + (rowHeight - volumeSize.height) / 2,
+        NSRect(x: contentRight - volumeSize.width,
+               y: designHeight - volumeSize.height - 1,
                width: volumeSize.width, height: volumeSize.height)
     }
 
+    private var seekRect: NSRect {
+        let right = volumeRect.minX - 6
+        let y = volumeRect.midY - seekHeight / 2
+        return NSRect(x: midLeft, y: y, width: max(0, right - midLeft), height: seekHeight)
+    }
+
+    // Display row (top): track-title marquee on the left, time inline at the right.
     private var timeRect: NSRect {
         // "00:00 / 00:00" = 13 chars × 5px native.
         let w = 13 * SkinElements.TextFont.charWidth
-        return NSRect(x: volumeRect.minX - 6 - w,
-                      y: titleBarHeight + controlRowTopPad
-                        + (rowHeight - SkinElements.TextFont.charHeight) / 2,
+        return NSRect(x: contentRight - w,
+                      y: titleBarHeight + controlRowTopPad + 1,
                       width: w, height: SkinElements.TextFont.charHeight)
     }
 
-    /// Flexible middle region between transport and the time readout.
-    private var middleRect: NSRect {
-        let left = transportEndX
-        let right = timeRect.minX - 4
-        return NSRect(x: left, y: titleBarHeight,
-                      width: max(0, right - left), height: controlRowHeight)
-    }
-
     private var titleRect: NSRect {
-        NSRect(x: middleRect.minX, y: titleBarHeight + controlRowTopPad + 1,
-               width: middleRect.width, height: SkinElements.TextFont.charHeight)
-    }
-
-    private var seekRect: NSRect {
-        NSRect(x: middleRect.minX, y: designHeight - seekHeight - 1,
-               width: middleRect.width, height: seekHeight)
+        let left = midLeft
+        let right = timeRect.minX - 4
+        return NSRect(x: left, y: titleBarHeight + controlRowTopPad + 1,
+                      width: max(0, right - left), height: SkinElements.TextFont.charHeight)
     }
 
     private var minimizeRect: NSRect {

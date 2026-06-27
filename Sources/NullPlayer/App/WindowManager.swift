@@ -210,10 +210,16 @@ class WindowManager {
     /// Main player window controller (classic or modern, accessed via protocol)
     private(set) var mainWindowController: MainWindowProviding?
     
-    /// Whether the modern UI is enabled (requires restart to take effect)
+    var uiMode: PlayerUIMode {
+        get { PlayerUIMode.stored() }
+        set { newValue.persist() }
+    }
+
+    /// Whether the modern-family UI is enabled. Kept as a compatibility mirror for
+    /// call sites that only need to choose classic vs. modern-family controllers.
     var isModernUIEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "modernUIEnabled") }
-        set { UserDefaults.standard.set(newValue, forKey: "modernUIEnabled") }
+        get { uiMode.usesModernControllers }
+        set { uiMode = newValue ? .modern : .classic }
     }
 
     /// Runtime UI mode inferred from the active main window controller.
@@ -224,6 +230,14 @@ class WindowManager {
             if controller is MainWindowController { return false }
         }
         return isModernUIEnabled
+    }
+
+    var isRunningModernFamilyUI: Bool {
+        isRunningModernUI
+    }
+
+    var isRunningMetalUI: Bool {
+        isRunningModernFamilyUI && uiMode == .metal
     }
     
     /// Whether title bars are hidden on all windows (only applies in modern UI mode)
@@ -421,6 +435,7 @@ class WindowManager {
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
+    private(set) var mainWindowVisClassicBridge: VisClassicBridge?
 
     /// Waveform window controller (classic or modern, accessed via protocol)
     private var waveformWindowController: WaveformWindowProviding?
@@ -1065,12 +1080,38 @@ class WindowManager {
             if restoreRegularWindows {
                 self.restoreRegularWindowSnapshot()
                 self.updateDockedChildWindows()
-                NSApp.activate(ignoringOtherApps: true)
+                self.reassertRegularActivation()
+
+                // The `.accessory → .regular` transition settles over a runloop turn or two on
+                // modern macOS: right after the activation above the menu bar can still show the
+                // stale (empty) menu — the menu options stay missing until the user manually
+                // minimizes and restores a window — and the Dock tile can show the generic
+                // executable icon. Re-assert activation, the rebuilt menu, and the icon once the
+                // transition has fully landed so none of them depends on winning that race.
+                DispatchQueue.main.async {
+                    guard self.compactModeState == .regular else { return }
+                    (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
+                    self.reassertRegularActivation()
+                }
             }
             self.compactModeState = .regular
             self.postLayoutChangeNotification()
             completion?()
         }
+    }
+
+    /// Reclaim foreground activation after leaving Compact Mode's `.accessory` policy: activate the
+    /// app, make the restored main window key, and re-apply the Dock icon. Establishing a key window
+    /// is what gives the app menu-bar ownership and first responder — without it the rebuilt menu can
+    /// stay missing until the user manually minimizes/restores a window. Re-applying the icon here
+    /// (after macOS has built the `.regular` Dock tile) keeps the NullPlayer logo from being replaced
+    /// by the generic executable icon.
+    private func reassertRegularActivation() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = mainWindowController?.window, window.isVisible, !isInNativeFullScreen(window) {
+            window.makeKey()
+        }
+        restoreDockIconImage()
     }
 
     private func captureRegularWindowSnapshot() -> CompactWindowSnapshot {
@@ -2579,6 +2620,19 @@ class WindowManager {
         return bridge
     }
 
+    /// Dedicated bridge for the main window's embedded analyzer, scoped to `.mainWindow`
+    /// so it loads and persists its own profile independently of the dedicated spectrum
+    /// window (which uses `acquireSharedVisClassicBridge`). This realizes the window-scoped
+    /// vis_classic profile independence and lets metal skins default the main-window
+    /// analyzer to a per-finish profile without clobbering the spectrum window's choice.
+    func acquireMainWindowVisClassicBridge() -> VisClassicBridge {
+        if let b = mainWindowVisClassicBridge { return b }
+        let bridge = VisClassicBridge(width: 576, height: 128, scope: .mainWindow)!
+        bridge.setReferenceWidth(576)
+        mainWindowVisClassicBridge = bridge
+        return bridge
+    }
+
     private func applyClassicVisualizationDefaults(notify: Bool) {
         // Classic and modern skins are independent. WindowManager still loads the
         // remembered classic skin at startup so it is ready if the user switches UI
@@ -2640,7 +2694,7 @@ class WindowManager {
         audioAnalysisWindowController?.skinDidChange()
         waveformWindowController?.skinDidChange()
     }
-    
+
     // MARK: - Skin Discovery
     
     /// Application Support directory for NullPlayer
@@ -4547,7 +4601,7 @@ class WindowManager {
     }
     #endif
 
-    /// Switch between Classic and Modern UI in-process, with **no app restart**.
+    /// Switch between Classic, Modern, and Metal UI in-process, with **no app restart**.
     ///
     /// This is the production live-switch built on the same teardown/rebuild primitive proven
     /// by the DEBUG recreate action, with mode-change semantics layered on:
@@ -4566,8 +4620,20 @@ class WindowManager {
     /// across the switch — audio state is deliberately *not* snapshotted or restored. No-op if the
     /// requested mode is already running.
     func reloadUI(toModernUI targetModern: Bool) {
-        guard targetModern != isRunningModernUI else { return }
-        NSLog("WindowManager: reloadUI — switching to %@ UI", targetModern ? "modern" : "classic")
+        reloadUI(to: targetModern ? .modern : .classic)
+    }
+
+    /// Switch the live UI to `targetMode`. When Compact Mode is active the actual swap is
+    /// deferred until compact teardown finishes, so callers that need to read the post-swap
+    /// state (`uiMode`, `isRunningModernFamilyUI`) or rebuild window/skin state must pass
+    /// `completion` — it runs after `performReloadUI`, on the main thread, in both the
+    /// synchronous and deferred paths. It also fires when no switch is needed.
+    func reloadUI(to targetMode: PlayerUIMode, completion: (() -> Void)? = nil) {
+        guard targetMode != uiMode else {
+            completion?()
+            return
+        }
+        NSLog("WindowManager: reloadUI — switching to %@ UI", targetMode.displayName)
 
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
         // on exit. When in Compact Mode, derive the layout to rebuild from the pre-compact capture
@@ -4585,11 +4651,13 @@ class WindowManager {
             let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
                 guard let self else { return }
-                self.performReloadUI(toModernUI: targetModern, snapshot: snapshot, reenterCompact: true)
+                self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true)
                 self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
+                completion?()
             }
         } else {
-            performReloadUI(toModernUI: targetModern, snapshot: captureModeDependentLayout(), reenterCompact: false)
+            performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false)
+            completion?()
         }
     }
 
@@ -4631,16 +4699,16 @@ class WindowManager {
 
     /// The actual mode-dependent window swap. Runs synchronously when not in Compact Mode, or as
     /// the `exitCompactMode` completion when it was — see `reloadUI(toModernUI:)`.
-    private func performReloadUI(toModernUI targetModern: Bool, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool) {
+    private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
 
-        // Flip the persisted flag before recreate — show*() reads it to choose controllers.
-        isModernUIEnabled = targetModern
+        // Persist the mode before recreate — show*() reads it to choose controllers.
+        uiMode = targetMode
 
-        prepareUIRuntime(forModernUI: targetModern)
-        audioEngine.applyEQLayout(forModernUI: targetModern)
+        prepareUIRuntime(for: targetMode)
+        audioEngine.applyEQLayout(forModernUI: targetMode.usesModernControllers)
         (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
 
         recreateModeDependentLayout(snapshot)
@@ -4650,7 +4718,7 @@ class WindowManager {
         let tDone = CACurrentMediaTime()
 
         NSLog("WindowManager: reloadUI — teardown %.1fms, recreate %.1fms (now %@ UI)",
-              (tTorn - t0) * 1000.0, (tDone - tTorn) * 1000.0, targetModern ? "modern" : "classic")
+              (tTorn - t0) * 1000.0, (tDone - tTorn) * 1000.0, targetMode.displayName)
     }
 
     /// Prepare mode-specific runtime state *before* target-mode controllers are created.
@@ -4658,9 +4726,9 @@ class WindowManager {
     /// preferred modern skin when entering modern; reset classic spectrum transparent-background
     /// defaults when entering classic. The classic `currentSkin` is loaded once at init and
     /// survives across switches, so no classic skin reload is needed here.
-    private func prepareUIRuntime(forModernUI targetModern: Bool) {
-        if targetModern {
-            ModernSkinEngine.shared.loadPreferredSkin()
+    private func prepareUIRuntime(for targetMode: PlayerUIMode) {
+        if let family = targetMode.modernSkinFamily {
+            ModernSkinEngine.shared.loadPreferredSkin(for: family)
         } else {
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)

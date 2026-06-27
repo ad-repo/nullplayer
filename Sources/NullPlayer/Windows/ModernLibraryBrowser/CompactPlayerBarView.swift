@@ -96,29 +96,48 @@ final class CompactPlayerBarView: NSView {
         )
     }
 
+    private var midLeft: CGFloat { transportRects.next.maxX + buttonGap * 2 }
+    private var contentRight: CGFloat { bounds.maxX - pad }
+
+    /// LCD "display" region — the upper area holding the track-title marquee and time.
+    /// In metal mode this gets the hi-fi green backlit fill, mirroring the main window.
+    /// It deliberately does not overlap the seek/volume control row beneath it.
+    private var displayRect: NSRect {
+        let bottom = bounds.height * 0.46
+        let top = bounds.height - 4 * m
+        return NSRect(x: midLeft, y: bottom, width: max(0, contentRight - midLeft), height: max(0, top - bottom))
+    }
+
+    private var timeFont: NSFont { NSFont.monospacedDigitSystemFont(ofSize: 10 * m, weight: .regular) }
+
+    /// Time sits inline at the right end of the display, vertically centered to match the marquee.
+    private var timeRect: NSRect {
+        let w = 82 * m
+        let h = ("0" as NSString).size(withAttributes: [.font: timeFont]).height
+        let y = displayRect.minY + (displayRect.height - h) / 2
+        return NSRect(x: displayRect.maxX - w - 4 * m, y: y, width: w, height: h)
+    }
+
+    /// Track-title marquee fills the rest of the display, left of the time.
+    private var titleRect: NSRect {
+        let left = displayRect.minX + 4 * m
+        return NSRect(x: left, y: displayRect.minY,
+                      width: max(0, timeRect.minX - buttonGap - left), height: displayRect.height)
+    }
+
+    // Bottom control row: seek bar on the left, volume to its right.
+    private var controlRowY: CGFloat { bounds.height * 0.23 }
+
     private var volumeRect: NSRect {
         let w = 70 * m
         let h = 6 * m
-        return NSRect(x: bounds.maxX - pad - w, y: bounds.midY - h / 2, width: w, height: h)
-    }
-
-    private var midLeft: CGFloat { transportRects.next.maxX + buttonGap * 2 }
-    private var midRight: CGFloat { volumeRect.minX - buttonGap * 2 }
-
-    private var timeRect: NSRect {
-        let w = 82 * m
-        return NSRect(x: midRight - w, y: 0, width: w, height: bounds.height * 0.5)
+        return NSRect(x: contentRight - w, y: controlRowY - h / 2, width: w, height: h)
     }
 
     private var seekRect: NSRect {
         let h = 6 * m
-        let right = timeRect.minX - buttonGap
-        return NSRect(x: midLeft, y: bounds.height * 0.25 - h / 2, width: max(0, right - midLeft), height: h)
-    }
-
-    private var titleRect: NSRect {
-        NSRect(x: midLeft, y: bounds.height * 0.46,
-               width: max(0, midRight - midLeft), height: bounds.height * 0.5 - 2 * m)
+        let right = volumeRect.minX - buttonGap * 2
+        return NSRect(x: midLeft, y: controlRowY - h / 2, width: max(0, right - midLeft), height: h)
     }
 
     // MARK: - Drawing
@@ -129,13 +148,26 @@ final class CompactPlayerBarView: NSView {
 
         // Background + faint bottom separator so the bar reads as a distinct strip.
         let skin = renderer.skin
-        context.setFillColor(skin.surfaceColor.withAlphaComponent(0.18).cgColor)
+        let isMetal = ModernSkinEngine.shared.currentRenderStyle == .metal
+        let barFill = isMetal
+            ? NSColor(calibratedRed: 0.62, green: 0.67, blue: 0.69, alpha: 0.34)
+            : skin.surfaceColor.withAlphaComponent(0.18)
+        context.setFillColor(barFill.cgColor)
         context.fill(bounds)
-        context.setStrokeColor(skin.borderColor.withAlphaComponent(0.35).cgColor)
+        let separator = isMetal
+            ? NSColor(calibratedRed: 0.24, green: 0.27, blue: 0.29, alpha: 0.42)
+            : skin.borderColor.withAlphaComponent(0.35)
+        context.setStrokeColor(separator.cgColor)
         context.setLineWidth(0.5)
         context.move(to: CGPoint(x: bounds.minX, y: bounds.minY + 0.5))
         context.addLine(to: CGPoint(x: bounds.maxX, y: bounds.minY + 0.5))
         context.strokePath()
+
+        // Metal: backlit hi-fi green panel behind the central display (marquee/seek/time),
+        // matching the main window's LCD. The marquee text already renders in dark ink.
+        if isMetal {
+            renderer.drawInsetPanel(in: displayRect, displayFill: true, context: context)
+        }
 
         let t = transportRects
         renderer.drawTransportButton("btn_prev", state: state(for: "btn_prev"), in: t.prev, context: context)
@@ -156,9 +188,11 @@ final class CompactPlayerBarView: NSView {
 
         // Time label "elapsed / total"
         let timeText = "\(format(currentTime)) / \(format(duration))"
+        // On the green LCD panel the time reads in the finish's dark ink (matches main window).
+        let timeColor = isMetal ? skin.metalMaterial.lcdInk : skin.timeColor
         renderer.drawLabel(timeText, in: timeRect,
-                           font: NSFont.monospacedDigitSystemFont(ofSize: 10 * m, weight: .regular),
-                           color: skin.timeColor, alignment: .right, context: context)
+                           font: timeFont,
+                           color: timeColor, alignment: .right, context: context)
 
         // Volume slider
         let volume = CGFloat(WindowManager.shared.audioEngine.volume)

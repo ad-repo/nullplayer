@@ -83,6 +83,16 @@ class ModernSkinLoader {
         throw ModernSkinError.configNotFound(url.path)
     }
     
+    /// Load the default bundled skin for a modern-family skin namespace.
+    func loadDefault(for family: ModernSkinFamily) -> ModernSkin {
+        switch family {
+        case .modern:
+            return loadDefault()
+        case .metal:
+            return createMetalFallbackSkin()
+        }
+    }
+
     /// Load the default bundled skin (NeonWave)
     func loadDefault() -> ModernSkin {
         // Try to find NeonWave in the resource bundle
@@ -103,8 +113,21 @@ class ModernSkinLoader {
     
     /// User skins directory
     var userSkinsDirectory: URL {
+        userSkinsDirectory(for: .modern)
+    }
+
+    var userMetalSkinsDirectory: URL {
+        userSkinsDirectory(for: .metal)
+    }
+
+    func userSkinsDirectory(for family: ModernSkinFamily) -> URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return appSupport.appendingPathComponent("NullPlayer").appendingPathComponent("ModernSkins")
+        let folderName: String
+        switch family {
+        case .modern: folderName = "ModernSkins"
+        case .metal: folderName = "MetalSkins"
+        }
+        return appSupport.appendingPathComponent("NullPlayer").appendingPathComponent(folderName)
     }
     
     /// Get all available modern skins (bundled + user by default).
@@ -151,6 +174,15 @@ class ModernSkinLoader {
         }
         
         return skins.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func availableSkins(for family: ModernSkinFamily) -> [(name: String, path: URL, isBundled: Bool)] {
+        switch family {
+        case .modern:
+            return availableSkins()
+        case .metal:
+            return availableSkins(includeBundled: false, userDirectory: userSkinsDirectory(for: .metal))
+        }
     }
     
     // MARK: - Image Loading
@@ -290,6 +322,147 @@ class ModernSkinLoader {
         )
         
         let skin = ModernSkin(config: config, bundlePath: nil)
+        let fonts = ModernSkinFont.resolve(config: config.fonts, skinBundle: nil)
+        skin.setFonts(primary: fonts.primary, time: fonts.time, small: fonts.small)
+        return skin
+    }
+
+    /// Names of the built-in (code-defined) metal skins, in menu order. Each maps to a
+    /// `MetalMaterial` finish + a palette tuned for that finish in `createBuiltInMetalSkin`.
+    static let builtInMetalSkinNames = ["Brushed Steel", "Aluminum", "Gunmetal", "Anodized Black", "Brass", "Bronze", "Copper"]
+
+    private func createMetalFallbackSkin() -> ModernSkin {
+        createBuiltInMetalSkin(named: "Brushed Steel")
+    }
+
+    /// Build a code-defined metal skin by name. Unknown names fall back to Brushed Steel.
+    /// On-chrome palette text (`text`/`textDim`/`dataColor`) is light on dark finishes and dark on
+    /// light finishes; `timeColor`/`marqueeColor` stay dark because they render on the green LCD.
+    func createBuiltInMetalSkin(named name: String) -> ModernSkin {
+        let palette: ColorPalette
+        let material: MetalMaterial
+
+        switch name {
+        case "Aluminum":
+            material = .aluminum
+            palette = ColorPalette(
+                primary: "#d8dde1", secondary: "#8b969d", accent: "#2a3136", highlight: "#f4f8fa",
+                background: "#a6afb4", surface: "#1b2024", text: "#080b0d", textDim: "#2a3136",
+                positive: nil, negative: nil, warning: "#4d3a18", border: "#353c40",
+                timeColor: "#080b0d", marqueeColor: "#080b0d", dataColor: "#2a3136",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        case "Gunmetal":
+            material = .gunmetal
+            palette = ColorPalette(
+                primary: "#cdd6dd", secondary: "#8a99a4", accent: "#9fb4c4", highlight: "#f1f5f7",
+                background: "#2a2f35", surface: "#20252b", text: "#e8eef2", textDim: "#b6c2cb",
+                positive: nil, negative: nil, warning: "#d6a35a", border: "#11151a",
+                timeColor: "#080b0d", marqueeColor: "#080b0d", dataColor: "#c2ccd4",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        case "Anodized Black":
+            material = .anodizedBlack
+            palette = ColorPalette(
+                primary: "#d2d4d8", secondary: "#8a8c90", accent: "#c8cace", highlight: "#f2f3f5",
+                background: "#161618", surface: "#101012", text: "#e6e7ea", textDim: "#aeb0b5",
+                positive: nil, negative: nil, warning: "#c9a25f", border: "#060607",
+                timeColor: "#080b0d", marqueeColor: "#080b0d", dataColor: "#bcbec3",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        case "Brass":
+            material = .brass
+            palette = ColorPalette(
+                primary: "#2a2212", secondary: "#6b5c3c", accent: "#6e521c", highlight: "#fff7e6",
+                background: "#b8ad95", surface: "#6a5f48", text: "#1c160c", textDim: "#4a3f2a",
+                positive: nil, negative: nil, warning: "#8a5a1e", border: "#2a2214",
+                timeColor: "#0a0f0a", marqueeColor: "#0a0f0a", dataColor: "#4a3f2a",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        case "Bronze":
+            material = .bronze
+            palette = ColorPalette(
+                primary: "#e8dcc2", secondary: "#b09a6f", accent: "#caa86a", highlight: "#fff3da",
+                background: "#6b5230", surface: "#4a3a20", text: "#f2e9d6", textDim: "#c9b88f",
+                positive: nil, negative: nil, warning: "#caa86a", border: "#1c1408",
+                timeColor: "#0a0f0a", marqueeColor: "#0a0f0a", dataColor: "#cdbb92",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        case "Copper":
+            material = .copper
+            palette = ColorPalette(
+                primary: "#f2dccb", secondary: "#c79a82", accent: "#d98b63", highlight: "#fff0e6",
+                background: "#7d4a34", surface: "#5a3322", text: "#f6e7da", textDim: "#d8b39e",
+                positive: nil, negative: nil, warning: "#b5651d", border: "#23110a",
+                timeColor: "#0a0f0a", marqueeColor: "#0a0f0a", dataColor: "#d8b39e",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        default: // Brushed Steel
+            material = .brushedSteel
+            palette = ColorPalette(
+                primary: "#cbd3d8", secondary: "#7f8c94", accent: "#20272b", highlight: "#f1f5f7",
+                background: "#9aa3a8", surface: "#181d20", text: "#080b0d", textDim: "#252c31",
+                positive: nil, negative: nil, warning: "#4d3a18", border: "#2f363a",
+                timeColor: "#080b0d", marqueeColor: "#080b0d", dataColor: "#252c31",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
+        }
+
+        let resolvedName = ModernSkinLoader.builtInMetalSkinNames.contains(name) ? name : "Brushed Steel"
+        let config = ModernSkinConfig(
+            meta: SkinMeta(name: resolvedName, author: "NullPlayer", version: "1.0", description: "Built-in metal skin"),
+            palette: palette,
+            fonts: FontConfig(
+                primaryName: ModernSkinFont.defaultFontName,
+                fallbackName: "Menlo",
+                titleSize: 10,
+                bodySize: 11,
+                smallSize: 7,
+                timeSize: 24,
+                infoSize: nil,
+                eqLabelSize: nil,
+                eqValueSize: nil,
+                marqueeSize: nil,
+                playlistSize: nil
+            ),
+            background: BackgroundConfig(
+                image: nil,
+                grid: GridConfig(color: "#eef4f7", spacing: 22, angle: 90, opacity: 0.03, perspective: false)
+            ),
+            glow: GlowConfig(enabled: false, radius: 0, intensity: 0, threshold: 0.8, color: nil, elementBlur: nil),
+            window: WindowConfig(borderWidth: 2.0, borderColor: "#2f363a", cornerRadius: 5, scale: nil, opacity: 1.0, textOpacity: nil, mainSpectrumOpacity: 0.72, spectrumTransparentBackground: true, waveformWindowOpacity: 0.82, seamlessDocking: 1.0, areaOpacity: nil),
+            // Transparency is part of the metal skin: BOTH the main-window analyzer and the
+            // dedicated Spectrum window default to the exact-port vis_classic core running a
+            // per-finish LCD profile ("Metal <finish>") whose bar gradient matches this finish's
+            // MetalMaterial ramp, drawn transparent over the metal chrome. The transparent flags
+            // and profiles are applied on every load (and on Reset) so a stale persisted `false`
+            // or non-metal profile can't leave either analyzer an opaque black box.
+            visualization: VisualizationConfig(
+                mainWindowMode: MainWindowVisMode.visClassicExact.rawValue,
+                spectrumWindowMode: SpectrumQualityMode.visClassicExact.rawValue,
+                visClassic: VisClassicVisualizationConfig(
+                    mainWindowProfile: "Metal \(resolvedName)",
+                    spectrumWindowProfile: "Metal \(resolvedName)",
+                    mainWindowFitToWidth: nil,
+                    spectrumWindowFitToWidth: nil,
+                    mainWindowTransparentBackground: true,
+                    spectrumWindowTransparentBackground: true,
+                    mainWindowOpacity: nil,
+                    spectrumWindowOpacity: nil
+                ),
+                fire: nil,
+                lightning: nil,
+                matrix: nil
+            ),
+            waveform: nil,
+            marquee: nil,
+            titleText: nil,
+            elements: nil,
+            animations: nil
+        )
+
+        let skin = ModernSkin(config: config, bundlePath: nil)
+        skin.metalMaterial = material
         let fonts = ModernSkinFont.resolve(config: config.fonts, skinBundle: nil)
         skin.setFonts(primary: fonts.primary, time: fonts.time, small: fonts.small)
         return skin

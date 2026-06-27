@@ -236,6 +236,14 @@ The simplest skin is just a `skin.json` with palette colors:
 
 All elements render programmatically using the palette colors.
 
+Metal mode uses the same modern skin engine but a separate family namespace (`.metal` render style, `metalSkinName` key, user skins under `MetalSkins`). Its appearance is **code-driven, not palette-driven**: every metal skin draws the same surfaces, with per-finish colors supplied by a `MetalMaterial` preset (`ModernSkin/MetalMaterial.swift`).
+
+Seven built-in metal finishes ship in code (`ModernSkinLoader.createBuiltInMetalSkin(named:)`, listed by `builtInMetalSkinNames`): **Brushed Steel** (default), **Aluminum**, **Gunmetal**, **Anodized Black**, **Brass**, **Bronze**, **Copper**. They appear automatically in the Skins → Metal menu and load by name (path-nil `SkinInfo`).
+
+Display vs. chrome contrast: the main-window time/track panels and EQ curve graph render on a backlit-green LCD (`material.displayFill`); text on the LCD uses `material.lcdInk` (dark in every finish), while on-chrome text uses the skin palette `text`/`textDim`/`dataColor` (light on dark finishes, dark on light). `timeColor`/`marqueeColor` stay dark for all finishes since they sit on the green LCD. EQ faders use a brightness value ramp (`material.faderLow`/`faderMid`/`faderHigh`), not a hue scale.
+
+Library browser (metal): the window renders as one continuous brushed-metal surface — the top-chrome band fills and the alphabet-index inset are cleared, and the renderer's metal accent strip is suppressed for this window via `drawWindowBackground(..., drawMetalAccentStrip:)` (other metal windows keep the strip). Compact player bar (`CompactPlayerBarView`, metal): the upper display row (track-title marquee + inline, vertically-centered time) gets the green LCD fill via `drawInsetPanel(displayFill: true)`, with the seek bar and volume in a separate control row below so they sit off the LCD. The classic compact bar (`ClassicCompactPlayerBarView`) mirrors the same display-row / control-row layout without the green fill.
+
 ## Bundled Skins
 
 The following skins ship in `Sources/NullPlayer/Resources/Skins/`:
@@ -276,7 +284,7 @@ Users place `.nsz` files or folders in:
 
 Right-click the player → **Skins** → **Modern** → choose from the list (or use **Load Skin...** to import a `.nsz` bundle).
 
-Skin changes take effect immediately. Switching between Classic and Modern mode requires a restart.
+Skin changes take effect immediately. Switching between Classic, Modern, and Metal mode happens live in-process.
 
 ## Multi-Window Support
 
