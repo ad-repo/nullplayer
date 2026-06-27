@@ -1984,6 +1984,13 @@ class ModernLibraryBrowserView: NSView {
             let headerRect = NSRect(x: fullListRect.minX, y: headerY,
                                     width: fullListRect.width, height: columnHeaderHeight)
             drawColumnHeaders(in: context, rect: headerRect, columns: columns, skin: skin)
+            // Fill the header-row gap above the alphabet index (and scrollbar) so it
+            // matches the column-header band instead of showing the panel background.
+            let gapRect = NSRect(x: headerRect.maxX, y: headerY,
+                                 width: bounds.width - Layout.borderWidth - headerRect.maxX,
+                                 height: columnHeaderHeight)
+            (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
+            context.fill(gapRect)
             contentListY = listAreaY
         }
         
