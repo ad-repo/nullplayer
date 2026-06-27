@@ -4597,8 +4597,16 @@ class WindowManager {
         reloadUI(to: targetModern ? .modern : .classic)
     }
 
-    func reloadUI(to targetMode: PlayerUIMode) {
-        guard targetMode != uiMode else { return }
+    /// Switch the live UI to `targetMode`. When Compact Mode is active the actual swap is
+    /// deferred until compact teardown finishes, so callers that need to read the post-swap
+    /// state (`uiMode`, `isRunningModernFamilyUI`) or rebuild window/skin state must pass
+    /// `completion` — it runs after `performReloadUI`, on the main thread, in both the
+    /// synchronous and deferred paths. It also fires when no switch is needed.
+    func reloadUI(to targetMode: PlayerUIMode, completion: (() -> Void)? = nil) {
+        guard targetMode != uiMode else {
+            completion?()
+            return
+        }
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetMode.displayName)
 
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
@@ -4619,9 +4627,11 @@ class WindowManager {
                 guard let self else { return }
                 self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true)
                 self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
+                completion?()
             }
         } else {
             performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false)
+            completion?()
         }
     }
 

@@ -140,7 +140,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Use default skin for consistent test results
         // Don't load custom skins from environment in test mode
         if let family = windowManager.uiMode.modernSkinFamily {
-            ModernSkinEngine.shared.loadPreferredSkin(for: family)
+            ModernSkinEngine.shared.loadDefaultSkin(for: family)
         }
         
         // Show the main player window

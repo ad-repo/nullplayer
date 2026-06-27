@@ -108,10 +108,14 @@ final class CompactPlayerBarView: NSView {
         return NSRect(x: midLeft, y: bottom, width: max(0, contentRight - midLeft), height: max(0, top - bottom))
     }
 
-    /// Time sits inline at the right end of the display.
+    private var timeFont: NSFont { NSFont.monospacedDigitSystemFont(ofSize: 10 * m, weight: .regular) }
+
+    /// Time sits inline at the right end of the display, vertically centered to match the marquee.
     private var timeRect: NSRect {
         let w = 82 * m
-        return NSRect(x: displayRect.maxX - w - 4 * m, y: displayRect.minY, width: w, height: displayRect.height)
+        let h = ("0" as NSString).size(withAttributes: [.font: timeFont]).height
+        let y = displayRect.minY + (displayRect.height - h) / 2
+        return NSRect(x: displayRect.maxX - w - 4 * m, y: y, width: w, height: h)
     }
 
     /// Track-title marquee fills the rest of the display, left of the time.
@@ -187,7 +191,7 @@ final class CompactPlayerBarView: NSView {
         // On the green LCD panel the time reads in the finish's dark ink (matches main window).
         let timeColor = isMetal ? skin.metalMaterial.lcdInk : skin.timeColor
         renderer.drawLabel(timeText, in: timeRect,
-                           font: NSFont.monospacedDigitSystemFont(ofSize: 10 * m, weight: .regular),
+                           font: timeFont,
                            color: timeColor, alignment: .right, context: context)
 
         // Volume slider

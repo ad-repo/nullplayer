@@ -676,12 +676,25 @@ class AppStateManager {
     /// Apply settings state (skin, volume, EQ, windows) - no playlist
     private func applySettingsState(_ state: AppState, completion: (() -> Void)? = nil) {
         let wm = WindowManager.shared
-        let engine = wm.audioEngine
         let restoredMode = state.restoredUIMode
 
+        // reloadUI(to:) can defer the actual mode swap until Compact Mode teardown completes.
+        // The rest of the restore reads wm.uiMode / wm.isRunningModernFamilyUI and rebuilds
+        // skin/window state, so it must run only once the target-mode controllers exist.
         if wm.uiMode != restoredMode {
-            wm.reloadUI(to: restoredMode)
+            wm.reloadUI(to: restoredMode) { [weak self] in
+                self?.applySettingsStateAfterReload(state, completion: completion)
+            }
+        } else {
+            applySettingsStateAfterReload(state, completion: completion)
         }
+    }
+
+    /// Apply the non-mode-switching portion of settings restore. Runs after any
+    /// `reloadUI(to:)` swap has completed so it observes the final controller set.
+    private func applySettingsStateAfterReload(_ state: AppState, completion: (() -> Void)? = nil) {
+        let wm = WindowManager.shared
+        let engine = wm.audioEngine
 
         let runningModernMode = wm.isRunningModernFamilyUI
         let runningMode = wm.uiMode

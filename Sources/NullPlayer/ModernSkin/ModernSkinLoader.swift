@@ -439,7 +439,7 @@ class ModernSkinLoader {
             // or non-metal profile can't leave either analyzer an opaque black box.
             visualization: VisualizationConfig(
                 mainWindowMode: MainWindowVisMode.visClassicExact.rawValue,
-                spectrumWindowMode: nil,
+                spectrumWindowMode: SpectrumQualityMode.visClassicExact.rawValue,
                 visClassic: VisClassicVisualizationConfig(
                     mainWindowProfile: "Metal \(resolvedName)",
                     spectrumWindowProfile: "Metal \(resolvedName)",

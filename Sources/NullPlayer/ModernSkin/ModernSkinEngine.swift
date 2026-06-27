@@ -255,10 +255,14 @@ class ModernSkinEngine {
         case .modern:
             return discovered
         case .metal:
-            let builtInNames = ModernSkinLoader.builtInMetalSkinNames
-            let builtIns = builtInNames.map { SkinInfo(name: $0, path: nil, isBundled: true) }
-            let filtered = discovered.filter { !builtInNames.contains($0.name) }
-            return builtIns + filtered
+            // An imported metal bundle whose name collides with a built-in finish should win:
+            // expose the user skin (with a real path) and drop only the synthesized built-in
+            // entry, so loadSkin(named:) resolves the bundle instead of the path-nil built-in.
+            let userNames = Set(discovered.map(\.name))
+            let builtIns = ModernSkinLoader.builtInMetalSkinNames
+                .filter { !userNames.contains($0) }
+                .map { SkinInfo(name: $0, path: nil, isBundled: true) }
+            return builtIns + discovered
         }
     }
     
