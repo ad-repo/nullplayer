@@ -13644,7 +13644,14 @@ class PlexBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedArtists.isEmpty {
-                        if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
+                        if self.pendingArtistLoadUnfiltered {
+                            self.cachedArtists = try await plexManager.fetchArtists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                            if self.cachedAlbums.isEmpty {
+                                self.cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                            }
+                        } else if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
                             self.cachedArtists = plexManager.cachedArtists
                             self.cachedAlbums = plexManager.cachedAlbums
                         } else {
@@ -13657,6 +13664,7 @@ class PlexBrowserView: NSView {
                         }
                         self.buildArtistAlbumCounts()
                     }
+                    self.pendingArtistLoadUnfiltered = false
                     self.buildArtistItems()
                     
                 case .albums:
@@ -15100,7 +15108,11 @@ class PlexBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedSubsonicArtists.isEmpty {
-                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                        if self.pendingArtistLoadUnfiltered {
+                            try Task.checkCancellation()
+                            self.cachedSubsonicArtists = try await manager.fetchArtistsUnfiltered()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                        } else if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
                             self.cachedSubsonicArtists = manager.cachedArtists
                             self.cachedSubsonicAlbums = manager.cachedAlbums
                         } else {
@@ -15112,6 +15124,7 @@ class PlexBrowserView: NSView {
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
+                    self.pendingArtistLoadUnfiltered = false
                     self.buildSubsonicArtistItems()
                     
                 case .albums:
@@ -15359,7 +15372,11 @@ class PlexBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedEmbyArtists.isEmpty {
-                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                        if self.pendingArtistLoadUnfiltered {
+                            try Task.checkCancellation()
+                            self.cachedEmbyArtists = try await manager.fetchArtistsUnfiltered()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                        } else if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
                             self.cachedEmbyArtists = manager.cachedArtists
                             self.cachedEmbyAlbums = manager.cachedAlbums
                         } else {
@@ -15371,6 +15388,7 @@ class PlexBrowserView: NSView {
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
+                    self.pendingArtistLoadUnfiltered = false
                     self.buildEmbyArtistItems()
 
                 case .albums:
@@ -15490,7 +15508,11 @@ class PlexBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedJellyfinArtists.isEmpty {
-                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                        if self.pendingArtistLoadUnfiltered {
+                            try Task.checkCancellation()
+                            self.cachedJellyfinArtists = try await manager.fetchArtistsUnfiltered()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                        } else if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
                             self.cachedJellyfinArtists = manager.cachedArtists
                             self.cachedJellyfinAlbums = manager.cachedAlbums
                         } else {
@@ -15502,6 +15524,7 @@ class PlexBrowserView: NSView {
                             }
                         }
                     }
+                    self.pendingArtistLoadUnfiltered = false
                     self.buildJellyfinArtistItems()
                     
                 case .albums:
