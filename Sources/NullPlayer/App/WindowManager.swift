@@ -3584,6 +3584,14 @@ class WindowManager {
     
     /// Called when a window is being dragged - handle snapping and move docked windows
     func windowWillMove(_ window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
+        // The Compact Mode window is a floating, status-item-anchored window positioned
+        // explicitly by CompactModeWindowController. It must never participate in snapping or
+        // docking against the regular window set — when extra regular windows are open, snapping
+        // pulls it off its menu-bar anchor. Always accept its programmatic origin verbatim.
+        if window === compactWindowController?.window {
+            return newOrigin
+        }
+
         // Programmatic frame changes should never re-enter snap logic.
         if isSnappingWindow {
             return newOrigin
