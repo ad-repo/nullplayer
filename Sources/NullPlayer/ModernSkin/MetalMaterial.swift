@@ -257,9 +257,9 @@ extension MetalMaterial {
         spectrumHigh: rgb(0.95, 0.97, 1.0)
     )
 
-    // MARK: Champagne (warm silver-gold vintage receiver faceplate)
+    // MARK: Brass (warm polished yellow-gold faceplate)
 
-    static let champagne = MetalMaterial(
+    static let brass = MetalMaterial(
         backgroundBase: rgb(0.80, 0.75, 0.64),
         backgroundStops: [
             .init(location: 0.0,  color: rgb(0.93, 0.89, 0.79)),
@@ -299,5 +299,95 @@ extension MetalMaterial {
         faderHigh: rgb(0.96, 0.92, 0.82),
         spectrumLow: rgb(0.40, 0.24, 0.06),
         spectrumHigh: rgb(1.0, 0.86, 0.46)
+    )
+
+    // MARK: Bronze (dark muted brown-gold faceplate)
+
+    static let bronze = MetalMaterial(
+        backgroundBase: rgb(0.40, 0.31, 0.17),
+        backgroundStops: [
+            .init(location: 0.0,  color: rgb(0.55, 0.45, 0.28)),
+            .init(location: 0.08, color: rgb(0.42, 0.33, 0.18)),
+            .init(location: 0.32, color: rgb(0.49, 0.39, 0.23)),
+            .init(location: 0.58, color: rgb(0.38, 0.29, 0.16)),
+            .init(location: 0.78, color: rgb(0.45, 0.36, 0.21)),
+            .init(location: 1.0,  color: rgb(0.32, 0.24, 0.13)),
+        ],
+        brushHighlightStrong: 0.12,
+        brushHighlightFaint: 0.06,
+        accentStrip: rgb(0.85, 0.72, 0.45, 0.16),
+        borderDark: rgb(0.16, 0.11, 0.05, 0.66),
+        borderLight: rgb(1.0, 0.92, 0.72, 0.26),
+        titleBarStops: [
+            .init(location: 0.0,  color: rgb(0.60, 0.50, 0.32, 0.42)),
+            .init(location: 0.48, color: rgb(0.44, 0.35, 0.20, 0.20)),
+            .init(location: 1.0,  color: rgb(0.30, 0.23, 0.12, 0.18)),
+        ],
+        titleBarHighlight: rgb(1.0, 0.92, 0.72, 0.24),
+        separator: rgb(0.12, 0.08, 0.03, 0.45),
+        insetFill: rgb(0.30, 0.24, 0.14),
+        insetBorder: rgb(0.16, 0.12, 0.06),
+        displayFill: lcdGreen,
+        lcdInk: lcdInkDark,
+        sliderTrack: rgb(0.34, 0.28, 0.17),
+        sliderFill: rgb(0.62, 0.52, 0.34),
+        sliderThumb: rgb(0.90, 0.80, 0.58),
+        transportButton: rgb(0.90, 0.82, 0.62),
+        transportButtonPressed: rgb(0.66, 0.58, 0.40),
+        eqPanelFill: rgb(0.30, 0.24, 0.14),
+        eqControlFill: rgb(0.60, 0.50, 0.32, 0.30),
+        eqActiveFill: rgb(0.68, 0.58, 0.38, 0.38),
+        eqStroke: rgb(0.74, 0.64, 0.44, 0.50),
+        faderLow: rgb(0.34, 0.28, 0.18),
+        faderMid: rgb(0.56, 0.48, 0.32),
+        faderHigh: rgb(0.94, 0.86, 0.64),
+        // Light warm so the bar floor stays visible on the dark bronze chrome.
+        spectrumLow: rgb(0.55, 0.46, 0.30),
+        spectrumHigh: rgb(1.0, 0.90, 0.62)
+    )
+
+    // MARK: Copper (warm reddish-orange polished faceplate)
+
+    static let copper = MetalMaterial(
+        backgroundBase: rgb(0.52, 0.31, 0.21),
+        backgroundStops: [
+            .init(location: 0.0,  color: rgb(0.74, 0.48, 0.34)),
+            .init(location: 0.08, color: rgb(0.55, 0.33, 0.22)),
+            .init(location: 0.32, color: rgb(0.66, 0.42, 0.29)),
+            .init(location: 0.58, color: rgb(0.50, 0.30, 0.20)),
+            .init(location: 0.78, color: rgb(0.60, 0.38, 0.26)),
+            .init(location: 1.0,  color: rgb(0.42, 0.24, 0.16)),
+        ],
+        brushHighlightStrong: 0.14,
+        brushHighlightFaint: 0.07,
+        accentStrip: rgb(0.95, 0.72, 0.55, 0.18),
+        borderDark: rgb(0.20, 0.10, 0.06, 0.64),
+        borderLight: rgb(1.0, 0.85, 0.72, 0.30),
+        titleBarStops: [
+            .init(location: 0.0,  color: rgb(0.80, 0.54, 0.40, 0.42)),
+            .init(location: 0.48, color: rgb(0.58, 0.36, 0.25, 0.20)),
+            .init(location: 1.0,  color: rgb(0.40, 0.23, 0.15, 0.18)),
+        ],
+        titleBarHighlight: rgb(1.0, 0.86, 0.74, 0.30),
+        separator: rgb(0.16, 0.07, 0.04, 0.42),
+        insetFill: rgb(0.40, 0.24, 0.16),
+        insetBorder: rgb(0.22, 0.12, 0.08),
+        displayFill: lcdGreen,
+        lcdInk: lcdInkDark,
+        sliderTrack: rgb(0.44, 0.27, 0.18),
+        sliderFill: rgb(0.74, 0.50, 0.36),
+        sliderThumb: rgb(0.96, 0.82, 0.66),
+        transportButton: rgb(0.98, 0.84, 0.70),
+        transportButtonPressed: rgb(0.74, 0.56, 0.44),
+        eqPanelFill: rgb(0.40, 0.24, 0.16),
+        eqControlFill: rgb(0.72, 0.48, 0.34, 0.30),
+        eqActiveFill: rgb(0.80, 0.56, 0.40, 0.38),
+        eqStroke: rgb(0.92, 0.68, 0.52, 0.50),
+        faderLow: rgb(0.42, 0.26, 0.18),
+        faderMid: rgb(0.66, 0.44, 0.32),
+        faderHigh: rgb(1.0, 0.82, 0.64),
+        // Light warm so the bar floor stays visible on the dark copper chrome.
+        spectrumLow: rgb(0.70, 0.46, 0.32),
+        spectrumHigh: rgb(1.0, 0.80, 0.56)
     )
 }
