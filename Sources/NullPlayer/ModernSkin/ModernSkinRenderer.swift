@@ -1283,10 +1283,13 @@ class ModernSkinRenderer {
             let x = scaledR.minX + CGFloat(i) * (barWidth + gap)
             let barRect = NSRect(x: x, y: scaledR.minY, width: barWidth, height: barHeight)
             
-            // Gradient from accent (bottom) to primary (top)
+            // Gradient bottom -> top. Metal finishes use the material's analyzer ramp;
+            // the chrome accent would render near-black bars.
             context.saveGState()
             context.clip(to: barRect)
-            let colors = [skin.accentColor.cgColor, skin.primaryColor.cgColor] as CFArray
+            let bottomColor = usesMetalAppearance ? material.spectrumLow : skin.accentColor
+            let topColor = usesMetalAppearance ? material.spectrumHigh : skin.primaryColor
+            let colors = [bottomColor.cgColor, topColor.cgColor] as CFArray
             if let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: nil) {
                 context.drawLinearGradient(grad,
                                           start: CGPoint(x: barRect.midX, y: barRect.minY),

@@ -62,6 +62,57 @@ class ModernSkinEngine {
         loadDefaultSkin(for: family, preservePersistedProfiles: true)
     }
     
+    /// Full reset of the active modern/metal skin: clear every persisted
+    /// visualization override (analyzer mode, vis_classic profile/fit/transparent/
+    /// opacity, and the per-mode style/intensity/color keys for both the main and
+    /// dedicated spectrum windows), reload the skin re-applying its shipped defaults,
+    /// then push the live windows back to the default analyzer immediately.
+    func resetCurrentSkinToDefault() {
+        let defaults = UserDefaults.standard
+
+        // 1. Clear persisted visualization overrides so skin/app defaults take effect.
+        var keys: [String] = [
+            "mainWindowVisMode", "modernMainWindowVisMode", "spectrumQualityMode",
+            "spectrumNormalizationMode", "mainWindowNormalizationMode",
+            // Fire
+            "mainWindowFlameStyle", "mainWindowFlameIntensity", "flameStyle", "flameIntensity",
+            // Lightning
+            "mainWindowLightningStyle", "lightningStyle",
+            // Matrix
+            "mainWindowMatrixColorScheme", "mainWindowMatrixIntensity", "matrixColorScheme", "matrixIntensity",
+            // EKG / decay
+            "mainWindowEKGStyle", "ekgStyle", "mainWindowDecayMode", "decayMode",
+            // Legacy vis_classic (pre-scoped keys)
+            "visClassicLastProfileName", "visClassicFitToWidth",
+        ]
+        for scope in [VisClassicBridge.PreferenceScope.mainWindow, .spectrumWindow] {
+            keys.append(scope.lastProfileNameKey)
+            keys.append(scope.fitToWidthKey)
+            keys.append(scope.transparentBgKey)
+            keys.append(scope.opacityKey)
+        }
+        for key in keys { defaults.removeObject(forKey: key) }
+
+        // 2. Reload the active skin, re-applying its shipped visualization defaults.
+        let family = currentFamily
+        if let name = currentSkinName {
+            _ = loadSkin(named: name, family: family, preservePersistedProfiles: false)
+        } else {
+            loadDefaultSkin(for: family, preservePersistedProfiles: false)
+        }
+
+        // 3. If the skin didn't re-seed a main-window analyzer mode, fall back to the
+        //    app default (Spectrum) so the live window leaves any black vis_classic box.
+        if defaults.string(forKey: "mainWindowVisMode") == nil {
+            defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: "mainWindowVisMode")
+            defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: "modernMainWindowVisMode")
+        }
+
+        // 4. Push the live windows to re-read the (reset) analyzer mode/settings now.
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+    }
+
     /// Load the default bundled skin (NeonWave)
     func loadDefaultSkin() {
         loadDefaultSkin(for: .modern)
@@ -274,9 +325,14 @@ class ModernSkinEngine {
         // Apply per-skin visualization defaults (mode + mode-specific presets/profiles).
         // window.spectrumTransparentBackground seeds the spectrum transparent state;
         // visualization.visClassic.spectrumWindowTransparentBackground overrides it if both are set.
+        // Metal finishes own their analyzer look: always apply the per-finish vis_classic
+        // profile so it follows the finish (a stale non-metal profile from an earlier
+        // session must not survive into metal mode), even though other persisted profiles
+        // are preserved across launches.
         applyVisualizationDefaults(from: skin.config.visualization,
                                    windowSpectrumTransparentBackground: skin.config.window.spectrumTransparentBackground,
-                                   preservePersistedProfiles: preservePersistedProfiles)
+                                   preservePersistedProfiles: preservePersistedProfiles,
+                                   forceProfileDefaults: currentFamily == .metal)
         
         // Configure bloom processor
         bloomProcessor.configure(with: skin.config.glow)
@@ -292,8 +348,12 @@ class ModernSkinEngine {
 
     private func applyVisualizationDefaults(from config: VisualizationConfig?,
                                              windowSpectrumTransparentBackground: Bool? = nil,
-                                             preservePersistedProfiles: Bool = false) {
+                                             preservePersistedProfiles: Bool = false,
+                                             forceProfileDefaults: Bool = false) {
         guard config != nil || windowSpectrumTransparentBackground != nil else { return }
+
+        // When forcing (metal), the skin's profile defaults win even on a preserved launch.
+        let profilePreserve = preservePersistedProfiles && !forceProfileDefaults
 
         let defaults = UserDefaults.standard
         var mainVisChanged = false
@@ -344,7 +404,7 @@ class ModernSkinEngine {
             if let profile = visClassic.mainWindowProfile,
                Self.shouldApplyProfileDefault(
                    forKey: VisClassicBridge.PreferenceScope.mainWindow.lastProfileNameKey,
-                   preservePersistedProfiles: preservePersistedProfiles,
+                   preservePersistedProfiles: profilePreserve,
                    defaults: defaults
                ) {
                 defaults.set(profile, forKey: "visClassicLastProfileName.mainWindow")

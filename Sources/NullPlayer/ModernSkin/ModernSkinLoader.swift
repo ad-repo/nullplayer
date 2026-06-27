@@ -329,7 +329,7 @@ class ModernSkinLoader {
 
     /// Names of the built-in (code-defined) metal skins, in menu order. Each maps to a
     /// `MetalMaterial` finish + a palette tuned for that finish in `createBuiltInMetalSkin`.
-    static let builtInMetalSkinNames = ["Brushed Steel", "Gunmetal", "Anodized Black", "Champagne"]
+    static let builtInMetalSkinNames = ["Brushed Steel", "Aluminum", "Gunmetal", "Anodized Black", "Champagne"]
 
     private func createMetalFallbackSkin() -> ModernSkin {
         createBuiltInMetalSkin(named: "Brushed Steel")
@@ -343,6 +343,15 @@ class ModernSkinLoader {
         let material: MetalMaterial
 
         switch name {
+        case "Aluminum":
+            material = .aluminum
+            palette = ColorPalette(
+                primary: "#d8dde1", secondary: "#8b969d", accent: "#2a3136", highlight: "#f4f8fa",
+                background: "#a6afb4", surface: "#1b2024", text: "#080b0d", textDim: "#2a3136",
+                positive: nil, negative: nil, warning: "#4d3a18", border: "#353c40",
+                timeColor: "#080b0d", marqueeColor: "#080b0d", dataColor: "#2a3136",
+                eqLow: "#252c31", eqMid: "#3c464c", eqHigh: "#080b0d"
+            )
         case "Gunmetal":
             material = .gunmetal
             palette = ColorPalette(
@@ -403,8 +412,30 @@ class ModernSkinLoader {
                 grid: GridConfig(color: "#eef4f7", spacing: 22, angle: 90, opacity: 0.03, perspective: false)
             ),
             glow: GlowConfig(enabled: false, radius: 0, intensity: 0, threshold: 0.8, color: nil, elementBlur: nil),
-            window: WindowConfig(borderWidth: 2.0, borderColor: "#2f363a", cornerRadius: 5, scale: nil, opacity: 1.0, textOpacity: nil, mainSpectrumOpacity: 0.72, spectrumTransparentBackground: false, waveformWindowOpacity: 0.82, seamlessDocking: 1.0, areaOpacity: nil),
-            visualization: nil,
+            window: WindowConfig(borderWidth: 2.0, borderColor: "#2f363a", cornerRadius: 5, scale: nil, opacity: 1.0, textOpacity: nil, mainSpectrumOpacity: 0.72, spectrumTransparentBackground: true, waveformWindowOpacity: 0.82, seamlessDocking: 1.0, areaOpacity: nil),
+            // Transparency is part of the metal skin: BOTH the main-window analyzer and the
+            // dedicated Spectrum window default to the exact-port vis_classic core running a
+            // per-finish LCD profile ("Metal <finish>") whose bar gradient matches this finish's
+            // MetalMaterial ramp, drawn transparent over the metal chrome. The transparent flags
+            // and profiles are applied on every load (and on Reset) so a stale persisted `false`
+            // or non-metal profile can't leave either analyzer an opaque black box.
+            visualization: VisualizationConfig(
+                mainWindowMode: MainWindowVisMode.visClassicExact.rawValue,
+                spectrumWindowMode: nil,
+                visClassic: VisClassicVisualizationConfig(
+                    mainWindowProfile: "Metal \(resolvedName)",
+                    spectrumWindowProfile: "Metal \(resolvedName)",
+                    mainWindowFitToWidth: nil,
+                    spectrumWindowFitToWidth: nil,
+                    mainWindowTransparentBackground: true,
+                    spectrumWindowTransparentBackground: true,
+                    mainWindowOpacity: nil,
+                    spectrumWindowOpacity: nil
+                ),
+                fire: nil,
+                lightning: nil,
+                matrix: nil
+            ),
             waveform: nil,
             marquee: nil,
             titleText: nil,

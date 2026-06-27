@@ -1042,20 +1042,29 @@ class ModernLibraryBrowserView: NSView {
         ModernSkinEngine.shared.currentRenderStyle == .metal
     }
 
+    /// Active metal finish (falls back to Brushed Steel). The control colors below are
+    /// derived from its per-finish EQ control palette so they adapt to dark finishes:
+    /// on Anodized Black / Gunmetal the band fills go dark and the strokes go light, so
+    /// the tab/control boxes stay visible instead of washing out against the chrome.
+    private var metalMaterial: MetalMaterial {
+        ModernSkinEngine.shared.currentSkin?.metalMaterial ?? .brushedSteel
+    }
+
+    // Header/alphabet band — the strip wrapping the top and the right-side alphabet index.
     private var metalControlBandFill: NSColor {
-        NSColor(calibratedRed: 0.62, green: 0.67, blue: 0.69, alpha: 0.34)
+        metalMaterial.eqPanelFill.withAlphaComponent(0.55)
     }
 
     private var metalControlFill: NSColor {
-        NSColor(calibratedRed: 0.70, green: 0.75, blue: 0.77, alpha: 0.30)
+        metalMaterial.eqControlFill
     }
 
     private var metalControlActiveFill: NSColor {
-        NSColor(calibratedRed: 0.80, green: 0.84, blue: 0.85, alpha: 0.38)
+        metalMaterial.eqActiveFill
     }
 
     private var metalControlStroke: NSColor {
-        NSColor(calibratedRed: 0.24, green: 0.27, blue: 0.29, alpha: 0.58)
+        metalMaterial.eqStroke
     }
 
     private var metalRatingColor: NSColor {

@@ -572,6 +572,11 @@ class ContextMenuBuilder {
         }
 
         modernMenu.addItem(NSMenuItem.separator())
+        if activeMode == .modern {
+            let resetModern = NSMenuItem(title: "Reset Skin to Default", action: #selector(MenuActions.resetCurrentSkinToDefault), keyEquivalent: "")
+            resetModern.target = MenuActions.shared
+            modernMenu.addItem(resetModern)
+        }
         let openModernFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openModernSkinsFolder), keyEquivalent: "")
         openModernFolder.target = MenuActions.shared
         modernMenu.addItem(openModernFolder)
@@ -618,6 +623,11 @@ class ContextMenuBuilder {
         }
 
         metalMenu.addItem(NSMenuItem.separator())
+        if activeMode == .metal {
+            let resetMetal = NSMenuItem(title: "Reset Skin to Default", action: #selector(MenuActions.resetCurrentSkinToDefault), keyEquivalent: "")
+            resetMetal.target = MenuActions.shared
+            metalMenu.addItem(resetMetal)
+        }
         let openMetalFolder = NSMenuItem(title: "Open Metal Skins Folder...", action: #selector(MenuActions.openMetalSkinsFolder), keyEquivalent: "")
         openMetalFolder.target = MenuActions.shared
         metalMenu.addItem(openMetalFolder)
@@ -3886,7 +3896,15 @@ class MenuActions: NSObject {
         guard wm.uiMode != .metal else { return }
         wm.reloadUI(to: .metal)
     }
-    
+
+    /// Reset the active modern/metal skin to its shipped defaults, discarding
+    /// persisted per-skin visualization overrides. Only meaningful in a modern-family
+    /// mode; the live skin reload refreshes the windows via the skin-changed notification.
+    @objc func resetCurrentSkinToDefault() {
+        guard WindowManager.shared.uiMode.modernSkinFamily != nil else { return }
+        ModernSkinEngine.shared.resetCurrentSkinToDefault()
+    }
+
     /// Relaunch the application by opening a new instance and terminating the current one.
     private func relaunchApp() {
         guard let bundleURL = Bundle.main.bundleURL as URL? else { return }

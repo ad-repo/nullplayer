@@ -2974,7 +2974,9 @@ class SpectrumAnalyzerView: NSView {
         }
 
         if visClassicBridge == nil {
-            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
+            visClassicBridge = isEmbedded
+                ? WindowManager.shared.acquireMainWindowVisClassicBridge()
+                : WindowManager.shared.acquireSharedVisClassicBridge()
             if VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
@@ -3810,7 +3812,9 @@ class SpectrumAnalyzerView: NSView {
 
     func visClassicProfiles() -> [VisClassicBridge.ProfileEntry] {
         if visClassicBridge == nil {
-            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
+            visClassicBridge = isEmbedded
+                ? WindowManager.shared.acquireMainWindowVisClassicBridge()
+                : WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.availableProfiles() ?? []
     }
@@ -3822,7 +3826,9 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func loadVisClassicProfile(named name: String) -> Bool {
         if visClassicBridge == nil {
-            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
+            visClassicBridge = isEmbedded
+                ? WindowManager.shared.acquireMainWindowVisClassicBridge()
+                : WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.loadProfile(named: name) ?? false
     }
@@ -3830,7 +3836,9 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func loadNextVisClassicProfile() -> Bool {
         if visClassicBridge == nil {
-            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
+            visClassicBridge = isEmbedded
+                ? WindowManager.shared.acquireMainWindowVisClassicBridge()
+                : WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.loadNextProfile() ?? false
     }
@@ -3838,7 +3846,9 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func loadPreviousVisClassicProfile() -> Bool {
         if visClassicBridge == nil {
-            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
+            visClassicBridge = isEmbedded
+                ? WindowManager.shared.acquireMainWindowVisClassicBridge()
+                : WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.loadPreviousProfile() ?? false
     }
@@ -3852,7 +3862,9 @@ class SpectrumAnalyzerView: NSView {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if visClassicBridge == nil {
-            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
+            visClassicBridge = isEmbedded
+                ? WindowManager.shared.acquireMainWindowVisClassicBridge()
+                : WindowManager.shared.acquireSharedVisClassicBridge()
         }
         _ = visClassicBridge?.importProfile(from: url)
     }
@@ -3871,7 +3883,9 @@ class SpectrumAnalyzerView: NSView {
 
     func visClassicFitToWidthEnabled() -> Bool {
         if visClassicBridge == nil {
-            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
+            visClassicBridge = isEmbedded
+                ? WindowManager.shared.acquireMainWindowVisClassicBridge()
+                : WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.fitToWidthEnabled() ?? true
     }
@@ -3879,7 +3893,9 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func setVisClassicFitToWidth(_ enabled: Bool) -> Bool {
         if visClassicBridge == nil {
-            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
+            visClassicBridge = isEmbedded
+                ? WindowManager.shared.acquireMainWindowVisClassicBridge()
+                : WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.setFitToWidth(enabled) ?? false
     }
@@ -3916,7 +3932,9 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func setVisClassicTransparentBackground(_ enabled: Bool) -> Bool {
         if visClassicBridge == nil {
-            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
+            visClassicBridge = isEmbedded
+                ? WindowManager.shared.acquireMainWindowVisClassicBridge()
+                : WindowManager.shared.acquireSharedVisClassicBridge()
         }
         let ok = visClassicBridge?.setTransparentBackground(enabled) ?? false
         if ok {

@@ -505,11 +505,17 @@ class ModernEQView: NSView {
         let faderOpacity = skin.resolvedOpacity(for: .eqFaderBackground)
         let curveOpacity = skin.resolvedOpacity(for: .curveBackground)
 
+        // `bands` and `eqConfiguration` can momentarily disagree on band count
+        // during a live UI/skin switch (e.g. modern 21-band -> classic 10-band),
+        // when a final draw fires before `syncFromEngine` re-sizes `bands`.
+        // Clamp every loop to the count they share to avoid an out-of-range crash.
+        let drawBandCount = min(bands.count, eqConfiguration.bandCount)
+
         // == 1. Sliders (clip so glow doesn't bleed up) ==
         context.saveGState()
         context.clip(to: NSRect(x: 0, y: 0, width: bounds.width, height: sliderTopY))
 
-        for i in bands.indices {
+        for i in 0..<drawBandCount {
             let x = bandX(i)
             drawSlider(index: i, x: x, opacityStyle: faderOpacity, context: context)
         }
@@ -555,7 +561,7 @@ class ModernEQView: NSView {
 
         // == 3. Frequency labels (bottom) ==
 
-        for i in bands.indices {
+        for i in 0..<drawBandCount {
             let x = bandX(i)
             let sliderCenterX = x + sliderWidth / 2
             let labelY = freqLabelY + (i.isMultiple(of: 2) ? freqLabelHeight * 0.72 : freqLabelHeight * 0.28)

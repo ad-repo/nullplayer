@@ -58,6 +58,12 @@ struct MetalMaterial {
     let faderLow: NSColor                  // -12 dB (cut)
     let faderMid: NSColor                  // 0 dB
     let faderHigh: NSColor                 // +12 dB (boost)
+
+    // Spectrum analyzer (main + dedicated spectrum window). Per-finish so the bars read
+    // against each chrome — the chrome `accentColor` is a dark metal tone that would
+    // otherwise render the bars near-black. Ramp runs low amplitude -> high amplitude.
+    let spectrumLow: NSColor               // bar base (quiet)
+    let spectrumHigh: NSColor              // bar peak (loud)
 }
 
 private func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1.0) -> NSColor {
@@ -113,7 +119,53 @@ extension MetalMaterial {
         eqStroke: rgb(0.24, 0.27, 0.29, 0.58),
         faderLow: rgb(0.17, 0.20, 0.21),
         faderMid: rgb(0.42, 0.46, 0.48),
-        faderHigh: rgb(0.90, 0.92, 0.94)
+        faderHigh: rgb(0.90, 0.92, 0.94),
+        spectrumLow: rgb(0.10, 0.34, 0.42),
+        spectrumHigh: rgb(0.66, 0.93, 1.0)
+    )
+
+    // MARK: Aluminum (bright polished/shiny silver faceplate)
+
+    static let aluminum = MetalMaterial(
+        backgroundBase: white(0.80),
+        backgroundStops: [
+            .init(location: 0.0,  color: white(0.99)),
+            .init(location: 0.08, color: white(0.80)),
+            .init(location: 0.32, color: white(0.93)),
+            .init(location: 0.58, color: white(0.72)),
+            .init(location: 0.78, color: white(0.86)),
+            .init(location: 1.0,  color: white(0.62)),
+        ],
+        brushHighlightStrong: 0.18,
+        brushHighlightFaint: 0.09,
+        accentStrip: rgb(0.92, 0.95, 0.97, 0.22),
+        borderDark: white(0.0, 0.58),
+        borderLight: white(1.0, 0.45),
+        titleBarStops: [
+            .init(location: 0.0,  color: white(1.0, 0.45)),
+            .init(location: 0.48, color: white(0.85, 0.20)),
+            .init(location: 1.0,  color: white(0.55, 0.16)),
+        ],
+        titleBarHighlight: white(1.0, 0.40),
+        separator: white(0.0, 0.30),
+        insetFill: rgb(0.52, 0.56, 0.60),
+        insetBorder: rgb(0.28, 0.31, 0.34),
+        displayFill: lcdGreen,
+        lcdInk: lcdInkDark,
+        sliderTrack: rgb(0.58, 0.62, 0.66),
+        sliderFill: rgb(0.80, 0.84, 0.87),
+        sliderThumb: rgb(0.22, 0.25, 0.28),
+        transportButton: rgb(0.16, 0.19, 0.22),
+        transportButtonPressed: rgb(0.24, 0.27, 0.30),
+        eqPanelFill: rgb(0.52, 0.56, 0.60),
+        eqControlFill: rgb(0.78, 0.82, 0.85, 0.30),
+        eqActiveFill: rgb(0.86, 0.89, 0.92, 0.38),
+        eqStroke: rgb(0.28, 0.31, 0.34, 0.58),
+        faderLow: rgb(0.20, 0.23, 0.25),
+        faderMid: rgb(0.48, 0.52, 0.55),
+        faderHigh: rgb(0.94, 0.96, 0.98),
+        spectrumLow: rgb(0.30, 0.34, 0.38),
+        spectrumHigh: rgb(0.92, 0.96, 1.0)
     )
 
     // MARK: Gunmetal (dark blue-gray satin)
@@ -155,7 +207,10 @@ extension MetalMaterial {
         eqStroke: rgb(0.60, 0.67, 0.75, 0.50),
         faderLow: rgb(0.30, 0.34, 0.39),
         faderMid: rgb(0.54, 0.59, 0.65),
-        faderHigh: rgb(0.86, 0.90, 0.96)
+        faderHigh: rgb(0.86, 0.90, 0.96),
+        // Light neutral silver-blue so the bar floor stays visible on the dark satin chrome.
+        spectrumLow: rgb(0.55, 0.60, 0.66),
+        spectrumHigh: rgb(0.92, 0.96, 1.0)
     )
 
     // MARK: Anodized Black (near-matte charcoal)
@@ -196,7 +251,10 @@ extension MetalMaterial {
         eqStroke: rgb(0.52, 0.54, 0.56, 0.50),
         faderLow: rgb(0.22, 0.22, 0.24),
         faderMid: rgb(0.45, 0.46, 0.48),
-        faderHigh: rgb(0.82, 0.84, 0.86)
+        faderHigh: rgb(0.82, 0.84, 0.86),
+        // Light neutral silver so the bar floor stays visible on the near-black chrome.
+        spectrumLow: rgb(0.55, 0.57, 0.60),
+        spectrumHigh: rgb(0.95, 0.97, 1.0)
     )
 
     // MARK: Champagne (warm silver-gold vintage receiver faceplate)
@@ -238,6 +296,8 @@ extension MetalMaterial {
         eqStroke: rgb(0.34, 0.29, 0.20, 0.55),
         faderLow: rgb(0.34, 0.30, 0.22),
         faderMid: rgb(0.55, 0.50, 0.40),
-        faderHigh: rgb(0.96, 0.92, 0.82)
+        faderHigh: rgb(0.96, 0.92, 0.82),
+        spectrumLow: rgb(0.40, 0.24, 0.06),
+        spectrumHigh: rgb(1.0, 0.86, 0.46)
     )
 }

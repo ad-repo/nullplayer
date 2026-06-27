@@ -1,15 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Improvements
-
-- **Metal UI default skin and contrast pass** — Metal mode now defaults to a built-in `Brushed Steel` skin with dark neutral text and muted control surfaces instead of inheriting modern skin neon defaults. The main window, EQ, library browser, compact player bar, transport controls, and waveform window were all tuned to avoid bright yellow/blue accents and black control wells that disappeared against the brushed metal palette.
-
-- **Backlit green LCD display (Metal mode)** — the main window's time and track-display panels and the EQ curve graph now render on a hi-fi style backlit-green LCD background with dark "ink" digits, marquee, info labels, and curve. The EQ faders use a brightness-based value ramp (dark = cut, bright = boost) instead of the classic red/yellow/green, which washed out against the green display.
-
-- **New built-in Metal finishes — Gunmetal, Anodized Black, Champagne** — Metal mode ships three realistic faceplate finishes alongside Brushed Steel, selectable from **Skins → Metal**. Gunmetal is a dark blue-gray satin, Anodized Black a near-matte charcoal, and Champagne a warm silver-gold vintage receiver look. Each finish drives the window sheen, panels, sliders, transport icons, and EQ via a new per-finish `MetalMaterial` descriptor, with on-chrome text automatically light on the dark finishes and dark on the light ones, while the green LCD keeps dark text in every finish.
-
 ## 0.26.0
 
 ### New Features
@@ -22,7 +12,7 @@
 
 - **YouTube source — channel uploads in the Radio tab** — a new YouTube source appears in the Radio tab alongside internet radio. The tab's slot toggles between **Internet Radio** and **Channels** (your YouTube subscriptions). Add YouTube channel URLs and the app lists each channel's uploads via `yt-dlp --flat-playlist` (no API key / account required). Videos appear as indented, sortable rows (with resizable columns) under an expandable channel folder; double-clicking downloads the audio (via `yt-dlp`) and plays it immediately. Downloads are stored in a **user-chosen folder** (reachability is checked before downloading; a default folder is created on first use), organized per channel as `<Channel Name>/<Title> [<videoId>].<ext>` with readable filenames, separate from the Local library, and tracked in a manifest. A **quality setting** (FLAC / MP3 High / MP3 Low) is in the Library menu, alongside "Set Download Folder…". Plays attribute to a first-class **YouTube** source in the Data (Stats) tab rather than to Local. Works in both modern and classic UI, and downloaded files cast to Sonos, Chromecast, and DLNA like any local track.
 
-### Improvements
+- **Metal mode — hi-fi faceplate finishes** — Metal mode is a fully realized hardware look, selectable from **Skins → Metal**, with five built-in finishes: **Brushed Steel** (default), **Aluminum** (bright polished silver), **Gunmetal** (dark blue-gray satin), **Anodized Black** (near-matte charcoal), and **Champagne** (warm silver-gold vintage receiver). Each finish is a per-finish `MetalMaterial` that drives the whole chrome — window sheen, panels, sliders, transport icons, and EQ (with a brightness-based fader ramp) — with on-chrome text automatically light on dark finishes and dark on light ones. The time/track displays and EQ curve render on a backlit-green LCD with dark "ink", and the spectrum analyzer uses the **vis_classic** core running a per-finish profile drawn transparent over the chrome, with a bar gradient matched to each finish (re-applied on every load so it always follows the finish). **Skins → Metal/Modern → Reset Skin to Default** restores a skin's shipped defaults, discarding persisted visualization overrides.
 
 - **YouTube Format selector now includes Video (720p/1080p) options** — the YouTube source download format selector (Library → YouTube → Format) now offers **Video (720p)** and **Video (1080p)** alongside audio formats. Videos are fetched as H.264 video + AAC audio remuxed to MP4 (fast, no transcode) and open in the video player window the same way Plex/Jellyfin/Emby movies do; downloading fails loudly if no H.264 rendition exists at the selected height.
 

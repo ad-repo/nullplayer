@@ -435,6 +435,7 @@ class WindowManager {
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
+    private(set) var mainWindowVisClassicBridge: VisClassicBridge?
 
     /// Waveform window controller (classic or modern, accessed via protocol)
     private var waveformWindowController: WaveformWindowProviding?
@@ -2590,6 +2591,19 @@ class WindowManager {
         let bridge = VisClassicBridge(width: 576, height: 128, scope: .spectrumWindow)!
         bridge.setReferenceWidth(576)
         sharedVisClassicBridge = bridge
+        return bridge
+    }
+
+    /// Dedicated bridge for the main window's embedded analyzer, scoped to `.mainWindow`
+    /// so it loads and persists its own profile independently of the dedicated spectrum
+    /// window (which uses `acquireSharedVisClassicBridge`). This realizes the window-scoped
+    /// vis_classic profile independence and lets metal skins default the main-window
+    /// analyzer to a per-finish profile without clobbering the spectrum window's choice.
+    func acquireMainWindowVisClassicBridge() -> VisClassicBridge {
+        if let b = mainWindowVisClassicBridge { return b }
+        let bridge = VisClassicBridge(width: 576, height: 128, scope: .mainWindow)!
+        bridge.setReferenceWidth(576)
+        mainWindowVisClassicBridge = bridge
         return bridge
     }
 
