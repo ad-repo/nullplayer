@@ -197,6 +197,9 @@ The browser reads from the SQLite store (`MediaLibraryStore`), not `MediaLibrary
 ### Use `albumsForArtistsBatch` not per-artist queries in the display layer
 `albumsForArtist(_:)` does one SQL query per artist. In `buildLocalArtistItems()` on a 200-artist page this means 200 queries, each a full table scan without the expression index (before v2 schema). Always use `albumsForArtistsBatch(_:)`.
 
+### Search-result artist navigation must resolve against the final destination list
+Both browser implementations (`ModernLibraryBrowserView` and classic `PlexBrowserView`) can navigate from Search results to the Artists tab. Do not preserve the clicked search result's row index, and do not rely solely on a server search-result artist ID: Plex search artist IDs can differ from the normal Artists-tab rows. Store the selected artist display name, switch to Artists, rebuild/load the destination list, apply any active column sort, then select the final visible artist row by title (falling back to id only after title match). Local-library search also needs to set `localArtistPageOffset` from `MediaLibraryStore.artistOffset(named:sort:)` before loading Artists so paged local artist results land on the page containing the target.
+
 ### Expression index is load-bearing
 `idx_tracks_artist_expr` uses `coalesce(album_artist, artist, 'Unknown Artist')` — the same expression used in `artistNames` GROUP BY and WHERE clauses. If the expression in a query doesn't exactly match the index expression, SQLite won't use the index. Keep query expressions consistent with the index definition.
 

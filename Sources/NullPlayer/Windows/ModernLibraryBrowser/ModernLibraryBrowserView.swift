@@ -4133,26 +4133,40 @@ class ModernLibraryBrowserView: NSView {
         guard let artistId = pendingScrollToArtistId else { return }
         let name = pendingScrollToArtistName ?? ""
         pendingScrollAttempts += 1
-        NSLog("🎵 applyPendingArtistScroll attempt=\(pendingScrollAttempts) id='\(artistId)' name='\(name)' items=\(displayItems.count)")
-        let lItems = displayItems.filter { $0.title.lowercased().hasPrefix(String(name.prefix(1)).lowercased()) }
-        NSLog("🎵 '\(name.prefix(1))' artists in list: \(lItems.prefix(5).map { "\($0.id)|\($0.title)" })")
-        let idx = displayItems.firstIndex(where: { $0.id == artistId })
-            ?? (!name.isEmpty ? displayItems.firstIndex(where: { $0.title.caseInsensitiveCompare(name) == .orderedSame }) : nil)
+        let idx = pendingArtistIndex(artistId: artistId, name: name)
         if let idx = idx {
-            NSLog("🎵 FOUND at idx=\(idx) scrollOffset will be set")
             selectedIndices = [idx]
             ensureVisible(index: idx)
             pendingScrollToArtistId = nil
             pendingScrollToArtistName = nil
             pendingScrollAttempts = 0
+            pendingArtistLoadUnfiltered = false
             needsDisplay = true
         } else {
-            NSLog("🎵 NOT FOUND (attempt \(pendingScrollAttempts)/3)")
             if pendingScrollAttempts >= 3 {
                 pendingScrollToArtistId = nil
                 pendingScrollToArtistName = nil
                 pendingScrollAttempts = 0
+                pendingArtistLoadUnfiltered = false
             }
+        }
+    }
+
+    private func pendingArtistIndex(artistId: String, name: String) -> Int? {
+        let titleMatch = !name.isEmpty ? displayItems.firstIndex { item in
+            isArtistRow(item) && item.title.caseInsensitiveCompare(name) == .orderedSame
+        } : nil
+        return titleMatch ?? displayItems.firstIndex { item in
+            isArtistRow(item) && item.id == artistId
+        }
+    }
+
+    private func isArtistRow(_ item: ModernDisplayItem) -> Bool {
+        switch item.type {
+        case .artist, .localArtist, .subsonicArtist, .jellyfinArtist, .embyArtist:
+            return true
+        default:
+            return false
         }
     }
 
@@ -4466,8 +4480,20 @@ class ModernLibraryBrowserView: NSView {
         // In search mode, clicking an artist navigates to the Artists tab
         if browseMode == .search {
             switch item.type {
-            case .artist, .subsonicArtist, .jellyfinArtist, .embyArtist, .localArtist:
-                navigateToArtistFromSearch(id: item.id, name: item.title)
+            case .artist(let artist):
+                navigateToArtistFromSearch(id: artist.id, name: artist.title)
+                return
+            case .subsonicArtist(let artist):
+                navigateToArtistFromSearch(id: artist.id, name: artist.name)
+                return
+            case .jellyfinArtist(let artist):
+                navigateToArtistFromSearch(id: artist.id, name: artist.name)
+                return
+            case .embyArtist(let artist):
+                navigateToArtistFromSearch(id: artist.id, name: artist.name)
+                return
+            case .localArtist(let artist):
+                navigateToArtistFromSearch(id: item.id, name: artist.name)
                 return
             default: break
             }
@@ -7603,6 +7629,7 @@ class ModernLibraryBrowserView: NSView {
         // expand-driven rebuild produces — otherwise expanding a row would re-order the
         // list. (Mirrors rebuildCurrentModeItems.)
         if columnSortId != nil { applyColumnSort() }
+        applyPendingArtistScroll()
         needsDisplay = true
     }
     
@@ -8886,7 +8913,9 @@ class ModernLibraryBrowserView: NSView {
         let store = MediaLibraryStore.shared
         switch browseMode {
         case .artists:
-            localArtistPageOffset = 0
+            if !pendingArtistLoadUnfiltered {
+                localArtistPageOffset = 0
+            }
             localArtistTotal = store.artistCount()
             buildLocalArtistItems()
         case .albums:
@@ -8913,6 +8942,7 @@ class ModernLibraryBrowserView: NSView {
         // rebuild produces — otherwise expanding a row would re-order the list. (Mirrors
         // rebuildCurrentModeItems.)
         if columnSortId != nil { applyColumnSort() }
+        applyPendingArtistScroll()
         needsDisplay = true
     }
 
@@ -9541,7 +9571,6 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
-        applyPendingArtistScroll()
     }
 
     private func buildAlbumItems() {
@@ -10086,7 +10115,6 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
-        applyPendingArtistScroll()
     }
     
     private func buildLocalAlbumItems() {
@@ -10313,7 +10341,6 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
-        applyPendingArtistScroll()
     }
 
     private func buildSubsonicAlbumItems() {
@@ -10391,7 +10418,6 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
-        applyPendingArtistScroll()
     }
 
     private func buildJellyfinAlbumItems() {
@@ -10436,7 +10462,6 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
-        applyPendingArtistScroll()
     }
 
     private func buildEmbyAlbumItems() {
@@ -10946,6 +10971,7 @@ class ModernLibraryBrowserView: NSView {
             }
         }
         if columnSortId != nil { applyColumnSort() }
+        applyPendingArtistScroll()
         needsDisplay = true
     }
     
@@ -11660,8 +11686,9 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func navigateToArtistFromSearch(id: String, name: String = "") {
+        let artistName = name.isEmpty ? id.replacingOccurrences(of: "local-artist-", with: "") : name
         pendingScrollToArtistId = id
-        pendingScrollToArtistName = name
+        pendingScrollToArtistName = artistName
         pendingScrollAttempts = 0
         pendingArtistLoadUnfiltered = true
         // Clear view-level artist caches to force a fresh fetch that bypasses
@@ -11670,6 +11697,10 @@ class ModernLibraryBrowserView: NSView {
         cachedSubsonicArtists.removeAll()
         cachedJellyfinArtists.removeAll()
         cachedEmbyArtists.removeAll()
+        if case .local = currentSource,
+           let artistOffset = MediaLibraryStore.shared.artistOffset(named: artistName, sort: currentSort) {
+            localArtistPageOffset = (artistOffset / localPageSize) * localPageSize
+        }
         browseMode = .artists
         selectedIndices.removeAll()
         scrollOffset = 0
@@ -11681,7 +11712,7 @@ class ModernLibraryBrowserView: NSView {
         switch item.type {
         case .track: playTrack(item)
         case .album(let a): playAlbum(a)
-        case .artist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id) } else { toggleExpand(item) }
+        case .artist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.title) } else { toggleExpand(item) }
         case .movie(let m): playMovie(m)
         case .show: toggleExpand(item)
         case .season: toggleExpand(item)
@@ -11689,7 +11720,7 @@ class ModernLibraryBrowserView: NSView {
         case .header: break
         case .localTrack(let t): playLocalTrack(t)
         case .localAlbum(let a): playLocalAlbum(a)
-        case .localArtist: toggleExpand(item)
+        case .localArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: item.id, name: a.name) } else { toggleExpand(item) }
         case .localFolder: toggleExpand(item)
         case .localMovie(let m): WindowManager.shared.showVideoPlayer(url: m.url, title: m.title)
         case .localShow: toggleExpand(item)
@@ -11697,11 +11728,11 @@ class ModernLibraryBrowserView: NSView {
         case .localEpisode(let e): WindowManager.shared.showVideoPlayer(url: e.url, title: e.title)
         case .subsonicTrack(let s): playSubsonicSong(s)
         case .subsonicAlbum(let a): playSubsonicAlbum(a)
-        case .subsonicArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id) } else { toggleExpand(item) }
+        case .subsonicArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.name) } else { toggleExpand(item) }
         case .subsonicPlaylist(let p): playSubsonicPlaylist(p)
         case .jellyfinTrack(let s): playJellyfinSong(s)
         case .jellyfinAlbum(let a): playJellyfinAlbum(a)
-        case .jellyfinArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id) } else { toggleExpand(item) }
+        case .jellyfinArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.name) } else { toggleExpand(item) }
         case .jellyfinPlaylist(let p): playJellyfinPlaylist(p)
         case .jellyfinMovie(let m): playJellyfinMovie(m)
         case .jellyfinShow: toggleExpand(item)
@@ -11709,7 +11740,7 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfinEpisode(let e): playJellyfinEpisode(e)
         case .embyTrack(let s): playEmbySong(s)
         case .embyAlbum(let a): playEmbyAlbum(a)
-        case .embyArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id) } else { toggleExpand(item) }
+        case .embyArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.name) } else { toggleExpand(item) }
         case .embyPlaylist(let p): playEmbyPlaylist(p)
         case .embyMovie(let m): playEmbyMovie(m)
         case .embyShow: toggleExpand(item)

@@ -889,6 +889,75 @@ final class MediaLibraryStore {
         }
     }
 
+    func artistOffset(named artistName: String, sort: ModernBrowserSortOption) -> Int? {
+        guard let db = db else { return nil }
+        let sql: String
+        switch sort {
+        case .nameAsc:
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name ASC
+                """
+        case .nameDesc:
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name DESC
+                """
+        case .dateAddedDesc:
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.date_added) DESC, ta.artist_name ASC
+                """
+        case .dateAddedAsc:
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.date_added) ASC, ta.artist_name ASC
+                """
+        case .yearDesc:
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.year) DESC NULLS LAST, ta.artist_name ASC
+                """
+        case .yearAsc:
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.year) ASC NULLS LAST, ta.artist_name ASC
+                """
+        }
+        do {
+            for (offset, row) in try db.prepare(sql).enumerated() {
+                guard let name = row[0] as? String else { continue }
+                if name == artistName || name.caseInsensitiveCompare(artistName) == .orderedSame {
+                    return offset
+                }
+            }
+            return nil
+        } catch {
+            NSLog("MediaLibraryStore: artistOffset failed: %@", error.localizedDescription)
+            return nil
+        }
+    }
+
     func albumCount() -> Int {
         guard let db = db else { return 0 }
         do {
