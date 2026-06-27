@@ -121,7 +121,8 @@ class ModernSkinRenderer {
         context: CGContext,
         adjacentEdges: AdjacentEdges = [],
         sharpCorners: CACornerMask = [],
-        backgroundOpacity: CGFloat? = nil
+        backgroundOpacity: CGFloat? = nil,
+        drawMetalAccentStrip: Bool = true
     ) {
         let cornerRadius = skin.config.window.cornerRadius ?? 0
         let resolvedBackgroundOpacity = min(1.0, max(0.0, backgroundOpacity ?? skin.config.window.opacity))
@@ -132,7 +133,7 @@ class ModernSkinRenderer {
             context.clip()
         }
         if usesMetalAppearance {
-            drawMetalWindowBackground(in: bounds, context: context, opacity: resolvedBackgroundOpacity)
+            drawMetalWindowBackground(in: bounds, context: context, opacity: resolvedBackgroundOpacity, drawAccentStrip: drawMetalAccentStrip)
             if cornerRadius > 0 {
                 context.restoreGState()
             }
@@ -155,7 +156,7 @@ class ModernSkinRenderer {
         }
     }
 
-    private func drawMetalWindowBackground(in bounds: NSRect, context: CGContext, opacity: CGFloat) {
+    private func drawMetalWindowBackground(in bounds: NSRect, context: CGContext, opacity: CGFloat, drawAccentStrip: Bool = true) {
         context.saveGState()
         context.setBlendMode(.copy)
         context.setFillColor(material.backgroundBase.withAlphaComponent(opacity).cgColor)
@@ -188,17 +189,19 @@ class ModernSkinRenderer {
             stripeIndex += 1
         }
 
-        context.setAlpha(1.0)
-        let accent = material.accentStrip.withAlphaComponent(material.accentStrip.alphaComponent * opacity)
-        context.setFillColor(accent.cgColor)
-        let accentHeight = max(2.0 * scaleFactor, min(bounds.height * 0.18, 14.0 * scaleFactor))
-        let accentRect = NSRect(
-            x: bounds.minX + 1.0 * scaleFactor,
-            y: bounds.maxY - accentHeight - 1.0 * scaleFactor,
-            width: max(0, bounds.width - 2.0 * scaleFactor),
-            height: accentHeight
-        )
-        context.fill(accentRect)
+        if drawAccentStrip {
+            context.setAlpha(1.0)
+            let accent = material.accentStrip.withAlphaComponent(material.accentStrip.alphaComponent * opacity)
+            context.setFillColor(accent.cgColor)
+            let accentHeight = max(2.0 * scaleFactor, min(bounds.height * 0.18, 14.0 * scaleFactor))
+            let accentRect = NSRect(
+                x: bounds.minX + 1.0 * scaleFactor,
+                y: bounds.maxY - accentHeight - 1.0 * scaleFactor,
+                width: max(0, bounds.width - 2.0 * scaleFactor),
+                height: accentHeight
+            )
+            context.fill(accentRect)
+        }
 
         context.restoreGState()
     }

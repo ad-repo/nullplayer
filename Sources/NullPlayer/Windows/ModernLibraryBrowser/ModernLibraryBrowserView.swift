@@ -1051,8 +1051,10 @@ class ModernLibraryBrowserView: NSView {
     }
 
     // Header/alphabet band — the strip wrapping the top and the right-side alphabet index.
+    // In metal mode the top chrome and alphabet index blend into the brushed-metal panel
+    // (no darker overlay) so the whole window reads as a single continuous surface.
     private var metalControlBandFill: NSColor {
-        metalMaterial.eqPanelFill.withAlphaComponent(0.55)
+        .clear
     }
 
     private var metalControlFill: NSColor {
@@ -1133,7 +1135,8 @@ class ModernLibraryBrowserView: NSView {
                 context: context,
                 adjacentEdges: adjacentEdges,
                 sharpCorners: sharpCorners,
-                backgroundOpacity: mainOpacity.background
+                backgroundOpacity: mainOpacity.background,
+                drawMetalAccentStrip: false
             )
             context.saveGState()
             context.setAlpha(mainOpacity.content)
@@ -1149,7 +1152,8 @@ class ModernLibraryBrowserView: NSView {
             context: context,
             adjacentEdges: adjacentEdges,
             sharpCorners: sharpCorners,
-            backgroundOpacity: mainOpacity.background
+            backgroundOpacity: mainOpacity.background,
+            drawMetalAccentStrip: false
         )
         renderer.drawWindowBorder(
             in: bounds,
@@ -2424,7 +2428,9 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Alphabet Index
     
     private func drawAlphabetIndex(in context: CGContext, rect: NSRect, skin: ModernSkin) {
-        (isMetalRenderStyle ? metalControlFill : skin.surfaceColor.withAlphaComponent(0.3)).setFill()
+        // Metal: let the brushed-metal panel show through so the index reads as part of
+        // the single continuous surface rather than a darker inset strip.
+        (isMetalRenderStyle ? NSColor.clear : skin.surfaceColor.withAlphaComponent(0.3)).setFill()
         context.fill(rect)
         
         let letterCount = CGFloat(alphabetLetters.count)
