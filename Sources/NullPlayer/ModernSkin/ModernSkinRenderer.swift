@@ -31,7 +31,9 @@ class ModernSkinRenderer {
     let glowMultiplier: CGFloat
 
     private var renderStyle: ModernRenderStyle {
-        ModernSkinEngine.shared.currentRenderStyle
+        // Derive from the skin being rendered, not the engine's global currentRenderStyle,
+        // so the background and its bands stay in sync even if the global lags a skin swap.
+        skin.renderStyle
     }
 
     private var usesMetalAppearance: Bool {

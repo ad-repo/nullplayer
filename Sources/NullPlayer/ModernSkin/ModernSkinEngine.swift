@@ -322,7 +322,12 @@ class ModernSkinEngine {
     
     private func configureSkinDependencies(preservePersistedProfiles: Bool = false) {
         guard let skin = currentSkin else { return }
-        
+
+        // Stamp the render style onto the skin instance so renderers and windows derive
+        // "is this metal?" from the skin they're drawing, not the global currentRenderStyle
+        // (which could lag a skin swap and leak the modern darkened top-chrome band into metal).
+        skin.renderStyle = currentFamily.renderStyle
+
         // Apply base scale factor from skin config (sizeMultiplier is preserved independently)
         ModernSkinElements.baseScaleFactor = skin.config.window.scale ?? 1.25
 
