@@ -594,8 +594,18 @@ class VisualizationGLView: NSOpenGLView {
     
     func startRendering() {
         guard isRenderEligible() else { return }
+
+        // Resync the drag-suspend flag against the actual drag state. The flag is otherwise
+        // driven purely by the global windowDragDidBegin/End notifications, which can arrive
+        // unbalanced (e.g. when the visualization window is opened into an already-connected
+        // window cluster). A stale `true` here makes renderFrame early-return forever, so the
+        // window shows only its background color until a click runs a begin/end cycle. Pinning
+        // it to the authoritative state on every (re)start guarantees a freshly shown window
+        // renders without requiring user interaction.
+        isDragSuspended = WindowManager.shared.isWindowDragInProgress
+
         guard let displayLink = displayLink, !isRendering else { return }
-        
+
         // Re-register callback if it was previously cleared by stopRendering()
         if displayLinkContextRef == nil {
             let context = VisualizationDisplayLinkContext(view: self)

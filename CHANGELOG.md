@@ -23,6 +23,7 @@
 
 ### Bug Fixes
 
+- **Visualizations window now loads on open instead of after a click** — opening the Visualizations window on top of an already-connected window cluster could leave it showing just its background color (with the connected-window drag tint) until you clicked a window. Opening/positioning windows no longer starts a phantom "drag" that stranded the visualization render-suspended; it now starts rendering immediately.
 - **Metal mode — Library Browser top bar no longer flickers darker** — in Metal mode the Library Browser's top strip occasionally flashed the darker modern styling before correcting itself; it now stays consistent with the metal finish.
 - **Library search now lands on the artist you picked (Plex)** — choosing an artist from Library search results reliably switches to the Artists tab and selects that artist, in both classic and modern UI.
 - **Cleartext `http://` radio stations play again (#310)** — after 0.25.0, many `http://` Icecast/SHOUTcast stations connected but produced no sound (they sat stuck at `0:00`); they now play again. `https://` stations were unaffected.

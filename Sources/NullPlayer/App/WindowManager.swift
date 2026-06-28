@@ -3434,17 +3434,33 @@ class WindowManager {
     /// Programmatic moves (startup restore, snapping, frame repair) must not arm drag state.
     static func shouldTreatMoveAsDrag(
         holdPrimed: Bool,
-        pressedMouseButtons: Int,
-        currentEventType: NSEvent.EventType?
+        pressedMouseButtons: Int
     ) -> Bool {
+        // A move counts as an interactive drag only if a drag was primed by the window's own
+        // mouse-down handler, or the left mouse button is physically held right now.
+        //
+        // We deliberately do NOT key off `currentEventType` alone: `NSApp.currentEvent` can be a
+        // stale `.leftMouseDown` from the click that opened a window via a menu/toolbar item, long
+        // after the button was released. Programmatic positioning `setFrame`s during window open or
+        // docking then emit `windowDidMove`, and treating those as drags starts a phantom drag that
+        // never ends — leaving the cluster tinted in drag-highlight and the visualization window
+        // render-suspended until a real click finishes the imaginary drag.
         if holdPrimed { return true }
-        if (pressedMouseButtons & 0x1) != 0 { return true } // Left mouse button.
-        switch currentEventType {
-        case .leftMouseDown, .leftMouseDragged:
-            return true
-        default:
-            return false
-        }
+        if (pressedMouseButtons & 0x1) != 0 { return true } // Left mouse button physically held.
+        return false
+    }
+
+    /// Whether a window drag is actually in progress right now. Consumers of the
+    /// `windowDragDidBegin` / `windowDragDidEnd` notifications (e.g. `VisualizationGLView`,
+    /// which suspends rendering during drags) use this to resync their suspended state and
+    /// recover if those notifications ever arrive unbalanced.
+    ///
+    /// A real interactive drag always has the left mouse button held down. Programmatic frame
+    /// changes (window open/dock/restore) can leave `draggingWindow` set without a matching
+    /// drag-end — a phantom "stuck drag". Requiring the button to be pressed rejects that stale
+    /// state so a just-opened visualization window doesn't strand itself drag-suspended.
+    var isWindowDragInProgress: Bool {
+        draggingWindow != nil && (NSEvent.pressedMouseButtons & 0x1) != 0
     }
 
     /// Called when a window drag begins
@@ -3611,8 +3627,7 @@ class WindowManager {
         let holdPrimedForWindow = (primedDragWindow === window && holdStartTime != nil)
         let treatAsDrag = WindowManager.shouldTreatMoveAsDrag(
             holdPrimed: holdPrimedForWindow,
-            pressedMouseButtons: Int(NSEvent.pressedMouseButtons),
-            currentEventType: NSApp.currentEvent?.type
+            pressedMouseButtons: Int(NSEvent.pressedMouseButtons)
         )
 
         // Ignore non-drag moves for drag-state purposes (e.g. startup/applyFrame).
