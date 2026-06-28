@@ -172,10 +172,20 @@ final class YouTubeManager {
         let title = try await Self.fetchChannelTitle(from: listURL)
         try Task.checkCancellation()
 
+        // `deletingLastPathComponent()` on ".../@handle/videos" leaves a trailing
+        // slash (".../@handle/"); strip it so `channelVideosURL` doesn't build a
+        // double-slash listing URL.
+        var baseComponents = URLComponents(url: listURL, resolvingAgainstBaseURL: false)
+        var basePath = baseComponents?.path ?? ""
+        if basePath.hasSuffix("/videos") { basePath.removeLast("/videos".count) }
+        while basePath.hasSuffix("/") { basePath.removeLast() }
+        baseComponents?.path = basePath
+        let baseURL = baseComponents?.url ?? listURL.deletingLastPathComponent()
+
         let channel = YouTubeChannel(
             id: key,
             title: title,
-            url: listURL.deletingLastPathComponent(),
+            url: baseURL,
             dateAdded: Date()
         )
 
@@ -339,15 +349,22 @@ final class YouTubeManager {
     // MARK: - Private Helpers
 
     /// Construct the URL to list videos from a channel
-    private static func channelVideosURL(channel: YouTubeChannel) -> URL? {
-        // Attempt to append /videos if not already present
-        if channel.url.path.hasSuffix("/videos") {
-            return channel.url
+    nonisolated static func channelVideosURL(channel: YouTubeChannel) -> URL? {
+        guard var components = URLComponents(url: channel.url, resolvingAgainstBaseURL: false) else {
+            return nil
         }
-        if channel.url.path == "/" || channel.url.path.isEmpty {
-            return channel.url.appendingPathComponent("videos")
+        // Strip any trailing slashes before appending so we never produce a
+        // double slash like "@handle//videos". yt-dlp treats the double-slash
+        // form as the channel root and returns the Videos/Live/Shorts tab list
+        // instead of the uploads. This also repairs channels whose stored URL
+        // already carries a trailing slash (e.g. from `addChannel`).
+        var path = components.path
+        while path.hasSuffix("/") { path.removeLast() }
+        if !path.hasSuffix("/videos") {
+            path += "/videos"
         }
-        return URL(string: channel.url.absoluteString.appending("/videos"))
+        components.path = path
+        return components.url
     }
 
     /// Single-segment YouTube paths that are not channel handles and must not be
