@@ -18,17 +18,27 @@ extension ModernLibraryBrowserWindowController: CompactModeBrowserSurface {}
 final class CompactModeWindowController: NSWindowController {
 
     private let browserController: CompactModeBrowserSurface
-    private let modernUI: Bool
     private var needsInitialSizing = true
-    private var revealWorkItem: DispatchWorkItem?
-    /// Screen-space center X of the status-item icon from the last time it resolved.
-    /// Reused to keep the window middle-aligned when the live anchor is momentarily
-    /// unavailable, instead of snapping to the screen edge.
-    private var lastAnchorCenterX: CGFloat?
 
-    private let retryInterval: TimeInterval = 0.02       // ~1–2 AppKit layout passes per tick
-    private let maxRetryAttempts = 15                    // ~0.3s budget for status-item layout
+    /// Observer for status-item window move notifications (initial reveal + display-reconfig).
+    private var statusButtonWindowMoveObserver: NSObjectProtocol?
+    /// Observer for status-item window resize notifications (initial reveal + display-reconfig).
+    private var statusButtonWindowResizeObserver: NSObjectProtocol?
+    /// Whether the compact window has already been revealed at the anchored position.
+    private var hasRevealed = false
+    /// Observer for display-configuration changes (added/removed screens, resolution changes).
+    private var displayConfigObserver: NSObjectProtocol?
+    /// The status-item button the window is anchored to. Held weakly so a display-reconfig
+    /// can re-anchor without WindowManager threading the button back through. Cleared on hide().
+    private weak var anchorButton: NSStatusBarButton?
+
+    /// DEBUG timer to detect if the anchor never resolves. Fires a loud diagnostic in dev builds.
+    private var anchorDiagnosticTimer: Timer?
+
     private let statusAnchorReadyThreshold: CGFloat = 40 // menu bar ≈ 24–28pt + jitter
+    /// How far inside a screen horizontal edge the status item must sit to count as laid out.
+    /// A mid-flight item is reported flush at a corner; a settled one sits well inside.
+    private let statusItemEdgeInset: CGFloat = 8
 
     // Render the compact window ~1/5 narrower than the browser's label-fit minimum.
     private let compactWidthFactor: CGFloat = 0.8
@@ -38,7 +48,6 @@ final class CompactModeWindowController: NSWindowController {
     }
 
     init(modernUI: Bool) {
-        self.modernUI = modernUI
         if modernUI {
             browserController = ModernLibraryBrowserWindowController()
         } else {
@@ -51,7 +60,7 @@ final class CompactModeWindowController: NSWindowController {
     }
 
     required init?(coder: NSCoder) {
-        modernUI = WindowManager.shared.isRunningModernUI
+        let modernUI = WindowManager.shared.isRunningModernUI
         if modernUI {
             browserController = ModernLibraryBrowserWindowController()
         } else {
@@ -66,6 +75,9 @@ final class CompactModeWindowController: NSWindowController {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        stopObservingStatusButtonFrame()
+        stopObservingDisplayConfig()
+        anchorDiagnosticTimer?.invalidate()
         browserController.prepareForUITeardown()
     }
 
@@ -143,7 +155,8 @@ final class CompactModeWindowController: NSWindowController {
 
     func show(anchoredTo button: NSStatusBarButton?) {
         guard let window else { return }
-        revealWorkItem?.cancel()
+        stopObservingStatusButtonFrame()
+        anchorDiagnosticTimer?.invalidate()
 
         window.level = .statusBar
         window.collectionBehavior = [.moveToActiveSpace, .transient, .ignoresCycle]
@@ -151,6 +164,7 @@ final class CompactModeWindowController: NSWindowController {
         let wasVisible = window.isVisible && window.alphaValue > 0
         if wasVisible {
             // Already on screen: reposition immediately and stay visible — no flash possible.
+            anchorButton = button
             position(anchoredTo: button, display: true)
             window.orderFrontRegardless()
             window.makeKey()
@@ -159,35 +173,139 @@ final class CompactModeWindowController: NSWindowController {
             return
         }
 
-        // Not yet visible: keep the window invisible (alpha 0) at the best-known position
-        // until the status-item anchor has laid out, then position and reveal exactly once
-        // at the correct top-right corner. Ordering front at alpha 0 keeps it invisible while
-        // letting the retry closure detect a mid-flight hide() via window.isVisible.
+        // Not yet visible: keep the window invisible (alpha 0) until the status-item anchor
+        // has laid out, then position and reveal exactly once at the correct position under
+        // the menubar icon. Ordering front at alpha 0 keeps it invisible while observers
+        // detect the anchor readiness. Observers fire when the status-item window moves or
+        // resizes (AppKit layout signals), or when display config changes.
         window.alphaValue = 0
         window.hasShadow = false
-        position(anchoredTo: button, display: false)
         window.orderFrontRegardless()
-        scheduleReveal(anchoredTo: button, attempt: 0)
+
+        // Reset reveal state and start observing. Register observers *before* the sync check
+        // so we don't miss a move that happens between the check and registration.
+        hasRevealed = false
+        anchorButton = button
+        startObservingStatusButtonFrame(button: button)
+        startObservingDisplayConfig()
+        startAnchorDiagnosticTimer()
+
+        // Sync check: if the anchor is already ready by the time we run, reveal immediately.
+        if isStatusAnchorReady(button) {
+            revealNow(anchoredTo: button)
+        }
     }
 
-    private func scheduleReveal(anchoredTo button: NSStatusBarButton?, attempt: Int) {
-        let reveal = DispatchWorkItem { [weak self, weak button] in
-            guard let self, let window = self.window, window.isVisible else { return }
-            guard self.isStatusAnchorReady(button) || attempt >= self.maxRetryAttempts else {
-                self.scheduleReveal(anchoredTo: button, attempt: attempt + 1)
-                return
-            }
-            // Reveal unconditionally once the anchor is ready or the cap is hit. On cap
-            // exhaustion position() degrades to the top-right fallback; never leave the
-            // window stuck at alpha 0 — an invisible compact window is worse than a flash.
-            self.position(anchoredTo: button, display: false)
-            window.displayIfNeeded()
-            window.hasShadow = true
-            window.alphaValue = 1
-            window.makeKey()
+    /// Start observing the status-item window's move and resize notifications to detect
+    /// when the anchor has laid out. These drive the initial reveal only; once revealed,
+    /// handleStatusButtonWindowFrameChange ignores them so an incidental menu-bar relayout
+    /// can't snap a user-moved window back under the icon. Re-anchoring after that point is
+    /// handled exclusively by the display-config observer.
+    private func startObservingStatusButtonFrame(button: NSStatusBarButton?) {
+        guard let button, let buttonWindow = button.window else { return }
+        stopObservingStatusButtonFrame()
+
+        let nc = NotificationCenter.default
+        statusButtonWindowMoveObserver = nc.addObserver(
+            forName: NSWindow.didMoveNotification,
+            object: buttonWindow,
+            queue: .main
+        ) { [weak self, weak button] _ in
+            self?.handleStatusButtonWindowFrameChange(button: button)
         }
-        revealWorkItem = reveal
-        DispatchQueue.main.asyncAfter(deadline: .now() + retryInterval, execute: reveal)
+
+        statusButtonWindowResizeObserver = nc.addObserver(
+            forName: NSWindow.didResizeNotification,
+            object: buttonWindow,
+            queue: .main
+        ) { [weak self, weak button] _ in
+            self?.handleStatusButtonWindowFrameChange(button: button)
+        }
+    }
+
+    /// Stop observing the status-item window's frame changes.
+    private func stopObservingStatusButtonFrame() {
+        let nc = NotificationCenter.default
+        if let observer = statusButtonWindowMoveObserver {
+            nc.removeObserver(observer)
+            statusButtonWindowMoveObserver = nil
+        }
+        if let observer = statusButtonWindowResizeObserver {
+            nc.removeObserver(observer)
+            statusButtonWindowResizeObserver = nil
+        }
+    }
+
+    /// Handle a status-item window move or resize. Check if the anchor is ready and
+    /// reveal if so (initial reveal only — after reveal, this does nothing).
+    private func handleStatusButtonWindowFrameChange(button: NSStatusBarButton?) {
+        guard !hasRevealed else { return }
+        if isStatusAnchorReady(button) {
+            revealNow(anchoredTo: button)
+        }
+    }
+
+    /// Reveal the compact window at the anchored position, exactly once.
+    private func revealNow(anchoredTo button: NSStatusBarButton?) {
+        guard let window, !hasRevealed else { return }
+        hasRevealed = true
+        anchorDiagnosticTimer?.invalidate()
+        anchorDiagnosticTimer = nil
+
+        position(anchoredTo: button, display: false)
+        window.displayIfNeeded()
+        window.hasShadow = true
+        window.alphaValue = 1
+        window.makeKey()
+    }
+
+    /// Start observing display-configuration changes (added/removed screens, resolution changes).
+    /// Used for re-anchoring after screen geometry changes.
+    private func startObservingDisplayConfig() {
+        stopObservingDisplayConfig()
+        let nc = NotificationCenter.default
+        displayConfigObserver = nc.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: NSApplication.shared,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleDisplayConfigChange()
+        }
+    }
+
+    /// Stop observing display-configuration changes.
+    private func stopObservingDisplayConfig() {
+        if let observer = displayConfigObserver {
+            NotificationCenter.default.removeObserver(observer)
+            displayConfigObserver = nil
+        }
+    }
+
+    /// Handle a display-configuration change. Re-anchor a revealed window back under the
+    /// status-item icon — display reconfig (screens added/removed, resolution change) can
+    /// otherwise leave the window off-screen or against a stale screen edge. This is one of
+    /// the two sanctioned re-anchor triggers (the other being the initial reveal); incidental
+    /// status-button moves after reveal are deliberately ignored (see handleStatusButtonWindowFrameChange).
+    private func handleDisplayConfigChange() {
+        guard let window, window.isVisible, window.alphaValue > 0 else { return }
+        guard let button = anchorButton, isStatusAnchorReady(button) else { return }
+        position(anchoredTo: button, display: true)
+    }
+
+    /// Start a diagnostic timer to detect if the anchor never resolves. After a generous
+    /// deadline (~2–3s) with no successful reveal, fires an assertion failure in DEBUG
+    /// builds so the issue surfaces loudly during development.
+    private func startAnchorDiagnosticTimer() {
+        anchorDiagnosticTimer?.invalidate()
+        #if DEBUG
+        anchorDiagnosticTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+            guard let self, !self.hasRevealed else { return }
+            NSLog("CompactMode: anchor never resolved after 2.5s — status-item may not have posted a move/resize notification; window stays invisible.")
+            assertionFailure(
+                "Compact window anchor never resolved after 2.5s. Status-item may not have posted move/resize notification. Check logs."
+            )
+        }
+        #endif
     }
 
     private func isStatusAnchorReady(_ button: NSStatusBarButton?) -> Bool {
@@ -199,22 +317,30 @@ final class CompactModeWindowController: NSWindowController {
             ?? NSScreen.main
         guard let screen else { return false }
         // NSStatusBar creates the button's window eagerly (so button.window/.screen are non-nil
-        // before layout), but a not-yet-laid-out item sits near the origin. Two independent
-        // signals must both hold before the anchor is trustworthy:
+        // before layout), but a not-yet-laid-out item is reported at a transient position before
+        // AppKit slides it into its real slot. Two signals must both hold before the anchor is
+        // trustworthy:
         //   (1) Menu-bar proximity (Y): the laid-out item sits at the top edge. Compare against
         //       screen.frame.maxY (the menu-bar edge), not visibleFrame.maxY which excludes it.
         let nearMenuBar = abs(buttonScreenRect.maxY - screen.frame.maxY) < statusAnchorReadyThreshold
-        //   (2) Horizontal validity (X): a still-settling item reports an x near the screen's left
-        //       origin, which would center the compact window hard against the left margin (the
-        //       intermittent "left-aligned" bug). Real status items live in the right portion of
-        //       the menu bar — the left is occupied by the app menus — so treat any anchor whose
-        //       center lands in the left quarter of the screen as not yet laid out and retry.
-        let validX = (buttonScreenRect.midX - screen.frame.minX) > screen.frame.width * 0.25
-        return nearMenuBar && validX
+        //   (2) Settled horizontally (X): during the .accessory entry churn the item is briefly
+        //       reported flush against a screen edge — at the right corner (right edge == screen
+        //       maxX) or near the left origin — before it lands in its real slot. A real status
+        //       item never sits flush in a corner (system items like Control Center are always to
+        //       its right), so treat a flush-edge X as not-yet-laid-out and keep waiting for the
+        //       next move notification. Revealing under the transient corner X is exactly what
+        //       jammed the window against the right screen edge.
+        let settledX = buttonScreenRect.minX > screen.frame.minX + statusItemEdgeInset
+            && buttonScreenRect.maxX < screen.frame.maxX - statusItemEdgeInset
+        return nearMenuBar && settledX
     }
 
     func hide() {
-        revealWorkItem?.cancel()
+        stopObservingStatusButtonFrame()
+        stopObservingDisplayConfig()
+        anchorDiagnosticTimer?.invalidate()
+        anchorDiagnosticTimer = nil
+        anchorButton = nil
         window?.alphaValue = 0
         window?.orderOut(nil)
     }
@@ -234,59 +360,54 @@ final class CompactModeWindowController: NSWindowController {
     private func position(anchoredTo button: NSStatusBarButton?, display: Bool = true) {
         guard let window else { return }
 
-        let gap: CGFloat = 0
         let margin: CGFloat = 8
-        let visibleFrame: NSRect
-        let topY: CGFloat
-        let centerX: CGFloat
-        let hasStatusAnchor: Bool
 
+        // Resolve the target screen and (when anchoring) the icon's center X. A ready anchor
+        // gives the icon's screen and center; a nil button is the setup-time sizing call, which
+        // uses the main screen and leaves the origin untouched. A button that isn't laid out yet
+        // is left alone entirely — the reveal waits for the next move notification.
+        let screen: NSScreen?
+        let centerX: CGFloat?
         if let button, isStatusAnchorReady(button), let buttonWindow = button.window {
-            let buttonRectInWindow = button.convert(button.bounds, to: nil)
-            let buttonScreenRect = buttonWindow.convertToScreen(buttonRectInWindow)
-            let screen = buttonWindow.screen
+            let buttonScreenRect = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+            screen = buttonWindow.screen
                 ?? NSScreen.screens.first { $0.frame.contains(buttonScreenRect.origin) }
                 ?? NSScreen.main
-            visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-            topY = visibleFrame.maxY - gap
             centerX = buttonScreenRect.midX
-            lastAnchorCenterX = centerX
-            hasStatusAnchor = true
-        } else if let cachedCenterX = lastAnchorCenterX {
-            // Anchor briefly unavailable (e.g. a relayout): reuse the last known icon
-            // center so the window stays middle-aligned rather than jumping to the edge.
-            let screen = NSScreen.main
-            visibleFrame = screen?.visibleFrame ?? .zero
-            topY = visibleFrame.maxY - gap
-            centerX = cachedCenterX
-            hasStatusAnchor = true
+        } else if button == nil {
+            // Setup-time sizing call. Once the initial size is set, a nil-anchor call has nothing
+            // to do — never resize an already-sized window when there's no anchor to position to.
+            guard needsInitialSizing else { return }
+            screen = NSScreen.main
+            centerX = nil
         } else {
-            let screen = NSScreen.main
-            visibleFrame = screen?.visibleFrame ?? .zero
-            topY = visibleFrame.maxY - gap
-            centerX = visibleFrame.midX
-            hasStatusAnchor = false
+            return
         }
-        guard visibleFrame != .zero else { return }
 
-        let minimumWidth = compactBaseWidth
+        let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        guard visibleFrame != .zero else { return }
+        let topY = visibleFrame.maxY
+
         let minimumHeight = window.minSize.height
         let availableHeight = max(minimumHeight, topY - visibleFrame.minY - margin)
-
         var frame = window.frame
         if needsInitialSizing {
-            frame.size.width = min(minimumWidth, visibleFrame.width - margin * 2)
+            frame.size.width = min(compactBaseWidth, visibleFrame.width - margin * 2)
             frame.size.height = min(minimumHeight, availableHeight)
             needsInitialSizing = false
         } else {
-            frame.size.width = max(frame.width, minimumWidth)
+            frame.size.width = max(frame.width, compactBaseWidth)
             frame.size.height = min(frame.height, availableHeight)
         }
 
-        frame.origin.x = hasStatusAnchor ? centerX - frame.width / 2 : visibleFrame.maxX - frame.width - margin
-        frame.origin.x = min(max(frame.origin.x, visibleFrame.minX + margin), visibleFrame.maxX - frame.width - margin)
-        frame.origin.y = topY - frame.height
-        frame.origin.y = min(max(frame.origin.y, visibleFrame.minY + margin), visibleFrame.maxY - frame.height)
+        // Center the window horizontally under the status-item icon and pin its top to the menu
+        // bar. No clamping: the window sits exactly centered under the icon, even when the icon is
+        // near a screen edge. Clamping the origin back onto the screen is what jammed the window
+        // against the right edge — it is not wanted. A nil-anchor setup call only sizes.
+        if let centerX {
+            frame.origin.x = centerX - frame.width / 2
+            frame.origin.y = topY - frame.height
+        }
 
         window.setFrame(frame, display: display, animate: false)
     }
