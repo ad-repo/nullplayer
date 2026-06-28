@@ -293,19 +293,28 @@ final class CompactModeWindowController: NSWindowController {
     }
 
     /// Start a diagnostic timer to detect if the anchor never resolves. After a generous
-    /// deadline (~2–3s) with no successful reveal, fires an assertion failure in DEBUG
-    /// builds so the issue surfaces loudly during development.
+    /// deadline (~2–3s) with no successful reveal, log loudly in *all* builds and additionally
+    /// assert in DEBUG.
+    ///
+    /// This is the only release-safe trigger for the rare dead-end where the window stays at
+    /// alpha 0 forever: if `button`/`button.window` is nil at `show()` time (status-item
+    /// creation/layout churn), the frame observers never attach and `isStatusAnchorReady` can
+    /// never become true, so nothing else would ever reveal — or report — the stuck window.
+    /// We deliberately do **not** reveal at a guessed position here: "no fallback placement" is
+    /// the design (a guessed spot is what jammed the window against the right edge through PRs
+    /// #306/#307 — see the ui-guide skill). The log makes the rare case visible in release logs
+    /// instead of silently stranding the app in an invisible compact window.
     private func startAnchorDiagnosticTimer() {
         anchorDiagnosticTimer?.invalidate()
-        #if DEBUG
         anchorDiagnosticTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
             guard let self, !self.hasRevealed else { return }
-            NSLog("CompactMode: anchor never resolved after 2.5s — status-item may not have posted a move/resize notification; window stays invisible.")
+            NSLog("CompactMode: anchor never resolved after 2.5s — status-item may not have posted a move/resize notification (or button.window was nil at show()); compact window stays invisible.")
+            #if DEBUG
             assertionFailure(
                 "Compact window anchor never resolved after 2.5s. Status-item may not have posted move/resize notification. Check logs."
             )
+            #endif
         }
-        #endif
     }
 
     private func isStatusAnchorReady(_ button: NSStatusBarButton?) -> Bool {
