@@ -410,7 +410,10 @@ struct Track: Identifiable, Equatable {
         if embyId != nil { return .emby }
         if isRadioOrigin { return .radio }
         if !url.isFileURL { return .radio }
-        if isYouTubeOrigin { return .youtube }
+        // Either the explicit origin flag (set when played from the YouTube list) or the
+        // file living under the YouTube download folder (covers downloads played from the
+        // Library Browser, or restored from a saved state that predates the flag).
+        if isYouTubeOrigin || YouTubeManager.isWithinDownloadRoot(url) { return .youtube }
         return .local
     }
 

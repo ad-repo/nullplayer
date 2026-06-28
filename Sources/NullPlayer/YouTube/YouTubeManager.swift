@@ -70,6 +70,31 @@ final class YouTubeManager {
         }
     }
 
+    /// The configured download root resolved directly from persisted settings, mirroring
+    /// `setupDownloadRoot`. Reads only `UserDefaults` (which is thread-safe), so it can be
+    /// called off the main thread — e.g. from `Track.playHistorySource` — without touching
+    /// the manager's mutable in-memory state.
+    static var resolvedDownloadRoot: URL {
+        if let savedPath = UserDefaults.standard.string(forKey: downloadRootKey), !savedPath.isEmpty {
+            return URL(fileURLWithPath: savedPath).standardizedFileURL
+        }
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return appSupport.appendingPathComponent("NullPlayer/YouTube/").standardizedFileURL
+    }
+
+    /// Whether `url` points to a file inside the YouTube download folder. Lets play-history
+    /// analytics attribute downloads to the YouTube source even when the in-memory origin
+    /// flag was lost — e.g. a download played from the Library Browser (where the folder is
+    /// also a scanned library location) or restored from an older saved state.
+    static func isWithinDownloadRoot(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        let root = resolvedDownloadRoot.path
+        guard !root.isEmpty else { return false }
+        let candidate = url.standardizedFileURL.path
+        let rootWithSlash = root.hasSuffix("/") ? root : root + "/"
+        return candidate == root || candidate.hasPrefix(rootWithSlash)
+    }
+
     // MARK: - Download Manifest
 
     /// In-memory cache of downloaded videos, keyed by videoId
@@ -496,7 +521,8 @@ final class YouTubeManager {
     // MARK: - Constants
 
     private let channelsKey = "YouTubeChannels"
-    private let downloadRootKey = "YouTubeDownloadRoot"
+    private static let downloadRootKey = "YouTubeDownloadRoot"
+    private var downloadRootKey: String { Self.downloadRootKey }
 
     /// Directories searched for `yt-dlp` (same as StreamRipper's searchPaths)
     private static let defaultSearchPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin"]
