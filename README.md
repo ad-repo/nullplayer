@@ -22,8 +22,8 @@
 - Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
 - Emby media server integration with music and video streaming, scrobbling, and library browsing
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
-- Stream Ripper — paste a URL and rip it to lossless FLAC, MP3, or an MP4 video file (via yt-dlp), with metadata tags, embedded cover art, metadata-based filenames, and a `.cue` sheet generated from chapter timestamps
-- YouTube source — subscribe to channels in the Radio tab, browse uploads, and download audio (FLAC / MP3) or video (720p / 1080p) ad-free to a folder you choose (via yt-dlp); downloads play locally and cast like any track
+- Stream Ripper — paste a URL and rip it to lossless FLAC, MP3, or an MP4 video file (requires `yt-dlp` + `ffmpeg`, see [Requirements](#requirements)), with metadata tags, embedded cover art, metadata-based filenames, and a `.cue` sheet generated from chapter timestamps
+- YouTube source — subscribe to channels in the Radio tab, browse uploads, and download audio (FLAC / MP3) or video (720p / 1080p) ad-free to a folder you choose (requires `yt-dlp` + `ffmpeg`, see [Requirements](#requirements)); downloads play locally and cast like any track
 - `.cue` sheet support — open a `.cue` (or an audio file with a sibling `.cue`) to virtually split one backing file into per-track, gapless playlist rows; an optional library setting (off by default, needs ffmpeg) physically splits cue albums on import into per-track FLACs, organized into a per-album folder named from the source's metadata
 - Inteligent radio mix generation for all sources
 - Navidrome/Subsonic server integration with scrobbling support
@@ -124,6 +124,19 @@ After either option, NullPlayer will open normally.
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
+
+### Optional command-line tools
+
+The **YouTube source** and **Stream Ripper** features download and transcode media by shelling out to two command-line tools that are **not bundled** — install them via [Homebrew](https://brew.sh):
+
+```bash
+brew install yt-dlp ffmpeg
+```
+
+- **yt-dlp** — lists channel uploads and downloads audio/video. Required for any YouTube or Stream Ripper download.
+- **ffmpeg** — merges YouTube's separate video + audio streams into an MP4 and transcodes audio to FLAC/MP3. Without it, video downloads fail with `Postprocessing: ffmpeg not found` and audio downloads can't be converted.
+
+NullPlayer looks for both in the standard Homebrew/MacPorts locations (`/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `/usr/bin`). Keep them current with `brew upgrade yt-dlp ffmpeg` — an outdated `yt-dlp` may fail to list or download videos as YouTube changes.
 
 ## Building from Source
 
