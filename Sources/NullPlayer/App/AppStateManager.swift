@@ -74,7 +74,12 @@ class AppStateManager {
         // For radio tracks (internet radio streams)
         var radioURL: String?
         var radioStationName: String?
-        
+
+        // True when this local file originated from a YouTube download, so play-history
+        // analytics keep attributing it to the YouTube source across restarts (otherwise
+        // restored YouTube downloads are indistinguishable from generic local files).
+        var isYouTubeOrigin: Bool?
+
         // Display metadata (shown while loading streaming tracks)
         var title: String
         var artist: String?
@@ -90,6 +95,7 @@ class AppStateManager {
             if track.url.isFileURL {
                 return SavedTrack(
                     localURL: track.url.absoluteString,
+                    isYouTubeOrigin: track.isYouTubeOrigin ? true : nil,
                     title: track.title,
                     artist: track.artist,
                     album: track.album,
@@ -900,7 +906,8 @@ class AppStateManager {
                         artist: savedTrack.artist,
                         album: savedTrack.album,
                         duration: savedTrack.duration,
-                        contentType: savedTrack.contentType
+                        contentType: savedTrack.contentType,
+                        isYouTubeOrigin: savedTrack.isYouTubeOrigin ?? false
                     ))
                 } else {
                     // File no longer exists - add a placeholder that will display but won't play
