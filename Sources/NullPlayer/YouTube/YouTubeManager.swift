@@ -169,6 +169,15 @@ final class YouTubeManager {
             throw YouTubeManagerError.invalidChannelURL("Could not parse channel URL")
         }
 
+        // ffmpeg is required to merge video streams and transcode audio to
+        // FLAC/MP3 at download time. Verify it up front (the yt-dlp check happens
+        // implicitly in fetchChannelTitle below) so the user is told about a
+        // missing dependency when adding a channel, rather than only when a later
+        // download fails with a cryptic "Postprocessing: ffmpeg not found" error.
+        guard StreamRipper.resolveTool("ffmpeg") != nil else {
+            throw YouTubeManagerError.toolNotFound("ffmpeg is not installed. Install via Homebrew: brew install ffmpeg")
+        }
+
         let title = try await Self.fetchChannelTitle(from: listURL)
         try Task.checkCancellation()
 
