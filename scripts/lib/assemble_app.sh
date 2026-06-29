@@ -127,6 +127,20 @@ assemble_app() {
     # Also copy Info.plist from source
     cp "$REPO_ROOT/Sources/NullPlayer/Resources/Info.plist" "$CONTENTS_DIR/"
 
+    # Step 6a: Refresh the aggregated third-party notices so they match the
+    # current Info.plist version. The notices file embeds the app version on its
+    # second line, so a version bump leaves the committed copy stale and trips the
+    # Step 6b validation below. Regenerate the committed source (so git stays
+    # current — commit the result) and refresh the bundle's copy directly so the
+    # build self-heals even under --skip-build (where the SPM-copied resource
+    # above is from a previous build).
+    log_info "Refreshing third-party notices..."
+    SRC_NOTICES="$REPO_ROOT/Sources/NullPlayer/Resources/ThirdPartyLicenses/ThirdPartyNotices.txt"
+    "$REPO_ROOT/scripts/generate_third_party_notices.sh" --output "$SRC_NOTICES" >/dev/null
+    mkdir -p "$RESOURCES_DIR/ThirdPartyLicenses"
+    cp "$SRC_NOTICES" "$RESOURCES_DIR/ThirdPartyLicenses/ThirdPartyNotices.txt"
+    log_success "Third-party notices refreshed"
+
     # Step 6b: Validate third-party notices for every bundled dependency.
     # Forward: every component in scripts/third_party_components.tsv ships its
     # license text. Reverse: every framework/dylib in Contents/Frameworks is
@@ -142,20 +156,27 @@ assemble_app() {
         rm -rf "$ICONSET_DIR"
         mkdir -p "$ICONSET_DIR"
 
-        # Use magick to produce a full-bleed square icon (no transparent corners).
-        # macOS Big Sur+ applies its own squircle mask; pre-rounded icons with transparent
-        # corners show the Dock background as a grey border. We fix this by:
-        #   1. Trimming the transparent canvas padding
-        #   2. Blurring a copy to spread the gradient colors into the rounded corners
-        #   3. Compositing the original over that filled background (DstOver)
-        # Result: solid square with the gradient naturally filling the corners.
+        # Build a full-size rounded macOS icon from the source artwork.
+        #
+        # Main's previous pipeline trimmed the transparent padding and filled the
+        # rounded corners, which avoided edge fringes but produced an opaque square.
+        # Keep the trimmed full-size color layer, then apply a full-canvas rounded
+        # mask. That gives macOS rounded corners without adding a transparent outer
+        # inset that reads as a grey border on the Dock.
         resize_icon() {
             local size=$1
             local out=$2
+            local radius max_coord
+            radius=$(awk "BEGIN { printf \"%d\", $size * 0.219 }")
+            max_coord=$(( size - 1 ))
             magick "$APP_ICON_PNG" -trim +repage \
                 \( +clone -blur 0x200 -alpha off \) \
                 -compose DstOver -composite \
-                -resize "${size}x${size}" "$out"
+                -resize "${size}x${size}!" \
+                \( -size "${size}x${size}" xc:black -fill white \
+                   -draw "roundrectangle 0,0 ${max_coord},${max_coord} ${radius},${radius}" \) \
+                -alpha off -compose CopyOpacity -composite \
+                "PNG32:$out"
         }
 
         # Generate all required icon sizes

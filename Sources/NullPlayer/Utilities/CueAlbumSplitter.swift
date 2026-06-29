@@ -71,7 +71,7 @@ enum CueAlbumSplitter {
         guard let cue = try? CueSheet.parse(from: cueURL), !cue.entries.isEmpty else {
             return SplitOutcome(backingFileToExclude: nil, trackFiles: [])  // Cue unparseable
         }
-        let backingURL = CueSheet.resolveBackingFile(for: cueURL, fileName: cue.fileName)
+        let backingURL = resolveBackingFileWithFallback(for: cueURL, fileName: cue.fileName)
 
         guard let shouldSplit = shouldPerformSplit(cueURL: cueURL) else {
             return SplitOutcome(backingFileToExclude: nil, trackFiles: [])
@@ -130,7 +130,7 @@ enum CueAlbumSplitter {
     private static func performSplit(cueURL: URL) -> SplitResult {
         do {
             let cue = try CueSheet.parse(from: cueURL)
-            let backingURL = CueSheet.resolveBackingFile(for: cueURL, fileName: cue.fileName)
+            let backingURL = resolveBackingFileWithFallback(for: cueURL, fileName: cue.fileName)
 
             // Check backing file exists
             guard FileManager.default.fileExists(atPath: backingURL.path) else {
@@ -417,13 +417,60 @@ enum CueAlbumSplitter {
         return outURL
     }
 
+    // MARK: - Backing File Resolution
+
+    /// Resolves the cue's backing file, honoring the `FILE` line first and falling back to a
+    /// same-basename audio sibling when that file is absent on disk.
+    ///
+    /// The common case: a cue+audio pair is renamed together (`track01.{cue,flac}` →
+    /// `My Album.{cue,flac}`) but the `FILE "track01.flac"` line inside the cue is left stale.
+    /// `CueSheet.resolveBackingFile` then points at a file that no longer exists, so the split
+    /// silently no-ops. When that happens, look for an audio file next to the cue whose basename
+    /// matches the cue's own basename (`My Album.cue` → `My Album.flac`) and use it instead.
+    ///
+    /// The fallback only ever inspects the cue's own directory, so — like `resolveBackingFile`'s
+    /// path-escape guard — it can never read an arbitrary file elsewhere on disk. It is
+    /// deterministic (sorted), so `expectedOutputPaths`, `performSplit`, and `sourceTags` all
+    /// resolve the same backing and idempotency holds. When the `FILE` line resolves to an
+    /// existing file, or no matching sibling exists, the original resolved path is returned
+    /// unchanged so callers' existence checks behave exactly as before.
+    ///
+    /// Internal (not private) so the resolution logic can be unit-tested without ffmpeg.
+    static func resolveBackingFileWithFallback(for cueURL: URL, fileName: String) -> URL {
+        let primary = CueSheet.resolveBackingFile(for: cueURL, fileName: fileName)
+        if FileManager.default.fileExists(atPath: primary.path) {
+            return primary
+        }
+        return siblingAudioByName(for: cueURL) ?? primary
+    }
+
+    /// Finds an audio file next to the cue that shares the cue's basename (`My Album.cue` →
+    /// `My Album.flac`). Returns nil when none exists. Deterministic: candidates are sorted by
+    /// path so repeated calls within a scan agree.
+    private static func siblingAudioByName(for cueURL: URL) -> URL? {
+        let dir = cueURL.deletingLastPathComponent()
+        let base = cueURL.deletingPathExtension().lastPathComponent
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+        return entries
+            .filter { $0.deletingPathExtension().lastPathComponent == base
+                && LocalFileDiscovery.isSupportedAudioFile($0) }
+            .sorted { $0.path < $1.path }
+            .first
+    }
+
     // MARK: - Source Tags
 
     /// Reads the backing file's own album/artist/album_artist tags via ffprobe.
     /// Deterministic (same file → same result), so it is safe to call from both the
     /// idempotency path and the split path. Returns nils when ffprobe or the file is absent.
     private static func sourceTags(for cue: CueSheet, cueURL: URL) -> (artist: String?, album: String?, albumArtist: String?) {
-        let backingURL = CueSheet.resolveBackingFile(for: cueURL, fileName: cue.fileName)
+        let backingURL = resolveBackingFileWithFallback(for: cueURL, fileName: cue.fileName)
         guard FileManager.default.fileExists(atPath: backingURL.path),
               let ffprobe = resolveToolPath("ffprobe") else { return (nil, nil, nil) }
 

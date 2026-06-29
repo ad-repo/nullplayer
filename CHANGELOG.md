@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.26.1
+
+### Bug Fixes
+
+- **App icon no longer renders as a square on fresh installs** — the Dock and Cmd-Tab app icon could appear as a hard square (with the rounded logo visible inside it) on Macs that hadn't already cached the icon, while staying correct on machines that had. The icon's rounded "squircle" shape is now baked into the build, so it looks right everywhere on a clean install.
+- **Cue albums split correctly even when the audio file was renamed** — library split-on-import now locates the backing audio by its same-named sibling when a `.cue`'s internal `FILE` reference is stale (for example, when the `.cue` and its audio were renamed together), instead of importing the whole album as one track. Adding the backing audio file directly with **Add Files…** now triggers the split too.
+
 ## 0.26.0
 
 ### New Features
