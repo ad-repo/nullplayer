@@ -392,6 +392,73 @@ final class CueAlbumSplitterTests: XCTestCase {
         XCTAssertTrue(filename.hasSuffix(".flac"))
     }
 
+    // MARK: - Backing File Sibling Fallback Tests
+
+    func testBackingResolutionFallsBackToSameBasenameSibling() throws {
+        // The cue's FILE line names a file that no longer exists (the pair was renamed),
+        // but a same-basename audio sibling sits next to the cue. Resolution should pick it.
+        let cueContent = """
+        PERFORMER "Artist"
+        TITLE "Album"
+        FILE "old-name.flac" WAVE
+        TRACK 01 AUDIO
+            TITLE "Track One"
+            INDEX 01 00:00:00
+        """
+        let cueURL = tempDirectory.appendingPathComponent("My Album.cue")
+        try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
+
+        // The renamed audio file shares the cue's basename.
+        let sibling = tempDirectory.appendingPathComponent("My Album.flac")
+        try "audio".write(to: sibling, atomically: true, encoding: .utf8)
+
+        let resolved = CueAlbumSplitter.resolveBackingFileWithFallback(for: cueURL, fileName: "old-name.flac")
+        XCTAssertEqual(resolved.standardizedFileURL, sibling.standardizedFileURL)
+    }
+
+    func testBackingResolutionHonorsExistingFileLineOverSibling() throws {
+        // When the FILE line resolves to a real file, use it — the fallback must not fire,
+        // even if a same-basename sibling also exists.
+        let cueContent = """
+        FILE "backing.flac" WAVE
+        TRACK 01 AUDIO
+            TITLE "Track One"
+            INDEX 01 00:00:00
+        """
+        let cueURL = tempDirectory.appendingPathComponent("album.cue")
+        try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
+
+        let backing = tempDirectory.appendingPathComponent("backing.flac")
+        try "audio".write(to: backing, atomically: true, encoding: .utf8)
+        // A same-basename sibling also exists; it must NOT win over the valid FILE line.
+        let decoy = tempDirectory.appendingPathComponent("album.flac")
+        try "decoy".write(to: decoy, atomically: true, encoding: .utf8)
+
+        let resolved = CueAlbumSplitter.resolveBackingFileWithFallback(for: cueURL, fileName: "backing.flac")
+        XCTAssertEqual(resolved.standardizedFileURL, backing.standardizedFileURL)
+    }
+
+    func testBackingResolutionIgnoresNonAudioSibling() throws {
+        // A same-basename NON-audio file is not a valid backing; with no audio match the
+        // original (missing) path is returned so callers' existence checks behave as before.
+        let cueContent = """
+        FILE "gone.flac" WAVE
+        TRACK 01 AUDIO
+            TITLE "Track One"
+            INDEX 01 00:00:00
+        """
+        let cueURL = tempDirectory.appendingPathComponent("orphan.cue")
+        try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
+
+        // Same basename, but not an audio file — must be ignored.
+        let notAudio = tempDirectory.appendingPathComponent("orphan.txt")
+        try "notes".write(to: notAudio, atomically: true, encoding: .utf8)
+
+        let resolved = CueAlbumSplitter.resolveBackingFileWithFallback(for: cueURL, fileName: "gone.flac")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: resolved.path))
+        XCTAssertEqual(resolved.lastPathComponent, "gone.flac")
+    }
+
     // MARK: - Integration Tests
 
     func testExpectedOutputPathsIdempotentWithShouldPerformSplit() throws {

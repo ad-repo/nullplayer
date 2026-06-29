@@ -731,13 +731,51 @@ class MediaLibrary {
         }
 
         guard !validation.validURLs.isEmpty else { return }
+
+        // When cue-split-on-import is enabled, the user may add the backing audio file
+        // directly (Add Files…) rather than scanning its folder. Fold in any sibling .cue
+        // in the same folder that backs one of the added files so the split pre-pass runs.
+        // (Discovery only collects cues it enumerates from a directory; a directly-picked
+        // audio file would otherwise never surface its sibling cue.)
+        var importURLs = validation.validURLs
+        if UserDefaults.standard.bool(forKey: "cueSplitOnImportEnabled") {
+            importURLs.append(contentsOf: siblingCuesForAddedAudio(validation.validURLs))
+        }
+
         importMedia(
-            urls: validation.validURLs,
+            urls: importURLs,
             recursiveDirectories: false,
             includeVideo: false,
             isLibraryScan: false,
             cleanMissingFolderPaths: []
         )
+    }
+
+    /// Finds sibling `.cue` files (in the same folders as the supplied audio files) whose
+    /// resolved backing — honoring the cue's `FILE` line, with the same-basename fallback —
+    /// is one of those audio files. Returns the cue URLs so `addTracks` can fold them into the
+    /// import and let the split pre-pass run. Bounded: only the added files' own directories are
+    /// scanned, non-recursively.
+    private func siblingCuesForAddedAudio(_ audioURLs: [URL]) -> [URL] {
+        let addedPaths = Set(audioURLs.map { $0.standardizedFileURL.path })
+        let dirs = Set(audioURLs.map { $0.deletingLastPathComponent().standardizedFileURL })
+
+        var result: [URL] = []
+        var seen = Set<String>()
+        for dir in dirs {
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+            ) else { continue }
+            for entry in entries where entry.pathExtension.lowercased() == "cue" {
+                guard let cue = try? CueSheet.parse(from: entry) else { continue }
+                let backing = CueAlbumSplitter.resolveBackingFileWithFallback(for: entry, fileName: cue.fileName)
+                guard addedPaths.contains(backing.standardizedFileURL.path) else { continue }
+                if seen.insert(entry.standardizedFileURL.path).inserted {
+                    result.append(entry)
+                }
+            }
+        }
+        return result
     }
     
     /// Remove a track from the library
