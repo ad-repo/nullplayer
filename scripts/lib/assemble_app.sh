@@ -127,6 +127,20 @@ assemble_app() {
     # Also copy Info.plist from source
     cp "$REPO_ROOT/Sources/NullPlayer/Resources/Info.plist" "$CONTENTS_DIR/"
 
+    # Step 6a: Refresh the aggregated third-party notices so they match the
+    # current Info.plist version. The notices file embeds the app version on its
+    # second line, so a version bump leaves the committed copy stale and trips the
+    # Step 6b validation below. Regenerate the committed source (so git stays
+    # current — commit the result) and refresh the bundle's copy directly so the
+    # build self-heals even under --skip-build (where the SPM-copied resource
+    # above is from a previous build).
+    log_info "Refreshing third-party notices..."
+    SRC_NOTICES="$REPO_ROOT/Sources/NullPlayer/Resources/ThirdPartyLicenses/ThirdPartyNotices.txt"
+    "$REPO_ROOT/scripts/generate_third_party_notices.sh" --output "$SRC_NOTICES" >/dev/null
+    mkdir -p "$RESOURCES_DIR/ThirdPartyLicenses"
+    cp "$SRC_NOTICES" "$RESOURCES_DIR/ThirdPartyLicenses/ThirdPartyNotices.txt"
+    log_success "Third-party notices refreshed"
+
     # Step 6b: Validate third-party notices for every bundled dependency.
     # Forward: every component in scripts/third_party_components.tsv ships its
     # license text. Reverse: every framework/dylib in Contents/Frameworks is
@@ -142,20 +156,40 @@ assemble_app() {
         rm -rf "$ICONSET_DIR"
         mkdir -p "$ICONSET_DIR"
 
-        # Use magick to produce a full-bleed square icon (no transparent corners).
-        # macOS Big Sur+ applies its own squircle mask; pre-rounded icons with transparent
-        # corners show the Dock background as a grey border. We fix this by:
-        #   1. Trimming the transparent canvas padding
-        #   2. Blurring a copy to spread the gradient colors into the rounded corners
-        #   3. Compositing the original over that filled background (DstOver)
-        # Result: solid square with the gradient naturally filling the corners.
+        # Bake the final rounded "squircle" shape into the icon ourselves.
+        #
+        # macOS (unlike iOS) does NOT apply an automatic squircle mask to app icons:
+        # whatever shape the .icns contains is what the Dock, Cmd-Tab switcher, Finder
+        # and the in-app About box display, verbatim. A previous version produced a
+        # full-bleed SQUARE on the assumption macOS would round it — it doesn't, so on
+        # clean machines the icon rendered as a hard square (dev machines only looked
+        # correct because of a stale icon-services cache).
+        #
+        # Pipeline per size:
+        #   1. Trim the source's transparent padding, then fill the rounded-corner
+        #      transparency by blurring a copy underneath (DstOver) so the corners hold
+        #      solid gradient instead of black when masked.
+        #   2. Build a mask from the source's own alpha (threshold to a hard edge, erode
+        #      a hair so it sits just inside the colored region — avoids a dark fringe).
+        #   3. Apply that mask (CopyOpacity) to get a crisp rounded squircle.
+        #   4. Re-add ~9.6% transparent margin (matches the source artwork's native
+        #      padding, i.e. the macOS icon grid) via -extent so the icon doesn't render
+        #      oversized next to its Dock neighbours.
         resize_icon() {
             local size=$1
             local out=$2
+            local margin content
+            margin=$(awk "BEGIN { printf \"%d\", $size * 0.096 }")
+            content=$(( size - 2 * margin ))
             magick "$APP_ICON_PNG" -trim +repage \
                 \( +clone -blur 0x200 -alpha off \) \
                 -compose DstOver -composite \
-                -resize "${size}x${size}" "$out"
+                \( "$APP_ICON_PNG" -trim +repage -alpha extract \
+                   -threshold 50% -morphology Erode Disk:2 \) \
+                -alpha off -compose CopyOpacity -composite \
+                -resize "${content}x${content}!" \
+                -background none -compose Over -gravity center -extent "${size}x${size}" \
+                "$out"
         }
 
         # Generate all required icon sizes
