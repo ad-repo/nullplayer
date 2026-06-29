@@ -156,40 +156,27 @@ assemble_app() {
         rm -rf "$ICONSET_DIR"
         mkdir -p "$ICONSET_DIR"
 
-        # Bake the final rounded "squircle" shape into the icon ourselves.
+        # Build a full-size rounded macOS icon from the source artwork.
         #
-        # macOS (unlike iOS) does NOT apply an automatic squircle mask to app icons:
-        # whatever shape the .icns contains is what the Dock, Cmd-Tab switcher, Finder
-        # and the in-app About box display, verbatim. A previous version produced a
-        # full-bleed SQUARE on the assumption macOS would round it — it doesn't, so on
-        # clean machines the icon rendered as a hard square (dev machines only looked
-        # correct because of a stale icon-services cache).
-        #
-        # Pipeline per size:
-        #   1. Trim the source's transparent padding, then fill the rounded-corner
-        #      transparency by blurring a copy underneath (DstOver) so the corners hold
-        #      solid gradient instead of black when masked.
-        #   2. Build a mask from the source's own alpha (threshold to a hard edge, erode
-        #      a hair so it sits just inside the colored region — avoids a dark fringe).
-        #   3. Apply that mask (CopyOpacity) to get a crisp rounded squircle.
-        #   4. Re-add ~9.6% transparent margin (matches the source artwork's native
-        #      padding, i.e. the macOS icon grid) via -extent so the icon doesn't render
-        #      oversized next to its Dock neighbours.
+        # Main's previous pipeline trimmed the transparent padding and filled the
+        # rounded corners, which avoided edge fringes but produced an opaque square.
+        # Keep the trimmed full-size color layer, then apply a full-canvas rounded
+        # mask. That gives macOS rounded corners without adding a transparent outer
+        # inset that reads as a grey border on the Dock.
         resize_icon() {
             local size=$1
             local out=$2
-            local margin content
-            margin=$(awk "BEGIN { printf \"%d\", $size * 0.096 }")
-            content=$(( size - 2 * margin ))
+            local radius max_coord
+            radius=$(awk "BEGIN { printf \"%d\", $size * 0.219 }")
+            max_coord=$(( size - 1 ))
             magick "$APP_ICON_PNG" -trim +repage \
                 \( +clone -blur 0x200 -alpha off \) \
                 -compose DstOver -composite \
-                \( "$APP_ICON_PNG" -trim +repage -alpha extract \
-                   -threshold 50% -morphology Erode Disk:2 \) \
+                -resize "${size}x${size}!" \
+                \( -size "${size}x${size}" xc:black -fill white \
+                   -draw "roundrectangle 0,0 ${max_coord},${max_coord} ${radius},${radius}" \) \
                 -alpha off -compose CopyOpacity -composite \
-                -resize "${content}x${content}!" \
-                -background none -compose Over -gravity center -extent "${size}x${size}" \
-                "$out"
+                "PNG32:$out"
         }
 
         # Generate all required icon sizes
