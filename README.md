@@ -351,8 +351,10 @@ the terms of the **GNU GPL v3.0 only**.
 The **NullPlayer** name, logo, icon, and other brand identifiers are not licensed
 for use by modified distributions. Forks, derivative works, and redistributed
 builds must use a different application name and replace or remove NullPlayer
-branding unless they have prior written permission. Accurate attribution such as
-"based on NullPlayer" is allowed when it does not imply endorsement.
+branding from user-facing product names, bundle names, bundle identifiers,
+executable names, icons, and public marketing materials unless they have prior
+written permission. Accurate attribution such as "based on NullPlayer" is allowed
+when it does not imply endorsement.
 
 The full text of every third-party notice ships inside the app bundle at
 `Contents/Resources/ThirdPartyLicenses/` (aggregated in `ThirdPartyNotices.txt`,

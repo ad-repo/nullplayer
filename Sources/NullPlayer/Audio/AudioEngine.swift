@@ -79,7 +79,6 @@ protocol AudioEngineDelegate: AnyObject {
 class AudioEngine {
 
     static var isHeadless = false
-    private static let balanceDefaultsKey = "audioBalance"
 
     struct LocalPlaybackSleepClockState: Equatable {
         let currentTime: TimeInterval
@@ -282,8 +281,9 @@ class AudioEngine {
         }
     }
     
-    /// Balance (-1.0 left, 0.0 center, 1.0 right)
-    var balance: Float = AudioEngine.loadSavedBalance() {
+    /// Balance (-1.0 left, 0.0 center, 1.0 right).
+    /// Intentionally not persisted — playback always starts centered on each launch.
+    var balance: Float = 0.0 {
         didSet {
             balance = Self.clampedBalance(balance)
             // Apply to both players since they alternate during crossfades
@@ -291,7 +291,6 @@ class AudioEngine {
             crossfadePlayerNode.pan = balance
             streamingPlayer?.balance = balance
             crossfadeStreamingPlayer?.balance = balance
-            UserDefaults.standard.set(balance, forKey: Self.balanceDefaultsKey)
             notifyPlaybackOptionsChanged()
         }
     }
@@ -734,11 +733,6 @@ class AudioEngine {
 
     private static func clampedBalance(_ value: Float) -> Float {
         max(-1.0, min(1.0, value))
-    }
-
-    private static func loadSavedBalance() -> Float {
-        guard UserDefaults.standard.object(forKey: balanceDefaultsKey) != nil else { return 0.0 }
-        return clampedBalance(UserDefaults.standard.float(forKey: balanceDefaultsKey))
     }
 
     private func captureShufflePlaybackState() -> ShufflePlaybackStateSnapshot {

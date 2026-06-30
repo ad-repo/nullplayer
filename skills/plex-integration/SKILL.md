@@ -64,7 +64,7 @@ Plex can expose multiple artist records with the same display name but different
 
 Current behavior in both classic `PlexBrowserView` and modern `ModernLibraryBrowserView`:
 
-- Normalize artist names with lowercase + trimmed whitespace and use `plex-artist-{normalizedName}` as the grouped display key.
+- Normalize artist names with trimmed whitespace, case-insensitive + diacritic-insensitive folding, and lowercasing (so e.g. "Motörhead" groups with "Motorhead"), then use `plex-artist-{normalizedName}` as the grouped display key.
 - Pick the visible representative from the same-name group by highest `albumCount`.
 - When expanding, playing, or queueing a grouped row, fan out across every artist record in the group and then deduplicate albums/tracks by stable metadata keys.
 - Search mode intentionally treats the selected Plex artist as a single record instead of expanding all same-name records.

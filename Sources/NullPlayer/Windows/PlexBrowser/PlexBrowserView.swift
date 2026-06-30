@@ -16057,7 +16057,10 @@ class PlexBrowserView: NSView {
             groups = plexArtistGroupsByName
         }
         return groups.values.compactMap { group in
-            group.max { lhs, rhs in lhs.albumCount < rhs.albumCount }
+            // Highest albumCount wins; ties broken by smallest id for a deterministic representative.
+            group.max { lhs, rhs in
+                lhs.albumCount != rhs.albumCount ? lhs.albumCount < rhs.albumCount : lhs.id > rhs.id
+            }
         }
     }
 

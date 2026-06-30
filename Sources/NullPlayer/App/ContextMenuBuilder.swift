@@ -1055,6 +1055,10 @@ class ContextMenuBuilder {
             keyEquivalent: ""
         )
         balanceRoot.submenu = buildBalanceMenu()
+        if engine.isAnyCastingActive {
+            balanceRoot.isEnabled = false
+            balanceRoot.toolTip = "Not available while casting"
+        }
         optionsMenu.addItem(balanceRoot)
 
         optionsMenu.addItem(NSMenuItem.separator())
