@@ -346,7 +346,13 @@ A hi-fi hardware faceplate look, selected from **Skins > Metal**, with seven fin
 
 This project is open source. Because it bundles GPL-licensed components
 (KSPlayer, FFmpegKit, and aubio), the combined application is distributed under
-the terms of the **GNU GPL v3.0 or later**.
+the terms of the **GNU GPL v3.0 only**.
+
+The **NullPlayer** name, logo, icon, and other brand identifiers are not licensed
+for use by modified distributions. Forks, derivative works, and redistributed
+builds must use a different application name and replace or remove NullPlayer
+branding unless they have prior written permission. Accurate attribution such as
+"based on NullPlayer" is allowed when it does not imply endorsement.
 
 The full text of every third-party notice ships inside the app bundle at
 `Contents/Resources/ThirdPartyLicenses/` (aggregated in `ThirdPartyNotices.txt`,

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.26.2
+
+### Improvements
+
+- **License and branding terms clarified** — the project license notice and README now state GPL-3.0-only distribution terms and clarify that modified distributions must not reuse the NullPlayer name, icon, logo, bundle identity, or other branding without permission.
+
+### Bug Fixes
+
+- **Plex Artists no longer show duplicate same-name rows** — the Library Browser now groups Plex artist records with the same display name into one visible artist row in both classic and modern UI. Expanding, playing, or queueing that row still fans out across every underlying Plex `ratingKey`, so albums and tracks attached to duplicate server-side artist records remain accessible instead of being hidden.
+
 ## 0.26.1
 
 ### Bug Fixes

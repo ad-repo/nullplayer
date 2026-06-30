@@ -5193,7 +5193,7 @@ class ModernLibraryBrowserView: NSView {
             playNextItem.target = self; playNextItem.representedObject = artist; menu.addItem(playNextItem)
             let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddArtistToQueue(_:)), keyEquivalent: "")
             queueItem.target = self; queueItem.representedObject = artist; menu.addItem(queueItem)
-            let expandItem = NSMenuItem(title: expandedArtists.contains(artist.id) ? "Collapse" : "Expand",
+            let expandItem = NSMenuItem(title: expandedArtists.contains(item.id) ? "Collapse" : "Expand",
                                          action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
         case .localTrack(let track):
@@ -6462,10 +6462,7 @@ class ModernLibraryBrowserView: NSView {
         guard let artist = sender.representedObject as? PlexArtist else { return }
         Task { @MainActor in
             do {
-                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
-                var all: [PlexTrack] = []
-                for album in albums { all.append(contentsOf: try await PlexManager.shared.fetchTracks(forAlbum: album)) }
-                if all.isEmpty { all = try await PlexManager.shared.fetchTracks(forArtist: artist) }
+                let all = try await self.fetchTracksForPlexArtistGroup(artist)
                 WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(all))
             } catch { NSLog("Failed: %@", error.localizedDescription) }
         }
@@ -6769,12 +6766,7 @@ class ModernLibraryBrowserView: NSView {
         guard let artist = sender.representedObject as? PlexArtist else { return }
         Task { @MainActor in
             do {
-                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [PlexTrack] = []
-                for album in albums {
-                    let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
-                    allTracks.append(contentsOf: tracks)
-                }
+                let allTracks = try await self.fetchTracksForPlexArtistGroup(artist)
                 let converted = PlexManager.shared.convertToTracks(allTracks)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(converted)
             } catch { NSLog("Failed to play artist next: %@", error.localizedDescription) }
@@ -6784,12 +6776,7 @@ class ModernLibraryBrowserView: NSView {
         guard let artist = sender.representedObject as? PlexArtist else { return }
         Task { @MainActor in
             do {
-                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [PlexTrack] = []
-                for album in albums {
-                    let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
-                    allTracks.append(contentsOf: tracks)
-                }
+                let allTracks = try await self.fetchTracksForPlexArtistGroup(artist)
                 let converted = PlexManager.shared.convertToTracks(allTracks)
                 let engine = WindowManager.shared.audioEngine
                 let wasEmpty = engine.playlist.isEmpty
@@ -7027,13 +7014,7 @@ class ModernLibraryBrowserView: NSView {
             }
         case .artist(let artist):
             Task { @MainActor in
-                if let albums = try? await PlexManager.shared.fetchAlbums(forArtist: artist) {
-                    var allTracks: [PlexTrack] = []
-                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
-                        if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
-                            allTracks.append(contentsOf: tracks)
-                        }
-                    }
+                if let allTracks = try? await self.fetchTracksForPlexArtistGroup(artist) {
                     WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(allTracks), startPlaybackIfEmpty: false)
                 }
             }
@@ -7165,13 +7146,7 @@ class ModernLibraryBrowserView: NSView {
             }
         case .artist(let artist):
             Task { @MainActor in
-                if let albums = try? await PlexManager.shared.fetchAlbums(forArtist: artist) {
-                    var allTracks: [PlexTrack] = []
-                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
-                        if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
-                            allTracks.append(contentsOf: tracks)
-                        }
-                    }
+                if let allTracks = try? await self.fetchTracksForPlexArtistGroup(artist) {
                     engine.appendTracks(PlexManager.shared.convertToTracks(allTracks))
                 }
             }
@@ -9558,16 +9533,16 @@ class ModernLibraryBrowserView: NSView {
     
     private func buildArtistItems() {
         displayItems.removeAll()
-        let sorted = sortPlexArtists(cachedArtists)
+        let sorted = sortPlexArtists(uniquePlexArtistsByName(cachedArtists))
         for artist in sorted {
-            let expanded = expandedArtists.contains(artist.id)
+            let groupKey = plexArtistGroupKey(for: artist)
+            let expanded = expandedArtists.contains(groupKey)
             let info: String?
-            if let count = artistAlbumCounts[artist.id], count > 0 { info = "\(count) album\(count == 1 ? "" : "s")" }
-            else if let albums = artistAlbums[artist.id] { info = "\(albums.count) album\(albums.count == 1 ? "" : "s")" }
-            else if artist.albumCount > 0 { info = "\(artist.albumCount) album\(artist.albumCount == 1 ? "" : "s")" }
+            if let albums = artistAlbums[groupKey] { info = "\(albums.count) album\(albums.count == 1 ? "" : "s")" }
+            else if let count = plexArtistAlbumCount(for: artist), count > 0 { info = "\(count) album\(count == 1 ? "" : "s")" }
             else { info = nil }
-            displayItems.append(ModernDisplayItem(id: artist.id, title: artist.title, info: info, indentLevel: 0, hasChildren: true, type: .artist(artist)))
-            if expanded, let albums = artistAlbums[artist.id] {
+            displayItems.append(ModernDisplayItem(id: groupKey, title: artist.title, info: info, indentLevel: 0, hasChildren: true, type: .artist(artist)))
+            if expanded, let albums = artistAlbums[groupKey] {
                 for album in sortPlexAlbums(albums) {
                     displayItems.append(ModernDisplayItem(id: album.id, title: album.title, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .album(album)))
                     if expandedAlbums.contains(album.id), let tracks = albumTracks[album.id] {
@@ -10537,6 +10512,110 @@ class ModernLibraryBrowserView: NSView {
         default: return artists.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
         }
     }
+
+    private func normalizedPlexArtistName(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+    }
+
+    private func plexArtistGroupKey(for artist: PlexArtist) -> String {
+        "plex-artist-\(normalizedPlexArtistName(artist.title))"
+    }
+
+    private func uniquePlexArtistsByName(_ artists: [PlexArtist]) -> [PlexArtist] {
+        var artistsByName: [String: PlexArtist] = [:]
+        for artist in artists {
+            let key = normalizedPlexArtistName(artist.title)
+            if let existing = artistsByName[key] {
+                if artist.albumCount > existing.albumCount {
+                    artistsByName[key] = artist
+                }
+            } else {
+                artistsByName[key] = artist
+            }
+        }
+        return Array(artistsByName.values)
+    }
+
+    private func plexArtistGroup(for artist: PlexArtist) -> [PlexArtist] {
+        guard browseMode != .search else { return [artist] }
+        let key = normalizedPlexArtistName(artist.title)
+        let matches = cachedArtists.filter { normalizedPlexArtistName($0.title) == key }
+        return matches.isEmpty ? [artist] : matches
+    }
+
+    private func plexArtistAlbumCount(for artist: PlexArtist) -> Int? {
+        let group = plexArtistGroup(for: artist)
+        let memberIds = Set(group.map { $0.id })
+        let cachedGroupAlbums = cachedAlbums.filter { album in
+            guard let parentKey = album.parentKey,
+                  let artistId = extractArtistId(from: parentKey) else { return false }
+            return memberIds.contains(artistId)
+        }
+        if !cachedGroupAlbums.isEmpty {
+            return deduplicatedPlexAlbums(cachedGroupAlbums).count
+        }
+
+        var count = 0
+        var foundCount = false
+        for member in group {
+            if let cached = artistAlbumCounts[member.id], cached > 0 {
+                count += cached
+                foundCount = true
+            } else if member.albumCount > 0 {
+                count += member.albumCount
+                foundCount = true
+            }
+        }
+        return foundCount ? count : nil
+    }
+
+    private func deduplicatedPlexAlbums(_ albums: [PlexAlbum]) -> [PlexAlbum] {
+        var seen = Set<String>()
+        var result: [PlexAlbum] = []
+        for album in albums {
+            let key = "\(normalizedPlexArtistName(album.parentTitle ?? ""))|\(normalizedPlexArtistName(album.title))|\(album.year.map { String($0) } ?? "")"
+            if seen.insert(key).inserted {
+                result.append(album)
+            }
+        }
+        return result
+    }
+
+    private func deduplicatedPlexTracks(_ tracks: [PlexTrack]) -> [PlexTrack] {
+        var seen = Set<String>()
+        var result: [PlexTrack] = []
+        for track in tracks {
+            let key = "\(normalizedPlexArtistName(track.grandparentTitle ?? ""))|\(normalizedPlexArtistName(track.parentTitle ?? ""))|\(normalizedPlexArtistName(track.title))|\(track.parentIndex ?? 1)|\(track.index ?? 0)"
+            if seen.insert(key).inserted {
+                result.append(track)
+            }
+        }
+        return result
+    }
+
+    private func fetchAlbumsForPlexArtistGroup(_ artist: PlexArtist) async throws -> [PlexAlbum] {
+        var albums: [PlexAlbum] = []
+        for member in plexArtistGroup(for: artist) {
+            albums.append(contentsOf: try await PlexManager.shared.fetchAlbums(forArtist: member))
+        }
+        return deduplicatedPlexAlbums(albums)
+    }
+
+    private func fetchTracksForPlexArtistGroup(_ artist: PlexArtist) async throws -> [PlexTrack] {
+        let albums = try await fetchAlbumsForPlexArtistGroup(artist)
+        var tracks: [PlexTrack] = []
+        for album in albums {
+            tracks.append(contentsOf: try await PlexManager.shared.fetchTracks(forAlbum: album))
+        }
+        if tracks.isEmpty {
+            for member in plexArtistGroup(for: artist) {
+                tracks.append(contentsOf: try await PlexManager.shared.fetchTracks(forArtist: member))
+            }
+        }
+        return deduplicatedPlexTracks(tracks)
+    }
     
     private func sortPlexAlbums(_ albums: [PlexAlbum]) -> [PlexAlbum] {
         switch currentSort {
@@ -11018,25 +11097,26 @@ class ModernLibraryBrowserView: NSView {
     private func toggleExpand(_ item: ModernDisplayItem) {
         switch item.type {
         case .artist(let artist):
-            if expandedArtists.contains(artist.id) { expandedArtists.remove(artist.id) }
+            let groupKey = item.id
+            if expandedArtists.contains(groupKey) { expandedArtists.remove(groupKey) }
             else {
-                expandedArtists.insert(artist.id)
-                if artistAlbums[artist.id] == nil {
+                expandedArtists.insert(groupKey)
+                if artistAlbums[groupKey] == nil {
                     Task { @MainActor in
                         do {
-                            NSLog("ModernLibraryBrowser: Fetching albums for artist '%@' (id=%@)", artist.title, artist.id)
-                            let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
-                            if albums.isEmpty && artist.albumCount > 0 {
-                                NSLog("ModernLibraryBrowser: Warning - API returned 0 albums for '%@' (id=%@) but albumCount=%d - allowing retry", artist.title, artist.id, artist.albumCount)
-                                expandedArtists.remove(artist.id)
+                            NSLog("ModernLibraryBrowser: Fetching albums for artist group '%@' (key=%@)", artist.title, groupKey)
+                            let albums = try await self.fetchAlbumsForPlexArtistGroup(artist)
+                            if albums.isEmpty && (self.plexArtistAlbumCount(for: artist) ?? 0) > 0 {
+                                NSLog("ModernLibraryBrowser: Warning - API returned 0 albums for artist group '%@' (key=%@) - allowing retry", artist.title, groupKey)
+                                expandedArtists.remove(groupKey)
                             } else {
-                                NSLog("ModernLibraryBrowser: Loaded %d albums for '%@' (id=%@)", albums.count, artist.title, artist.id)
-                                artistAlbums[artist.id] = albums
+                                NSLog("ModernLibraryBrowser: Loaded %d albums for artist group '%@' (key=%@)", albums.count, artist.title, groupKey)
+                                artistAlbums[groupKey] = albums
                             }
                             rebuildCurrentModeItems()
                         } catch {
-                            NSLog("ModernLibraryBrowser: Failed to load albums for '%@' (id=%@): %@", artist.title, artist.id, error.localizedDescription)
-                            expandedArtists.remove(artist.id)
+                            NSLog("ModernLibraryBrowser: Failed to load albums for artist group '%@' (key=%@): %@", artist.title, groupKey, error.localizedDescription)
+                            expandedArtists.remove(groupKey)
                             rebuildCurrentModeItems()
                         }
                     }; return
@@ -11370,14 +11450,7 @@ class ModernLibraryBrowserView: NSView {
     private func playArtist(_ artist: PlexArtist) {
         Task { @MainActor in
             do {
-                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
-                var all: [PlexTrack] = []
-                for album in albums { all.append(contentsOf: try await PlexManager.shared.fetchTracks(forAlbum: album)) }
-                // Last-resort fallback: if no tracks found via albums, fetch tracks directly
-                if all.isEmpty {
-                    NSLog("ModernLibraryBrowser: No tracks found via albums for '%@', trying direct track fetch", artist.title)
-                    all = try await PlexManager.shared.fetchTracks(forArtist: artist)
-                }
+                let all = try await fetchTracksForPlexArtistGroup(artist)
                 WindowManager.shared.audioEngine.playNow(PlexManager.shared.convertToTracks(all))
             } catch { NSLog("Failed: %@", error.localizedDescription) }
         }
@@ -12100,7 +12173,14 @@ extension ModernDisplayItem {
         case .jellyfinAlbum(let a): return jellyfinAlbumValue(a, for: column)
         case .embyAlbum(let a): return embyAlbumValue(a, for: column)
         case .localAlbum(let a): return localAlbumValue(a, for: column)
-        case .artist(let a): return plexArtistValue(a, for: column)
+        case .artist(let a):
+            if column.id == "albums",
+               let info,
+               let first = info.split(separator: " ").first,
+               let count = Int(first) {
+                return String(count)
+            }
+            return plexArtistValue(a, for: column)
         case .subsonicArtist(let a):
             if column.id == "albums" { return String(a.albumCount) }
             if column.id == "rating" { return a.starred != nil ? "★★★★★" : "" }
