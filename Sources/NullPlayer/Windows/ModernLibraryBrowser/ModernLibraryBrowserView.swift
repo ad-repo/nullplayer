@@ -345,6 +345,9 @@ class ModernLibraryBrowserView: NSView {
     private var artistAlbums: [String: [PlexAlbum]] = [:]
     private var albumTracks: [String: [PlexTrack]] = [:]
     private var artistAlbumCounts: [String: Int] = [:]
+    private var plexArtistGroupsByName: [String: [PlexArtist]] = [:]
+    private var plexAlbumsByArtistGroupKey: [String: [PlexAlbum]] = [:]
+    private var plexAlbumCountsByArtistGroupKey: [String: Int] = [:]
     private var artistAlbumsByName: [String: [PlexAlbum]] = [:]
     
     // Cached data - Local
@@ -1514,11 +1517,12 @@ class ModernLibraryBrowserView: NSView {
         if isArtOnlyMode,
            let currentTrack = WindowManager.shared.audioEngine.currentTrack,
            currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
-            let starSize: CGFloat = 14 * m
-            let starSpacing: CGFloat = 4 * m
+            let starSize: CGFloat = (compactMode ? 11 : 14) * m
+            let starSpacing: CGFloat = (compactMode ? 2 : 4) * m
+            let starButtonGap: CGFloat = (compactMode ? 10 : 16) * m
             let totalStars = 5
             let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
-            let starsX = visEndX - starsWidth - 16 * m
+            let starsX = visEndX - starsWidth - starButtonGap
             let starY = barRect.minY + (barRect.height - starSize) / 2
             
             // Get current rating (0-10 scale -> 0-5 filled stars)
@@ -9524,10 +9528,27 @@ class ModernLibraryBrowserView: NSView {
     
     private func buildArtistAlbumCounts() {
         artistAlbumCounts.removeAll()
+        plexArtistGroupsByName = Dictionary(grouping: cachedArtists, by: { normalizedPlexArtistName($0.title) })
+        plexAlbumsByArtistGroupKey.removeAll()
+        plexAlbumCountsByArtistGroupKey.removeAll()
+
+        var artistsById: [String: PlexArtist] = [:]
+        for artist in cachedArtists {
+            artistsById[artist.id] = artist
+        }
         for album in cachedAlbums {
             if let parentKey = album.parentKey, let artistId = extractArtistId(from: parentKey) {
                 artistAlbumCounts[artistId, default: 0] += 1
+                if let artist = artistsById[artistId] {
+                    plexAlbumsByArtistGroupKey[plexArtistGroupKey(for: artist), default: []].append(album)
+                }
             }
+        }
+
+        for (groupKey, albums) in plexAlbumsByArtistGroupKey {
+            let deduplicated = deduplicatedPlexAlbums(albums)
+            plexAlbumsByArtistGroupKey[groupKey] = deduplicated
+            plexAlbumCountsByArtistGroupKey[groupKey] = deduplicated.count
         }
     }
     
@@ -10524,28 +10545,29 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func uniquePlexArtistsByName(_ artists: [PlexArtist]) -> [PlexArtist] {
-        var artistsByName: [String: PlexArtist] = [:]
-        for artist in artists {
-            let key = normalizedPlexArtistName(artist.title)
-            if let existing = artistsByName[key] {
-                if artist.albumCount > existing.albumCount {
-                    artistsByName[key] = artist
-                }
-            } else {
-                artistsByName[key] = artist
-            }
+        var groups = Dictionary(grouping: artists, by: { normalizedPlexArtistName($0.title) })
+        if artists.count == cachedArtists.count && !plexArtistGroupsByName.isEmpty {
+            groups = plexArtistGroupsByName
         }
-        return Array(artistsByName.values)
+        let representatives = groups.values.compactMap { group in
+            group.max { lhs, rhs in lhs.albumCount < rhs.albumCount }
+        }
+        return representatives
     }
 
     private func plexArtistGroup(for artist: PlexArtist) -> [PlexArtist] {
         guard browseMode != .search else { return [artist] }
         let key = normalizedPlexArtistName(artist.title)
-        let matches = cachedArtists.filter { normalizedPlexArtistName($0.title) == key }
+        let matches = plexArtistGroupsByName[key] ?? cachedArtists.filter { normalizedPlexArtistName($0.title) == key }
         return matches.isEmpty ? [artist] : matches
     }
 
     private func plexArtistAlbumCount(for artist: PlexArtist) -> Int? {
+        let groupKey = plexArtistGroupKey(for: artist)
+        if let count = plexAlbumCountsByArtistGroupKey[groupKey], count > 0 {
+            return count
+        }
+
         let group = plexArtistGroup(for: artist)
         let memberIds = Set(group.map { $0.id })
         let cachedGroupAlbums = cachedAlbums.filter { album in
@@ -10596,6 +10618,11 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func fetchAlbumsForPlexArtistGroup(_ artist: PlexArtist) async throws -> [PlexAlbum] {
+        let groupKey = plexArtistGroupKey(for: artist)
+        if let cached = plexAlbumsByArtistGroupKey[groupKey], !cached.isEmpty {
+            return cached
+        }
+
         var albums: [PlexAlbum] = []
         for member in plexArtistGroup(for: artist) {
             albums.append(contentsOf: try await PlexManager.shared.fetchAlbums(forArtist: member))

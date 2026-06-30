@@ -79,6 +79,7 @@ protocol AudioEngineDelegate: AnyObject {
 class AudioEngine {
 
     static var isHeadless = false
+    private static let balanceDefaultsKey = "audioBalance"
 
     struct LocalPlaybackSleepClockState: Equatable {
         let currentTime: TimeInterval
@@ -282,11 +283,16 @@ class AudioEngine {
     }
     
     /// Balance (-1.0 left, 0.0 center, 1.0 right)
-    var balance: Float = 0.0 {
+    var balance: Float = AudioEngine.loadSavedBalance() {
         didSet {
+            balance = Self.clampedBalance(balance)
             // Apply to both players since they alternate during crossfades
             playerNode.pan = balance
             crossfadePlayerNode.pan = balance
+            streamingPlayer?.balance = balance
+            crossfadeStreamingPlayer?.balance = balance
+            UserDefaults.standard.set(balance, forKey: Self.balanceDefaultsKey)
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -726,6 +732,15 @@ class AudioEngine {
         NotificationCenter.default.post(name: .audioPlaybackOptionsChanged, object: self)
     }
 
+    private static func clampedBalance(_ value: Float) -> Float {
+        max(-1.0, min(1.0, value))
+    }
+
+    private static func loadSavedBalance() -> Float {
+        guard UserDefaults.standard.object(forKey: balanceDefaultsKey) != nil else { return 0.0 }
+        return clampedBalance(UserDefaults.standard.float(forKey: balanceDefaultsKey))
+    }
+
     private func captureShufflePlaybackState() -> ShufflePlaybackStateSnapshot {
         ShufflePlaybackStateSnapshot(
             order: shufflePlaybackOrder,
@@ -1096,6 +1111,8 @@ class AudioEngine {
         // This ensures the spectrum tap captures volume-independent audio
         playerNode.volume = 1.0
         crossfadePlayerNode.volume = 0  // Still starts silent for crossfade
+        playerNode.pan = balance
+        crossfadePlayerNode.pan = balance
         
         // Apply initial volume to mainMixerNode (after EQ, before output)
         engine.mainMixerNode.outputVolume = volume
@@ -4433,6 +4450,7 @@ class AudioEngine {
             streamingPlayer?.stereoNeeded = stereoNeeded
             streamingPlayer?.magnitudesNeeded = magnitudesNeeded
         }
+        streamingPlayer?.balance = balance
 
         // Sync EQ settings from main EQ to streaming player
         syncEQToStreamingPlayer()
@@ -5043,6 +5061,7 @@ class AudioEngine {
             pitchNode: tuningController.makeStreamingPitchNode()
         )
         crossfadeStreamingPlayer?.rate = tuningController.rate
+        crossfadeStreamingPlayer?.balance = balance
         // Note: We don't set delegate - we handle state internally during crossfade
         
         // Sync EQ settings to crossfade player

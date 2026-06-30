@@ -58,6 +58,19 @@ Type values:
 | 1 | Movies |
 | 2 | TV Shows |
 
+## Library Browser Artist Grouping
+
+Plex can expose multiple artist records with the same display name but different `ratingKey` values. In the Library Browser, normal Plex artist browsing shows one visible row per normalized artist name while keeping every underlying Plex artist record reachable.
+
+Current behavior in both classic `PlexBrowserView` and modern `ModernLibraryBrowserView`:
+
+- Normalize artist names with lowercase + trimmed whitespace and use `plex-artist-{normalizedName}` as the grouped display key.
+- Pick the visible representative from the same-name group by highest `albumCount`.
+- When expanding, playing, or queueing a grouped row, fan out across every artist record in the group and then deduplicate albums/tracks by stable metadata keys.
+- Search mode intentionally treats the selected Plex artist as a single record instead of expanding all same-name records.
+
+Performance requirement: build group indexes once when artist/album counts are rebuilt. `buildArtistAlbumCounts()` should populate `plexArtistGroupsByName`, `plexAlbumsByArtistGroupKey`, and `plexAlbumCountsByArtistGroupKey` from `cachedArtists` and `cachedAlbums`. Expanding a grouped artist row should first use `plexAlbumsByArtistGroupKey[groupKey]` and avoid rescanning the full album cache on the main actor, because large same-name groups can otherwise beachball the UI.
+
 ## Popular Tracks (Last.fm Integration)
 
 Plex identifies "hit" tracks using the `ratingCount` field, which contains **global popularity data from Last.fm** - the number of unique listeners who have scrobbled the track worldwide.
