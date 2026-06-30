@@ -1151,10 +1151,9 @@ class WindowManager {
     }
 
     private func orderOutRegularWindows() {
-        // The video player window is the one regular window allowed to stay in Compact Mode:
-        // a playing video (e.g. a downloaded YouTube video) keeps showing on entry and may be
-        // opened while compact. It is deliberately excluded here and skipped by the orphan sweep
-        // below, so Compact Mode never hides or restores it.
+        // The video player and debug console are allowed to stay in Compact Mode. They are
+        // deliberately excluded here and skipped by the orphan sweep below, so Compact Mode
+        // never hides or restores them.
         for window in [mainWindowController?.window,
                        equalizerWindowController?.window,
                        playlistWindowController?.window,
@@ -1162,8 +1161,7 @@ class WindowManager {
                        audioAnalysisWindowController?.window,
                        waveformWindowController?.window,
                        projectMWindowController?.window,
-                       plexBrowserWindowController?.window,
-                       debugWindowController?.window].compactMap({ $0 })
+                       plexBrowserWindowController?.window].compactMap({ $0 })
         where !isInNativeFullScreen(window) {
             window.orderOut(nil)
         }
@@ -1195,8 +1193,9 @@ class WindowManager {
         let compactWindow = compactWindowController?.window
         for window in NSApp.windows where window.isVisible {
             if window === compactWindow { continue }
-            // The video player is allowed to remain visible in Compact Mode (see orderOutRegularWindows).
+            // These windows are allowed to remain visible in Compact Mode (see orderOutRegularWindows).
             if window === videoPlayerWindowController?.window { continue }
+            if window === debugWindowController?.window { continue }
             if isSystemOrTransientWindow(window) { continue }
             // Leave fullscreen windows on their own Space — hiding them would switch Spaces.
             if isInNativeFullScreen(window) { continue }
@@ -1245,15 +1244,6 @@ class WindowManager {
             }
         }
 
-        func restoreWindow(_ snapshot: WindowSnapshot?, window: NSWindow?) {
-            guard let snapshot, let window else { return }
-            if isInNativeFullScreen(window) { return }
-            if snapshot.frame != .zero {
-                window.setFrame(snapshot.frame, display: true)
-            }
-            snapshot.wasVisible ? window.orderFront(nil) : window.orderOut(nil)
-        }
-
         restore(snapshot.main, controller: mainWindowController)
         restore(snapshot.equalizer, controller: equalizerWindowController)
         restore(snapshot.playlist, controller: playlistWindowController)
@@ -1262,8 +1252,7 @@ class WindowManager {
         restore(snapshot.waveform, controller: waveformWindowController)
         restore(snapshot.projectM, controller: projectMWindowController)
         restore(snapshot.library, controller: plexBrowserWindowController)
-        // The video player is never hidden by Compact Mode, so it is not restored here either.
-        restoreWindow(snapshot.debug, window: debugWindowController?.window)
+        // The video player and debug console are never hidden by Compact Mode, so they are not restored here either.
 
         for window in snapshot.additionalWindows where !isInNativeFullScreen(window) {
             window.orderFront(nil)
@@ -1288,9 +1277,8 @@ class WindowManager {
         case "waveform": return snapshot.waveform?.wasVisible ?? current
         case "projectM": return snapshot.projectM?.wasVisible ?? current
         case "plexBrowser": return snapshot.library?.wasVisible ?? current
-        // "video" is intentionally omitted: Compact Mode no longer hides the video player,
-        // so its live visibility is already the value worth saving (falls through to `current`).
-        case "debug": return snapshot.debug?.wasVisible ?? current
+        // "video" and "debug" are intentionally omitted: Compact Mode no longer hides them,
+        // so their live visibility is already the value worth saving (falls through to `current`).
         default: return current
         }
     }
@@ -4715,11 +4703,11 @@ class WindowManager {
         // `compactModeState == .regular` instead of a no-op `.exiting` guard.
         if compactModeEnabled {
             let snapshot = modeDependentLayout(from: regularWindowSnapshot)
-            // The hidden mode-independent windows (debug, app panels) survive teardown but were
+            // The hidden mode-independent windows (app panels) survive teardown but were
             // hidden on compact entry and are not re-shown here. enterCompactMode() will re-capture
             // the snapshot from the live (still-hidden) windows, losing their visibility — so carry
-            // their pre-switch state forward afterward. (The video player is exempt from Compact
-            // Mode hiding and stays visible throughout.) See reapplyModeIndependentWindows(from:).
+            // their pre-switch state forward afterward. (The video player and debug console are
+            // exempt from Compact Mode hiding and stay visible throughout.) See reapplyModeIndependentWindows(from:).
             let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
                 guard let self else { return }
@@ -4733,18 +4721,17 @@ class WindowManager {
         }
     }
 
-    /// A Compact-Mode-preserving UI switch leaves the hidden mode-independent windows (debug
-    /// console, app-owned panels) hidden without re-showing them, then `enterCompactMode()`
+    /// A Compact-Mode-preserving UI switch leaves hidden mode-independent app-owned panels
+    /// hidden without re-showing them, then `enterCompactMode()`
     /// re-captures `regularWindowSnapshot` from those still-hidden windows — recording them as not
     /// visible and dropping `additionalWindows`. Carry those fields forward from the pre-switch
     /// capture so a later Compact-Mode exit restores them. The mode-dependent fields in the fresh
-    /// capture are correct (rebuilt then captured) and are left untouched. (The video player is
-    /// exempt from Compact Mode hiding, so it needs no carry-forward.)
+    /// capture are correct (rebuilt then captured) and are left untouched. (The video player and
+    /// debug console are exempt from Compact Mode hiding, so they need no carry-forward.)
     private func reapplyModeIndependentWindows(from previous: CompactWindowSnapshot?) {
         guard let previous, regularWindowSnapshot != nil else { return }
-        // The video player is exempt from Compact Mode hiding, so it needs no carry-forward;
-        // only the debug console and additional app windows are hidden and must be preserved.
-        regularWindowSnapshot?.debug = previous.debug
+        // The video player and debug console are exempt from Compact Mode hiding, so they need
+        // no carry-forward; only additional app windows are hidden and must be preserved.
         regularWindowSnapshot?.additionalWindows = previous.additionalWindows
     }
 

@@ -14,8 +14,10 @@ class DebugConsoleManager {
     // MARK: - Properties
     
     private var messages: [String] = []
+    private var nonUPnPMessages: [String] = []
     private let messagesLock = NSLock()
-    private let maxMessages = 1000
+    private let maxMessages = 25000
+    private let maxVisibleMessages = 10000
     
     private var pipe: Pipe?
     private var originalStderr: Int32 = -1
@@ -75,17 +77,19 @@ class DebugConsoleManager {
         pipe = nil
     }
     
-    /// Get all captured messages
-    func getMessages() -> [String] {
+    /// Get captured messages. When UPnP is hidden, return the dedicated non-UPnP buffer so
+    /// relentless discovery/casting logs cannot evict useful visible backscroll.
+    func getMessages(hidingUPnP: Bool = false) -> [String] {
         messagesLock.lock()
         defer { messagesLock.unlock() }
-        return messages
+        return hidingUPnP ? nonUPnPMessages : messages
     }
     
     /// Clear all messages
     func clearMessages() {
         messagesLock.lock()
         messages.removeAll()
+        nonUPnPMessages.removeAll()
         messagesLock.unlock()
         
         DispatchQueue.main.async {
@@ -101,10 +105,14 @@ class DebugConsoleManager {
         // Split by newlines and add each line
         let lines = message.components(separatedBy: .newlines).filter { !$0.isEmpty }
         messages.append(contentsOf: lines)
+        nonUPnPMessages.append(contentsOf: lines.filter { !Self.isUPnPMessage($0) })
         
         // Trim if over limit
         if messages.count > maxMessages {
             messages.removeFirst(messages.count - maxMessages)
+        }
+        if nonUPnPMessages.count > maxVisibleMessages {
+            nonUPnPMessages.removeFirst(nonUPnPMessages.count - maxVisibleMessages)
         }
         
         messagesLock.unlock()
@@ -113,5 +121,9 @@ class DebugConsoleManager {
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: Self.messageReceivedNotification, object: nil)
         }
+    }
+
+    private static func isUPnPMessage(_ message: String) -> Bool {
+        message.contains("UPnPManager")
     }
 }
