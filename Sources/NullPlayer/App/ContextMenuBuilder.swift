@@ -345,6 +345,72 @@ class ContextMenuBuilder {
         return menu
     }
 
+    /// Builds the Balance submenu.
+    static func buildBalanceMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let current = WindowManager.shared.audioEngine.balance
+
+        let sliderItem = NSMenuItem()
+        sliderItem.view = makeBalanceSliderView(current: current)
+        menu.addItem(sliderItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let presets: [(title: String, value: Float)] = [
+            ("Left 100%", -1.0),
+            ("Left 50%", -0.5),
+            ("Center", 0.0),
+            ("Right 50%", 0.5),
+            ("Right 100%", 1.0)
+        ]
+
+        for preset in presets {
+            let item = NSMenuItem(title: preset.title, action: #selector(MenuActions.setPlaybackBalancePreset(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = preset.value
+            item.state = abs(current - preset.value) < 0.001 ? .on : .off
+            menu.addItem(item)
+        }
+
+        return menu
+    }
+
+    private static func makeBalanceSliderView(current: Float) -> NSView {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 230, height: 42))
+
+        let slider = NSSlider(value: Double(current), minValue: -1.0, maxValue: 1.0, target: MenuActions.shared, action: #selector(MenuActions.setPlaybackBalanceFromSlider(_:)))
+        slider.frame = NSRect(x: 16, y: 17, width: 198, height: 18)
+        slider.isContinuous = true
+        slider.numberOfTickMarks = 5
+        slider.allowsTickMarkValuesOnly = false
+        view.addSubview(slider)
+
+        let labels: [(String, CGFloat, NSTextAlignment)] = [
+            ("L", 16, .left),
+            ("Center", 82, .center),
+            ("R", 196, .right)
+        ]
+        for label in labels {
+            let field = NSTextField(labelWithString: label.0)
+            field.frame = NSRect(x: label.1, y: 2, width: label.0 == "Center" ? 66 : 18, height: 14)
+            field.font = .menuFont(ofSize: 10)
+            field.textColor = .secondaryLabelColor
+            field.alignment = label.2
+            view.addSubview(field)
+        }
+
+        return view
+    }
+
+    static func balanceDisplayName(_ balance: Float) -> String {
+        let clamped = max(-1.0, min(1.0, balance))
+        if abs(clamped) < 0.001 { return "Center" }
+        let percent = Int(round(abs(clamped) * 100))
+        return clamped < 0 ? "L \(percent)%" : "R \(percent)%"
+    }
+
     /// Builds the top-level "Visuals" menu content for the macOS menu bar.
     static func buildMenuBarVisualsMenu() -> NSMenu {
         let menu = NSMenu()
@@ -981,6 +1047,19 @@ class ContextMenuBuilder {
             speedRoot.toolTip = "Not available while casting"
         }
         optionsMenu.addItem(speedRoot)
+
+        // Balance submenu
+        let balanceRoot = NSMenuItem(
+            title: "Balance: \(balanceDisplayName(engine.balance))",
+            action: nil,
+            keyEquivalent: ""
+        )
+        balanceRoot.submenu = buildBalanceMenu()
+        if engine.isAnyCastingActive {
+            balanceRoot.isEnabled = false
+            balanceRoot.toolTip = "Not available while casting"
+        }
+        optionsMenu.addItem(balanceRoot)
 
         optionsMenu.addItem(NSMenuItem.separator())
 
@@ -4145,6 +4224,17 @@ class MenuActions: NSObject {
         }
 
         engine.setPlaybackSpeed(speed)
+    }
+
+    // MARK: - Balance
+
+    @objc func setPlaybackBalanceFromSlider(_ sender: NSSlider) {
+        WindowManager.shared.audioEngine.balance = Float(sender.doubleValue)
+    }
+
+    @objc func setPlaybackBalancePreset(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? Float else { return }
+        WindowManager.shared.audioEngine.balance = value
     }
     
     @objc func toggleSweetFade() {

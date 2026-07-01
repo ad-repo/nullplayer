@@ -640,7 +640,7 @@ These are subtle and only reproduce with multiple Spaces / a fullscreen app on a
 
 - `exitCompactMode` restores asynchronously (state stays `.exiting` until a deferred block), so a synchronous re-enter hits the `.regular` guard and is silently dropped. `exitCompactMode` is **completion-based**; run the teardown/rebuild/re-enter inside the completion.
 - Pass `exitCompactMode(restoreRegularWindows: false)` on this path: re-showing the still-hidden `.managed` regular windows would pull the user to whatever Space they live on. Derive the rebuild snapshot from the pre-compact capture (`modeDependentLayout(from: regularWindowSnapshot)`) instead of the live (hidden) windows.
-- `enterCompactMode()` re-captures `regularWindowSnapshot` from the live windows, which **loses the mode-independent windows** (video player, debug console, app panels — they survive teardown but stay hidden). Carry those fields forward with `reapplyModeIndependentWindows(from:)` after the rebuild, or a video player open before the switch won't restore on the eventual Compact-Mode exit.
+- `enterCompactMode()` re-captures `regularWindowSnapshot` from the live windows, which **loses hidden mode-independent app panels** (they survive teardown but stay hidden). Carry those fields forward with `reapplyModeIndependentWindows(from:)` after the rebuild. The video player and debug console are exempt from Compact Mode hiding and stay visible throughout.
 
 ### Compact window reveal positioning
 

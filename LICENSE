@@ -1,3 +1,28 @@
+NullPlayer Project License Notice
+=================================
+
+NullPlayer is distributed under the GNU General Public License version 3
+only (GPL-3.0-only), with the following additional trademark and branding
+term under GPLv3 section 7(e):
+
+No trademark license is granted for the NullPlayer name, logo, icon, or
+other NullPlayer brand identifiers. Modified versions, forks, derivative
+works, and redistributed builds may not be named "NullPlayer", may not use
+a confusingly similar name, and may not use NullPlayer branding in a way
+that suggests they are the original NullPlayer project or are endorsed by
+the NullPlayer project, unless prior written permission is granted by the
+NullPlayer trademark owner.
+
+Redistributors of modified versions must rename the application and replace
+or remove NullPlayer branding from user-facing product names, bundle names,
+bundle identifiers, executable names, icons, and public marketing materials.
+Accurate attribution such as "based on NullPlayer" is permitted, provided
+it does not imply endorsement or that the modified version is the original
+NullPlayer application.
+
+This trademark and branding term does not limit the GPL rights to copy,
+modify, or distribute the covered source code.
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 
@@ -70,4 +95,4 @@ modification follow.
 
 For the complete license text, see: https://www.gnu.org/licenses/gpl-3.0.txt
 
-SPDX-License-Identifier: GPL-3.0-only
+SPDX-License-Identifier: GPL-3.0-only AND LicenseRef-NullPlayer-Trademark

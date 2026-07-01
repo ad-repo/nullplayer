@@ -77,7 +77,7 @@ Windows automatically snap together when dragged near each other:
 - Left-clicking the status-bar item toggles the compact window shown/hidden. Right-clicking opens the Compact Mode menu.
 - The compact window opens at the top-right of the screen, aligned directly below the menu bar with no extra gap.
 - The sole window is the **Library Browser** with a stripped-down player bar embedded across the top (transport, seek + time, a scrolling title marquee, and volume), built from the active UI's own components (classic skin sprites in classic, modern controls in modern).
-- All other windows (Main, EQ, Playlist, Spectrum, etc.) are hidden; their prior visibility is remembered and restored when you exit. **Exception:** the video player window is allowed in Compact Mode — a playing video stays visible on entry, and videos opened while compact (e.g. a downloaded YouTube video) appear normally.
+- All other windows (Main, EQ, Playlist, Spectrum, etc.) are hidden; their prior visibility is remembered and restored when you exit. **Exceptions:** the video player and debug console windows are allowed in Compact Mode — a playing video stays visible on entry, videos opened while compact (e.g. a downloaded YouTube video) appear normally, and an open debug console remains visible.
 - Exiting restores the Dock icon, the macOS menu bar, and the previously open windows.
 
 ### Main Window Elements

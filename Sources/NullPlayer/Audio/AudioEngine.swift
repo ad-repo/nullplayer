@@ -281,12 +281,17 @@ class AudioEngine {
         }
     }
     
-    /// Balance (-1.0 left, 0.0 center, 1.0 right)
+    /// Balance (-1.0 left, 0.0 center, 1.0 right).
+    /// Intentionally not persisted — playback always starts centered on each launch.
     var balance: Float = 0.0 {
         didSet {
+            balance = Self.clampedBalance(balance)
             // Apply to both players since they alternate during crossfades
             playerNode.pan = balance
             crossfadePlayerNode.pan = balance
+            streamingPlayer?.balance = balance
+            crossfadeStreamingPlayer?.balance = balance
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -726,6 +731,10 @@ class AudioEngine {
         NotificationCenter.default.post(name: .audioPlaybackOptionsChanged, object: self)
     }
 
+    private static func clampedBalance(_ value: Float) -> Float {
+        max(-1.0, min(1.0, value))
+    }
+
     private func captureShufflePlaybackState() -> ShufflePlaybackStateSnapshot {
         ShufflePlaybackStateSnapshot(
             order: shufflePlaybackOrder,
@@ -1096,6 +1105,8 @@ class AudioEngine {
         // This ensures the spectrum tap captures volume-independent audio
         playerNode.volume = 1.0
         crossfadePlayerNode.volume = 0  // Still starts silent for crossfade
+        playerNode.pan = balance
+        crossfadePlayerNode.pan = balance
         
         // Apply initial volume to mainMixerNode (after EQ, before output)
         engine.mainMixerNode.outputVolume = volume
@@ -4433,6 +4444,7 @@ class AudioEngine {
             streamingPlayer?.stereoNeeded = stereoNeeded
             streamingPlayer?.magnitudesNeeded = magnitudesNeeded
         }
+        streamingPlayer?.balance = balance
 
         // Sync EQ settings from main EQ to streaming player
         syncEQToStreamingPlayer()
@@ -5043,6 +5055,7 @@ class AudioEngine {
             pitchNode: tuningController.makeStreamingPitchNode()
         )
         crossfadeStreamingPlayer?.rate = tuningController.rate
+        crossfadeStreamingPlayer?.balance = balance
         // Note: We don't set delegate - we handle state internally during crossfade
         
         // Sync EQ settings to crossfade player

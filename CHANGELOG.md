@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.26.2
+
+### Improvements
+
+- **License and branding terms clarified** — the project license notice and README now state GPL-3.0-only distribution terms and clarify that modified distributions must not reuse the NullPlayer name, icon, logo, bundle identity, or other branding without permission.
+- **Balance control added to Playback menu** — the Playback options now include a Balance submenu with a slider and common left/center/right presets, giving modern UI and menu-only workflows access to stereo balance without adding more controls to the player face.
+
+### Bug Fixes
+
+- **Plex Artists no longer show duplicate same-name rows** — the Library Browser now groups Plex artist records with the same display name into one visible artist row in both classic and modern UI. Expanding, playing, or queueing that row still fans out across every underlying Plex `ratingKey`, so albums and tracks attached to duplicate server-side artist records remain accessible instead of being hidden.
+- **Plex artist expansion no longer beachballs on large grouped artists** — grouped Plex artist rows now reuse precomputed artist/album indexes instead of rescanning the whole Plex library while expanding a row like Rush.
+- **Compact Mode art ratings fit the small UI** — the modern Library Browser's art-view rating stars now shrink in Compact Mode, preventing them from crowding or overlapping the source/library picker row.
+
 ## 0.26.1
 
 ### Bug Fixes

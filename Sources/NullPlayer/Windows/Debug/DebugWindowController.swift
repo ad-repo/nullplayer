@@ -94,11 +94,7 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
     }
     
     private func getFilteredMessages() -> [String] {
-        var messages = DebugConsoleManager.shared.getMessages()
-        if hideUPnPMessages {
-            messages = messages.filter { !$0.contains("UPnPManager") }
-        }
-        return messages
+        DebugConsoleManager.shared.getMessages(hidingUPnP: hideUPnPMessages)
     }
     
     private func subscribeToMessages() {

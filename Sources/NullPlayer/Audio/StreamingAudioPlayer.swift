@@ -34,6 +34,10 @@ class StreamingAudioPlayer {
     /// Equalizer attached to the player
     private let eqNode: AVAudioUnitEQ
 
+    /// Balance/pan node attached before EQ so streaming playback follows the same
+    /// left/right balance setting as local AVAudioPlayerNode playback.
+    private let balanceNode = AVAudioMixerNode()
+
     /// Optional Reference Tuning pitch node. Retained here because AudioStreaming's
     /// custom node list is private to its AudioPlayer.
     private let pitchNode: AVAudioUnitTimePitch?
@@ -183,6 +187,12 @@ class StreamingAudioPlayer {
 
     /// Cached volume for use inside tap callbacks (avoids mainMixerNode access from realtime thread)
     private var _cachedVolume: Float = 1.0
+
+    /// Stereo balance (-1.0 full left, 0.0 center, 1.0 full right).
+    var balance: Float {
+        get { balanceNode.pan }
+        set { balanceNode.pan = max(-1.0, min(1.0, newValue)) }
+    }
     
     /// Playback rate (1.0 = normal speed)
     var rate: Float {
@@ -213,8 +223,10 @@ class StreamingAudioPlayer {
         eqNode = AVAudioUnitEQ(numberOfBands: EQBandProgram.physicalBandCount)
         setupEQ()
 
-        // Attach EQ to the player's audio graph
-        player.attach(node: eqNode)
+        balanceNode.outputVolume = 1.0
+
+        // Attach balance and EQ to the player's audio graph.
+        player.attach(nodes: [balanceNode, eqNode])
 
         // Attach the Reference Tuning pitch node (after EQ, before output) when provided.
         // AudioStreaming's own private `rateNode` (AVAudioUnitTimePitch) is bypassed while
