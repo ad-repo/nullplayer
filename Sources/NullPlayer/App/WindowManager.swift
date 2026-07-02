@@ -96,6 +96,10 @@ private struct WindowSnapshot {
     /// is the collapsed shade frame, so this carries the full-height frame separately so a later
     /// unshade restores the real height. nil for windows with no distinct shade/normal frames.
     var normalFrame: NSRect?
+    /// Whether a side window (Library/ProjectM) was detached from the main-window edge (not docked)
+    /// at capture time. Used to re-detach it after a Large-UI re-apply force-docks it. Always false
+    /// for non-side windows.
+    var wasDetached: Bool = false
 }
 
 private struct CompactWindowSnapshot {
@@ -1154,13 +1158,17 @@ class WindowManager {
     }
 
     private func captureRegularWindowSnapshot() -> CompactWindowSnapshot {
-        func snap(_ controller: ModeDependentWindow?, normalFrame: NSRect? = nil) -> WindowSnapshot? {
+        func snap(_ controller: ModeDependentWindow?, normalFrame: NSRect? = nil,
+                  sideWindow: Bool = false) -> WindowSnapshot? {
             guard let window = controller?.window else { return nil }
             return WindowSnapshot(
                 wasVisible: window.isVisible,
                 frame: window.frame,
                 wasShadeMode: controller?.isShadeMode ?? false,
-                normalFrame: normalFrame
+                normalFrame: normalFrame,
+                // Record detached-ness while the window is live (it's determinable here; after
+                // Compact Mode hides it, docking can no longer be measured).
+                wasDetached: sideWindow && window.isVisible && !isWindowDocked(window)
             )
         }
 
@@ -1176,10 +1184,11 @@ class WindowManager {
             spectrum: snap(spectrumWindowController),
             audioAnalysis: snap(audioAnalysisWindowController),
             waveform: snap(waveformWindowController),
-            projectM: snap(projectMWindowController),
+            projectM: snap(projectMWindowController, sideWindow: true),
             // Library carries its un-shaded frame so a shaded window can restore its real position
             // on unshade after a Compact-preserving UI rebuild (raw window.frame is the shade frame).
-            library: snap(plexBrowserWindowController, normalFrame: plexBrowserWindowController?.frameForPositionMemory),
+            library: snap(plexBrowserWindowController,
+                          normalFrame: plexBrowserWindowController?.frameForPositionMemory, sideWindow: true),
             debug: snapWindow(debugWindowController?.window)
         )
     }
@@ -4786,12 +4795,20 @@ class WindowManager {
         // no flash is visible.
         //
         // Collapsing runs applyDoubleSize(), which force-docks the side windows (Library/ProjectM)
-        // to the main-window edge — capture their real frames first so a user's detached position
-        // survives the switch (restored after Large UI is re-applied). Only live (non-Compact)
-        // windows are captured; in Compact Mode the regular windows are hidden and their layout
-        // comes from `regularWindowSnapshot` instead.
+        // to the main-window edge — capture their detached frames first so a user's detached position
+        // survives the switch (restored after Large UI is re-applied). In Compact Mode the regular
+        // windows are hidden, so captureSideWindowFrames() would see nothing; derive the detached
+        // frames from `regularWindowSnapshot` (which recorded each side window's detached state at
+        // Compact entry) instead.
         let restoreLargeUI = isDoubleSize
-        let preservedSideFrames = restoreLargeUI ? captureSideWindowFrames() : SideWindowFrames()
+        let preservedSideFrames: SideWindowFrames
+        if restoreLargeUI {
+            preservedSideFrames = compactModeEnabled
+                ? sideWindowFrames(from: regularWindowSnapshot)
+                : captureSideWindowFrames()
+        } else {
+            preservedSideFrames = SideWindowFrames()
+        }
         if restoreLargeUI { isDoubleSize = false }
 
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
@@ -4843,6 +4860,23 @@ class WindowManager {
         return SideWindowFrames(
             library: detachedFrame(plexBrowserWindowController?.window),
             projectM: detachedFrame(projectMWindowController?.window)
+        )
+    }
+
+    /// Detached side-window frames drawn from a Compact-Mode capture. The live windows are hidden in
+    /// Compact Mode, so `captureSideWindowFrames()` would see nothing; instead read each side
+    /// window's Compact-entry frame, carrying only those that were detached then (docked ones are
+    /// left to `applyDoubleSize()`'s target-mode docking). Frames were captured at the Large-UI
+    /// scale, matching the scale `restoreSideWindowFrames` re-applies them at.
+    private func sideWindowFrames(from snapshot: CompactWindowSnapshot?) -> SideWindowFrames {
+        guard let snapshot else { return SideWindowFrames() }
+        func detachedFrame(_ w: WindowSnapshot?) -> NSRect? {
+            guard let w, w.wasVisible, w.wasDetached else { return nil }
+            return w.frame
+        }
+        return SideWindowFrames(
+            library: detachedFrame(snapshot.library),
+            projectM: detachedFrame(snapshot.projectM)
         )
     }
 
