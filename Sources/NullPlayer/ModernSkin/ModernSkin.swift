@@ -316,14 +316,23 @@ class ModernSkin {
     func eqValueFont() -> NSFont { scaledFont(size: config.fonts.eqValueSize ?? 6) }
     
     /// Marquee/scrolling title text font (default base size 12.7)
-    func marqueeFont() -> NSFont { scaledFont(size: config.fonts.marqueeSize ?? 12.7) }
+    ///
+    /// Nudged up one step (`+ mainDisplayFontBoost`) to compensate for the system-font swap
+    /// (commit ab6080b): the modern system font renders visibly smaller than the old lo-fi
+    /// bitmap font at the same point size, so the main-window track display looked too small.
+    func marqueeFont() -> NSFont { scaledFont(size: (config.fonts.marqueeSize ?? 12.7) + Self.mainDisplayFontBoost) }
     
     /// Playlist track list text font (default base size 8)
     func playlistFont() -> NSFont { scaledFont(size: config.fonts.playlistSize ?? 8) }
 
+    /// One-step size boost applied to the main-window track display and timer text to
+    /// offset the system-font swap (commit ab6080b), which renders smaller than the old
+    /// lo-fi bitmap font at the same point size.
+    static let mainDisplayFontBoost: CGFloat = 1
+
     /// Time display font (default base size 20)
     func timeDisplayFont() -> NSFont {
-        let size = config.fonts.timeSize ?? ModernSkinFont.defaultTimeSize
+        let size = (config.fonts.timeSize ?? ModernSkinFont.defaultTimeSize) + Self.mainDisplayFontBoost
         return timeFont?.withSize(size * ModernSkinElements.scaleFactor)
             ?? NSFont.monospacedSystemFont(ofSize: size * ModernSkinElements.scaleFactor, weight: .regular)
     }
