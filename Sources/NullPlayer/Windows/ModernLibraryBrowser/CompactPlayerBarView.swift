@@ -81,7 +81,7 @@ final class CompactPlayerBarView: NSView {
 
     // Element rects (real pixels, bottom-left origin).
     private var pad: CGFloat { 8 * m }
-    private var buttonSize: CGFloat { 18 * m }
+    private var buttonSize: CGFloat { 22 * m }
     private var buttonGap: CGFloat { 5 * m }
 
     private var transportRects: (prev: NSRect, play: NSRect, stop: NSRect, next: NSRect) {
@@ -108,21 +108,38 @@ final class CompactPlayerBarView: NSView {
         return NSRect(x: midLeft, y: bottom, width: max(0, contentRight - midLeft), height: max(0, top - bottom))
     }
 
-    private var timeFont: NSFont { NSFont.monospacedDigitSystemFont(ofSize: 10 * m, weight: .regular) }
+    /// Matches the track-title marquee's size/weight (monospaced-digit variant so the counter stays aligned).
+    private var timeFont: NSFont { NSFont.monospacedDigitSystemFont(ofSize: 11 * m, weight: .medium) }
 
-    /// Time sits inline at the right end of the display, vertically centered to match the marquee.
-    private var timeRect: NSRect {
-        let w = 82 * m
-        let h = ("0" as NSString).size(withAttributes: [.font: timeFont]).height
-        let y = displayRect.minY + (displayRect.height - h) / 2
-        return NSRect(x: displayRect.maxX - w - 4 * m, y: y, width: w, height: h)
+    /// Padded gap between the two LCD "windows".
+    private var panelGap: CGFloat { 6 * m }
+
+    /// Left LCD "window": a small self-contained panel holding the time counter.
+    /// Sized to the counter text plus symmetric inner padding so the reading is centered cleanly;
+    /// the padding is generous enough to also absorb a remaining-time "-00:00" without shifting.
+    private var timePanelRect: NSRect {
+        let textW = ("00:00" as NSString).size(withAttributes: [.font: timeFont]).width
+        let w = (textW + 20 * m).rounded()
+        return NSRect(x: displayRect.minX, y: displayRect.minY, width: w, height: displayRect.height)
     }
 
-    /// Track-title marquee fills the rest of the display, left of the time.
-    private var titleRect: NSRect {
-        let left = displayRect.minX + 4 * m
+    /// Right LCD "window": the track-title panel, filling the remaining width after the gap.
+    private var titlePanelRect: NSRect {
+        let left = timePanelRect.maxX + panelGap
         return NSRect(x: left, y: displayRect.minY,
-                      width: max(0, timeRect.minX - buttonGap - left), height: displayRect.height)
+                      width: max(0, contentRight - left), height: displayRect.height)
+    }
+
+    /// The counter, centered within its panel.
+    private var timeRect: NSRect {
+        let h = ("0" as NSString).size(withAttributes: [.font: timeFont]).height
+        let y = timePanelRect.midY - h / 2
+        return NSRect(x: timePanelRect.minX, y: y, width: timePanelRect.width, height: h)
+    }
+
+    /// The marquee sits inside the title panel with a little inner padding.
+    private var titleRect: NSRect {
+        timePanelRect.height > 0 ? titlePanelRect.insetBy(dx: 7 * m, dy: 2 * m) : titlePanelRect
     }
 
     // Bottom control row: seek bar on the left, volume to its right.
@@ -163,11 +180,11 @@ final class CompactPlayerBarView: NSView {
         context.addLine(to: CGPoint(x: bounds.maxX, y: bounds.minY + 0.5))
         context.strokePath()
 
-        // Metal: backlit hi-fi green panel behind the central display (marquee/seek/time),
-        // matching the main window's LCD. The marquee text already renders in dark ink.
-        if isMetal {
-            renderer.drawInsetPanel(in: displayRect, displayFill: true, context: context)
-        }
+        // Two separate LCD "windows": a small counter panel on the left and the track-title
+        // panel on the right, with a padded gap between them (mirrors the main window's LCD look).
+        // In metal mode both get the backlit hi-fi green fill; otherwise they read as inset panels.
+        renderer.drawInsetPanel(in: timePanelRect, displayFill: isMetal, context: context)
+        renderer.drawInsetPanel(in: titlePanelRect, displayFill: isMetal, context: context)
 
         let t = transportRects
         renderer.drawTransportButton("btn_prev", state: state(for: "btn_prev"), in: t.prev, context: context)
@@ -186,13 +203,18 @@ final class CompactPlayerBarView: NSView {
                             trackRect: seekRect, fillFraction: seekFraction,
                             thumbState: isDraggingSeek ? "pressed" : "normal", context: context)
 
-        // Time label "elapsed / total"
-        let timeText = "\(format(currentTime)) / \(format(duration))"
-        // On the green LCD panel the time reads in the finish's dark ink (matches main window).
+        // Single counter on the LEFT, matching the main window's LCD timer (respects elapsed/remaining
+        // and the chosen number system). On the green LCD panel it reads in the finish's dark ink.
+        let timeText = TimeDisplayFormatter.string(
+            currentTime: currentTime,
+            duration: duration,
+            mode: WindowManager.shared.timeDisplayMode,
+            numberSystem: WindowManager.shared.timeDisplayNumberSystem
+        )
         let timeColor = isMetal ? skin.metalMaterial.lcdInk : skin.timeColor
         renderer.drawLabel(timeText, in: timeRect,
                            font: timeFont,
-                           color: timeColor, alignment: .right, context: context)
+                           color: timeColor, alignment: .center, context: context)
 
         // Volume slider
         let volume = CGFloat(WindowManager.shared.audioEngine.volume)
@@ -207,12 +229,6 @@ final class CompactPlayerBarView: NSView {
 
     private var isPlaying: Bool {
         WindowManager.shared.audioEngine.state == .playing
-    }
-
-    private func format(_ time: TimeInterval) -> String {
-        guard time.isFinite, time >= 0 else { return "00:00" }
-        let total = Int(time)
-        return String(format: "%02d:%02d", total / 60, total % 60)
     }
 
     // MARK: - Mouse Handling
