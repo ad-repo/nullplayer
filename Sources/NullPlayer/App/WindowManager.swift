@@ -91,7 +91,13 @@ private enum CompactModeState {
 private struct WindowSnapshot {
     var wasVisible: Bool
     var frame: NSRect
-    var wasShadeMode: Bool
+    /// Normal frame for position memory (Library only). Stores the full window frame.
+    /// nil for windows with no special frame handling.
+    var normalFrame: NSRect?
+    /// Whether a side window (Library/ProjectM) was detached from the main-window edge (not docked)
+    /// at capture time. Used to re-detach it after a Large-UI re-apply force-docks it. Always false
+    /// for non-side windows.
+    var wasDetached: Bool = false
 }
 
 private struct CompactWindowSnapshot {
@@ -420,6 +426,10 @@ class WindowManager {
     
     /// Library browser window controller (classic or modern, accessed via protocol)
     private var plexBrowserWindowController: LibraryBrowserWindowProviding?
+
+    /// Last known Library window frame, remembered across hide/close so the
+    /// window reopens where the user left it instead of the default right-of-stack layout.
+    private var lastPlexBrowserFrame: NSRect?
 
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
@@ -882,8 +892,14 @@ class WindowManager {
         applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
         // Position window to match the vertical stack
         if let window = plexBrowserWindowController?.window {
-            if isNewWindow, let frame = restoredFrame, frame != .zero {
-                // Use restored frame from state restoration (first creation only)
+            // Priority: explicit restored frame (launch / mode-rebuild) → remembered session
+            // frame (reopen after hide/close) → default right-of-stack layout (first-ever open).
+            let chosenFrame: NSRect? = {
+                if let f = restoredFrame, f != .zero { return f }
+                if let f = lastPlexBrowserFrame, f != .zero { return f }
+                return nil
+            }()
+            if let frame = chosenFrame {
                 window.setFrame(frame, display: true)
             } else {
                 // Position to the right of the vertical stack
@@ -964,8 +980,33 @@ class WindowManager {
         return projectMWindowController?.window?.frame
     }
     
+    /// Cache the current library frame before it is hidden/closed.
+    private func rememberPlexBrowserFrame() {
+        if let f = plexBrowserWindowController?.frameForPositionMemory, f != .zero {
+            lastPlexBrowserFrame = f
+        }
+    }
+
+    /// Public entry point so the library controllers can cache their frame from
+    /// `windowWillClose` (the red-button close path bypasses `togglePlexBrowser`).
+    func rememberPlexBrowserFrameBeforeClose() {
+        rememberPlexBrowserFrame()
+    }
+
+    /// Frame to persist at quit: live controller frame (valid even when orderOut-hidden, e.g.
+    /// Compact Mode) when the controller exists, else the last remembered frame (seeded/closed).
+    var plexBrowserFrameForPersistence: NSRect? {
+        plexBrowserWindowController?.frameForPositionMemory ?? lastPlexBrowserFrame
+    }
+
+    /// Seed the remembered frame at launch when the library is not reopened.
+    func seedPlexBrowserFrame(_ frame: NSRect?) {
+        if let f = frame, f != .zero { lastPlexBrowserFrame = f }
+    }
+
     func togglePlexBrowser() {
         if let controller = plexBrowserWindowController, controller.window?.isVisible == true {
+            rememberPlexBrowserFrame()
             controller.window?.orderOut(nil)
         } else {
             showPlexBrowser()
@@ -1115,18 +1156,22 @@ class WindowManager {
     }
 
     private func captureRegularWindowSnapshot() -> CompactWindowSnapshot {
-        func snap(_ controller: ModeDependentWindow?) -> WindowSnapshot? {
+        func snap(_ controller: ModeDependentWindow?, normalFrame: NSRect? = nil,
+                  sideWindow: Bool = false) -> WindowSnapshot? {
             guard let window = controller?.window else { return nil }
             return WindowSnapshot(
                 wasVisible: window.isVisible,
                 frame: window.frame,
-                wasShadeMode: controller?.isShadeMode ?? false
+                normalFrame: normalFrame,
+                // Record detached-ness while the window is live (it's determinable here; after
+                // Compact Mode hides it, docking can no longer be measured).
+                wasDetached: sideWindow && window.isVisible && !isWindowDocked(window)
             )
         }
 
         func snapWindow(_ window: NSWindow?) -> WindowSnapshot? {
             guard let window else { return nil }
-            return WindowSnapshot(wasVisible: window.isVisible, frame: window.frame, wasShadeMode: false)
+            return WindowSnapshot(wasVisible: window.isVisible, frame: window.frame)
         }
 
         return CompactWindowSnapshot(
@@ -1136,8 +1181,10 @@ class WindowManager {
             spectrum: snap(spectrumWindowController),
             audioAnalysis: snap(audioAnalysisWindowController),
             waveform: snap(waveformWindowController),
-            projectM: snap(projectMWindowController),
-            library: snap(plexBrowserWindowController),
+            projectM: snap(projectMWindowController, sideWindow: true),
+            // Library stores its position frame for restoration after Compact-mode rebuild.
+            library: snap(plexBrowserWindowController,
+                          normalFrame: plexBrowserWindowController?.frameForPositionMemory, sideWindow: true),
             debug: snapWindow(debugWindowController?.window)
         )
     }
@@ -1233,9 +1280,6 @@ class WindowManager {
             if isInNativeFullScreen(window) { return }
             if snapshot.frame != .zero {
                 window.setFrame(snapshot.frame, display: true)
-            }
-            if controller?.isShadeMode != snapshot.wasShadeMode {
-                controller?.setShadeMode(snapshot.wasShadeMode)
             }
             if snapshot.wasVisible {
                 window.orderFront(nil)
@@ -2981,8 +3025,30 @@ class WindowManager {
         }
 
         isSnappingWindow = false
+
+        // Force every affected window to redraw its skin at the new scale. Classic views are
+        // layer-backed with `.onSetNeedsDisplay`, so resizing alone just stretches/leaves the
+        // cached bitmap (a stale "ghost" of the old size) until something marks them dirty —
+        // switching Spaces and back used to be the only thing that cleared it. Redraw explicitly.
+        for controller in [mainWindowController, equalizerWindowController, playlistWindowController,
+                           spectrumWindowController, waveformWindowController, audioAnalysisWindowController,
+                           plexBrowserWindowController, projectMWindowController] {
+            guard let window = controller?.window, window.isVisible,
+                  let contentView = window.contentView else { continue }
+            forceRedrawTree(contentView)
+            window.displayIfNeeded()
+        }
     }
-    
+
+    /// Recursively mark a view and its subviews for redraw so layer-backed skin views
+    /// repaint at their new bounds instead of showing stale, stretched cached contents.
+    private func forceRedrawTree(_ view: NSView) {
+        view.needsDisplay = true
+        for subview in view.subviews {
+            forceRedrawTree(subview)
+        }
+    }
+
     private func applyAlwaysOnTop() {
         let level: NSWindow.Level = isAlwaysOnTop ? .floating : .normal
         
@@ -4414,6 +4480,11 @@ class WindowManager {
         equalizerWindowController = nil
         plexBrowserWindowController?.window?.close()
         plexBrowserWindowController = nil
+        // The close() above fires windowWillClose, which caches the old-mode library frame.
+        // Discard it so a classic frame can't leak onto the modern controller (or vice-versa);
+        // classic/modern differ in coordinates/size. An open library that must survive the
+        // switch is repositioned explicitly via recreateModeDependentLayout's snapshot frame.
+        lastPlexBrowserFrame = nil
         projectMWindowController?.window?.close()
         projectMWindowController = nil
         spectrumWindowController?.window?.close()
@@ -4447,7 +4518,9 @@ class WindowManager {
     private struct UIWindowSnapshot {
         let visible: Bool
         let frame: NSRect
-        let isShadeMode: Bool
+        /// Normal frame for position memory. Stores the full window frame for Library window
+        /// restoration; nil for other window types.
+        var normalFrame: NSRect?
     }
 
     /// Snapshot of the mode-dependent window layer, used to restore which windows were open
@@ -4467,19 +4540,20 @@ class WindowManager {
     }
 
     private func captureModeDependentLayout() -> ModeDependentLayoutSnapshot {
-        func snap(_ controller: ModeDependentWindow?) -> UIWindowSnapshot? {
+        func snap(_ controller: ModeDependentWindow?, normalFrame: NSRect? = nil) -> UIWindowSnapshot? {
             guard let window = controller?.window else { return nil }
             return UIWindowSnapshot(
                 visible: window.isVisible,
                 frame: window.frame,
-                isShadeMode: controller?.isShadeMode ?? false
+                normalFrame: normalFrame
             )
         }
         return ModeDependentLayoutSnapshot(
             main: snap(mainWindowController),
             playlist: snap(playlistWindowController),
             equalizer: snap(equalizerWindowController),
-            library: snap(plexBrowserWindowController),
+            // Library stores its position frame for restoration after the rebuild.
+            library: snap(plexBrowserWindowController, normalFrame: plexBrowserWindowController?.frameForPositionMemory),
             projectM: snap(projectMWindowController),
             spectrum: snap(spectrumWindowController),
             audioAnalysis: snap(audioAnalysisWindowController),
@@ -4503,61 +4577,33 @@ class WindowManager {
     private func recreateModeDependentLayout(_ snapshot: ModeDependentLayoutSnapshot) {
         showMainWindow()
         if let main = snapshot.main {
-            mainWindowController?.setShadeMode(main.isShadeMode)
             if main.frame != .zero {
                 mainWindowController?.window?.setFrame(main.frame, display: true)
             }
         }
 
-        // Freshly recreated windows are always created in non-shade mode, so calling
-        // setShadeMode(false) here is not just redundant — it resizes the window to its
-        // *default* size (normalModeFrame is nil on a new window), discarding the full-height
-        // frame the show*() call just restored. Only re-enter shade mode when it was captured.
         if let playlist = snapshot.playlist, playlist.visible {
-            showPlaylist(at: playlist.isShadeMode ? nil : playlist.frame)
-            if playlist.isShadeMode {
-                playlistWindowController?.setShadeMode(true)
-                playlistWindowController?.window?.setFrame(playlist.frame, display: true)
-            }
+            showPlaylist(at: playlist.frame)
         }
         if let equalizer = snapshot.equalizer, equalizer.visible {
-            showEqualizer(at: equalizer.isShadeMode ? nil : equalizer.frame)
-            if equalizer.isShadeMode {
-                equalizerWindowController?.setShadeMode(true)
-                equalizerWindowController?.window?.setFrame(equalizer.frame, display: true)
-            }
+            showEqualizer(at: equalizer.frame)
         }
         if let library = snapshot.library, library.visible {
-            showPlexBrowser(at: library.isShadeMode ? nil : library.frame)
-            if library.isShadeMode {
-                plexBrowserWindowController?.setShadeMode(true)
-                plexBrowserWindowController?.window?.setFrame(library.frame, display: true)
-            }
+            let normalFrame = library.normalFrame ?? library.frame
+            showPlexBrowser(at: normalFrame)
         }
         if let spectrum = snapshot.spectrum, spectrum.visible {
-            showSpectrum(at: spectrum.isShadeMode ? nil : spectrum.frame)
-            if spectrum.isShadeMode {
-                spectrumWindowController?.setShadeMode(true)
-                spectrumWindowController?.window?.setFrame(spectrum.frame, display: true)
-            }
+            showSpectrum(at: spectrum.frame)
         }
         if snapshot.audioAnalysis?.visible == true { showAudioAnalysis(at: snapshot.audioAnalysis?.frame) }
         if let waveform = snapshot.waveform, waveform.visible {
-            showWaveform(at: waveform.isShadeMode ? nil : waveform.frame)
-            if waveform.isShadeMode {
-                waveformWindowController?.setShadeMode(true)
-                waveformWindowController?.window?.setFrame(waveform.frame, display: true)
-            }
+            showWaveform(at: waveform.frame)
         }
         if let projectM = snapshot.projectM, projectM.visible {
             showProjectM(
-                at: projectM.isShadeMode ? nil : projectM.frame,
+                at: projectM.frame,
                 restoringPresetIndex: snapshot.projectMPresetIndex
             )
-            if projectM.isShadeMode {
-                projectMWindowController?.setShadeMode(true)
-                projectMWindowController?.window?.setFrame(projectM.frame, display: true)
-            }
         }
 
         pushCurrentPresentationStateToRecreatedWindows()
@@ -4636,7 +4682,9 @@ class WindowManager {
         // until that completes so the snapshot captures the real windows and the re-enter is not
         // swallowed by the `.exiting` guard. Mirrors the production reloadUI path.
         if compactModeEnabled {
-            let snapshot = modeDependentLayout(from: regularWindowSnapshot)
+            // Same-mode rebuild: Large UI is not collapsed/re-applied here, so restore the snapshot
+            // frames as-is (no 1x collapse — they'd never be re-scaled).
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingLargeUI: false)
             let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
                 guard let self else { return }
@@ -4695,6 +4743,31 @@ class WindowManager {
         }
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetMode.displayName)
 
+        // If Large UI is active, collapse it to 1x in the *current* mode before the switch and
+        // re-apply it in the target mode afterward (inside performReloadUI). The two UI systems
+        // have different window geometry (and modern layout is driven by the global
+        // ModernSkinElements.sizeMultiplier), so forcing the old mode's enlarged frames onto
+        // freshly-created target-mode windows renders them distorted. Collapsing first lets each
+        // mode drive its own tested 1x→1.5x scaling. The 1x windows are torn down immediately, so
+        // no flash is visible.
+        //
+        // Collapsing runs applyDoubleSize(), which force-docks the side windows (Library/ProjectM)
+        // to the main-window edge — capture their detached frames first so a user's detached position
+        // survives the switch (restored after Large UI is re-applied). In Compact Mode the regular
+        // windows are hidden, so captureSideWindowFrames() would see nothing; derive the detached
+        // frames from `regularWindowSnapshot` (which recorded each side window's detached state at
+        // Compact entry) instead.
+        let restoreLargeUI = isDoubleSize
+        let preservedSideFrames: SideWindowFrames
+        if restoreLargeUI {
+            preservedSideFrames = compactModeEnabled
+                ? sideWindowFrames(from: regularWindowSnapshot)
+                : captureSideWindowFrames()
+        } else {
+            preservedSideFrames = SideWindowFrames()
+        }
+        if restoreLargeUI { isDoubleSize = false }
+
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
         // on exit. When in Compact Mode, derive the layout to rebuild from the pre-compact capture
         // (`regularWindowSnapshot`) rather than the live windows — they're still hidden, and
@@ -4702,7 +4775,7 @@ class WindowManager {
         // Defer the swap until the compact teardown completes so the re-enter sees
         // `compactModeState == .regular` instead of a no-op `.exiting` guard.
         if compactModeEnabled {
-            let snapshot = modeDependentLayout(from: regularWindowSnapshot)
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingLargeUI: restoreLargeUI)
             // The hidden mode-independent windows (app panels) survive teardown but were
             // hidden on compact entry and are not re-shown here. enterCompactMode() will re-capture
             // the snapshot from the live (still-hidden) windows, losing their visibility — so carry
@@ -4711,13 +4784,65 @@ class WindowManager {
             let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
                 guard let self else { return }
-                self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true)
+                self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true,
+                                     restoreLargeUI: restoreLargeUI, preservedSideFrames: preservedSideFrames)
                 self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
                 completion?()
             }
         } else {
-            performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false)
+            performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false,
+                            restoreLargeUI: restoreLargeUI, preservedSideFrames: preservedSideFrames)
             completion?()
+        }
+    }
+
+    /// Frames of the side windows that `applyDoubleSize()` force-docks to the main-window edge.
+    /// Captured before a Large-UI collapse so a user's detached Library/ProjectM position can be
+    /// restored after a mode switch.
+    private struct SideWindowFrames {
+        var library: NSRect?
+        var projectM: NSRect?
+    }
+
+    /// Capture only *detached* side windows. A docked side window is re-docked to the
+    /// target-mode main edge by `applyDoubleSize()` during the Large-UI re-apply; restoring its
+    /// old-mode frame on top of that would fight the target mode's docking and misalign it (the
+    /// old frame was measured against the old main width). A detached window has no docking to
+    /// recompute, so its exact floating position must be carried across the switch.
+    private func captureSideWindowFrames() -> SideWindowFrames {
+        func detachedFrame(_ window: NSWindow?) -> NSRect? {
+            guard let window, window.isVisible, !isWindowDocked(window) else { return nil }
+            return window.frame
+        }
+        return SideWindowFrames(
+            library: detachedFrame(plexBrowserWindowController?.window),
+            projectM: detachedFrame(projectMWindowController?.window)
+        )
+    }
+
+    /// Detached side-window frames drawn from a Compact-Mode capture. The live windows are hidden in
+    /// Compact Mode, so `captureSideWindowFrames()` would see nothing; instead read each side
+    /// window's Compact-entry frame, carrying only those that were detached then (docked ones are
+    /// left to `applyDoubleSize()`'s target-mode docking). Frames were captured at the Large-UI
+    /// scale, matching the scale `restoreSideWindowFrames` re-applies them at.
+    private func sideWindowFrames(from snapshot: CompactWindowSnapshot?) -> SideWindowFrames {
+        guard let snapshot else { return SideWindowFrames() }
+        func detachedFrame(_ w: WindowSnapshot?) -> NSRect? {
+            guard let w, w.wasVisible, w.wasDetached else { return nil }
+            return w.frame
+        }
+        return SideWindowFrames(
+            library: detachedFrame(snapshot.library),
+            projectM: detachedFrame(snapshot.projectM)
+        )
+    }
+
+    private func restoreSideWindowFrames(_ frames: SideWindowFrames) {
+        if let frame = frames.library, let window = plexBrowserWindowController?.window, window.isVisible {
+            window.setFrame(frame, display: true)
+        }
+        if let frame = frames.projectM, let window = projectMWindowController?.window, window.isVisible {
+            window.setFrame(frame, display: true)
         }
     }
 
@@ -4738,28 +4863,51 @@ class WindowManager {
     /// Build a mode-dependent layout snapshot from a Compact-Mode capture, so the live UI switch
     /// can rebuild the regular windows without first re-showing them. Falls back to a live capture
     /// if no Compact snapshot exists.
-    private func modeDependentLayout(from snapshot: CompactWindowSnapshot?) -> ModeDependentLayoutSnapshot {
+    private func modeDependentLayout(from snapshot: CompactWindowSnapshot?,
+                                     collapsingLargeUI: Bool) -> ModeDependentLayoutSnapshot {
         guard let snapshot else { return captureModeDependentLayout() }
+
+        // The regular windows were snapshotted at Compact-Mode *entry*, so their frames still carry
+        // the Large-UI (1.5x) scale if it was active. performReloadUI re-applies Large UI after the
+        // rebuild, and applyDoubleSize scales the relative-sized stack/side windows off their
+        // *current* frame — so an already-1.5x frame would be scaled to 2.25x. Collapse those frames
+        // back to 1x here so the re-apply lands on a single 1.5x, matching the non-Compact path
+        // (which captures its frames *after* the 1x collapse). Main and EQ use absolute target sizes
+        // in applyDoubleSize, so they are left untouched.
+        let inverse: CGFloat = collapsingLargeUI ? (1.0 / 1.5) : 1.0
+        func collapsed(_ rect: NSRect?) -> NSRect? {
+            guard var rect else { return nil }
+            rect.size.width *= inverse
+            rect.size.height *= inverse
+            return rect
+        }
         func conv(_ w: WindowSnapshot?) -> UIWindowSnapshot? {
             guard let w else { return nil }
-            return UIWindowSnapshot(visible: w.wasVisible, frame: w.frame, isShadeMode: w.wasShadeMode)
+            return UIWindowSnapshot(visible: w.wasVisible, frame: w.frame,
+                                    normalFrame: w.normalFrame)
+        }
+        func convScaled(_ w: WindowSnapshot?) -> UIWindowSnapshot? {
+            guard let w else { return nil }
+            return UIWindowSnapshot(visible: w.wasVisible, frame: collapsed(w.frame) ?? w.frame,
+                                    normalFrame: collapsed(w.normalFrame))
         }
         return ModeDependentLayoutSnapshot(
             main: conv(snapshot.main),
-            playlist: conv(snapshot.playlist),
+            playlist: convScaled(snapshot.playlist),
             equalizer: conv(snapshot.equalizer),
-            library: conv(snapshot.library),
-            projectM: conv(snapshot.projectM),
-            spectrum: conv(snapshot.spectrum),
-            audioAnalysis: conv(snapshot.audioAnalysis),
-            waveform: conv(snapshot.waveform),
+            library: convScaled(snapshot.library),
+            projectM: convScaled(snapshot.projectM),
+            spectrum: convScaled(snapshot.spectrum),
+            audioAnalysis: convScaled(snapshot.audioAnalysis),
+            waveform: convScaled(snapshot.waveform),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
     }
 
     /// The actual mode-dependent window swap. Runs synchronously when not in Compact Mode, or as
     /// the `exitCompactMode` completion when it was — see `reloadUI(toModernUI:)`.
-    private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool) {
+    private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool,
+                                 restoreLargeUI: Bool, preservedSideFrames: SideWindowFrames) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
@@ -4772,6 +4920,15 @@ class WindowManager {
         (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
 
         recreateModeDependentLayout(snapshot)
+
+        // Re-apply Large UI (collapsed to 1x in reloadUI before the switch) now that the target-mode
+        // windows exist. This must happen *before* enterCompactMode() so the compact capture records
+        // the enlarged regular layout, not a 1x one. applyDoubleSize (via the isDoubleSize setter)
+        // also re-docks the side windows, so restore any preserved detached frames afterward.
+        if restoreLargeUI {
+            isDoubleSize = true
+            restoreSideWindowFrames(preservedSideFrames)
+        }
 
         // Restore Compact Mode last so it captures the freshly rebuilt window set, not stale state.
         if reenterCompact { enterCompactMode() }
@@ -4788,6 +4945,12 @@ class WindowManager {
     /// survives across switches, so no classic skin reload is needed here.
     private func prepareUIRuntime(for targetMode: PlayerUIMode) {
         if let family = targetMode.modernSkinFamily {
+            // Modern window sizes are derived from this global multiplier, so pin it to the
+            // current Large UI state before any modern controller is created — otherwise a
+            // stale value left over from a previous modern session would create the windows
+            // at the wrong scale. reloadUI collapses isDoubleSize to 1x before switching, so
+            // this is normally 1.0 here; Large UI is re-applied via applyDoubleSize afterward.
+            ModernSkinElements.sizeMultiplier = isDoubleSize ? 1.5 : 1.0
             ModernSkinEngine.shared.loadPreferredSkin(for: family)
         } else {
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)

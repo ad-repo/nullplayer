@@ -4719,29 +4719,10 @@ class MenuActions: NSObject {
     }
 
     @objc func toggleDoubleSize() {
-        let wm = WindowManager.shared
-        if wm.isModernUIEnabled {
-            // Modern mode: live toggle works correctly
-            wm.isDoubleSize.toggle()
-        } else {
-            // Classic mode: show the dialog BEFORE touching the UI so it never distorts.
-            // Classic Double Size still requires a restart (unlike UI-mode switching, which is
-            // now live): toggle the flag only after the user confirms, then relaunch, so
-            // applicationWillTerminate → saveState() captures the new value.
-            let alert = NSAlert()
-            alert.messageText = "Restart Required"
-            alert.informativeText = "NullPlayer needs to restart to apply the size change. Restart now?"
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "Restart")
-            alert.addButton(withTitle: "Cancel")
-            
-            if alert.runModal() == .alertFirstButtonReturn {
-                // Toggle first so applicationWillTerminate → saveState() captures the new value.
-                // applyDoubleSize() starts an async animation that never renders — app terminates first.
-                wm.isDoubleSize.toggle()
-                relaunchApp()
-            }
-        }
+        // Live toggle in both modern and classic UI — applyDoubleSize() rescales every
+        // window in place (classic windows self-scale their skin rendering from their bounds),
+        // so no restart is needed.
+        WindowManager.shared.isDoubleSize.toggle()
     }
 
     @objc func toggleWindowLayoutLock() {

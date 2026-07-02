@@ -78,7 +78,7 @@ class ResizableWindow: NSWindow {
         let titleBarHeight = max(20, size.height * 0.12)
         let isInTitleBar = windowPoint.y > size.height - titleBarHeight
         
-        // Exclude top-right corner where window control buttons are (close, shade, minimize)
+        // Exclude top-right corner where window control buttons are (close, minimize)
         // Scale-aware: buttons span ~38 skin pixels from right edge, which scales with window
         let buttonAreaWidth = max(40, size.width * 0.14)
         let isInButtonArea = isInTitleBar && windowPoint.x > size.width - buttonAreaWidth

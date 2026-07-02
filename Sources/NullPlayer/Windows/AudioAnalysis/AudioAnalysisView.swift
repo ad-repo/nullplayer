@@ -94,10 +94,8 @@ final class AudioAnalysisView: NSView {
             bounds: bounds,
             isActive: window?.isKeyWindow ?? true,
             pressedButton: pressedButton,
-            isShadeMode: false,
             controlScale: WindowManager.shared.playlistChromeScale,
-            title: "AUDIO ANALYZER",
-            showsShade: false
+            title: "AUDIO ANALYZER"
         )
         context.restoreGState()
 

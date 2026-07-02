@@ -99,7 +99,6 @@ class WaveformView: BaseWaveformView {
             bounds: bounds,
             isActive: isActive,
             pressedButton: pressedClose ? .close : nil,
-            isShadeMode: false,
             controlScale: WindowManager.shared.playlistChromeScale,
             title: "WAVEFORM"
         )

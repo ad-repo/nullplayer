@@ -42,9 +42,6 @@ class EQView: NSView {
     /// Region manager for hit testing
     private let regionManager = RegionManager.shared
     
-    /// Shade mode state
-    private(set) var isShadeMode = false
-    
     // MARK: - Layout Constants
     
     private struct Layout {
@@ -75,11 +72,9 @@ class EQView: NSView {
         
         // Window control buttons - draw positions (in title bar, from right to left)
         static let closeRect = NSRect(x: 264, y: 3, width: 9, height: 9)
-        static let shadeRect = NSRect(x: 254, y: 3, width: 9, height: 9)  // Toggle shade mode
-        
+
         // Enlarged hit-test areas for easier clicking
         static let closeHitRect = NSRect(x: 257, y: 0, width: 18, height: 14)
-        static let shadeHitRect = NSRect(x: 248, y: 0, width: 9, height: 14)
     }
     
     // MARK: - Initialization
@@ -298,7 +293,7 @@ class EQView: NSView {
     
     /// Calculate scale factor based on current bounds vs original size
     private var scaleFactor: CGFloat {
-        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.baseEQSize
+        let originalSize = Skin.baseEQSize
         let scaleX = bounds.width / originalSize.width
         let scaleY = bounds.height / originalSize.height
         return min(scaleX, scaleY)
@@ -306,7 +301,7 @@ class EQView: NSView {
     
     /// Convert a point from view coordinates to original (unscaled) coordinates
     private func convertToOriginalCoordinates(_ point: NSPoint) -> NSPoint {
-        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.baseEQSize
+        let originalSize = Skin.baseEQSize
         let scale = scaleFactor
         
         if scale == 1.0 {
@@ -326,25 +321,25 @@ class EQView: NSView {
     
     /// Get the original window size for hit testing
     private var originalWindowSize: NSSize {
-        return isShadeMode ? SkinElements.EQShade.windowSize : Skin.baseEQSize
+        return Skin.baseEQSize
     }
     
     // MARK: - Drawing
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
-        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.baseEQSize
+
+        let originalSize = Skin.baseEQSize
         let scale = scaleFactor
-        
+
         // Flip coordinate system to match skin's top-down coordinates
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
-        
+
         // When hiding title bars, shift content up to clip the title bar off the top
-        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
-        
+        let hidingTitleBar = WindowManager.shared.hideTitleBars
+
         // Apply scaling for resized window
         if scale != 1.0 {
             let scaledWidth = originalSize.width * scale
@@ -361,23 +356,18 @@ class EQView: NSView {
         } else if hidingTitleBar {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
-        
+
         let skin = WindowManager.shared.currentSkin
         let renderer = SkinRenderer(skin: skin ?? SkinLoader.shared.loadDefault())
-        
+
         let isActive = window?.isKeyWindow ?? true
-        
+
         // Use original bounds for drawing (scaling is applied via transform)
         let drawBounds = NSRect(origin: .zero, size: originalSize)
-        
-        if isShadeMode {
-            // Draw shade mode
-            renderer.drawEqualizerShade(in: context, bounds: drawBounds, isActive: isActive, pressedButton: pressedButton)
-        } else {
-            // Draw normal mode
-            drawNormalMode(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
-        }
-        
+
+        // Draw normal mode
+        drawNormalMode(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
+
         context.restoreGState()
 
         if isHighlighted {
@@ -386,7 +376,7 @@ class EQView: NSView {
         }
     }
 
-    /// Draw normal (non-shade) mode
+    /// Draw the window
     private func drawNormalMode(renderer: SkinRenderer, context: CGContext, isActive: Bool, drawBounds: NSRect) {
         // Draw EQ background
         renderer.drawEqualizerBackground(in: context, bounds: drawBounds, isActive: isActive)
@@ -513,18 +503,6 @@ class EQView: NSView {
         needsDisplay = true
     }
     
-    /// Set shade mode externally (e.g., from controller)
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        needsDisplay = true
-    }
-    
-    /// Toggle shade mode
-    private func toggleShadeMode() {
-        isShadeMode.toggle()
-        controller?.setShadeMode(isShadeMode)
-    }
-    
     // MARK: - Mouse Events
     
     /// Track if we're dragging the window (not a slider)
@@ -541,25 +519,6 @@ class EQView: NSView {
         let point = convertToOriginalCoordinates(viewPoint)
         let skinPoint = NSPoint(x: point.x, y: originalWindowSize.height - point.y)
         
-        // Check for double-click on title bar to toggle shade mode
-        if event.clickCount == 2 {
-            let isTitleBarDblClick: Bool
-            if WindowManager.shared.hideTitleBars {
-                isTitleBarDblClick = viewPoint.y >= bounds.height - 6
-            } else {
-                isTitleBarDblClick = skinPoint.y < Layout.titleBarHeight && skinPoint.x < bounds.width - 30
-            }
-            if isTitleBarDblClick {
-                toggleShadeMode()
-                return
-            }
-        }
-        
-        if isShadeMode {
-            handleShadeMouseDown(at: skinPoint, event: event)
-            return
-        }
-        
         // Window dragging is handled by macOS via isMovableByWindowBackground
         
         // Close button (checked first for priority, enlarged hit area) - skip when title bars hidden
@@ -569,12 +528,6 @@ class EQView: NSView {
             return
         }
         
-        // Shade button (toggle compact mode, enlarged hit area) - skip when title bars hidden
-        if !WindowManager.shared.hideTitleBars && Layout.shadeHitRect.contains(skinPoint) {
-            pressedButton = .shade
-            needsDisplay = true
-            return
-        }
         
         // Toggle buttons
         if Layout.onOffRect.contains(skinPoint) {
@@ -636,27 +589,6 @@ class EQView: NSView {
         }
     }
     
-    /// Handle mouse down in shade mode
-    private func handleShadeMouseDown(at skinPoint: NSPoint, event: NSEvent) {
-        // Check window control buttons - close first for priority (enlarged hit areas)
-        let closeRect = SkinElements.EQShade.HitPositions.closeButton
-        let shadeRect = SkinElements.EQShade.HitPositions.shadeButton
-        
-        if closeRect.contains(skinPoint) {
-            pressedButton = .close
-            needsDisplay = true
-            return
-        }
-        
-        if shadeRect.contains(skinPoint) {
-            pressedButton = .unshade
-            needsDisplay = true
-            return
-        }
-        
-        // Window dragging is handled by macOS via isMovableByWindowBackground
-    }
-    
     override func mouseDragged(with event: NSEvent) {
         // Handle slider dragging
         if draggingSlider != nil {
@@ -687,43 +619,13 @@ class EQView: NSView {
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToOriginalCoordinates(viewPoint)
         let skinPoint = NSPoint(x: point.x, y: originalWindowSize.height - point.y)
-        
-        if isShadeMode {
-            // Handle shade mode button release
-            if let pressed = pressedButton {
-                var shouldPerform = false
-                
-                switch pressed {
-                case .close:
-                    shouldPerform = SkinElements.EQShade.HitPositions.closeButton.contains(skinPoint)
-                    if shouldPerform {
-                        window?.close()
-                    }
-                case .unshade:
-                    shouldPerform = SkinElements.EQShade.HitPositions.shadeButton.contains(skinPoint)
-                    if shouldPerform {
-                        toggleShadeMode()
-                    }
-                default:
-                    break
-                }
-                
-                pressedButton = nil
-                needsDisplay = true
-            }
-            return
-        }
-        
-        // Handle button releases in normal mode
+
+        // Handle button releases
         if let pressed = pressedButton {
             switch pressed {
             case .close:
                 if Layout.closeHitRect.contains(skinPoint) {
                     window?.close()
-                }
-            case .shade:
-                if Layout.shadeHitRect.contains(skinPoint) {
-                    toggleShadeMode()
                 }
             case .eqPresets:
                 if Layout.presetsRect.contains(skinPoint) {
@@ -735,7 +637,7 @@ class EQView: NSView {
             pressedButton = nil
             needsDisplay = true
         }
-        
+
         draggingSlider = nil
         if isDraggingWindow {
             isDraggingWindow = false

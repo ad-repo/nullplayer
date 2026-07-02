@@ -249,6 +249,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - **Volume Normalization**: Consistent loudness (-14dB target)
 - **Reference Tuning**: Pitch-shift playback to a different reference frequency. Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog (source/target Hz, ±2400 cents). Applies to local files and HTTP streams; unavailable while casting because remote renderers have no local audio graph to insert the pitch shifter into. Persists across launches; the CLI also accepts `--tuning`, `--tuning-source`, and `--tuning-offset-cents` as session-only overrides.
 - **Playback Speed**: Tempo-preserving speed control from `0.25×` to `4.0×`, with presets plus Custom…. Applies to local files and HTTP streams; unavailable while casting. Persists across launches.
+- **Balance**: Stereo pan submenu (slider plus Left / Center / Right presets), backed by `engine.balance` and mirrored by the classic Balance Slider sprite. Gives the modern UI and menu-only/Compact workflows access to balance without a face slider. Persists across launches.
 - **Remember State on Quit**: `AppStateManager.restorePlaylistState` restores playlist contents and ordering; it intentionally does not restore the selected track, seek position, or playing state
 
 ### Sleep Timer
@@ -322,7 +323,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Scales all windows by 1.5x
 - Persists across restarts
 - **Modern UI**: toggles live instantly
-- **Classic UI**: requires a restart (dialog appears before any UI change)
+- **Classic UI**: toggles live instantly (no restart)
 
 ### Hide Title Bars (Modern UI)
 - Toggle via context menu or HT button on the main window
@@ -411,8 +412,7 @@ For comprehensive documentation, see:
 
 - **Drag & drop** files/folders onto the player to add them
 - **Right-click** anywhere for the context menu
-- **Double-click** title bars for shade mode
 - **Shift+Click** for multi-select in playlist/browser
 - **Cmd+J** to jump to currently playing track
 - Windows **dock automatically** when dragged near each other
-- **Large UI** (1.5x) is available in both modern and classic UI; classic requires restart
+- **Large UI** (1.5x) is available in both modern and classic UI; both toggle live instantly (no restart)

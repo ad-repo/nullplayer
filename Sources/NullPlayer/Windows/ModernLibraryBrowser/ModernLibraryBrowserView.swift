@@ -176,7 +176,6 @@ enum ModernBrowserSortOption: String, CaseIterable, Codable {
 
 enum LibraryBrowserButtonType {
     case close
-    case shade
 }
 
 // MARK: - Modern Library Browser View
@@ -523,9 +522,6 @@ class ModernLibraryBrowserView: NSView {
     private var libraryNameTextWidth: CGFloat = 0
     private var serverNameMaxWidth: CGFloat = 0
     private var libraryNameMaxWidth: CGFloat = 0
-    
-    // Shade mode
-    private(set) var isShadeMode = false
 
     /// Highlight state for drag-mode visual feedback
     private var isHighlighted = false
@@ -972,13 +968,12 @@ class ModernLibraryBrowserView: NSView {
         if browseMode.isHistoryMode {
             ensureHistoryHostingView()
         }
-        let isVisible = browseMode.isHistoryMode && !isShadeMode && !isArtOnlyMode
+        let isVisible = browseMode.isHistoryMode && !isArtOnlyMode
         historyHostingView?.isHidden = !isVisible
         updateEmbeddedSubviewFrames()
     }
 
     private func embeddedHistoryContentRect() -> NSRect {
-        guard !isShadeMode else { return .zero }
         var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let statusBarHeight = Layout.statusBarHeight
@@ -1000,7 +995,7 @@ class ModernLibraryBrowserView: NSView {
 
     /// Create/position/remove the embedded compact player bar to match the current mode.
     private func updateCompactPlayerBarFrame() {
-        guard compactMode && !isShadeMode else {
+        guard compactMode else {
             compactPlayerBar?.removeFromSuperview()
             compactPlayerBar = nil
             return
@@ -1087,48 +1082,6 @@ class ModernLibraryBrowserView: NSView {
         
         let skin = currentSkin()
         let mainOpacity = skin.resolvedOpacity(for: .mainWindow)
-        
-        if isShadeMode {
-            // Draw shade mode
-            renderer.drawWindowBackground(
-                in: bounds,
-                context: context,
-                adjacentEdges: adjacentEdges,
-                sharpCorners: sharpCorners,
-                backgroundOpacity: mainOpacity.background
-            )
-            renderer.drawWindowBorder(
-                in: bounds,
-                context: context,
-                adjacentEdges: adjacentEdges,
-                sharpCorners: sharpCorners,
-                occlusionSegments: edgeOcclusionSegments,
-                borderOpacity: mainOpacity.border
-            )
-            
-            context.saveGState()
-            context.setAlpha(mainOpacity.content)
-            // Draw title text centered (using renderer for image text support)
-            let shadeScale = ModernSkinElements.scaleFactor
-            let titleRect = NSRect(x: 0, y: 0, width: bounds.width / shadeScale, height: bounds.height / shadeScale)
-            renderer.drawTitleBar(in: titleRect, title: "NULLPLAYER LIBRARY", prefix: "library_", context: context)
-            
-            // Draw close and shade buttons (base space for renderer scaling)
-            let shadeBaseW = bounds.width / shadeScale
-            let shadeBaseH = bounds.height / shadeScale
-            let closeBtnRect = NSRect(x: shadeBaseW - 14, y: (shadeBaseH - 10) / 2, width: 10, height: 10)
-            let shadeBtnRect = NSRect(x: shadeBaseW - 26, y: (shadeBaseH - 10) / 2, width: 10, height: 10)
-            let closeState = pressedButton == .close ? "pressed" : "normal"
-            let shadeState = pressedButton == .shade ? "pressed" : "normal"
-            renderer.drawWindowControlButton("library_btn_close", state: closeState, in: closeBtnRect, context: context)
-            renderer.drawWindowControlButton("library_btn_shade", state: shadeState, in: shadeBtnRect, context: context)
-            context.restoreGState()
-            if isHighlighted {
-                NSColor.white.withAlphaComponent(0.15).setFill()
-                bounds.fill()
-            }
-            return
-        }
 
         // Fast path: scroll timer marks only server bar dirty — skip full window redraw.
         // Always fill the full background first (copy blend mode) so the layer is never
@@ -1176,7 +1129,7 @@ class ModernLibraryBrowserView: NSView {
         context.saveGState()
         context.setAlpha(mainOpacity.content)
         
-        // Title bar, close, shade buttons use base (unscaled) coordinates
+        // Title bar, close button use base (unscaled) coordinates
         // because the renderer's scaledRect() multiplies by scaleFactor
         let scale = ModernSkinElements.scaleFactor
         let baseWidth = bounds.width / scale
@@ -1189,13 +1142,10 @@ class ModernLibraryBrowserView: NSView {
             let titleBarRect = NSRect(x: 0, y: baseHeight - tbh, width: baseWidth, height: tbh)
             renderer.drawTitleBar(in: titleBarRect, title: "NULLPLAYER LIBRARY", prefix: "library_", context: context)
 
-            // Close and shade buttons in title bar (base space)
+            // Close button in title bar (base space)
             let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - tbh / 2 - 5, width: 10, height: 10)
-            let shadeBtnRect = NSRect(x: baseWidth - 26, y: baseHeight - tbh / 2 - 5, width: 10, height: 10)
             let closeState = pressedButton == .close ? "pressed" : "normal"
-            let shadeState = pressedButton == .shade ? "pressed" : "normal"
             renderer.drawWindowControlButton("library_btn_close", state: closeState, in: closeBtnRect, context: context)
-            renderer.drawWindowControlButton("library_btn_shade", state: shadeState, in: shadeBtnRect, context: context)
         }
         
         // Server bar (below title bar in screen coords)
@@ -1300,7 +1250,7 @@ class ModernLibraryBrowserView: NSView {
     var minimumCompactContentWidth: CGFloat {
         let skin = currentSkin()
         let m = ModernSkinElements.sizeMultiplier
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
 
         // Widest possible tab label across all sources (includes the YouTube "Channels" slot).
@@ -1324,7 +1274,7 @@ class ModernLibraryBrowserView: NSView {
         (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(tabBarRect)
         
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         
         // Sort indicator width on right
         let sortText = "Sort"
@@ -1456,7 +1406,7 @@ class ModernLibraryBrowserView: NSView {
             cachedServerBarFontSkinName != skinName ||
             cachedServerBarFontScale != currentScale ||
             cachedServerBarIsMetal != isMetal {
-            let font = skin.sideWindowFont(size: 11)
+            let font = skin.libraryFont(size: 11)
             cachedServerBarFont = font
             cachedServerBarFontSkinName = skinName
             cachedServerBarFontScale = currentScale
@@ -1945,7 +1895,7 @@ class ModernLibraryBrowserView: NSView {
             path.stroke()
         }
         
-        let font = skin.smallFont?.withSize(9) ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let font = skin.libraryFont(size: 9)
         let displayText = searchQuery.isEmpty ? "Type and press ↵ to search..." : searchQuery
         let textColor = searchQuery.isEmpty ? skin.textDimColor : skin.textColor
         let attrs: [NSAttributedString.Key: Any] = [
@@ -2386,7 +2336,7 @@ class ModernLibraryBrowserView: NSView {
         case .history: message = "No play history recorded yet"
         }
         
-        let font = skin.primaryFont?.withSize(10) ?? NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        let font = skin.libraryFont(size: 10)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
@@ -2424,7 +2374,7 @@ class ModernLibraryBrowserView: NSView {
             context.restoreGState()
         } else {
             let message = "No album art"
-            let font = skin.primaryFont?.withSize(14) ?? NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+            let font = skin.libraryFont(size: 14)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
@@ -3356,12 +3306,6 @@ class ModernLibraryBrowserView: NSView {
         return closeRect.contains(point)
     }
     
-    private func hitTestShadeButton(at point: NSPoint) -> Bool {
-        let m = ModernSkinElements.sizeMultiplier
-        let shadeRect = NSRect(x: bounds.width - 31 * m, y: bounds.height - Layout.titleBarHeight, width: 11 * m, height: Layout.titleBarHeight)
-        return shadeRect.contains(point)
-    }
-    
     private func hitTestServerBar(at point: NSPoint) -> Bool {
         let serverBarY = topChromeBottomY - Layout.serverBarHeight
         return point.y >= serverBarY && point.y < topChromeBottomY
@@ -3373,7 +3317,7 @@ class ModernLibraryBrowserView: NSView {
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return nil }
 
         let skin = currentSkin()
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         let sortText = "Sort"
         let sortAttrs: [NSAttributedString.Key: Any] = [.font: font]
         let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
@@ -3400,7 +3344,7 @@ class ModernLibraryBrowserView: NSView {
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return false }
         
         let skin = currentSkin()
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         let sortText = "Sort"
         let sortAttrs: [NSAttributedString.Key: Any] = [.font: font]
         let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
@@ -3636,7 +3580,7 @@ class ModernLibraryBrowserView: NSView {
 
         // When HT is on, record drag start point early so mouseDragged can move the window
         // from anywhere (title bar is hidden so there's no dedicated drag handle)
-        if WindowManager.shared.hideTitleBars && !isShadeMode {
+        if WindowManager.shared.hideTitleBars {
             windowDragStartPoint = event.locationInWindow
             if let window = window {
                 WindowManager.shared.windowWillPrimeDragging(window)
@@ -3644,19 +3588,9 @@ class ModernLibraryBrowserView: NSView {
             }
         }
 
-        // Double-click title bar for shade (only when titlebar is visible)
-        if event.clickCount == 2 && hitTestTitleBar(at: point) && !WindowManager.shared.hideTitleBars {
-            toggleShadeMode(); return
-        }
-        
-        if isShadeMode {
-            handleShadeMouseDown(at: point, event: event); return
-        }
-        
         // Window buttons (only when titlebar is visible)
         if !WindowManager.shared.hideTitleBars {
             if hitTestCloseButton(at: point) { pressedButton = .close; needsDisplay = true; return }
-            if hitTestShadeButton(at: point) { pressedButton = .shade; needsDisplay = true; return }
         }
         
         // Server bar (check before content area so ART/VIS/source buttons work)
@@ -3760,13 +3694,6 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
-    private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
-        if hitTestCloseButton(at: point) { pressedButton = .close; needsDisplay = true; return }
-        if hitTestShadeButton(at: point) { pressedButton = .shade; needsDisplay = true; return }
-        isDraggingWindow = true; windowDragStartPoint = event.locationInWindow
-        if let window = window { WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true) }
-    }
-    
     override func mouseDragged(with event: NSEvent) {
         if let columnId = resizingColumnId, let group = resizingColumnGroup {
             let point = convert(event.locationInWindow, from: nil)
@@ -3777,7 +3704,7 @@ class ModernLibraryBrowserView: NSView {
         }
 
         // When HT is on, lazily start window drag on first mouseDragged (handles content-area drags)
-        if !isDraggingWindow && WindowManager.shared.hideTitleBars && !isShadeMode {
+        if !isDraggingWindow && WindowManager.shared.hideTitleBars {
             isDraggingWindow = true
             if let window = window { WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true) }
         }
@@ -3806,28 +3733,15 @@ class ModernLibraryBrowserView: NSView {
             didPrimeWindowDragHold = false
         }
         isDraggingScrollbar = false
-        
-        if isShadeMode { handleShadeMouseUp(at: point); return }
-        
+
         if let pressed = pressedButton {
             switch pressed {
             case .close: if hitTestCloseButton(at: point) { window?.close() }
-            case .shade: if hitTestShadeButton(at: point) { toggleShadeMode() }
             }
             pressedButton = nil; needsDisplay = true
         }
     }
-    
-    private func handleShadeMouseUp(at point: NSPoint) {
-        if let pressed = pressedButton {
-            switch pressed {
-            case .close: if hitTestCloseButton(at: point) { window?.close() }
-            case .shade: if hitTestShadeButton(at: point) { toggleShadeMode() }
-            }
-            pressedButton = nil; needsDisplay = true
-        }
-    }
-    
+
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if hitTestColumnResize(at: point) != nil {
@@ -4221,7 +4135,7 @@ class ModernLibraryBrowserView: NSView {
         
         // ART toggle - match drawn button positions
         let skin = currentSkin()
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         let fontAttrs: [NSAttributedString.Key: Any] = [.font: font]
         let artTextWidth = "ART".size(withAttributes: fontAttrs).width
         let artBtnWidth = artTextWidth + 16 * m
@@ -7313,18 +7227,6 @@ class ModernLibraryBrowserView: NSView {
 
     func skinDidChange() { modernSkinDidChange() }
 
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        updateHistoryHostingVisibility()
-        needsDisplay = true
-    }
-    
-    private func toggleShadeMode() {
-        guard !compactMode else { return }
-        isShadeMode.toggle()
-        controller?.setShadeMode(isShadeMode)
-    }
-    
     @objc private func plexStateDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, case .plex = self.currentSource else { return }

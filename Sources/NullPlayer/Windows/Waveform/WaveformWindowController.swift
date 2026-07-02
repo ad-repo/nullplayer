@@ -6,8 +6,6 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
     /// Close + reopen should restore the default frame once. `orderOut` hides should not.
     private var shouldResetFrameOnNextShow = true
 
-    private(set) var isShadeMode = false
-
     convenience init() {
         let window = ResizableWindow(
             contentRect: NSRect(origin: .zero, size: SkinElements.WaveformWindow.windowSize),
@@ -59,10 +57,6 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
 
     func skinDidChange() {
         waveformView.needsDisplay = true
-    }
-
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = false
     }
 
     func updateTrack(_ track: Track?) {

@@ -1220,9 +1220,6 @@ class PlexBrowserView: NSView {
     /// Cached skin renderer — avoids recreating (and discarding its whiteTextImage cache) every frame
     private var cachedRenderer: SkinRenderer?
     private var cachedRendererSkinPath: String?
-    
-    /// Shade mode state
-    private(set) var isShadeMode = false
 
     /// Highlight state for drag-mode visual feedback
     private var isHighlighted = false
@@ -2218,27 +2215,15 @@ class PlexBrowserView: NSView {
     // MARK: - Scaling Support
 
     /// Get the original window size for drawing and hit testing
-    /// Normal mode uses actual bounds (no scaling), shade mode uses fixed reference size
     private var originalWindowSize: NSSize {
-        if isShadeMode {
-            // Shade mode: uses fixed reference size for scaling
-            return NSSize(width: SkinElements.PlexBrowser.minSize.width, height: SkinElements.PlexBrowser.shadeHeight)
-        } else {
-            // Normal mode: use actual bounds, no scaling
-            return bounds.size
-        }
+        // Use actual bounds, no scaling
+        return bounds.size
     }
-    
+
     /// Calculate scale factor based on current bounds vs original (base) size
-    /// Normal mode has no scaling (1.0), shade mode scales uniformly
     private var scaleFactor: CGFloat {
-        if isShadeMode {
-            // Shade mode scales uniformly based on width
-            return bounds.width / SkinElements.PlexBrowser.minSize.width
-        } else {
-            // Normal mode: no scaling, UI stays at fixed pixel size
-            return 1.0
-        }
+        // No scaling, UI stays at fixed pixel size
+        return 1.0
     }
 
     private func currentPlaylistColors() -> PlaylistColors {
@@ -2283,17 +2268,13 @@ class PlexBrowserView: NSView {
         if browseMode.isHistoryMode {
             ensureHistoryHostingView()
         }
-        let isVisible = browseMode.isHistoryMode && !isShadeMode && !isArtOnlyMode
+        let isVisible = browseMode.isHistoryMode && !isArtOnlyMode
         historyHostingView?.isHidden = !isVisible
         updateHistoryHostingFrame()
     }
 
     private func updateHistoryHostingFrame() {
         guard let hostingView = historyHostingView else { return }
-        guard !isShadeMode else {
-            hostingView.frame = .zero
-            return
-        }
 
         let scale = scaleFactor
         let hiddenTitleBarOffset = WindowManager.shared.hideTitleBars ? Layout.titleBarHeight : 0
@@ -2310,27 +2291,13 @@ class PlexBrowserView: NSView {
     
     /// Convert a point from view coordinates to skin coordinates (top-left origin)
     private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
-        if isShadeMode {
-            // Shade mode uses uniform scaling with centering
-            let scale = scaleFactor
-            let originalSize = originalWindowSize
-            let scaledWidth = originalSize.width * scale
-            let scaledHeight = originalSize.height * scale
-            let offsetX = (bounds.width - scaledWidth) / 2
-            let offsetY = (bounds.height - scaledHeight) / 2
-            
-            let x = (point.x - offsetX) / scale
-            let y = originalSize.height - ((point.y - offsetY) / scale)
-            return NSPoint(x: x, y: y)
-        } else {
-            // Normal mode: no scaling, just flip Y coordinate (macOS bottom-left to skin top-left)
-            var skinPoint = NSPoint(x: point.x, y: bounds.height - point.y)
-            // When title bars are hidden, offset to match the shifted drawing
-            if WindowManager.shared.hideTitleBars {
-                skinPoint.y += Layout.titleBarHeight
-            }
-            return skinPoint
+        // No scaling, just flip Y coordinate (macOS bottom-left to skin top-left)
+        var skinPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        // When title bars are hidden, offset to match the shifted drawing
+        if WindowManager.shared.hideTitleBars {
+            skinPoint.y += Layout.titleBarHeight
         }
+        return skinPoint
     }
     
     // MARK: - Drawing
@@ -2362,33 +2329,17 @@ class PlexBrowserView: NSView {
         context.scaleBy(x: 1, y: -1)
         
         // When hiding title bars, shift content up to clip the title bar off the top
-        if WindowManager.shared.hideTitleBars && !isShadeMode {
+        if WindowManager.shared.hideTitleBars {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
-        
+
         // Use low interpolation for cleaner scaling of skin sprites (none can cause artifacts)
         context.interpolationQuality = .low
         
-        // Apply scaling for resized window (only shade mode uses scaling)
-        if isShadeMode && scale != 1.0 {
-            // Shade mode uses uniform scaling, centered
-            let scaledWidth = originalSize.width * scale
-            let scaledHeight = originalSize.height * scale
-            let offsetX = (bounds.width - scaledWidth) / 2
-            let offsetY = (bounds.height - scaledHeight) / 2
-            context.translateBy(x: offsetX, y: offsetY)
-            context.scaleBy(x: scale, y: scale)
-        }
-        // Normal mode: no transform needed, scale is always 1.0
-        
         // Use original bounds for drawing (scaling is applied via transform)
         let drawBounds = NSRect(origin: .zero, size: originalSize)
-        
-        if isShadeMode {
-            renderer.drawPlexBrowserShade(in: context, bounds: drawBounds, isActive: isActive,
-                                          pressedButton: pressedButton)
-        } else {
-            let colors = skin.playlistColors
+
+        let colors = skin.playlistColors
 
             // Fast path: scroll timer marks only server bar area dirty — skip tab bar + list
             // Must still draw the window chrome (borders) so the border tiles aren't missing in that row
@@ -2450,8 +2401,7 @@ class PlexBrowserView: NSView {
                     }
                 }
             }
-        }
-        
+
         context.restoreGState()
 
         if isHighlighted {
@@ -3690,7 +3640,7 @@ class PlexBrowserView: NSView {
         let visibleStart = max(0, Int(scrollOffset / itemHeight))
         let visibleEnd = min(displayItems.count, visibleStart + Int(contentHeight / itemHeight) + 2)
         
-        // Guard against invalid range during window resize/shade animation
+        // Guard against invalid range during window resize
         guard visibleStart < visibleEnd else {
             context.restoreGState()
             // Still draw alphabet index
@@ -6092,19 +6042,6 @@ class PlexBrowserView: NSView {
         }
     }
     
-    /// Set shade mode externally (e.g., from controller)
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        updateHistoryHostingVisibility()
-        needsDisplay = true
-    }
-    
-    /// Toggle shade mode
-    private func toggleShadeMode() {
-        guard controller?.isCompactMode != true else { return }
-        isShadeMode.toggle()
-        controller?.setShadeMode(isShadeMode)
-    }
     
     @objc private func plexStateDidChange() {
         DispatchQueue.main.async { [weak self] in
@@ -7247,14 +7184,6 @@ class PlexBrowserView: NSView {
         return closeRect.contains(skinPoint)
     }
     
-    /// Check if point hits shade button (enlarged hit area, full title bar height)
-    private func hitTestShadeButton(at skinPoint: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
-        let originalSize = originalWindowSize
-        let shadeRect = NSRect(x: originalSize.width - 31, y: 0, width: 11, height: 14)
-        return shadeRect.contains(skinPoint)
-    }
-    
     /// Check if point is in server bar
     private func hitTestServerBar(at skinPoint: NSPoint) -> Bool {
         let serverBarY = Layout.titleBarHeight
@@ -8055,17 +7984,6 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Check for double-click on title bar to toggle shade mode
-        if event.clickCount == 2 && hitTestTitleBar(at: skinPoint) {
-            toggleShadeMode()
-            return
-        }
-        
-        if isShadeMode {
-            handleShadeMouseDown(at: skinPoint, event: event)
-            return
-        }
-        
         // Check scrollbar FIRST (priority over column operations)
         if hitTestScrollbar(at: skinPoint) {
             isDraggingScrollbar = true
@@ -8121,13 +8039,7 @@ class PlexBrowserView: NSView {
             needsDisplay = true
             return
         }
-        
-        if hitTestShadeButton(at: skinPoint) {
-            pressedButton = .shade
-            needsDisplay = true
-            return
-        }
-        
+
         // Check server bar
         if hitTestServerBar(at: skinPoint) {
             // For local files, radio, or subsonic - always handle the click
@@ -8204,40 +8116,6 @@ class PlexBrowserView: NSView {
             }
         }
     }
-    
-    private func handleShadeMouseDown(at skinPoint: NSPoint, event: NSEvent) {
-        let originalSize = originalWindowSize
-        
-        // Check window control buttons - close first for priority (enlarged hit areas)
-        let closeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.HitPositions.closeButton.minX,
-                               y: SkinElements.PlaylistShade.HitPositions.closeButton.minY,
-                               width: SkinElements.PlaylistShade.HitPositions.closeButton.width,
-                               height: SkinElements.PlaylistShade.HitPositions.closeButton.height)
-        let shadeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.HitPositions.shadeButton.minX,
-                               y: SkinElements.PlaylistShade.HitPositions.shadeButton.minY,
-                               width: SkinElements.PlaylistShade.HitPositions.shadeButton.width,
-                               height: SkinElements.PlaylistShade.HitPositions.shadeButton.height)
-        
-        if closeRect.contains(skinPoint) {
-            pressedButton = .close
-            needsDisplay = true
-            return
-        }
-        
-        if shadeRect.contains(skinPoint) {
-            pressedButton = .shade
-            needsDisplay = true
-            return
-        }
-        
-        // Start window drag (shade mode is all title bar, so can undock)
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
-        }
-    }
-    
     private func handleServerBarClick(at skinPoint: NSPoint, event: NSEvent) {
         let originalSize = originalWindowSize
         let barWidth = originalSize.width - Layout.leftBorder - Layout.rightBorder
@@ -9601,12 +9479,7 @@ class PlexBrowserView: NSView {
         
         // End scrollbar dragging
         isDraggingScrollbar = false
-        
-        if isShadeMode {
-            handleShadeMouseUp(at: skinPoint)
-            return
-        }
-        
+
         // Handle button releases
         if let pressed = pressedButton {
             switch pressed {
@@ -9614,94 +9487,11 @@ class PlexBrowserView: NSView {
                 if hitTestCloseButton(at: skinPoint) {
                     window?.close()
                 }
-            case .shade:
-                if hitTestShadeButton(at: skinPoint) {
-                    toggleShadeMode()
-                }
             }
-            
+
             pressedButton = nil
             needsDisplay = true
         }
-    }
-    
-    private func handleShadeMouseUp(at skinPoint: NSPoint) {
-        let originalSize = originalWindowSize
-        if let pressed = pressedButton {
-            let closeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.HitPositions.closeButton.minX,
-                                   y: SkinElements.PlaylistShade.HitPositions.closeButton.minY,
-                                   width: SkinElements.PlaylistShade.HitPositions.closeButton.width,
-                                   height: SkinElements.PlaylistShade.HitPositions.closeButton.height)
-            let shadeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.HitPositions.shadeButton.minX,
-                                   y: SkinElements.PlaylistShade.HitPositions.shadeButton.minY,
-                                   width: SkinElements.PlaylistShade.HitPositions.shadeButton.width,
-                                   height: SkinElements.PlaylistShade.HitPositions.shadeButton.height)
-            
-            switch pressed {
-            case .close:
-                if closeRect.contains(skinPoint) {
-                    window?.close()
-                }
-            case .shade:
-                if shadeRect.contains(skinPoint) {
-                    toggleShadeMode()
-                }
-            }
-            
-            pressedButton = nil
-            needsDisplay = true
-        }
-    }
-    
-    override func scrollWheel(with event: NSEvent) {
-        guard !browseMode.isHistoryMode else {
-            super.scrollWheel(with: event)
-            return
-        }
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
-        let totalHeight = CGFloat(displayItems.count) * itemHeight
-        
-        let columns = currentVisibleColumns()
-        let group = currentColumnGroup()
-        
-        var needsRedraw = false
-        
-        // Handle horizontal scrolling (shift+scroll or trackpad horizontal gesture)
-        if !columns.isEmpty, (event.modifierFlags.contains(.shift) || abs(event.deltaX) > abs(event.deltaY)) {
-            let alphabetWidth = Layout.alphabetWidth
-            let availableWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - alphabetWidth
-            let columnsWidth = totalColumnsWidth(columns: columns, group: group)
-            let maxHorizontalScroll = max(0, columnsWidth - availableWidth)
-            
-            if maxHorizontalScroll > 0 {
-                let delta = event.modifierFlags.contains(.shift) ? event.deltaY : event.deltaX
-                horizontalScrollOffset = max(0, min(maxHorizontalScroll, horizontalScrollOffset - delta * 3))
-                needsRedraw = true
-            }
-        }
-        
-        // Handle vertical scrolling
-        if totalHeight > listHeight && abs(event.deltaY) > 0 && !event.modifierFlags.contains(.shift) {
-            scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - event.deltaY * 3))
-            needsRedraw = true
-        }
-        
-        if needsRedraw {
-            // Only redraw the list area and scrollbar, not the entire view
-            // This prevents tabs and server bar from shimmering during scroll
-            let scale = bounds.width / originalWindowSize.width
-            let scaledListY = bounds.height - (listY + listHeight) * scale
-            let scaledListHeight = (listHeight + Layout.statusBarHeight) * scale
-            let listRect = NSRect(x: 0, y: scaledListY,
-                                 width: bounds.width, height: scaledListHeight)
-            setNeedsDisplay(listRect)
-        }
-        // Trigger next-page load when scrolled near bottom of a local paginated list
-        if case .local = currentSource { loadNextLocalPageIfNeeded(listHeight: listHeight) }
     }
 
     private func loadNextLocalPageIfNeeded(listHeight: CGFloat) {

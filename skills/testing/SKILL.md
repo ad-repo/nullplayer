@@ -112,9 +112,9 @@ UI tests use Apple's XCUITest framework. Tests are consolidated to minimize app 
 |-------|-------|----------|
 | `MainWindowTests` | 2 | Transport controls, sliders, toggles, keyboard shortcuts, drag, context menu |
 | `PlaylistTests` | 2 | Window, buttons, keyboard shortcuts, scrolling, drag, context menu |
-| `EqualizerTests` | 2 | On/off toggle, presets, sliders, drag, context menu, shade mode |
-| `PlexBrowserTests` | 2 | Tabs, content, scrolling, drag, resize, context menu, shade mode |
-| `VisualizationTests` | 2 | Preset navigation, fullscreen, hard cuts, drag, resize, context menu, shade mode |
+| `EqualizerTests` | 2 | On/off toggle, presets, sliders, drag, context menu |
+| `PlexBrowserTests` | 2 | Tabs, content, scrolling, drag, resize, context menu |
+| `VisualizationTests` | 2 | Preset navigation, fullscreen, hard cuts, drag, resize, context menu |
 | `IntegrationTests` | 3 | Multi-window workflows, docking, keyboard shortcuts, toggle persistence |
 
 **Example Test:**

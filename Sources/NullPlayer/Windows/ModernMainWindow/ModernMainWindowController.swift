@@ -11,12 +11,6 @@ class ModernMainWindowController: NSWindowController, MainWindowProviding {
     
     private var modernView: ModernMainWindowView!
     
-    /// Whether the window is in shade mode
-    private(set) var isShadeMode = false
-    
-    /// Stored normal mode frame for restoration
-    private var normalModeFrame: NSRect?
-    
     // MARK: - Initialization
     
     convenience init() {
@@ -105,57 +99,6 @@ class ModernMainWindowController: NSWindowController, MainWindowProviding {
         modernView.needsDisplay = true
     }
     
-    func toggleShadeMode() {
-        setShadeMode(!isShadeMode)
-    }
-    
-    // MARK: - Shade Mode
-    
-    /// Shade mode height: title bar (14) + seek (6) + transport row (28) + padding = ~18px base * scale
-    static var shadeHeight: CGFloat { 18 * ModernSkinElements.scaleFactor }
-    
-    func setShadeMode(_ enabled: Bool) {
-        guard let window = window else { return }
-        
-        isShadeMode = enabled
-        
-        if enabled {
-            normalModeFrame = window.frame
-            
-            let shadeSize = NSSize(width: ModernSkinElements.mainWindowSize.width,
-                                   height: Self.shadeHeight)
-            let newFrame = NSRect(
-                x: window.frame.origin.x,
-                y: window.frame.origin.y + window.frame.height - shadeSize.height,
-                width: shadeSize.width,
-                height: shadeSize.height
-            )
-            
-            window.setFrame(newFrame, display: true, animate: true)
-            modernView.frame = NSRect(origin: .zero, size: shadeSize)
-        } else {
-            let normalSize = ModernSkinElements.mainWindowSize
-            let newFrame: NSRect
-            
-            if let storedFrame = normalModeFrame {
-                newFrame = storedFrame
-            } else {
-                newFrame = NSRect(
-                    x: window.frame.origin.x,
-                    y: window.frame.origin.y + window.frame.height - normalSize.height,
-                    width: normalSize.width,
-                    height: normalSize.height
-                )
-            }
-            
-            window.setFrame(newFrame, display: true, animate: true)
-            modernView.frame = NSRect(origin: .zero, size: normalSize)
-            normalModeFrame = nil
-        }
-        
-        modernView.isShadeMode = isShadeMode
-        modernView.needsDisplay = true
-    }
 }
 
 // MARK: - NSWindowDelegate

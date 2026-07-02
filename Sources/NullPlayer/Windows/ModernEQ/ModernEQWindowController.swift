@@ -8,14 +8,8 @@ import AppKit
 class ModernEQWindowController: NSWindowController, EQWindowProviding {
     
     // MARK: - Properties
-    
+
     private var eqView: ModernEQView!
-    
-    /// Whether the window is in shade mode
-    private(set) var isShadeMode = false
-    
-    /// Stored normal mode frame for restoration
-    private var normalModeFrame: NSRect?
     
     // MARK: - Initialization
     
@@ -77,53 +71,6 @@ class ModernEQWindowController: NSWindowController, EQWindowProviding {
         eqView.skinDidChange()
     }
     
-    // MARK: - Shade Mode
-    
-    func setShadeMode(_ enabled: Bool) {
-        guard let window = window else { return }
-        
-        isShadeMode = enabled
-        
-        if enabled {
-            // Store current frame for restoration
-            normalModeFrame = window.frame
-            
-            // Calculate new shade mode frame (keep width, reduce height)
-            let shadeHeight = ModernSkinElements.eqShadeHeight
-            let newFrame = NSRect(
-                x: window.frame.origin.x,
-                y: window.frame.origin.y + window.frame.height - shadeHeight,
-                width: window.frame.width,
-                height: shadeHeight
-            )
-            
-            // Resize window
-            window.setFrame(newFrame, display: true, animate: true)
-            eqView.frame = NSRect(origin: .zero, size: newFrame.size)
-        } else {
-            // Restore normal mode frame
-            let newFrame: NSRect
-            
-            if let storedFrame = normalModeFrame {
-                newFrame = storedFrame
-            } else {
-                let normalSize = ModernSkinElements.eqWindowSize
-                newFrame = NSRect(
-                    x: window.frame.origin.x,
-                    y: window.frame.origin.y + window.frame.height - normalSize.height,
-                    width: normalSize.width,
-                    height: normalSize.height
-                )
-            }
-            
-            // Resize window
-            window.setFrame(newFrame, display: true, animate: true)
-            eqView.frame = NSRect(origin: .zero, size: newFrame.size)
-            normalModeFrame = nil
-        }
-        
-        eqView.setShadeMode(enabled)
-    }
 }
 
 // MARK: - NSWindowDelegate

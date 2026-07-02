@@ -197,20 +197,22 @@ All font sizes are **unscaled base values**. The engine multiplies by `window.sc
 | `marqueeSize` | Scrolling title text | 12.7 |
 | `playlistSize` | Playlist track list | 8 |
 
-### Using the Bundled Font
+### Default Font (System Font)
 
-The app ships with **Departure Mono** (SIL OFL license):
+The modern/metal UI renders text in the **macOS system font**, not a retro bitmap font.
+Historically the bundled **Departure Mono** was the default, but `ModernSkinFont.resolveFont`
+now deliberately **skips** `DepartureMono-Regular` (the "lo-fi" default) and substitutes
+`NSFont.systemFont`. Numeric displays (the time/track digits) fall back to
+`NSFont.monospacedDigitSystemFont` so digits stay aligned. Existing skin JSONs can still list
+`"primaryName": "DepartureMono-Regular"` for compatibility — it just resolves to the system font.
 
-```json
-"fonts": {
-    "primaryName": "DepartureMono-Regular",
-    "fallbackName": "Menlo"
-}
-```
+This substitution happens in one place (`ModernSkinFont.resolveFont`), so every modern window
+(main, playlist, EQ, spectrum, library) picks it up automatically.
 
 ### Using a Custom Font
 
-Include a TTF/OTF in `fonts/` and reference by PostScript name:
+Include a TTF/OTF in `fonts/` and reference it by PostScript name. Any `primaryName` **other than
+the lo-fi default** is honored as-is, so a real custom font keeps the skin's identity:
 
 ```json
 "fonts": {
@@ -519,7 +521,7 @@ This section documents the repeatable pattern for creating modern-skinned versio
 
 4. **Add conformance to existing classic controller** -- The classic controller already has the required methods; just add the protocol conformance declaration.
 
-5. **Create `Windows/Modern{Window}/Modern{Window}WindowController.swift`** -- Borderless window, shade mode, fullscreen, `NSWindowDelegate` for docking, conforms to the protocol. Zero classic skin imports.
+5. **Create `Windows/Modern{Window}/Modern{Window}WindowController.swift`** -- Borderless window, fullscreen, `NSWindowDelegate` for docking, conforms to the protocol. Zero classic skin imports.
 
 6. **Create `Windows/Modern{Window}/Modern{Window}View.swift`** -- Compose `ModernSkinRenderer` methods for chrome (`drawWindowBackground`, `drawWindowBorder`, `drawTitleBar`, `drawWindowControlButton`), skin change observation via `ModernSkinDidChange` notification. Zero classic skin imports. Note: `GridBackgroundLayer` is only used in the main window; sub-windows use solid backgrounds.
 

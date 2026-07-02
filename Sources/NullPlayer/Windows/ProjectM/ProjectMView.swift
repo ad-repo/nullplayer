@@ -18,9 +18,6 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
     
     /// The OpenGL visualization view
     private(set) var visualizationGLView: VisualizationGLView?
-    
-    /// Shade mode state
-    private(set) var isShadeMode = false
 
     /// Fullscreen mode state (hides window chrome)
     private(set) var isFullscreen = false
@@ -233,7 +230,7 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
         // Simply flip Y coordinate - no scaling needed for resizable window
         var skinPoint = NSPoint(x: point.x, y: bounds.height - point.y)
         // When title bars are hidden, offset to match the shifted drawing
-        if WindowManager.shared.hideTitleBars && !isShadeMode {
+        if WindowManager.shared.hideTitleBars {
             skinPoint.y += Layout.titleBarHeight
         }
         return skinPoint
@@ -262,13 +259,13 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
         context.scaleBy(x: 1, y: -1)
         
         // When hiding title bars, shift content up to clip the title bar off the top
-        if WindowManager.shared.hideTitleBars && !isShadeMode {
+        if WindowManager.shared.hideTitleBars {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
         
         // Draw window chrome at actual window bounds (no scaling - chrome tiles to fill)
         renderer.drawProjectMWindow(in: context, bounds: bounds, isActive: isActive,
-                                    pressedButton: pressedButton, isShadeMode: isShadeMode,
+                                    pressedButton: pressedButton,
                                     controlScale: WindowManager.shared.playlistChromeScale)
         
         context.restoreGState()
@@ -292,8 +289,6 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
     
     /// Handle PCM data notification from audio tap (called on audio thread for low latency)
     private func handlePCMUpdate(_ notification: Notification) {
-        guard !isShadeMode else { return }
-
         guard let userInfo = notification.userInfo,
               let pcm = userInfo["pcm"] as? [Float] else { return }
 
@@ -304,8 +299,6 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
 
     /// Handle spectrum data notification from audio engine (called on audio thread for low latency)
     private func handleSpectrumUpdate(_ notification: Notification) {
-        guard !isShadeMode else { return }
-
         guard let userInfo = notification.userInfo,
               let spectrum = userInfo["spectrum"] as? [Float] else { return }
 
@@ -331,27 +324,6 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
         needsDisplay = true
     }
     
-    /// Set shade mode externally (e.g., from controller)
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        if enabled || isPresetRatingOverlayVisible {
-            hidePresetRatingOverlay()
-        }
-        
-        // Show/hide visualization view
-        visualizationGLView?.isHidden = enabled
-        
-        // Stop/start rendering based on mode
-        if enabled {
-            visualizationGLView?.stopRendering()
-        } else {
-            visualizationGLView?.startRendering()
-            updateVisualizationFrame()
-        }
-        
-        needsDisplay = true
-    }
-    
     /// Set fullscreen mode (hides window chrome)
     func setFullscreen(_ enabled: Bool) {
         isFullscreen = enabled
@@ -364,29 +336,19 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
         let visArea = calculateVisualizationArea()
         visualizationGLView?.frame = visArea
     }
-    
-    /// Toggle shade mode
-    private func toggleShadeMode() {
-        isShadeMode.toggle()
-        controller?.setShadeMode(isShadeMode)
-    }
-    
+
     /// Stop rendering (for window close/hide)
     func stopRendering() {
         visualizationGLView?.stopRendering()
     }
-    
+
     /// Start rendering
     func startRendering() {
-        if !isShadeMode {
-            visualizationGLView?.startRendering()
-        }
+        visualizationGLView?.startRendering()
     }
 
     func resumeRenderingAfterWindowTransition() {
-        if !isShadeMode {
-            visualizationGLView?.resumeRenderingAfterWindowTransition()
-        }
+        visualizationGLView?.resumeRenderingAfterWindowTransition()
     }
 
     // MARK: - Preset Ratings
@@ -482,23 +444,6 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
         return closeRect.contains(skinPoint)
     }
     
-    /// Check if point hits shade button (not currently visible in this design)
-    private func hitTestShadeButton(at skinPoint: NSPoint) -> Bool {
-        // Shade button not used in this design - double-click title bar instead
-        return false
-    }
-    
-    /// Hit test for shade mode close button (uses same title bar)
-    private func hitTestShadeCloseButton(at skinPoint: NSPoint) -> Bool {
-        // Same as normal mode since shade uses same title bar
-        return hitTestCloseButton(at: skinPoint)
-    }
-    
-    private func hitTestShadeShadeButton(at skinPoint: NSPoint) -> Bool {
-        // Shade button not used - double-click to toggle
-        return false
-    }
-    
     // MARK: - Mouse Events
     
     /// Allow clicking even when window is not active
@@ -509,28 +454,10 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
-        
-        // Check for double-click in top zone to toggle shade mode
-        if event.clickCount == 2 && hitTestTopZone(at: point) &&
-           !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
-            toggleShadeMode()
-            return
-        }
-
-        if isShadeMode {
-            handleShadeMouseDown(at: skinPoint, event: event)
-            return
-        }
 
         // Check window control buttons
         if hitTestCloseButton(at: skinPoint) {
             pressedButton = .close
-            needsDisplay = true
-            return
-        }
-
-        if hitTestShadeButton(at: skinPoint) {
-            pressedButton = .shade
             needsDisplay = true
             return
         }
@@ -550,30 +477,7 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
             showPresetRatingOverlay()
         }
     }
-    
-    /// Handle mouse down in shade mode
-    private func handleShadeMouseDown(at skinPoint: NSPoint, event: NSEvent) {
-        // Check window control buttons
-        if hitTestShadeCloseButton(at: skinPoint) {
-            pressedButton = .close
-            needsDisplay = true
-            return
-        }
-        
-        if hitTestShadeShadeButton(at: skinPoint) {
-            pressedButton = .shade
-            needsDisplay = true
-            return
-        }
-        
-        // Start window drag (shade mode is all title bar, so can undock)
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
-        }
-    }
-    
+
     override func mouseDragged(with event: NSEvent) {
         // Handle window dragging (moves docked windows too)
         if isDraggingWindow, let window = window {
@@ -602,12 +506,7 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
                 WindowManager.shared.windowDidFinishDragging(window)
             }
         }
-        
-        if isShadeMode {
-            handleShadeMouseUp(at: skinPoint)
-            return
-        }
-        
+
         // Handle button releases
         if let pressed = pressedButton {
             switch pressed {
@@ -615,31 +514,8 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
                 if hitTestCloseButton(at: skinPoint) {
                     window?.close()
                 }
-            case .shade:
-                if hitTestShadeButton(at: skinPoint) {
-                    toggleShadeMode()
-                }
             }
-            
-            pressedButton = nil
-            needsDisplay = true
-        }
-    }
-    
-    /// Handle mouse up in shade mode
-    private func handleShadeMouseUp(at skinPoint: NSPoint) {
-        if let pressed = pressedButton {
-            switch pressed {
-            case .close:
-                if hitTestShadeCloseButton(at: skinPoint) {
-                    window?.close()
-                }
-            case .shade:
-                if hitTestShadeShadeButton(at: skinPoint) {
-                    toggleShadeMode()
-                }
-            }
-            
+
             pressedButton = nil
             needsDisplay = true
         }

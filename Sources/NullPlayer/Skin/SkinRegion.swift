@@ -15,8 +15,7 @@ enum PlayerAction: Equatable {
     // Window controls
     case close
     case minimize
-    case shade
-    
+
     // Toggle controls
     case shuffle
     case `repeat`
@@ -112,11 +111,6 @@ class RegionManager {
         regions.append(ClickableRegion(
             rect: SkinElements.TitleBar.HitPositions.closeButton,
             action: .close,
-            cursor: .pointer
-        ))
-        regions.append(ClickableRegion(
-            rect: SkinElements.TitleBar.HitPositions.shadeButton,
-            action: .shade,
             cursor: .pointer
         ))
         regions.append(ClickableRegion(
@@ -452,7 +446,6 @@ class RegionManager {
              (.eject, .eject),
              (.close, .close),
              (.minimize, .minimize),
-             (.shade, .shade),
              (.shuffle, .shuffle),
              (.repeat, .repeat),
              (.toggleEQ, .toggleEQ),
@@ -478,11 +471,6 @@ class RegionManager {
         
         // Title bar is at the top, 14 pixels high, excluding buttons on the right
         return skinY < SkinElements.titleBarHeight && point.x < windowSize.width - 30
-    }
-    
-    /// Check if double-click should toggle shade mode
-    func shouldToggleShade(at point: NSPoint, windowType: WindowType, windowSize: NSSize) -> Bool {
-        return isInTitleBar(point, windowType: windowType, windowSize: windowSize)
     }
 }
 

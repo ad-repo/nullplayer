@@ -33,9 +33,6 @@ class PlaylistView: NSView {
     /// Region manager
     private let regionManager = RegionManager.shared
 
-    /// Shade mode state
-    private(set) var isShadeMode = false
-
     /// Button being pressed (for visual feedback)
     private var pressedButton: SkinRenderer.PlaylistButtonType?
 
@@ -237,7 +234,7 @@ class PlaylistView: NSView {
             if marqueeOffset >= cycleWidth {
                 marqueeOffset = 0
             }
-            if isShadeMode || playlistMarqueeLayer == nil {
+            if playlistMarqueeLayer == nil {
                 setNeedsDisplayForListArea()
             }
         }
@@ -329,8 +326,7 @@ class PlaylistView: NSView {
     }
 
     private func configurePlaylistMarqueeLayer(text: String, titleX: CGFloat, titleMaxWidth: CGFloat, rowRect: NSRect, color: NSColor) -> Bool {
-        guard !isShadeMode,
-              let marqueeLayer = playlistMarqueeLayer,
+        guard let marqueeLayer = playlistMarqueeLayer,
               titleMaxWidth > 0 else { return false }
         let listTop = Layout.titleBarHeight
         let listBottom = effectiveWindowSize.height - Layout.bottomBarHeight
@@ -392,11 +388,6 @@ class PlaylistView: NSView {
     }
 
     private func setNeedsDisplayForListArea() {
-        guard !isShadeMode else {
-            needsDisplay = true
-            return
-        }
-
         let scale = scaleFactor
         let effectiveSize = effectiveWindowSize
         let hiddenTitleOffset = WindowManager.shared.hideTitleBars ? Layout.titleBarHeight : 0
@@ -440,11 +431,7 @@ class PlaylistView: NSView {
 
     /// Get the original window size (unscaled base size)
     private var originalWindowSize: NSSize {
-        if isShadeMode {
-            return NSSize(width: SkinElements.Playlist.minSize.width, height: SkinElements.PlaylistShade.height)
-        } else {
-            return SkinElements.Playlist.minSize
-        }
+        return SkinElements.Playlist.minSize
     }
 
     /// Get the effective window size in unscaled skin coordinates.
@@ -470,7 +457,7 @@ class PlaylistView: NSView {
 
         // When title bars are hidden, the drawing is shifted up by titleBarHeight,
         // so we need to offset the skin coordinate to match
-        if WindowManager.shared.hideTitleBars && !isShadeMode {
+        if WindowManager.shared.hideTitleBars {
             y += Layout.titleBarHeight
         }
 
@@ -495,7 +482,7 @@ class PlaylistView: NSView {
         context.scaleBy(x: 1, y: -1)
 
         // When hiding title bars, shift content up to clip the title bar off the top
-        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+        let hidingTitleBar = WindowManager.shared.hideTitleBars
 
         // Apply width-based scaling (allows vertical expansion for more tracks)
         if scale != 1.0 {
@@ -509,40 +496,24 @@ class PlaylistView: NSView {
         // Use effective bounds for drawing (height can be taller than original for more tracks)
         let drawBounds = NSRect(origin: .zero, size: effectiveSize)
 
-        if isShadeMode {
-            let shadeSize = NSSize(width: effectiveSize.width, height: SkinElements.PlaylistShade.height)
-            renderer.drawPlaylistShade(in: context, bounds: NSRect(origin: .zero, size: shadeSize),
-                                       isActive: isActive, pressedButton: mapToButtonType(pressedButton))
-        } else {
-            // Calculate scroll position for scrollbar (0-1)
-            let scrollPosition = calculateScrollPosition()
+        // Calculate scroll position for scrollbar (0-1)
+        let scrollPosition = calculateScrollPosition()
 
-            // Draw window frame using skin sprites (SkinRenderer tiles to fill the space)
-            renderer.drawPlaylistWindow(in: context, bounds: drawBounds, isActive: isActive,
-                                        pressedButton: pressedButton, scrollPosition: scrollPosition)
+        // Draw window frame using skin sprites (SkinRenderer tiles to fill the space)
+        renderer.drawPlaylistWindow(in: context, bounds: drawBounds, isActive: isActive,
+                                    pressedButton: pressedButton, scrollPosition: scrollPosition)
 
-            // Draw track list in the content area
-            let colors = skin?.playlistColors ?? .default
-            drawTrackList(in: context, colors: colors, drawBounds: drawBounds)
+        // Draw track list in the content area
+        let colors = skin?.playlistColors ?? .default
+        drawTrackList(in: context, colors: colors, drawBounds: drawBounds)
 
-            // Bottom bar removed - no track info or playback time rendering needed
-        }
+        // Bottom bar removed - no track info or playback time rendering needed
 
         context.restoreGState()
 
         if isHighlighted {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
-        }
-    }
-
-    /// Map PlaylistButtonType to ButtonType for shade mode
-    private func mapToButtonType(_ plButton: SkinRenderer.PlaylistButtonType?) -> ButtonType? {
-        guard let btn = plButton else { return nil }
-        switch btn {
-        case .close: return .close
-        case .shade: return .unshade
-        default: return nil
         }
     }
 
@@ -1019,20 +990,6 @@ class PlaylistView: NSView {
         needsDisplay = true
     }
 
-    /// Set shade mode externally (e.g., from controller)
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        playlistMarqueeLayer?.isHidden = enabled
-        needsDisplay = true
-    }
-
-    /// Toggle shade mode
-    private func toggleShadeMode() {
-        isShadeMode.toggle()
-        playlistMarqueeLayer?.isHidden = isShadeMode
-        controller?.setShadeMode(isShadeMode)
-    }
-
     // MARK: - Hit Testing
 
     /// Check if point hits title bar (for dragging)
@@ -1053,14 +1010,6 @@ class PlaylistView: NSView {
         let effectiveSize = effectiveWindowSize
         let closeRect = NSRect(x: effectiveSize.width - 20, y: 0, width: 20, height: 14)
         return closeRect.contains(skinPoint)
-    }
-
-    /// Check if point hits shade button (enlarged hit area, full title bar height)
-    private func hitTestShadeButton(at skinPoint: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
-        let effectiveSize = effectiveWindowSize
-        let shadeRect = NSRect(x: effectiveSize.width - 31, y: 0, width: 11, height: 14)
-        return shadeRect.contains(skinPoint)
     }
 
     /// Check if point hits a bottom bar button, return which one
@@ -1147,26 +1096,9 @@ class PlaylistView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
 
-        // Check for double-click on title bar to toggle shade mode
-        if event.clickCount == 2 && hitTestTitleBar(at: skinPoint) {
-            toggleShadeMode()
-            return
-        }
-
-        if isShadeMode {
-            handleShadeMouseDown(at: skinPoint, event: event)
-            return
-        }
-
         // Check window control buttons
         if hitTestCloseButton(at: skinPoint) {
             pressedButton = .close
-            needsDisplay = true
-            return
-        }
-
-        if hitTestShadeButton(at: skinPoint) {
-            pressedButton = .shade
             needsDisplay = true
             return
         }
@@ -1199,39 +1131,6 @@ class PlaylistView: NSView {
             if let window = window {
                 WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
             }
-        }
-    }
-
-    /// Handle mouse down in shade mode
-    private func handleShadeMouseDown(at skinPoint: NSPoint, event: NSEvent) {
-        let effectiveSize = effectiveWindowSize
-        // Check window control buttons - close first for priority (enlarged hit areas)
-        let closeRect = NSRect(x: effectiveSize.width + SkinElements.PlaylistShade.HitPositions.closeButton.minX,
-                               y: SkinElements.PlaylistShade.HitPositions.closeButton.minY,
-                               width: SkinElements.PlaylistShade.HitPositions.closeButton.width,
-                               height: SkinElements.PlaylistShade.HitPositions.closeButton.height)
-        let shadeRect = NSRect(x: effectiveSize.width + SkinElements.PlaylistShade.HitPositions.shadeButton.minX,
-                               y: SkinElements.PlaylistShade.HitPositions.shadeButton.minY,
-                               width: SkinElements.PlaylistShade.HitPositions.shadeButton.width,
-                               height: SkinElements.PlaylistShade.HitPositions.shadeButton.height)
-
-        if closeRect.contains(skinPoint) {
-            pressedButton = .close
-            needsDisplay = true
-            return
-        }
-
-        if shadeRect.contains(skinPoint) {
-            pressedButton = .shade
-            needsDisplay = true
-            return
-        }
-
-        // Start window drag (shade mode is all title bar, so can undock)
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
         }
     }
 
@@ -1320,21 +1219,12 @@ class PlaylistView: NSView {
         // End scrollbar dragging
         isDraggingScrollbar = false
 
-        if isShadeMode {
-            handleShadeMouseUp(at: skinPoint)
-            return
-        }
-
         // Handle button releases
         if let pressed = pressedButton {
             switch pressed {
             case .close:
                 if hitTestCloseButton(at: skinPoint) {
                     window?.close()
-                }
-            case .shade:
-                if hitTestShadeButton(at: skinPoint) {
-                    toggleShadeMode()
                 }
             case .add:
                 if hitTestBottomButton(at: skinPoint) == .add {
@@ -1443,37 +1333,6 @@ class PlaylistView: NSView {
             }
         default:
             break
-        }
-    }
-
-    /// Handle mouse up in shade mode
-    private func handleShadeMouseUp(at skinPoint: NSPoint) {
-        let effectiveSize = effectiveWindowSize
-        if let pressed = pressedButton {
-            let closeRect = NSRect(x: effectiveSize.width + SkinElements.PlaylistShade.HitPositions.closeButton.minX,
-                                   y: SkinElements.PlaylistShade.HitPositions.closeButton.minY,
-                                   width: SkinElements.PlaylistShade.HitPositions.closeButton.width,
-                                   height: SkinElements.PlaylistShade.HitPositions.closeButton.height)
-            let shadeRect = NSRect(x: effectiveSize.width + SkinElements.PlaylistShade.HitPositions.shadeButton.minX,
-                                   y: SkinElements.PlaylistShade.HitPositions.shadeButton.minY,
-                                   width: SkinElements.PlaylistShade.HitPositions.shadeButton.width,
-                                   height: SkinElements.PlaylistShade.HitPositions.shadeButton.height)
-
-            switch pressed {
-            case .close:
-                if closeRect.contains(skinPoint) {
-                    window?.close()
-                }
-            case .shade:
-                if shadeRect.contains(skinPoint) {
-                    toggleShadeMode()
-                }
-            default:
-                break
-            }
-
-            pressedButton = nil
-            needsDisplay = true
         }
     }
 

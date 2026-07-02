@@ -7,46 +7,37 @@ import AppKit
 protocol MainWindowProviding: ModeDependentWindow {
     /// The underlying window
     var window: NSWindow? { get }
-    
-    /// Whether the window is in shade (compact) mode
-    var isShadeMode: Bool { get }
-    
+
     /// Whether the window is currently visible
     var isWindowVisible: Bool { get }
-    
+
     /// Show the window
     func showWindow(_ sender: Any?)
-    
+
     /// Update the displayed track info (title, artist, bitrate, etc.)
     func updateTrackInfo(_ track: Track?)
-    
+
     /// Update video track info display
     func updateVideoTrackInfo(title: String, artworkTrack: Track?)
-    
+
     /// Clear video track info and revert to audio display
     func clearVideoTrackInfo()
-    
+
     /// Update the time display
     func updateTime(current: TimeInterval, duration: TimeInterval)
-    
+
     /// Update playback state indicators (play/pause/stop)
     func updatePlaybackState()
-    
+
     /// Feed spectrum analyzer data for visualization
     func updateSpectrum(_ levels: [Float])
-    
-    /// Toggle shade (compact) mode
-    func toggleShadeMode()
 
-    /// Set shade mode explicitly when restoring a recreated window.
-    func setShadeMode(_ enabled: Bool)
-    
     /// Notify that the skin has changed and views should redraw
     func skinDidChange()
-    
+
     /// Notify that window visibility of sibling windows changed (for toggle button states)
     func windowVisibilityDidChange()
-    
+
     /// Mark the window content as needing redraw
     func setNeedsDisplay()
 

@@ -523,7 +523,7 @@ class AppStateManager {
             mainWindowFrame: wm.mainWindowController?.window.map { NSStringFromRect($0.frame) },
             playlistWindowFrame: wm.playlistWindowController?.window.map { NSStringFromRect($0.frame) },
             equalizerWindowFrame: wm.equalizerWindowController?.window.map { NSStringFromRect($0.frame) },
-            plexBrowserWindowFrame: wm.plexBrowserWindowFrame.map { NSStringFromRect($0) },
+            plexBrowserWindowFrame: wm.plexBrowserFrameForPersistence.map { NSStringFromRect($0) },
             // Don't save frame when fullscreen (it would be screen bounds)
             projectMWindowFrame: wm.isProjectMVisible && !wm.isProjectMFullscreen ? wm.projectMWindowFrame.map { NSStringFromRect($0) } : nil,
             spectrumWindowFrame: wm.spectrumWindowFrame.map { NSStringFromRect($0) },
@@ -821,7 +821,7 @@ class AppStateManager {
             }
             if state.isPlexBrowserVisible {
                 wm.showPlexBrowser(at: browserFrame)
-                
+
                 // Restore browse mode after the browser window is shown and view is ready
                 if let browseMode = savedBrowseMode {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -829,6 +829,10 @@ class AppStateManager {
                         NSLog("AppStateManager: Restored browser browse mode: %d", browseMode)
                     }
                 }
+            } else {
+                // Library was closed at quit: seed the remembered frame so the next open
+                // reuses the saved position instead of the default right-of-stack layout.
+                wm.seedPlexBrowserFrame(browserFrame)
             }
             if state.isProjectMVisible {
                 wm.showProjectM(at: projectMFrame)

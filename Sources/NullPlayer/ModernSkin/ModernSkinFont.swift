@@ -71,40 +71,48 @@ enum ModernSkinFont {
             size: config.bodySize ?? defaultBodySize
         )
         
+        // Time/track digits keep a monospaced feel (aligned digits) but modern, not lo-fi.
         let timeFont = resolveFont(
             name: config.primaryName,
             fallback: config.fallbackName,
-            size: config.timeSize ?? defaultTimeSize
+            size: config.timeSize ?? defaultTimeSize,
+            monospaced: true
         )
-        
+
         let smallFont = resolveFont(
             name: config.primaryName,
             fallback: config.fallbackName,
             size: config.smallSize ?? defaultSmallSize
         )
-        
+
         return (primaryFont, timeFont, smallFont)
     }
-    
-    /// Resolve a single font by name with fallback
-    static func resolveFont(name: String, fallback: String?, size: CGFloat) -> NSFont {
-        // Try primary font name
-        if let font = NSFont(name: name, size: size) {
-            return font
+
+    /// Resolve a single font by name with fallback.
+    ///
+    /// The bundled DepartureMono ("lo-fi") retro font is deliberately no longer used in the
+    /// modern/metal UI — it is substituted with a modern system font here so every modern
+    /// window (main, playlist, EQ, spectrum, library) picks up the change from one place.
+    /// Genuinely custom skin-provided fonts (any name other than the lo-fi default) are still
+    /// honored. `monospaced` chooses a monospaced-digit system font for numeric displays.
+    static func resolveFont(name: String, fallback: String?, size: CGFloat, monospaced: Bool = false) -> NSFont {
+        // A genuinely custom skin font (any name other than the lo-fi default) is honored,
+        // and its own fallback applies only if that custom font fails to load.
+        if name != defaultFontName {
+            if let font = NSFont(name: name, size: size) {
+                return font
+            }
+            if let fallbackName = fallback, fallbackName != defaultFontName,
+               let font = NSFont(name: fallbackName, size: size) {
+                return font
+            }
         }
-        
-        // Try fallback font name
-        if let fallbackName = fallback, let font = NSFont(name: fallbackName, size: size) {
-            return font
-        }
-        
-        // Try bundled default font
-        if let font = NSFont(name: defaultFontName, size: size) {
-            return font
-        }
-        
-        // Last resort: monospace system font
-        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+
+        // The bundled lo-fi default (and its companion fallback, e.g. Menlo) is deliberately
+        // replaced by a modern system font so every modern window picks it up from here.
+        return monospaced
+            ? NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
+            : NSFont.systemFont(ofSize: size)
     }
     
     // MARK: - Private

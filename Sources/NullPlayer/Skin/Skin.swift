@@ -99,10 +99,7 @@ struct Skin {
     
     /// Playlist minimum size scaled
     static let playlistMinSize = NSSize(width: baseMainSize.width * scaleFactor, height: baseMainSize.height * scaleFactor)
-    
-    /// Shade mode height scaled
-    static let shadeHeight: CGFloat = 14 * scaleFactor
-    
+
     // MARK: - Custom Window Image Helpers
     
     /// Get the library window image from this skin instance (loaded from .wsz)
@@ -148,11 +145,8 @@ struct PlaylistColors {
 
 struct WindowRegions {
     let mainNormal: [NSPoint]?
-    let mainShade: [NSPoint]?
     let eqNormal: [NSPoint]?
-    let eqShade: [NSPoint]?
     let playlistNormal: [NSPoint]?
-    let playlistShade: [NSPoint]?
 }
 
 // MARK: - NSColor Extension

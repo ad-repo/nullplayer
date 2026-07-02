@@ -29,10 +29,7 @@ class ModernPlaylistView: NSView {
     
     /// Scroll offset (in pixels)
     private var scrollOffset: CGFloat = 0
-    
-    /// Shade mode state
-    private(set) var isShadeMode = false
-    
+
     /// Button being pressed (for visual feedback)
     private var pressedButton: String?
     
@@ -67,7 +64,7 @@ class ModernPlaylistView: NSView {
     // MARK: - Layout Constants
     
     private var titleBarHeight: CGFloat {
-        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode
+        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window)
         return hide ? borderWidth : ModernSkinElements.playlistTitleBarHeight
     }
     private var bottomBarHeight: CGFloat { ModernSkinElements.playlistBottomBarHeight }
@@ -182,8 +179,8 @@ class ModernPlaylistView: NSView {
         let currentIndex = engine.currentIndex
         let tracks = engine.playlist
 
-        // Hide if no current track or in shade mode
-        guard currentIndex >= 0, currentIndex < tracks.count, !isShadeMode else {
+        // Hide if no current track
+        guard currentIndex >= 0, currentIndex < tracks.count else {
             marquee.isHidden = true
             marquee.text = ""
             return
@@ -376,19 +373,6 @@ class ModernPlaylistView: NSView {
             let closeState = (pressedButton == "playlist_btn_close") ? "pressed" : "normal"
             renderer.drawWindowControlButton("playlist_btn_close", state: closeState,
                                              in: closeBtnBaseRect, context: context)
-            
-            // Draw shade button
-            let shadeState = (pressedButton == "playlist_btn_shade") ? "pressed" : "normal"
-            renderer.drawWindowControlButton("playlist_btn_shade", state: shadeState,
-                                             in: shadeBtnBaseRect, context: context)
-        }
-        
-        if isShadeMode {
-            if isHighlighted {
-                NSColor.white.withAlphaComponent(0.15).setFill()
-                bounds.fill()
-            }
-            return
         }
 
         // Draw track list
@@ -413,12 +397,6 @@ class ModernPlaylistView: NSView {
         return NSRect(x: 261, y: (bounds.height / scale) - tbh / 2 - 5, width: 10, height: 10)
     }
 
-    private var shadeBtnBaseRect: NSRect {
-        let scale = ModernSkinElements.scaleFactor
-        let tbh = ModernSkinElements.titleBarBaseHeight
-        return NSRect(x: 249, y: (bounds.height / scale) - tbh / 2 - 5, width: 10, height: 10)
-    }
-    
     // MARK: - Track List Drawing
     
     private func drawTrackList(in context: CGContext) {
@@ -824,20 +802,6 @@ class ModernPlaylistView: NSView {
         needsDisplay = true
     }
 
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        trackMarqueeLayer?.isHidden = enabled
-        if !enabled {
-            // Clamp scroll offset to valid range after window resize
-            let listRect = calculateListArea()
-            let totalContentHeight = CGFloat(WindowManager.shared.audioEngine.playlist.count) * itemHeight
-            let maxScroll = max(0, totalContentHeight - listRect.height)
-            scrollOffset = max(0, min(maxScroll, scrollOffset))
-        }
-        updateMarqueeLayerPosition()
-        needsDisplay = true
-    }
-    
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
@@ -856,15 +820,7 @@ class ModernPlaylistView: NSView {
                                width: 14 * scale, height: 12 * scale)
         return closeRect.contains(point)
     }
-    
-    private func hitTestShadeButton(at point: NSPoint) -> Bool {
-        if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
-        let scale = ModernSkinElements.scaleFactor
-        let shadeRect = NSRect(x: bounds.width - 28 * scale, y: bounds.height - titleBarHeight + 2 * scale,
-                               width: 12 * scale, height: 12 * scale)
-        return shadeRect.contains(point)
-    }
-    
+
     private func hitTestBottomBar(at point: NSPoint) -> String? {
         guard point.y < bottomBarHeight else { return nil }
         let scale = ModernSkinElements.scaleFactor
@@ -913,34 +869,16 @@ class ModernPlaylistView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         
-        // Double-click title bar → shade mode
-        if event.clickCount == 2 && hitTestTitleBar(at: point) {
-            toggleShadeMode()
-            return
-        }
-        
-        if isShadeMode {
-            handleShadeMouseDown(at: point, event: event)
-            return
-        }
-        
         // Close button
         if hitTestCloseButton(at: point) {
             pressedButton = "playlist_btn_close"
             needsDisplay = true
             return
         }
-        
-        // Shade button
-        if hitTestShadeButton(at: point) {
-            pressedButton = "playlist_btn_shade"
-            needsDisplay = true
-            return
-        }
-        
+
         // Track list
         if let trackIndex = hitTestTrackList(at: point) {
-            if WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode {
+            if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
                 // Defer the click so the user can drag to undock; commit on mouseUp if no drag
                 pendingTrackClick = (trackIndex, event)
                 hasDraggedWindow = false
@@ -964,33 +902,14 @@ class ModernPlaylistView: NSView {
             }
             return
         }
-        
+
         // When title bar is hidden (docked + HT on), allow dragging from anywhere
-        if WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode {
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
             if let window = window {
                 WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
             }
-        }
-    }
-    
-    private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
-        if hitTestCloseButton(at: point) {
-            pressedButton = "playlist_btn_close"
-            needsDisplay = true
-            return
-        }
-        if hitTestShadeButton(at: point) {
-            pressedButton = "playlist_btn_shade"
-            needsDisplay = true
-            return
-        }
-        
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
         }
     }
     
@@ -1052,45 +971,18 @@ class ModernPlaylistView: NSView {
         }
         pendingTrackClick = nil
         hasDraggedWindow = false
-        
-        if isShadeMode {
-            handleShadeMouseUp(at: point)
-            return
-        }
-        
+
         if let pressed = pressedButton {
             switch pressed {
             case "playlist_btn_close":
                 if hitTestCloseButton(at: point) { window?.close() }
-            case "playlist_btn_shade":
-                if hitTestShadeButton(at: point) { toggleShadeMode() }
             default:
                 break
             }
-            
+
             pressedButton = nil
             needsDisplay = true
         }
-    }
-    
-    private func handleShadeMouseUp(at point: NSPoint) {
-        if let pressed = pressedButton {
-            switch pressed {
-            case "playlist_btn_close":
-                if hitTestCloseButton(at: point) { window?.close() }
-            case "playlist_btn_shade":
-                if hitTestShadeButton(at: point) { toggleShadeMode() }
-            default:
-                break
-            }
-            pressedButton = nil
-            needsDisplay = true
-        }
-    }
-    
-    private func toggleShadeMode() {
-        isShadeMode.toggle()
-        controller?.setShadeMode(isShadeMode)
     }
     
     override func scrollWheel(with event: NSEvent) {

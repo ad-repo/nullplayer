@@ -10,13 +10,7 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
     // MARK: - Properties
     
     private var spectrumView: ModernSpectrumView!
-    
-    /// Whether the window is in shade mode
-    private(set) var isShadeMode = false
-    
-    /// Stored normal mode frame for restoration
-    private var normalModeFrame: NSRect?
-    
+
     /// Custom fullscreen state (for borderless window)
     private var isCustomFullscreen = false
     private var preFullscreenFrame: NSRect?
@@ -100,55 +94,7 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
     func skinDidChange() {
         spectrumView.skinDidChange()
     }
-    
-    // MARK: - Shade Mode
-    
-    func setShadeMode(_ enabled: Bool) {
-        guard let window = window else { return }
-        
-        isShadeMode = enabled
-        
-        if enabled {
-            // Store current frame for restoration
-            normalModeFrame = window.frame
-            
-            // Calculate new shade mode frame (keep width, reduce height)
-            let shadeHeight = ModernSkinElements.spectrumShadeHeight
-            let newFrame = NSRect(
-                x: window.frame.origin.x,
-                y: window.frame.origin.y + window.frame.height - shadeHeight,
-                width: window.frame.width,
-                height: shadeHeight
-            )
-            
-            // Resize window
-            window.setFrame(newFrame, display: true, animate: true)
-            spectrumView.frame = NSRect(origin: .zero, size: newFrame.size)
-        } else {
-            // Restore normal mode frame
-            let newFrame: NSRect
-            
-            if let storedFrame = normalModeFrame {
-                newFrame = storedFrame
-            } else {
-                let normalSize = ModernSkinElements.spectrumWindowSize
-                newFrame = NSRect(
-                    x: window.frame.origin.x,
-                    y: window.frame.origin.y + window.frame.height - normalSize.height,
-                    width: normalSize.width,
-                    height: normalSize.height
-                )
-            }
-            
-            // Resize window
-            window.setFrame(newFrame, display: true, animate: true)
-            spectrumView.frame = NSRect(origin: .zero, size: newFrame.size)
-            normalModeFrame = nil
-        }
-        
-        spectrumView.setShadeMode(enabled)
-    }
-    
+
     // MARK: - Fullscreen
     
     /// Toggle fullscreen mode using custom fullscreen implementation for borderless windows.
@@ -164,11 +110,7 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
     
     private func enterCustomFullscreen() {
         guard let window = window else { return }
-        
-        if isShadeMode {
-            setShadeMode(false)
-        }
-        
+
         guard let screen = window.screen ?? NSScreen.main else { return }
         
         preFullscreenFrame = window.frame

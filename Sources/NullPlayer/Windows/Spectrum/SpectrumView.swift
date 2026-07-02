@@ -16,10 +16,7 @@ class SpectrumView: NSView {
     
     /// The Metal-based spectrum analyzer view
     private var spectrumAnalyzerView: SpectrumAnalyzerView?
-    
-    /// Shade mode state
-    private(set) var isShadeMode = false
-    
+
     /// Fullscreen mode state (hides window chrome)
     private(set) var isFullscreen = false
     
@@ -142,7 +139,7 @@ class SpectrumView: NSView {
     private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
         var skinPoint = NSPoint(x: point.x, y: bounds.height - point.y)
         // When title bars are hidden, offset to match the shifted drawing
-        if WindowManager.shared.hideTitleBars && !isShadeMode {
+        if WindowManager.shared.hideTitleBars {
             skinPoint.y += Layout.titleBarHeight
         }
         return skinPoint
@@ -171,13 +168,13 @@ class SpectrumView: NSView {
         context.scaleBy(x: 1, y: -1)
         
         // When hiding title bars, shift content up to clip the title bar off the top
-        if WindowManager.shared.hideTitleBars && !isShadeMode {
+        if WindowManager.shared.hideTitleBars {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
-        
+
         // Draw window chrome with an explicit title over the skin's decorative rails.
         renderer.drawSpectrumAnalyzerWindow(in: context, bounds: bounds, isActive: isActive,
-                                            pressedButton: pressedButton, isShadeMode: isShadeMode,
+                                            pressedButton: pressedButton,
                                             controlScale: WindowManager.shared.playlistChromeScale,
                                             title: "SPECTRUM ANALYZER")
         
@@ -204,7 +201,6 @@ class SpectrumView: NSView {
     
     /// Handle spectrum data notification from audio engine
     private func handleSpectrumUpdate(_ notification: Notification) {
-        guard !isShadeMode else { return }
         guard let window = window,
               window.isVisible,
               !window.isMiniaturized,
@@ -240,15 +236,6 @@ class SpectrumView: NSView {
     
     func skinDidChange() {
         spectrumAnalyzerView?.skinDidChange()
-        needsDisplay = true
-    }
-    
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        
-        // Hide/show spectrum view
-        spectrumAnalyzerView?.isHidden = enabled
-        
         needsDisplay = true
     }
     
@@ -313,20 +300,9 @@ class SpectrumView: NSView {
         if isFullscreen {
             return
         }
-        
+
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
-        
-        // Check for double-click on title bar to toggle shade mode
-        if event.clickCount == 2 && hitTestTitleBar(at: skinPoint) {
-            toggleShadeMode()
-            return
-        }
-        
-        if isShadeMode {
-            handleShadeMouseDown(at: skinPoint, event: event)
-            return
-        }
         
         // Check close button
         if hitTestCloseButton(at: skinPoint) {
@@ -356,21 +332,6 @@ class SpectrumView: NSView {
         windowDragStartPoint = event.locationInWindow
         if let window = window {
             WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
-        }
-    }
-    
-    private func handleShadeMouseDown(at skinPoint: NSPoint, event: NSEvent) {
-        if hitTestCloseButton(at: skinPoint) {
-            pressedButton = .close
-            needsDisplay = true
-            return
-        }
-        
-        // Start window drag
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
         }
     }
     
@@ -410,12 +371,7 @@ class SpectrumView: NSView {
                 WindowManager.shared.windowDidFinishDragging(window)
             }
         }
-        
-        if isShadeMode {
-            handleShadeMouseUp(at: skinPoint)
-            return
-        }
-        
+
         // Handle button releases
         if let pressed = pressedButton {
             switch pressed {
@@ -423,34 +379,11 @@ class SpectrumView: NSView {
                 if hitTestCloseButton(at: skinPoint) {
                     window?.close()
                 }
-            case .shade:
-                break  // Not used
             }
-            
+
             pressedButton = nil
             needsDisplay = true
         }
-    }
-    
-    private func handleShadeMouseUp(at skinPoint: NSPoint) {
-        if let pressed = pressedButton {
-            switch pressed {
-            case .close:
-                if hitTestCloseButton(at: skinPoint) {
-                    window?.close()
-                }
-            case .shade:
-                break
-            }
-            
-            pressedButton = nil
-            needsDisplay = true
-        }
-    }
-    
-    private func toggleShadeMode() {
-        isShadeMode.toggle()
-        controller?.setShadeMode(isShadeMode)
     }
     
     // MARK: - Keyboard Events
