@@ -13,6 +13,10 @@ protocol LibraryBrowserWindowProviding: ModeDependentWindow {
     
     /// Whether the window is in shade (compact) mode
     var isShadeMode: Bool { get }
+
+    /// Normal-mode (un-shaded) frame for position memory. Returns the stored normal frame
+    /// while shaded, otherwise the live window frame. nil if there is no window.
+    var frameForPositionMemory: NSRect? { get }
     
     /// Show the window
     func showWindow(_ sender: Any?)

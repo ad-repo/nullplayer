@@ -421,6 +421,10 @@ class WindowManager {
     /// Library browser window controller (classic or modern, accessed via protocol)
     private var plexBrowserWindowController: LibraryBrowserWindowProviding?
 
+    /// Last known Library window frame (shade-safe), remembered across hide/close so the
+    /// window reopens where the user left it instead of the default right-of-stack layout.
+    private var lastPlexBrowserFrame: NSRect?
+
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
     
@@ -882,8 +886,14 @@ class WindowManager {
         applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
         // Position window to match the vertical stack
         if let window = plexBrowserWindowController?.window {
-            if isNewWindow, let frame = restoredFrame, frame != .zero {
-                // Use restored frame from state restoration (first creation only)
+            // Priority: explicit restored frame (launch / mode-rebuild) → remembered session
+            // frame (reopen after hide/close) → default right-of-stack layout (first-ever open).
+            let chosenFrame: NSRect? = {
+                if let f = restoredFrame, f != .zero { return f }
+                if let f = lastPlexBrowserFrame, f != .zero { return f }
+                return nil
+            }()
+            if let frame = chosenFrame {
                 window.setFrame(frame, display: true)
             } else {
                 // Position to the right of the vertical stack
@@ -964,8 +974,33 @@ class WindowManager {
         return projectMWindowController?.window?.frame
     }
     
+    /// Cache the current library frame (shade-safe) before it is hidden/closed.
+    private func rememberPlexBrowserFrame() {
+        if let f = plexBrowserWindowController?.frameForPositionMemory, f != .zero {
+            lastPlexBrowserFrame = f
+        }
+    }
+
+    /// Public entry point so the library controllers can cache their frame from
+    /// `windowWillClose` (the red-button close path bypasses `togglePlexBrowser`).
+    func rememberPlexBrowserFrameBeforeClose() {
+        rememberPlexBrowserFrame()
+    }
+
+    /// Frame to persist at quit: live controller frame (valid even when orderOut-hidden, e.g.
+    /// Compact Mode) when the controller exists, else the last remembered frame (seeded/closed).
+    var plexBrowserFrameForPersistence: NSRect? {
+        plexBrowserWindowController?.frameForPositionMemory ?? lastPlexBrowserFrame
+    }
+
+    /// Seed the remembered frame at launch when the library is not reopened.
+    func seedPlexBrowserFrame(_ frame: NSRect?) {
+        if let f = frame, f != .zero { lastPlexBrowserFrame = f }
+    }
+
     func togglePlexBrowser() {
         if let controller = plexBrowserWindowController, controller.window?.isVisible == true {
+            rememberPlexBrowserFrame()
             controller.window?.orderOut(nil)
         } else {
             showPlexBrowser()
@@ -4414,6 +4449,11 @@ class WindowManager {
         equalizerWindowController = nil
         plexBrowserWindowController?.window?.close()
         plexBrowserWindowController = nil
+        // The close() above fires windowWillClose, which caches the old-mode library frame.
+        // Discard it so a classic frame can't leak onto the modern controller (or vice-versa);
+        // classic/modern differ in coordinates/size. An open library that must survive the
+        // switch is repositioned explicitly via recreateModeDependentLayout's snapshot frame.
+        lastPlexBrowserFrame = nil
         projectMWindowController?.window?.close()
         projectMWindowController = nil
         spectrumWindowController?.window?.close()

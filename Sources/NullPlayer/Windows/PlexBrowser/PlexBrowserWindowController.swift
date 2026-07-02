@@ -99,8 +99,16 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
         window?.contentView = browserView
     }
     
+    /// Normal-mode (un-shaded) frame for position memory. While shaded the window frame is
+    /// collapsed to shade height, so return the stashed normal frame instead.
+    var frameForPositionMemory: NSRect? {
+        guard let window else { return nil }
+        if isShadeMode, let normal = normalModeFrame { return normal }
+        return window.frame
+    }
+
     // MARK: - Shade Mode
-    
+
     /// Set shade mode (called from view)
     func setShadeMode(_ enabled: Bool) {
         guard let window = window else { return }
@@ -291,6 +299,7 @@ extension PlexBrowserWindowController: NSWindowDelegate {
     }
     
     func windowWillClose(_ notification: Notification) {
+        WindowManager.shared.rememberPlexBrowserFrameBeforeClose()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }
 
