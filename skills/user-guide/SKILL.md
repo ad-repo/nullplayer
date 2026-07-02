@@ -323,7 +323,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Scales all windows by 1.5x
 - Persists across restarts
 - **Modern UI**: toggles live instantly
-- **Classic UI**: requires a restart (dialog appears before any UI change)
+- **Classic UI**: toggles live instantly (no restart)
 
 ### Hide Title Bars (Modern UI)
 - Toggle via context menu or HT button on the main window
@@ -415,4 +415,4 @@ For comprehensive documentation, see:
 - **Shift+Click** for multi-select in playlist/browser
 - **Cmd+J** to jump to currently playing track
 - Windows **dock automatically** when dragged near each other
-- **Large UI** (1.5x) is available in both modern and classic UI; classic requires restart
+- **Large UI** (1.5x) is available in both modern and classic UI; both toggle live instantly (no restart)
