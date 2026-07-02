@@ -351,48 +351,36 @@ class SkinLoader {
         
         var currentSection = ""
         var mainNormal: [NSPoint]?
-        var mainShade: [NSPoint]?
         var eqNormal: [NSPoint]?
-        var eqShade: [NSPoint]?
         var playlistNormal: [NSPoint]?
-        var playlistShade: [NSPoint]?
-        
+
         let lines = content.components(separatedBy: .newlines)
-        
+
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            
+
             if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
                 currentSection = String(trimmed.dropFirst().dropLast()).lowercased()
             } else if trimmed.lowercased().hasPrefix("pointlist=") {
                 let points = parsePointList(from: trimmed)
-                
+
                 switch currentSection {
                 case "normal", "":
                     mainNormal = points
-                case "windowshade":
-                    mainShade = points
                 case "equalizer":
                     eqNormal = points
-                case "equalizershade":
-                    eqShade = points
                 case "playlist":
                     playlistNormal = points
-                case "playlistshade":
-                    playlistShade = points
                 default:
                     break
                 }
             }
         }
-        
+
         return WindowRegions(
             mainNormal: mainNormal,
-            mainShade: mainShade,
             eqNormal: eqNormal,
-            eqShade: eqShade,
-            playlistNormal: playlistNormal,
-            playlistShade: playlistShade
+            playlistNormal: playlistNormal
         )
     }
     

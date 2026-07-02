@@ -28,8 +28,6 @@ public enum ButtonType: CaseIterable, Sendable {
     // Window controls
     case close
     case minimize
-    case shade
-    case unshade  // Used in shade mode to return to normal
     case menu     // Top-left menu icon - opens ProjectM
     
     // Toggle buttons
@@ -99,8 +97,7 @@ public enum PlayerAction: Equatable, Sendable {
     // Window controls
     case close
     case minimize
-    case shade
-    
+
     // Toggle controls
     case shuffle
     case `repeat`
@@ -216,26 +213,17 @@ public final class SliderDragTracker: @unchecked Sendable {
 
 public struct WindowRegions: Sendable {
     public let mainNormal: [CGPoint]?
-    public let mainShade: [CGPoint]?
     public let eqNormal: [CGPoint]?
-    public let eqShade: [CGPoint]?
     public let playlistNormal: [CGPoint]?
-    public let playlistShade: [CGPoint]?
-    
+
     public init(
         mainNormal: [CGPoint]? = nil,
-        mainShade: [CGPoint]? = nil,
         eqNormal: [CGPoint]? = nil,
-        eqShade: [CGPoint]? = nil,
-        playlistNormal: [CGPoint]? = nil,
-        playlistShade: [CGPoint]? = nil
+        playlistNormal: [CGPoint]? = nil
     ) {
         self.mainNormal = mainNormal
-        self.mainShade = mainShade
         self.eqNormal = eqNormal
-        self.eqShade = eqShade
         self.playlistNormal = playlistNormal
-        self.playlistShade = playlistShade
     }
 }
 
@@ -253,9 +241,6 @@ public enum SkinConstants {
     
     /// Equalizer window size scaled
     public static let eqWindowSize = CGSize(width: baseMainSize.width * scaleFactor, height: baseMainSize.height * scaleFactor)
-    
-    /// Shade mode height scaled
-    public static let shadeHeight: CGFloat = 14 * scaleFactor
 }
 
 // MARK: - Playlist Colors

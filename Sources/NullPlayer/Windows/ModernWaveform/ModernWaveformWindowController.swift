@@ -4,7 +4,6 @@ import AppKit
 class ModernWaveformWindowController: NSWindowController, WaveformWindowProviding {
     private var waveformView: ModernWaveformView!
 
-    private(set) var isShadeMode = false
 
     convenience init() {
         let window = BorderlessWindow(
@@ -46,10 +45,6 @@ class ModernWaveformWindowController: NSWindowController, WaveformWindowProvidin
 
     func skinDidChange() {
         waveformView.skinDidChange()
-    }
-
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = false
     }
 
     func updateTrack(_ track: Track?) {

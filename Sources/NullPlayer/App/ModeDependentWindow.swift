@@ -16,12 +16,6 @@ protocol ModeDependentWindow: AnyObject {
     /// The underlying window.
     var window: NSWindow? { get }
 
-    /// Whether this window is currently in shade mode.
-    var isShadeMode: Bool { get }
-
-    /// Apply shade mode when restoring a mode-dependent layout.
-    func setShadeMode(_ enabled: Bool)
-
     /// Synchronously release any resources that must not survive a UI teardown.
     /// Default implementation is a no-op; controllers that own render loops, timers, or
     /// in-flight tasks should override (or inherit one of the protocol-specific defaults below).
@@ -29,8 +23,6 @@ protocol ModeDependentWindow: AnyObject {
 }
 
 extension ModeDependentWindow {
-    var isShadeMode: Bool { false }
-    func setShadeMode(_ enabled: Bool) {}
     func prepareForUITeardown() {}
 }
 

@@ -11,12 +11,6 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     
     private var browserView: ModernLibraryBrowserView!
     
-    /// Whether the window is in shade mode
-    private(set) var isShadeMode = false
-    
-    /// Stored normal mode frame for restoration
-    private var normalModeFrame: NSRect?
-    
     // MARK: - Initialization
     
     convenience init() {
@@ -114,69 +108,9 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
         }
     }
     
-    /// Normal-mode (un-shaded) frame for position memory. While shaded the window frame is
-    /// collapsed to shade height, so return the stashed normal frame instead.
+    /// Window frame for position memory across restart.
     var frameForPositionMemory: NSRect? {
-        guard let window else { return nil }
-        if isShadeMode, let normal = normalModeFrame { return normal }
-        return window.frame
-    }
-
-    // MARK: - Shade Mode
-
-    func setShadeMode(_ enabled: Bool) {
-        guard let window = window else { return }
-        guard !(isCompactMode && enabled) else { return }
-        
-        isShadeMode = enabled
-        
-        if enabled {
-            // Store current frame for restoration
-            normalModeFrame = window.frame
-            
-            // Calculate new shade mode frame (keep width, reduce height)
-            let shadeHeight = ModernSkinElements.libraryShadeHeight
-            let newFrame = NSRect(
-                x: window.frame.origin.x,
-                y: window.frame.origin.y + window.frame.height - shadeHeight,
-                width: window.frame.width,
-                height: shadeHeight
-            )
-            
-            // Lock size in shade mode
-            window.minSize = NSSize(width: ModernSkinElements.libraryMinSize.width, height: shadeHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: shadeHeight)
-            
-            // Resize window
-            window.setFrame(newFrame, display: true, animate: true)
-            browserView.frame = NSRect(origin: .zero, size: newFrame.size)
-        } else {
-            // Restore normal mode frame
-            let newFrame: NSRect
-            
-            if let storedFrame = normalModeFrame {
-                newFrame = storedFrame
-            } else {
-                let normalSize = ModernSkinElements.libraryDefaultSize
-                newFrame = NSRect(
-                    x: window.frame.origin.x,
-                    y: window.frame.origin.y + window.frame.height - normalSize.height,
-                    width: window.frame.width,
-                    height: normalSize.height
-                )
-            }
-            
-            // Restore size constraints
-            window.minSize = ModernSkinElements.libraryMinSize
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-            
-            // Resize window
-            window.setFrame(newFrame, display: true, animate: true)
-            browserView.frame = NSRect(origin: .zero, size: newFrame.size)
-            normalModeFrame = nil
-        }
-        
-        browserView.setShadeMode(enabled)
+        return window?.frame
     }
 
     // MARK: - Compact Mode
@@ -190,13 +124,9 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
         browserView.minimumCompactContentWidth
     }
 
-    /// Enable/disable Compact Mode. Unlike shade mode this does NOT resize or size-lock the
-    /// window — the full, resizable library window is kept; only the embedded player bar is
-    /// toggled and the list/content region shifts to make room.
+    /// Enable/disable Compact Mode. The full, resizable library window is kept; only the
+    /// embedded player bar is toggled and the list/content region shifts to make room.
     func setCompactMode(_ enabled: Bool) {
-        if enabled && isShadeMode {
-            setShadeMode(false)
-        }
         isCompactMode = enabled
         browserView.compactMode = enabled
         browserView.needsDisplay = true

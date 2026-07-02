@@ -64,9 +64,7 @@ enum ModernSkinElements {
                                   states: ["normal", "pressed"])
     static let btnMinimize = Element("btn_minimize", NSRect(x: 237, y: 102, width: 10, height: 10),
                                      states: ["normal", "pressed"])
-    static let btnShade = Element("btn_shade", NSRect(x: 249, y: 102, width: 10, height: 10),
-                                  states: ["normal", "pressed"])
-    
+
     // MARK: - Time Display (left side)
     
     /// Time display area -- region for 7-segment LED digits (to the right of status indicator)
@@ -161,10 +159,7 @@ enum ModernSkinElements {
     
     /// Playlist window minimum size (width locked, height expandable)
     static var playlistMinSize: NSSize { playlistWindowSize }
-    
-    /// Playlist window shade mode height
-    static var playlistShadeHeight: CGFloat { 18 * scaleFactor }
-    
+
     /// Playlist window title bar height
     static var playlistTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
@@ -184,10 +179,6 @@ enum ModernSkinElements {
     static let playlistBtnClose = Element("playlist_btn_close", NSRect(x: 261, y: 102, width: 10, height: 10),
                                           states: ["normal", "pressed"])
 
-    /// Playlist shade button
-    static let playlistBtnShade = Element("playlist_btn_shade", NSRect(x: 249, y: 102, width: 10, height: 10),
-                                          states: ["normal", "pressed"])
-    
     // MARK: - EQ Window
     
     /// EQ window size (same width as main window for docking compatibility)
@@ -197,10 +188,7 @@ enum ModernSkinElements {
     
     /// EQ window minimum size
     static var eqMinSize: NSSize { eqWindowSize }
-    
-    /// EQ window shade mode height
-    static var eqShadeHeight: CGFloat { 18 * scaleFactor }
-    
+
     /// EQ window title bar height
     static var eqTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
@@ -213,10 +201,6 @@ enum ModernSkinElements {
     /// EQ close button
     static let eqBtnClose = Element("eq_btn_close", NSRect(x: 261, y: 102, width: 10, height: 10),
                                     states: ["normal", "pressed"])
-
-    /// EQ shade button
-    static let eqBtnShade = Element("eq_btn_shade", NSRect(x: 249, y: 102, width: 10, height: 10),
-                                    states: ["normal", "pressed"])
     
     // MARK: - Spectrum Window
     
@@ -227,10 +211,7 @@ enum ModernSkinElements {
     
     /// Spectrum window minimum size
     static var spectrumMinSize: NSSize { spectrumWindowSize }
-    
-    /// Spectrum window shade mode height
-    static var spectrumShadeHeight: CGFloat { 18 * scaleFactor }
-    
+
     /// Spectrum window title bar height
     static var spectrumTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
@@ -279,10 +260,7 @@ enum ModernSkinElements {
     
     /// ProjectM window minimum size (resizable)
     static let projectMMinSize = NSSize(width: 480, height: 300)
-    
-    /// ProjectM window shade mode height
-    static var projectMShadeHeight: CGFloat { 18 * scaleFactor }
-    
+
     /// ProjectM window title bar height
     static var projectMTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
@@ -305,10 +283,7 @@ enum ModernSkinElements {
     
     /// Library browser minimum size
     static let libraryMinSize = NSSize(width: 480, height: 300)
-    
-    /// Library browser shade mode height
-    static var libraryShadeHeight: CGFloat { 18 * scaleFactor }
-    
+
     /// Library browser title bar height
     static var libraryTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
@@ -322,15 +297,11 @@ enum ModernSkinElements {
     static let libraryBtnClose = Element("library_btn_close", NSRect(x: 256, y: 102, width: 10, height: 10),
                                          states: ["normal", "pressed"])
 
-    /// Library browser shade button
-    static let libraryBtnShade = Element("library_btn_shade", NSRect(x: 244, y: 102, width: 10, height: 10),
-                                         states: ["normal", "pressed"])
-    
     // MARK: - All Elements
     
     static let allElements: [Element] = [
         windowBackground, windowBorder,
-        titleBar, titleBarText, btnClose, btnMinimize, btnShade,
+        titleBar, titleBarText, btnClose, btnMinimize,
         timeDisplay,
         marqueeBackground,
         infoBitrate, infoSampleRate, infoBPM, infoSleepTimer, infoStereo, infoMono, infoCast,
@@ -340,11 +311,11 @@ enum ModernSkinElements {
         seekTrack, seekFill, seekThumb,
         btnPrev, btnPlay, btnPause, btnStop, btnNext,
         volumeTrack, volumeFill, volumeThumb,
-        playlistTitleBar, playlistBtnClose, playlistBtnShade,
-        eqTitleBar, eqBtnClose, eqBtnShade,
+        playlistTitleBar, playlistBtnClose,
+        eqTitleBar, eqBtnClose,
         spectrumTitleBar, spectrumBtnClose,
         projectMTitleBar, projectMBtnClose,
-        libraryTitleBar, libraryBtnClose, libraryBtnShade
+        libraryTitleBar, libraryBtnClose
     ]
     
     /// Look up element by ID

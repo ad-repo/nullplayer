@@ -16,16 +16,13 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
     // MARK: - Properties
     
     weak var controller: ModernProjectMWindowController?
-    
+
     /// The skin renderer
     private var renderer: ModernSkinRenderer!
-    
+
     /// The OpenGL visualization view
     private(set) var visualizationGLView: VisualizationGLView?
-    
-    /// Shade mode state
-    private(set) var isShadeMode = false
-    
+
     /// Fullscreen mode state (hides window chrome)
     private(set) var isFullscreen = false
     
@@ -268,8 +265,8 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
         
-        // Draw title bar -- always in shade mode, gated by HT otherwise
-        if isShadeMode || !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+        // Draw title bar (unless HT is on)
+        if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             // Compute title bar and button rects dynamically in base space
             // (window is larger than the 275x116 base, so we can't use fixed element rects)
             let baseWidth = bounds.width / scale
@@ -286,15 +283,6 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
             let closeState = (pressedButton == "projectm_btn_close") ? "pressed" : "normal"
             renderer.drawWindowControlButton("projectm_btn_close", state: closeState,
                                              in: closeBtnRect, context: context)
-        }
-        
-        // In shade mode, just draw title bar - no content area
-        if isShadeMode {
-            if isHighlighted {
-                NSColor.white.withAlphaComponent(0.15).setFill()
-                bounds.fill()
-            }
-            return
         }
 
         if isHighlighted {
@@ -352,22 +340,18 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
     
     /// Handle PCM data notification from audio tap (called on audio thread for low latency)
     private func handlePCMUpdate(_ notification: Notification) {
-        guard !isShadeMode else { return }
-        
         guard let userInfo = notification.userInfo,
               let pcm = userInfo["pcm"] as? [Float] else { return }
-        
+
         // Forward PCM data directly to visualization view (thread-safe via dataLock)
         visualizationGLView?.updatePCM(pcm)
     }
-    
+
     /// Handle spectrum data notification from audio engine (called on audio thread for low latency)
     private func handleSpectrumUpdate(_ notification: Notification) {
-        guard !isShadeMode else { return }
-        
         guard let userInfo = notification.userInfo,
               let spectrum = userInfo["spectrum"] as? [Float] else { return }
-        
+
         // Forward spectrum data directly to visualization view (thread-safe)
         visualizationGLView?.updateSpectrum(spectrum)
     }
@@ -385,27 +369,6 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
     }
     
     // MARK: - Public Methods
-    
-    /// Set shade mode externally (e.g., from controller)
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        if enabled || isPresetRatingOverlayVisible {
-            hidePresetRatingOverlay()
-        }
-        
-        // Show/hide visualization view
-        visualizationGLView?.isHidden = enabled
-        
-        // Stop/start rendering based on mode
-        if enabled {
-            visualizationGLView?.stopRendering()
-        } else {
-            visualizationGLView?.startRendering()
-            updateVisualizationFrame()
-        }
-        
-        needsDisplay = true
-    }
     
     /// Set fullscreen mode (hides window chrome)
     func setFullscreen(_ enabled: Bool) {
@@ -427,15 +390,11 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
     
     /// Start rendering
     func startRendering() {
-        if !isShadeMode {
-            visualizationGLView?.startRendering()
-        }
+        visualizationGLView?.startRendering()
     }
 
     func resumeRenderingAfterWindowTransition() {
-        if !isShadeMode {
-            visualizationGLView?.resumeRenderingAfterWindowTransition()
-        }
+        visualizationGLView?.resumeRenderingAfterWindowTransition()
     }
 
     // MARK: - Preset Ratings
@@ -501,13 +460,7 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
             }
         }
     }
-    
-    /// Toggle shade mode
-    private func toggleShadeMode() {
-        isShadeMode.toggle()
-        controller?.setShadeMode(isShadeMode)
-    }
-    
+
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
@@ -534,19 +487,7 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
     
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        
-        // Check for double-click in top zone to toggle shade mode
-        if event.clickCount == 2 && hitTestTopZone(at: point) &&
-           !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
-            toggleShadeMode()
-            return
-        }
-        
-        if isShadeMode {
-            handleShadeMouseDown(at: point, event: event)
-            return
-        }
-        
+
         // Check close button (only when titlebar is visible)
         if !WindowManager.shared.effectiveHideTitleBars(for: self.window) &&
            hitTestCloseButton(at: point) {
@@ -570,22 +511,7 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
             showPresetRatingOverlay()
         }
     }
-    
-    private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
-        if hitTestCloseButton(at: point) {
-            pressedButton = "projectm_btn_close"
-            needsDisplay = true
-            return
-        }
-        
-        // Start window drag
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
-        }
-    }
-    
+
     override func mouseDragged(with event: NSEvent) {
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
@@ -603,7 +529,7 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
     
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        
+
         // End window dragging
         if isDraggingWindow {
             isDraggingWindow = false
@@ -611,29 +537,13 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
                 WindowManager.shared.windowDidFinishDragging(window)
             }
         }
-        
-        if isShadeMode {
-            handleShadeMouseUp(at: point)
-            return
-        }
-        
+
         // Handle button releases
         if let pressed = pressedButton {
             if pressed == "projectm_btn_close" && hitTestCloseButton(at: point) {
                 window?.close()
             }
-            
-            pressedButton = nil
-            needsDisplay = true
-        }
-    }
-    
-    private func handleShadeMouseUp(at point: NSPoint) {
-        if let pressed = pressedButton {
-            if pressed == "projectm_btn_close" && hitTestCloseButton(at: point) {
-                window?.close()
-            }
-            
+
             pressedButton = nil
             needsDisplay = true
         }

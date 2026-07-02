@@ -16,14 +16,6 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
         return NSSize(width: 550, height: height)
     }
     
-    /// Shade mode height
-    private static let shadeHeight: CGFloat = 14
-    
-    /// Shade mode state
-    private(set) var isShadeMode = false
-    
-    /// Normal mode frame (stored when entering shade mode)
-    private var normalModeFrame: NSRect?
 
     /// Compact Mode state. When active the browser view is wrapped in a container with an
     /// embedded `ClassicCompactPlayerBarView` pinned across the top.
@@ -99,52 +91,10 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
         window?.contentView = browserView
     }
     
-    /// Normal-mode (un-shaded) frame for position memory. While shaded the window frame is
-    /// collapsed to shade height, so return the stashed normal frame instead.
+    /// Normal-mode frame for position memory.
     var frameForPositionMemory: NSRect? {
         guard let window else { return nil }
-        if isShadeMode, let normal = normalModeFrame { return normal }
         return window.frame
-    }
-
-    // MARK: - Shade Mode
-
-    /// Set shade mode (called from view)
-    func setShadeMode(_ enabled: Bool) {
-        guard let window = window else { return }
-        guard !(isCompactMode && enabled) else { return }
-        
-        isShadeMode = enabled
-        
-        if enabled {
-            // Store current frame before entering shade mode
-            normalModeFrame = window.frame
-            
-            // Collapse to shade height
-            let shadeFrame = NSRect(
-                x: window.frame.minX,
-                y: window.frame.maxY - Self.shadeHeight,
-                width: window.frame.width,
-                height: Self.shadeHeight
-            )
-            window.setFrame(shadeFrame, display: true, animate: true)
-            window.minSize = NSSize(width: Self.minSize.width, height: Self.shadeHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: Self.shadeHeight)
-        } else {
-            // Restore normal frame
-            let normalFrame = normalModeFrame ?? NSRect(
-                x: window.frame.minX,
-                y: window.frame.maxY - Self.defaultSize.height,
-                width: window.frame.width,
-                height: Self.defaultSize.height
-            )
-            window.minSize = Self.minSize
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-            window.setFrame(normalFrame, display: true, animate: true)
-            normalModeFrame = nil
-        }
-        
-        browserView.setShadeMode(enabled)
     }
     
     // MARK: - Public Methods
@@ -194,14 +144,10 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
         max(Self.minSize.width, browserView.minimumCompactContentWidth)
     }
 
-    /// Enable/disable Compact Mode. Unlike shade mode this does NOT resize or size-lock the
-    /// window — the full, resizable browser is kept; the browser view is wrapped in a container
-    /// with an embedded classic player bar pinned across the top.
+    /// Enable/disable Compact Mode. The full, resizable browser is kept; the browser view is
+    /// wrapped in a container with an embedded classic player bar pinned across the top.
     func setCompactMode(_ enabled: Bool) {
         guard isCompactMode != enabled, let window = window else { return }
-        if enabled && isShadeMode {
-            setShadeMode(false)
-        }
         isCompactMode = enabled
 
         if enabled {

@@ -222,9 +222,8 @@ column below the main window. Instead it remembers where the user last put it (i
   `rememberPlexBrowserFrameBeforeClose()` for the red-button path.
 - `showPlexBrowser(at:)` applies a priority chain: explicit restored frame (launch / mode
   rebuild) → remembered session frame → default right-of-stack layout (first-ever open only).
-- **Always capture the shade-safe frame** via `LibraryBrowserWindowProviding.frameForPositionMemory`,
-  which returns the stashed `normalModeFrame` while shaded (raw `window.frame` would remember the
-  ~14px collapsed height). Library shade state is not persisted.
+- **Always capture the frame** via `LibraryBrowserWindowProviding.frameForPositionMemory`,
+  which returns `window.frame`.
 - **Do not leak across UI mode switches**: `teardownModeDependentWindows()` clears
   `lastPlexBrowserFrame` after nil'ing the controller so a classic frame can't apply to the
   modern window (or vice-versa). An open library that must survive the switch is repositioned
@@ -582,7 +581,6 @@ Key implementation details:
 - `ModernMainWindowView` applies HT-only internal reflow in draw with a Y-axis context transform (`withMainContentLayoutTransform`, `contentLayoutScaleY`)
 - HT internal reflow is mirrored in interaction math (`basePoint`/`scaledRect`) so hit testing, dirty-rect invalidation, marquee frame, and Metal mini-spectrum overlay geometry stay aligned with rendered controls
 - Each view's `titleBarHeight` computed property returns `borderWidth` (not 0) when hidden, preserving the top border line
-- ProjectM shade mode is always drawn (uses `isShadeMode || !effectiveHideTitleBars` condition) so HT + shade never produces a blank window
 - Library Browser uses lazy drag: `mouseDown` records `windowDragStartPoint`; `mouseDragged` starts the drag on first movement when HT is on
 
 ## Large UI Mode (1.5x, Both UI Modes)

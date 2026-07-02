@@ -9,19 +9,13 @@ import AppKit
 protocol PlaylistWindowProviding: ModeDependentWindow {
     /// The underlying window
     var window: NSWindow? { get }
-    
-    /// Whether the window is in shade (compact) mode
-    var isShadeMode: Bool { get }
-    
+
     /// Show the window
     func showWindow(_ sender: Any?)
-    
+
     /// Notify that the skin has changed and views should redraw
     func skinDidChange()
-    
+
     /// Reload playlist data (called when tracks are added/removed/reordered)
     func reloadPlaylist()
-    
-    /// Toggle shade (compact) mode
-    func setShadeMode(_ enabled: Bool)
 }

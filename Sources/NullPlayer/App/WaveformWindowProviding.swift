@@ -7,17 +7,11 @@ protocol WaveformWindowProviding: ModeDependentWindow {
     /// The underlying window.
     var window: NSWindow? { get }
 
-    /// Whether the window is in shade mode.
-    var isShadeMode: Bool { get }
-
     /// Show the window.
     func showWindow(_ sender: Any?)
 
     /// Notify that the skin has changed and the window should redraw.
     func skinDidChange()
-
-    /// Toggle shade mode.
-    func setShadeMode(_ enabled: Bool)
 
     /// Update the active track used for waveform generation.
     func updateTrack(_ track: Track?)

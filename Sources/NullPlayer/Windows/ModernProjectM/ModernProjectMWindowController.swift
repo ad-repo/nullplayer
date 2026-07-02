@@ -11,13 +11,7 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
     
     private var projectMView: ModernProjectMView!
     private var localKeyDownMonitor: Any?
-    
-    /// Whether the window is in shade mode
-    private(set) var isShadeMode = false
-    
-    /// Stored normal mode frame for restoration
-    private var normalModeFrame: NSRect?
-    
+
     /// Custom fullscreen state (for borderless window)
     private var isCustomFullscreen = false
     private var preFullscreenFrame: NSRect?
@@ -119,63 +113,6 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
     func skinDidChange() {
         projectMView.skinDidChange()
     }
-    
-    // MARK: - Shade Mode
-    
-    func setShadeMode(_ enabled: Bool) {
-        guard let window = window else { return }
-        
-        isShadeMode = enabled
-        
-        if enabled {
-            // Store current frame for restoration
-            normalModeFrame = window.frame
-            
-            // Calculate new shade mode frame (keep width, reduce height)
-            let shadeHeight = ModernSkinElements.projectMShadeHeight
-            let newFrame = NSRect(
-                x: window.frame.origin.x,
-                y: window.frame.origin.y + window.frame.height - shadeHeight,
-                width: window.frame.width,
-                height: shadeHeight
-            )
-            
-            // Lock size in shade mode
-            window.minSize = NSSize(width: ModernSkinElements.projectMMinSize.width, height: shadeHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: shadeHeight)
-            
-            // Resize window
-            window.setFrame(newFrame, display: true, animate: true)
-            projectMView.frame = NSRect(origin: .zero, size: newFrame.size)
-        } else {
-            // Restore normal mode frame
-            let newFrame: NSRect
-            
-            if let storedFrame = normalModeFrame {
-                newFrame = storedFrame
-            } else {
-                let normalSize = ModernSkinElements.projectMDefaultSize
-                newFrame = NSRect(
-                    x: window.frame.origin.x,
-                    y: window.frame.origin.y + window.frame.height - normalSize.height,
-                    width: normalSize.width,
-                    height: normalSize.height
-                )
-            }
-            
-            // Restore size constraints
-            window.minSize = ModernSkinElements.projectMMinSize
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-            
-            // Resize window
-            window.setFrame(newFrame, display: true, animate: true)
-            projectMView.frame = NSRect(origin: .zero, size: newFrame.size)
-            normalModeFrame = nil
-        }
-        
-        projectMView.setShadeMode(enabled)
-    }
-    
     // MARK: - Fullscreen
     
     /// Toggle fullscreen mode
@@ -193,12 +130,7 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
     /// Enter custom fullscreen mode (for borderless window)
     private func enterCustomFullscreen() {
         guard let window = window else { return }
-        
-        // Exit shade mode before going fullscreen
-        if isShadeMode {
-            setShadeMode(false)
-        }
-        
+
         // Get the screen containing the window (or main screen as fallback)
         guard let screen = window.screen ?? NSScreen.main else { return }
         

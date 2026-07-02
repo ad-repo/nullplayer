@@ -17,7 +17,6 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 | `titlebar_text` | 50,98,175,18 | normal | Title text area |
 | `btn_close` | 261,102,10,10 | normal, pressed | Close button |
 | `btn_minimize` | 237,102,10,10 | normal, pressed | Minimize button |
-| `btn_shade` | 249,102,10,10 | normal, pressed | Shade mode button |
 
 ## Time Display
 
@@ -146,7 +145,6 @@ Per-window chrome elements (fall back to shared elements if missing):
 |-----------|-------------|--------|-------------|
 | `playlist_titlebar` | 0,98,275,18 | normal | Playlist window title bar |
 | `playlist_btn_close` | 261,102,10,10 | normal, pressed | Playlist close button |
-| `playlist_btn_shade` | 249,102,10,10 | normal, pressed | Playlist shade button |
 
 The modern playlist has no bottom bar -- all operations via context menu and keyboard shortcuts. Currently playing track rendered in `accent` color.
 
@@ -176,7 +174,6 @@ The modern playlist has no bottom bar -- all operations via context menu and key
 |-----------|-------------|--------|-------------|
 | `eq_titlebar` | 0,98,275,18 | normal | EQ window title bar |
 | `eq_btn_close` | 261,102,10,10 | normal, pressed | EQ close button |
-| `eq_btn_shade` | 249,102,10,10 | normal, pressed | EQ shade button |
 
 The modern EQ window renders a 21-band graphic equalizer with an integrated `PRE` control, ON/OFF toggle, AUTO toggle, and compact preset buttons (`FLAT`, `ROCK`, `POP`, `ELEC`, `HIP`, `JAZZ`, `CLSC`). The old dedicated preamp slider lane is gone; the `PRE` control now lives in the graph strip. Sliders still use color-coded fill from green (-12dB) through yellow (0dB) to red (+12dB), and the graph background now uses slim per-band mini tracks so it visually matches the fader lanes.
 
@@ -195,7 +192,6 @@ Embeds the same `VisualizationGLView` (OpenGL) used by classic version. Supports
 |-----------|-------------|--------|-------------|
 | `library_titlebar` | 0,98,275,18 | normal | Library browser title bar |
 | `library_btn_close` | 256,102,10,10 | normal, pressed | Library close button |
-| `library_btn_shade` | 244,102,10,10 | normal, pressed | Library shade button |
 
 Provides multi-source browsing (Local/Plex/Subsonic/Radio) with multiple browse modes. Supports multi-edge resizing.
 

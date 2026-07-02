@@ -1209,7 +1209,7 @@ class ModernSkinRenderer {
         }
     }
     
-    /// Draw a window control button (close, minimize, shade)
+    /// Draw a window control button (close, minimize)
     func drawWindowControlButton(_ id: String, state: String, in rect: NSRect, context: CGContext) {
         let scaledR = scaledRect(rect)
         
@@ -1242,10 +1242,6 @@ class ModernSkinRenderer {
             context.move(to: CGPoint(x: inset.minX, y: inset.midY))
             context.addLine(to: CGPoint(x: inset.maxX, y: inset.midY))
             context.strokePath()
-            
-        case "btn_shade", "playlist_btn_shade", "eq_btn_shade", "library_btn_shade":
-            // Small square
-            context.stroke(inset)
             
         default:
             break

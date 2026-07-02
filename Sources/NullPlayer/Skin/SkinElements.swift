@@ -33,8 +33,6 @@ enum ButtonType: CaseIterable {
     // Window controls
     case close
     case minimize
-    case shade
-    case unshade  // Used in shade mode to return to normal
     case menu     // Top-left menu icon - opens ProjectM
     
     // Toggle buttons
@@ -91,7 +89,7 @@ struct SkinElements {
     /// Title bar height
     static let titleBarHeight: CGFloat = 14
     
-    // MARK: - Title Bar (titlebar.bmp - 275x14 x 2 rows + shade mode)
+    // MARK: - Title Bar (titlebar.bmp - 275x14 x 2 rows)
     
     struct TitleBar {
         /// Active state title bar
@@ -108,15 +106,7 @@ struct SkinElements {
             // Minimize button
             static let minimizeNormal = NSRect(x: 9, y: 0, width: 9, height: 9)
             static let minimizePressed = NSRect(x: 9, y: 9, width: 9, height: 9)
-            
-            // Shade button (normal mode - toggles to shade)
-            static let shadeNormal = NSRect(x: 0, y: 18, width: 9, height: 9)
-            static let shadePressed = NSRect(x: 9, y: 18, width: 9, height: 9)
-            
-            // Unshade button (shade mode - toggles back to normal)
-            static let unshadeNormal = NSRect(x: 0, y: 27, width: 9, height: 9)
-            static let unshadePressed = NSRect(x: 9, y: 27, width: 9, height: 9)
-            
+
             // Close button
             static let closeNormal = NSRect(x: 18, y: 0, width: 9, height: 9)
             static let closePressed = NSRect(x: 18, y: 9, width: 9, height: 9)
@@ -126,101 +116,16 @@ struct SkinElements {
         struct Positions {
             static let menuButton = NSRect(x: 6, y: 3, width: 9, height: 9)
             static let minimizeButton = NSRect(x: 244, y: 3, width: 9, height: 9)
-            static let shadeButton = NSRect(x: 254, y: 3, width: 9, height: 9)
             static let closeButton = NSRect(x: 264, y: 3, width: 9, height: 9)
         }
-        
+
         // Enlarged hit-test areas for main window (normal mode)
-        // Close extends to right edge and top; shade/minimize get full title bar height
+        // Close extends to right edge and top; minimize gets full title bar height
         struct HitPositions {
             static let menuButton = NSRect(x: 0, y: 0, width: 15, height: 14)
             // Keep contiguous hit zones so clicks cannot fall through to drag-start.
             static let minimizeButton = NSRect(x: 242, y: 0, width: 11, height: 14)
-            static let shadeButton = NSRect(x: 253, y: 0, width: 11, height: 14)
             static let closeButton = NSRect(x: 264, y: 0, width: 11, height: 14)
-        }
-        
-        // Positions on main window (shade mode) - used for DRAWING sprites
-        struct ShadePositions {
-            static let menuButton = NSRect(x: 6, y: 3, width: 9, height: 9)
-            static let minimizeButton = NSRect(x: 244, y: 3, width: 9, height: 9)
-            static let unshadeButton = NSRect(x: 254, y: 3, width: 9, height: 9)
-            static let closeButton = NSRect(x: 264, y: 3, width: 9, height: 9)
-        }
-        
-        // Enlarged hit-test areas for main window (shade mode)
-        struct ShadeHitPositions {
-            static let menuButton = NSRect(x: 0, y: 0, width: 15, height: 14)
-            static let minimizeButton = NSRect(x: 242, y: 0, width: 11, height: 14)
-            static let unshadeButton = NSRect(x: 253, y: 0, width: 11, height: 14)
-            static let closeButton = NSRect(x: 264, y: 0, width: 11, height: 14)
-        }
-    }
-    
-    // MARK: - Main Window Shade Mode (titlebar.bmp rows 29-42)
-    
-    struct MainShade {
-        /// Shade mode window size: 275x14 pixels
-        static let windowSize = NSSize(width: 275, height: 14)
-        
-        /// Shade mode background (active)
-        static let backgroundActive = NSRect(x: 27, y: 29, width: 275, height: 14)
-        /// Shade mode background (inactive)
-        static let backgroundInactive = NSRect(x: 27, y: 42, width: 275, height: 14)
-        
-        /// Shade mode position bar position on window
-        struct Positions {
-            static let positionBar = NSRect(x: 226, y: 4, width: 17, height: 7)
-        }
-        
-        /// Shade mode text display area
-        static let textArea = NSRect(x: 79, y: 4, width: 145, height: 6)
-    }
-    
-    // MARK: - Equalizer Shade Mode
-    
-    struct EQShade {
-        /// EQ shade mode window size: 275x14 pixels
-        static let windowSize = NSSize(width: 275, height: 14)
-        
-        /// EQ shade mode background (from eqmain.bmp)
-        static let backgroundActive = NSRect(x: 0, y: 164, width: 275, height: 14)
-        static let backgroundInactive = NSRect(x: 0, y: 178, width: 275, height: 14)
-        
-        /// Button positions in shade mode - used for DRAWING sprites
-        struct Positions {
-            static let closeButton = NSRect(x: 264, y: 3, width: 9, height: 9)
-            static let shadeButton = NSRect(x: 254, y: 3, width: 9, height: 9)
-        }
-        
-        /// Enlarged hit-test areas for EQ shade mode
-        struct HitPositions {
-            static let closeButton = NSRect(x: 257, y: 0, width: 18, height: 14)
-            static let shadeButton = NSRect(x: 248, y: 0, width: 9, height: 14)
-        }
-    }
-    
-    // MARK: - Playlist Shade Mode
-    
-    struct PlaylistShade {
-        /// Playlist shade mode height: 14 pixels (width is variable)
-        static let height: CGFloat = 14
-        
-        /// Playlist shade mode background tiles (from pledit.bmp)
-        static let leftCorner = NSRect(x: 72, y: 42, width: 25, height: 14)
-        static let rightCorner = NSRect(x: 99, y: 42, width: 75, height: 14)
-        static let tile = NSRect(x: 72, y: 57, width: 25, height: 14)
-        
-        /// Button positions in shade mode - used for DRAWING sprites (relative to right edge)
-        struct Positions {
-            static let closeButton = NSRect(x: -11, y: 3, width: 9, height: 9)  // Relative to right edge
-            static let shadeButton = NSRect(x: -21, y: 3, width: 9, height: 9)  // Relative to right edge
-        }
-        
-        /// Enlarged hit-test areas for playlist shade mode (relative to right edge)
-        struct HitPositions {
-            static let closeButton = NSRect(x: -18, y: 0, width: 18, height: 14)  // Relative to right edge
-            static let shadeButton = NSRect(x: -27, y: 0, width: 9, height: 14)   // Relative to right edge
         }
     }
     
@@ -743,10 +648,9 @@ struct SkinElements {
         struct TitleBarButtons {
             // Relative to right edge of window
             static let closeOffset: CGFloat = 11   // Right edge - 11px
-            static let shadeOffset: CGFloat = 20   // Right edge - 20px
         }
     }
-    
+
     // MARK: - Plex Browser Elements
     // Uses playlist sprites for frame/chrome with custom content areas
     
@@ -773,17 +677,13 @@ struct SkinElements {
             static let padding: CGFloat = 3
         }
         
-        /// Shade mode height (same as playlist shade)
-        static let shadeHeight: CGFloat = 14
-        
         /// Window control button positions in title bar (same as playlist)
         struct TitleBarButtons {
             // Relative to right edge of window
             static let closeOffset: CGFloat = 11
-            static let shadeOffset: CGFloat = 20
         }
     }
-    
+
     // MARK: - Library Window Elements
     // Custom library window skin from library-window.png (500x348 pixels)
     // Used for the Media Library window as a replacement for playlist-based Plex browser chrome
@@ -874,8 +774,6 @@ struct SkinElements {
         struct TitleBarButtons {
             /// Close button offset from right edge
             static let closeOffset: CGFloat = 5
-            /// Shade button offset from right edge
-            static let shadeOffset: CGFloat = 15
         }
     }
     
@@ -894,10 +792,7 @@ struct SkinElements {
         
         /// Title bar height (same as playlist: 20px)
         static let titleBarHeight: CGFloat = 20
-        
-        /// Shade mode height (title bar only)
-        static let shadeHeight: CGFloat = 14
-        
+
         /// Layout constants - playlist style title bar with matching side borders
         struct Layout {
             static let titleBarHeight: CGFloat = 20
@@ -922,12 +817,6 @@ struct SkinElements {
         struct TitleBarButtons {
             // Relative to right edge of window (same as playlist)
             static let closeOffset: CGFloat = 11
-            static let shadeOffset: CGFloat = 20
-        }
-        
-        /// Shade mode positions
-        struct ShadePositions {
-            static let closeButton = NSRect(x: -11, y: 3, width: 9, height: 9)  // Relative to right edge
         }
     }
     
@@ -944,10 +833,7 @@ struct SkinElements {
         
         /// Title bar height (same as ProjectM/playlist)
         static let titleBarHeight: CGFloat = 20
-        
-        /// Shade mode height (title bar only)
-        static let shadeHeight: CGFloat = 14
-        
+
         /// Layout constants
         struct Layout {
             static let titleBarHeight: CGFloat = 20
@@ -955,12 +841,11 @@ struct SkinElements {
             static let rightBorder: CGFloat = 3
             static let bottomBorder: CGFloat = 3
         }
-        
+
         /// Window control button positions in title bar
         struct TitleBarButtons {
             // Relative to right edge of window (same as ProjectM)
             static let closeOffset: CGFloat = 11
-            static let shadeOffset: CGFloat = 20
         }
     }
     
@@ -977,10 +862,7 @@ struct SkinElements {
         
         /// Title bar height (same as playlist/ProjectM, scaled)
         static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
-        
-        /// Shade mode height (title bar only, scaled)
-        static let shadeHeight: CGFloat = 14 * Skin.scaleFactor
-        
+
         /// Content area (after title bar and borders, scaled)
         static let contentArea = NSRect(
             x: 3 * Skin.scaleFactor,
@@ -1004,7 +886,6 @@ struct SkinElements {
         struct TitleBarButtons {
             // Relative to right edge of window (same as ProjectM)
             static let closeOffset: CGFloat = 11 * Skin.scaleFactor
-            static let shadeOffset: CGFloat = 20
         }
     }
 
@@ -1089,7 +970,6 @@ struct SkinElements {
         // MARK: - Window Button Positions (relative to right edge)
         struct Buttons {
             static let closeOffset: CGFloat = 9
-            static let shadeOffset: CGFloat = 18
         }
     }
     
@@ -1279,10 +1159,6 @@ extension SkinElements {
             return state == .pressed ? TitleBar.Buttons.closePressed : TitleBar.Buttons.closeNormal
         case .minimize:
             return state == .pressed ? TitleBar.Buttons.minimizePressed : TitleBar.Buttons.minimizeNormal
-        case .shade:
-            return state == .pressed ? TitleBar.Buttons.shadePressed : TitleBar.Buttons.shadeNormal
-        case .unshade:
-            return state == .pressed ? TitleBar.Buttons.unshadePressed : TitleBar.Buttons.unshadeNormal
         case .shuffle:
             switch state {
             case .normal: return ShuffleRepeat.shuffleOffNormal
@@ -1343,22 +1219,10 @@ extension SkinElements {
         case .eject: return Transport.Positions.eject
         case .close: return TitleBar.Positions.closeButton
         case .minimize: return TitleBar.Positions.minimizeButton
-        case .shade: return TitleBar.Positions.shadeButton
-        case .unshade: return TitleBar.ShadePositions.unshadeButton
         case .shuffle: return ShuffleRepeat.Positions.shuffle
         case .repeatTrack: return ShuffleRepeat.Positions.repeatBtn
         case .eqToggle: return ShuffleRepeat.Positions.eqToggle
         case .playlistToggle: return ShuffleRepeat.Positions.plToggle
-        default: return .zero
-        }
-    }
-    
-    /// Get hit rect for a button on the main window in shade mode
-    static func shadeHitRect(for button: ButtonType) -> NSRect {
-        switch button {
-        case .close: return TitleBar.ShadePositions.closeButton
-        case .minimize: return TitleBar.ShadePositions.minimizeButton
-        case .unshade: return TitleBar.ShadePositions.unshadeButton
         default: return .zero
         }
     }

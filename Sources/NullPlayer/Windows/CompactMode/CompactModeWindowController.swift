@@ -2,7 +2,6 @@ import AppKit
 
 private protocol CompactModeBrowserSurface: AnyObject {
     var window: NSWindow? { get }
-    var isShadeMode: Bool { get }
     var minimumCompactContentWidth: CGFloat { get }
 
     func setCompactMode(_ enabled: Bool)

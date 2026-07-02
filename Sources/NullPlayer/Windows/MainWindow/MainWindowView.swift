@@ -113,42 +113,39 @@ class MainWindowView: NSView {
     /// Temporary error message to display in marquee (persists until new track loads)
     private var errorMessage: String?
     
-    /// Marquee timer (for bitrate scrolling and shade mode)
+    /// Marquee timer (for bitrate scrolling)
     private var marqueeTimer: Timer?
     
     /// Layer-based marquee for GPU-accelerated scrolling (normal mode only)
     private var marqueeLayer: MarqueeLayer?
-    
+
     /// Timer for delayed single-click on vis area (to distinguish from double-click)
     private var visClickTimer: Timer?
-    
+
     /// Mouse tracking area
     private var trackingArea: NSTrackingArea?
-    
+
     /// Button being pressed
     private var pressedButton: ButtonType?
-    
+
     /// Dragging state
-    
+
     /// Which slider is being dragged (nil = none)
     private var draggingSlider: SliderType?
-    
+
     /// Position slider drag value (for visual feedback during drag)
     private var dragPositionValue: CGFloat?
-    
+
     /// Timestamp of last seek to ignore stale updates
     private var lastSeekTime: Date?
-    
+
     /// Region manager for hit testing
     private let regionManager = RegionManager.shared
-    
+
     /// Skin renderer
     private var renderer: SkinRenderer {
         return SkinRenderer.current
     }
-    
-    /// Shade mode state
-    private(set) var isShadeMode = false
     
     // MARK: - Toggle States
     
@@ -209,7 +206,7 @@ class MainWindowView: NSView {
             setupMetalOverlay()
         }
         
-        // Start timer for bitrate scrolling (and shade mode marquee)
+        // Start timer for bitrate scrolling
         startMarquee()
         
         // Set up tracking area for mouse events
@@ -317,12 +314,6 @@ class MainWindowView: NSView {
     }
     
     private func updateMarqueeLayerFrame() {
-        guard !isShadeMode else {
-            // Hide layer in shade mode - shade mode uses timer-based marquee
-            marqueeLayer?.isHidden = true
-            return
-        }
-        
         marqueeLayer?.isHidden = false
         
         let scale = scaleFactor
@@ -361,8 +352,6 @@ class MainWindowView: NSView {
     }
     
     private func updateMarqueeContent() {
-        guard !isShadeMode else { return }  // Shade mode uses timer-based rendering
-        
         let text = getMarqueeDisplayText()
         marqueeLayer?.text = text
         marqueeLayer?.skinTextImage = WindowManager.shared.currentSkin?.text
@@ -421,7 +410,7 @@ class MainWindowView: NSView {
     
     /// Update Metal overlay position to match the visualization area in scaled skin coordinates
     private func updateMetalOverlayFrame() {
-        guard let overlay = metalOverlay, !isShadeMode else {
+        guard let overlay = metalOverlay else {
             metalOverlay?.isHidden = true
             return
         }
@@ -453,7 +442,7 @@ class MainWindowView: NSView {
     
     /// Show/hide the Metal overlay based on current vis mode
     private func updateMetalOverlayVisibility() {
-        if mainVisMode.usesMetal && !isShadeMode {
+        if mainVisMode.usesMetal {
             // Create overlay if needed
             if metalOverlay == nil {
                 setupMetalOverlay()
@@ -735,7 +724,7 @@ class MainWindowView: NSView {
     
     /// Convert a rect from skin coordinates (top-left origin) to screen coordinates
     private func convertSkinRectToScreen(_ rect: NSRect) -> NSRect {
-        let originalHeight = isShadeMode ? SkinElements.MainShade.windowSize.height : Skin.baseMainSize.height
+        let originalHeight = Skin.baseMainSize.height
         let scale = scaleFactor
         
         // Convert Y from skin (top-down) to macOS (bottom-up)
@@ -840,21 +829,18 @@ class MainWindowView: NSView {
         // Show error message in marquee - persists until user loads something else
         errorMessage = "[Error] \(message)"
         updateMarqueeContent()  // Update layer-based marquee
-        if isShadeMode { marqueeOffset = 0; startMarquee() }  // Shade mode uses timer
         needsDisplay = true
     }
     
     @objc private func radioMetadataDidChange() {
         // Update marquee when radio stream metadata changes
         updateMarqueeContent()  // Update layer-based marquee
-        if isShadeMode { marqueeOffset = 0; startMarquee() }  // Shade mode uses timer
         needsDisplay = true
     }
     
     @objc private func radioConnectionStateDidChange() {
         // Update marquee when radio connection state changes
         updateMarqueeContent()  // Update layer-based marquee
-        if isShadeMode { startMarquee() }  // Shade mode uses timer
         needsDisplay = true
     }
     
@@ -883,17 +869,17 @@ class MainWindowView: NSView {
     
     /// Calculate scale factor based on current bounds vs original (base) size
     private var scaleFactor: CGFloat {
-        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
+        let originalSize = Skin.baseMainSize
         let scaleX = bounds.width / originalSize.width
         let scaleY = bounds.height / originalSize.height
         return min(scaleX, scaleY)
     }
-    
+
     /// Convert a point from view coordinates to original (unscaled) coordinates
     private func convertToOriginalCoordinates(_ point: NSPoint) -> NSPoint {
-        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
+        let originalSize = Skin.baseMainSize
         let scale = scaleFactor
-        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+        let hidingTitleBar = WindowManager.shared.hideTitleBars
         
         if scale == 1.0 {
             if hidingTitleBar {
@@ -924,7 +910,7 @@ class MainWindowView: NSView {
     
     /// Get the original window size for hit testing (base skin dimensions)
     private var originalWindowSize: NSSize {
-        return isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
+        return Skin.baseMainSize
     }
 
     /// Convert a skin-coordinate rect (top-left origin) to view coordinates (bottom-left origin),
@@ -932,7 +918,7 @@ class MainWindowView: NSView {
     private func skinRectToViewRect(_ skinRect: NSRect) -> NSRect {
         let originalSize = Skin.baseMainSize
         let scale = scaleFactor
-        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+        let hidingTitleBar = WindowManager.shared.hideTitleBars
 
         // Flip Y: skin uses top-left origin, view uses bottom-left
         let flippedY = originalSize.height - skinRect.maxY
@@ -968,17 +954,17 @@ class MainWindowView: NSView {
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
-        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
+
+        let originalSize = Skin.baseMainSize
         let scale = scaleFactor
-        
+
         // Flip coordinate system to match skin's top-down coordinates
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
-        
+
         // When hiding title bars, shift content up to clip the title bar off the top
-        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+        let hidingTitleBar = WindowManager.shared.hideTitleBars
         
         // Apply scaling for resized window
         if scale != 1.0 {
@@ -1008,25 +994,10 @@ class MainWindowView: NSView {
         
         // Use original bounds for drawing (scaling is applied via transform)
         let drawBounds = NSRect(origin: .zero, size: originalSize)
-        
-        if isShadeMode {
-            // Draw shade mode (compact view)
-            let marqueeText = getMarqueeDisplayText()
-            renderer.drawMainWindowShade(
-                in: context,
-                bounds: drawBounds,
-                isActive: isActive,
-                currentTime: currentTime,
-                duration: duration,
-                trackTitle: marqueeText,
-                marqueeOffset: marqueeOffset,
-                pressedButton: pressedButton
-            )
-        } else {
-            // Draw normal mode with original bounds
-            drawNormalModeScaled(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds, dirtyRect: dirtyRect)
-        }
-        
+
+        // Draw normal mode with original bounds
+        drawNormalModeScaled(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds, dirtyRect: dirtyRect)
+
         context.restoreGState()
         
         // Draw loading overlay if casting local file
@@ -1097,7 +1068,7 @@ class MainWindowView: NSView {
     private func viewRectToSkinRect(_ viewRect: NSRect) -> NSRect {
         let originalSize = Skin.baseMainSize
         let scale = scaleFactor
-        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+        let hidingTitleBar = WindowManager.shared.hideTitleBars
 
         let scaledWidth = originalSize.width * scale
         let scaledHeight = originalSize.height * scale
@@ -1119,7 +1090,7 @@ class MainWindowView: NSView {
         return NSRect(x: skinX, y: flippedY, width: skinW, height: skinH)
     }
 
-    /// Draw the normal (non-shade) mode with scaling support
+    /// Draw the normal mode with scaling support
     private func drawNormalModeScaled(renderer: SkinRenderer, context: CGContext, isActive: Bool, drawBounds: NSRect, dirtyRect: NSRect) {
         // Convert dirty rect to skin coordinates for partial redraw optimization
         let dirtySkin = viewRectToSkinRect(dirtyRect)
@@ -1227,7 +1198,7 @@ class MainWindowView: NSView {
             )
         }
 
-        // Draw window controls (minimize, shade, close) - skip when title bars are hidden
+        // Draw window controls (minimize, close) - skip when title bars are hidden
         if !WindowManager.shared.hideTitleBars {
             let controlsRect = NSRect(x: 0, y: 0, width: 275, height: 14)
             if isFullRedraw || dirtySkin.intersects(controlsRect) {
@@ -1251,18 +1222,14 @@ class MainWindowView: NSView {
         let timeChanged = abs(self.currentTime - current) > 0.05
         let durationChanged = abs(self.duration - duration) > 0.1
         guard timeChanged || durationChanged else { return }
-        
+
         self.currentTime = current
         self.duration = duration
-        if isShadeMode {
-            needsDisplay = true
-        } else {
-            // Only invalidate the time display and position slider areas
-            let timeRect = NSRect(x: 36, y: 26, width: 63, height: 13)
-            let posRect = NSRect(x: 16, y: 72, width: 248, height: 10)
-            setNeedsDisplay(skinRectToViewRect(timeRect))
-            setNeedsDisplay(skinRectToViewRect(posRect))
-        }
+        // Only invalidate the time display and position slider areas
+        let timeRect = NSRect(x: 36, y: 26, width: 63, height: 13)
+        let posRect = NSRect(x: 16, y: 72, width: 248, height: 10)
+        setNeedsDisplay(skinRectToViewRect(timeRect))
+        setNeedsDisplay(skinRectToViewRect(posRect))
     }
     
     func updateTrackInfo(_ track: Track?) {
@@ -1271,20 +1238,14 @@ class MainWindowView: NSView {
         self.errorMessage = nil  // Clear any error message when track loads successfully
         bitrateScrollOffset = 0  // Reset bitrate scroll
         updateMarqueeContent()  // Update layer-based marquee
-        if isShadeMode {
-            marqueeOffset = 0
-        }
-        startMarquee()  // Restart timer for bitrate scrolling (both modes) or shade marquee
+        startMarquee()  // Restart timer for bitrate scrolling
         needsDisplay = true
     }
-    
+
     func updateVideoTrackInfo(title: String) {
         self.currentVideoTitle = title
         updateMarqueeContent()  // Update layer-based marquee
-        if isShadeMode {
-            marqueeOffset = 0
-        }
-        startMarquee()  // Restart timer for bitrate scrolling (both modes) or shade marquee
+        startMarquee()  // Restart timer for bitrate scrolling
         needsDisplay = true
     }
     
@@ -1329,7 +1290,7 @@ class MainWindowView: NSView {
         marqueeTimer = nil
     }
     
-    /// Handle marquee timer tick - only for bitrate scrolling and shade mode marquee
+    /// Handle marquee timer tick - only for bitrate scrolling
     /// (Normal mode marquee is handled by MarqueeLayer for GPU-accelerated performance)
     private func handleMarqueeTimerTick() {
         // Skip updates if window is not visible or occluded
@@ -1341,31 +1302,8 @@ class MainWindowView: NSView {
         
         var needsScrolling = false
         let charWidth = SkinElements.TextFont.charWidth
-        
-        // Shade mode marquee scrolling (layer-based marquee is hidden in shade mode)
-        if isShadeMode {
-            let title = isCastingLocalFile ? "Loading..." : getMarqueeDisplayText()
-            let textWidth = CGFloat(title.count) * charWidth
-            let marqueeWidth = SkinElements.MainShade.textArea.width
-            
-            if textWidth > marqueeWidth {
-                let separatorWidth = charWidth * 5
-                let totalCycleWidth = textWidth + separatorWidth
-                marqueeOffset += 3
-                if marqueeOffset >= totalCycleWidth {
-                    marqueeOffset = 0
-                }
-                needsScrolling = true
-            } else if marqueeOffset != 0 {
-                marqueeOffset = 0
-            }
-            
-            if needsScrolling {
-                needsDisplay = true
-            }
-        }
-        
-        // Scroll bitrate if > 3 digits (circular scroll) - both modes
+
+        // Scroll bitrate if > 3 digits (circular scroll)
         if let bitrate = currentTrack?.bitrate {
             let kbps = bitrate > 10000 ? bitrate / 1000 : bitrate
             let bitrateText = "\(kbps)"
@@ -1387,7 +1325,7 @@ class MainWindowView: NSView {
         
         // CPU optimization: Stop the timer when nothing needs scrolling
         // It will restart when track changes or new content arrives
-        if !needsScrolling && !isShadeMode {
+        if !needsScrolling {
             stopMarquee()
         }
     }
@@ -1520,19 +1458,11 @@ class MainWindowView: NSView {
             }
             return
         }
-        
-        // Classic main window shade toggle is disabled; title-bar double-click has no action.
-        
-        if isShadeMode {
-            // Shade mode mouse handling
-            handleShadeMouseDown(at: point, event: event)
-            return
-        }
-        
+
         // Hit test for actions
         if let action = regionManager.hitTest(point: point, in: .main, windowSize: hitTestSize) {
             // Skip window control actions when title bars are hidden
-            let isWindowControl = (action == .close || action == .minimize || action == .shade || action == .openMainMenu)
+            let isWindowControl = (action == .close || action == .minimize || action == .openMainMenu)
             if !(WindowManager.shared.hideTitleBars && isWindowControl) {
                 handleMouseDown(action: action, at: point)
                 return
@@ -1556,43 +1486,6 @@ class MainWindowView: NSView {
         }
     }
     
-    /// Handle mouse down in shade mode
-    private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
-        // Point is already in original coordinates, convert to skin Y-axis (top-down)
-        let originalHeight = SkinElements.MainShade.windowSize.height
-        let skinPoint = NSPoint(x: point.x, y: originalHeight - point.y)
-        
-        // Check window control buttons - close first for priority (enlarged hit areas)
-        let closeRect = SkinElements.TitleBar.ShadeHitPositions.closeButton
-        let unshadeRect = SkinElements.TitleBar.ShadeHitPositions.unshadeButton
-        let minimizeRect = SkinElements.TitleBar.ShadeHitPositions.minimizeButton
-        
-        if closeRect.contains(skinPoint) {
-            pressedButton = .close
-            needsDisplay = true
-            return
-        }
-        
-        if unshadeRect.contains(skinPoint) {
-            pressedButton = .unshade
-            needsDisplay = true
-            return
-        }
-        
-        if minimizeRect.contains(skinPoint) {
-            pressedButton = .minimize
-            needsDisplay = true
-            return
-        }
-        
-        // No button hit - start window drag (shade mode is all title bar, so can undock)
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
-        }
-    }
-    
     private func handleMouseDown(action: PlayerAction, at point: NSPoint) {
         switch action {
         // Button presses - track pressed state
@@ -1612,8 +1505,6 @@ class MainWindowView: NSView {
             pressedButton = .close
         case .minimize:
             pressedButton = .minimize
-        case .shade:
-            pressedButton = .shade
         case .shuffle:
             pressedButton = .shuffle
         case .repeat:
@@ -1765,36 +1656,14 @@ class MainWindowView: NSView {
         
         // Check if mouse is still over the pressed button
         if let pressed = pressedButton {
-            if isShadeMode {
-                // Shade mode button release handling
-                let originalHeight = SkinElements.MainShade.windowSize.height
-                let skinPoint = NSPoint(x: point.x, y: originalHeight - point.y)
-                var shouldPerform = false
-                
-                switch pressed {
-                case .close:
-                    shouldPerform = SkinElements.TitleBar.ShadeHitPositions.closeButton.contains(skinPoint)
-                case .minimize:
-                    shouldPerform = SkinElements.TitleBar.ShadeHitPositions.minimizeButton.contains(skinPoint)
-                case .unshade:
-                    shouldPerform = SkinElements.TitleBar.ShadeHitPositions.unshadeButton.contains(skinPoint)
-                default:
-                    break
-                }
-                
-                if shouldPerform {
-                    performAction(for: pressed)
-                }
-            } else {
-                // Normal mode button release handling
-                let action = regionManager.hitTest(point: point, in: .main, windowSize: originalWindowSize)
-                
-                // If released on the same button, perform the action
-                if actionMatchesButton(action, pressed) {
-                    performAction(for: pressed)
-                }
+            // Normal mode button release handling
+            let action = regionManager.hitTest(point: point, in: .main, windowSize: originalWindowSize)
+
+            // If released on the same button, perform the action
+            if actionMatchesButton(action, pressed) {
+                performAction(for: pressed)
             }
-            
+
             pressedButton = nil
             needsDisplay = true
         }
@@ -1831,7 +1700,6 @@ class MainWindowView: NSView {
              (.eject, .eject),
              (.close, .close),
              (.minimize, .minimize),
-             (.shade, .shade),
              (.shuffle, .shuffle),
              (.repeat, .repeatTrack),
              (.toggleEQ, .eqToggle),
@@ -1894,7 +1762,7 @@ class MainWindowView: NSView {
             WindowManager.shared.togglePlaylist()
         case .close:
             NSApplication.shared.terminate(nil)
-        case .minimize, .shade, .unshade:
+        case .minimize:
             WindowManager.shared.miniaturizeAllManagedWindows()
         case .logo:
             WindowManager.shared.togglePlexBrowser()
@@ -1944,22 +1812,6 @@ class MainWindowView: NSView {
         }
     }
     
-    private func toggleShadeMode() {
-        isShadeMode.toggle()
-        controller?.setShadeMode(isShadeMode)
-    }
-    
-    /// Set shade mode externally (e.g., from controller)
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        updateMarqueeLayerFrame()  // Hide/show layer based on mode
-        updateMetalOverlayVisibility()  // Hide/show Metal overlay based on mode
-        if enabled {
-            marqueeOffset = 0  // Reset shade mode marquee
-            startMarquee()     // Start timer for shade mode
-        }
-        needsDisplay = true
-    }
     
     // MARK: - Keyboard Events
     

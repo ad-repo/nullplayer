@@ -91,10 +91,8 @@ private enum CompactModeState {
 private struct WindowSnapshot {
     var wasVisible: Bool
     var frame: NSRect
-    var wasShadeMode: Bool
-    /// Un-shaded frame for position memory (Library only). When the window is shaded, `frame`
-    /// is the collapsed shade frame, so this carries the full-height frame separately so a later
-    /// unshade restores the real height. nil for windows with no distinct shade/normal frames.
+    /// Normal frame for position memory (Library only). Stores the full window frame.
+    /// nil for windows with no special frame handling.
     var normalFrame: NSRect?
     /// Whether a side window (Library/ProjectM) was detached from the main-window edge (not docked)
     /// at capture time. Used to re-detach it after a Large-UI re-apply force-docks it. Always false
@@ -429,7 +427,7 @@ class WindowManager {
     /// Library browser window controller (classic or modern, accessed via protocol)
     private var plexBrowserWindowController: LibraryBrowserWindowProviding?
 
-    /// Last known Library window frame (shade-safe), remembered across hide/close so the
+    /// Last known Library window frame, remembered across hide/close so the
     /// window reopens where the user left it instead of the default right-of-stack layout.
     private var lastPlexBrowserFrame: NSRect?
 
@@ -982,7 +980,7 @@ class WindowManager {
         return projectMWindowController?.window?.frame
     }
     
-    /// Cache the current library frame (shade-safe) before it is hidden/closed.
+    /// Cache the current library frame before it is hidden/closed.
     private func rememberPlexBrowserFrame() {
         if let f = plexBrowserWindowController?.frameForPositionMemory, f != .zero {
             lastPlexBrowserFrame = f
@@ -1164,7 +1162,6 @@ class WindowManager {
             return WindowSnapshot(
                 wasVisible: window.isVisible,
                 frame: window.frame,
-                wasShadeMode: controller?.isShadeMode ?? false,
                 normalFrame: normalFrame,
                 // Record detached-ness while the window is live (it's determinable here; after
                 // Compact Mode hides it, docking can no longer be measured).
@@ -1174,7 +1171,7 @@ class WindowManager {
 
         func snapWindow(_ window: NSWindow?) -> WindowSnapshot? {
             guard let window else { return nil }
-            return WindowSnapshot(wasVisible: window.isVisible, frame: window.frame, wasShadeMode: false)
+            return WindowSnapshot(wasVisible: window.isVisible, frame: window.frame)
         }
 
         return CompactWindowSnapshot(
@@ -1185,8 +1182,7 @@ class WindowManager {
             audioAnalysis: snap(audioAnalysisWindowController),
             waveform: snap(waveformWindowController),
             projectM: snap(projectMWindowController, sideWindow: true),
-            // Library carries its un-shaded frame so a shaded window can restore its real position
-            // on unshade after a Compact-preserving UI rebuild (raw window.frame is the shade frame).
+            // Library stores its position frame for restoration after Compact-mode rebuild.
             library: snap(plexBrowserWindowController,
                           normalFrame: plexBrowserWindowController?.frameForPositionMemory, sideWindow: true),
             debug: snapWindow(debugWindowController?.window)
@@ -1284,9 +1280,6 @@ class WindowManager {
             if isInNativeFullScreen(window) { return }
             if snapshot.frame != .zero {
                 window.setFrame(snapshot.frame, display: true)
-            }
-            if controller?.isShadeMode != snapshot.wasShadeMode {
-                controller?.setShadeMode(snapshot.wasShadeMode)
             }
             if snapshot.wasVisible {
                 window.orderFront(nil)
@@ -4525,11 +4518,9 @@ class WindowManager {
     private struct UIWindowSnapshot {
         let visible: Bool
         let frame: NSRect
-        /// Un-shaded frame for position memory. For a shaded Library window `frame` is the
-        /// collapsed shade frame, so this carries the full-height frame separately; nil when the
-        /// window has no distinct shade/normal frames (or isn't shaded).
+        /// Normal frame for position memory. Stores the full window frame for Library window
+        /// restoration; nil for other window types.
         var normalFrame: NSRect?
-        let isShadeMode: Bool
     }
 
     /// Snapshot of the mode-dependent window layer, used to restore which windows were open
@@ -4554,16 +4545,14 @@ class WindowManager {
             return UIWindowSnapshot(
                 visible: window.isVisible,
                 frame: window.frame,
-                normalFrame: normalFrame,
-                isShadeMode: controller?.isShadeMode ?? false
+                normalFrame: normalFrame
             )
         }
         return ModeDependentLayoutSnapshot(
             main: snap(mainWindowController),
             playlist: snap(playlistWindowController),
             equalizer: snap(equalizerWindowController),
-            // Library carries its un-shaded frame so a shaded window can restore its real
-            // position on unshade after the rebuild (raw window.frame is the shade frame).
+            // Library stores its position frame for restoration after the rebuild.
             library: snap(plexBrowserWindowController, normalFrame: plexBrowserWindowController?.frameForPositionMemory),
             projectM: snap(projectMWindowController),
             spectrum: snap(spectrumWindowController),
@@ -4588,65 +4577,33 @@ class WindowManager {
     private func recreateModeDependentLayout(_ snapshot: ModeDependentLayoutSnapshot) {
         showMainWindow()
         if let main = snapshot.main {
-            mainWindowController?.setShadeMode(main.isShadeMode)
             if main.frame != .zero {
                 mainWindowController?.window?.setFrame(main.frame, display: true)
             }
         }
 
-        // Freshly recreated windows are always created in non-shade mode, so calling
-        // setShadeMode(false) here is not just redundant — it resizes the window to its
-        // *default* size (normalModeFrame is nil on a new window), discarding the full-height
-        // frame the show*() call just restored. Only re-enter shade mode when it was captured.
         if let playlist = snapshot.playlist, playlist.visible {
-            showPlaylist(at: playlist.isShadeMode ? nil : playlist.frame)
-            if playlist.isShadeMode {
-                playlistWindowController?.setShadeMode(true)
-                playlistWindowController?.window?.setFrame(playlist.frame, display: true)
-            }
+            showPlaylist(at: playlist.frame)
         }
         if let equalizer = snapshot.equalizer, equalizer.visible {
-            showEqualizer(at: equalizer.isShadeMode ? nil : equalizer.frame)
-            if equalizer.isShadeMode {
-                equalizerWindowController?.setShadeMode(true)
-                equalizerWindowController?.window?.setFrame(equalizer.frame, display: true)
-            }
+            showEqualizer(at: equalizer.frame)
         }
         if let library = snapshot.library, library.visible {
-            // Create at the un-shaded frame first: entering shade mode stashes the *current*
-            // frame as the normal frame, so this is what restores on a later unshade. Then
-            // collapse and position the shaded window exactly where it was captured.
-            let normalFrame = (library.isShadeMode ? library.normalFrame : nil) ?? library.frame
+            let normalFrame = library.normalFrame ?? library.frame
             showPlexBrowser(at: normalFrame)
-            if library.isShadeMode {
-                plexBrowserWindowController?.setShadeMode(true)
-                plexBrowserWindowController?.window?.setFrame(library.frame, display: true)
-            }
         }
         if let spectrum = snapshot.spectrum, spectrum.visible {
-            showSpectrum(at: spectrum.isShadeMode ? nil : spectrum.frame)
-            if spectrum.isShadeMode {
-                spectrumWindowController?.setShadeMode(true)
-                spectrumWindowController?.window?.setFrame(spectrum.frame, display: true)
-            }
+            showSpectrum(at: spectrum.frame)
         }
         if snapshot.audioAnalysis?.visible == true { showAudioAnalysis(at: snapshot.audioAnalysis?.frame) }
         if let waveform = snapshot.waveform, waveform.visible {
-            showWaveform(at: waveform.isShadeMode ? nil : waveform.frame)
-            if waveform.isShadeMode {
-                waveformWindowController?.setShadeMode(true)
-                waveformWindowController?.window?.setFrame(waveform.frame, display: true)
-            }
+            showWaveform(at: waveform.frame)
         }
         if let projectM = snapshot.projectM, projectM.visible {
             showProjectM(
-                at: projectM.isShadeMode ? nil : projectM.frame,
+                at: projectM.frame,
                 restoringPresetIndex: snapshot.projectMPresetIndex
             )
-            if projectM.isShadeMode {
-                projectMWindowController?.setShadeMode(true)
-                projectMWindowController?.window?.setFrame(projectM.frame, display: true)
-            }
         }
 
         pushCurrentPresentationStateToRecreatedWindows()
@@ -4927,12 +4884,12 @@ class WindowManager {
         func conv(_ w: WindowSnapshot?) -> UIWindowSnapshot? {
             guard let w else { return nil }
             return UIWindowSnapshot(visible: w.wasVisible, frame: w.frame,
-                                    normalFrame: w.normalFrame, isShadeMode: w.wasShadeMode)
+                                    normalFrame: w.normalFrame)
         }
         func convScaled(_ w: WindowSnapshot?) -> UIWindowSnapshot? {
             guard let w else { return nil }
             return UIWindowSnapshot(visible: w.wasVisible, frame: collapsed(w.frame) ?? w.frame,
-                                    normalFrame: collapsed(w.normalFrame), isShadeMode: w.wasShadeMode)
+                                    normalFrame: collapsed(w.normalFrame))
         }
         return ModeDependentLayoutSnapshot(
             main: conv(snapshot.main),

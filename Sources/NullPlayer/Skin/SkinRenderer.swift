@@ -223,7 +223,7 @@ class SkinRenderer {
         switch button {
         case .previous, .play, .pause, .stop, .next, .eject:
             spriteSheet = skin.cbuttons
-        case .close, .minimize, .shade, .unshade:
+        case .close, .minimize:
             spriteSheet = skin.titlebar
         case .shuffle, .repeatTrack, .eqToggle, .playlistToggle:
             spriteSheet = skin.shufrep
@@ -260,11 +260,10 @@ class SkinRenderer {
         }
     }
     
-    /// Draw window control buttons (minimize, shade, close)
+    /// Draw window control buttons (minimize, close)
     func drawWindowControls(in context: CGContext, bounds: NSRect, pressedButton: ButtonType?) {
         let controls: [(ButtonType, NSRect)] = [
             (.minimize, SkinElements.TitleBar.Positions.minimizeButton),
-            (.shade, SkinElements.TitleBar.Positions.shadeButton),
             (.close, SkinElements.TitleBar.Positions.closeButton)
         ]
         
@@ -1178,151 +1177,7 @@ class SkinRenderer {
             drawFallbackSlider(value: normalizedValue, rect: sliderRect, in: context)
         }
     }
-    
-    // MARK: - Shade Mode Rendering
-    
-    /// Draw main window in shade mode
-    func drawMainWindowShade(in context: CGContext, bounds: NSRect, isActive: Bool,
-                             currentTime: TimeInterval, duration: TimeInterval,
-                             trackTitle: String, marqueeOffset: CGFloat, pressedButton: ButtonType?) {
-        // Draw shade mode background
-        if let titlebarImage = skin.titlebar {
-            let sourceRect = isActive ? SkinElements.MainShade.backgroundActive : SkinElements.MainShade.backgroundInactive
-            drawSprite(from: titlebarImage, sourceRect: sourceRect, to: bounds, in: context)
-        } else {
-            // Fallback shade background
-            let gradient = NSGradient(colors: [
-                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.5, alpha: 1.0) : NSColor(calibratedWhite: 0.3, alpha: 1.0),
-                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.3, alpha: 1.0) : NSColor(calibratedWhite: 0.2, alpha: 1.0)
-            ])
-            gradient?.draw(in: bounds, angle: 90)
-        }
-        
-        // Draw window control buttons
-        let controls: [(ButtonType, NSRect)] = [
-            (.minimize, SkinElements.TitleBar.ShadePositions.minimizeButton),
-            (.unshade, SkinElements.TitleBar.ShadePositions.unshadeButton),
-            (.close, SkinElements.TitleBar.ShadePositions.closeButton)
-        ]
-        
-        for (button, position) in controls {
-            let state: ButtonState = (pressedButton == button) ? .pressed : .normal
-            drawButton(button, state: state, at: position, in: context)
-        }
-        
-        // Draw mini position bar
-        if duration > 0 {
-            let posRect = SkinElements.MainShade.Positions.positionBar
-            let progress = CGFloat(currentTime / duration)
-            
-            NSColor.darkGray.setFill()
-            context.fill(posRect)
-            
-            let fillWidth = posRect.width * progress
-            NSColor.green.setFill()
-            context.fill(NSRect(x: posRect.minX, y: posRect.minY, width: fillWidth, height: posRect.height))
-        }
-        
-        // Draw scrolling title text
-        let textArea = SkinElements.MainShade.textArea
-        context.saveGState()
-        context.clip(to: textArea)
-        
-        let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.green,
-            .font: NSFont.monospacedSystemFont(ofSize: 8, weight: .regular)
-        ]
-        let textPoint = NSPoint(x: textArea.minX - marqueeOffset, y: textArea.minY)
-        trackTitle.draw(at: textPoint, withAttributes: attrs)
-        
-        context.restoreGState()
-    }
-    
-    /// Draw equalizer window in shade mode
-    func drawEqualizerShade(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: ButtonType?) {
-        // Draw shade mode background
-        if let eqImage = skin.eqmain {
-            let sourceRect = isActive ? SkinElements.EQShade.backgroundActive : SkinElements.EQShade.backgroundInactive
-            drawSprite(from: eqImage, sourceRect: sourceRect, to: bounds, in: context)
-        } else {
-            // Fallback shade background
-            let gradient = NSGradient(colors: [
-                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.5, alpha: 1.0) : NSColor(calibratedWhite: 0.3, alpha: 1.0),
-                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.3, alpha: 1.0) : NSColor(calibratedWhite: 0.2, alpha: 1.0)
-            ])
-            gradient?.draw(in: bounds, angle: 90)
-            
-            // Draw EQ label
-            let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.white,
-                .font: NSFont.boldSystemFont(ofSize: 9)
-            ]
-            "EQUALIZER".draw(at: NSPoint(x: 6, y: 3), withAttributes: attrs)
-        }
-        
-        // Draw window control buttons
-        let closePos = SkinElements.EQShade.Positions.closeButton
-        let shadePos = SkinElements.EQShade.Positions.shadeButton
-        
-        let closeState: ButtonState = (pressedButton == .close) ? .pressed : .normal
-        drawButton(.close, state: closeState, at: closePos, in: context)
-        
-        let shadeState: ButtonState = (pressedButton == .unshade) ? .pressed : .normal
-        drawButton(.unshade, state: shadeState, at: shadePos, in: context)
-    }
-    
-    /// Draw playlist window in shade mode
-    func drawPlaylistShade(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: ButtonType?) {
-        // Draw shade mode background (tiled)
-        if let pleditImage = skin.pledit {
-            // Left corner
-            drawSprite(from: pleditImage, sourceRect: SkinElements.PlaylistShade.leftCorner,
-                      to: NSRect(x: 0, y: 0, width: 25, height: 14), in: context)
-            
-            // Right corner
-            let rightCornerX = bounds.width - 75
-            drawSprite(from: pleditImage, sourceRect: SkinElements.PlaylistShade.rightCorner,
-                      to: NSRect(x: rightCornerX, y: 0, width: 75, height: 14), in: context)
-            
-            // Tile middle
-            var x: CGFloat = 25
-            while x < rightCornerX {
-                let tileWidth = min(25, rightCornerX - x)
-                drawSprite(from: pleditImage, sourceRect: SkinElements.PlaylistShade.tile,
-                          to: NSRect(x: x, y: 0, width: tileWidth, height: 14), in: context)
-                x += 25
-            }
-        } else {
-            // Fallback shade background
-            let gradient = NSGradient(colors: [
-                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.5, alpha: 1.0) : NSColor(calibratedWhite: 0.3, alpha: 1.0),
-                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.3, alpha: 1.0) : NSColor(calibratedWhite: 0.2, alpha: 1.0)
-            ])
-            gradient?.draw(in: bounds, angle: 90)
-            
-            // Draw PL label
-            let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.white,
-                .font: NSFont.boldSystemFont(ofSize: 9)
-            ]
-            "PLAYLIST".draw(at: NSPoint(x: 6, y: 3), withAttributes: attrs)
-        }
-        
-        // Draw window control buttons (relative to right edge)
-        let closeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
-                               y: SkinElements.PlaylistShade.Positions.closeButton.minY,
-                               width: 9, height: 9)
-        let shadeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
-                               y: SkinElements.PlaylistShade.Positions.shadeButton.minY,
-                               width: 9, height: 9)
-        
-        let closeState: ButtonState = (pressedButton == .close) ? .pressed : .normal
-        drawButton(.close, state: closeState, at: closeRect, in: context)
-        
-        let shadeState: ButtonState = (pressedButton == .unshade) ? .pressed : .normal
-        drawButton(.unshade, state: shadeState, at: shadeRect, in: context)
-    }
-    
+
     // MARK: - Equalizer Window
     
     /// Draw equalizer window background
@@ -1478,7 +1333,7 @@ class SkinRenderer {
     
     /// ProjectM button types
     enum ProjectMButtonType {
-        case close, shade
+        case close
     }
 
     private func drawPlaylistTitleBarControls(from pleditImage: NSImage,
@@ -1487,9 +1342,7 @@ class SkinRenderer {
                                               titleHeight: CGFloat,
                                               isActive: Bool,
                                               controlScale: CGFloat = 1.0,
-                                              showsShade: Bool,
-                                              closePressed: Bool,
-                                              shadePressed: Bool) {
+                                              closePressed: Bool) {
         let scale = max(1.0, controlScale)
         let buttonSize = 9 * scale
         let buttonY = min(3 * scale, max(0, (titleHeight - buttonSize) / 2))
@@ -1503,32 +1356,6 @@ class SkinRenderer {
         let closeSource = NSRect(x: 167, y: 3 + inactiveYOffset, width: 9, height: 9)
         drawSprite(from: pleditImage, sourceRect: closeSource, to: closeRect, in: context)
 
-        if showsShade {
-            let shadeRect = NSRect(
-                x: bounds.width - SkinElements.Playlist.TitleBarButtons.shadeOffset * scale,
-                y: buttonY,
-                width: buttonSize,
-                height: buttonSize
-            )
-            let gapWidth = 4 * scale
-            let gapSource = NSRect(x: 153, y: inactiveYOffset, width: 4, height: 20)
-            let gapRect = NSRect(
-                x: shadeRect.minX - gapWidth,
-                y: 0,
-                width: gapWidth,
-                height: titleHeight
-            )
-            drawSprite(from: pleditImage, sourceRect: gapSource, to: gapRect, in: context)
-
-            let shadeSource = NSRect(x: 158, y: 3 + inactiveYOffset, width: 9, height: 9)
-            drawSprite(from: pleditImage, sourceRect: shadeSource, to: shadeRect, in: context)
-
-            if shadePressed {
-                NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-                context.fill(shadeRect)
-            }
-        }
-
         if closePressed {
             NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
             context.fill(closeRect)
@@ -1538,17 +1365,12 @@ class SkinRenderer {
     /// Draw the complete ProjectM window chrome (title bar, borders)
     /// The visualization area itself is handled by the OpenGL view
     func drawProjectMWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
-                            pressedButton: ProjectMButtonType?, isShadeMode: Bool,
+                            pressedButton: ProjectMButtonType?,
                             controlScale: CGFloat = 1.0,
                             title: String = "VISUALIZATIONS") {
-        if isShadeMode {
-            drawProjectMShade(in: context, bounds: bounds, isActive: isActive,
-                              pressedButton: pressedButton, title: title)
-        } else {
-            drawProjectMNormal(in: context, bounds: bounds, isActive: isActive,
-                               pressedButton: pressedButton, controlScale: controlScale,
-                               title: title)
-        }
+        drawProjectMNormal(in: context, bounds: bounds, isActive: isActive,
+                           pressedButton: pressedButton, controlScale: controlScale,
+                           title: title)
     }
     
     /// Draw normal mode ProjectM window chrome
@@ -1625,8 +1447,8 @@ class SkinRenderer {
 
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
-                                     controlScale: controlScale, showsShade: true,
-                                     closePressed: pressedButton == .close, shadePressed: pressedButton == .shade)
+                                     controlScale: controlScale,
+                                     closePressed: pressedButton == .close)
 
         _ = rightCorner
 
@@ -1733,24 +1555,17 @@ class SkinRenderer {
     /// Draw spectrum analyzer window chrome
     /// Uses same style as ProjectM window but with "SPECTRUM ANALYZER" title
     func drawSpectrumAnalyzerWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                    pressedButton: ProjectMButtonType?, isShadeMode: Bool,
-                                    controlScale: CGFloat = 1.0, title: String? = nil,
-                                    showsShade: Bool = true) {
-        if isShadeMode {
-            drawSpectrumAnalyzerShade(in: context, bounds: bounds, isActive: isActive,
-                                      pressedButton: pressedButton,
-                                      title: title ?? "SPECTRUM ANALYZER")
-        } else {
-            drawSpectrumAnalyzerNormal(in: context, bounds: bounds, isActive: isActive,
-                                       pressedButton: pressedButton, controlScale: controlScale,
-                                       title: title, showsShade: showsShade)
-        }
+                                    pressedButton: ProjectMButtonType?,
+                                    controlScale: CGFloat = 1.0, title: String? = nil) {
+        drawSpectrumAnalyzerNormal(in: context, bounds: bounds, isActive: isActive,
+                                   pressedButton: pressedButton, controlScale: controlScale,
+                                   title: title)
     }
     
     /// Draw normal mode spectrum analyzer window chrome
     private func drawSpectrumAnalyzerNormal(in context: CGContext, bounds: NSRect, isActive: Bool,
                                             pressedButton: ProjectMButtonType?, controlScale: CGFloat,
-                                            title: String?, showsShade: Bool) {
+                                            title: String?) {
         // Fill background with black for visualization area
         NSColor.black.setFill()
         context.fill(bounds)
@@ -1767,13 +1582,13 @@ class SkinRenderer {
         // Draw title bar using PLEDIT.BMP sprites (without custom text)
         drawSpectrumAnalyzerTitleBar(in: context, bounds: bounds, isActive: isActive,
                                      pressedButton: pressedButton, controlScale: controlScale,
-                                     title: title, showsShade: showsShade)
+                                     title: title)
     }
     
     /// Draw spectrum-style title bar using PLEDIT.BMP sprites.
     private func drawSpectrumAnalyzerTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool,
                                               pressedButton: ProjectMButtonType?, controlScale: CGFloat,
-                                              title: String?, showsShade: Bool) {
+                                              title: String?) {
         guard let pleditImage = skin.pledit else {
             drawFallbackProjectMTitleBar(
                 in: context,
@@ -1828,8 +1643,8 @@ class SkinRenderer {
 
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
-                                     controlScale: controlScale, showsShade: showsShade,
-                                     closePressed: pressedButton == .close, shadePressed: pressedButton == .shade)
+                                     controlScale: controlScale,
+                                     closePressed: pressedButton == .close)
 
         _ = rightCorner  // original sprite no longer drawn; reference kept above for parity
 
@@ -1939,52 +1754,6 @@ class SkinRenderer {
                     xPos += charSpacing
                 }
             }
-        }
-    }
-    
-    /// Draw spectrum analyzer shade mode
-    private func drawSpectrumAnalyzerShade(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                           pressedButton: ProjectMButtonType?, title: String) {
-        guard let pleditImage = skin.pledit else {
-            // Simple fallback
-            NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.22, alpha: 1.0).setFill()
-            context.fill(bounds)
-            return
-        }
-        
-        let shadeHeight = SkinElements.PlaylistShade.height  // 14px
-        
-        // Draw shade background using playlist shade sprites
-        let leftCorner = SkinElements.PlaylistShade.leftCorner
-        let rightCorner = SkinElements.PlaylistShade.rightCorner
-        let tile = SkinElements.PlaylistShade.tile
-        
-        // Draw left corner
-        drawSprite(from: pleditImage, sourceRect: leftCorner,
-                  to: NSRect(x: 0, y: 0, width: leftCorner.width, height: shadeHeight), in: context)
-        
-        // Draw right corner
-        drawSprite(from: pleditImage, sourceRect: rightCorner,
-                  to: NSRect(x: bounds.width - rightCorner.width, y: 0, width: rightCorner.width, height: shadeHeight), in: context)
-        
-        // Fill middle with tiles
-        var x = leftCorner.width
-        let endX = bounds.width - rightCorner.width
-        while x < endX {
-            let w = min(tile.width, endX - x)
-            drawSprite(from: pleditImage, sourceRect: tile,
-                      to: NSRect(x: x, y: 0, width: w, height: shadeHeight), in: context)
-            x += tile.width
-        }
-        
-        drawGenFontTitleText(title, in: context, bounds: bounds,
-                             titleHeight: shadeHeight, isActive: isActive)
-        
-        // Close button pressed state
-        if pressedButton == .close {
-            let closeRect = NSRect(x: bounds.width - 11, y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(closeRect)
         }
     }
     
@@ -2332,51 +2101,6 @@ class SkinRenderer {
         context.restoreGState()
     }
     
-    /// Draw ProjectM window in shade mode (title bar only)
-    private func drawProjectMShade(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                   pressedButton: ProjectMButtonType?, title: String) {
-        // In shade mode, use playlist shade sprites
-        guard let pleditImage = skin.pledit else {
-            drawFallbackProjectMTitleBar(in: context, bounds: bounds, isActive: isActive, title: title)
-            return
-        }
-        
-        let shadeHeight: CGFloat = 14
-        
-        // Draw shade mode background using playlist shade sprites
-        let leftCorner = SkinElements.PlaylistShade.leftCorner
-        let rightCorner = SkinElements.PlaylistShade.rightCorner
-        let tile = SkinElements.PlaylistShade.tile
-        
-        // Draw left corner
-        drawSprite(from: pleditImage, sourceRect: leftCorner,
-                  to: NSRect(x: 0, y: 0, width: leftCorner.width, height: shadeHeight), in: context)
-        
-        // Draw right corner
-        drawSprite(from: pleditImage, sourceRect: rightCorner,
-                  to: NSRect(x: bounds.width - rightCorner.width, y: 0, width: rightCorner.width, height: shadeHeight), in: context)
-        
-        // Tile middle
-        var x = leftCorner.width
-        let endX = bounds.width - rightCorner.width
-        while x < endX {
-            let w = min(tile.width, endX - x)
-            drawSprite(from: pleditImage, sourceRect: tile,
-                      to: NSRect(x: x, y: 0, width: w, height: shadeHeight), in: context)
-            x += tile.width
-        }
-        
-        drawGenFontTitleText(title, in: context, bounds: bounds,
-                             titleHeight: shadeHeight, isActive: isActive)
-        
-        // Close button pressed state
-        if pressedButton == .close {
-            let closeRect = NSRect(x: bounds.width - 11, y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(closeRect)
-        }
-    }
-    
     /// Fallback chrome drawing when GEN.BMP is not available
     private func drawFallbackProjectMChrome(in context: CGContext, bounds: NSRect, isActive: Bool,
                                             pressedButton: ProjectMButtonType?) {
@@ -2494,7 +2218,7 @@ class SkinRenderer {
     /// Playlist button types
     enum PlaylistButtonType {
         case add, rem, sel, misc, list
-        case close, shade
+        case close
         // Mini transport controls (existing in skin sprites)
         case miniPrevious, miniPlay, miniPause, miniStop, miniNext, miniOpen
     }
@@ -2615,9 +2339,7 @@ class SkinRenderer {
 
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
-                                     showsShade: true,
-                                     closePressed: pressedButton == .close,
-                                     shadePressed: pressedButton == .shade)
+                                     closePressed: pressedButton == .close)
     }
     
     /// Build a horizontally-tileable bottom-border tile by rotating the playlist `leftSideTile`
@@ -2860,9 +2582,8 @@ class SkinRenderer {
             patternX += 4
         }
         
-        // Window control buttons (shade, close) - simple rectangles
+        // Window control button (close) - simple rectangle
         NSColor(calibratedWhite: 0.4, alpha: 1.0).setFill()
-        context.fill(NSRect(x: bounds.width - 22, y: 6, width: 9, height: 9))
         context.fill(NSRect(x: bounds.width - 11, y: 6, width: 9, height: 9))
     }
     
@@ -2870,7 +2591,7 @@ class SkinRenderer {
     
     /// Plex browser button types
     enum PlexBrowserButtonType {
-        case close, shade
+        case close
     }
     
     /// Draw the complete Plex browser window using skin sprites
@@ -2983,9 +2704,8 @@ class SkinRenderer {
 
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
-                                     controlScale: controlScale, showsShade: true,
-                                     closePressed: pressedButton == .close,
-                                     shadePressed: pressedButton == .shade)
+                                     controlScale: controlScale,
+                                     closePressed: pressedButton == .close)
 
         _ = rightCorner
 
@@ -3016,8 +2736,8 @@ class SkinRenderer {
         }
         
         // Right corner: mirror the leftCorner sprite so the outer bevel matches the side
-        // border below (same fix as playlist/spectrum/waveform/projectM). The close + shade
-        // buttons are drawn separately via drawButton below, so no icon overlay is needed.
+        // border below (same fix as playlist/spectrum/waveform/projectM). The close
+        // button is drawn separately via drawButton below, so no icon overlay is needed.
         let rightMirrorRect = NSRect(x: bounds.width - rightCornerWidth, y: 0,
                                      width: rightCornerWidth, height: titleHeight)
         context.saveGState()
@@ -3034,18 +2754,13 @@ class SkinRenderer {
         if let pleditImage = skin.pledit {
             drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                          titleHeight: titleHeight, isActive: isActive,
-                                         controlScale: controlScale, showsShade: true,
-                                         closePressed: pressedButton == .close,
-                                         shadePressed: pressedButton == .shade)
+                                         controlScale: controlScale,
+                                         closePressed: pressedButton == .close)
         } else {
             let closeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9,
                                    y: 4, width: 9, height: 9)
-            let shadeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.shadeOffset - 9,
-                                   y: 4, width: 9, height: 9)
             let closeState: ButtonState = (pressedButton == .close) ? .pressed : .normal
-            let shadeState: ButtonState = (pressedButton == .shade) ? .pressed : .normal
             drawButton(.close, state: closeState, at: closeRect, in: context)
-            drawButton(.shade, state: shadeState, at: shadeRect, in: context)
         }
     }
 
@@ -3719,61 +3434,6 @@ class SkinRenderer {
         
         drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.scrollbarThumbNormal,
                   to: NSRect(x: scrollbarX, y: thumbY, width: scrollbarWidth, height: thumbHeight), in: context)
-    }
-    
-    /// Draw Plex browser in shade mode
-    func drawPlexBrowserShade(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
-        // Use playlist shade sprites
-        if let pleditImage = skin.pledit {
-            // Left corner
-            drawSprite(from: pleditImage, sourceRect: SkinElements.PlaylistShade.leftCorner,
-                      to: NSRect(x: 0, y: 0, width: 25, height: 14), in: context)
-            
-            // Right corner
-            let rightCornerX = bounds.width - 75
-            drawSprite(from: pleditImage, sourceRect: SkinElements.PlaylistShade.rightCorner,
-                      to: NSRect(x: rightCornerX, y: 0, width: 75, height: 14), in: context)
-            
-            // Tile middle
-            var x: CGFloat = 25
-            while x < rightCornerX {
-                let tileWidth = min(25, rightCornerX - x)
-                drawSprite(from: pleditImage, sourceRect: SkinElements.PlaylistShade.tile,
-                          to: NSRect(x: x, y: 0, width: tileWidth, height: 14), in: context)
-                x += 25
-            }
-            
-            drawGenFontTitleText("LIBRARY", in: context, bounds: bounds,
-                                 titleHeight: 14, isActive: isActive)
-        } else {
-            // Fallback shade background
-            let gradient = NSGradient(colors: [
-                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.5, alpha: 1.0) : NSColor(calibratedWhite: 0.3, alpha: 1.0),
-                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.3, alpha: 1.0) : NSColor(calibratedWhite: 0.2, alpha: 1.0)
-            ])
-            gradient?.draw(in: bounds, angle: 90)
-            
-            // Draw Library label
-            let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.white,
-                .font: NSFont.boldSystemFont(ofSize: 9)
-            ]
-            "LIBRARY".draw(at: NSPoint(x: 6, y: 3), withAttributes: attrs)
-        }
-        
-        // Draw window control buttons (relative to right edge)
-        let closeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
-                               y: SkinElements.PlaylistShade.Positions.closeButton.minY,
-                               width: 9, height: 9)
-        let shadeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
-                               y: SkinElements.PlaylistShade.Positions.shadeButton.minY,
-                               width: 9, height: 9)
-        
-        let closeState: ButtonState = (pressedButton == .close) ? .pressed : .normal
-        drawButton(.close, state: closeState, at: closeRect, in: context)
-        
-        let shadeState: ButtonState = (pressedButton == .shade) ? .pressed : .normal
-        drawButton(.unshade, state: shadeState, at: shadeRect, in: context)
     }
     
     // MARK: - Plex Browser Fallback Rendering

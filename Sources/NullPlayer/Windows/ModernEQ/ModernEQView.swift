@@ -49,10 +49,7 @@ class ModernEQView: NSView {
     /// Window dragging state
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
-    
-    /// Shade mode state
-    private(set) var isShadeMode = false
-    
+
     /// Scale factor for layout (computed to track double-size changes)
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
     
@@ -97,7 +94,7 @@ class ModernEQView: NSView {
     // MARK: - Layout Constants
     
     private var titleBarHeight: CGFloat {
-        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode
+        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window)
         return hide ? borderWidth : ModernSkinElements.eqTitleBarHeight
     }
     private var borderWidth: CGFloat { ModernSkinElements.eqBorderWidth }
@@ -459,15 +456,6 @@ class ModernEQView: NSView {
                 let closeState = (pressedButton == "eq_btn_close") ? "pressed" : "normal"
                 renderer.drawWindowControlButton("eq_btn_close", state: closeState,
                                                  in: closeBtnBaseRect, context: context)
-
-                // Draw shade button
-                let shadeState = (pressedButton == "eq_btn_shade") ? "pressed" : "normal"
-                renderer.drawWindowControlButton("eq_btn_shade", state: shadeState,
-                                                 in: shadeBtnBaseRect, context: context)
-            }
-
-            if isShadeMode {
-                return
             }
 
             // Draw EQ content
@@ -491,11 +479,6 @@ class ModernEQView: NSView {
         return NSRect(x: 261, y: (bounds.height / scale) - tbh / 2 - 5, width: 10, height: 10)
     }
 
-    private var shadeBtnBaseRect: NSRect {
-        let tbh = ModernSkinElements.titleBarBaseHeight
-        return NSRect(x: 249, y: (bounds.height / scale) - tbh / 2 - 5, width: 10, height: 10)
-    }
-    
     // MARK: - EQ Content Drawing
     
     private func drawEQContent(in context: CGContext) {
@@ -1172,16 +1155,6 @@ class ModernEQView: NSView {
         needsDisplay = true
     }
     
-    func setShadeMode(_ enabled: Bool) {
-        isShadeMode = enabled
-        needsDisplay = true
-    }
-    
-    private func toggleShadeMode() {
-        isShadeMode.toggle()
-        controller?.setShadeMode(isShadeMode)
-    }
-    
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
@@ -1200,15 +1173,7 @@ class ModernEQView: NSView {
                                width: 14 * scale, height: 12 * scale)
         return closeRect.contains(point)
     }
-    
-    private func hitTestShadeButton(at point: NSPoint) -> Bool {
-        if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
-        let shadeRect = NSRect(x: bounds.width - 28 * scale,
-                               y: bounds.height - titleBarHeight + 2 * scale,
-                               width: 12 * scale, height: 12 * scale)
-        return shadeRect.contains(point)
-    }
-    
+
     /// Hit test ON/OFF button
     private func hitTestOnOff(at point: NSPoint) -> Bool {
         let onOffX = borderWidth + 4 * scale
@@ -1252,31 +1217,13 @@ class ModernEQView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         
-        // Double-click title bar -> shade mode
-        if event.clickCount == 2 && hitTestTitleBar(at: point) {
-            toggleShadeMode()
-            return
-        }
-        
-        if isShadeMode {
-            handleShadeMouseDown(at: point, event: event)
-            return
-        }
-        
         // Close button
         if hitTestCloseButton(at: point) {
             pressedButton = "eq_btn_close"
             needsDisplay = true
             return
         }
-        
-        // Shade button
-        if hitTestShadeButton(at: point) {
-            pressedButton = "eq_btn_shade"
-            needsDisplay = true
-            return
-        }
-        
+
         // ON/OFF toggle (immediate action)
         if hitTestOnOff(at: point) {
             isEnabled.toggle()
@@ -1381,26 +1328,8 @@ class ModernEQView: NSView {
             WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.effectiveHideTitleBars(for: window))
         }
     }
-    
-    private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
-        if hitTestCloseButton(at: point) {
-            pressedButton = "eq_btn_close"
-            needsDisplay = true
-            return
-        }
-        if hitTestShadeButton(at: point) {
-            pressedButton = "eq_btn_shade"
-            needsDisplay = true
-            return
-        }
-        
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
-        }
-    }
-    
+
+
     override func mouseDragged(with event: NSEvent) {
         // Handle slider dragging
         if draggingSlider != nil {
@@ -1426,49 +1355,27 @@ class ModernEQView: NSView {
     
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        
+
         if isDraggingWindow {
             isDraggingWindow = false
             if let window = window {
                 WindowManager.shared.windowDidFinishDragging(window)
             }
         }
-        
-        if isShadeMode {
-            handleShadeMouseUp(at: point)
-            return
-        }
-        
+
         if let pressed = pressedButton {
             switch pressed {
             case "eq_btn_close":
                 if hitTestCloseButton(at: point) { window?.close() }
-            case "eq_btn_shade":
-                if hitTestShadeButton(at: point) { toggleShadeMode() }
             default:
                 break
             }
-            
+
             pressedButton = nil
             needsDisplay = true
         }
-        
+
         draggingSlider = nil
-    }
-    
-    private func handleShadeMouseUp(at point: NSPoint) {
-        if let pressed = pressedButton {
-            switch pressed {
-            case "eq_btn_close":
-                if hitTestCloseButton(at: point) { window?.close() }
-            case "eq_btn_shade":
-                if hitTestShadeButton(at: point) { toggleShadeMode() }
-            default:
-                break
-            }
-            pressedButton = nil
-            needsDisplay = true
-        }
     }
     
     // MARK: - Slider Interaction

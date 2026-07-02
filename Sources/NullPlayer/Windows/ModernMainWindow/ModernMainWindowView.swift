@@ -65,10 +65,7 @@ class ModernMainWindowView: NSView {
     
     /// Seek position during drag (0-1)
     private var seekDragPosition: CGFloat?
-    
-    /// Whether in shade (compact) mode
-    var isShadeMode = false
-    
+
     /// Current detected BPM (nil = not yet detected, 0 = no confidence)
     private var currentBPM: Int?
     
@@ -317,7 +314,7 @@ class ModernMainWindowView: NSView {
 
     /// True when main-window content should be remapped to reclaim hidden titlebar space.
     private var isTitleBarHiddenForLayout: Bool {
-        !isShadeMode && WindowManager.shared.effectiveHideTitleBars(for: self.window)
+        WindowManager.shared.effectiveHideTitleBars(for: self.window)
     }
 
     /// Reclaimed base units when title bars are hidden.
@@ -378,16 +375,7 @@ class ModernMainWindowView: NSView {
         let spectrumBackgroundOpacity = spectrumOpacity.background
         let spectrumBorderOpacity = spectrumOpacity.border
         let spectrumContentOpacity = renderer.skin.applyMainSpectrumOpacity(to: spectrumOpacity.content)
-        
-        if isShadeMode {
-            drawShadeMode(in: windowBounds, context: context)
-            if isHighlighted {
-                NSColor.white.withAlphaComponent(0.15).setFill()
-                bounds.fill()
-            }
-            return
-        }
-        
+
         // 1. Window background + border -- always fill full bounds so the layer is
         //    never left partially transparent on the first partial-dirty draw (e.g. on
         //    app reopen).  drawWindowBackground uses .copy blend mode, so repeated
@@ -557,65 +545,12 @@ class ModernMainWindowView: NSView {
             bounds.fill()
         }
     }
-    
-    // MARK: - Shade Mode Drawing
-    
-    /// Draw compact shade mode: single strip with title, scrolling track name, and controls
-    private func drawShadeMode(in bounds: NSRect, context: CGContext) {
-        let mainOpacity = renderer.skin.resolvedOpacity(for: .mainWindow)
-        // Background
-        renderer.drawWindowBackground(
-            in: bounds,
-            context: context,
-            adjacentEdges: adjacentEdges,
-            sharpCorners: sharpCorners,
-            backgroundOpacity: mainOpacity.background
-        )
-        renderer.drawWindowBorder(
-            in: bounds,
-            context: context,
-            adjacentEdges: adjacentEdges,
-            sharpCorners: sharpCorners,
-            occlusionSegments: edgeOcclusionSegments,
-            borderOpacity: mainOpacity.border
-        )
 
-        // In shade mode, draw a compact horizontal layout in the available space
-        // The window is 18 base units tall (22.5px scaled)
-        // Layout: [unshade btn] [title text / marquee] [close btn]
-        let baseH: CGFloat = 18  // base height of shade window
-        withContextAlpha(mainOpacity.content, context: context) {
-            // Title text "NULLPLAYER" on left (using renderer for image text support)
-            let titleRect = NSRect(x: 4, y: 0, width: 70, height: baseH)
-            renderer.drawTitleBar(in: titleRect, title: "NULLPLAYER", context: context)
-
-            // Scrolling track name in the middle
-            // (marquee layer handles this, it's positioned by setupMarquee)
-
-            // Window controls on right
-            let btnSize: CGFloat = 8
-            let btnY = (baseH - btnSize) / 2
-
-            // Unshade button (□ to restore)
-            renderer.drawWindowControlButton("btn_shade",
-                                              state: pressedElement == "btn_shade" ? "pressed" : "normal",
-                                              in: NSRect(x: 255, y: btnY, width: btnSize, height: btnSize),
-                                              context: context)
-
-            // Close button
-            renderer.drawWindowControlButton("btn_close",
-                                              state: pressedElement == "btn_close" ? "pressed" : "normal",
-                                              in: NSRect(x: 265, y: btnY, width: btnSize, height: btnSize),
-                                              context: context)
-        }
-    }
-    
     // MARK: - Sub-Drawing Methods
     
     private func drawWindowControls(context: CGContext) {
         let controls: [(ModernSkinElements.Element, String)] = [
             (ModernSkinElements.btnMinimize, "btn_minimize"),
-            (ModernSkinElements.btnShade, "btn_shade"),
             (ModernSkinElements.btnClose, "btn_close"),
         ]
         
@@ -937,30 +872,19 @@ class ModernMainWindowView: NSView {
         needsDisplay = true
     }
     
-    /// Reposition the marquee for normal or shade mode
+    /// Reposition the marquee
     private func updateMarqueeForMode() {
-        if isShadeMode {
-            // In shade mode, place marquee in the middle of the compact strip
-            let shadeH = ModernMainWindowController.shadeHeight
-            let marqueeX: CGFloat = 80 * scale  // after "NULLPLAYER" title
-            let marqueeW: CGFloat = 160 * scale  // space before close buttons
-            marqueeLayer.frame = NSRect(x: marqueeX, y: 2 * scale, width: marqueeW, height: shadeH - 4 * scale)
-            marqueeLayer.isHidden = false
-            gridLayer?.isHidden = true
-            metalOverlay?.isHidden = true
-        } else {
-            // Normal mode marquee positioning
-            let marqueeRect = scaledRect(effectiveMarqueePanelRect)
-            let inset: CGFloat = 4 * scale
-            marqueeLayer.frame = NSRect(x: marqueeRect.minX + inset,
-                                        y: marqueeRect.minY + marqueeRect.height * 0.35,
-                                        width: marqueeRect.width - inset * 2,
-                                        height: marqueeRect.height * 0.55)
-            marqueeLayer.isHidden = false
-            gridLayer?.isHidden = false
-            if mainVisMode.usesMetal {
-                metalOverlay?.isHidden = false
-            }
+        // Normal mode marquee positioning
+        let marqueeRect = scaledRect(effectiveMarqueePanelRect)
+        let inset: CGFloat = 4 * scale
+        marqueeLayer.frame = NSRect(x: marqueeRect.minX + inset,
+                                    y: marqueeRect.minY + marqueeRect.height * 0.35,
+                                    width: marqueeRect.width - inset * 2,
+                                    height: marqueeRect.height * 0.55)
+        marqueeLayer.isHidden = false
+        gridLayer?.isHidden = false
+        if mainVisMode.usesMetal {
+            metalOverlay?.isHidden = false
         }
         // Force re-render text at new size
         marqueeLayer.text = marqueeLayer.text
@@ -1448,7 +1372,7 @@ class ModernMainWindowView: NSView {
             rect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
         case "btn_prev", "btn_play", "btn_pause", "btn_stop", "btn_next":
             rect = scaledRect(NSRect(x: 6, y: 3, width: 140, height: 24))
-        case "btn_close", "btn_minimize", "btn_shade":
+        case "btn_close", "btn_minimize":
             rect = scaledRect(ModernSkinElements.titleBar.defaultRect)
         case let id where id.hasPrefix("btn_"):
             // Toggle buttons (EQ, PL, SH, 2X, etc.)
@@ -1462,28 +1386,15 @@ class ModernMainWindowView: NSView {
     
     private func hitTest(point: NSPoint) -> String? {
         let base = basePoint(from: point)
-        
-        // In shade mode, only close and shade buttons are active
-        if isShadeMode {
-            let baseH: CGFloat = 18
-            let btnSize: CGFloat = 8
-            let btnY = (baseH - btnSize) / 2
-            let shadeRect = NSRect(x: 255, y: btnY, width: btnSize, height: btnSize)
-            let closeRect = NSRect(x: 265, y: btnY, width: btnSize, height: btnSize)
-            if closeRect.contains(base) { return "btn_close" }
-            if shadeRect.contains(base) { return "btn_shade" }
-            return nil
-        }
-        
+
         // Check elements in priority order (front to back)
         var hitTargets: [(String, NSRect)] = []
-        
+
         // Window controls
         if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             hitTargets.append(contentsOf: [
                 ("btn_close", ModernSkinElements.btnClose.defaultRect),
                 ("btn_minimize", ModernSkinElements.btnMinimize.defaultRect),
-                ("btn_shade", ModernSkinElements.btnShade.defaultRect),
             ])
         }
         
@@ -1533,23 +1444,7 @@ class ModernMainWindowView: NSView {
     
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        
-        // Handle double-click: in shade mode anywhere unshades, in normal mode title bar toggles shade
-        if event.clickCount == 2 {
-            if isShadeMode {
-                controller?.toggleShadeMode()
-                updateMarqueeForMode()
-                return
-            }
-            let base = basePoint(from: point)
-            let isTitleBarDblClick = ModernSkinElements.titleBar.defaultRect.contains(base)
-            if isTitleBarDblClick && !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
-                controller?.toggleShadeMode()
-                updateMarqueeForMode()
-                return
-            }
-        }
-        
+
         if let element = hitTest(point: point) {
             pressedElement = element
             
@@ -1767,10 +1662,6 @@ class ModernMainWindowView: NSView {
             
         case "btn_minimize":
             window?.miniaturize(nil)
-            
-        case "btn_shade":
-            controller?.toggleShadeMode()
-            updateMarqueeForMode()
             
         case "btn_library":
             WindowManager.shared.togglePlexBrowser()

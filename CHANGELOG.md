@@ -8,12 +8,16 @@
 - **License and branding terms clarified** — the project license notice and README now state GPL-3.0-only distribution terms and clarify that modified distributions must not reuse the NullPlayer name, icon, logo, bundle identity, or other branding without permission.
 - **Balance control added to Playback menu** — the Playback options now include a Balance submenu with a slider and common left/center/right presets, giving modern UI and menu-only workflows access to stereo balance without adding more controls to the player face.
 
+### Changes
+
+- **Window shade mode removed** — double-clicking a window's title bar no longer collapses it to a title-bar-only strip ("windowshade"). This legacy Winamp feature was the source of recurring layout glitches when combined with Large UI, Compact Mode, and live UI-mode switching; removing it makes window sizing and position memory behave consistently across every window in Classic, Modern, and Metal.
+
 ### Bug Fixes
 
 - **Metal skin transport icons are now fully filled** — the previous/next (and eject) icons in the Metal finishes no longer show a stray light vertical line: the icon bars now draw in the same transport-button color as the rest of the glyph instead of the skin's light primary color.
 - **Plex Artists no longer show duplicate same-name rows** — the Library Browser now groups Plex artist records with the same display name into one visible artist row in both classic and modern UI. Expanding, playing, or queueing that row still fans out across every underlying Plex `ratingKey`, so albums and tracks attached to duplicate server-side artist records remain accessible instead of being hidden.
 - **Compact Mode art ratings fit the small UI** — the modern Library Browser's art-view rating stars now shrink in Compact Mode, preventing them from crowding or overlapping the source/library picker row.
-- **Library window remembers where you put it** — after unlocking the connected windows and moving the Library/browser window, it now reopens at the exact position and size you left it — across closing and reopening it (via the menu or the red close button) and across full app restarts, even when it was closed at quit. First-ever opens still dock to the right of the window stack, shaded (collapsed) windows restore to their normal size, and the position survives Compact Mode. Playlist, EQ, and Spectrum still intentionally snap back into the column below the main window.
+- **Library window remembers where you put it** — after unlocking the connected windows and moving the Library/browser window, it now reopens at the exact position and size you left it — across closing and reopening it (via the menu or the red close button) and across full app restarts, even when it was closed at quit. First-ever opens still dock to the right of the window stack, and the position survives Compact Mode. Playlist, EQ, and Spectrum still intentionally snap back into the column below the main window.
 - **Classic Large UI toggles instantly — no restart** — turning Large UI on or off in the classic skin now resizes the windows in place, matching the modern UI, instead of asking you to relaunch. The player, EQ, playlist, and other windows redraw crisply at the new size (no leftover "ghost" of the old size), and switching between Classic, Modern, and Metal while Large UI is on no longer distorts the new look.
 
 ## 0.26.1

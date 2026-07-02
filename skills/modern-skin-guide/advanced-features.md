@@ -521,7 +521,7 @@ This section documents the repeatable pattern for creating modern-skinned versio
 
 4. **Add conformance to existing classic controller** -- The classic controller already has the required methods; just add the protocol conformance declaration.
 
-5. **Create `Windows/Modern{Window}/Modern{Window}WindowController.swift`** -- Borderless window, shade mode, fullscreen, `NSWindowDelegate` for docking, conforms to the protocol. Zero classic skin imports.
+5. **Create `Windows/Modern{Window}/Modern{Window}WindowController.swift`** -- Borderless window, fullscreen, `NSWindowDelegate` for docking, conforms to the protocol. Zero classic skin imports.
 
 6. **Create `Windows/Modern{Window}/Modern{Window}View.swift`** -- Compose `ModernSkinRenderer` methods for chrome (`drawWindowBackground`, `drawWindowBorder`, `drawTitleBar`, `drawWindowControlButton`), skin change observation via `ModernSkinDidChange` notification. Zero classic skin imports. Note: `GridBackgroundLayer` is only used in the main window; sub-windows use solid backgrounds.
 

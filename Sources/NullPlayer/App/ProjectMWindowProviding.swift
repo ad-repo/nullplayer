@@ -9,19 +9,16 @@ import AppKit
 protocol ProjectMWindowProviding: ModeDependentWindow {
     /// The underlying window
     var window: NSWindow? { get }
-    
-    /// Whether the window is in shade (compact) mode
-    var isShadeMode: Bool { get }
-    
+
     /// Whether the window is in custom fullscreen mode
     var isFullscreen: Bool { get }
-    
+
     /// Show the window
     func showWindow(_ sender: Any?)
-    
+
     /// Notify that the skin has changed and views should redraw
     func skinDidChange()
-    
+
     /// Stop rendering when window is hidden via orderOut (saves CPU)
     func stopRenderingForHide()
 
@@ -29,10 +26,7 @@ protocol ProjectMWindowProviding: ModeDependentWindow {
     /// (e.g. a live skin-system switch that tears down and rebuilds the window). Clears any
     /// occlusion-induced pause so rendering resumes without needing the user to focus the window.
     func resumeRenderingAfterWindowTransition()
-    
-    /// Toggle shade (compact) mode
-    func setShadeMode(_ enabled: Bool)
-    
+
     /// Toggle custom fullscreen mode
     func toggleFullscreen()
     

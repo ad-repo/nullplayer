@@ -412,7 +412,6 @@ For comprehensive documentation, see:
 
 - **Drag & drop** files/folders onto the player to add them
 - **Right-click** anywhere for the context menu
-- **Double-click** title bars for shade mode
 - **Shift+Click** for multi-select in playlist/browser
 - **Cmd+J** to jump to currently playing track
 - Windows **dock automatically** when dragged near each other
