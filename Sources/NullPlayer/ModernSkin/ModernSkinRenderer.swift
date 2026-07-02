@@ -988,10 +988,11 @@ class ModernSkinRenderer {
         
         context.saveGState()
         context.setStrokeColor(color.cgColor)
+        context.setFillColor(color.cgColor)
         context.setLineWidth(1.0 * scaleFactor)
         context.setLineCap(.round)
         context.setLineJoin(.round)
-        
+
         let inset = scaledR.insetBy(dx: 5 * scaleFactor, dy: 4 * scaleFactor)
         
         switch id {
@@ -1502,7 +1503,6 @@ class ModernSkinRenderer {
         // |<< icon
         let barX = rect.minX
         let barW: CGFloat = 1.2 * scaleFactor
-        context.setFillColor(skin.primaryColor.cgColor)
         context.fill(NSRect(x: barX, y: rect.minY, width: barW, height: rect.height))
         
         let triW = (rect.width - barW) / 2
@@ -1544,7 +1544,6 @@ class ModernSkinRenderer {
         // >>| icon
         let barX = rect.maxX - 1.2 * scaleFactor
         let barW: CGFloat = 1.2 * scaleFactor
-        context.setFillColor(skin.primaryColor.cgColor)
         context.fill(NSRect(x: barX, y: rect.minY, width: barW, height: rect.height))
         
         let triW = (rect.width - barW - 1) / 2
@@ -1563,7 +1562,6 @@ class ModernSkinRenderer {
         // Triangle above a line
         let lineY = rect.minY
         let lineH: CGFloat = 1.2 * scaleFactor
-        context.setFillColor(skin.primaryColor.cgColor)
         context.fill(NSRect(x: rect.minX, y: lineY, width: rect.width, height: lineH))
         
         let triBottom = lineY + lineH + 2 * scaleFactor

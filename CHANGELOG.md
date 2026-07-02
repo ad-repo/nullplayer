@@ -9,6 +9,7 @@
 
 ### Bug Fixes
 
+- **Metal skin transport icons are now fully filled** — the previous/next (and eject) icons in the Metal finishes no longer show a stray light vertical line: the icon bars now draw in the same transport-button color as the rest of the glyph instead of the skin's light primary color.
 - **Plex Artists no longer show duplicate same-name rows** — the Library Browser now groups Plex artist records with the same display name into one visible artist row in both classic and modern UI. Expanding, playing, or queueing that row still fans out across every underlying Plex `ratingKey`, so albums and tracks attached to duplicate server-side artist records remain accessible instead of being hidden.
 - **Plex artist expansion no longer beachballs on large grouped artists** — grouped Plex artist rows now reuse precomputed artist/album indexes instead of rescanning the whole Plex library while expanding a row like Rush.
 - **Compact Mode art ratings fit the small UI** — the modern Library Browser's art-view rating stars now shrink in Compact Mode, preventing them from crowding or overlapping the source/library picker row.
