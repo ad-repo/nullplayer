@@ -212,6 +212,28 @@ For new center-stack windows, follow the waveform/spectrum pattern:
 3. Modern chrome in `Windows/Modern...`
 4. Registration and docking behavior in `WindowManager`
 
+## Library Window Position Memory
+
+The Library/browser window is **not** a center-stack window — it does not snap back into the
+column below the main window. Instead it remembers where the user last put it (issue #326):
+
+- `WindowManager.lastPlexBrowserFrame` caches the frame on every hide/close.
+  `togglePlexBrowser()` caches before `orderOut`; both controllers' `windowWillClose` call
+  `rememberPlexBrowserFrameBeforeClose()` for the red-button path.
+- `showPlexBrowser(at:)` applies a priority chain: explicit restored frame (launch / mode
+  rebuild) → remembered session frame → default right-of-stack layout (first-ever open only).
+- **Always capture the shade-safe frame** via `LibraryBrowserWindowProviding.frameForPositionMemory`,
+  which returns the stashed `normalModeFrame` while shaded (raw `window.frame` would remember the
+  ~14px collapsed height). Library shade state is not persisted.
+- **Do not leak across UI mode switches**: `teardownModeDependentWindows()` clears
+  `lastPlexBrowserFrame` after nil'ing the controller so a classic frame can't apply to the
+  modern window (or vice-versa). An open library that must survive the switch is repositioned
+  explicitly from `recreateModeDependentLayout`'s snapshot frame.
+- **Persistence** (`AppStateManager`): saves `wm.plexBrowserFrameForPersistence` — the live
+  controller frame even when `orderOut`-hidden (fixes Compact Mode) or the last remembered frame
+  (closed at quit). On restore, `seedPlexBrowserFrame(_:)` primes the cache when the library was
+  not reopened, so the first open uses the saved position.
+
 ## Custom Sprites
 
 For on/off states, stack vertically in NSImage:
