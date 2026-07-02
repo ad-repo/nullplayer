@@ -92,6 +92,10 @@ private struct WindowSnapshot {
     var wasVisible: Bool
     var frame: NSRect
     var wasShadeMode: Bool
+    /// Un-shaded frame for position memory (Library only). When the window is shaded, `frame`
+    /// is the collapsed shade frame, so this carries the full-height frame separately so a later
+    /// unshade restores the real height. nil for windows with no distinct shade/normal frames.
+    var normalFrame: NSRect?
 }
 
 private struct CompactWindowSnapshot {
@@ -1150,12 +1154,13 @@ class WindowManager {
     }
 
     private func captureRegularWindowSnapshot() -> CompactWindowSnapshot {
-        func snap(_ controller: ModeDependentWindow?) -> WindowSnapshot? {
+        func snap(_ controller: ModeDependentWindow?, normalFrame: NSRect? = nil) -> WindowSnapshot? {
             guard let window = controller?.window else { return nil }
             return WindowSnapshot(
                 wasVisible: window.isVisible,
                 frame: window.frame,
-                wasShadeMode: controller?.isShadeMode ?? false
+                wasShadeMode: controller?.isShadeMode ?? false,
+                normalFrame: normalFrame
             )
         }
 
@@ -1172,7 +1177,9 @@ class WindowManager {
             audioAnalysis: snap(audioAnalysisWindowController),
             waveform: snap(waveformWindowController),
             projectM: snap(projectMWindowController),
-            library: snap(plexBrowserWindowController),
+            // Library carries its un-shaded frame so a shaded window can restore its real position
+            // on unshade after a Compact-preserving UI rebuild (raw window.frame is the shade frame).
+            library: snap(plexBrowserWindowController, normalFrame: plexBrowserWindowController?.frameForPositionMemory),
             debug: snapWindow(debugWindowController?.window)
         )
     }
@@ -4709,7 +4716,9 @@ class WindowManager {
         // until that completes so the snapshot captures the real windows and the re-enter is not
         // swallowed by the `.exiting` guard. Mirrors the production reloadUI path.
         if compactModeEnabled {
-            let snapshot = modeDependentLayout(from: regularWindowSnapshot)
+            // Same-mode rebuild: Large UI is not collapsed/re-applied here, so restore the snapshot
+            // frames as-is (no 1x collapse — they'd never be re-scaled).
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingLargeUI: false)
             let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
                 guard let self else { return }
@@ -4792,7 +4801,7 @@ class WindowManager {
         // Defer the swap until the compact teardown completes so the re-enter sees
         // `compactModeState == .regular` instead of a no-op `.exiting` guard.
         if compactModeEnabled {
-            let snapshot = modeDependentLayout(from: regularWindowSnapshot)
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingLargeUI: restoreLargeUI)
             // The hidden mode-independent windows (app panels) survive teardown but were
             // hidden on compact entry and are not re-shown here. enterCompactMode() will re-capture
             // the snapshot from the live (still-hidden) windows, losing their visibility — so carry
@@ -4821,12 +4830,19 @@ class WindowManager {
         var projectM: NSRect?
     }
 
+    /// Capture only *detached* side windows. A docked side window is re-docked to the
+    /// target-mode main edge by `applyDoubleSize()` during the Large-UI re-apply; restoring its
+    /// old-mode frame on top of that would fight the target mode's docking and misalign it (the
+    /// old frame was measured against the old main width). A detached window has no docking to
+    /// recompute, so its exact floating position must be carried across the switch.
     private func captureSideWindowFrames() -> SideWindowFrames {
-        SideWindowFrames(
-            library: plexBrowserWindowController?.window?.isVisible == true
-                ? plexBrowserWindowController?.window?.frame : nil,
-            projectM: projectMWindowController?.window?.isVisible == true
-                ? projectMWindowController?.window?.frame : nil
+        func detachedFrame(_ window: NSWindow?) -> NSRect? {
+            guard let window, window.isVisible, !isWindowDocked(window) else { return nil }
+            return window.frame
+        }
+        return SideWindowFrames(
+            library: detachedFrame(plexBrowserWindowController?.window),
+            projectM: detachedFrame(projectMWindowController?.window)
         )
     }
 
@@ -4856,21 +4872,43 @@ class WindowManager {
     /// Build a mode-dependent layout snapshot from a Compact-Mode capture, so the live UI switch
     /// can rebuild the regular windows without first re-showing them. Falls back to a live capture
     /// if no Compact snapshot exists.
-    private func modeDependentLayout(from snapshot: CompactWindowSnapshot?) -> ModeDependentLayoutSnapshot {
+    private func modeDependentLayout(from snapshot: CompactWindowSnapshot?,
+                                     collapsingLargeUI: Bool) -> ModeDependentLayoutSnapshot {
         guard let snapshot else { return captureModeDependentLayout() }
+
+        // The regular windows were snapshotted at Compact-Mode *entry*, so their frames still carry
+        // the Large-UI (1.5x) scale if it was active. performReloadUI re-applies Large UI after the
+        // rebuild, and applyDoubleSize scales the relative-sized stack/side windows off their
+        // *current* frame — so an already-1.5x frame would be scaled to 2.25x. Collapse those frames
+        // back to 1x here so the re-apply lands on a single 1.5x, matching the non-Compact path
+        // (which captures its frames *after* the 1x collapse). Main and EQ use absolute target sizes
+        // in applyDoubleSize, so they are left untouched.
+        let inverse: CGFloat = collapsingLargeUI ? (1.0 / 1.5) : 1.0
+        func collapsed(_ rect: NSRect?) -> NSRect? {
+            guard var rect else { return nil }
+            rect.size.width *= inverse
+            rect.size.height *= inverse
+            return rect
+        }
         func conv(_ w: WindowSnapshot?) -> UIWindowSnapshot? {
             guard let w else { return nil }
-            return UIWindowSnapshot(visible: w.wasVisible, frame: w.frame, isShadeMode: w.wasShadeMode)
+            return UIWindowSnapshot(visible: w.wasVisible, frame: w.frame,
+                                    normalFrame: w.normalFrame, isShadeMode: w.wasShadeMode)
+        }
+        func convScaled(_ w: WindowSnapshot?) -> UIWindowSnapshot? {
+            guard let w else { return nil }
+            return UIWindowSnapshot(visible: w.wasVisible, frame: collapsed(w.frame) ?? w.frame,
+                                    normalFrame: collapsed(w.normalFrame), isShadeMode: w.wasShadeMode)
         }
         return ModeDependentLayoutSnapshot(
             main: conv(snapshot.main),
-            playlist: conv(snapshot.playlist),
+            playlist: convScaled(snapshot.playlist),
             equalizer: conv(snapshot.equalizer),
-            library: conv(snapshot.library),
-            projectM: conv(snapshot.projectM),
-            spectrum: conv(snapshot.spectrum),
-            audioAnalysis: conv(snapshot.audioAnalysis),
-            waveform: conv(snapshot.waveform),
+            library: convScaled(snapshot.library),
+            projectM: convScaled(snapshot.projectM),
+            spectrum: convScaled(snapshot.spectrum),
+            audioAnalysis: convScaled(snapshot.audioAnalysis),
+            waveform: convScaled(snapshot.waveform),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
     }
