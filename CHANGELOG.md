@@ -15,6 +15,7 @@
 - **Plex Artists no longer show duplicate same-name rows** — the Library Browser now groups Plex artist records with the same display name into one visible artist row in both classic and modern UI. Expanding, playing, or queueing that row still fans out across every underlying Plex `ratingKey`, so albums and tracks attached to duplicate server-side artist records remain accessible instead of being hidden.
 - **Compact Mode art ratings fit the small UI** — the modern Library Browser's art-view rating stars now shrink in Compact Mode, preventing them from crowding or overlapping the source/library picker row.
 - **Library window remembers where you put it** — after unlocking the connected windows and moving the Library/browser window, it now reopens at the exact position and size you left it — across closing and reopening it (via the menu or the red close button) and across full app restarts, even when it was closed at quit. First-ever opens still dock to the right of the window stack, shaded (collapsed) windows restore to their normal size, and the position survives Compact Mode. Playlist, EQ, and Spectrum still intentionally snap back into the column below the main window.
+- **Classic Large UI toggles instantly — no restart** — turning Large UI on or off in the classic skin now resizes the windows in place, matching the modern UI, instead of asking you to relaunch. The player, EQ, playlist, and other windows redraw crisply at the new size (no leftover "ghost" of the old size), and switching between Classic, Modern, and Metal while Large UI is on no longer distorts the new look.
 
 ## 0.26.1
 
@@ -35,7 +36,7 @@
 
 - **Metal mode — hi-fi faceplate finishes** — a new metallic look, selectable from **Skins → Metal**, with seven finishes: Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, and Copper. Each finish restyles the whole player — chrome, panels, sliders, transport, and EQ — with a backlit-green LCD for the time and track displays and a spectrum analyzer matched to the finish.
 
-- **Switch between Classic, Modern, and Metal instantly — no restart** — changing UI mode, or picking a skin from a different mode, now happens live and in place. Playback, casting, the open playlist, the current track, and your play position all continue uninterrupted while the windows rebuild in the new look, reappearing where you left them. (Classic Large UI still relaunches, since it's a size change rather than a mode switch.)
+- **Switch between Classic, Modern, and Metal instantly — no restart** — changing UI mode, or picking a skin from a different mode, now happens live and in place. Playback, casting, the open playlist, the current track, and your play position all continue uninterrupted while the windows rebuild in the new look, reappearing where you left them.
 
 ### Improvements
 

@@ -3016,8 +3016,30 @@ class WindowManager {
         }
 
         isSnappingWindow = false
+
+        // Force every affected window to redraw its skin at the new scale. Classic views are
+        // layer-backed with `.onSetNeedsDisplay`, so resizing alone just stretches/leaves the
+        // cached bitmap (a stale "ghost" of the old size) until something marks them dirty —
+        // switching Spaces and back used to be the only thing that cleared it. Redraw explicitly.
+        for controller in [mainWindowController, equalizerWindowController, playlistWindowController,
+                           spectrumWindowController, waveformWindowController, audioAnalysisWindowController,
+                           plexBrowserWindowController, projectMWindowController] {
+            guard let window = controller?.window, window.isVisible,
+                  let contentView = window.contentView else { continue }
+            forceRedrawTree(contentView)
+            window.displayIfNeeded()
+        }
     }
-    
+
+    /// Recursively mark a view and its subviews for redraw so layer-backed skin views
+    /// repaint at their new bounds instead of showing stale, stretched cached contents.
+    private func forceRedrawTree(_ view: NSView) {
+        view.needsDisplay = true
+        for subview in view.subviews {
+            forceRedrawTree(subview)
+        }
+    }
+
     private func applyAlwaysOnTop() {
         let level: NSWindow.Level = isAlwaysOnTop ? .floating : .normal
         
@@ -4746,6 +4768,20 @@ class WindowManager {
         }
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetMode.displayName)
 
+        // If Large UI is active, collapse it to 1x in the *current* mode before the switch and
+        // re-apply it in the target mode afterward. The two UI systems have different window
+        // geometry (and modern layout is driven by the global ModernSkinElements.sizeMultiplier),
+        // so forcing the old mode's enlarged frames onto freshly-created target-mode windows
+        // renders them distorted. Collapsing first lets each mode drive its own tested 1x→1.5x
+        // scaling. The 1x windows are torn down immediately, so no flash is visible.
+        let restoreLargeUI = isDoubleSize
+        if restoreLargeUI { isDoubleSize = false }
+        let originalCompletion = completion
+        let completion: (() -> Void)? = { [weak self] in
+            if restoreLargeUI { self?.isDoubleSize = true }
+            originalCompletion?()
+        }
+
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
         // on exit. When in Compact Mode, derive the layout to rebuild from the pre-compact capture
         // (`regularWindowSnapshot`) rather than the live windows — they're still hidden, and
@@ -4839,6 +4875,12 @@ class WindowManager {
     /// survives across switches, so no classic skin reload is needed here.
     private func prepareUIRuntime(for targetMode: PlayerUIMode) {
         if let family = targetMode.modernSkinFamily {
+            // Modern window sizes are derived from this global multiplier, so pin it to the
+            // current Large UI state before any modern controller is created — otherwise a
+            // stale value left over from a previous modern session would create the windows
+            // at the wrong scale. reloadUI collapses isDoubleSize to 1x before switching, so
+            // this is normally 1.0 here; Large UI is re-applied via applyDoubleSize afterward.
+            ModernSkinElements.sizeMultiplier = isDoubleSize ? 1.5 : 1.0
             ModernSkinEngine.shared.loadPreferredSkin(for: family)
         } else {
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)

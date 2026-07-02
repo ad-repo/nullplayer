@@ -591,8 +591,9 @@ UI label is **Large UI**. Internal state key remains `isDoubleSize`.
 
 - **Scale amount**: 1.5x (not 2x)
 - **Modern UI**: live toggle — `ModernSkinElements.scaleFactor` is computed (`baseScaleFactor * sizeMultiplier`). Do NOT cache `scaleFactor` in a `let` property. Views should refresh renderers on `.doubleSizeDidChange`.
-- **Classic UI**: requires restart. `MenuActions.toggleDoubleSize()` shows a "Restart Required" dialog and relaunches if confirmed.
+- **Classic UI**: also a live toggle (no restart). `MenuActions.toggleDoubleSize()` just flips `WindowManager.isDoubleSize` in both modes; `applyDoubleSize()` resizes every window in place. Classic views self-scale their skin rendering from their own `bounds`, so resizing is enough — **but** they're layer-backed with `.onSetNeedsDisplay`, so a bare resize leaves a stale, stretched "ghost" of the old size (visible until the window is recomposited, e.g. by switching Spaces). `applyDoubleSize()` ends by walking every visible window's view tree (`forceRedrawTree`) setting `needsDisplay = true` + `displayIfNeeded()` to force the repaint.
 - **Startup restoration**: `isDoubleSize` is restored in `AppStateManager.restoreSettingsState()` before sub-windows are shown, so saved 1.5x geometry is not double-applied during restore.
+- **Interaction with mode switching**: `reloadUI(to:)` collapses `isDoubleSize` to 1x in the current mode *before* the switch and re-applies it in the target mode afterward (via the wrapped `completion`). The two UI systems have different window geometry — and modern layout is driven by the global `ModernSkinElements.sizeMultiplier` — so forcing the old mode's enlarged frames onto freshly-created target-mode windows renders them distorted. `prepareUIRuntime` also pins `sizeMultiplier` to the current `isDoubleSize` when entering a modern family, so modern windows are *created* at the right base scale rather than inheriting a stale value.
 - When title bars are hidden, all window drags pass `fromTitleBar: true` to allow undocking
 - Classic windows use drawing transform offset (`translateBy`) to shift the skin image up; modern windows use conditional `titleBarHeight`
 
@@ -606,8 +607,8 @@ untouched; audio state is deliberately never snapshotted.
 **Entry points** (`ContextMenuBuilder` / `MenuActions`): `setClassicMode()` /
 `setModernMode()`, plus the skin-driven switches `selectClassicSkin` / `selectModernSkin` /
 `loadDefaultClassicSkin` (picking a skin for the other mode switches into it). All call
-`WindowManager.reloadUI(toModernUI:)`. Only classic **Large UI** (Double Size) still
-restarts — it's a size change, not a mode switch.
+`WindowManager.reloadUI(toModernUI:)`. Classic **Large UI** (Double Size) is now also live
+(see the Large UI Mode section) — nothing in the UI still requires a relaunch.
 
 **`WindowManager.reloadUI(toModernUI:)`** orchestration:
 1. `captureModeDependentLayout()` — snapshot which mode-dependent windows are open + frames; snapshot Compact Mode.
