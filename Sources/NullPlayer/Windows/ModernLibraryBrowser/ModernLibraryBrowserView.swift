@@ -1300,7 +1300,7 @@ class ModernLibraryBrowserView: NSView {
     var minimumCompactContentWidth: CGFloat {
         let skin = currentSkin()
         let m = ModernSkinElements.sizeMultiplier
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
 
         // Widest possible tab label across all sources (includes the YouTube "Channels" slot).
@@ -1324,7 +1324,7 @@ class ModernLibraryBrowserView: NSView {
         (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(tabBarRect)
         
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         
         // Sort indicator width on right
         let sortText = "Sort"
@@ -1456,7 +1456,7 @@ class ModernLibraryBrowserView: NSView {
             cachedServerBarFontSkinName != skinName ||
             cachedServerBarFontScale != currentScale ||
             cachedServerBarIsMetal != isMetal {
-            let font = skin.sideWindowFont(size: 11)
+            let font = skin.libraryFont(size: 11)
             cachedServerBarFont = font
             cachedServerBarFontSkinName = skinName
             cachedServerBarFontScale = currentScale
@@ -1945,7 +1945,7 @@ class ModernLibraryBrowserView: NSView {
             path.stroke()
         }
         
-        let font = skin.smallFont?.withSize(9) ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let font = skin.libraryFont(size: 9)
         let displayText = searchQuery.isEmpty ? "Type and press ↵ to search..." : searchQuery
         let textColor = searchQuery.isEmpty ? skin.textDimColor : skin.textColor
         let attrs: [NSAttributedString.Key: Any] = [
@@ -2386,7 +2386,7 @@ class ModernLibraryBrowserView: NSView {
         case .history: message = "No play history recorded yet"
         }
         
-        let font = skin.primaryFont?.withSize(10) ?? NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        let font = skin.libraryFont(size: 10)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
@@ -2424,7 +2424,7 @@ class ModernLibraryBrowserView: NSView {
             context.restoreGState()
         } else {
             let message = "No album art"
-            let font = skin.primaryFont?.withSize(14) ?? NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+            let font = skin.libraryFont(size: 14)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
@@ -3373,7 +3373,7 @@ class ModernLibraryBrowserView: NSView {
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return nil }
 
         let skin = currentSkin()
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         let sortText = "Sort"
         let sortAttrs: [NSAttributedString.Key: Any] = [.font: font]
         let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
@@ -3400,7 +3400,7 @@ class ModernLibraryBrowserView: NSView {
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return false }
         
         let skin = currentSkin()
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         let sortText = "Sort"
         let sortAttrs: [NSAttributedString.Key: Any] = [.font: font]
         let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
@@ -4221,7 +4221,7 @@ class ModernLibraryBrowserView: NSView {
         
         // ART toggle - match drawn button positions
         let skin = currentSkin()
-        let font = skin.sideWindowFont(size: 11)
+        let font = skin.libraryFont(size: 11)
         let fontAttrs: [NSAttributedString.Key: Any] = [.font: font]
         let artTextWidth = "ART".size(withAttributes: fontAttrs).width
         let artBtnWidth = artTextWidth + 16 * m

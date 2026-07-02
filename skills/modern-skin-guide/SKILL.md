@@ -74,6 +74,9 @@ MySkin/
         "marqueeSize": 12.7,
         "playlistSize": 8
     },
+    // NOTE: "primaryName": "DepartureMono-Regular" (the lo-fi default) now resolves to the
+    // macOS system font — the modern/metal UI no longer uses the retro bitmap font. Only a
+    // real custom font name is rendered verbatim. See advanced-features.md → Font Configuration.
     "background": {
         "image": "background.png",
         "grid": {

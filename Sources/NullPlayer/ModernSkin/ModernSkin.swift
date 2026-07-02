@@ -287,6 +287,15 @@ class ModernSkin {
         return primaryFont?.withSize(adjustedSize)
             ?? NSFont.monospacedSystemFont(ofSize: adjustedSize, weight: .regular)
     }
+
+    /// Proportional system font for the modern/metal Library Browser chrome — tabs,
+    /// server bar, breadcrumb, search box, and empty-state messages. The library
+    /// deliberately avoids the skin's retro bitmap ("lo-fi") primary font, which is
+    /// too low-fi for this data-dense, text-heavy UI. Mirrors `sideWindowFont`
+    /// scaling (by `sizeMultiplier`) so it grows with double-size mode.
+    func libraryFont(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        return NSFont.systemFont(ofSize: size * ModernSkinElements.sizeMultiplier, weight: weight)
+    }
     
     /// Title bar text font (default base size 8)
     func titleBarFont() -> NSFont { scaledFont(size: config.fonts.titleSize ?? 8) }

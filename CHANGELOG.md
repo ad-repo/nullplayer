@@ -4,6 +4,7 @@
 
 ### Improvements
 
+- **Modern and Metal UI now use a modern system font** — the retro low-fi bitmap font (Departure Mono) has been replaced throughout the Modern and Metal windows — Library tabs and headers, the main window, playlist, EQ, and spectrum — with the crisp macOS system font. Time and track digits stay monospaced so they don't jitter. Skins that ship their own custom font still render it as before.
 - **License and branding terms clarified** — the project license notice and README now state GPL-3.0-only distribution terms and clarify that modified distributions must not reuse the NullPlayer name, icon, logo, bundle identity, or other branding without permission.
 - **Balance control added to Playback menu** — the Playback options now include a Balance submenu with a slider and common left/center/right presets, giving modern UI and menu-only workflows access to stereo balance without adding more controls to the player face.
 
