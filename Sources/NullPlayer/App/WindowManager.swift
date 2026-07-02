@@ -4769,18 +4769,21 @@ class WindowManager {
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetMode.displayName)
 
         // If Large UI is active, collapse it to 1x in the *current* mode before the switch and
-        // re-apply it in the target mode afterward. The two UI systems have different window
-        // geometry (and modern layout is driven by the global ModernSkinElements.sizeMultiplier),
-        // so forcing the old mode's enlarged frames onto freshly-created target-mode windows
-        // renders them distorted. Collapsing first lets each mode drive its own tested 1x→1.5x
-        // scaling. The 1x windows are torn down immediately, so no flash is visible.
+        // re-apply it in the target mode afterward (inside performReloadUI). The two UI systems
+        // have different window geometry (and modern layout is driven by the global
+        // ModernSkinElements.sizeMultiplier), so forcing the old mode's enlarged frames onto
+        // freshly-created target-mode windows renders them distorted. Collapsing first lets each
+        // mode drive its own tested 1x→1.5x scaling. The 1x windows are torn down immediately, so
+        // no flash is visible.
+        //
+        // Collapsing runs applyDoubleSize(), which force-docks the side windows (Library/ProjectM)
+        // to the main-window edge — capture their real frames first so a user's detached position
+        // survives the switch (restored after Large UI is re-applied). Only live (non-Compact)
+        // windows are captured; in Compact Mode the regular windows are hidden and their layout
+        // comes from `regularWindowSnapshot` instead.
         let restoreLargeUI = isDoubleSize
+        let preservedSideFrames = restoreLargeUI ? captureSideWindowFrames() : SideWindowFrames()
         if restoreLargeUI { isDoubleSize = false }
-        let originalCompletion = completion
-        let completion: (() -> Void)? = { [weak self] in
-            if restoreLargeUI { self?.isDoubleSize = true }
-            originalCompletion?()
-        }
 
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
         // on exit. When in Compact Mode, derive the layout to rebuild from the pre-compact capture
@@ -4798,13 +4801,41 @@ class WindowManager {
             let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
                 guard let self else { return }
-                self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true)
+                self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true,
+                                     restoreLargeUI: restoreLargeUI, preservedSideFrames: preservedSideFrames)
                 self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
                 completion?()
             }
         } else {
-            performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false)
+            performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false,
+                            restoreLargeUI: restoreLargeUI, preservedSideFrames: preservedSideFrames)
             completion?()
+        }
+    }
+
+    /// Frames of the side windows that `applyDoubleSize()` force-docks to the main-window edge.
+    /// Captured before a Large-UI collapse so a user's detached Library/ProjectM position can be
+    /// restored after a mode switch.
+    private struct SideWindowFrames {
+        var library: NSRect?
+        var projectM: NSRect?
+    }
+
+    private func captureSideWindowFrames() -> SideWindowFrames {
+        SideWindowFrames(
+            library: plexBrowserWindowController?.window?.isVisible == true
+                ? plexBrowserWindowController?.window?.frame : nil,
+            projectM: projectMWindowController?.window?.isVisible == true
+                ? projectMWindowController?.window?.frame : nil
+        )
+    }
+
+    private func restoreSideWindowFrames(_ frames: SideWindowFrames) {
+        if let frame = frames.library, let window = plexBrowserWindowController?.window, window.isVisible {
+            window.setFrame(frame, display: true)
+        }
+        if let frame = frames.projectM, let window = projectMWindowController?.window, window.isVisible {
+            window.setFrame(frame, display: true)
         }
     }
 
@@ -4846,7 +4877,8 @@ class WindowManager {
 
     /// The actual mode-dependent window swap. Runs synchronously when not in Compact Mode, or as
     /// the `exitCompactMode` completion when it was — see `reloadUI(toModernUI:)`.
-    private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool) {
+    private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool,
+                                 restoreLargeUI: Bool, preservedSideFrames: SideWindowFrames) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
@@ -4859,6 +4891,15 @@ class WindowManager {
         (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
 
         recreateModeDependentLayout(snapshot)
+
+        // Re-apply Large UI (collapsed to 1x in reloadUI before the switch) now that the target-mode
+        // windows exist. This must happen *before* enterCompactMode() so the compact capture records
+        // the enlarged regular layout, not a 1x one. applyDoubleSize (via the isDoubleSize setter)
+        // also re-docks the side windows, so restore any preserved detached frames afterward.
+        if restoreLargeUI {
+            isDoubleSize = true
+            restoreSideWindowFrames(preservedSideFrames)
+        }
 
         // Restore Compact Mode last so it captures the freshly rebuilt window set, not stale state.
         if reenterCompact { enterCompactMode() }
