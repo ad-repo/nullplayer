@@ -96,17 +96,20 @@ enum ModernSkinFont {
     /// Genuinely custom skin-provided fonts (any name other than the lo-fi default) are still
     /// honored. `monospaced` chooses a monospaced-digit system font for numeric displays.
     static func resolveFont(name: String, fallback: String?, size: CGFloat, monospaced: Bool = false) -> NSFont {
-        // Honor a real custom font, but never the bundled lo-fi default.
-        if name != defaultFontName, let font = NSFont(name: name, size: size) {
-            return font
+        // A genuinely custom skin font (any name other than the lo-fi default) is honored,
+        // and its own fallback applies only if that custom font fails to load.
+        if name != defaultFontName {
+            if let font = NSFont(name: name, size: size) {
+                return font
+            }
+            if let fallbackName = fallback, fallbackName != defaultFontName,
+               let font = NSFont(name: fallbackName, size: size) {
+                return font
+            }
         }
 
-        if let fallbackName = fallback, fallbackName != defaultFontName,
-           let font = NSFont(name: fallbackName, size: size) {
-            return font
-        }
-
-        // Modern system font in place of the lo-fi default.
+        // The bundled lo-fi default (and its companion fallback, e.g. Menlo) is deliberately
+        // replaced by a modern system font so every modern window picks it up from here.
         return monospaced
             ? NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
             : NSFont.systemFont(ofSize: size)

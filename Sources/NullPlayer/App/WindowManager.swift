@@ -4487,6 +4487,10 @@ class WindowManager {
     private struct UIWindowSnapshot {
         let visible: Bool
         let frame: NSRect
+        /// Un-shaded frame for position memory. For a shaded Library window `frame` is the
+        /// collapsed shade frame, so this carries the full-height frame separately; nil when the
+        /// window has no distinct shade/normal frames (or isn't shaded).
+        var normalFrame: NSRect?
         let isShadeMode: Bool
     }
 
@@ -4507,11 +4511,12 @@ class WindowManager {
     }
 
     private func captureModeDependentLayout() -> ModeDependentLayoutSnapshot {
-        func snap(_ controller: ModeDependentWindow?) -> UIWindowSnapshot? {
+        func snap(_ controller: ModeDependentWindow?, normalFrame: NSRect? = nil) -> UIWindowSnapshot? {
             guard let window = controller?.window else { return nil }
             return UIWindowSnapshot(
                 visible: window.isVisible,
                 frame: window.frame,
+                normalFrame: normalFrame,
                 isShadeMode: controller?.isShadeMode ?? false
             )
         }
@@ -4519,7 +4524,9 @@ class WindowManager {
             main: snap(mainWindowController),
             playlist: snap(playlistWindowController),
             equalizer: snap(equalizerWindowController),
-            library: snap(plexBrowserWindowController),
+            // Library carries its un-shaded frame so a shaded window can restore its real
+            // position on unshade after the rebuild (raw window.frame is the shade frame).
+            library: snap(plexBrowserWindowController, normalFrame: plexBrowserWindowController?.frameForPositionMemory),
             projectM: snap(projectMWindowController),
             spectrum: snap(spectrumWindowController),
             audioAnalysis: snap(audioAnalysisWindowController),
@@ -4568,7 +4575,11 @@ class WindowManager {
             }
         }
         if let library = snapshot.library, library.visible {
-            showPlexBrowser(at: library.isShadeMode ? nil : library.frame)
+            // Create at the un-shaded frame first: entering shade mode stashes the *current*
+            // frame as the normal frame, so this is what restores on a later unshade. Then
+            // collapse and position the shaded window exactly where it was captured.
+            let normalFrame = (library.isShadeMode ? library.normalFrame : nil) ?? library.frame
+            showPlexBrowser(at: normalFrame)
             if library.isShadeMode {
                 plexBrowserWindowController?.setShadeMode(true)
                 plexBrowserWindowController?.window?.setFrame(library.frame, display: true)
