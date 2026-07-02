@@ -10,6 +10,7 @@
 
 ### Bug Fixes
 
+- **Modern/Metal display keeps album art pinned while the text scrolls** — in the Modern and Metal main-window display, the album art (when present) now stays fixed and left-aligned with a small pad while only the artist and title scroll beside it, instead of the art scrolling off with the text. Tracks with no art still scroll across the full display width as before.
 - **Metal skin transport icons are now fully filled** — the previous/next (and eject) icons in the Metal finishes no longer show a stray light vertical line: the icon bars now draw in the same transport-button color as the rest of the glyph instead of the skin's light primary color.
 - **Plex Artists no longer show duplicate same-name rows** — the Library Browser now groups Plex artist records with the same display name into one visible artist row in both classic and modern UI. Expanding, playing, or queueing that row still fans out across every underlying Plex `ratingKey`, so albums and tracks attached to duplicate server-side artist records remain accessible instead of being hidden.
 - **Compact Mode art ratings fit the small UI** — the modern Library Browser's art-view rating stars now shrink in Compact Mode, preventing them from crowding or overlapping the source/library picker row.
