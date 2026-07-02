@@ -55,6 +55,7 @@ class ModernMarqueeLayer: CALayer {
 
     private var _artworkImage: NSImage?
     private var scrollOffset: CGFloat = 0
+    private var artScrollOffset: CGFloat = 0
     private var textWidth: CGFloat = 0
     private var cachedLoopWidth: CGFloat = 0
     private var scrollTimer: Timer?
@@ -64,20 +65,8 @@ class ModernMarqueeLayer: CALayer {
     private var cachedContentWidth: CGFloat = 0
     private var lastBoundsSize: NSSize = .zero
     
-    /// Fixed, left-aligned album art layer (does not scroll)
-    private let artLayer = CALayer()
-
-    /// Clips the scrolling text to the region to the right of the art
-    private let textClipLayer = CALayer()
-
-    /// Content sublayer that holds the rendered text bitmap (scrolls inside textClipLayer)
+    /// Content sublayer that holds the rendered text bitmap
     private let contentLayer = CALayer()
-
-    /// Small left pad before the album art
-    private let artLeftPad: CGFloat = 2.0
-
-    /// Gap between the album art and the text
-    private let artTextGap: CGFloat = 6.0
     
     // MARK: - Initialization
     
@@ -109,31 +98,12 @@ class ModernMarqueeLayer: CALayer {
         isOpaque = false
         contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
         
-        let noImplicitAnimations: [String: CAAction] = [
-            "position": NSNull(), "bounds": NSNull(), "frame": NSNull(),
-            "contents": NSNull(), "hidden": NSNull()
-        ]
-
-        artLayer.contentsScale = contentsScale
-        artLayer.isOpaque = false
-        artLayer.anchorPoint = .zero
-        artLayer.masksToBounds = true
-        artLayer.contentsGravity = .resizeAspectFill
-        artLayer.actions = noImplicitAnimations
-        addSublayer(artLayer)
-
-        textClipLayer.isOpaque = false
-        textClipLayer.anchorPoint = .zero
-        textClipLayer.masksToBounds = true
-        textClipLayer.actions = noImplicitAnimations
-        addSublayer(textClipLayer)
-
         contentLayer.contentsScale = contentsScale
         contentLayer.isOpaque = false
         contentLayer.anchorPoint = .zero
         // Disable implicit animations on the content layer
-        contentLayer.actions = noImplicitAnimations
-        textClipLayer.addSublayer(contentLayer)
+        contentLayer.actions = ["position": NSNull(), "bounds": NSNull(), "frame": NSNull(), "contents": NSNull()]
+        addSublayer(contentLayer)
     }
     
     deinit {
@@ -164,31 +134,17 @@ class ModernMarqueeLayer: CALayer {
         let attrs = textAttributes()
         let attrStr = NSAttributedString(string: text, attributes: attrs)
         textWidth = attrStr.size().width
-
+        
         let pad: CGFloat = glowEnabled ? 8.0 : 2.0
 
-        // Art geometry — fixed and left-aligned (never scrolls)
-        let hasArt = _artworkImage != nil
-        let artSize: CGFloat = hasArt ? bounds.height : 0
-        let textStartX = hasArt ? (artLeftPad + artSize + artTextGap) : 0
-        let textAreaWidth = max(0, bounds.width - textStartX)
+        // Art geometry
+        let artSize: CGFloat = _artworkImage != nil ? bounds.height : 0
+        let artGap: CGFloat = _artworkImage != nil ? 12.0 : 0
+        artScrollOffset = artSize + artGap
 
-        // Position the fixed art + text clip layers
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        if hasArt {
-            artLayer.contents = _artworkImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
-            artLayer.frame = NSRect(x: artLeftPad, y: 0, width: artSize, height: artSize)
-            artLayer.isHidden = false
-        } else {
-            artLayer.contents = nil
-            artLayer.isHidden = true
-        }
-        textClipLayer.frame = NSRect(x: textStartX, y: 0, width: textAreaWidth, height: bounds.height)
-        CATransaction.commit()
-
-        let needsScroll = textWidth > textAreaWidth
-        let loopWidth = textWidth + scrollGap
+        let needsScroll = (artScrollOffset + textWidth) > bounds.width
+        let endGap = _artworkImage != nil ? artGap : scrollGap
+        let loopWidth = artScrollOffset + textWidth + endGap
         cachedLoopWidth = loopWidth
 
         // Calculate total content width
@@ -196,16 +152,16 @@ class ModernMarqueeLayer: CALayer {
         if needsScroll {
             contentWidth = loopWidth * 2 + pad * 2
         } else {
-            contentWidth = textAreaWidth + pad * 2
+            contentWidth = bounds.width + pad * 2
         }
         cachedContentWidth = contentWidth
-
+        
         // Render the text to a bitmap
         let scale = contentsScale
         let pixelWidth = Int(contentWidth * scale)
         let pixelHeight = Int(bounds.height * scale)
         guard pixelWidth > 0, pixelHeight > 0 else { return }
-
+        
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(data: nil,
                                   width: pixelWidth,
@@ -214,42 +170,54 @@ class ModernMarqueeLayer: CALayer {
                                   bytesPerRow: 0,
                                   space: colorSpace,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return }
-
+        
         ctx.scaleBy(x: scale, y: scale)
         ctx.clear(NSRect(origin: .zero, size: NSSize(width: contentWidth, height: bounds.height)))
-
+        
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-
+        
         let textSize = attrStr.size()
         let y = (bounds.height - textSize.height) / 2
-
-        let drawText = { (x: CGFloat) in
-            if self.glowEnabled {
-                self.drawWithGlow(attrStr, at: NSPoint(x: x, y: y), ctx: ctx)
-            } else {
-                attrStr.draw(at: NSPoint(x: x, y: y))
-            }
+        
+        func drawArt(atX x: CGFloat) {
+            guard let img = _artworkImage else { return }
+            img.draw(in: NSRect(x: x, y: 0, width: artSize, height: artSize),
+                     from: .zero, operation: .sourceOver, fraction: 1.0)
         }
 
         if needsScroll {
-            drawText(pad)
-            drawText(pad + loopWidth)
+            let drawText = { (x: CGFloat) in
+                if self.glowEnabled {
+                    self.drawWithGlow(attrStr, at: NSPoint(x: x, y: y), ctx: ctx)
+                } else {
+                    attrStr.draw(at: NSPoint(x: x, y: y))
+                }
+            }
+            drawArt(atX: pad)
+            drawText(pad + artScrollOffset)
+            drawArt(atX: pad + loopWidth)
+            drawText(pad + loopWidth + artScrollOffset)
         } else {
-            drawText(pad)
+            drawArt(atX: pad)
+            if glowEnabled {
+                drawWithGlow(attrStr, at: NSPoint(x: pad + artScrollOffset, y: y), ctx: ctx)
+            } else {
+                attrStr.draw(at: NSPoint(x: pad + artScrollOffset, y: y))
+            }
         }
-
+        
         NSGraphicsContext.restoreGraphicsState()
-
+        
         cachedTextImage = ctx.makeImage()
-
+        
         // Apply to content layer without animation
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         contentLayer.contents = cachedTextImage
         contentLayer.frame = NSRect(x: -pad, y: 0, width: contentWidth, height: bounds.height)
         CATransaction.commit()
-
+        
         // Start/stop scrolling as needed
         if needsScroll && !isScrolling {
             scrollOffset = 0
@@ -286,11 +254,30 @@ class ModernMarqueeLayer: CALayer {
     }
 
     private func scheduleArtwork(_ image: NSImage?) {
-        // Art is a fixed, left-aligned layer independent of the scrolling text, so
-        // showing/hiding it only reshapes the text area — no scroll compensation needed.
-        _artworkImage = image
-        needsTextRender = true
-        renderAndLayout()
+        if image == nil {
+            // Clear immediately — never linger with stale art
+            _artworkImage = nil
+            needsTextRender = true
+            renderAndLayout()
+        } else if isScrolling {
+            // Re-render now but compensate scrollOffset so visible text stays put.
+            // The art lands behind the current position and scrolls in from the right naturally.
+            //
+            // Invariant: callers always set artworkImage = nil synchronously before starting a
+            // new load (see ModernMainWindowView.updateTrackInfo), so previousArtScrollOffset
+            // is 0 here. The compensation equals the full artScrollOffset of the new image,
+            // shifting the text back to its current screen position after the loop widens.
+            let previousArtScrollOffset = artScrollOffset
+            _artworkImage = image
+            needsTextRender = true
+            renderAndLayout()
+            scrollOffset += artScrollOffset - previousArtScrollOffset
+            applyScrollPosition()
+        } else {
+            _artworkImage = image
+            needsTextRender = true
+            renderAndLayout()
+        }
     }
     
     /// Apply the current scroll offset to the content layer position (main thread only)
