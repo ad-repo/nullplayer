@@ -47,6 +47,10 @@ class ContextMenuBuilder {
         compactMode.target = MenuActions.shared
         compactMode.state = wm.compactModeEnabled ? .on : .off
         menu.addItem(compactMode)
+        let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
+        compactWindow.target = MenuActions.shared
+        compactWindow.state = wm.compactWindowEnabled ? .on : .off
+        menu.addItem(compactWindow)
         menu.addItem(NSMenuItem.separator())
 
         // Display toggles
@@ -120,6 +124,10 @@ class ContextMenuBuilder {
         compactMode.target = MenuActions.shared
         compactMode.state = wm.compactModeEnabled ? .on : .off
         menu.addItem(compactMode)
+        let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
+        compactWindow.target = MenuActions.shared
+        compactWindow.state = wm.compactWindowEnabled ? .on : .off
+        menu.addItem(compactWindow)
         menu.addItem(NSMenuItem.separator())
 
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
@@ -4716,6 +4724,10 @@ class MenuActions: NSObject {
 
     @objc func toggleCompactMode() {
         WindowManager.shared.toggleCompactMode()
+    }
+
+    @objc func toggleCompactWindow() {
+        WindowManager.shared.toggleCompactWindow()
     }
 
     @objc func toggleDoubleSize() {

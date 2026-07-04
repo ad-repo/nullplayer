@@ -257,9 +257,14 @@ class WindowManager {
     /// `compactModeEnabled` mirrors this so the mode can be restored on the next launch.
     private(set) var compactModeEnabled = false
 
+    /// Whether Compact Window (free-floating mini-player) is currently active. Unlike
+    /// Compact Mode, this keeps the app regular and hides only the main window.
+    private(set) var compactWindowEnabled = false
+
     private var compactModeState: CompactModeState = .regular
 
     private var regularWindowSnapshot: CompactWindowSnapshot?
+    private var mainWasVisibleBeforeCompactWindow = false
 
     /// Status-bar item shown while Compact Mode is active.
     private var compactStatusItem: NSStatusItem?
@@ -579,7 +584,8 @@ class WindowManager {
             "hideTitleBars": true,
             "waveformShowCuePoints": false,
             "waveformHideTooltip": false,
-            "compactModeEnabled": false
+            "compactModeEnabled": false,
+            "compactWindowEnabled": false
         ])
     }
     
@@ -627,13 +633,17 @@ class WindowManager {
         if isRunningModernUI {
             normalizeModernMainWindowForHTIfNeeded()
         }
-        if reveal {
+        if reveal && !compactWindowEnabled {
             mainWindowController?.showWindow(nil)
         }
         applyAlwaysOnTopToWindow(mainWindowController?.window)
     }
     
     func toggleMainWindow() {
+        if compactWindowEnabled {
+            exitCompactWindow()
+            return
+        }
         if let controller = mainWindowController, controller.window?.isVisible == true {
             controller.window?.orderOut(nil)
         } else {
@@ -1026,6 +1036,72 @@ class WindowManager {
         }
     }
 
+    /// Toggle the free-floating Compact Window. This reuses the compact mini-player surface
+    /// without changing activation policy or hiding any secondary windows.
+    func toggleCompactWindow() {
+        if compactWindowEnabled {
+            exitCompactWindow()
+        } else {
+            enterCompactWindow()
+        }
+    }
+
+    /// Enter the free-floating Compact Window variant.
+    ///
+    /// - Parameter treatMainAsVisible: Used at launch restore when the main window was created
+    ///   hidden only to avoid flash. Exiting Compact Window should still bring it back.
+    func enterCompactWindow(treatMainAsVisible: Bool = false) {
+        if compactModeState != .regular {
+            exitCompactMode { [weak self] in
+                self?.enterCompactWindow(treatMainAsVisible: treatMainAsVisible)
+            }
+            return
+        }
+        guard !compactWindowEnabled else { return }
+
+        compactWindowEnabled = true
+        UserDefaults.standard.set(true, forKey: "compactWindowEnabled")
+        UserDefaults.standard.set(false, forKey: "compactModeEnabled")
+
+        mainWasVisibleBeforeCompactWindow = treatMainAsVisible
+            || (mainWindowController?.window?.isVisible ?? false)
+        mainWindowController?.window?.orderOut(nil)
+
+        createCompactWindowControllerIfNeeded()
+        compactWindowController?.showFloating(level: isAlwaysOnTop ? .floating : .normal)
+        postLayoutChangeNotification()
+    }
+
+    func exitCompactWindow(restoreMainWindow: Bool = true) {
+        guard compactWindowEnabled else { return }
+        compactWindowEnabled = false
+        UserDefaults.standard.set(false, forKey: "compactWindowEnabled")
+
+        compactWindowController?.hide()
+        compactWindowController = nil
+
+        if restoreMainWindow, mainWasVisibleBeforeCompactWindow,
+           let mainWindow = mainWindowController?.window {
+            mainWindow.makeKeyAndOrderFront(nil)
+            applyAlwaysOnTopToWindow(mainWindow)
+        }
+        mainWasVisibleBeforeCompactWindow = false
+        postLayoutChangeNotification()
+    }
+
+    func handleAppReopen() {
+        if compactWindowEnabled {
+            mainWindowController?.window?.orderOut(nil)
+            createCompactWindowControllerIfNeeded()
+            compactWindowController?.showFloating(level: isAlwaysOnTop ? .floating : .normal)
+            postLayoutChangeNotification()
+            return
+        }
+
+        showMainWindow()
+        mainWindowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
     /// - Parameter revealWindow: When `true` (live toggle from the menu) the compact window is
     ///   shown and positioned under the status item. When `false` (restore on launch) the window
     ///   is left hidden behind the status item so the *first* click reveals it — otherwise the
@@ -1036,13 +1112,17 @@ class WindowManager {
     ///   regular layout, so this matches the live-toggle behavior. Defaults to `false` so the
     ///   live menu toggle keeps recording the main window's actual visibility.
     func enterCompactMode(revealWindow: Bool = true, treatMainAsVisible: Bool = false) {
+        let compactWindowMainWasVisible = compactWindowEnabled && mainWasVisibleBeforeCompactWindow
+        if compactWindowEnabled {
+            exitCompactWindow(restoreMainWindow: false)
+        }
         guard compactModeState == .regular else { return }
         compactModeState = .entering
         compactModeEnabled = true
         UserDefaults.standard.set(true, forKey: "compactModeEnabled")
 
         regularWindowSnapshot = captureRegularWindowSnapshot()
-        if treatMainAsVisible {
+        if treatMainAsVisible || compactWindowMainWasVisible {
             regularWindowSnapshot?.main?.wasVisible = true
         }
 
@@ -1311,6 +1391,9 @@ class WindowManager {
     /// While Compact Mode is active, state persistence must record the windows that were
     /// visible before entry rather than the intentionally hidden compact-mode window set.
     func visibilityForStateSaving(_ key: String, current: Bool) -> Bool {
+        if compactWindowEnabled, key == "main" {
+            return mainWasVisibleBeforeCompactWindow
+        }
         guard compactModeState != .regular, let snapshot = regularWindowSnapshot else { return current }
         switch key {
         case "main": return snapshot.main?.wasVisible ?? current
@@ -1452,6 +1535,10 @@ class WindowManager {
     }
 
     func compactSurfaceDidHide() {
+        if compactWindowEnabled {
+            exitCompactWindow()
+            return
+        }
         guard compactModeState == .compactVisible || compactModeState == .entering else { return }
         compactModeState = .compactHidden
     }
@@ -1462,17 +1549,17 @@ class WindowManager {
 
     // Forwarders from the AudioEngine broadcast hub to the embedded compact player bar.
     func compactBarUpdateTime(current: TimeInterval, duration: TimeInterval) {
-        guard compactModeEnabled else { return }
+        guard compactModeEnabled || compactWindowEnabled else { return }
         compactWindowController?.updateTime(current: current, duration: duration)
     }
 
     func compactBarUpdateTrack(_ track: Track?) {
-        guard compactModeEnabled else { return }
+        guard compactModeEnabled || compactWindowEnabled else { return }
         compactWindowController?.updateTrack(track)
     }
 
     func compactBarUpdatePlaybackState() {
-        guard compactModeEnabled else { return }
+        guard compactModeEnabled || compactWindowEnabled else { return }
         compactWindowController?.updatePlaybackState()
     }
 
@@ -3062,6 +3149,9 @@ class WindowManager {
         spectrumWindowController?.window?.level = level
         audioAnalysisWindowController?.window?.level = level
         waveformWindowController?.window?.level = level
+        if compactWindowEnabled {
+            compactWindowController?.window?.level = level
+        }
     }
     
     /// Apply always on top level to a single window (used when showing windows)
@@ -4691,17 +4781,24 @@ class WindowManager {
                 self.performDebugRecreateModeDependentWindows(snapshot: snapshot, reenterCompact: true)
                 self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
             }
+        } else if compactWindowEnabled {
+            exitCompactWindow()
+            performDebugRecreateModeDependentWindows(snapshot: captureModeDependentLayout(), reenterCompact: false,
+                                                     reenterCompactWindow: true)
         } else {
-            performDebugRecreateModeDependentWindows(snapshot: captureModeDependentLayout(), reenterCompact: false)
+            performDebugRecreateModeDependentWindows(snapshot: captureModeDependentLayout(), reenterCompact: false,
+                                                     reenterCompactWindow: false)
         }
     }
 
-    private func performDebugRecreateModeDependentWindows(snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool) {
+    private func performDebugRecreateModeDependentWindows(snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool,
+                                                         reenterCompactWindow: Bool = false) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
         recreateModeDependentLayout(snapshot)
         if reenterCompact { enterCompactMode() }
+        if reenterCompactWindow { enterCompactWindow() }
         let tDone = CACurrentMediaTime()
 
         NSLog("WindowManager: debugRecreateModeDependentWindows — teardown %.1fms, recreate %.1fms",
@@ -4742,6 +4839,11 @@ class WindowManager {
             return
         }
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetMode.displayName)
+
+        let restoreCompactWindow = compactWindowEnabled
+        if restoreCompactWindow {
+            exitCompactWindow()
+        }
 
         // If Large UI is active, collapse it to 1x in the *current* mode before the switch and
         // re-apply it in the target mode afterward (inside performReloadUI). The two UI systems
@@ -4785,12 +4887,14 @@ class WindowManager {
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
                 guard let self else { return }
                 self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true,
+                                     reenterCompactWindow: false,
                                      restoreLargeUI: restoreLargeUI, preservedSideFrames: preservedSideFrames)
                 self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
                 completion?()
             }
         } else {
             performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false,
+                            reenterCompactWindow: restoreCompactWindow,
                             restoreLargeUI: restoreLargeUI, preservedSideFrames: preservedSideFrames)
             completion?()
         }
@@ -4907,6 +5011,7 @@ class WindowManager {
     /// The actual mode-dependent window swap. Runs synchronously when not in Compact Mode, or as
     /// the `exitCompactMode` completion when it was — see `reloadUI(toModernUI:)`.
     private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool,
+                                 reenterCompactWindow: Bool = false,
                                  restoreLargeUI: Bool, preservedSideFrames: SideWindowFrames) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
@@ -4932,6 +5037,7 @@ class WindowManager {
 
         // Restore Compact Mode last so it captures the freshly rebuilt window set, not stale state.
         if reenterCompact { enterCompactMode() }
+        if reenterCompactWindow { enterCompactWindow() }
         let tDone = CACurrentMediaTime()
 
         NSLog("WindowManager: reloadUI — teardown %.1fms, recreate %.1fms (now %@ UI)",
@@ -5029,6 +5135,7 @@ class WindowManager {
     
     func saveWindowPositions() {
         let defaults = UserDefaults.standard
+        compactWindowController?.persistFloatingFrameForStateSaving()
         
         if let frame = mainWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "MainWindowFrame")
