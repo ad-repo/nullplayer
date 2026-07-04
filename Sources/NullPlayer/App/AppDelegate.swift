@@ -178,6 +178,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Flush WAL to disk before exit so history survives hard shutdown / reboot
         MediaLibraryStore.shared.checkpoint()
         MediaLibraryStore.shared.close()
+
+        // Clear the ProjectM crash sentinel on a clean quit. The sentinel stays armed for
+        // the whole time a preset is displayed (see #328), so without this a normal quit
+        // while a visualization preset is on screen would blacklist that good preset on the
+        // next launch. Process exit does not run ProjectMWrapper.deinit, so clear it here.
+        ProjectMWrapper.clearCrashSentinel()
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
