@@ -2818,6 +2818,7 @@ class WindowManager {
         spectrumWindowController?.skinDidChange()
         audioAnalysisWindowController?.skinDidChange()
         waveformWindowController?.skinDidChange()
+        compactWindowController?.skinDidChange()
     }
 
     // MARK: - Skin Discovery
@@ -3122,17 +3123,8 @@ class WindowManager {
                            plexBrowserWindowController, projectMWindowController] {
             guard let window = controller?.window, window.isVisible,
                   let contentView = window.contentView else { continue }
-            forceRedrawTree(contentView)
+            contentView.markSubtreeForDisplayAndLayout()
             window.displayIfNeeded()
-        }
-    }
-
-    /// Recursively mark a view and its subviews for redraw so layer-backed skin views
-    /// repaint at their new bounds instead of showing stale, stretched cached contents.
-    private func forceRedrawTree(_ view: NSView) {
-        view.needsDisplay = true
-        for subview in view.subviews {
-            forceRedrawTree(subview)
         }
     }
 
@@ -4661,11 +4653,13 @@ class WindowManager {
         return index
     }
 
-    /// Rebuild the mode-dependent windows from a snapshot: the main window always returns;
-    /// each sub-window returns only if it was visible, restored to its captured frame.
-    /// Finally re-pushes current playback presentation state and makes the main window key.
-    private func recreateModeDependentLayout(_ snapshot: ModeDependentLayoutSnapshot) {
-        showMainWindow()
+    /// Rebuild the mode-dependent windows from a snapshot: the main window always returns,
+    /// but callers may keep it ordered out for transitions where another surface replaces it
+    /// temporarily (Compact Window). Each sub-window returns only if it was visible, restored
+    /// to its captured frame.
+    private func recreateModeDependentLayout(_ snapshot: ModeDependentLayoutSnapshot,
+                                             revealMainWindow: Bool = true) {
+        showMainWindow(reveal: revealMainWindow)
         if let main = snapshot.main {
             if main.frame != .zero {
                 mainWindowController?.window?.setFrame(main.frame, display: true)
@@ -4698,7 +4692,11 @@ class WindowManager {
 
         pushCurrentPresentationStateToRecreatedWindows()
 
-        mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        if revealMainWindow {
+            mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        } else {
+            mainWindowController?.window?.orderOut(nil)
+        }
         postWindowLayoutDidChange()
         updateDockedChildWindows()
 
@@ -4782,9 +4780,11 @@ class WindowManager {
                 self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
             }
         } else if compactWindowEnabled {
-            exitCompactWindow()
+            let compactWindowMainWasVisible = mainWasVisibleBeforeCompactWindow
+            exitCompactWindow(restoreMainWindow: false)
             performDebugRecreateModeDependentWindows(snapshot: captureModeDependentLayout(), reenterCompact: false,
-                                                     reenterCompactWindow: true)
+                                                     reenterCompactWindow: true,
+                                                     compactWindowTreatMainAsVisible: compactWindowMainWasVisible)
         } else {
             performDebugRecreateModeDependentWindows(snapshot: captureModeDependentLayout(), reenterCompact: false,
                                                      reenterCompactWindow: false)
@@ -4792,13 +4792,16 @@ class WindowManager {
     }
 
     private func performDebugRecreateModeDependentWindows(snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool,
-                                                         reenterCompactWindow: Bool = false) {
+                                                         reenterCompactWindow: Bool = false,
+                                                         compactWindowTreatMainAsVisible: Bool = false) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
-        recreateModeDependentLayout(snapshot)
+        recreateModeDependentLayout(snapshot, revealMainWindow: !reenterCompactWindow)
         if reenterCompact { enterCompactMode() }
-        if reenterCompactWindow { enterCompactWindow() }
+        if reenterCompactWindow {
+            enterCompactWindow(treatMainAsVisible: compactWindowTreatMainAsVisible)
+        }
         let tDone = CACurrentMediaTime()
 
         NSLog("WindowManager: debugRecreateModeDependentWindows — teardown %.1fms, recreate %.1fms",
@@ -4841,8 +4844,9 @@ class WindowManager {
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetMode.displayName)
 
         let restoreCompactWindow = compactWindowEnabled
+        let compactWindowMainWasVisible = restoreCompactWindow && mainWasVisibleBeforeCompactWindow
         if restoreCompactWindow {
-            exitCompactWindow()
+            exitCompactWindow(restoreMainWindow: false)
         }
 
         // If Large UI is active, collapse it to 1x in the *current* mode before the switch and
@@ -4895,6 +4899,7 @@ class WindowManager {
         } else {
             performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false,
                             reenterCompactWindow: restoreCompactWindow,
+                            compactWindowTreatMainAsVisible: compactWindowMainWasVisible,
                             restoreLargeUI: restoreLargeUI, preservedSideFrames: preservedSideFrames)
             completion?()
         }
@@ -5012,6 +5017,7 @@ class WindowManager {
     /// the `exitCompactMode` completion when it was — see `reloadUI(toModernUI:)`.
     private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool,
                                  reenterCompactWindow: Bool = false,
+                                 compactWindowTreatMainAsVisible: Bool = false,
                                  restoreLargeUI: Bool, preservedSideFrames: SideWindowFrames) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
@@ -5024,7 +5030,7 @@ class WindowManager {
         audioEngine.applyEQLayout(forModernUI: targetMode.usesModernControllers)
         (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
 
-        recreateModeDependentLayout(snapshot)
+        recreateModeDependentLayout(snapshot, revealMainWindow: !reenterCompactWindow)
 
         // Re-apply Large UI (collapsed to 1x in reloadUI before the switch) now that the target-mode
         // windows exist. This must happen *before* enterCompactMode() so the compact capture records
@@ -5037,7 +5043,9 @@ class WindowManager {
 
         // Restore Compact Mode last so it captures the freshly rebuilt window set, not stale state.
         if reenterCompact { enterCompactMode() }
-        if reenterCompactWindow { enterCompactWindow() }
+        if reenterCompactWindow {
+            enterCompactWindow(treatMainAsVisible: compactWindowTreatMainAsVisible)
+        }
         let tDone = CACurrentMediaTime()
 
         NSLog("WindowManager: reloadUI — teardown %.1fms, recreate %.1fms (now %@ UI)",
