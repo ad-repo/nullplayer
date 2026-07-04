@@ -3798,22 +3798,24 @@ class ModernLibraryBrowserView: NSView {
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let totalHeight = CGFloat(displayItems.count) * itemHeight
+        let verticalDelta = verticalScrollDelta(from: event)
 
-        if totalHeight > listHeight && abs(event.deltaY) > 0 {
-            scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - event.deltaY * 3))
+        if totalHeight > listHeight && verticalDelta != 0 {
+            scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - verticalDelta))
 
             let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
             setNeedsDisplay(listRect)
         }
 
-        if abs(event.deltaX) > 0 {
+        let horizontalDelta = horizontalScrollDelta(from: event)
+        if horizontalDelta != 0 {
             let columns = currentVisibleColumns()
             let group = currentColumnGroup()
             let availableWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
             let totalWidth = totalColumnsWidth(columns: columns, availableWidth: availableWidth, group: group)
             let maxOffset = max(0, totalWidth - availableWidth)
             if maxOffset > 0 {
-                horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - event.deltaX * 3))
+                horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - horizontalDelta))
                 let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
                 setNeedsDisplay(listRect)
             }
@@ -3821,6 +3823,20 @@ class ModernLibraryBrowserView: NSView {
 
         // Trigger next-page load when scrolled near the bottom of a local paginated list
         if case .local = currentSource { loadNextLocalPageIfNeeded(listHeight: listHeight) }
+    }
+
+    private func verticalScrollDelta(from event: NSEvent) -> CGFloat {
+        if event.hasPreciseScrollingDeltas, event.scrollingDeltaY != 0 {
+            return event.scrollingDeltaY
+        }
+        return event.deltaY * 3
+    }
+
+    private func horizontalScrollDelta(from event: NSEvent) -> CGFloat {
+        if event.hasPreciseScrollingDeltas, event.scrollingDeltaX != 0 {
+            return event.scrollingDeltaX
+        }
+        return event.deltaX * 3
     }
 
     private func loadNextLocalPageIfNeeded(listHeight: CGFloat) {

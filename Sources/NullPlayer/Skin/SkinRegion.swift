@@ -381,10 +381,7 @@ class RegionManager {
             }
         }
         
-        // Check if in title bar area (for window dragging)
-        let titleBarRect = NSRect(x: 0, y: windowSize.height - SkinElements.titleBarHeight,
-                                  width: windowSize.width - 30, height: SkinElements.titleBarHeight)
-        if titleBarRect.contains(point) {
+        if isInTitleBar(point, windowType: windowType, windowSize: windowSize) {
             return .openHand
         }
         
@@ -469,8 +466,24 @@ class RegionManager {
         // Convert to skin coordinates
         let skinY = windowSize.height - point.y
         
-        // Title bar is at the top, 14 pixels high, excluding buttons on the right
-        return skinY < SkinElements.titleBarHeight && point.x < windowSize.width - 30
+        guard skinY < SkinElements.titleBarHeight else { return false }
+
+        let regions: [ClickableRegion]
+        switch windowType {
+        case .main:
+            regions = mainWindowRegions
+        case .equalizer:
+            regions = equalizerRegions
+        case .playlist:
+            regions = playlistRegions(for: NSRect(origin: .zero, size: windowSize))
+        case .mediaLibrary:
+            return false
+        }
+
+        let skinPoint = NSPoint(x: point.x, y: skinY)
+        return !regions.contains { region in
+            region.cursorType == .pointer && region.rect.contains(skinPoint)
+        }
     }
 }
 
@@ -495,4 +508,3 @@ extension RegionManager {
         // custom hit testing, or by setting the window's shape mask
     }
 }
-

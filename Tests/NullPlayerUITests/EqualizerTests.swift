@@ -59,7 +59,7 @@ final class EqualizerTests: NullPlayerUITestCase {
     
     // MARK: - Interaction Test
     
-    /// Tests window drag, context menu, and shade mode
+    /// Tests window drag, context menu, and title-bar double-click behavior
     func testEqualizerInteractions() {
         // Window drag
         let startPoint = equalizerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
@@ -73,7 +73,7 @@ final class EqualizerTests: NullPlayerUITestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 1))
         app.pressEscape()
         
-        // Shade mode
+        // Title-bar double-click should not disturb the window.
         let titleBar = equalizerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
         titleBar.doubleTap()
         XCTAssertTrue(equalizerWindow.exists)
