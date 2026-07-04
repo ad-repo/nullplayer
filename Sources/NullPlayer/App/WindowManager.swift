@@ -1112,8 +1112,9 @@ class WindowManager {
     ///   regular layout, so this matches the live-toggle behavior. Defaults to `false` so the
     ///   live menu toggle keeps recording the main window's actual visibility.
     func enterCompactMode(revealWindow: Bool = true, treatMainAsVisible: Bool = false) {
+        let compactWindowMainWasVisible = compactWindowEnabled && mainWasVisibleBeforeCompactWindow
         if compactWindowEnabled {
-            exitCompactWindow()
+            exitCompactWindow(restoreMainWindow: false)
         }
         guard compactModeState == .regular else { return }
         compactModeState = .entering
@@ -1121,7 +1122,7 @@ class WindowManager {
         UserDefaults.standard.set(true, forKey: "compactModeEnabled")
 
         regularWindowSnapshot = captureRegularWindowSnapshot()
-        if treatMainAsVisible {
+        if treatMainAsVisible || compactWindowMainWasVisible {
             regularWindowSnapshot?.main?.wasVisible = true
         }
 

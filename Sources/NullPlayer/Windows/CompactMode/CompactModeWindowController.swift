@@ -224,14 +224,22 @@ final class CompactModeWindowController: NSWindowController {
 
         if !hasAppliedFloatingFrame {
             let savedFrame = Self.savedFloatingFrame()
+            var shouldCenter = savedFrame == nil
             var frame = savedFrame ?? window.frame
             if savedFrame == nil {
                 frame.size.width = compactBaseWidth
             }
             frame.size.width = max(frame.width, compactBaseWidth)
             frame.size.height = max(frame.height, window.minSize.height)
+            if savedFrame != nil {
+                if let visibleFrame = Self.visibleFloatingFrame(for: frame) {
+                    frame = visibleFrame
+                } else {
+                    shouldCenter = true
+                }
+            }
             window.setFrame(frame, display: false, animate: false)
-            if savedFrame == nil {
+            if shouldCenter {
                 window.center()
             }
             hasAppliedFloatingFrame = true
@@ -418,6 +426,32 @@ final class CompactModeWindowController: NSWindowController {
         }
         let frame = NSRectFromString(string)
         return frame == .zero ? nil : frame
+    }
+
+    private static func visibleFloatingFrame(for frame: NSRect) -> NSRect? {
+        guard !NSScreen.screens.isEmpty else { return frame }
+
+        let bestScreen = NSScreen.screens
+            .map { screen -> (screen: NSScreen, area: CGFloat) in
+                let intersection = frame.intersection(screen.visibleFrame)
+                let area = intersection.isNull || intersection.isEmpty
+                    ? 0
+                    : intersection.width * intersection.height
+                return (screen, area)
+            }
+            .max { $0.area < $1.area }
+
+        guard let bestScreen, bestScreen.area > 0 else { return nil }
+
+        let visibleFrame = bestScreen.screen.visibleFrame
+        var adjusted = frame
+        adjusted.size.width = min(adjusted.width, visibleFrame.width)
+        adjusted.size.height = min(adjusted.height, visibleFrame.height)
+        adjusted.origin.x = min(max(adjusted.origin.x, visibleFrame.minX),
+                                visibleFrame.maxX - adjusted.width)
+        adjusted.origin.y = min(max(adjusted.origin.y, visibleFrame.minY),
+                                visibleFrame.maxY - adjusted.height)
+        return adjusted
     }
 
     func updateTime(current: TimeInterval, duration: TimeInterval) {
