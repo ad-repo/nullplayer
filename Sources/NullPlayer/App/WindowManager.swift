@@ -5135,6 +5135,7 @@ class WindowManager {
     
     func saveWindowPositions() {
         let defaults = UserDefaults.standard
+        compactWindowController?.persistFloatingFrameForStateSaving()
         
         if let frame = mainWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "MainWindowFrame")

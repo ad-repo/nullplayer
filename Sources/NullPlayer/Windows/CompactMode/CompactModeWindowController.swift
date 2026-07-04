@@ -420,6 +420,10 @@ final class CompactModeWindowController: NSWindowController {
         UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: Self.floatingFrameKey)
     }
 
+    func persistFloatingFrameForStateSaving() {
+        persistFloatingFrameIfNeeded()
+    }
+
     private static func savedFloatingFrame() -> NSRect? {
         guard let string = UserDefaults.standard.string(forKey: floatingFrameKey), !string.isEmpty else {
             return nil
