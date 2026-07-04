@@ -2021,9 +2021,11 @@ class ModernLibraryBrowserView: NSView {
             }
             if isOffline { context.saveGState(); context.setAlpha(0.35) }
 
-            // Selection background - subtle to keep accent text readable
+            // Selection background - subtle to keep accent text readable.
+            // In metal mode, highlight with the green LCD display color (matching the
+            // playlist's now-playing row) instead of the metal control fill.
             if isSelected {
-                (isMetalRenderStyle ? metalControlActiveFill : skin.primaryColor.withAlphaComponent(0.06)).setFill()
+                (isMetalRenderStyle ? metalMaterial.displayFill.withAlphaComponent(0.30) : skin.primaryColor.withAlphaComponent(0.06)).setFill()
                 context.fill(itemRect)
             }
 

@@ -166,8 +166,9 @@ class ModernPlaylistView: NSView {
         let skin = renderer.skin
         // Must use playlistFont (8pt default), NOT bodyFont (9pt) which configure(with:) would set
         marquee.textFont = skin.playlistFont()
-        // Must use accentColor (magenta) to match current-track title color, NOT marqueeColor (yellow)
-        marquee.textColor = skin.applyTextOpacity(to: skin.accentColor)
+        // Must use accentColor (magenta) to match current-track title color, NOT marqueeColor (yellow).
+        // In metal the current-track title stays at textColor (the green highlight is the cue), so match that.
+        marquee.textColor = skin.applyTextOpacity(to: skin.renderStyle == .metal ? skin.textColor : skin.accentColor)
         marquee.glowEnabled = false  // Track list text has no glow
         marquee.scrollSpeed = 24.0   // Match original: ~24px/sec
         marquee.scrollGap = 30.0     // Match original separatorWidth
@@ -449,10 +450,25 @@ class ModernPlaylistView: NSView {
             let track = tracks[index]
             let isCurrent = index == currentIndex
             let isSelected = selectedIndices.contains(index)
-            
+
+            // In metal mode the current-track text color (accent, a light metal tone) reads
+            // too close to the normal/selected text colors to signal "now playing". Fill the
+            // current row with the green LCD display color so it stands out unambiguously.
+            // (Test color: the backlit hi-fi green used by the main-window display panels.)
+            if isCurrent && skin.renderStyle == .metal {
+                let fill = skin.metalMaterial.displayFill.withAlphaComponent(0.30)
+                context.setFillColor(fill.cgColor)
+                context.fill(itemRect)
+            }
+
             // Text color -- current track uses accent, selected uses primary text, normal uses playlist_text
             let titleColor: NSColor
-            if isCurrent {
+            if skin.renderStyle == .metal {
+                // Metal: the green highlight fill is the sole now-playing/selection cue. Keep
+                // every row at the same (library-matching) text color so accent-colored current
+                // text doesn't clash with / wash out against the green highlight.
+                titleColor = skin.textColor
+            } else if isCurrent {
                 titleColor = skin.accentColor
             } else if isSelected {
                 titleColor = skin.textColor
