@@ -60,29 +60,63 @@
 
 ## Installation
 
-    brew install --cask ad-repo/nullplayer/nullplayer
-    brew tap ad-repo/nullplayer        # one-time configuration  
+Download the latest DMG:
 
-    brew install --cask ad-repo/nullplayer/nullplayer  
-    or if already installed manually
-    brew install --cask --force ad-repo/nullplayer/nullplayer 
-    
-    To upgrade to a new release:   
-    brew update   
-    brew upgrade --cask ad-repo/nullplayer/nullplayer   
-    
-    To verify the tap is picking up the latest version:   
-    brew livecheck --cask ad-repo/nullplayer/nullplayer   
-    
-    Notes from the cask:   
-    - App is ad-hoc signed (not notarized). 
-    The cask's postflight runs xattr -cr to strip the quarantine bit so Gatekeeper allows first launch.   
-    - Requires macOS Sonoma or newer.   
-    - brew uninstall --cask --zap nullplayer removes app support/caches/prefs, but Keychain tokens (service com.nullplayer.app) must be removed manually: security 
-    
-    The Homebrew cask strips the quarantine attribute on install because the app is currently ad-hoc signed (Apple Developer ID notarization is on the roadmap). `brew     uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
+https://github.com/ad-repo/nullplayer/releases/latest/download/NullPlayer.dmg
 
-    security delete-generic-password -s com.nullplayer.app
+Requires macOS 14 Sonoma or newer.
+
+1. Open `NullPlayer.dmg`.
+2. Drag `NullPlayer.app` to Applications.
+3. Open NullPlayer from Applications.
+
+See [docs/download.md](docs/download.md) for the same install steps in a short download-only page.
+
+### Fixing "App is damaged" or "macOS cannot verify that this app is free from malware" Error
+
+NullPlayer releases are currently ad-hoc signed, not Developer ID notarized. Because of that, macOS Gatekeeper may block the app on first launch.
+
+**Option 1: Terminal**
+
+```bash
+xattr -cr /Applications/NullPlayer.app
+```
+
+**Option 2: System Settings**
+
+1. Try to open NullPlayer once.
+2. Go to **System Settings -> Privacy & Security**.
+3. Scroll down and click **Open Anyway** next to the NullPlayer message.
+4. Click **Open** in the confirmation dialog.
+
+After either option, NullPlayer will open normally.
+
+### Advanced: Homebrew
+
+Terminal users can install NullPlayer through the personal Homebrew tap:
+
+```bash
+brew install --cask ad-repo/nullplayer/nullplayer
+```
+
+To upgrade to a new release:
+
+```bash
+brew update
+brew upgrade --cask ad-repo/nullplayer/nullplayer
+```
+
+To verify the tap is picking up the latest version:
+
+```bash
+brew livecheck --cask ad-repo/nullplayer/nullplayer
+```
+
+The Homebrew cask strips the quarantine attribute on install because the app is currently ad-hoc signed. `brew uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
+
+```bash
+security delete-generic-password -s com.nullplayer.app
+```
 
 ### Optional command-line launcher
 
@@ -102,24 +136,6 @@ The launcher looks for:
 
 - `/Applications/NullPlayer.app`
 - `~/Applications/NullPlayer.app`
-
-
-### Fixing "App is damaged" or "macOS cannot verify that this app is free from malware" Error
-
-Since the app is in beta testing and not code-signed (it costs $99 a year to sign the app and I am not sure yet I want to pay that yet) macOS Gatekeeper will block it. To fix this:
-
-**Option 1: Terminal (Recommended)**
-```bash
-xattr -cr /Applications/NullPlayer.app
-```
-
-**Option 2: System Settings**
-1. Try to open NullPlayer (it will be blocked)
-2. Go to **System Settings → Privacy & Security**
-3. Scroll down and click **Open Anyway** next to the NullPlayer message
-4. Click **Open** in the confirmation dialog
-
-After either option, NullPlayer will open normally.
 
 ## Requirements
 

@@ -52,9 +52,10 @@ The terminal file shows `exit_code: 0` after the build script completes, but new
 
 Output:
 - `dist/NullPlayer.app` — Application bundle
-- `dist/NullPlayer-X.Y.dmg` — Distributable DMG with Applications symlink
+- `dist/NullPlayer-X.Y.Z.dmg` — Immutable, versioned DMG for archives, checksums, and Homebrew
+- `dist/NullPlayer.dmg` — Stable-name copy for human-facing download links
 
-The script builds a release binary, creates the app bundle, copies VLCKit.framework and libprojectM-4.dylib, fixes rpaths, and creates a DMG. The final summary prints the DMG's SHA256 — copy this value into the Homebrew cask on each release.
+The script builds a release binary, creates the app bundle, copies VLCKit.framework and libprojectM-4.dylib, fixes rpaths, creates the versioned DMG, and copies it to the stable `NullPlayer.dmg` filename. The final summary prints the versioned DMG's SHA256 — copy this value into the Homebrew cask on each release.
 
 ### Mac App Store
 
@@ -69,21 +70,49 @@ Output:
 
 Requires environment variables (`MAS_APP_IDENTITY`, `MAS_INSTALLER_IDENTITY`, `MAS_PROVISION_PROFILE`). See `docs/mas-build-guide.md` for detailed setup and submission instructions.
 
-## Release flow (Homebrew cask)
+## Release Flow
 
-NullPlayer is distributed via a personal tap at `ad-repo/homebrew-nullplayer` (`Casks/nullplayer.rb`). For each release:
+NullPlayer releases use the plain `X.Y.Z` tag format, matching `CFBundleShortVersionString` exactly. Do not prefix release tags with `v`.
+
+### GitHub Release
+
+The preferred release helper builds the DMG, creates or updates the GitHub release, and uploads both the immutable versioned asset and the stable human-friendly asset:
 
 1. Bump `CFBundleShortVersionString` (and `CFBundleVersion` if needed) in `Sources/NullPlayer/Resources/Info.plist`.
-2. Run `./scripts/build_dmg.sh`. Note the printed `SHA256`.
-3. Publish the DMG:
+2. Update `CHANGELOG.md` with a matching `## X.Y.Z` section.
+3. Run:
    ```bash
-   gh release create vX.Y.Z dist/NullPlayer-X.Y.Z.dmg
+   ./scripts/create_release.sh
    ```
-4. In the `ad-repo/homebrew-nullplayer` repo, update `Casks/nullplayer.rb`:
+
+The helper uses `.github/release_template.md`, extracts the matching changelog section, and publishes these assets:
+
+- `NullPlayer-X.Y.Z.dmg` — use for Homebrew and archived release references
+- `NullPlayer.dmg` — use for download pages and `releases/latest/download/NullPlayer.dmg`
+
+Useful helper options:
+
+```bash
+./scripts/create_release.sh --dry-run     # Build notes and assets, but do not call GitHub
+./scripts/create_release.sh --skip-build  # Reuse an existing dist/NullPlayer-X.Y.Z.dmg
+./scripts/create_release.sh --draft       # Create/update the release as a draft
+./scripts/create_release.sh --prerelease  # Mark the release as a prerelease
+./scripts/create_release.sh --replace-versioned  # Re-upload the versioned DMG on an existing release
+```
+
+When updating an existing release, the helper always refreshes `NullPlayer.dmg` but leaves `NullPlayer-X.Y.Z.dmg` unchanged unless `--replace-versioned` is passed. This protects Homebrew users because the cask checksum is tied to the versioned asset.
+
+### Homebrew Cask
+
+NullPlayer is distributed via a personal tap at `ad-repo/homebrew-nullplayer` (`Casks/nullplayer.rb`). After the GitHub release:
+
+1. Note the SHA256 printed by `./scripts/build_dmg.sh` for `dist/NullPlayer-X.Y.Z.dmg`.
+2. In the `ad-repo/homebrew-nullplayer` repo, update `Casks/nullplayer.rb`:
    - Bump `version "X.Y.Z"`.
-   - Replace `sha256 "..."` with the value from step 2.
+   - Replace `sha256 "..."` with the value from step 1.
+   - Keep the cask URL pointed at the versioned DMG, not `NullPlayer.dmg`.
    - Commit and push.
-5. Verify locally:
+3. Verify locally:
    ```bash
    brew update
    brew install --cask ad-repo/nullplayer/nullplayer
