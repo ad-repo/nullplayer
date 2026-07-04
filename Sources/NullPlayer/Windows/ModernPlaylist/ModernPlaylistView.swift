@@ -451,12 +451,11 @@ class ModernPlaylistView: NSView {
             let isCurrent = index == currentIndex
             let isSelected = selectedIndices.contains(index)
 
-            // In metal mode the current-track text color (accent, a light metal tone) reads
-            // too close to the normal/selected text colors to signal "now playing". Fill the
-            // current row with the green LCD display color so it stands out unambiguously.
-            // (Test color: the backlit hi-fi green used by the main-window display panels.)
-            if isCurrent && skin.renderStyle == .metal {
-                let fill = skin.metalMaterial.displayFill.withAlphaComponent(0.30)
+            // In metal mode the text colors intentionally stay uniform. Use the green LCD
+            // display fill for row state: strong for now-playing, subtler for selection.
+            if skin.renderStyle == .metal, isCurrent || isSelected {
+                let fillAlpha: CGFloat = isCurrent ? 0.30 : 0.20
+                let fill = skin.metalMaterial.displayFill.withAlphaComponent(fillAlpha)
                 context.setFillColor(fill.cgColor)
                 context.fill(itemRect)
             }
@@ -464,9 +463,9 @@ class ModernPlaylistView: NSView {
             // Text color -- current track uses accent, selected uses primary text, normal uses playlist_text
             let titleColor: NSColor
             if skin.renderStyle == .metal {
-                // Metal: the green highlight fill is the sole now-playing/selection cue. Keep
-                // every row at the same (library-matching) text color so accent-colored current
-                // text doesn't clash with / wash out against the green highlight.
+                // Metal: green highlight fills are the sole row-state cue. Keep every row at
+                // the same (library-matching) text color so accent-colored text doesn't clash
+                // with / wash out against the green highlight.
                 titleColor = skin.textColor
             } else if isCurrent {
                 titleColor = skin.accentColor
