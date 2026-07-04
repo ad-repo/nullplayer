@@ -206,6 +206,11 @@ class ProjectMWrapper: VisualizationEngine {
             projectm_destroy(h)
         }
         #endif
+        // Clear the crash sentinel on clean teardown (engine switch / window close) so a
+        // stale sentinel from a normally-displayed preset never gets misread as a crash on
+        // the next launch. App-quit teardown clears it via AppDelegate.applicationWillTerminate,
+        // since process exit does not run deinit.
+        Self.clearCrashSentinel()
     }
     
     // MARK: - Viewport
@@ -307,11 +312,7 @@ class ProjectMWrapper: VisualizationEngine {
     /// Flag indicating we're currently inside renderFrame
     /// Used to detect and prevent re-entry
     private var _isRendering: Bool = false
-    
-    /// Whether the first render frame of the current preset has completed without crashing.
-    /// Reset to false each time a new preset is loaded. Used by the crash-detection sentinel.
-    private var _firstRenderCompleted: Bool = false
-    
+
     /// Renders a single frame of visualization.
     /// Must be called with a valid OpenGL context active (CVDisplayLink render thread).
     func renderFrame() {
@@ -339,18 +340,28 @@ class ProjectMWrapper: VisualizationEngine {
             NSLog("ProjectMWrapper: Loading preset %d on render thread: %@", pendingIndex, name)
             
             _presetLoadInProgress = true
+
+            // Arm the crash-detection sentinel for this preset BEFORE any risky libprojectM
+            // call. It names the preset now being displayed and stays on disk for the entire
+            // time this preset renders. If libprojectM SIGSEGVs at ANY point — during load,
+            // the first frame, or minutes into steady-state (e.g. the null-texture deref in
+            // FinalComposite::LoadVariables reported in #328) — the sentinel survives the
+            // crash and the preset is permanently blacklisted on the next launch. It is
+            // cleared on clean teardown (engine deinit / app quit), so a normal exit never
+            // blacklists a good preset.
+            Self.writeCrashSentinel(presetPath: path)
+
             projectm_load_preset_file(h, path, false)  // Always use hard cut for safety
-            
+
             // Reset all GL textures after each preset load. libprojectM can free the 3D
             // noise volume texture (sampler_noisevol_hq) when switching to presets that
             // don't reference it, leaving a dangling pointer that crashes the next preset
             // rendering call for any preset that does use it.
             projectm_reset_textures(h)
-            
+
             _presetLoaded = true
             _presetLoadInProgress = false
-            _firstRenderCompleted = false  // Arm the crash-detection sentinel for this preset
-            
+
             NSLog("ProjectMWrapper: Preset loaded and textures reset on render thread")
             
             // Clear to black this frame and let the warmup period begin
@@ -378,22 +389,12 @@ class ProjectMWrapper: VisualizationEngine {
         
         // Update viewport
         glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
-        
-        // Before the first render of each new preset, write a crash-detection sentinel
-        // file. If projectm_opengl_render_frame crashes (SIGSEGV in a buggy shader),
-        // the file persists on disk. On the next app launch, that preset is permanently
-        // blacklisted and removed from the rotation so the crash never recurs.
-        if !_firstRenderCompleted {
-            Self.writeCrashSentinel(presetPath: presetFiles[_currentPresetIndex])
-        }
-        
+
+        // The crash-detection sentinel was armed when this preset loaded and remains on
+        // disk for the preset's entire display lifetime. If projectm_opengl_render_frame
+        // SIGSEGVs on ANY frame — the first or the ten-thousandth — the sentinel survives
+        // and the offending preset is blacklisted on the next launch (see #328).
         projectm_opengl_render_frame(h)
-        
-        // Render succeeded — clear the sentinel and mark first render done
-        if !_firstRenderCompleted {
-            Self.clearCrashSentinel()
-            _firstRenderCompleted = true
-        }
         #endif
     }
     
