@@ -69,15 +69,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // entered only after the asynchronous window restoration has completed, so it
         // can capture and hide the actual restored window set.
         let shouldRestoreCompactMode = UserDefaults.standard.bool(forKey: "compactModeEnabled")
+        let shouldRestoreCompactWindow = !shouldRestoreCompactMode
+            && UserDefaults.standard.bool(forKey: "compactWindowEnabled")
 
         // Create the main window, but only reveal it when we are NOT launching straight into
-        // the menu-bar Compact Mode — otherwise the regular window flashes onscreen before
-        // compact mode hides it (~0.1s later, after async restore completes).
-        windowManager.showMainWindow(reveal: !shouldRestoreCompactMode)
+        // Compact Mode / Compact Window — otherwise the regular window flashes onscreen before
+        // the compact surface hides it (~0.1s later, after async restore completes).
+        windowManager.showMainWindow(reveal: !shouldRestoreCompactMode && !shouldRestoreCompactWindow)
 
         // Bring app to foreground after windows are created (skip when starting in Compact
-        // Mode, where the app is a menu-bar accessory and the main window stays hidden).
-        if !shouldRestoreCompactMode {
+        // Mode/Window, where the main window stays hidden until the compact surface is ready).
+        if !shouldRestoreCompactMode && !shouldRestoreCompactWindow {
             NSApp.activate(ignoringOtherApps: true)
             windowManager.mainWindowController?.window?.makeKeyAndOrderFront(nil)
         }
@@ -89,10 +91,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         CastManager.shared.startDiscovery()
 
         AppStateManager.shared.restoreSettingsState { [weak self] in
-            guard shouldRestoreCompactMode else { return }
-            // The main window was created but never revealed, so force its snapshot to
-            // "visible" — exiting Compact Mode must restore it onscreen.
-            self?.windowManager.enterCompactMode(revealWindow: false, treatMainAsVisible: true)
+            if shouldRestoreCompactMode {
+                // The main window was created but never revealed, so force its snapshot to
+                // "visible" — exiting Compact Mode must restore it onscreen.
+                self?.windowManager.enterCompactMode(revealWindow: false, treatMainAsVisible: true)
+            } else if shouldRestoreCompactWindow {
+                self?.windowManager.enterCompactWindow(treatMainAsVisible: true)
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
         
         // Mark app as ready for file opens
@@ -196,7 +202,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        windowManager.mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        windowManager.handleAppReopen()
         return true
     }
     

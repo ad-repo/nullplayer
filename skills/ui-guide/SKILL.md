@@ -673,6 +673,35 @@ The reveal is **event-driven with no fallback** (this replaced the old retry-pol
 - Tear down both frame observers, the display-config observer, and the diagnostic timer in `hide()` and `deinit`.
 - The logic lives entirely in the shared `CompactModeWindowController` (`modernUI` only selects the embedded browser surface), so classic, modern, and metal skins all reveal through this one path — there is no mode-specific positioning to keep in sync.
 
+## Compact Window
+
+Compact Window is the free-floating sibling of menu-bar Compact Mode. It reuses
+`CompactModeWindowController` and the embedded browser compact surface, but it must not
+change activation policy or create a status item.
+
+Implementation rules:
+- `WindowManager.compactWindowEnabled` is the source of truth and persists under
+  `compactWindowEnabled`. It is mutually exclusive with `compactModeEnabled`.
+- Entering Compact Window hides **only** the main window, records whether main was visible,
+  creates the shared compact controller if needed, and calls `showFloating(level:)`.
+  Secondary windows stay visible and keep their frames.
+- `CompactModeWindowController.showFloating(level:)` uses `.normal` level by default,
+  `.managed` / `.fullScreenAuxiliary` collection behavior, immediate alpha-1 reveal, and
+  frame persistence via `compactWindowFrame`. Do not run status-anchor observers,
+  display-reconfig anchoring, diagnostic timers, or `.statusBar` level juggling in floating mode.
+- `showMainWindow(reveal:)` must not reveal main while `compactWindowEnabled` is true. Generic
+  app reopen handling should call `WindowManager.handleAppReopen()`, which focuses/re-shows
+  Compact Window and keeps main ordered out. This prevents returning from another Space or a
+  fullscreen app from reopening both Compact Window and the main window.
+- The compact-bar update forwarders must run for `compactModeEnabled || compactWindowEnabled`
+  so track/time/play state stays live in both variants.
+- The classic and modern compact player bars should start a window drag from non-control
+  regions when `compactWindowEnabled` is true. Keep playback buttons, seek, volume,
+  close/minimize hit targets consuming their own events. Menu-bar Compact Mode remains anchored
+  and should not become draggable from the title/player bar.
+- Live UI switching should exit Compact Window, rebuild the mode-dependent window layer, then
+  re-enter Compact Window so the embedded classic/modern compact surface matches the new mode.
+
 ## Window Docking
 
 Complex snapping logic in `WindowManager`:

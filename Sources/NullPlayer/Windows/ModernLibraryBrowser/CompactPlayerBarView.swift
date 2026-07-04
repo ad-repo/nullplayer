@@ -255,6 +255,7 @@ final class CompactPlayerBarView: NSView {
         else if t.stop.contains(p) { pressedButton = "btn_stop" }
         else if t.next.contains(p) { pressedButton = "btn_next" }
         if pressedButton != nil { needsDisplay = true }
+        else { beginFloatingCompactWindowDrag(with: event) }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -291,6 +292,11 @@ final class CompactPlayerBarView: NSView {
         }
         pressedButton = nil
         needsDisplay = true
+    }
+
+    private func beginFloatingCompactWindowDrag(with event: NSEvent) {
+        guard WindowManager.shared.compactWindowEnabled, let window else { return }
+        window.performDrag(with: event)
     }
 
     private func updateSeekPosition(from point: NSPoint) {

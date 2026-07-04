@@ -394,6 +394,8 @@ final class ClassicCompactPlayerBarView: NSView {
         if p.y < titleBarHeight {
             // Compact Mode is anchored beneath the status item. Consume titlebar clicks
             // without initiating a window drag so it cannot be detached from the menu bar.
+            // Compact Window is free-floating, so the same region should drag normally.
+            beginFloatingCompactWindowDrag(with: event)
             return
         }
 
@@ -418,6 +420,8 @@ final class ClassicCompactPlayerBarView: NSView {
             needsDisplay = true
             return
         }
+
+        beginFloatingCompactWindowDrag(with: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -463,6 +467,11 @@ final class ClassicCompactPlayerBarView: NSView {
         }
         pressedButton = nil
         needsDisplay = true
+    }
+
+    private func beginFloatingCompactWindowDrag(with event: NSEvent) {
+        guard WindowManager.shared.compactWindowEnabled, let window else { return }
+        window.performDrag(with: event)
     }
 
     private func updateSeekPosition(from point: NSPoint) {

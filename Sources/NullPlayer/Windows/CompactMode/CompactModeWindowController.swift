@@ -18,6 +18,7 @@ final class CompactModeWindowController: NSWindowController {
 
     private let browserController: CompactModeBrowserSurface
     private var needsInitialSizing = true
+    private var isFloatingMode = false
 
     /// Observer for status-item window move notifications (initial reveal + display-reconfig).
     private var statusButtonWindowMoveObserver: NSObjectProtocol?
@@ -45,6 +46,8 @@ final class CompactModeWindowController: NSWindowController {
     private var compactBaseWidth: CGFloat {
         browserController.minimumCompactContentWidth * compactWidthFactor
     }
+
+    private static let floatingFrameKey = "compactWindowFrame"
 
     init(modernUI: Bool) {
         if modernUI {
@@ -74,6 +77,7 @@ final class CompactModeWindowController: NSWindowController {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        persistFloatingFrameIfNeeded()
         stopObservingStatusButtonFrame()
         stopObservingDisplayConfig()
         anchorDiagnosticTimer?.invalidate()
@@ -107,6 +111,7 @@ final class CompactModeWindowController: NSWindowController {
     }
 
     @objc private func handleWindowDidBecomeKey(_ note: Notification) {
+        guard !isFloatingMode else { return }
         guard let window, window.isVisible else { return }
         guard let keyWindow = note.object as? NSWindow else { return }
         // A dialog/panel from our app took key — let it sit above the floating compact window.
@@ -119,6 +124,7 @@ final class CompactModeWindowController: NSWindowController {
     /// this the video would launch *behind* the floating mini-player. The compact window
     /// returns to its floating level the next time it becomes key (see handleWindowDidBecomeKey).
     func yieldFrontForVideoPlayer() {
+        guard !isFloatingMode else { return }
         window?.level = .normal
     }
 
@@ -127,6 +133,7 @@ final class CompactModeWindowController: NSWindowController {
     /// user happens to click it. Called when video playback stops/closes so always-on-top behavior
     /// returns automatically.
     func restoreFloatingLevelAfterVideoPlayer() {
+        guard !isFloatingMode else { return }
         window?.level = .statusBar
     }
 
@@ -145,6 +152,7 @@ final class CompactModeWindowController: NSWindowController {
     /// real fade-in/positioning still happens later in `show`.
     func establishPresenceOnActiveSpace() {
         guard let window else { return }
+        isFloatingMode = false
         window.alphaValue = 0
         window.hasShadow = false
         window.collectionBehavior = [.moveToActiveSpace, .transient, .ignoresCycle]
@@ -154,11 +162,14 @@ final class CompactModeWindowController: NSWindowController {
 
     func show(anchoredTo button: NSStatusBarButton?) {
         guard let window else { return }
+        isFloatingMode = false
         stopObservingStatusButtonFrame()
         anchorDiagnosticTimer?.invalidate()
 
         window.level = .statusBar
         window.collectionBehavior = [.moveToActiveSpace, .transient, .ignoresCycle]
+        window.title = "Compact Mode"
+        window.setAccessibilityLabel("Compact Mode")
 
         let wasVisible = window.isVisible && window.alphaValue > 0
         if wasVisible {
@@ -193,6 +204,47 @@ final class CompactModeWindowController: NSWindowController {
         if isStatusAnchorReady(button) {
             revealNow(anchoredTo: button)
         }
+    }
+
+    func showFloating(level: NSWindow.Level = .normal) {
+        guard let window else { return }
+        isFloatingMode = true
+        hasRevealed = true
+        anchorButton = nil
+        stopObservingStatusButtonFrame()
+        stopObservingDisplayConfig()
+        anchorDiagnosticTimer?.invalidate()
+        anchorDiagnosticTimer = nil
+
+        window.level = level
+        window.collectionBehavior = [.managed, .fullScreenAuxiliary]
+        window.title = "Compact Window"
+        window.setAccessibilityLabel("Compact Window")
+
+        if needsInitialSizing {
+            let savedFrame = Self.savedFloatingFrame()
+            var frame = savedFrame ?? window.frame
+            if savedFrame == nil {
+                frame.size.width = compactBaseWidth
+            }
+            frame.size.width = max(frame.width, compactBaseWidth)
+            frame.size.height = max(frame.height, window.minSize.height)
+            window.setFrame(frame, display: false, animate: false)
+            if savedFrame == nil {
+                window.center()
+            }
+            needsInitialSizing = false
+        } else {
+            var frame = window.frame
+            frame.size.width = max(frame.width, compactBaseWidth)
+            frame.size.height = max(frame.height, window.minSize.height)
+            window.setFrame(frame, display: false, animate: false)
+        }
+
+        window.alphaValue = 1
+        window.hasShadow = true
+        window.orderFront(nil)
+        window.makeKey()
     }
 
     /// Start observing the status-item window's move and resize notifications to detect
@@ -344,6 +396,7 @@ final class CompactModeWindowController: NSWindowController {
     }
 
     func hide() {
+        persistFloatingFrameIfNeeded()
         stopObservingStatusButtonFrame()
         stopObservingDisplayConfig()
         anchorDiagnosticTimer?.invalidate()
@@ -351,6 +404,19 @@ final class CompactModeWindowController: NSWindowController {
         anchorButton = nil
         window?.alphaValue = 0
         window?.orderOut(nil)
+    }
+
+    private func persistFloatingFrameIfNeeded() {
+        guard isFloatingMode, let window, window.frame != .zero else { return }
+        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: Self.floatingFrameKey)
+    }
+
+    private static func savedFloatingFrame() -> NSRect? {
+        guard let string = UserDefaults.standard.string(forKey: floatingFrameKey), !string.isEmpty else {
+            return nil
+        }
+        let frame = NSRectFromString(string)
+        return frame == .zero ? nil : frame
     }
 
     func updateTime(current: TimeInterval, duration: TimeInterval) {

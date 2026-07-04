@@ -80,6 +80,16 @@ Windows automatically snap together when dragged near each other:
 - All other windows (Main, EQ, Playlist, Spectrum, etc.) are hidden; their prior visibility is remembered and restored when you exit. **Exceptions:** the video player and debug console windows are allowed in Compact Mode — a playing video stays visible on entry, videos opened while compact (e.g. a downloaded YouTube video) appear normally, and an open debug console remains visible.
 - Exiting restores the Dock icon, the macOS menu bar, and the previously open windows.
 
+### Compact Window
+
+**Compact Window** opens the same compact Library Browser mini-player as a normal free-floating window. Toggle it from the main window's right-click context menu (**Compact Window**) or the `Windows` top menu. It is mutually exclusive with menu-bar Compact Mode.
+
+- NullPlayer stays a regular app: Dock icon and menu bar remain visible.
+- Only the main window is hidden. Playlist, EQ, Spectrum, Library, Visualizations, video, and other windows stay where they are.
+- The compact window uses normal window level so it can sit behind other apps; enabling **Always on Top** raises it like the other app windows.
+- Drag it from the compact player bar or the browser area. Playback controls, seek, volume, close, and minimize keep their normal click behavior.
+- The window remembers its last frame and can restore across launches. Returning to NullPlayer from another desktop or fullscreen app focuses Compact Window instead of reopening the hidden main window.
+
 ### Main Window Elements
 
 | Element | Description |
