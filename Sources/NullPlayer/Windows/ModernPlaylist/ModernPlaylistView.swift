@@ -166,8 +166,9 @@ class ModernPlaylistView: NSView {
         let skin = renderer.skin
         // Must use playlistFont (8pt default), NOT bodyFont (9pt) which configure(with:) would set
         marquee.textFont = skin.playlistFont()
-        // Must use accentColor (magenta) to match current-track title color, NOT marqueeColor (yellow)
-        marquee.textColor = skin.applyTextOpacity(to: skin.accentColor)
+        // Must use accentColor (magenta) to match current-track title color, NOT marqueeColor (yellow).
+        // In metal the current-track title stays at textColor (the green highlight is the cue), so match that.
+        marquee.textColor = skin.applyTextOpacity(to: skin.renderStyle == .metal ? skin.textColor : skin.accentColor)
         marquee.glowEnabled = false  // Track list text has no glow
         marquee.scrollSpeed = 24.0   // Match original: ~24px/sec
         marquee.scrollGap = 30.0     // Match original separatorWidth
@@ -449,10 +450,24 @@ class ModernPlaylistView: NSView {
             let track = tracks[index]
             let isCurrent = index == currentIndex
             let isSelected = selectedIndices.contains(index)
-            
+
+            // In metal mode the text colors intentionally stay uniform. Use the green LCD
+            // display fill for row state: strong for now-playing, subtler for selection.
+            if skin.renderStyle == .metal, isCurrent || isSelected {
+                let fillAlpha: CGFloat = isCurrent ? 0.30 : 0.20
+                let fill = skin.metalMaterial.displayFill.withAlphaComponent(fillAlpha)
+                context.setFillColor(fill.cgColor)
+                context.fill(itemRect)
+            }
+
             // Text color -- current track uses accent, selected uses primary text, normal uses playlist_text
             let titleColor: NSColor
-            if isCurrent {
+            if skin.renderStyle == .metal {
+                // Metal: green highlight fills are the sole row-state cue. Keep every row at
+                // the same (library-matching) text color so accent-colored text doesn't clash
+                // with / wash out against the green highlight.
+                titleColor = skin.textColor
+            } else if isCurrent {
                 titleColor = skin.accentColor
             } else if isSelected {
                 titleColor = skin.textColor

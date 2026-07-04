@@ -8,10 +8,12 @@
 - **License and branding terms clarified** — the project license notice and README now state GPL-3.0-only distribution terms and clarify that modified distributions must not reuse the NullPlayer name, icon, logo, bundle identity, or other branding without permission.
 - **Balance control added to Playback menu** — the Playback options now include a Balance submenu with a slider and common left/center/right presets, giving modern UI and menu-only workflows access to stereo balance without adding more controls to the player face.
 - **Compact Mode player bar reads like the main window** — in Modern and Metal, the Compact Mode display now splits into two distinct LCD "windows" with a padded gap: a single elapsed/remaining time counter on the left and the scrolling track title on the right (previously the title sat left with a cramped "elapsed / total" reading pinned to the right). The counter matches the title's size and weight, and the transport buttons are slightly larger.
+- **Larger Library tab and control fonts** — the Library Browser's tab labels and control text render at a slightly larger size in non-compact mode for better legibility. Compact Mode is unchanged.
 
 ### Changes
 
 - **Window shade mode removed** — double-clicking a window's title bar no longer collapses it to a title-bar-only strip ("windowshade"). This legacy Winamp feature was the source of recurring layout glitches when combined with Large UI, Compact Mode, and live UI-mode switching; removing it makes window sizing and position memory behave consistently across every window in Classic, Modern, and Metal.
+- **Library source menu lists only sources** — the Library Browser's source picker no longer injects local-library settings ("Manage Folders…" and the "Clear Local Library" submenu) when the local source is active. Those are settings, not sources, and already live in the Library menu-bar item, so the source menu now lists sources only.
 
 ### Bug Fixes
 
@@ -21,6 +23,7 @@
 - **Library window remembers where you put it** — after unlocking the connected windows and moving the Library/browser window, it now reopens at the exact position and size you left it — across closing and reopening it (via the menu or the red close button) and across full app restarts, even when it was closed at quit. First-ever opens still dock to the right of the window stack, and the position survives Compact Mode. Playlist, EQ, and Spectrum still intentionally snap back into the column below the main window.
 - **Classic Large UI toggles instantly — no restart** — turning Large UI on or off in the classic skin now resizes the windows in place, matching the modern UI, instead of asking you to relaunch. The player, EQ, playlist, and other windows redraw crisply at the new size (no leftover "ghost" of the old size), and switching between Classic, Modern, and Metal while Large UI is on no longer distorts the new look.
 - **ProjectM visualizer recovers from a preset that crashes mid-playback** — a rare bug inside the MilkDrop preset engine could crash the app while a preset was on screen — including minutes into a track, not just when the preset first appeared. The crash-guard now watches a preset for its entire time on screen (previously only its first frame), so the offending preset is automatically skipped on the next launch and the crash never recurs. Normal quits never flag a good preset.
+- **Metal playlist and Library highlights are now clearly visible** — in Metal skins, the playlist's now-playing track and the Library Browser's selected/expanded row were indicated by text color alone, which several metal finishes render nearly identical to normal rows, so the active row was easy to miss. Both now draw a translucent green backlit-LCD highlight bar (matching the hi-fi display panels) as the cue. The metal playlist's row text is also unified at the Library window's brightness — previously it was dimmer — and the current track no longer recolors to the accent tone that clashed with the new highlight.
 
 ## 0.26.1
 
