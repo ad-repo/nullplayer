@@ -8,6 +8,7 @@ private protocol CompactModeBrowserSurface: AnyObject {
     func updateCompactBarTime(current: TimeInterval, duration: TimeInterval)
     func updateCompactBarTrack(_ track: Track?)
     func updateCompactBarPlaybackState()
+    func skinDidChange()
     func prepareForUITeardown()
 }
 
@@ -143,6 +144,16 @@ final class CompactModeWindowController: NSWindowController {
         browserController.updateCompactBarTrack(engine.currentTrack)
         browserController.updateCompactBarTime(current: engine.currentTime, duration: engine.duration)
         browserController.updateCompactBarPlaybackState()
+    }
+
+    func skinDidChange() {
+        browserController.skinDidChange()
+        if let contentView = window?.contentView {
+            contentView.markSubtreeForDisplayAndLayout()
+            contentView.layoutSubtreeIfNeeded()
+            contentView.displayIfNeeded()
+        }
+        window?.displayIfNeeded()
     }
 
     /// Order the compact window front on the *current* Space while still invisible (alpha 0),
