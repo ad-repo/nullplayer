@@ -982,12 +982,32 @@ extension ProjectMWrapper {
         try? FileManager.default.removeItem(atPath: crashSentinelPath)
     }
     
-    /// Checks whether a previous run crashed during preset rendering.
+    /// Serializes the once-per-process previous-crash check.
+    private static let previousCrashCheckLock = NSLock()
+
+    /// Whether the previous-run crash sentinel has already been evaluated this launch.
+    private static var didCheckPreviousCrash = false
+
+    /// Checks whether a *previous* run crashed during preset rendering.
     ///
     /// If a sentinel file exists, the preset it names crashed libprojectM. That preset
     /// is added to the persistent blacklist and the sentinel is removed.
-    /// Call this once at startup (before building the preset list).
+    ///
+    /// This runs at most once per process launch. The sentinel now stays on disk for the
+    /// entire time a preset is displayed (see #328), so on any call after the first the
+    /// sentinel belongs to the *current* session's live preset — treating that as a crash
+    /// would falsely blacklist a healthy preset (e.g. during an in-app "Reload Presets"
+    /// rescan). The first call happens during initial preset loading, before this session
+    /// writes any sentinel, so it still catches a genuine previous-run crash.
     static func checkAndHandlePreviousCrash() {
+        previousCrashCheckLock.lock()
+        if didCheckPreviousCrash {
+            previousCrashCheckLock.unlock()
+            return
+        }
+        didCheckPreviousCrash = true
+        previousCrashCheckLock.unlock()
+
         guard let crashedPath = try? String(contentsOfFile: crashSentinelPath, encoding: .utf8),
               !crashedPath.isEmpty else { return }
         
