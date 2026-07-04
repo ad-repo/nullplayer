@@ -12963,6 +12963,66 @@ class PlexBrowserView: NSView {
             }
         }
     }
+
+    override func scrollWheel(with event: NSEvent) {
+        if browseMode.isHistoryMode {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
+        if browseMode == .search {
+            listY += Layout.searchBarHeight
+        }
+        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
+        let totalHeight = CGFloat(displayItems.count) * itemHeight
+        let verticalDelta = verticalScrollDelta(from: event)
+        let horizontalDelta = horizontalScrollDelta(from: event)
+        let columns = currentVisibleColumns()
+        let group = currentColumnGroup()
+        var needsRedraw = false
+
+        if !columns.isEmpty,
+           event.modifierFlags.contains(.shift) || abs(horizontalDelta) > abs(verticalDelta) {
+            let availableWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth
+            let totalWidth = totalColumnsWidth(columns: columns, group: group)
+            let maxOffset = max(0, totalWidth - availableWidth)
+            if maxOffset > 0 {
+                let delta = event.modifierFlags.contains(.shift) ? verticalDelta : horizontalDelta
+                horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - delta))
+                needsRedraw = true
+            }
+        }
+
+        if totalHeight > listHeight && verticalDelta != 0 && !event.modifierFlags.contains(.shift) {
+            scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - verticalDelta))
+            needsRedraw = true
+        }
+
+        if needsRedraw {
+            let scale = bounds.width / originalWindowSize.width
+            let scaledListY = bounds.height - (listY + listHeight) * scale
+            let scaledListHeight = (listHeight + Layout.statusBarHeight) * scale
+            let listRect = NSRect(x: 0, y: scaledListY, width: bounds.width, height: scaledListHeight)
+            setNeedsDisplay(listRect)
+        }
+
+        if case .local = currentSource { loadNextLocalPageIfNeeded(listHeight: listHeight) }
+    }
+
+    private func verticalScrollDelta(from event: NSEvent) -> CGFloat {
+        if event.hasPreciseScrollingDeltas, event.scrollingDeltaY != 0 {
+            return event.scrollingDeltaY
+        }
+        return event.deltaY * 3
+    }
+
+    private func horizontalScrollDelta(from event: NSEvent) -> CGFloat {
+        if event.hasPreciseScrollingDeltas, event.scrollingDeltaX != 0 {
+            return event.scrollingDeltaX
+        }
+        return event.deltaX * 3
+    }
     
     // MARK: - Keyboard Events
     

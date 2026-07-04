@@ -31,7 +31,6 @@ enum AccessibilityIdentifiers {
         // Window controls
         static let closeButton = "mainWindow.closeButton"
         static let minimizeButton = "mainWindow.minimizeButton"
-        static let shadeButton = "mainWindow.shadeButton"
         
         // Display elements
         static let timeDisplay = "mainWindow.timeDisplay"
@@ -59,7 +58,6 @@ enum AccessibilityIdentifiers {
         
         // Window controls
         static let closeButton = "playlist.closeButton"
-        static let shadeButton = "playlist.shadeButton"
         
         // Scrollbar
         static let scrollbar = "playlist.scrollbar"
@@ -92,7 +90,6 @@ enum AccessibilityIdentifiers {
         
         // Window controls
         static let closeButton = "equalizer.closeButton"
-        static let shadeButton = "equalizer.shadeButton"
         
         // Toggle buttons
         static let onOffButton = "equalizer.onOffButton"
@@ -128,7 +125,6 @@ enum AccessibilityIdentifiers {
         
         // Window controls
         static let closeButton = "plexBrowser.closeButton"
-        static let shadeButton = "plexBrowser.shadeButton"
         
         // Source selector
         static let sourceButton = "plexBrowser.sourceButton"
@@ -168,7 +164,6 @@ enum AccessibilityIdentifiers {
         
         // Window controls
         static let closeButton = "visualization.closeButton"
-        static let shadeButton = "visualization.shadeButton"
         
         // Content
         static let glView = "visualization.glView"

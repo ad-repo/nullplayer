@@ -57,7 +57,7 @@ final class VisualizationTests: NullPlayerUITestCase {
     
     // MARK: - Interaction Test
     
-    /// Tests window drag, resize, context menu, and shade mode
+    /// Tests window drag, resize, context menu, and title-bar double-click behavior
     func testVisualizationInteractions() {
         // Window drag
         let startPoint = visualizationWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02))
@@ -77,7 +77,7 @@ final class VisualizationTests: NullPlayerUITestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 1))
         app.pressEscape()
         
-        // Shade mode
+        // Title-bar double-click should not disturb the window.
         let titleBar = visualizationWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02))
         titleBar.doubleTap()
         XCTAssertTrue(visualizationWindow.exists)

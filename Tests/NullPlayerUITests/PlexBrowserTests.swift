@@ -47,7 +47,7 @@ final class PlexBrowserTests: NullPlayerUITestCase {
     
     // MARK: - Interaction Test
     
-    /// Tests window drag, resize, context menu, and shade mode
+    /// Tests window drag, resize, context menu, and title-bar double-click behavior
     func testPlexBrowserInteractions() {
         // Window drag
         let startPoint = plexBrowserWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01))
@@ -67,7 +67,7 @@ final class PlexBrowserTests: NullPlayerUITestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 1))
         app.pressEscape()
         
-        // Shade mode
+        // Title-bar double-click should not disturb the window.
         let titleBar = plexBrowserWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01))
         titleBar.doubleTap()
         XCTAssertTrue(plexBrowserWindow.exists)
