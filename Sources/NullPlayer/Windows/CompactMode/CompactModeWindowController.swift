@@ -19,6 +19,7 @@ final class CompactModeWindowController: NSWindowController {
     private let browserController: CompactModeBrowserSurface
     private var needsInitialSizing = true
     private var isFloatingMode = false
+    private var hasAppliedFloatingFrame = false
 
     /// Observer for status-item window move notifications (initial reveal + display-reconfig).
     private var statusButtonWindowMoveObserver: NSObjectProtocol?
@@ -221,7 +222,7 @@ final class CompactModeWindowController: NSWindowController {
         window.title = "Compact Window"
         window.setAccessibilityLabel("Compact Window")
 
-        if needsInitialSizing {
+        if !hasAppliedFloatingFrame {
             let savedFrame = Self.savedFloatingFrame()
             var frame = savedFrame ?? window.frame
             if savedFrame == nil {
@@ -233,7 +234,7 @@ final class CompactModeWindowController: NSWindowController {
             if savedFrame == nil {
                 window.center()
             }
-            needsInitialSizing = false
+            hasAppliedFloatingFrame = true
         } else {
             var frame = window.frame
             frame.size.width = max(frame.width, compactBaseWidth)
