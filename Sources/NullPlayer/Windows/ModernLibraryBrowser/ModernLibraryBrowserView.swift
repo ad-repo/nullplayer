@@ -4505,45 +4505,6 @@ class ModernLibraryBrowserView: NSView {
         youtubeItem.target = self; if case .youtube = currentSource { youtubeItem.state = .on }
         menu.addItem(youtubeItem)
 
-        if case .local = currentSource {
-            let store = MediaLibraryStore.shared
-            let trackCount = store.trackCount()
-            let movieCount = store.movieCount()
-            let episodeCount = store.episodeCount()
-            let totalLocalItems = trackCount + movieCount + episodeCount
-            menu.addItem(NSMenuItem.separator())
-            let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
-            manageFoldersItem.target = self; menu.addItem(manageFoldersItem)
-            menu.addItem(NSMenuItem.separator())
-            let clearItem = NSMenuItem(title: "Clear Local Library", action: nil, keyEquivalent: "")
-            let clearSubmenu = NSMenu()
-
-            let clearMusicItem = NSMenuItem(title: "Clear Music...", action: #selector(clearLocalMusicFromSourceMenu), keyEquivalent: "")
-            clearMusicItem.target = self
-            clearMusicItem.isEnabled = trackCount > 0
-            clearSubmenu.addItem(clearMusicItem)
-
-            let clearMoviesItem = NSMenuItem(title: "Clear Movies...", action: #selector(clearLocalMoviesFromSourceMenu), keyEquivalent: "")
-            clearMoviesItem.target = self
-            clearMoviesItem.isEnabled = movieCount > 0
-            clearSubmenu.addItem(clearMoviesItem)
-
-            let clearTVItem = NSMenuItem(title: "Clear TV...", action: #selector(clearLocalTVFromSourceMenu), keyEquivalent: "")
-            clearTVItem.target = self
-            clearTVItem.isEnabled = episodeCount > 0
-            clearSubmenu.addItem(clearTVItem)
-
-            clearSubmenu.addItem(NSMenuItem.separator())
-
-            let clearAllItem = NSMenuItem(title: "Clear Everything...", action: #selector(clearLocalLibraryFromSourceMenu), keyEquivalent: "")
-            clearAllItem.target = self
-            clearAllItem.isEnabled = totalLocalItems > 0
-            clearSubmenu.addItem(clearAllItem)
-
-            clearItem.submenu = clearSubmenu
-            menu.addItem(clearItem)
-        }
-
         menu.addItem(NSMenuItem.separator())
         for server in PlexManager.shared.servers {
             let item = NSMenuItem(title: server.name, action: #selector(selectPlexServer(_:)), keyEquivalent: "")
@@ -5537,24 +5498,6 @@ class ModernLibraryBrowserView: NSView {
         addItem.target = self; menu.addItem(addItem)
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
-    }
-    @objc private func clearLocalMusicFromSourceMenu() {
-        MenuActions.shared.clearLocalMusic()
-        if case .local = currentSource { loadLocalData() }
-    }
-    @objc private func clearLocalMoviesFromSourceMenu() {
-        MenuActions.shared.clearLocalMovies()
-        if case .local = currentSource { loadLocalData() }
-    }
-    @objc private func clearLocalTVFromSourceMenu() {
-        MenuActions.shared.clearLocalTV()
-        if case .local = currentSource { loadLocalData() }
-    }
-    @objc private func clearLocalLibraryFromSourceMenu() {
-        MenuActions.shared.clearLibrary()
-        if case .local = currentSource {
-            loadLocalData()
-        }
     }
     @objc private func selectPlexServer(_ sender: NSMenuItem) {
         guard let serverId = sender.representedObject as? String else { return }
