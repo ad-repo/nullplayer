@@ -941,11 +941,13 @@ extension ProjectMWrapper {
     
     /// Path to the crash-detection sentinel file.
     ///
-    /// This file is written immediately before the first `projectm_opengl_render_frame`
-    /// call for a new preset, and deleted immediately after it succeeds. If the app
-    /// crashes during rendering (SIGSEGV/SIGBUS inside a buggy libprojectM shader),
-    /// the file persists. On the next launch, the offending preset is permanently
-    /// blacklisted and excluded from the rotation.
+    /// This file is written when a preset loads (before any risky libprojectM call) and
+    /// stays on disk for the entire time that preset is displayed. It is removed only on
+    /// clean teardown — engine deinit or app quit — or overwritten when the next preset
+    /// loads. If the app instead crashes while the preset is on screen (SIGSEGV/SIGBUS
+    /// inside a buggy libprojectM shader, at any frame — see #328), the file persists. On
+    /// the next launch, the offending preset is permanently blacklisted and excluded from
+    /// the rotation.
     static var crashSentinelPath: String {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NullPlayer", isDirectory: true).path
