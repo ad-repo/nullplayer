@@ -5,12 +5,12 @@
 ### New Features
 
 - **Compact Window adds a free-floating mini player** — the Windows menu and main-window context menu now include **Compact Window**, which uses the same compact Library Browser mini-player as Compact Mode but keeps NullPlayer as a regular Dock/menu-bar app. It hides only the main window, leaves Playlist/EQ/Spectrum/Library/visualization windows where they are, uses normal window level unless Always on Top is enabled, can be dragged from both the player bar and browser area, remembers its frame, and restores across launches.
+- **Balance control added to Playback menu** — the Playback options now include a Balance submenu with a slider and common left/center/right presets, giving modern UI and menu-only workflows access to stereo balance without adding more controls to the player face.
 
 ### Improvements
 
 - **Modern and Metal UI now use a modern system font** — the retro low-fi bitmap font (Departure Mono) has been replaced throughout the Modern and Metal windows — Library tabs and headers, the main window, playlist, EQ, and spectrum — with the crisp macOS system font. Time and track digits stay monospaced so they don't jitter. Skins that ship their own custom font still render it as before.
 - **License and branding terms clarified** — the project license notice and README now state GPL-3.0-only distribution terms and clarify that modified distributions must not reuse the NullPlayer name, icon, logo, bundle identity, or other branding without permission.
-- **Balance control added to Playback menu** — the Playback options now include a Balance submenu with a slider and common left/center/right presets, giving modern UI and menu-only workflows access to stereo balance without adding more controls to the player face.
 - **Compact Mode player bar reads like the main window** — in Modern and Metal, the Compact Mode display now splits into two distinct LCD "windows" with a padded gap: a single elapsed/remaining time counter on the left and the scrolling track title on the right (previously the title sat left with a cramped "elapsed / total" reading pinned to the right). The counter matches the title's size and weight, and the transport buttons are slightly larger.
 - **Larger Library tab and control fonts** — the Library Browser's tab labels and control text render at a slightly larger size in non-compact mode for better legibility. Compact Mode is unchanged.
 
