@@ -515,6 +515,7 @@ class ModernLibraryBrowserView: NSView {
     private var cachedServerBarFontSkinName: String?
     private var cachedServerBarFontScale: CGFloat?
     private var cachedServerBarIsMetal: Bool?
+    private var cachedServerBarCompact: Bool?
     private var cachedPrefixAttrs: [NSAttributedString.Key: Any]?
     private var cachedDataAttrs: [NSAttributedString.Key: Any]?
     private var cachedActiveAttrs: [NSAttributedString.Key: Any]?
@@ -1273,8 +1274,8 @@ class ModernLibraryBrowserView: NSView {
         // Background
         (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(tabBarRect)
-        
-        let font = skin.libraryFont(size: 11)
+
+        let font = skin.libraryFont(size: compactMode ? 11 : 12)
         
         // Sort indicator width on right
         let sortText = "Sort"
@@ -1405,12 +1406,14 @@ class ModernLibraryBrowserView: NSView {
         if cachedServerBarFont == nil ||
             cachedServerBarFontSkinName != skinName ||
             cachedServerBarFontScale != currentScale ||
-            cachedServerBarIsMetal != isMetal {
-            let font = skin.libraryFont(size: 11)
+            cachedServerBarIsMetal != isMetal ||
+            cachedServerBarCompact != compactMode {
+            let font = skin.libraryFont(size: compactMode ? 11 : 12)
             cachedServerBarFont = font
             cachedServerBarFontSkinName = skinName
             cachedServerBarFontScale = currentScale
             cachedServerBarIsMetal = isMetal
+            cachedServerBarCompact = compactMode
             cachedPrefixAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dimColor)]
             cachedDataAttrs   = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dataColor)]
             cachedActiveAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: isMetal ? skin.textColor : accentColor)]
@@ -7108,6 +7111,7 @@ class ModernLibraryBrowserView: NSView {
         cachedServerBarFontSkinName = nil
         cachedServerBarFontScale = nil
         cachedServerBarIsMetal = nil
+        cachedServerBarCompact = nil
         cachedPrefixAttrs = nil
         cachedDataAttrs = nil
         cachedActiveAttrs = nil
