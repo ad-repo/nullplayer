@@ -43,6 +43,10 @@ extension AudioAnalysisWindowProviding {
     func prepareForUITeardown() { stopRenderingForHide() }
 }
 
+extension NetworkMonitorWindowProviding {
+    func prepareForUITeardown() { tearDownMonitoring() }
+}
+
 extension WaveformWindowProviding {
     func prepareForUITeardown() { stopLoadingForHide() }
 }
