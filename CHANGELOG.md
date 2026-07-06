@@ -1,10 +1,15 @@
 # Changelog
 
-## 0.27.0
+## Unreleased
 
 ### New Features
 
 - **PeppyMeter analog VU meter window** — a new **PeppyMeter** entry in the Windows menu and main-window context menu opens a skinnable analog VU meter (a port of PeppyMeter) in both classic and modern UI. Left/right levels drive rotating **needle** meters or **bar** meters composited from bundled image templates (25 meters, including `vintage`, `bar`, `compass`, `chillout`, and `big-bang`). Right-click the window to pick a meter or enable **Random**, which auto-switches meters on an interval. It docks and snaps in the window stack, remembers its position across launches, and consumes the shared stereo audio tap so it stays idle when closed. Bundled meter artwork is GPL-3.0 (see the third-party notices).
+
+## 0.27.0
+
+### New Features
+
 - **Compact Window adds a free-floating mini player** — the Windows menu and main-window context menu now include **Compact Window**, which uses the same compact Library Browser mini-player as Compact Mode but keeps NullPlayer as a regular Dock/menu-bar app. It hides only the main window, leaves Playlist/EQ/Spectrum/Library/visualization windows where they are, uses normal window level unless Always on Top is enabled, can be dragged from both the player bar and browser area, remembers its frame, and restores across launches.
 - **Balance control added to Playback menu** — the Playback options now include a Balance submenu with a slider and common left/center/right presets, giving modern UI and menu-only workflows access to stereo balance without adding more controls to the player face.
 
