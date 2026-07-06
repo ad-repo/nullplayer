@@ -98,6 +98,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
         menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum)))
         menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis)))
+        menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter)))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         if wm.isRunningModernUI {
@@ -3100,6 +3101,10 @@ class MenuActions: NSObject {
 
     @objc func toggleAudioAnalysis() {
         WindowManager.shared.toggleAudioAnalysis()
+    }
+
+    @objc func togglePeppyMeter() {
+        WindowManager.shared.togglePeppyMeter()
     }
 
     @objc func toggleWaveform() {

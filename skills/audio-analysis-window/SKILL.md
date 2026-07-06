@@ -117,6 +117,8 @@ larger analysis buffer, not pane code.
   `.audioStereoPCMDataUpdated` (downsampled L/R) gated by `addStereoConsumer`/`removeStereoConsumer`/
   `stereoNeeded`, mirroring the spectrum/waveform consumer pattern. Wired in **both** the local
   engine and the streaming delegate (`streamingPlayerDidUpdateStereoPCM(left:right:sampleRate:)`).
+  The **PeppyMeter** window ([peppymeter](../peppymeter/SKILL.md)) is another consumer of this same
+  stereo path — any change to it must keep both the Levels/Delay panes and PeppyMeter working.
 
 - **Magnitudes path** (new): `Audio/AudioEngine.swift` and `Audio/StreamingAudioPlayer.swift` publish
   `.audioFFTMagnitudesUpdated` (userInfo: `"magnitudes"` raw linear half-spectrum, `"sampleRate"`,

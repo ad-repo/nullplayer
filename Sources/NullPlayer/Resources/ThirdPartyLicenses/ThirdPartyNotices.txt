@@ -6091,3 +6091,32 @@ License: Creative Commons CC0 1.0 Universal (Public Domain Dedication)
   https://creativecommons.org/publicdomain/zero/1.0/legalcode
 
 
+================================================================================
+PeppyMeter meter templates
+================================================================================
+License:    GPL-3.0-only
+Copyright:  Copyright 2016-2024 PeppyMeter (peppy.player@gmail.com)
+Source:     https://github.com/project-owner/PeppyMeter
+Version:    480x320, 800x480, and 1280x400 template sets
+
+PeppyMeter Meter Templates
+==========================
+
+The meter templates bundled under Resources/PeppyMeter/ (meters.txt and all
+associated background, needle, indicator, and foreground images) are taken from
+the PeppyMeter project:
+
+    https://github.com/project-owner/PeppyMeter
+    Copyright 2016-2024 PeppyMeter (peppy.player@gmail.com)
+
+PeppyMeter is licensed under the GNU General Public License, version 3 (GPL-3.0).
+A copy of the GPL-3.0 license text is available at:
+
+    https://www.gnu.org/licenses/gpl-3.0.txt
+
+These image assets and their configuration file are redistributed here under the
+terms of the GPL-3.0. Only the meter template assets carry this license; the
+NullPlayer PeppyMeter rendering engine (Sources/NullPlayer/PeppyMeter/) is an
+independent Swift implementation.
+
+
