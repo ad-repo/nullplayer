@@ -157,6 +157,23 @@ final class NetworkThroughputMonitorTests: XCTestCase {
         XCTAssertEqual(NetworkThroughputFormatting.bytes(1_048_576), "1.0 MB")
     }
 
+    func testSlidingWindowAveragesRecentSamples() {
+        var window = NetworkThroughputSlidingWindow(capacity: 4)
+
+        _ = window.push(downDelta: 100, upDelta: 50, elapsed: 0.1)
+        _ = window.push(downDelta: 100, upDelta: 50, elapsed: 0.1)
+        _ = window.push(downDelta: 100, upDelta: 50, elapsed: 0.1)
+        var point = window.push(downDelta: 100, upDelta: 50, elapsed: 0.1)
+
+        XCTAssertEqual(point.downBytesPerSecond, 1_000, accuracy: 0.001)
+        XCTAssertEqual(point.upBytesPerSecond, 500, accuracy: 0.001)
+
+        point = window.push(downDelta: 400, upDelta: 200, elapsed: 0.1)
+
+        XCTAssertEqual(point.downBytesPerSecond, 1_750, accuracy: 0.001)
+        XCTAssertEqual(point.upBytesPerSecond, 875, accuracy: 0.001)
+    }
+
     private func counters(_ name: String, input: UInt64, output: UInt64) -> NetworkByteCounters {
         NetworkByteCounters(interfaceName: name, inputBytes: input, outputBytes: output)
     }

@@ -281,6 +281,8 @@ extension ModernProjectMWindowController: NSWindowDelegate {
             exitCustomFullscreen()
         }
         
+        WindowManager.shared.rememberProjectMFrameBeforeClose()
+
         // Stop rendering when window closes
         projectMView.stopRendering()
         WindowManager.shared.notifyMainWindowVisibilityChanged()

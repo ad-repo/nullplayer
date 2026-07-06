@@ -17,9 +17,14 @@ struct NetworkThroughputSnapshot: Equatable {
     let upBytesPerSecond: Double
     let sessionPeakDownBytesPerSecond: Double
     let sessionPeakUpBytesPerSecond: Double
+    let rollingMaxDownBytesPerSecond: Double
+    let rollingMaxUpBytesPerSecond: Double
     let dailyDownBytes: UInt64
     let dailyUpBytes: UInt64
     let history: [NetworkThroughputPoint]
+    let downloadHistory: [Double]
+    let uploadHistory: [Double]
+    let sampleInterval: TimeInterval
     let updatedAt: Date
 }
 
@@ -41,12 +46,63 @@ enum NetworkThroughputResetReason: Equatable {
 struct NetworkThroughputTickResult: Equatable {
     let downBytesPerSecond: Double
     let upBytesPerSecond: Double
+    let downDeltaBytes: UInt64
+    let upDeltaBytes: UInt64
+    let elapsed: TimeInterval
     let dailyDownBytes: UInt64
     let dailyUpBytes: UInt64
     let currentDay: String
     let resetReason: NetworkThroughputResetReason
 
     var didAccumulate: Bool { resetReason == .none }
+}
+
+struct NetworkThroughputSlidingWindow: Equatable {
+    private struct Entry: Equatable {
+        var downBytes: UInt64
+        var upBytes: UInt64
+        var elapsed: TimeInterval
+    }
+
+    private let capacity: Int
+    private var entries: [Entry] = []
+    private var downSum: UInt64 = 0
+    private var upSum: UInt64 = 0
+    private var elapsedSum: TimeInterval = 0
+
+    init(capacity: Int = 4) {
+        self.capacity = max(1, capacity)
+    }
+
+    mutating func reset() {
+        entries.removeAll(keepingCapacity: true)
+        downSum = 0
+        upSum = 0
+        elapsedSum = 0
+    }
+
+    mutating func push(downDelta: UInt64, upDelta: UInt64, elapsed: TimeInterval) -> NetworkThroughputPoint {
+        if entries.count == capacity {
+            let removed = entries.removeFirst()
+            downSum = downSum >= removed.downBytes ? downSum - removed.downBytes : 0
+            upSum = upSum >= removed.upBytes ? upSum - removed.upBytes : 0
+            elapsedSum = max(0, elapsedSum - removed.elapsed)
+        }
+
+        let entry = Entry(downBytes: downDelta, upBytes: upDelta, elapsed: max(0, elapsed))
+        entries.append(entry)
+        let downAdded = downSum.addingReportingOverflow(entry.downBytes)
+        let upAdded = upSum.addingReportingOverflow(entry.upBytes)
+        downSum = downAdded.overflow ? UInt64.max : downAdded.partialValue
+        upSum = upAdded.overflow ? UInt64.max : upAdded.partialValue
+        elapsedSum += entry.elapsed
+
+        let divisor = elapsedSum > 0 ? elapsedSum : 1
+        return NetworkThroughputPoint(
+            downBytesPerSecond: Double(downSum) / divisor,
+            upBytesPerSecond: Double(upSum) / divisor
+        )
+    }
 }
 
 enum NetworkThroughputFormatting {
@@ -81,6 +137,7 @@ enum NetworkThroughputFormatting {
 
 final class NetworkThroughputMonitor {
     static let selectedInterfaceDefaultsKey = "NetworkMonitorSelectedInterfaceName"
+    static let defaultSampleInterval: TimeInterval = 0.1
 
     private enum DefaultsKey {
         static let day = "NetworkMonitorDailyTotalsDay"
@@ -105,10 +162,13 @@ final class NetworkThroughputMonitor {
     private var currentDay: String
     private var history: [NetworkThroughputPoint] = []
     private var interfaces: [NetworkInterfaceResolver.InterfaceInfo] = []
+    private var slidingWindow = NetworkThroughputSlidingWindow()
+    private var rollingMaxDown: Double = 1
+    private var rollingMaxUp: Double = 1
 
     init(
-        sampleInterval: TimeInterval = 0.5,
-        historyLimit: Int = 90,
+        sampleInterval: TimeInterval = NetworkThroughputMonitor.defaultSampleInterval,
+        historyLimit: Int = 600,
         defaults: UserDefaults = .standard,
         calendar: Calendar = .current
     ) {
@@ -185,6 +245,7 @@ final class NetworkThroughputMonitor {
             publish(down: 0, up: 0, now: now)
             previousCounters = nil
             previousSampleAt = nil
+            slidingWindow.reset()
             return
         }
 
@@ -204,6 +265,10 @@ final class NetworkThroughputMonitor {
             sampleInterval: sampleInterval,
             calendar: calendar
         )
+        if result.resetReason != .none {
+            slidingWindow.reset()
+        }
+
         currentDay = result.currentDay
         dailyDown = result.dailyDownBytes
         dailyUp = result.dailyUpBytes
@@ -211,7 +276,21 @@ final class NetworkThroughputMonitor {
             persistDailyTotals()
         }
 
-        publish(down: result.downBytesPerSecond, up: result.upBytesPerSecond, now: now)
+        let point: NetworkThroughputPoint
+        if result.didAccumulate {
+            point = slidingWindow.push(
+                downDelta: result.downDeltaBytes,
+                upDelta: result.upDeltaBytes,
+                elapsed: result.elapsed
+            )
+        } else {
+            point = NetworkThroughputPoint(
+                downBytesPerSecond: result.downBytesPerSecond,
+                upBytesPerSecond: result.upBytesPerSecond
+            )
+        }
+
+        publish(down: point.downBytesPerSecond, up: point.upBytesPerSecond, now: now)
     }
 
     static func allowedSamplingGap(sampleInterval: TimeInterval) -> TimeInterval {
@@ -239,6 +318,9 @@ final class NetworkThroughputMonitor {
             return NetworkThroughputTickResult(
                 downBytesPerSecond: 0,
                 upBytesPerSecond: 0,
+                downDeltaBytes: 0,
+                upDeltaBytes: 0,
+                elapsed: 0,
                 dailyDownBytes: 0,
                 dailyUpBytes: 0,
                 currentDay: day,
@@ -250,6 +332,9 @@ final class NetworkThroughputMonitor {
             return NetworkThroughputTickResult(
                 downBytesPerSecond: 0,
                 upBytesPerSecond: 0,
+                downDeltaBytes: 0,
+                upDeltaBytes: 0,
+                elapsed: 0,
                 dailyDownBytes: dailyDownBytes,
                 dailyUpBytes: dailyUpBytes,
                 currentDay: currentDay,
@@ -261,6 +346,9 @@ final class NetworkThroughputMonitor {
             return NetworkThroughputTickResult(
                 downBytesPerSecond: 0,
                 upBytesPerSecond: 0,
+                downDeltaBytes: 0,
+                upDeltaBytes: 0,
+                elapsed: 0,
                 dailyDownBytes: dailyDownBytes,
                 dailyUpBytes: dailyUpBytes,
                 currentDay: currentDay,
@@ -273,6 +361,9 @@ final class NetworkThroughputMonitor {
             return NetworkThroughputTickResult(
                 downBytesPerSecond: 0,
                 upBytesPerSecond: 0,
+                downDeltaBytes: 0,
+                upDeltaBytes: 0,
+                elapsed: elapsed,
                 dailyDownBytes: dailyDownBytes,
                 dailyUpBytes: dailyUpBytes,
                 currentDay: currentDay,
@@ -285,6 +376,9 @@ final class NetworkThroughputMonitor {
             return NetworkThroughputTickResult(
                 downBytesPerSecond: 0,
                 upBytesPerSecond: 0,
+                downDeltaBytes: 0,
+                upDeltaBytes: 0,
+                elapsed: elapsed,
                 dailyDownBytes: dailyDownBytes,
                 dailyUpBytes: dailyUpBytes,
                 currentDay: currentDay,
@@ -299,6 +393,9 @@ final class NetworkThroughputMonitor {
         return NetworkThroughputTickResult(
             downBytesPerSecond: Double(downDelta) / elapsed,
             upBytesPerSecond: Double(upDelta) / elapsed,
+            downDeltaBytes: downDelta,
+            upDeltaBytes: upDelta,
+            elapsed: elapsed,
             dailyDownBytes: downSum.overflow ? UInt64.max : downSum.partialValue,
             dailyUpBytes: upSum.overflow ? UInt64.max : upSum.partialValue,
             currentDay: currentDay,
@@ -383,6 +480,7 @@ final class NetworkThroughputMonitor {
         dailyUp = 0
         previousCounters = nil
         previousSampleAt = nil
+        slidingWindow.reset()
         persistDailyTotals()
     }
 
@@ -405,12 +503,15 @@ final class NetworkThroughputMonitor {
         }
         previousCounters = counters
         previousSampleAt = Date()
+        slidingWindow.reset()
         publish(down: 0, up: 0, now: Date())
     }
 
     private func publish(down: Double, up: Double, now: Date) {
         sessionPeakDown = max(sessionPeakDown, down)
         sessionPeakUp = max(sessionPeakUp, up)
+        rollingMaxDown = max(rollingMaxDown * 0.985, down, 1)
+        rollingMaxUp = max(rollingMaxUp * 0.985, up, 1)
         history.append(NetworkThroughputPoint(downBytesPerSecond: down, upBytesPerSecond: up))
         if history.count > historyLimit {
             history.removeFirst(history.count - historyLimit)
@@ -422,9 +523,14 @@ final class NetworkThroughputMonitor {
             upBytesPerSecond: up,
             sessionPeakDownBytesPerSecond: sessionPeakDown,
             sessionPeakUpBytesPerSecond: sessionPeakUp,
+            rollingMaxDownBytesPerSecond: rollingMaxDown,
+            rollingMaxUpBytesPerSecond: rollingMaxUp,
             dailyDownBytes: dailyDown,
             dailyUpBytes: dailyUp,
             history: history,
+            downloadHistory: history.map(\.downBytesPerSecond),
+            uploadHistory: history.map(\.upBytesPerSecond),
+            sampleInterval: sampleInterval,
             updatedAt: now
         )
         onUpdate?(snapshot)

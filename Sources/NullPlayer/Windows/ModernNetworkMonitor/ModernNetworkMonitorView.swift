@@ -14,6 +14,8 @@ final class ModernNetworkMonitorView: NSView {
     private var pressedButton: String?
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
+    private let renderState = NetworkMonitorRenderState()
+    private var animationTimer: Timer?
 
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
     private var borderWidth: CGFloat { ModernSkinElements.spectrumBorderWidth }
@@ -33,6 +35,7 @@ final class ModernNetworkMonitorView: NSView {
     }
 
     deinit {
+        stopAnimationTimer()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -90,7 +93,8 @@ final class ModernNetworkMonitorView: NSView {
         NetworkMonitorDrawing.drawContent(
             in: contentAreaRect(),
             snapshot: snapshot,
-            isModern: true
+            isModern: true,
+            renderState: renderState
         )
 
         if isHighlighted {
@@ -117,6 +121,30 @@ final class ModernNetworkMonitorView: NSView {
 
     @objc private func modernSkinDidChange() { skinDidChange() }
     @objc private func doubleSizeChanged() { skinDidChange() }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            stopAnimationTimer()
+        } else {
+            startAnimationTimer()
+        }
+    }
+
+    private func startAnimationTimer() {
+        guard animationTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self, self.window?.isVisible == true else { return }
+            self.needsDisplay = true
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        animationTimer = timer
+    }
+
+    private func stopAnimationTimer() {
+        animationTimer?.invalidate()
+        animationTimer = nil
+    }
 
     @objc private func windowLayoutDidChange() {
         guard let window else { return }

@@ -5867,6 +5867,37 @@ SOFTWARE.
 
 
 ================================================================================
+Flow
+================================================================================
+License:    MIT
+Copyright:  Copyright (c) 2026 flow contributors
+Source:     https://github.com/programmersd21/flow
+Version:    Swift port / visual reference
+
+MIT License
+
+Copyright (c) 2026 flow contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================================================
 Nullsoft FFT
 ================================================================================
 License:    BSD-3-Clause
@@ -6089,5 +6120,34 @@ License: Creative Commons CC0 1.0 Universal (Public Domain Dedication)
 
   The full text of the CC0 1.0 dedication is available at:
   https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+
+================================================================================
+PeppyMeter meter templates
+================================================================================
+License:    GPL-3.0-only
+Copyright:  Copyright 2016-2024 PeppyMeter (peppy.player@gmail.com)
+Source:     https://github.com/project-owner/PeppyMeter
+Version:    480x320, 800x480, and 1280x400 template sets
+
+PeppyMeter Meter Templates
+==========================
+
+The meter templates bundled under Resources/PeppyMeter/ (meters.txt and all
+associated background, needle, indicator, and foreground images) are taken from
+the PeppyMeter project:
+
+    https://github.com/project-owner/PeppyMeter
+    Copyright 2016-2024 PeppyMeter (peppy.player@gmail.com)
+
+PeppyMeter is licensed under the GNU General Public License, version 3 (GPL-3.0).
+A copy of the GPL-3.0 license text is available at:
+
+    https://www.gnu.org/licenses/gpl-3.0.txt
+
+These image assets and their configuration file are redistributed here under the
+terms of the GPL-3.0. Only the meter template assets carry this license; the
+NullPlayer PeppyMeter rendering engine (Sources/NullPlayer/PeppyMeter/) is an
+independent Swift implementation.
 
 

@@ -10,6 +10,8 @@ final class NetworkMonitorView: NSView {
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
+    private let renderState = NetworkMonitorRenderState()
+    private var animationTimer: Timer?
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
         SkinElements.SpectrumWindow.Layout.self
@@ -26,6 +28,7 @@ final class NetworkMonitorView: NSView {
     }
 
     deinit {
+        stopAnimationTimer()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -76,7 +79,8 @@ final class NetworkMonitorView: NSView {
         NetworkMonitorDrawing.drawContent(
             in: contentAreaRect(),
             snapshot: snapshot,
-            isModern: false
+            isModern: false,
+            renderState: renderState
         )
 
         if isHighlighted {
@@ -87,6 +91,30 @@ final class NetworkMonitorView: NSView {
 
     func skinDidChange() {
         needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            stopAnimationTimer()
+        } else {
+            startAnimationTimer()
+        }
+    }
+
+    private func startAnimationTimer() {
+        guard animationTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self, self.window?.isVisible == true else { return }
+            self.needsDisplay = true
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        animationTimer = timer
+    }
+
+    private func stopAnimationTimer() {
+        animationTimer?.invalidate()
+        animationTimer = nil
     }
 
     private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {

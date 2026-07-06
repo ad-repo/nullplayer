@@ -389,5 +389,6 @@ Bundled third-party components:
 **Fonts & assets**
 - **Departure Mono** (SIL OFL-1.1) — bundled font
 - **MilkDrop / projectM presets** — community-authored (attribution in preset filenames)
+- **PeppyMeter meter templates** (GPL-3.0) — analog VU meter artwork, from [project-owner/PeppyMeter](https://github.com/project-owner/PeppyMeter)
 - **Viridis colormap** (CC0 / public domain) — spectrogram color ramp, by Stéfan van der Walt and Nathaniel Smith
 - **Bundled skins** — original NullPlayer assets

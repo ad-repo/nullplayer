@@ -43,6 +43,10 @@ extension AudioAnalysisWindowProviding {
     func prepareForUITeardown() { stopRenderingForHide() }
 }
 
+extension PeppyMeterWindowProviding {
+    func prepareForUITeardown() { tearDown() }
+}
+
 extension NetworkMonitorWindowProviding {
     func prepareForUITeardown() { tearDownMonitoring() }
 }

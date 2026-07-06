@@ -212,6 +212,16 @@ enum ModernSkinElements {
     /// Spectrum window minimum size
     static var spectrumMinSize: NSSize { spectrumWindowSize }
 
+    /// PeppyMeter window size. Matches center-stack width, with double the normal stack height.
+    static var peppyMeterWindowSize: NSSize {
+        NSSize(width: spectrumWindowSize.width, height: spectrumWindowSize.height * 2)
+    }
+
+    /// PeppyMeter window minimum size.
+    static var peppyMeterMinSize: NSSize {
+        NSSize(width: spectrumMinSize.width, height: spectrumMinSize.height * 2)
+    }
+
     /// Spectrum window title bar height
     static var spectrumTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     

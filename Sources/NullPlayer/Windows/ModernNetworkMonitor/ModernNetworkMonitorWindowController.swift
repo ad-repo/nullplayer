@@ -8,7 +8,7 @@ final class ModernNetworkMonitorWindowController: NSWindowController, NetworkMon
     convenience init() {
         let scale = ModernSkinElements.scaleFactor
         let window = BorderlessWindow(
-            contentRect: NSRect(origin: .zero, size: ModernSkinElements.spectrumWindowSize),
+            contentRect: NSRect(origin: .zero, size: ModernSkinElements.peppyMeterWindowSize),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -32,7 +32,7 @@ final class ModernNetworkMonitorWindowController: NSWindowController, NetworkMon
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.minSize = ModernSkinElements.spectrumMinSize
+        window.minSize = ModernSkinElements.peppyMeterMinSize
         window.title = "NullPlayer Network Monitor"
         window.isReleasedWhenClosed = false
         window.center()
@@ -42,7 +42,7 @@ final class ModernNetworkMonitorWindowController: NSWindowController, NetworkMon
     }
 
     private func setupView() {
-        monitorView = ModernNetworkMonitorView(frame: NSRect(origin: .zero, size: ModernSkinElements.spectrumWindowSize))
+        monitorView = ModernNetworkMonitorView(frame: NSRect(origin: .zero, size: ModernSkinElements.peppyMeterWindowSize))
         monitorView.controller = self
         monitorView.autoresizingMask = [.width, .height]
         monitor.onUpdate = { [weak self] snapshot in
