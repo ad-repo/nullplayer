@@ -184,12 +184,11 @@ final class ModernPeppyMeterView: NSView {
             needsDisplay = true
             return
         }
-        if hitTestTitleBar(at: point) {
-            isDraggingWindow = true
-            windowDragStartPoint = event.locationInWindow
-            if let window {
-                WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
-            }
+
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
+        if let window {
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: hitTestTitleBar(at: point))
         }
     }
 
