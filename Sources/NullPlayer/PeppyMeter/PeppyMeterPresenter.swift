@@ -106,7 +106,7 @@ final class PeppyMeterPresenter {
                    close: Selector,
                    isFullscreen: Bool) -> NSMenu {
         let menu = NSMenu()
-        for name in meterNames {
+        for name in meterNames.sortedByPeppyMeterMenuTitle() {
             let item = NSMenuItem(title: name.capitalized, action: selectMeter, keyEquivalent: "")
             item.target = target
             item.representedObject = name
@@ -132,6 +132,18 @@ final class PeppyMeterPresenter {
         closeItem.target = target
         menu.addItem(closeItem)
         return menu
+    }
+}
+
+private extension Array where Element == String {
+    func sortedByPeppyMeterMenuTitle() -> [String] {
+        sorted {
+            let lhs = $0.capitalized
+            let rhs = $1.capitalized
+            let comparison = lhs.localizedStandardCompare(rhs)
+            if comparison != .orderedSame { return comparison == .orderedAscending }
+            return $0 < $1
+        }
     }
 }
 

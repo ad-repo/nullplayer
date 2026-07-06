@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import NullPlayer
 
@@ -156,6 +157,27 @@ final class PeppyMeterConfigTests: XCTestCase {
         XCTAssertEqual(preferred.first, "1280x400")
     }
 
+    // MARK: Menu order
+
+    func testContextMenuPresetsAreAlphabetical() {
+        let presenter = PeppyMeterPresenter()
+        let target = TestMenuTarget()
+        let menu = presenter.buildMenu(
+            target: target,
+            selectMeter: #selector(TestMenuTarget.selectMeter(_:)),
+            toggleRandom: #selector(TestMenuTarget.toggleRandom(_:)),
+            toggleFullscreen: #selector(TestMenuTarget.toggleFullscreen(_:)),
+            close: #selector(TestMenuTarget.closeWindow(_:)),
+            isFullscreen: false
+        )
+
+        let presetItems = menu.items.prefix { !$0.isSeparatorItem }
+        let titles = presetItems.map(\.title)
+
+        XCTAssertFalse(titles.isEmpty)
+        XCTAssertEqual(titles, titles.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
+    }
+
     // MARK: dBFS → volume mapping
 
     func testVolumeMappingClampsToFloor() {
@@ -170,4 +192,11 @@ final class PeppyMeterConfigTests: XCTestCase {
     func testVolumeMappingMidpoint() {
         XCTAssertEqual(PeppyMeterLevels.volume(fromDBFS: -21, floor: -42), 50, accuracy: 0.001)
     }
+}
+
+private final class TestMenuTarget: NSObject {
+    @objc func selectMeter(_ sender: NSMenuItem) {}
+    @objc func toggleRandom(_ sender: NSMenuItem) {}
+    @objc func toggleFullscreen(_ sender: NSMenuItem) {}
+    @objc func closeWindow(_ sender: NSMenuItem) {}
 }
