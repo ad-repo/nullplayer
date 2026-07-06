@@ -191,6 +191,18 @@ class AudioEngine {
 
     /// Keep a real reserve on the temp volume when staging NAS files locally.
     private static let minimumTemporaryCopyFreeSpaceReserveBytes: Int64 = 1 * 1024 * 1024 * 1024
+    /// Filename prefix for staged NAS playback copies.
+    ///
+    /// ⚠️ SIDE EFFECT: `cleanupStaleTemporaryPlaybackCopies()` deletes *every* regular
+    /// file in the system temp directory that starts with this prefix on launch. Other
+    /// subsystems also write `nullplayer-`-prefixed temp files there (StreamRipper's
+    /// `nullplayer-yt-*` / `nullplayer-rip-*` / `nullplayer-chapters-*`, YouTubeManager's
+    /// `nullplayer-ytdlp-*`). The launch sweep will remove those too. This is harmless for
+    /// stale single-process leftovers (the sweep runs once, at init, before any rip starts),
+    /// but a *second* concurrent instance (e.g. the headless CLI while the GUI runs, or
+    /// `open -n`) can delete an in-progress rip/download's capture files. If you add a new
+    /// `nullplayer-`-prefixed temp file that must survive a concurrent launch, give it a
+    /// prefix that does NOT start with `temporaryPlaybackCopyPrefix`.
     private static let temporaryPlaybackCopyPrefix = "nullplayer-"
 
     /// Token used to invalidate stale in-flight normalization analyses.
@@ -4310,6 +4322,12 @@ class AudioEngine {
         }
     }
 
+    /// Remove leftover staged NAS playback copies on launch (files left behind by a crash
+    /// or force-quit that skipped the normal teardown/replacement cleanup).
+    ///
+    /// ⚠️ This matches on `temporaryPlaybackCopyPrefix` alone, so it also removes other
+    /// subsystems' `nullplayer-`-prefixed temp files. See the note on
+    /// `temporaryPlaybackCopyPrefix` before changing this or adding new temp-file prefixes.
     private func cleanupStaleTemporaryPlaybackCopies() {
         let fileManager = FileManager.default
         let tempDirectory = fileManager.temporaryDirectory
