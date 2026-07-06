@@ -18,6 +18,7 @@ enum PeppyMeterRenderer {
         context: CGContext,
         library: PeppyMeterLibrary = .shared
     ) {
+        let template = library.template(named: template.name, preferredFor: rect.size) ?? template
         let native = library.nativeSize(for: template)
         guard native.width > 0, native.height > 0, rect.width > 0, rect.height > 0 else { return }
 
@@ -35,7 +36,7 @@ enum PeppyMeterRenderer {
         let ctx = MeterContext(context: context, template: template, height: native.height, library: library)
 
         // Background
-        if let bgr = library.image(named: template.bgrFilename) {
+        if let bgr = library.image(named: template.bgrFilename, for: template) {
             context.draw(bgr, in: CGRect(x: 0, y: 0, width: native.width, height: native.height))
         }
 
@@ -61,7 +62,7 @@ enum PeppyMeterRenderer {
         }
 
         // Foreground overlay
-        if let fgrName = template.fgrFilename, let fgr = library.image(named: fgrName) {
+        if let fgrName = template.fgrFilename, let fgr = library.image(named: fgrName, for: template) {
             context.draw(fgr, in: CGRect(x: 0, y: 0, width: native.width, height: native.height))
         }
 
@@ -85,7 +86,7 @@ enum PeppyMeterRenderer {
         // MARK: Circular
 
         func drawNeedle(volume: Double, origin: CGPoint, startAngle: Double, stopAngle: Double) {
-            guard let needle = library.image(named: template.indicatorFilename) else { return }
+            guard let needle = library.image(named: template.indicatorFilename, for: template) else { return }
             let v = min(100.0, max(0.0, volume))
             let angleDeg = startAngle + (v / 100.0) * (stopAngle - startAngle)
             let o = bl(origin)
@@ -104,7 +105,7 @@ enum PeppyMeterRenderer {
 
         func drawLinear(volume: Double, pos: CGPoint, flip: Bool, isLeft: Bool) {
             let filename = template.indicatorFilename
-            guard let baseImage = flip ? library.flippedImage(named: filename) : library.image(named: filename) else { return }
+            guard let baseImage = flip ? library.flippedImage(named: filename, for: template) : library.image(named: filename, for: template) else { return }
             let iw = CGFloat(baseImage.width)
             let ih = CGFloat(baseImage.height)
 

@@ -6097,7 +6097,7 @@ PeppyMeter meter templates
 License:    GPL-3.0-only
 Copyright:  Copyright 2016-2024 PeppyMeter (peppy.player@gmail.com)
 Source:     https://github.com/project-owner/PeppyMeter
-Version:    480x320 template set
+Version:    480x320, 800x480, and 1280x400 template sets
 
 PeppyMeter Meter Templates
 ==========================

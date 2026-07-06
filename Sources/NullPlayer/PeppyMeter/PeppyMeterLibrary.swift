@@ -9,15 +9,16 @@ import ImageIO
 final class PeppyMeterLibrary {
     static let shared = PeppyMeterLibrary()
 
-    /// Bundled resolution folder. Other resolutions can be added as sibling folders later.
-    let resolutionFolder = "480x320"
+    /// Default catalog used for menus/random selection because it contains the full bundled meter set.
+    let defaultResolutionFolder = "480x320"
+    private let knownResolutionFolders = ["1280x400", "800x480", "480x320"]
 
     private(set) var templates: [PeppyMeterTemplate] = []
+    private(set) var availableResolutionFolders: [String] = []
+    private var templatesByResolution: [String: [PeppyMeterTemplate]] = [:]
     private var imageCache: [String: CGImage] = [:]
     private var sizeCache: [String: CGSize] = [:]
     private var loaded = false
-
-    private var subdirectory: String { "PeppyMeter/\(resolutionFolder)" }
 
     private init() {}
 
@@ -25,12 +26,13 @@ final class PeppyMeterLibrary {
     func loadIfNeeded() {
         guard !loaded else { return }
         loaded = true
-        guard let url = BundleHelper.url(forResource: "meters", withExtension: "txt", subdirectory: subdirectory),
-              let text = try? String(contentsOf: url, encoding: .utf8) else {
-            return
+
+        for folder in knownResolutionFolders {
+            guard let parsed = loadTemplates(in: folder), !parsed.isEmpty else { continue }
+            templatesByResolution[folder] = parsed
+            availableResolutionFolders.append(folder)
         }
-        // Keep only templates whose background image actually loads.
-        templates = PeppyMeterConfig.parse(text).filter { image(named: $0.bgrFilename) != nil }
+        templates = templatesByResolution[defaultResolutionFolder] ?? templatesByResolution.values.first ?? []
     }
 
     var meterNames: [String] { templates.map { $0.name } }
@@ -45,6 +47,16 @@ final class PeppyMeterLibrary {
         return templates.first { $0.name == name }
     }
 
+    func template(named name: String, preferredFor targetSize: CGSize) -> PeppyMeterTemplate? {
+        loadIfNeeded()
+        for folder in Self.preferredResolutionFolders(for: targetSize, available: availableResolutionFolders) {
+            if let template = templatesByResolution[folder]?.first(where: { $0.name == name }) {
+                return template
+            }
+        }
+        return template(named: name)
+    }
+
     /// The template for `name`, or the first available template as a fallback.
     func templateOrFirst(named name: String?) -> PeppyMeterTemplate? {
         loadIfNeeded()
@@ -53,25 +65,34 @@ final class PeppyMeterLibrary {
     }
 
     /// A CGImage for a `meters.txt` filename (e.g. `bar-bgr.png`), cached.
-    func image(named filename: String) -> CGImage? {
-        if let cached = imageCache[filename] { return cached }
+    func image(named filename: String, for template: PeppyMeterTemplate) -> CGImage? {
+        image(named: filename, resolutionFolder: resolvedResolutionFolder(for: template))
+    }
+
+    private func image(named filename: String, resolutionFolder: String) -> CGImage? {
+        let key = cacheKey(filename, resolutionFolder: resolutionFolder)
+        if let cached = imageCache[key] { return cached }
         let ns = filename as NSString
         let ext = ns.pathExtension
         let base = ns.deletingPathExtension
-        guard let url = BundleHelper.url(forResource: base, withExtension: ext, subdirectory: subdirectory),
+        guard let url = BundleHelper.url(forResource: base, withExtension: ext, subdirectory: subdirectory(for: resolutionFolder)),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             return nil
         }
-        imageCache[filename] = image
+        imageCache[key] = image
         return image
     }
 
     /// A horizontally-mirrored version of a filename's image (for `flip.left.x` / `flip.right.x`), cached.
-    func flippedImage(named filename: String) -> CGImage? {
-        let key = "flip:" + filename
+    func flippedImage(named filename: String, for template: PeppyMeterTemplate) -> CGImage? {
+        let resolutionFolder = resolvedResolutionFolder(for: template)
+        let key = "flip:" + cacheKey(filename, resolutionFolder: resolutionFolder)
         if let cached = imageCache[key] { return cached }
-        guard let img = image(named: filename), let flipped = Self.horizontallyFlip(img) else { return nil }
+        guard let img = image(named: filename, resolutionFolder: resolutionFolder),
+              let flipped = Self.horizontallyFlip(img) else {
+            return nil
+        }
         imageCache[key] = flipped
         return flipped
     }
@@ -91,15 +112,73 @@ final class PeppyMeterLibrary {
 
     /// The native pixel size of a meter, taken from its background image.
     func nativeSize(for template: PeppyMeterTemplate) -> CGSize {
-        if let cached = sizeCache[template.bgrFilename] { return cached }
+        let key = cacheKey(template.bgrFilename, resolutionFolder: resolvedResolutionFolder(for: template))
+        if let cached = sizeCache[key] { return cached }
         let size: CGSize
-        if let bgr = image(named: template.bgrFilename) {
+        if let bgr = image(named: template.bgrFilename, for: template) {
             size = CGSize(width: bgr.width, height: bgr.height)
         } else {
             size = CGSize(width: 480, height: 320)
         }
-        sizeCache[template.bgrFilename] = size
+        sizeCache[key] = size
         return size
+    }
+
+    static func preferredResolutionFolders(for targetSize: CGSize, available: [String]) -> [String] {
+        guard !available.isEmpty else { return [] }
+        guard targetSize.width > 0, targetSize.height > 0 else { return available }
+
+        let targetAspect = targetSize.width / targetSize.height
+        return available.sorted { lhs, rhs in
+            let l = resolutionScore(folder: lhs, targetAspect: targetAspect)
+            let r = resolutionScore(folder: rhs, targetAspect: targetAspect)
+            if l.aspectDelta != r.aspectDelta { return l.aspectDelta < r.aspectDelta }
+            return l.pixelArea > r.pixelArea
+        }
+    }
+
+    private func loadTemplates(in folder: String) -> [PeppyMeterTemplate]? {
+        guard let url = BundleHelper.url(forResource: "meters", withExtension: "txt", subdirectory: subdirectory(for: folder)),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
+        }
+        return PeppyMeterConfig.parse(text).compactMap { template in
+            var t = template
+            t.resolutionFolder = folder
+            return image(named: t.bgrFilename, resolutionFolder: folder) == nil ? nil : t
+        }
+    }
+
+    private func resolvedResolutionFolder(for template: PeppyMeterTemplate) -> String {
+        template.resolutionFolder.isEmpty ? defaultResolutionFolder : template.resolutionFolder
+    }
+
+    private func subdirectory(for resolutionFolder: String) -> String {
+        "PeppyMeter/\(resolutionFolder)"
+    }
+
+    private func cacheKey(_ filename: String, resolutionFolder: String) -> String {
+        "\(resolutionFolder):\(filename)"
+    }
+
+    private static func resolutionScore(folder: String, targetAspect: CGFloat) -> (aspectDelta: CGFloat, pixelArea: CGFloat) {
+        guard let size = resolutionSize(folder) else {
+            return (.greatestFiniteMagnitude, 0)
+        }
+        let aspect = size.width / size.height
+        return (abs(log(aspect / targetAspect)), size.width * size.height)
+    }
+
+    private static func resolutionSize(_ folder: String) -> CGSize? {
+        let parts = folder.split(separator: "x")
+        guard parts.count == 2,
+              let width = Double(parts[0]),
+              let height = Double(parts[1]),
+              width > 0,
+              height > 0 else {
+            return nil
+        }
+        return CGSize(width: width, height: height)
     }
 }
 

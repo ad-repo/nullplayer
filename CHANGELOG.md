@@ -4,7 +4,7 @@
 
 ### New Features
 
-- **PeppyMeter analog VU meter window** — a new **PeppyMeter** entry in the Windows menu and main-window context menu opens a skinnable analog VU meter (a port of PeppyMeter) in both classic and modern UI. Left/right levels drive rotating **needle** meters or **bar** meters composited from bundled image templates (25 meters, including `vintage`, `bar`, `compass`, `chillout`, and `big-bang`). Right-click the window to pick a meter or enable **Random**, which auto-switches meters on an interval. It docks and snaps in the window stack, remembers its position across launches, and consumes the shared stereo audio tap so it stays idle when closed. Bundled meter artwork is GPL-3.0 (see the third-party notices).
+- **PeppyMeter analog VU meter window** — a new **PeppyMeter** entry in the Windows menu and main-window context menu opens a skinnable analog VU meter (a port of PeppyMeter) in both classic and modern UI. Left/right levels drive rotating **needle** meters or **bar** meters composited from bundled image templates (25 meters, including `vintage`, `bar`, `compass`, `chillout`, and `big-bang`). Right-click the window to pick a meter or enable **Random**, which auto-switches meters on an interval. It docks and snaps in the window stack, remembers its position across launches, supports fullscreen mode with sharper high-resolution templates when available, and consumes the shared stereo audio tap so it stays idle when closed. Bundled meter artwork is GPL-3.0 (see the third-party notices).
 
 ### Bug Fixes
 

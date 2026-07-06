@@ -25,8 +25,10 @@ and Audio Analyzer windows.
 - **Linear meters** — a bar (or single moving indicator) per channel that grows with level.
 - Right-click the window to pick any bundled meter or toggle **Random** (auto-switches on an interval).
 
-The default bundled set is the PeppyMeter **480×320** templates (25 meters: `bar`, `vintage`, `blue`,
-`compass`, `chillout`, `big-bang`, …). Mixed `.png`/`.jpg` backgrounds are supported.
+The default catalog is the PeppyMeter **480×320** templates (25 meters: `bar`, `vintage`, `blue`,
+`compass`, `chillout`, `big-bang`, …). Higher-resolution sibling sets (`800x480`, plus the partial
+wide `1280x400` set) are bundled for sharper large-window/fullscreen rendering. Mixed `.png`/`.jpg`
+backgrounds are supported.
 
 ## Audio path (levels)
 
@@ -72,10 +74,11 @@ Rendering matches `SkinRenderer`'s CoreGraphics approach; there is no Metal here
 
 ## meters.txt & bundled assets
 
-- Templates live in `Sources/NullPlayer/Resources/PeppyMeter/<resolution>/` (currently `480x320/`),
-  auto-included by the existing `.copy("Resources")` in `Package.swift` — no `Package.swift` change to
-  add a resolution folder. `PeppyMeterLibrary` discovers them via
-  `BundleHelper.url(forResource:withExtension:subdirectory:)`.
+- Templates live in `Sources/NullPlayer/Resources/PeppyMeter/<resolution>/` (currently `480x320/`,
+  `800x480/`, and `1280x400/`), auto-included by the existing `.copy("Resources")` in `Package.swift`
+  — no `Package.swift` change to add a resolution folder. `PeppyMeterLibrary` discovers configured
+  folders via `BundleHelper.url(forResource:withExtension:subdirectory:)` and chooses the best
+  same-name template for the current draw size, falling back to the full `480x320` catalog.
 - `PeppyMeterConfig.parse` reads the INI-style `meters.txt`; each section keeps a template only if it
   has a valid `meter.type` **and** its background image loads.
 - **Licensing.** The bundled meter images + `meters.txt` are **GPL-3.0** (from PeppyMeter). They live in
@@ -118,7 +121,7 @@ Windows + protocol:
 - `Windows/PeppyMeter/PeppyMeterWindowController.swift` + `PeppyMeterView.swift` (classic chrome, `SkinRenderer`)
 - `Windows/ModernPeppyMeter/ModernPeppyMeterWindowController.swift` + `ModernPeppyMeterView.swift` (modern chrome, `ModernSkinRenderer`)
 
-Assets: `Resources/PeppyMeter/480x320/` (+ `ThirdPartyLicenses/PeppyMeter_NOTICE.txt`).
+Assets: `Resources/PeppyMeter/{480x320,800x480,1280x400}/` (+ `ThirdPartyLicenses/PeppyMeter_NOTICE.txt`).
 Tests: `Tests/NullPlayerAppTests/PeppyMeterConfigTests.swift` (parser + mask table + dBFS→volume math).
 
 ## Gotchas

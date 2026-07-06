@@ -134,6 +134,28 @@ final class PeppyMeterConfigTests: XCTestCase {
         XCTAssertEqual(masks.last, 11 * 19 + 3 * 25)       // + overload zone
     }
 
+    // MARK: Resolution selection
+
+    func testResolutionSelectionPrefersFullscreenAspectMatch() {
+        let available = ["1280x400", "800x480", "480x320"]
+        let preferred = PeppyMeterLibrary.preferredResolutionFolders(
+            for: CGSize(width: 1920, height: 1080),
+            available: available
+        )
+
+        XCTAssertEqual(preferred.first, "800x480")
+    }
+
+    func testResolutionSelectionUsesWidestSetForWideTargets() {
+        let available = ["1280x400", "800x480", "480x320"]
+        let preferred = PeppyMeterLibrary.preferredResolutionFolders(
+            for: CGSize(width: 2560, height: 800),
+            available: available
+        )
+
+        XCTAssertEqual(preferred.first, "1280x400")
+    }
+
     // MARK: dBFS → volume mapping
 
     func testVolumeMappingClampsToFloor() {

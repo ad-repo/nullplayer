@@ -24,6 +24,8 @@ enum PeppyMeterDirection: String {
 struct PeppyMeterTemplate {
     let name: String
     let type: PeppyMeterType
+    /// Resource folder this template was loaded from, e.g. `480x320`.
+    var resolutionFolder: String = ""
     /// 1 = mono (single needle/bar), 2 = stereo (left + right).
     let channels: Int
 
