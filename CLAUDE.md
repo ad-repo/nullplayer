@@ -30,6 +30,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **main-window-visualization**: Main window's 76×16 vis area — modes, switching, settings
 - **spectrum-analyzer-window**: Dedicated 84-bar spectrum window — docking, geometry, analyzer curve, vis_classic waveform demand
 - **audio-analysis-window**: Friture-style multi-pane Audio Analysis window — Scope/Levels/Spectrogram panes, stereo PCM path, per-pane consumer gating, AudioAnalysisDSP module
+- **peppymeter**: Skinnable analog VU meter window (PeppyMeter port) — meters.txt geometry, CoreGraphics needle/bar compositor, stereo-tap level model, bundled GPL templates
 - **gpu-vis-modes**: Per-mode shader internals (Fire/JWST/Lightning/Matrix/Snow/EKG) shared by both windows
 - **album-art-visualizer**: Library Browser ART-mode Core Image effects
 - **projectm-milkdrop**: ProjectM/MilkDrop preset engine + drag-suspend behavior
@@ -53,12 +54,13 @@ Sources/NullPlayer/
 ├── Radio/            # Internet radio (stations, metadata fallback, ratings, folders)
 ├── Skin/             # Classic .wsz skin loading and rendering
 ├── ModernSkin/       # Modern skin engine (independent of classic system)
-├── Windows/          # All window views (MainWindow, ModernMainWindow, ModernSpectrum, ModernPlaylist, ModernEQ, ModernProjectM, ModernLibraryBrowser, Playlist, EQ, etc.)
+├── Windows/          # All window views (MainWindow, ModernMainWindow, ModernSpectrum, ModernPlaylist, ModernEQ, ModernProjectM, ModernLibraryBrowser, PeppyMeter, ModernPeppyMeter, Playlist, EQ, etc.)
 ├── Plex/             # Plex server integration
 ├── Subsonic/         # Navidrome/Subsonic server integration
 ├── Jellyfin/         # Jellyfin media server integration
 ├── Emby/             # Emby media server integration
 ├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer, vis_classic bridge/core integration
+├── PeppyMeter/       # Analog VU meter engine (meters.txt parser, CoreGraphics compositor, level model)
 ├── Waveform/         # Shared waveform models, cache service, drawing, and stream accumulation
 └── Models/           # Track, Playlist, MediaLibrary
 ```
@@ -72,6 +74,7 @@ Sources/NullPlayer/
 | Audio | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift` |
 | Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernWaveform/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, `Windows/ModernLibraryBrowser/` |
 | Visualization | `Visualization/SpectrumAnalyzerView.swift`, `Visualization/VisClassicBridge.swift`, `Visualization/ProjectMWrapper.swift`, `Visualization/*.metal`, `Sources/CVisClassicCore/` |
+| PeppyMeter | `PeppyMeter/PeppyMeterConfig.swift`, `PeppyMeter/PeppyMeterRenderer.swift`, `PeppyMeter/PeppyMeterLibrary.swift`, `PeppyMeter/PeppyMeterPresenter.swift`, `Windows/PeppyMeter/`, `Windows/ModernPeppyMeter/` |
 | Waveform | `Waveform/WaveformCacheService.swift`, `Waveform/BaseWaveformView.swift` |
 | App | `App/WindowManager.swift`, `App/AppStateManager.swift`, `App/ContextMenuBuilder.swift` |
 | Local Library | `Data/Models/MediaLibrary.swift`, `Utilities/LocalFileDiscovery.swift` |
@@ -113,7 +116,7 @@ Manual QA for UI/playback changes: local file playback, Plex/Subsonic/Jellyfin/E
 
 ## Gotchas
 
-- **Modern skin system is completely independent**: Files in `ModernSkin/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, and `Windows/ModernLibraryBrowser/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. Coupling points: `AppDelegate` (mode selection), `WindowManager` (via provider protocols), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`).
+- **Modern skin system is completely independent**: Files in `ModernSkin/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, `Windows/ModernLibraryBrowser/`, and `Windows/ModernPeppyMeter/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. Coupling points: `AppDelegate` (mode selection), `WindowManager` (via provider protocols), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`).
 
 - **UI mode switching is live (no restart)**: `modernUIEnabled` UserDefaults preference selects which `MainWindowProviding` implementation `WindowManager` creates. `setClassicMode()`/`setModernMode()` call `WindowManager.reloadUI(toModernUI:)`, which tears down only the mode-dependent window layer (`teardownModeDependentWindows()`), flips the flag, prepares the target-mode runtime (`prepareUIRuntime`), reprograms the shared EQ nodes, rebuilds the menu, and recreates the windows. `AudioEngine` is owned by `WindowManager` (not a window), so playback/casting/playlist/seek survive untouched and audio state is deliberately not snapshotted. The mode-independent `VideoPlayerWindowController` is preserved across the switch. Skin-driven mode switches (`selectClassicSkin`/`selectModernSkin`/`loadDefaultClassicSkin`) are also live: they load the target skin into `currentSkin` (classic) or set `modernSkinName` (modern), then call `reloadUI`. Classic Large UI (Double Size) is also live now — `toggleDoubleSize()` just flips `isDoubleSize` and `applyDoubleSize()` resizes in place (ending with a forced `forceRedrawTree` repaint so layer-backed classic views don't leave a stale "ghost"). `reloadUI` collapses `isDoubleSize` to 1x before a mode switch and re-applies it after, so nothing in the UI requires a relaunch.
 

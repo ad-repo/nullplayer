@@ -23,6 +23,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Equalizer** | Classic 10-band EQ or modern 21-band EQ with presets | EQ button or context menu |
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
 | **Audio Analyzer** | Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay) | Context menu or Window menu |
+| **PeppyMeter** | Skinnable analog VU meter — needle/bar meters that track left/right levels; right-click to pick a meter or enable Random | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art (titled "Visualizations" in menus and window chrome; internally still the ProjectM window) | VZ button, Window menu, or context menu |
 
@@ -297,6 +298,13 @@ A multi-pane real-time analyzer (Friture-style), available in both classic and m
 - **Delay** — stereo left/right timing offset in ms and samples (resolves up to ±~5.8 ms).
 
 Only the visible pane runs, so the window is light on CPU and idles when closed.
+
+### PeppyMeter (Analog VU Meter)
+A skinnable analog VU meter window (a port of PeppyMeter), available in classic and modern UI. Left/right
+levels drive rotating **needle** meters or **bar** meters composited from bundled image templates
+(25 meters at 480×320: `bar`, `vintage`, `blue`, `compass`, `chillout`, `big-bang`, …). Right-click to
+choose a meter or toggle **Random** (auto-switches on an interval). It consumes the shared stereo audio
+tap, so it idles when closed. See the **peppymeter** skill for internals.
 
 ### Main Window GPU Modes
 Off, Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow, EKG. Double-click cycles visual modes; choose Off from Visuals > Spectrum Analyzer > Main Window > Mode.
