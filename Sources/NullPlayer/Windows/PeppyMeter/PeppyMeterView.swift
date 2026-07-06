@@ -7,6 +7,7 @@ final class PeppyMeterView: NSView {
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
+    private(set) var isFullscreen = false
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
         SkinElements.SpectrumWindow.Layout.self
@@ -42,6 +43,7 @@ final class PeppyMeterView: NSView {
     }
 
     private func contentAreaRect() -> NSRect {
+        if isFullscreen { return bounds }
         let titleHeight = WindowManager.shared.hideTitleBars ? 0 : chromeLayout.titleBarHeight
         return NSRect(
             x: chromeLayout.leftBorder,
@@ -53,24 +55,30 @@ final class PeppyMeterView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-        let renderer = SkinRenderer(skin: skin)
 
-        context.saveGState()
-        context.translateBy(x: 0, y: bounds.height)
-        context.scaleBy(x: 1, y: -1)
-        if WindowManager.shared.hideTitleBars {
-            context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
+        if isFullscreen {
+            NSColor.black.setFill()
+            bounds.fill()
+        } else {
+            let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+            let renderer = SkinRenderer(skin: skin)
+
+            context.saveGState()
+            context.translateBy(x: 0, y: bounds.height)
+            context.scaleBy(x: 1, y: -1)
+            if WindowManager.shared.hideTitleBars {
+                context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
+            }
+            renderer.drawSpectrumAnalyzerWindow(
+                in: context,
+                bounds: bounds,
+                isActive: window?.isKeyWindow ?? true,
+                pressedButton: pressedButton,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "PEPPYMETER"
+            )
+            context.restoreGState()
         }
-        renderer.drawSpectrumAnalyzerWindow(
-            in: context,
-            bounds: bounds,
-            isActive: window?.isKeyWindow ?? true,
-            pressedButton: pressedButton,
-            controlScale: WindowManager.shared.playlistChromeScale,
-            title: "PEPPYMETER"
-        )
-        context.restoreGState()
 
         if let presenter {
             PeppyMeterDrawing.draw(in: contentAreaRect(), presenter: presenter, context: context)
@@ -83,6 +91,13 @@ final class PeppyMeterView: NSView {
     }
 
     func skinDidChange() {
+        needsDisplay = true
+    }
+
+    func setFullscreen(_ enabled: Bool) {
+        isFullscreen = enabled
+        pressedButton = nil
+        isDraggingWindow = false
         needsDisplay = true
     }
 
@@ -109,6 +124,7 @@ final class PeppyMeterView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        guard !isFullscreen else { return }
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToSkinCoordinates(viewPoint)
         if hitTestCloseButton(at: point) {
@@ -124,6 +140,7 @@ final class PeppyMeterView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard !isFullscreen else { return }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
         var origin = window.frame.origin
@@ -133,6 +150,7 @@ final class PeppyMeterView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard !isFullscreen else { return }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if isDraggingWindow, let window {
             isDraggingWindow = false
@@ -150,7 +168,9 @@ final class PeppyMeterView: NSView {
             target: self,
             selectMeter: #selector(selectMeter(_:)),
             toggleRandom: #selector(toggleRandom(_:)),
-            close: #selector(closeWindow(_:))
+            toggleFullscreen: #selector(toggleFullscreen(_:)),
+            close: #selector(closeWindow(_:)),
+            isFullscreen: controller?.isFullscreen ?? false
         )
     }
 
@@ -161,6 +181,10 @@ final class PeppyMeterView: NSView {
 
     @objc private func toggleRandom(_ sender: Any?) {
         presenter?.toggleRandom()
+    }
+
+    @objc private func toggleFullscreen(_ sender: Any?) {
+        controller?.toggleFullscreen()
     }
 
     @objc private func closeWindow(_ sender: Any?) {

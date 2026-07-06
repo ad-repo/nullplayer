@@ -439,12 +439,18 @@ class WindowManager {
     /// Last known Library window frame, remembered across hide/close so the
     /// window reopens where the user left it instead of the default right-of-stack layout.
     private var lastPlexBrowserFrame: NSRect?
+    private var lastPlexBrowserFrameWasDocked = false
 
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
     
     /// ProjectM visualization window controller (classic or modern, accessed via protocol)
     private var projectMWindowController: ProjectMWindowProviding?
+
+    /// Last known Visualizations window frame, remembered across hide/close so a docked
+    /// window can refit to the current center stack while a floating one reopens exactly.
+    private var lastProjectMFrame: NSRect?
+    private var lastProjectMFrameWasDocked = false
     
     /// Spectrum analyzer window controller (classic or modern, accessed via protocol)
     private var spectrumWindowController: SpectrumWindowProviding?
@@ -913,46 +919,19 @@ class WindowManager {
         if let window = plexBrowserWindowController?.window {
             // Priority: explicit restored frame (launch / mode-rebuild) → remembered session
             // frame (reopen after hide/close) → default right-of-stack layout (first-ever open).
-            let chosenFrame: NSRect? = {
-                if let f = restoredFrame, f != .zero { return f }
-                if let f = lastPlexBrowserFrame, f != .zero { return f }
-                return nil
-            }()
-            if let frame = chosenFrame {
+            if let frame = restoredFrame, frame != .zero {
                 window.setFrame(frame, display: true)
+            } else if let frame = lastPlexBrowserFrame, frame != .zero {
+                if lastPlexBrowserFrameWasDocked,
+                   let dockedFrame = rightDockedSideFrame(for: window, width: frame.width) {
+                    window.setFrame(dockedFrame, display: true)
+                } else {
+                    window.setFrame(frame, display: true)
+                }
             } else {
-                // Position to the right of the vertical stack
-                // Only match stack height if there's more than just the main window
-                let stackBounds = verticalStackBounds()
-                let mainWindow = mainWindowController?.window
-                let mainActualHeight = mainWindow?.frame.height ?? 0
-                let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
                 // Scale width for double-size mode
                 let sideWidth = window.frame.width * (isModernUIEnabled ? ModernSkinElements.sizeMultiplier : 1.0)
-                // Use full cluster bounds for X so we don't open on top of side-docked windows
-                let clusterBounds = windowClusterBounds(excluding: window)
-                let rightEdgeX = clusterBounds != .zero ? clusterBounds.maxX : (mainWindow?.frame.maxX ?? 0)
-
-                if stackBounds != .zero && stackHasMultipleWindows {
-                    // Match stack height when multiple windows are stacked
-                    // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
-                    let newFrame = NSRect(
-                        x: rightEdgeX,
-                        y: stackBounds.minY,
-                        width: sideWidth,
-                        height: stackBounds.height
-                    )
-                    window.setFrame(newFrame, display: true)
-                } else if let mainWindow = mainWindow {
-                    // Use default height (4× main) when only main window is visible
-                    let mainFrame = mainWindow.frame
-                    let defaultHeight = defaultSideWindowHeight(mainFrame: mainFrame)
-                    let newFrame = NSRect(
-                        x: rightEdgeX,
-                        y: mainFrame.maxY - defaultHeight,
-                        width: sideWidth,
-                        height: defaultHeight
-                    )
+                if let newFrame = rightDockedSideFrame(for: window, width: sideWidth) {
                     window.setFrame(newFrame, display: true)
                 }
             }
@@ -998,11 +977,30 @@ class WindowManager {
     var projectMWindowFrame: NSRect? {
         return projectMWindowController?.window?.frame
     }
-    
+
+    /// Cache the current Visualizations frame before it is hidden/closed.
+    private func rememberProjectMFrame() {
+        if let window = projectMWindowController?.window,
+           window.isVisible,
+           window.frame != .zero {
+            lastProjectMFrame = window.frame
+            lastProjectMFrameWasDocked = sideFrameIsLeftDockedToCurrentStack(window.frame)
+        }
+    }
+
+    /// Public entry point so the Visualizations controllers can cache their frame from
+    /// `windowWillClose` (the red-button close path bypasses `toggleProjectM`).
+    func rememberProjectMFrameBeforeClose() {
+        rememberProjectMFrame()
+    }
+
     /// Cache the current library frame before it is hidden/closed.
     private func rememberPlexBrowserFrame() {
-        if let f = plexBrowserWindowController?.frameForPositionMemory, f != .zero {
+        if let window = plexBrowserWindowController?.window,
+           let f = plexBrowserWindowController?.frameForPositionMemory,
+           f != .zero {
             lastPlexBrowserFrame = f
+            lastPlexBrowserFrameWasDocked = window.isVisible && sideFrameIsRightDockedToCurrentStack(f)
         }
     }
 
@@ -1020,7 +1018,10 @@ class WindowManager {
 
     /// Seed the remembered frame at launch when the library is not reopened.
     func seedPlexBrowserFrame(_ frame: NSRect?) {
-        if let f = frame, f != .zero { lastPlexBrowserFrame = f }
+        if let f = frame, f != .zero {
+            lastPlexBrowserFrame = f
+            lastPlexBrowserFrameWasDocked = sideFrameIsRightDockedToCurrentStack(f)
+        }
     }
 
     func togglePlexBrowser() {
@@ -2231,37 +2232,15 @@ class WindowManager {
             if isNewWindow, let frame = restoredFrame, frame != .zero {
                 // Use restored frame from state restoration (first creation only)
                 window.setFrame(frame, display: true)
+            } else if let frame = lastProjectMFrame, frame != .zero {
+                if lastProjectMFrameWasDocked,
+                   let dockedFrame = leftDockedSideFrame(for: window, width: frame.width) {
+                    window.setFrame(dockedFrame, display: true)
+                } else {
+                    window.setFrame(frame, display: true)
+                }
             } else {
-                // Position to the left of the vertical stack
-                // Only match stack height if there's more than just the main window
-                let stackBounds = verticalStackBounds()
-                let mainWindow = mainWindowController?.window
-                let mainActualHeight = mainWindow?.frame.height ?? 0
-                let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
-                // Use full cluster bounds for X so we don't open on top of side-docked windows
-                let clusterBounds = windowClusterBounds(excluding: window)
-                let leftEdgeX = clusterBounds != .zero ? clusterBounds.minX : (mainWindow?.frame.minX ?? 0)
-
-                if stackBounds != .zero && stackHasMultipleWindows {
-                    // Match stack height when multiple windows are stacked
-                    // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
-                    let newFrame = NSRect(
-                        x: leftEdgeX - window.frame.width,
-                        y: stackBounds.minY,
-                        width: window.frame.width,
-                        height: stackBounds.height
-                    )
-                    window.setFrame(newFrame, display: true)
-                } else if let mainWindow = mainWindow {
-                    // Use default height (4× main) when only main window is visible
-                    let mainFrame = mainWindow.frame
-                    let defaultHeight = defaultSideWindowHeight(mainFrame: mainFrame)
-                    let newFrame = NSRect(
-                        x: leftEdgeX - window.frame.width,
-                        y: mainFrame.maxY - defaultHeight,
-                        width: window.frame.width,
-                        height: defaultHeight
-                    )
+                if let newFrame = leftDockedSideFrame(for: window, width: window.frame.width) {
                     window.setFrame(newFrame, display: true)
                 }
             }
@@ -2290,6 +2269,7 @@ class WindowManager {
     
     func toggleProjectM() {
         if let controller = projectMWindowController, controller.window?.isVisible == true {
+            rememberProjectMFrame()
             // Stop rendering before hiding to save CPU (orderOut doesn't trigger windowWillClose)
             controller.stopRenderingForHide()
             controller.window?.orderOut(nil)
@@ -2468,6 +2448,10 @@ class WindowManager {
         peppyMeterWindowController?.window?.isVisible == true
     }
 
+    var isPeppyMeterFullscreen: Bool {
+        peppyMeterWindowController?.isFullscreen ?? false
+    }
+
     var peppyMeterWindowFrame: NSRect? {
         peppyMeterWindowController?.window?.frame
     }
@@ -2476,10 +2460,22 @@ class WindowManager {
         peppyMeterWindowController?.window
     }
 
+    func togglePeppyMeterFullscreen() {
+        if peppyMeterWindowController?.window?.isVisible == true {
+            peppyMeterWindowController?.toggleFullscreen()
+        } else {
+            showPeppyMeter()
+            peppyMeterWindowController?.toggleFullscreen()
+        }
+    }
+
     func togglePeppyMeter() {
         if let controller = peppyMeterWindowController,
            let window = controller.window,
            window.isVisible {
+            if controller.isFullscreen {
+                controller.toggleFullscreen()
+            }
             let closingFrame = window.frame
             controller.stopRenderingForHide()
             window.orderOut(nil)
@@ -3166,19 +3162,21 @@ class WindowManager {
             let baseMinSize: NSSize = runningModernMode
                 ? ModernSkinElements.spectrumMinSize
                 : SkinElements.SpectrumWindow.minSize
+            let heightMultiplier = centerStackHeightMultiplier(for: .peppyMeter)
             let minHeight = runningModernMode
                 ? expectedMainHeightForCurrentHT(mainWindowController?.window)
                 : baseMinSize.height * scale
+            let adjustedMinHeight = minHeight * heightMultiplier
             let minWidth = runningModernMode
                 ? ModernSkinElements.spectrumMinSize.width
                 : baseMinSize.width * scale
-            peppyMeterWindow.minSize = NSSize(width: minWidth, height: minHeight)
+            peppyMeterWindow.minSize = NSSize(width: minWidth, height: adjustedMinHeight)
             peppyMeterWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             let currentFrame = peppyMeterWindow.frame
             let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+            let newHeight = max(adjustedMinHeight, currentFrame.height * heightScaleMultiplier)
             let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
             if peppyMeterWindow.isVisible {
                 let meterFrame = NSRect(
@@ -3376,11 +3374,104 @@ class WindowManager {
         ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
     }
 
+    private func rightDockedSideFrame(for window: NSWindow, width: CGFloat) -> NSRect? {
+        guard let mainWindow = mainWindowController?.window else { return nil }
+        let stackBounds = verticalStackBounds()
+        guard stackBounds != .zero else { return nil }
+
+        let clusterBounds = windowClusterBounds(excluding: window)
+        let rightEdgeX = clusterBounds != .zero ? clusterBounds.maxX : mainWindow.frame.maxX
+        let mainActualHeight = mainWindow.frame.height
+        let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
+
+        if stackHasMultipleWindows {
+            return NSRect(x: rightEdgeX, y: stackBounds.minY, width: width, height: stackBounds.height)
+        }
+
+        let defaultHeight = defaultSideWindowHeight(mainFrame: mainWindow.frame)
+        return NSRect(
+            x: rightEdgeX,
+            y: mainWindow.frame.maxY - defaultHeight,
+            width: width,
+            height: defaultHeight
+        )
+    }
+
+    private func leftDockedSideFrame(for window: NSWindow, width: CGFloat) -> NSRect? {
+        guard let mainWindow = mainWindowController?.window else { return nil }
+        let stackBounds = verticalStackBounds()
+        guard stackBounds != .zero else { return nil }
+
+        let clusterBounds = windowClusterBounds(excluding: window)
+        let leftEdgeX = clusterBounds != .zero ? clusterBounds.minX : mainWindow.frame.minX
+        let mainActualHeight = mainWindow.frame.height
+        let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
+
+        if stackHasMultipleWindows {
+            return NSRect(x: leftEdgeX - width, y: stackBounds.minY, width: width, height: stackBounds.height)
+        }
+
+        let defaultHeight = defaultSideWindowHeight(mainFrame: mainWindow.frame)
+        return NSRect(
+            x: leftEdgeX - width,
+            y: mainWindow.frame.maxY - defaultHeight,
+            width: width,
+            height: defaultHeight
+        )
+    }
+
+    private func sideFrameIsRightDockedToCurrentStack(_ frame: NSRect) -> Bool {
+        let stackBounds = verticalStackBounds()
+        guard stackBounds != .zero else { return false }
+        let touchesRightEdge = abs(frame.minX - stackBounds.maxX) <= dockThreshold
+        let overlapsStackVertically = frame.minY < stackBounds.maxY && frame.maxY > stackBounds.minY
+        return touchesRightEdge && overlapsStackVertically
+    }
+
+    private func sideFrameIsLeftDockedToCurrentStack(_ frame: NSRect) -> Bool {
+        let stackBounds = verticalStackBounds()
+        guard stackBounds != .zero else { return false }
+        let touchesLeftEdge = abs(frame.maxX - stackBounds.minX) <= dockThreshold
+        let overlapsStackVertically = frame.minY < stackBounds.maxY && frame.maxY > stackBounds.minY
+        return touchesLeftEdge && overlapsStackVertically
+    }
+
+    private func refitDockedPlexBrowserToVerticalStack() {
+        guard let window = plexBrowserWindowController?.window, window.isVisible else { return }
+        guard sideFrameIsRightDockedToCurrentStack(window.frame) else { return }
+        guard let frame = rightDockedSideFrame(for: window, width: window.frame.width),
+              frame != window.frame else { return }
+
+        let previousSnappingState = isSnappingWindow
+        isSnappingWindow = true
+        window.setFrame(frame, display: true, animate: false)
+        isSnappingWindow = previousSnappingState
+    }
+
+    private func refitDockedProjectMToVerticalStack() {
+        guard let window = projectMWindowController?.window, window.isVisible else { return }
+        guard sideFrameIsLeftDockedToCurrentStack(window.frame) else { return }
+        guard let frame = leftDockedSideFrame(for: window, width: window.frame.width),
+              frame != window.frame else { return }
+
+        let previousSnappingState = isSnappingWindow
+        isSnappingWindow = true
+        window.setFrame(frame, display: true, animate: false)
+        isSnappingWindow = previousSnappingState
+    }
+
+    /// Height multiplier for a center-stack window's default/minimum height.
+    /// PeppyMeter is the only double-height window; everything else is single height.
+    private func centerStackHeightMultiplier(for kind: CenterStackWindowKind) -> CGFloat {
+        kind == .peppyMeter ? 2 : 1
+    }
+
     private func targetCenterStackHeight(for kind: CenterStackWindowKind,
                                          currentHeight: CGFloat,
                                          titleBarDelta: CGFloat,
                                          preservePlaylistContentHeight: Bool) -> CGFloat {
         let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
+            * centerStackHeightMultiplier(for: kind)
         guard kind == .playlist || kind == .waveform else { return target }
         guard preservePlaylistContentHeight else { return target }
         let adjusted = hideTitleBars ? (currentHeight - titleBarDelta) : (currentHeight + titleBarDelta)
@@ -3404,9 +3495,16 @@ class WindowManager {
         case .waveform:
             window.minSize = NSSize(width: ModernSkinElements.waveformMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        case .audioAnalysis, .peppyMeter:
+        case .audioAnalysis:
             // Matches the center-stack width; stretchable in height like spectrum/playlist.
             window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        case .peppyMeter:
+            // Matches the center-stack width; stretchable above its double-height floor.
+            window.minSize = NSSize(
+                width: ModernSkinElements.spectrumMinSize.width,
+                height: targetHeight * centerStackHeightMultiplier(for: kind)
+            )
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
     }
@@ -3438,9 +3536,11 @@ class WindowManager {
         switch kind {
         case .equalizer, .spectrum:
             normalized.size.height = target
-        case .playlist, .waveform, .audioAnalysis, .peppyMeter:
+        case .playlist, .waveform, .audioAnalysis:
             // Accept legacy compact saved frames but normalize to current full-height minimum.
             normalized.size.height = max(target, normalized.height)
+        case .peppyMeter:
+            normalized.size.height = max(target * centerStackHeightMultiplier(for: kind), normalized.height)
         }
         normalized.origin.y = topY - normalized.size.height
         return normalized
@@ -4707,8 +4807,11 @@ class WindowManager {
         // classic/modern differ in coordinates/size. An open library that must survive the
         // switch is repositioned explicitly via recreateModeDependentLayout's snapshot frame.
         lastPlexBrowserFrame = nil
+        lastPlexBrowserFrameWasDocked = false
         projectMWindowController?.window?.close()
         projectMWindowController = nil
+        lastProjectMFrame = nil
+        lastProjectMFrameWasDocked = false
         spectrumWindowController?.window?.close()
         spectrumWindowController = nil
         audioAnalysisWindowController?.window?.close()
@@ -5242,6 +5345,8 @@ class WindowManager {
     /// main window when it moves across macOS Spaces.
     func updateDockedChildWindows() {
         guard let mainWindow = mainWindowController?.window else { return }
+        refitDockedPlexBrowserToVerticalStack()
+        refitDockedProjectMToVerticalStack()
         let docked = findDockedWindows(to: mainWindow)
 
         // Remove children that are no longer docked

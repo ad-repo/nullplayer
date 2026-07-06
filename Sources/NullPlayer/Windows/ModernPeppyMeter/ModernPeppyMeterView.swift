@@ -11,6 +11,7 @@ final class ModernPeppyMeterView: NSView {
     private var pressedButton: String?
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
+    private(set) var isFullscreen = false
 
     private var presenter: PeppyMeterPresenter? { controller?.presenter }
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
@@ -54,22 +55,27 @@ final class ModernPeppyMeterView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
-        renderer.drawWindowBackground(
-            in: bounds,
-            context: context,
-            adjacentEdges: adjacentEdges,
-            sharpCorners: sharpCorners,
-            backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity
-        )
-        renderer.drawWindowBorder(
-            in: bounds,
-            context: context,
-            adjacentEdges: adjacentEdges,
-            sharpCorners: sharpCorners,
-            occlusionSegments: edgeOcclusionSegments
-        )
+        if isFullscreen {
+            NSColor.black.setFill()
+            bounds.fill()
+        } else {
+            renderer.drawWindowBackground(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity
+            )
+            renderer.drawWindowBorder(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                occlusionSegments: edgeOcclusionSegments
+            )
+        }
 
-        if !WindowManager.shared.effectiveHideTitleBars(for: window) {
+        if !isFullscreen && !WindowManager.shared.effectiveHideTitleBars(for: window) {
             renderer.drawTitleBar(
                 in: ModernSkinElements.spectrumTitleBar.defaultRect,
                 title: "PEPPYMETER",
@@ -96,7 +102,8 @@ final class ModernPeppyMeterView: NSView {
     }
 
     private func contentAreaRect() -> NSRect {
-        NSRect(
+        if isFullscreen { return bounds }
+        return NSRect(
             x: borderWidth,
             y: borderWidth,
             width: max(0, bounds.width - borderWidth * 2),
@@ -107,6 +114,14 @@ final class ModernPeppyMeterView: NSView {
     func skinDidChange() {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
+        updateCornerMask()
+        needsDisplay = true
+    }
+
+    func setFullscreen(_ enabled: Bool) {
+        isFullscreen = enabled
+        pressedButton = nil
+        isDraggingWindow = false
         updateCornerMask()
         needsDisplay = true
     }
@@ -162,6 +177,7 @@ final class ModernPeppyMeterView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        guard !isFullscreen else { return }
         let point = convert(event.locationInWindow, from: nil)
         if hitTestCloseButton(at: point) {
             pressedButton = "spectrum_btn_close"
@@ -178,6 +194,7 @@ final class ModernPeppyMeterView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard !isFullscreen else { return }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
         var origin = window.frame.origin
@@ -187,6 +204,7 @@ final class ModernPeppyMeterView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard !isFullscreen else { return }
         let point = convert(event.locationInWindow, from: nil)
         if isDraggingWindow, let window {
             isDraggingWindow = false
@@ -204,7 +222,9 @@ final class ModernPeppyMeterView: NSView {
             target: self,
             selectMeter: #selector(selectMeter(_:)),
             toggleRandom: #selector(toggleRandom(_:)),
-            close: #selector(closeWindow(_:))
+            toggleFullscreen: #selector(toggleFullscreen(_:)),
+            close: #selector(closeWindow(_:)),
+            isFullscreen: controller?.isFullscreen ?? false
         )
     }
 
@@ -215,6 +235,10 @@ final class ModernPeppyMeterView: NSView {
 
     @objc private func toggleRandom(_ sender: Any?) {
         presenter?.toggleRandom()
+    }
+
+    @objc private func toggleFullscreen(_ sender: Any?) {
+        controller?.toggleFullscreen()
     }
 
     @objc private func closeWindow(_ sender: Any?) {
@@ -228,6 +252,12 @@ final class ModernPeppyMeterView: NSView {
 
     private func updateCornerMask() {
         guard let layer else { return }
+        if isFullscreen {
+            layer.cornerRadius = 0
+            layer.masksToBounds = false
+            layer.maskedCorners = []
+            return
+        }
         let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault())
             .config.window.cornerRadius ?? 0
         layer.cornerRadius = cornerRadius

@@ -53,6 +53,22 @@ final class PeppyMeterPresenter {
         onNeedsDisplay?()
     }
 
+    func selectNextMeter() {
+        selectAdjacentMeter(offset: 1)
+    }
+
+    func selectPreviousMeter() {
+        selectAdjacentMeter(offset: -1)
+    }
+
+    private func selectAdjacentMeter(offset: Int) {
+        let names = meterNames
+        guard !names.isEmpty else { return }
+        let currentIndex = currentMeterName.flatMap { names.firstIndex(of: $0) } ?? 0
+        let nextIndex = (currentIndex + offset + names.count) % names.count
+        selectMeter(named: names[nextIndex])
+    }
+
     func toggleRandom() {
         PeppyMeterSettings.randomEnabled.toggle()
         if PeppyMeterSettings.randomEnabled { startRandomTimer() } else { stopRandomTimer() }
@@ -82,8 +98,13 @@ final class PeppyMeterPresenter {
 
     // MARK: Menu
 
-    /// Build the shared right-click menu (meter radio list + Random toggle + Close).
-    func buildMenu(target: AnyObject, selectMeter: Selector, toggleRandom: Selector, close: Selector) -> NSMenu {
+    /// Build the shared right-click menu (meter radio list + Random/Fullscreen toggles + Close).
+    func buildMenu(target: AnyObject,
+                   selectMeter: Selector,
+                   toggleRandom: Selector,
+                   toggleFullscreen: Selector,
+                   close: Selector,
+                   isFullscreen: Bool) -> NSMenu {
         let menu = NSMenu()
         for name in meterNames {
             let item = NSMenuItem(title: name.capitalized, action: selectMeter, keyEquivalent: "")
@@ -97,6 +118,15 @@ final class PeppyMeterPresenter {
         randomItem.target = target
         randomItem.state = randomEnabled ? .on : .off
         menu.addItem(randomItem)
+        menu.addItem(.separator())
+        let fullscreenItem = NSMenuItem(
+            title: isFullscreen ? "Exit Fullscreen" : "Fullscreen",
+            action: toggleFullscreen,
+            keyEquivalent: "f"
+        )
+        fullscreenItem.target = target
+        fullscreenItem.state = isFullscreen ? .on : .off
+        menu.addItem(fullscreenItem)
         menu.addItem(.separator())
         let closeItem = NSMenuItem(title: "Close", action: close, keyEquivalent: "")
         closeItem.target = target

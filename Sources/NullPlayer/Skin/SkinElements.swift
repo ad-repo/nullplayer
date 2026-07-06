@@ -889,6 +889,20 @@ struct SkinElements {
         }
     }
 
+    struct PeppyMeterWindow {
+        /// Window size matches center-stack width, with double the normal stack height.
+        static let windowSize = NSSize(
+            width: SpectrumWindow.windowSize.width,
+            height: SpectrumWindow.windowSize.height * 2
+        )
+
+        /// Minimum window size.
+        static let minSize = NSSize(
+            width: SpectrumWindow.minSize.width,
+            height: SpectrumWindow.minSize.height * 2
+        )
+    }
+
     struct WaveformWindow {
         /// Window size matches main window dimensions for center-stack docking.
         static let windowSize = NSSize(width: 275 * Skin.scaleFactor, height: 116 * Skin.scaleFactor)
