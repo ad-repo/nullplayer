@@ -189,6 +189,10 @@ class AudioEngine {
     /// Background queue for non-critical local/NAS file I/O (normalization analysis, gapless pre-open).
     private let deferredIOQueue = DispatchQueue(label: "NullPlayer.AudioEngine.deferredIO", qos: .userInitiated)
 
+    /// Keep a real reserve on the temp volume when staging NAS files locally.
+    private static let minimumTemporaryCopyFreeSpaceReserveBytes: Int64 = 1 * 1024 * 1024 * 1024
+    private static let temporaryPlaybackCopyPrefix = "nullplayer-"
+
     /// Token used to invalidate stale in-flight normalization analyses.
     private var normalizationAnalysisToken: UInt64 = 0
 
@@ -678,6 +682,8 @@ class AudioEngine {
            let mode = SpectrumNormalizationMode(rawValue: saved) {
             spectrumNormalizationMode = mode
         }
+
+        cleanupStaleTemporaryPlaybackCopies()
         
         // Observe audio device configuration changes FIRST
         // This handles format mismatches when output device changes
@@ -723,6 +729,8 @@ class AudioEngine {
         timeUpdateTimer?.invalidate()
         mixerNode.removeTap(onBus: 0)  // Changed from playerNode - tap is now on mixerNode
         engine.stop()
+        if let tmp = tempPlaybackFileURL { try? FileManager.default.removeItem(at: tmp) }
+        if let tmp = tempGaplessFileURL { try? FileManager.default.removeItem(at: tmp) }
         // FFT setup is automatically released when set to nil
         fftSetup = nil
     }
@@ -4106,44 +4114,18 @@ class AudioEngine {
         deferredIOQueue.async { [weak self] in
             guard let self else { return }
 
+            var tempURL: URL? = nil
             do {
                 // For network-mounted volumes, copy the file to a local temp path before
                 // scheduling. AVAudioPlayerNode.scheduleFile reads from disk continuously
                 // via an internal pre-fetch thread — any NAS latency spike drains its ring
                 // buffer and produces an audible dropout. Playing from a local copy avoids
                 // all NAS I/O on the audio render path.
-                var tempURL: URL? = nil
-                let playbackURL: URL
-                let isLocalVolume = (try? track.url.resourceValues(
-                    forKeys: [.volumeIsLocalKey]
-                ))?.volumeIsLocal ?? true
-
-                if !isLocalVolume {
-                    let fileSize = (try? track.url.resourceValues(
-                        forKeys: [.fileSizeKey]
-                    ))?.fileSize ?? 0
-                    // Skip copy for very large files (>300 MB) to avoid excessive startup delay.
-                    if fileSize <= 300 * 1024 * 1024 {
-                        let ext = track.url.pathExtension
-                        let candidate = URL(fileURLWithPath: NSTemporaryDirectory())
-                            .appendingPathComponent("nullplayer-\(UUID().uuidString).\(ext)")
-                        let copyStart = CFAbsoluteTimeGetCurrent()
-                        try FileManager.default.copyItem(at: track.url, to: candidate)
-                        NSLog(
-                            "loadLocalTrackForImmediatePlayback: Copied NAS '%@' to temp in %.3fs",
-                            track.url.lastPathComponent,
-                            CFAbsoluteTimeGetCurrent() - copyStart
-                        )
-                        tempURL = candidate
-                    } else {
-                        NSLog(
-                            "loadLocalTrackForImmediatePlayback: Skipping NAS copy for large file '%@' (%lld MB)",
-                            track.url.lastPathComponent,
-                            Int64(fileSize) / (1024 * 1024)
-                        )
-                    }
-                }
-                playbackURL = tempURL ?? track.url
+                tempURL = self.temporaryLocalPlaybackCopyIfNeeded(
+                    for: track.url,
+                    logPrefix: "loadLocalTrackForImmediatePlayback"
+                )
+                let playbackURL = tempURL ?? track.url
 
                 let newAudioFile = try AVAudioFile(forReading: playbackURL)
                 let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
@@ -4173,6 +4155,7 @@ class AudioEngine {
                     self.play()
                 }
             } catch {
+                if let tmp = tempURL { try? FileManager.default.removeItem(at: tmp) }
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     guard self.deferredLocalTrackLoadToken == token else { return }
@@ -4266,6 +4249,112 @@ class AudioEngine {
         // Clear any pre-scheduled gapless track (we're loading a new track explicitly).
         nextScheduledFile = nil
         nextScheduledTrackIndex = -1
+    }
+
+    private func temporaryLocalPlaybackCopyIfNeeded(
+        for sourceURL: URL,
+        logPrefix: String,
+        displayName: String? = nil
+    ) -> URL? {
+        let fileManager = FileManager.default
+        let name = displayName ?? sourceURL.lastPathComponent
+        let isLocalVolume = (try? sourceURL.resourceValues(
+            forKeys: [.volumeIsLocalKey]
+        ))?.volumeIsLocal ?? true
+
+        guard !isLocalVolume else { return nil }
+
+        let fileSize = Int64((try? sourceURL.resourceValues(
+            forKeys: [.fileSizeKey]
+        ))?.fileSize ?? 0)
+        let tempDirectory = fileManager.temporaryDirectory
+
+        if fileSize > 0,
+           let available = temporaryDirectoryAvailableCapacity(for: tempDirectory) {
+            let required = fileSize + Self.minimumTemporaryCopyFreeSpaceReserveBytes
+            guard available >= required else {
+                NSLog(
+                    "%@: Skipping NAS temp copy for '%@' (%lld MB); temp volume has %lld MB free",
+                    logPrefix,
+                    name,
+                    fileSize / (1024 * 1024),
+                    available / (1024 * 1024)
+                )
+                return nil
+            }
+        }
+
+        let ext = sourceURL.pathExtension
+        let filename = Self.temporaryPlaybackCopyPrefix + UUID().uuidString + (ext.isEmpty ? "" : ".\(ext)")
+        let candidate = tempDirectory.appendingPathComponent(filename)
+        let copyStart = CFAbsoluteTimeGetCurrent()
+
+        do {
+            try fileManager.copyItem(at: sourceURL, to: candidate)
+            NSLog(
+                "%@: Copied NAS '%@' to temp in %.3fs",
+                logPrefix,
+                name,
+                CFAbsoluteTimeGetCurrent() - copyStart
+            )
+            return candidate
+        } catch {
+            try? fileManager.removeItem(at: candidate)
+            NSLog(
+                "%@: NAS temp copy failed for '%@': %@; falling back to original file",
+                logPrefix,
+                name,
+                error.localizedDescription
+            )
+            return nil
+        }
+    }
+
+    private func cleanupStaleTemporaryPlaybackCopies() {
+        let fileManager = FileManager.default
+        let tempDirectory = fileManager.temporaryDirectory
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: tempDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        var removedCount = 0
+        for url in entries where url.lastPathComponent.hasPrefix(Self.temporaryPlaybackCopyPrefix) {
+            let isRegularFile = (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? false
+            guard isRegularFile else { continue }
+
+            do {
+                try fileManager.removeItem(at: url)
+                removedCount += 1
+            } catch {
+                NSLog(
+                    "AudioEngine: Failed to remove stale temp playback copy '%@': %@",
+                    url.lastPathComponent,
+                    error.localizedDescription
+                )
+            }
+        }
+
+        if removedCount > 0 {
+            NSLog("AudioEngine: Removed %d stale temp playback copy file(s)", removedCount)
+        }
+    }
+
+    private func temporaryDirectoryAvailableCapacity(for url: URL) -> Int64? {
+        if let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+           let capacity = values.volumeAvailableCapacityForImportantUsage {
+            return capacity
+        }
+
+        if let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityKey]),
+           let capacity = values.volumeAvailableCapacity {
+            return Int64(capacity)
+        }
+
+        return nil
     }
 
     private func commitLoadedLocalTrack(_ newAudioFile: AVAudioFile, track: Track, generation: Int, reuseExistingFile: Bool = false) {
@@ -4847,28 +4936,15 @@ class AudioEngine {
             deferredIOQueue.async { [weak self] in
                 guard let self else { return }
                 let openStart = CFAbsoluteTimeGetCurrent()
+                var gaplessTempURL: URL? = nil
                 do {
                     // Apply the same NAS copy logic as the primary load path so that
                     // gapless track boundaries are also free of render-thread NAS reads.
-                    var gaplessTempURL: URL? = nil
-                    let isLocalVolume = (try? nextTrackURL.resourceValues(
-                        forKeys: [.volumeIsLocalKey]
-                    ))?.volumeIsLocal ?? true
-
-                    if !isLocalVolume {
-                        let fileSize = (try? nextTrackURL.resourceValues(
-                            forKeys: [.fileSizeKey]
-                        ))?.fileSize ?? 0
-                        if fileSize <= 300 * 1024 * 1024 {
-                            let ext = nextTrackURL.pathExtension
-                            let candidate = URL(fileURLWithPath: NSTemporaryDirectory())
-                                .appendingPathComponent("nullplayer-\(UUID().uuidString).\(ext)")
-                            try FileManager.default.copyItem(at: nextTrackURL, to: candidate)
-                            NSLog("Gapless: Copied NAS '%@' to temp in %.3fs",
-                                  nextTrackTitle, CFAbsoluteTimeGetCurrent() - openStart)
-                            gaplessTempURL = candidate
-                        }
-                    }
+                    gaplessTempURL = self.temporaryLocalPlaybackCopyIfNeeded(
+                        for: nextTrackURL,
+                        logPrefix: "Gapless",
+                        displayName: nextTrackTitle
+                    )
 
                     let playbackURL = gaplessTempURL ?? nextTrackURL
                     let nextFile = try AVAudioFile(forReading: playbackURL)
@@ -4901,6 +4977,7 @@ class AudioEngine {
                         NSLog("Gapless: Pre-scheduled next track: %@", nextTrackTitle)
                     }
                 } catch {
+                    if let tmp = gaplessTempURL { try? FileManager.default.removeItem(at: tmp) }
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
                         guard self.gaplessPreparationToken == token else { return }
