@@ -8,6 +8,7 @@
 
 ### Bug Fixes
 
+- **Large NAS-hosted local files seek smoothly** — local tracks on network-mounted volumes are now staged to a temp file based on available disk space instead of a hard 300 MB cap, so very large files avoid SMB/NFS reads during playback and seeking. NullPlayer also cleans up its staged playback temp files on launch after a crash or force-quit.
 - **Docked side windows resize to the current center stack** — reopening a docked Library/browser or Visualizations window now recomputes its height from the current main/EQ/playlist/spectrum/waveform/audio-analysis/PeppyMeter stack instead of replaying a stale remembered height. Detached side windows still reopen at the exact position and size where you left them.
 
 ## 0.27.0

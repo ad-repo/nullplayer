@@ -178,6 +178,12 @@ Each async open carries a load token (`deferredLocalTrackLoadToken` or `crossfad
 - `prepareForLocalTrackLoad` / `commitLoadedLocalTrack` / `handleLocalTrackLoadFailure` — shared setup/commit/failure.
 - Cue-sheet parsing is async/cancellable (`cueLoadTask`) in `BaseWaveformView`.
 
+### NAS Playback Temp Copies
+
+For non-local file volumes, direct local playback (`loadLocalTrackForImmediatePlayback`) and gapless pre-scheduling (`scheduleNextTrackForGapless`) stage the audio file into the system temp directory before scheduling it. This avoids `AVAudioPlayerNode` render/pre-fetch reads going back to SMB/NFS during playback or seek. The copy policy is disk-space based, not file-size capped: copy when the temp volume can hold the file while keeping a 1 GiB reserve; otherwise fall back to opening the original NAS path. Temp copies use the `nullplayer-playbackcopy-` filename prefix (kept distinct from other subsystems' `nullplayer-*` temp files so the launch sweep only removes playback copies), are removed on track replacement/teardown, and are cleaned on `AudioEngine` launch to recover files left behind by crashes or force-quits.
+
+> ⚠️ **Tradeoff — large files delay playback start.** There is no upper size cap: as long as the temp volume has room (file size + 1 GiB reserve), the *entire* file is copied on `deferredIOQueue` before its `AVAudioFile` opens, so the track does not begin until the copy finishes. On a large file over slow SMB/NFS this can be a multi-second-to-minute delay before first sound (and before a seek target is playable). The payoff is glitch-free playback and seeking afterward. When the temp volume lacks room, playback instead falls back to reading directly from the NAS path — fast start, but subject to render-thread NAS-latency dropouts.
+
 ## Critical Gotchas
 
 ### Never call `normalizedPath(for:)` in a loop over library items
