@@ -121,7 +121,9 @@ final class ModernPeppyMeterWindowController: NSWindowController, PeppyMeterWind
         meterView.setFullscreen(true)
         isCustomFullscreen = true
         window.level = .screenSaver
-        window.setFrame(screen.frame, display: true, animate: true)
+        WindowManager.shared.withProgrammaticWindowFrameChange(animationDuration: 0.45) {
+            window.setFrame(screen.frame, display: true, animate: true)
+        }
         NSCursor.setHiddenUntilMouseMoves(true)
         NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
         NSLog("ModernPeppyMeterWindowController: Entered custom fullscreen")
@@ -134,7 +136,9 @@ final class ModernPeppyMeterWindowController: NSWindowController, PeppyMeterWind
         NSApp.presentationOptions = []
         meterView.setFullscreen(false)
         if let frame = preFullscreenFrame {
-            window.setFrame(frame, display: true, animate: true)
+            WindowManager.shared.withProgrammaticWindowFrameChange(animationDuration: 0.45) {
+                window.setFrame(frame, display: true, animate: true)
+            }
         }
         preFullscreenFrame = nil
         NSLog("ModernPeppyMeterWindowController: Exited custom fullscreen")

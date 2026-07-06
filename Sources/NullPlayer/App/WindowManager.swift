@@ -538,6 +538,7 @@ class WindowManager {
     
     /// Flag to prevent feedback loop when snapping windows
     private var isSnappingWindow = false
+    private var programmaticFrameChangeToken = 0
 
     /// Guard against re-entrant classic stack tightening while applying repaired frames.
     private var isTighteningClassicCenterStack = false
@@ -3974,6 +3975,26 @@ class WindowManager {
         isSnappingWindow = true
         defer { isSnappingWindow = previousSnappingState }
         window.setFrameOrigin(position)
+    }
+
+    /// Run a programmatic frame mutation without letting windowDidMove feed back into
+    /// docking/drag state. Animated fullscreen transitions emit move callbacks during
+    /// the animation; those are not user drags.
+    func withProgrammaticWindowFrameChange(animationDuration: TimeInterval = 0, _ work: () -> Void) {
+        let previousSnappingState = isSnappingWindow
+        programmaticFrameChangeToken += 1
+        let token = programmaticFrameChangeToken
+        isSnappingWindow = true
+        work()
+        guard animationDuration > 0 else {
+            isSnappingWindow = previousSnappingState
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) { [weak self] in
+            guard let self, self.programmaticFrameChangeToken == token else { return }
+            self.isSnappingWindow = previousSnappingState
+        }
     }
     
     /// Called when a window is being dragged - handle snapping and move docked windows
