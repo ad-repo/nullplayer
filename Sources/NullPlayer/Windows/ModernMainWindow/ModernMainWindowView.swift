@@ -1642,12 +1642,6 @@ class ModernMainWindowView: NSView {
         case "btn_audioanalysis":
             WindowManager.shared.toggleAudioAnalysis()
 
-        case "btn_shuffle":
-            audioEngine.shuffleEnabled.toggle()
-            
-        case "btn_repeat":
-            audioEngine.repeatEnabled.toggle()
-            
         case "btn_eq":
             WindowManager.shared.toggleEqualizer()
             

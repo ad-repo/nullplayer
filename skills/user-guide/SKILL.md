@@ -128,7 +128,7 @@ Previous, Play, Pause, Stop, Next
 - **EQ**: Show/hide Equalizer
 - **PL**: Show/hide Playlist
 
-Modern UI adds: **HT** (Hide Title Bars), **CP** (Compact Mode), **VZ** (Visualizations), **FL** (Flow), **PM** (PeppyMeter), **SP** (Spectrum), **WV** (Waveform), **LB** (Library)
+Modern UI adds: **HT** (Hide Title Bars), **CP** (Compact Mode), **VZ** (Visualizations), **FL** (Flow), **PM** (PeppyMeter), **SP** (Spectrum), **AA** (Audio Analysis), **WV** (Waveform), **LB** (Library)
 
 ## Media Sources
 

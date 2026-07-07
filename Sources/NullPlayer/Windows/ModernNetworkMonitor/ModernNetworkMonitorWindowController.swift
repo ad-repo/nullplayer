@@ -147,7 +147,10 @@ extension ModernNetworkMonitorWindowController: NSWindowDelegate {
         if let window {
             WindowManager.shared.handleCenterStackWindowWillClose(window)
         }
-        tearDownMonitoring()
+        // The controller/window is reused (isReleasedWhenClosed == false), so only stop
+        // monitoring here — keep the occlusion/miniaturize observers installed so visibility
+        // sync still works after the window is reopened. Observers are torn down in deinit.
+        stopMonitoringForHide()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }
 }

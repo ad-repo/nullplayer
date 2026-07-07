@@ -58,7 +58,10 @@ final class PeppyMeterView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
         let contentRect = contentAreaRect()
-        if !isFullscreen && contentRect.insetBy(dx: -1, dy: -1).contains(dirtyRect) {
+        // Fast path: a content-only redraw (driven by requestMeterRedraw) repaints just the
+        // meter and returns before the isHighlighted tint below. Skip it while highlighted so
+        // the connected-window tint isn't wiped out of the content area on every VU tick.
+        if !isFullscreen && !isHighlighted && contentRect.insetBy(dx: -1, dy: -1).contains(dirtyRect) {
             if let presenter {
                 drawMeterContent(in: contentRect, presenter: presenter, context: context)
             }
