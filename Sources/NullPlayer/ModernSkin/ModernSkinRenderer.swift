@@ -1118,6 +1118,8 @@ class ModernSkinRenderer {
                              id == "btn_library" ||
                              id == "btn_compact" ||
                              id == "btn_projectm" ||
+                             id == "btn_networkmonitor" ||
+                             id == "btn_peppymeter" ||
                              id == "btn_spectrum" ||
                              id == "btn_waveform" ||
                              id == "btn_audioanalysis")

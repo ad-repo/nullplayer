@@ -1561,6 +1561,16 @@ class SkinRenderer {
                                    pressedButton: pressedButton, controlScale: controlScale,
                                    title: title)
     }
+
+    /// Draw spectrum analyzer chrome without filling the content area.
+    /// Use this when an animated child surface must be painted first and the border/title must stay on top.
+    func drawSpectrumAnalyzerWindowChromeOverlay(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                                 pressedButton: ProjectMButtonType?,
+                                                 controlScale: CGFloat = 1.0, title: String? = nil) {
+        drawSpectrumAnalyzerChrome(in: context, bounds: bounds, isActive: isActive,
+                                   pressedButton: pressedButton, controlScale: controlScale,
+                                   title: title)
+    }
     
     /// Draw normal mode spectrum analyzer window chrome
     private func drawSpectrumAnalyzerNormal(in context: CGContext, bounds: NSRect, isActive: Bool,
@@ -1570,6 +1580,14 @@ class SkinRenderer {
         NSColor.black.setFill()
         context.fill(bounds)
 
+        drawSpectrumAnalyzerChrome(in: context, bounds: bounds, isActive: isActive,
+                                   pressedButton: pressedButton, controlScale: controlScale,
+                                   title: title)
+    }
+
+    private func drawSpectrumAnalyzerChrome(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                            pressedButton: ProjectMButtonType?, controlScale: CGFloat,
+                                            title: String?) {
         let titleHeight = SkinElements.Playlist.titleHeight  // 20px like playlist
         let bottomHeight = 7 * Skin.scaleFactor
 

@@ -538,3 +538,39 @@ This section documents the repeatable pattern for creating modern-skinned versio
 - **Double size changes**: Observe `.doubleSizeDidChange` notification and call `skinDidChange()` to recreate the renderer with the updated scale factor
 - **Scale factor**: Use `ModernSkinElements.scaleFactor` for all geometry. This is a computed property: `baseScaleFactor * sizeMultiplier`. Do NOT cache in a `let` -- use a computed `var` or reference `ModernSkinElements.scaleFactor` directly
 - **Coordinates**: Standard macOS bottom-left origin (no flipping needed, unlike classic skin system)
+- **Dockable borders**: Dockable sub-windows must use `ModernSkinElements.auxiliaryWindowBorderWidth` for their outer chrome/content inset. Do not add per-window Metal border constants; Metal intentionally uses the smallest shared border width.
+- **Joined Metal edges**: If a dockable window draws its own animated/content rect directly (rather than hosting a child view that naturally fills the content area), pass that rect through `expandingThroughMetalJoinedEdges(in:borderWidth:adjacentEdges:)` before drawing. This removes the leftover Metal background strip on edges where `drawWindowBorder` has already suppressed the shared border.
+- **Extra content padding**: Avoid Metal-only outer padding on dockable windows. If normal Modern needs breathing room, make the padding conditional so Metal uses the standard thin border only.
+
+### Metal Dockable Window Checklist
+
+Metal skins share the Modern window classes, but the chrome is visually thinner. When creating or changing any dockable Metal-capable window:
+
+1. Use `ModernSkinElements.auxiliaryWindowBorderWidth` for the view's `borderWidth`.
+2. Draw chrome with `drawWindowBackground(... adjacentEdges:sharpCorners:)` and `drawWindowBorder(... occlusionSegments:)`.
+3. Subscribe to `.windowLayoutDidChange` and refresh `adjacentEdges`, `sharpCorners`, and `edgeOcclusionSegments` from `WindowManager`.
+4. Do not add permanent extra outer padding around content in Metal mode.
+5. If the window draws content itself, expand the content rect through joined Metal edges before filling/drawing it.
+6. If the window hosts a child content view, keep the child view's frame aligned to the same standardized content rect.
+
+Self-drawn content should follow this shape:
+
+```swift
+private var borderWidth: CGFloat { ModernSkinElements.auxiliaryWindowBorderWidth }
+
+private func contentAreaRect() -> NSRect {
+    let rect = NSRect(
+        x: borderWidth,
+        y: borderWidth,
+        width: max(0, bounds.width - borderWidth * 2),
+        height: max(0, bounds.height - titleBarHeight - borderWidth)
+    )
+    return rect.expandingThroughMetalJoinedEdges(
+        in: bounds,
+        borderWidth: borderWidth,
+        adjacentEdges: adjacentEdges
+    )
+}
+```
+
+This is required for windows like Flow and PeppyMeter: their animated content fills a rect directly, so a joined edge would otherwise show a leftover strip of Metal background after the shared border stroke is suppressed.

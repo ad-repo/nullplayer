@@ -890,17 +890,30 @@ struct SkinElements {
     }
 
     struct PeppyMeterWindow {
-        /// Window size matches center-stack width, with double the normal stack height.
-        static let windowSize = NSSize(
-            width: SpectrumWindow.windowSize.width,
-            height: SpectrumWindow.windowSize.height * 2
-        )
+        /// Window size matches center-stack width, with a landscape-friendly height for meter art.
+        static let heightMultiplier: CGFloat = 1.75
+        static let contentPadding: CGFloat = 2 * Skin.scaleFactor
+        static var windowHeight: CGFloat {
+            (SpectrumWindow.windowSize.height * heightMultiplier).rounded()
+        }
+        static var minHeight: CGFloat {
+            (SpectrumWindow.minSize.height * heightMultiplier).rounded()
+        }
+
+        static var windowSize: NSSize {
+            NSSize(
+                width: SpectrumWindow.windowSize.width,
+                height: windowHeight
+            )
+        }
 
         /// Minimum window size.
-        static let minSize = NSSize(
-            width: SpectrumWindow.minSize.width,
-            height: SpectrumWindow.minSize.height * 2
-        )
+        static var minSize: NSSize {
+            NSSize(
+                width: SpectrumWindow.minSize.width,
+                height: minHeight
+            )
+        }
     }
 
     struct WaveformWindow {

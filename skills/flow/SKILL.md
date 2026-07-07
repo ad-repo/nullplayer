@@ -31,7 +31,7 @@ Flow is a dockable network throughput meter available in classic and modern UI.
 
 - Flow participates in the center window stack managed by `WindowManager`.
 - It is a single-height stack window, matching the Spectrum/Waveform baseline height.
-- PeppyMeter remains the double-height stack window; do not reuse PeppyMeter sizing for Flow.
+- PeppyMeter uses a taller `1.75x` landscape stack height; do not reuse PeppyMeter sizing for Flow.
 - Classic uses `SkinElements.SpectrumWindow.windowSize` / `minSize`.
 - Modern uses `ModernSkinElements.spectrumWindowSize` / `spectrumMinSize`.
 - Restored Flow frames are normalized to the current single-height stack height so older double-height saved frames collapse to the current layout.
@@ -55,6 +55,7 @@ Flow is a dockable network throughput meter available in classic and modern UI.
 - `NetworkMonitorDrawing.drawContent` advances both directions every frame, but draws only the selected direction.
 - Flow intentionally does not draw an inner rounded panel border. The outer window chrome is the only border.
 - Classic Flow uses tighter content insets than modern so the meter fills the classic skin interior.
+- Modern Flow keeps extra breathing room, but Metal Flow removes that outer content padding and expands through joined edges so its interior edge matches the thinner Metal border used by the other dockable windows.
 - Tiny mode renders a compact single-line rate for the selected direction.
 
 ## Monitoring Lifecycle

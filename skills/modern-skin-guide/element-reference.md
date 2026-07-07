@@ -92,10 +92,10 @@ dynamically spaced from x=93 through x=269 at y=42.
 
 | Order | Element ID | Label | Description |
 |------:|------------|-------|-------------|
-| 1 | `btn_shuffle` | SH | Shuffle toggle |
-| 2 | `btn_repeat` | RP | Repeat toggle |
-| 3 | `btn_compact` | CP | Compact Mode toggle (active-state highlight forced on click) |
-| 4 | `btn_projectm` | VZ | Visualizer window toggle |
+| 1 | `btn_compact` | CP | Compact Mode toggle (active-state highlight forced on click) |
+| 2 | `btn_projectm` | VZ | Visualizations window toggle |
+| 3 | `btn_networkmonitor` | FL | Flow window toggle |
+| 4 | `btn_peppymeter` | PM | PeppyMeter window toggle |
 | 5 | `btn_eq` | EQ | Equalizer window toggle |
 | 6 | `btn_playlist` | PL | Playlist window toggle |
 | 7 | `btn_spectrum` | SP | Spectrum Analyzer window toggle |
