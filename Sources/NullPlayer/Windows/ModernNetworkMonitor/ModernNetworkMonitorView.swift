@@ -16,6 +16,7 @@ final class ModernNetworkMonitorView: NSView {
     private var windowDragStartPoint: NSPoint = .zero
     private let renderState = NetworkMonitorRenderState()
     private var animationTimer: Timer?
+    private var direction = NetworkMonitorDirection.load()
 
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
     private var borderWidth: CGFloat { ModernSkinElements.spectrumBorderWidth }
@@ -93,6 +94,7 @@ final class ModernNetworkMonitorView: NSView {
         NetworkMonitorDrawing.drawContent(
             in: contentAreaRect(),
             snapshot: snapshot,
+            direction: direction,
             isModern: true,
             renderState: renderState
         )
@@ -204,6 +206,10 @@ final class ModernNetworkMonitorView: NSView {
             needsDisplay = true
             return
         }
+        if event.clickCount == 2 {
+            toggleDirection()
+            return
+        }
         if hitTestTitleBar(at: point) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
@@ -254,10 +260,24 @@ final class ModernNetworkMonitorView: NSView {
         cycleItem.isEnabled = interfaces.count > 1
         menu.addItem(cycleItem)
         menu.addItem(.separator())
+        let toggleItem = NSMenuItem(title: direction.toggleMenuTitle, action: #selector(toggleDirection(_:)), keyEquivalent: "")
+        toggleItem.target = self
+        menu.addItem(toggleItem)
+        menu.addItem(.separator())
         let closeItem = NSMenuItem(title: "Close", action: #selector(closeWindow(_:)), keyEquivalent: "")
         closeItem.target = self
         menu.addItem(closeItem)
         return menu
+    }
+
+    private func toggleDirection() {
+        direction = direction.toggled
+        direction.save()
+        needsDisplay = true
+    }
+
+    @objc private func toggleDirection(_ sender: Any?) {
+        toggleDirection()
     }
 
     @objc private func cycleInterface(_ sender: Any?) {

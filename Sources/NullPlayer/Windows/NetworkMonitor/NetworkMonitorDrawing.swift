@@ -1,5 +1,38 @@
 import AppKit
 
+enum NetworkMonitorDirection: String {
+    private static let defaultsKey = "NetworkMonitorDisplayDirection"
+
+    case download
+    case upload
+
+    static func load() -> NetworkMonitorDirection {
+        guard let rawValue = UserDefaults.standard.string(forKey: defaultsKey),
+              let direction = NetworkMonitorDirection(rawValue: rawValue) else {
+            return .download
+        }
+        return direction
+    }
+
+    func save() {
+        UserDefaults.standard.set(rawValue, forKey: Self.defaultsKey)
+    }
+
+    var toggled: NetworkMonitorDirection {
+        switch self {
+        case .download: return .upload
+        case .upload: return .download
+        }
+    }
+
+    var toggleMenuTitle: String {
+        switch self {
+        case .download: return "Show Upload View"
+        case .upload: return "Show Download View"
+        }
+    }
+}
+
 final class NetworkMonitorRenderState {
     var displayDownBytesPerSecond: Double = 0
     var displayUpBytesPerSecond: Double = 0
@@ -59,6 +92,7 @@ enum NetworkMonitorDrawing {
     static func drawContent(
         in rect: NSRect,
         snapshot: NetworkThroughputSnapshot?,
+        direction: NetworkMonitorDirection,
         isModern: Bool,
         renderState: NetworkMonitorRenderState
     ) {
@@ -74,7 +108,7 @@ enum NetworkMonitorDrawing {
 
         let mode = mode(for: rect)
         if mode == .tiny {
-            drawTiny(in: rect, snapshot: snapshot, renderState: renderState, palette: palette)
+            drawTiny(in: rect, direction: direction, renderState: renderState, palette: palette)
             return
         }
 
@@ -84,41 +118,43 @@ enum NetworkMonitorDrawing {
         NSBezierPath(rect: rect).setClip()
         defer { NSGraphicsContext.restoreGraphicsState() }
 
-        let content = rect.insetBy(dx: 5, dy: 4)
-        let cursorY = content.maxY
-
-        let gap: CGFloat = 3
-        let availablePanelHeight = max(30, cursorY - content.minY)
-        let panelHeight = floor((availablePanelHeight - gap) / 2)
-        let uploadRect = NSRect(x: content.minX, y: content.minY, width: content.width, height: panelHeight)
-        let downloadRect = NSRect(x: content.minX, y: uploadRect.maxY + gap, width: content.width, height: panelHeight)
-
-        drawPanel(
-            title: "download",
-            arrow: "↓",
-            value: renderState.displayDownBytesPerSecond,
-            peak: snapshot?.sessionPeakDownBytesPerSecond ?? 0,
-            samples: snapshot?.downloadHistory ?? [],
-            rollingMax: snapshot?.rollingMaxDownBytesPerSecond ?? 1,
-            graphPhase: graphPhase,
-            rect: downloadRect,
-            isDownload: true,
-            compact: mode == .mini,
-            palette: palette
-        )
-        drawPanel(
-            title: "upload",
-            arrow: "↑",
-            value: renderState.displayUpBytesPerSecond,
-            peak: snapshot?.sessionPeakUpBytesPerSecond ?? 0,
-            samples: snapshot?.uploadHistory ?? [],
-            rollingMax: snapshot?.rollingMaxUpBytesPerSecond ?? 1,
-            graphPhase: graphPhase,
-            rect: uploadRect,
-            isDownload: false,
-            compact: mode == .mini,
-            palette: palette
-        )
+        let panelInsetX: CGFloat = isModern ? 5 : 2
+        let panelInsetY: CGFloat = isModern ? 4 : 0
+        let contentInsetY: CGFloat = isModern ? 4 : 1
+        let content = rect.insetBy(dx: panelInsetX, dy: panelInsetY)
+        let panelRect = NSRect(x: content.minX, y: content.minY, width: content.width, height: max(30, content.height))
+        switch direction {
+        case .download:
+            drawPanel(
+                title: "download",
+                arrow: "↓",
+                value: renderState.displayDownBytesPerSecond,
+                peak: snapshot?.sessionPeakDownBytesPerSecond ?? 0,
+                samples: snapshot?.downloadHistory ?? [],
+                rollingMax: snapshot?.rollingMaxDownBytesPerSecond ?? 1,
+                graphPhase: graphPhase,
+                rect: panelRect,
+                isDownload: true,
+                compact: mode == .mini,
+                contentInsetY: contentInsetY,
+                palette: palette
+            )
+        case .upload:
+            drawPanel(
+                title: "upload",
+                arrow: "↑",
+                value: renderState.displayUpBytesPerSecond,
+                peak: snapshot?.sessionPeakUpBytesPerSecond ?? 0,
+                samples: snapshot?.uploadHistory ?? [],
+                rollingMax: snapshot?.rollingMaxUpBytesPerSecond ?? 1,
+                graphPhase: graphPhase,
+                rect: panelRect,
+                isDownload: false,
+                compact: mode == .mini,
+                contentInsetY: contentInsetY,
+                palette: palette
+            )
+        }
 
     }
 
@@ -131,13 +167,17 @@ enum NetworkMonitorDrawing {
 
     private static func drawTiny(
         in rect: NSRect,
-        snapshot: NetworkThroughputSnapshot?,
+        direction: NetworkMonitorDirection,
         renderState: NetworkMonitorRenderState,
         palette: Palette
     ) {
-        let down = NetworkThroughputFormatting.bytesPerSecond(renderState.displayDownBytesPerSecond)
-        let up = NetworkThroughputFormatting.bytesPerSecond(renderState.displayUpBytesPerSecond)
-        let line = "↓ \(down)   ↑ \(up)"
+        let line: String
+        switch direction {
+        case .download:
+            line = "↓ \(NetworkThroughputFormatting.bytesPerSecond(renderState.displayDownBytesPerSecond))"
+        case .upload:
+            line = "↑ \(NetworkThroughputFormatting.bytesPerSecond(renderState.displayUpBytesPerSecond))"
+        }
         let attrs: [NSAttributedString.Key: Any] = [
             .font: monoDigitFont(ofSize: 11, weight: .semibold),
             .foregroundColor: palette.textBright
@@ -157,6 +197,7 @@ enum NetworkMonitorDrawing {
         rect: NSRect,
         isDownload: Bool,
         compact: Bool,
+        contentInsetY: CGFloat,
         palette: Palette
     ) {
         guard rect.width > 30, rect.height > 18 else { return }
@@ -165,24 +206,13 @@ enum NetworkMonitorDrawing {
         let base = isDownload ? palette.downloadLow : palette.uploadLow
         let hot = isDownload ? palette.downloadHigh : palette.uploadHigh
         let strokeColor = colorBetween(base, hot, ratio)
-        let fillColor = NSColor(calibratedRed: 0.035, green: 0.043, blue: 0.060, alpha: 0.95)
-
-        fillColor.setFill()
-        let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
-        path.fill()
-        // Constant stroke width and brightness so the border stays steady instead of
-        // flashing every time a new session peak is reached.
-        strokeColor.withAlphaComponent(0.82).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-
-        // Clip inner content to the panel so the value/peak text and waveform can't
-        // spill over the rounded border into the adjacent panel at small window sizes.
+        // Clip inner content to the flow content area so text and waveform stay inside
+        // the outer window chrome without drawing a second inner panel border.
         NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(roundedRect: rect.insetBy(dx: 1.5, dy: 1.5), xRadius: 6, yRadius: 6).setClip()
+        NSBezierPath(rect: rect).setClip()
         defer { NSGraphicsContext.restoreGraphicsState() }
 
-        let inner = rect.insetBy(dx: 8, dy: 5)
+        let inner = rect.insetBy(dx: 6, dy: contentInsetY)
         drawText(
             title,
             at: NSPoint(x: inner.minX, y: inner.maxY - 9),

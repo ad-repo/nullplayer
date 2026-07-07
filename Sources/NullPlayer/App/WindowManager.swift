@@ -3580,10 +3580,10 @@ class WindowManager {
     }
 
     /// Height multiplier for a center-stack window's default/minimum height.
-    /// PeppyMeter and Network Monitor use double-height center-stack windows; everything else is single height.
+    /// PeppyMeter uses a double-height center-stack window; everything else is single height.
     private func centerStackHeightMultiplier(for kind: CenterStackWindowKind) -> CGFloat {
         switch kind {
-        case .peppyMeter, .networkMonitor: return 2
+        case .peppyMeter: return 2
         default: return 1
         }
     }
@@ -3621,12 +3621,16 @@ class WindowManager {
             // Matches the center-stack width; stretchable in height like spectrum/playlist.
             window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        case .peppyMeter, .networkMonitor:
+        case .peppyMeter:
             // Matches the center-stack width; stretchable above its double-height floor.
             window.minSize = NSSize(
                 width: ModernSkinElements.spectrumMinSize.width,
                 height: targetHeight * centerStackHeightMultiplier(for: kind)
             )
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        case .networkMonitor:
+            // Matches the center-stack width; stretchable above its single-height floor.
+            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
     }
@@ -3646,7 +3650,18 @@ class WindowManager {
     }
 
     private func normalizedCenterStackRestoredFrame(_ frame: NSRect, kind: CenterStackWindowKind) -> NSRect {
-        guard isRunningModernUI else { return frame }
+        guard isRunningModernUI else {
+            guard kind == .networkMonitor else { return frame }
+            var normalized = frame
+            let topY = normalized.maxY
+            if let mainWindow = mainWindowController?.window {
+                normalized.size.height = mainWindow.frame.height
+            } else {
+                normalized.size.height = SkinElements.SpectrumWindow.windowSize.height * classicScaleMultiplier
+            }
+            normalized.origin.y = topY - normalized.size.height
+            return normalized
+        }
         var normalized = frame
         if let mainWindow = mainWindowController?.window, kind != .waveform {
             normalized.origin.x = mainWindow.frame.minX
@@ -3656,12 +3671,12 @@ class WindowManager {
         let topY = normalized.maxY
         let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
         switch kind {
-        case .equalizer, .spectrum:
+        case .equalizer, .spectrum, .networkMonitor:
             normalized.size.height = target
         case .playlist, .waveform, .audioAnalysis:
             // Accept legacy compact saved frames but normalize to current full-height minimum.
             normalized.size.height = max(target, normalized.height)
-        case .peppyMeter, .networkMonitor:
+        case .peppyMeter:
             normalized.size.height = max(target * centerStackHeightMultiplier(for: kind), normalized.height)
         }
         normalized.origin.y = topY - normalized.size.height

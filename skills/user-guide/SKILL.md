@@ -24,6 +24,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
 | **Audio Analyzer** | Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay) | Context menu or Window menu |
 | **PeppyMeter** | Skinnable analog VU meter — needle/bar meters that track left/right levels; right-click to pick a meter or enable Random | Context menu or Window menu |
+| **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art (titled "Visualizations" in menus and window chrome; internally still the ProjectM window) | VZ button, Window menu, or context menu |
 
@@ -305,6 +306,13 @@ levels drive rotating **needle** meters or **bar** meters composited from bundle
 (25 meters at 480×320: `bar`, `vintage`, `blue`, `compass`, `chillout`, `big-bang`, …). Right-click to
 choose a meter or toggle **Random** (auto-switches on an interval). It consumes the shared stereo audio
 tap, so it idles when closed. See the **peppymeter** skill for internals.
+
+### Flow (Network Throughput Meter)
+Flow is a single-height dockable network throughput meter, available in classic and modern UI. It shows
+either download or upload throughput with a live history graph. Double-click the window to switch between
+download and upload views, or right-click and choose **Show Upload View** / **Show Download View**. The
+right-click menu also selects the network interface or advances to the next interface. See the **flow**
+skill for internals.
 
 ### Main Window GPU Modes
 Off, Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow, EKG. Double-click cycles visual modes; choose Off from Visuals > Spectrum Analyzer > Main Window > Mode.

@@ -7,7 +7,7 @@ final class NetworkMonitorWindowController: NSWindowController, NetworkMonitorWi
 
     convenience init() {
         let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: SkinElements.PeppyMeterWindow.windowSize),
+            contentRect: NSRect(origin: .zero, size: SkinElements.SpectrumWindow.windowSize),
             styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
@@ -28,7 +28,7 @@ final class NetworkMonitorWindowController: NSWindowController, NetworkMonitorWi
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.minSize = SkinElements.PeppyMeterWindow.minSize
+        window.minSize = SkinElements.SpectrumWindow.minSize
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         window.title = "flow"
         window.isReleasedWhenClosed = false
@@ -39,7 +39,7 @@ final class NetworkMonitorWindowController: NSWindowController, NetworkMonitorWi
     }
 
     private func setupView() {
-        monitorView = NetworkMonitorView(frame: NSRect(origin: .zero, size: SkinElements.PeppyMeterWindow.windowSize))
+        monitorView = NetworkMonitorView(frame: NSRect(origin: .zero, size: SkinElements.SpectrumWindow.windowSize))
         monitorView.controller = self
         monitorView.autoresizingMask = [.width, .height]
         monitor.onUpdate = { [weak self] snapshot in
@@ -93,10 +93,10 @@ final class NetworkMonitorWindowController: NSWindowController, NetworkMonitorWi
     func resetToDefaultFrame() {
         guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
         let scale = WindowManager.shared.classicScaleMultiplier
-        let height = SkinElements.PeppyMeterWindow.windowSize.height * scale
+        let height = SkinElements.SpectrumWindow.windowSize.height * scale
         window.minSize = NSSize(
-            width: SkinElements.PeppyMeterWindow.minSize.width * scale,
-            height: SkinElements.PeppyMeterWindow.minSize.height * scale
+            width: SkinElements.SpectrumWindow.minSize.width * scale,
+            height: SkinElements.SpectrumWindow.minSize.height * scale
         )
         window.setFrame(
             NSRect(x: mainWindow.frame.minX, y: mainWindow.frame.minY - height,

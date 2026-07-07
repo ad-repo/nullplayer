@@ -12,6 +12,7 @@ final class NetworkMonitorView: NSView {
     private var isHighlighted = false
     private let renderState = NetworkMonitorRenderState()
     private var animationTimer: Timer?
+    private var direction = NetworkMonitorDirection.load()
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
         SkinElements.SpectrumWindow.Layout.self
@@ -48,10 +49,10 @@ final class NetworkMonitorView: NSView {
     private func contentAreaRect() -> NSRect {
         let titleHeight = WindowManager.shared.hideTitleBars ? 0 : chromeLayout.titleBarHeight
         return NSRect(
-            x: chromeLayout.leftBorder + 5,
-            y: chromeLayout.bottomBorder + 5,
-            width: max(0, bounds.width - chromeLayout.leftBorder - chromeLayout.rightBorder - 10),
-            height: max(0, bounds.height - titleHeight - chromeLayout.bottomBorder - 10)
+            x: chromeLayout.leftBorder + 2,
+            y: chromeLayout.bottomBorder,
+            width: max(0, bounds.width - chromeLayout.leftBorder - chromeLayout.rightBorder - 4),
+            height: max(0, bounds.height - titleHeight - chromeLayout.bottomBorder)
         )
     }
 
@@ -79,6 +80,7 @@ final class NetworkMonitorView: NSView {
         NetworkMonitorDrawing.drawContent(
             in: contentAreaRect(),
             snapshot: snapshot,
+            direction: direction,
             isModern: false,
             renderState: renderState
         )
@@ -149,6 +151,8 @@ final class NetworkMonitorView: NSView {
         if hitTestCloseButton(at: point) {
             pressedButton = .close
             needsDisplay = true
+        } else if event.clickCount == 2 {
+            toggleDirection()
         } else if hitTestTitleBar(at: point) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
@@ -199,10 +203,24 @@ final class NetworkMonitorView: NSView {
         cycleItem.isEnabled = interfaces.count > 1
         menu.addItem(cycleItem)
         menu.addItem(.separator())
+        let toggleItem = NSMenuItem(title: direction.toggleMenuTitle, action: #selector(toggleDirection(_:)), keyEquivalent: "")
+        toggleItem.target = self
+        menu.addItem(toggleItem)
+        menu.addItem(.separator())
         let closeItem = NSMenuItem(title: "Close", action: #selector(closeWindow(_:)), keyEquivalent: "")
         closeItem.target = self
         menu.addItem(closeItem)
         return menu
+    }
+
+    private func toggleDirection() {
+        direction = direction.toggled
+        direction.save()
+        needsDisplay = true
+    }
+
+    @objc private func toggleDirection(_ sender: Any?) {
+        toggleDirection()
     }
 
     @objc private func cycleInterface(_ sender: Any?) {
