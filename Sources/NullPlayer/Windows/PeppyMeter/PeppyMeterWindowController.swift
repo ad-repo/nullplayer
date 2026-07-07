@@ -51,7 +51,7 @@ final class PeppyMeterWindowController: NSWindowController, PeppyMeterWindowProv
         meterView = PeppyMeterView(frame: NSRect(origin: .zero, size: SkinElements.PeppyMeterWindow.windowSize))
         meterView.controller = self
         meterView.autoresizingMask = [.width, .height]
-        presenter.onNeedsDisplay = { [weak self] in self?.meterView.needsDisplay = true }
+        presenter.onNeedsDisplay = { [weak self] in self?.meterView.requestMeterRedraw() }
         window?.contentView = meterView
     }
 
@@ -147,10 +147,10 @@ final class PeppyMeterWindowController: NSWindowController, PeppyMeterWindowProv
     func resetToDefaultFrame() {
         guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
         let scale = WindowManager.shared.classicScaleMultiplier
-        let height = SkinElements.PeppyMeterWindow.windowSize.height * scale
+        let height = (SkinElements.PeppyMeterWindow.windowSize.height * scale).rounded()
         window.minSize = NSSize(
             width: SkinElements.PeppyMeterWindow.minSize.width * scale,
-            height: SkinElements.PeppyMeterWindow.minSize.height * scale
+            height: (SkinElements.PeppyMeterWindow.minSize.height * scale).rounded()
         )
         window.setFrame(
             NSRect(x: mainWindow.frame.minX, y: mainWindow.frame.minY - height,

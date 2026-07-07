@@ -157,6 +157,48 @@ final class PeppyMeterConfigTests: XCTestCase {
         XCTAssertEqual(preferred.first, "1280x400")
     }
 
+    func testPeppyMeterDefaultHeightUsesLandscapeStackMultiplier() {
+        XCTAssertEqual(
+            SkinElements.PeppyMeterWindow.windowSize.height,
+            SkinElements.PeppyMeterWindow.windowHeight,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            ModernSkinElements.peppyMeterWindowSize.height,
+            ModernSkinElements.peppyMeterWindowHeight,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(SkinElements.PeppyMeterWindow.heightMultiplier, 1.75, accuracy: 0.001)
+        XCTAssertLessThan(SkinElements.PeppyMeterWindow.heightMultiplier, 2)
+    }
+
+    func testClassicRepairCollapsesLegacyDoubleHeightPeppyMeterFrame() {
+        let mainFrame = NSRect(x: 100, y: 500, width: 275, height: Skin.mainWindowSize.height)
+        let legacyPeppyFrame = NSRect(
+            x: mainFrame.minX,
+            y: mainFrame.minY - SkinElements.SpectrumWindow.windowSize.height * 2,
+            width: mainFrame.width,
+            height: SkinElements.SpectrumWindow.windowSize.height * 2
+        )
+
+        let repaired = AppStateManager.repairClassicCenterStackFrames(
+            mainFrame: mainFrame,
+            equalizerFrame: nil,
+            playlistFrame: nil,
+            spectrumFrame: nil,
+            waveformFrame: nil,
+            audioAnalysisFrame: nil,
+            peppyMeterFrame: legacyPeppyFrame,
+            scale: 1
+        )
+
+        let peppyFrame = try? XCTUnwrap(repaired.peppyMeterFrame)
+        guard let peppyFrame else { return }
+        XCTAssertEqual(peppyFrame.height, SkinElements.PeppyMeterWindow.windowSize.height, accuracy: 0.001)
+        XCTAssertEqual(peppyFrame.maxY, mainFrame.minY, accuracy: 0.001)
+        XCTAssertTrue(repaired.repaired)
+    }
+
     // MARK: Menu order
 
     func testContextMenuPresetsAreAlphabetical() {

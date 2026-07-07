@@ -1115,26 +1115,38 @@ class AppStateManager {
             return verticalGap <= nearDockTolerance && horizontalOverlap && leftAligned
         }
 
-        func normalizedFlushFrame(for candidate: NSRect, below anchor: NSRect, preserveWidth: Bool = false) -> NSRect {
-            NSRect(
+        func normalizedFlushFrame(
+            for candidate: NSRect,
+            below anchor: NSRect,
+            preserveWidth: Bool = false,
+            targetHeight: CGFloat? = nil
+        ) -> NSRect {
+            let height = targetHeight ?? candidate.height
+            return NSRect(
                 x: adjustedMain.minX,
-                y: anchor.minY - candidate.height,
+                y: anchor.minY - height,
                 width: preserveWidth ? candidate.width : adjustedMain.width,
-                height: candidate.height
+                height: height
             )
         }
 
         func frameChanged(_ lhs: NSRect, _ rhs: NSRect) -> Bool {
             abs(lhs.minX - rhs.minX) > widthEpsilon ||
             abs(lhs.minY - rhs.minY) > widthEpsilon ||
-            abs(lhs.width - rhs.width) > widthEpsilon
+            abs(lhs.width - rhs.width) > widthEpsilon ||
+            abs(lhs.height - rhs.height) > widthEpsilon
         }
 
-        func repairCandidate(_ candidate: NSRect?, preserveWidth: Bool = false) -> NSRect? {
+        func repairCandidate(_ candidate: NSRect?, preserveWidth: Bool = false, targetHeight: CGFloat? = nil) -> NSRect? {
             guard let candidate else { return nil }
             guard shouldRepairCandidate(candidate, below: anchorFrame) else { return candidate }
 
-            let repairedFrame = normalizedFlushFrame(for: candidate, below: anchorFrame, preserveWidth: preserveWidth)
+            let repairedFrame = normalizedFlushFrame(
+                for: candidate,
+                below: anchorFrame,
+                preserveWidth: preserveWidth,
+                targetHeight: targetHeight
+            )
             if frameChanged(candidate, repairedFrame) {
                 repaired = true
             }
@@ -1147,7 +1159,11 @@ class AppStateManager {
         let adjustedSpectrum = repairCandidate(spectrumFrame, preserveWidth: true)
         let adjustedWaveform = repairCandidate(waveformFrame, preserveWidth: true)
         let adjustedAudioAnalysis = repairCandidate(audioAnalysisFrame, preserveWidth: true)
-        let adjustedPeppyMeter = repairCandidate(peppyMeterFrame, preserveWidth: true)
+        let adjustedPeppyMeter = repairCandidate(
+            peppyMeterFrame,
+            preserveWidth: true,
+            targetHeight: (SkinElements.PeppyMeterWindow.windowSize.height * scale).rounded()
+        )
 
         return ClassicCenterStackRepairResult(
             mainFrame: adjustedMain,

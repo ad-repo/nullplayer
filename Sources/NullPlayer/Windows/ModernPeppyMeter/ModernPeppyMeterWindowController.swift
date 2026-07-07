@@ -54,7 +54,7 @@ final class ModernPeppyMeterWindowController: NSWindowController, PeppyMeterWind
         meterView = ModernPeppyMeterView(frame: NSRect(origin: .zero, size: ModernSkinElements.peppyMeterWindowSize))
         meterView.controller = self
         meterView.autoresizingMask = [.width, .height]
-        presenter.onNeedsDisplay = { [weak self] in self?.meterView.needsDisplay = true }
+        presenter.onNeedsDisplay = { [weak self] in self?.meterView.requestMeterRedraw() }
         window?.contentView = meterView
     }
 

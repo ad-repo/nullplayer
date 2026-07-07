@@ -212,14 +212,23 @@ enum ModernSkinElements {
     /// Spectrum window minimum size
     static var spectrumMinSize: NSSize { spectrumWindowSize }
 
-    /// PeppyMeter window size. Matches center-stack width, with double the normal stack height.
+    /// PeppyMeter window size. Matches center-stack width, with a landscape-friendly meter height.
+    static let peppyMeterHeightMultiplier: CGFloat = 1.75
+    static var peppyMeterContentPadding: CGFloat { 2 * scaleFactor }
+    static var peppyMeterWindowHeight: CGFloat {
+        (spectrumWindowSize.height * peppyMeterHeightMultiplier).rounded()
+    }
+    static var peppyMeterMinHeight: CGFloat {
+        (spectrumMinSize.height * peppyMeterHeightMultiplier).rounded()
+    }
+
     static var peppyMeterWindowSize: NSSize {
-        NSSize(width: spectrumWindowSize.width, height: spectrumWindowSize.height * 2)
+        NSSize(width: spectrumWindowSize.width, height: peppyMeterWindowHeight)
     }
 
     /// PeppyMeter window minimum size.
     static var peppyMeterMinSize: NSSize {
-        NSSize(width: spectrumMinSize.width, height: spectrumMinSize.height * 2)
+        NSSize(width: spectrumMinSize.width, height: peppyMeterMinHeight)
     }
 
     /// Spectrum window title bar height

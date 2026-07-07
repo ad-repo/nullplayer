@@ -72,6 +72,20 @@ centered) into the window's content rect. Ported faithfully from PeppyMeter's `c
 
 Rendering matches `SkinRenderer`'s CoreGraphics approach; there is no Metal here.
 
+### Window compositing
+
+Classic and modern PeppyMeter windows draw the animated meter content separately from the window
+chrome:
+
+- `PeppyMeterPresenter.onNeedsDisplay` must call the view's `requestMeterRedraw()` method, not
+  `needsDisplay = true`, for normal VU ticks. This invalidates only the meter content rect, so the
+  static window border is not repainted at 60 Hz.
+- Both views clip `PeppyMeterDrawing.draw(...)` to an inset content rect. Keep this clip in place; some
+  templates have artwork near their own edges and must never paint over the app window border.
+- Classic PeppyMeter draws the skin chrome after the meter content by using
+  `SkinRenderer.drawSpectrumAnalyzerWindowChromeOverlay(...)`. The normal spectrum chrome method fills
+  the whole window and is not suitable as a border-only overlay.
+
 ## meters.txt & bundled assets
 
 - Templates live in `Sources/NullPlayer/Resources/PeppyMeter/<resolution>/` (currently `480x320/`,
@@ -106,6 +120,9 @@ exactly, and the controller is threaded through every window collection (docking
 always-on-top, Double Size, Hide Title Bars, compact-mode snapshots, mode teardown/rebuild) and the
 classic frame-repair path (`repairClassicCenterStackFrames`). It docks/snaps flush in the vertical
 stack, opens at main-window width, and is vertically stretchable like the spectrum/analyzer windows.
+Its default/minimum height is `1.75×` the normal center-stack height, rounded to whole pixels, because
+the bundled meter templates are landscape-oriented. Saved legacy double-height PeppyMeter frames are
+normalized down to this landscape height on restore/repair.
 
 ## Architecture / key files
 
@@ -122,7 +139,8 @@ Windows + protocol:
 - `Windows/ModernPeppyMeter/ModernPeppyMeterWindowController.swift` + `ModernPeppyMeterView.swift` (modern chrome, `ModernSkinRenderer`)
 
 Assets: `Resources/PeppyMeter/{480x320,800x480,1280x400}/` (+ `ThirdPartyLicenses/PeppyMeter_NOTICE.txt`).
-Tests: `Tests/NullPlayerAppTests/PeppyMeterConfigTests.swift` (parser + mask table + dBFS→volume math).
+Tests: `Tests/NullPlayerAppTests/PeppyMeterConfigTests.swift` (parser + mask table + dBFS→volume math
+and window geometry restore coverage).
 
 ## Gotchas
 
@@ -131,6 +149,9 @@ Tests: `Tests/NullPlayerAppTests/PeppyMeterConfigTests.swift` (parser + mask tab
   (no skin imports). Only the classic shell may use `Skin/`.
 - **No new audio tap.** PeppyMeter consumes the existing `.audioStereoPCMDataUpdated` stream. Don't add
   a dedicated tap; register/deregister the `stereo` consumer with show/hide so it's idle when closed.
+- **Don't invalidate chrome on VU ticks.** Use `requestMeterRedraw()` for level animation updates. Full
+  `needsDisplay = true` is reserved for skin changes, fullscreen transitions, resize, titlebar state,
+  and other events where chrome really changed.
 - **GPL assets.** The bundled meters are GPL-3.0 and isolated in `Resources/PeppyMeter/`. For a build
   that can't ship GPL assets, drop that folder — the renderer shows a "No meters bundled" placeholder.
 - **Coordinate flip.** Get the top-left→bottom-left conversion right (needle pivot Y, linear anchor Y,

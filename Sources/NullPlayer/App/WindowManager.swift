@@ -3167,7 +3167,7 @@ class WindowManager {
             let minHeight = runningModernMode
                 ? expectedMainHeightForCurrentHT(mainWindowController?.window)
                 : baseMinSize.height * scale
-            let adjustedMinHeight = minHeight * heightMultiplier
+            let adjustedMinHeight = (minHeight * heightMultiplier).rounded()
             let minWidth = runningModernMode
                 ? ModernSkinElements.spectrumMinSize.width
                 : baseMinSize.width * scale
@@ -3462,17 +3462,23 @@ class WindowManager {
     }
 
     /// Height multiplier for a center-stack window's default/minimum height.
-    /// PeppyMeter is the only double-height window; everything else is single height.
+    /// PeppyMeter is taller than single-height windows, but not double-height: its bundled assets are landscape.
     private func centerStackHeightMultiplier(for kind: CenterStackWindowKind) -> CGFloat {
-        kind == .peppyMeter ? 2 : 1
+        kind == .peppyMeter ? 1.75 : 1
+    }
+
+    private func peppyMeterHeight(for baseHeight: CGFloat) -> CGFloat {
+        (baseHeight * centerStackHeightMultiplier(for: .peppyMeter)).rounded()
     }
 
     private func targetCenterStackHeight(for kind: CenterStackWindowKind,
                                          currentHeight: CGFloat,
                                          titleBarDelta: CGFloat,
                                          preservePlaylistContentHeight: Bool) -> CGFloat {
-        let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
-            * centerStackHeightMultiplier(for: kind)
+        let baseTarget = expectedMainHeightForCurrentHT(mainWindowController?.window)
+        let target = kind == .peppyMeter
+            ? peppyMeterHeight(for: baseTarget)
+            : baseTarget * centerStackHeightMultiplier(for: kind)
         guard kind == .playlist || kind == .waveform else { return target }
         guard preservePlaylistContentHeight else { return target }
         let adjusted = hideTitleBars ? (currentHeight - titleBarDelta) : (currentHeight + titleBarDelta)
@@ -3501,10 +3507,10 @@ class WindowManager {
             window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         case .peppyMeter:
-            // Matches the center-stack width; stretchable above its double-height floor.
+            // Matches the center-stack width; stretchable above its landscape meter floor.
             window.minSize = NSSize(
                 width: ModernSkinElements.spectrumMinSize.width,
-                height: targetHeight * centerStackHeightMultiplier(for: kind)
+                height: peppyMeterHeight(for: targetHeight)
             )
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
@@ -3525,7 +3531,14 @@ class WindowManager {
     }
 
     private func normalizedCenterStackRestoredFrame(_ frame: NSRect, kind: CenterStackWindowKind) -> NSRect {
-        guard isRunningModernUI else { return frame }
+        guard isRunningModernUI else {
+            guard kind == .peppyMeter else { return frame }
+            var normalized = frame
+            let topY = normalized.maxY
+            normalized.size.height = (SkinElements.PeppyMeterWindow.windowSize.height * classicScaleMultiplier).rounded()
+            normalized.origin.y = topY - normalized.size.height
+            return normalized
+        }
         var normalized = frame
         if let mainWindow = mainWindowController?.window, kind != .waveform {
             normalized.origin.x = mainWindow.frame.minX
@@ -3541,7 +3554,7 @@ class WindowManager {
             // Accept legacy compact saved frames but normalize to current full-height minimum.
             normalized.size.height = max(target, normalized.height)
         case .peppyMeter:
-            normalized.size.height = max(target * centerStackHeightMultiplier(for: kind), normalized.height)
+            normalized.size.height = peppyMeterHeight(for: target)
         }
         normalized.origin.y = topY - normalized.size.height
         return normalized

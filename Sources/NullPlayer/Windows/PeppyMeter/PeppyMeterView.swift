@@ -45,23 +45,42 @@ final class PeppyMeterView: NSView {
     private func contentAreaRect() -> NSRect {
         if isFullscreen { return bounds }
         let titleHeight = WindowManager.shared.hideTitleBars ? 0 : chromeLayout.titleBarHeight
-        return NSRect(
+        let rect = NSRect(
             x: chromeLayout.leftBorder,
             y: chromeLayout.bottomBorder,
             width: max(0, bounds.width - chromeLayout.leftBorder - chromeLayout.rightBorder),
             height: max(0, bounds.height - titleHeight - chromeLayout.bottomBorder)
         )
+        return rect.insetBy(dx: SkinElements.PeppyMeterWindow.contentPadding, dy: SkinElements.PeppyMeterWindow.contentPadding)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
+        let contentRect = contentAreaRect()
+        if !isFullscreen && contentRect.insetBy(dx: -1, dy: -1).contains(dirtyRect) {
+            if let presenter {
+                drawMeterContent(in: contentRect, presenter: presenter, context: context)
+            }
+            return
+        }
+
         if isFullscreen {
             NSColor.black.setFill()
             bounds.fill()
+            if let presenter {
+                drawMeterContent(in: bounds, presenter: presenter, context: context)
+            }
         } else {
             let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
             let renderer = SkinRenderer(skin: skin)
+
+            NSColor.black.setFill()
+            bounds.fill()
+
+            if let presenter {
+                drawMeterContent(in: contentRect, presenter: presenter, context: context)
+            }
 
             context.saveGState()
             context.translateBy(x: 0, y: bounds.height)
@@ -69,7 +88,7 @@ final class PeppyMeterView: NSView {
             if WindowManager.shared.hideTitleBars {
                 context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
             }
-            renderer.drawSpectrumAnalyzerWindow(
+            renderer.drawSpectrumAnalyzerWindowChromeOverlay(
                 in: context,
                 bounds: bounds,
                 isActive: window?.isKeyWindow ?? true,
@@ -80,13 +99,26 @@ final class PeppyMeterView: NSView {
             context.restoreGState()
         }
 
-        if let presenter {
-            PeppyMeterDrawing.draw(in: contentAreaRect(), presenter: presenter, context: context)
-        }
-
         if isHighlighted {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
+        }
+    }
+
+    private func drawMeterContent(in rect: NSRect, presenter: PeppyMeterPresenter, context: CGContext) {
+        context.saveGState()
+        context.clip(to: rect)
+        NSColor.black.setFill()
+        context.fill(rect)
+        PeppyMeterDrawing.draw(in: rect, presenter: presenter, context: context)
+        context.restoreGState()
+    }
+
+    func requestMeterRedraw() {
+        if isFullscreen {
+            needsDisplay = true
+        } else {
+            setNeedsDisplay(contentAreaRect())
         }
     }
 

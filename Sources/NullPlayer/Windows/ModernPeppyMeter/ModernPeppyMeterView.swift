@@ -55,9 +55,20 @@ final class ModernPeppyMeterView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
+        let contentRect = contentAreaRect()
+        if !isFullscreen && contentRect.insetBy(dx: -1, dy: -1).contains(dirtyRect) {
+            if let presenter {
+                drawMeterContent(in: contentRect, presenter: presenter, context: context)
+            }
+            return
+        }
+
         if isFullscreen {
             NSColor.black.setFill()
             bounds.fill()
+            if let presenter {
+                drawMeterContent(in: bounds, presenter: presenter, context: context)
+            }
         } else {
             renderer.drawWindowBackground(
                 in: bounds,
@@ -66,6 +77,9 @@ final class ModernPeppyMeterView: NSView {
                 sharpCorners: sharpCorners,
                 backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity
             )
+            if let presenter {
+                drawMeterContent(in: contentRect, presenter: presenter, context: context)
+            }
             renderer.drawWindowBorder(
                 in: bounds,
                 context: context,
@@ -91,10 +105,6 @@ final class ModernPeppyMeterView: NSView {
             )
         }
 
-        if let presenter {
-            PeppyMeterDrawing.draw(in: contentAreaRect(), presenter: presenter, context: context)
-        }
-
         if isHighlighted {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
@@ -103,12 +113,30 @@ final class ModernPeppyMeterView: NSView {
 
     private func contentAreaRect() -> NSRect {
         if isFullscreen { return bounds }
-        return NSRect(
+        let rect = NSRect(
             x: borderWidth,
             y: borderWidth,
             width: max(0, bounds.width - borderWidth * 2),
             height: max(0, bounds.height - titleBarHeight - borderWidth)
         )
+        return rect.insetBy(dx: ModernSkinElements.peppyMeterContentPadding, dy: ModernSkinElements.peppyMeterContentPadding)
+    }
+
+    private func drawMeterContent(in rect: NSRect, presenter: PeppyMeterPresenter, context: CGContext) {
+        context.saveGState()
+        context.clip(to: rect)
+        NSColor.black.setFill()
+        context.fill(rect)
+        PeppyMeterDrawing.draw(in: rect, presenter: presenter, context: context)
+        context.restoreGState()
+    }
+
+    func requestMeterRedraw() {
+        if isFullscreen {
+            needsDisplay = true
+        } else {
+            setNeedsDisplay(contentAreaRect())
+        }
     }
 
     func skinDidChange() {
