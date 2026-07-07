@@ -193,6 +193,7 @@ class AppStateManager {
         var isSpectrumVisible: Bool = false
         var isAudioAnalysisVisible: Bool = false
         var isPeppyMeterVisible: Bool = false
+        var isNetworkMonitorVisible: Bool = false
         var isWaveformVisible: Bool = false
         
         // Window frames (as strings for NSRect compatibility)
@@ -204,6 +205,7 @@ class AppStateManager {
         var spectrumWindowFrame: String?
         var audioAnalysisWindowFrame: String?
         var peppyMeterWindowFrame: String?
+        var networkMonitorWindowFrame: String?
         var waveformWindowFrame: String?
         var isProjectMFullscreen: Bool = false
         
@@ -268,8 +270,8 @@ class AppStateManager {
         // MARK: - Custom Decoding for Backward Compatibility
         
         enum CodingKeys: String, CodingKey {
-            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isAudioAnalysisVisible, isPeppyMeterVisible, isWaveformVisible
-            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, audioAnalysisWindowFrame, peppyMeterWindowFrame, waveformWindowFrame, isProjectMFullscreen
+            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isAudioAnalysisVisible, isPeppyMeterVisible, isNetworkMonitorVisible, isWaveformVisible
+            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, audioAnalysisWindowFrame, peppyMeterWindowFrame, networkMonitorWindowFrame, waveformWindowFrame, isProjectMFullscreen
             case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
             case sweetFadeEnabled, sweetFadeDuration
             case eqEnabled, eqAutoEnabled, eqPreamp, eqBands
@@ -301,6 +303,7 @@ class AppStateManager {
             isSpectrumVisible = try container.decodeIfPresent(Bool.self, forKey: .isSpectrumVisible) ?? false
             isAudioAnalysisVisible = try container.decodeIfPresent(Bool.self, forKey: .isAudioAnalysisVisible) ?? false
             isPeppyMeterVisible = try container.decodeIfPresent(Bool.self, forKey: .isPeppyMeterVisible) ?? false
+            isNetworkMonitorVisible = try container.decodeIfPresent(Bool.self, forKey: .isNetworkMonitorVisible) ?? false
             isWaveformVisible = try container.decodeIfPresent(Bool.self, forKey: .isWaveformVisible) ?? false
             
             // Window frames
@@ -312,6 +315,7 @@ class AppStateManager {
             spectrumWindowFrame = try container.decodeIfPresent(String.self, forKey: .spectrumWindowFrame)
             audioAnalysisWindowFrame = try container.decodeIfPresent(String.self, forKey: .audioAnalysisWindowFrame)
             peppyMeterWindowFrame = try container.decodeIfPresent(String.self, forKey: .peppyMeterWindowFrame)
+            networkMonitorWindowFrame = try container.decodeIfPresent(String.self, forKey: .networkMonitorWindowFrame)
             waveformWindowFrame = try container.decodeIfPresent(String.self, forKey: .waveformWindowFrame)
             isProjectMFullscreen = try container.decodeIfPresent(Bool.self, forKey: .isProjectMFullscreen) ?? false
             
@@ -382,6 +386,7 @@ class AppStateManager {
             isSpectrumVisible: Bool = false,
             isAudioAnalysisVisible: Bool = false,
             isPeppyMeterVisible: Bool = false,
+            isNetworkMonitorVisible: Bool = false,
             isWaveformVisible: Bool = false,
             mainWindowFrame: String?,
             playlistWindowFrame: String?,
@@ -391,6 +396,7 @@ class AppStateManager {
             spectrumWindowFrame: String? = nil,
             audioAnalysisWindowFrame: String? = nil,
             peppyMeterWindowFrame: String? = nil,
+            networkMonitorWindowFrame: String? = nil,
             waveformWindowFrame: String? = nil,
             isProjectMFullscreen: Bool = false,
             volume: Float,
@@ -429,6 +435,7 @@ class AppStateManager {
             self.isSpectrumVisible = isSpectrumVisible
             self.isAudioAnalysisVisible = isAudioAnalysisVisible
             self.isPeppyMeterVisible = isPeppyMeterVisible
+            self.isNetworkMonitorVisible = isNetworkMonitorVisible
             self.isWaveformVisible = isWaveformVisible
             self.mainWindowFrame = mainWindowFrame
             self.playlistWindowFrame = playlistWindowFrame
@@ -438,6 +445,7 @@ class AppStateManager {
             self.spectrumWindowFrame = spectrumWindowFrame
             self.audioAnalysisWindowFrame = audioAnalysisWindowFrame
             self.peppyMeterWindowFrame = peppyMeterWindowFrame
+            self.networkMonitorWindowFrame = networkMonitorWindowFrame
             self.waveformWindowFrame = waveformWindowFrame
             self.isProjectMFullscreen = isProjectMFullscreen
             self.volume = volume
@@ -526,6 +534,7 @@ class AppStateManager {
             isSpectrumVisible: visibility("spectrum", wm.isSpectrumVisible),
             isAudioAnalysisVisible: visibility("audioAnalysis", wm.isAudioAnalysisVisible),
             isPeppyMeterVisible: visibility("peppyMeter", wm.isPeppyMeterVisible),
+            isNetworkMonitorVisible: visibility("networkMonitor", wm.isNetworkMonitorVisible),
             isWaveformVisible: visibility("waveform", wm.isWaveformVisible),
             
             // Window frames
@@ -538,6 +547,7 @@ class AppStateManager {
             spectrumWindowFrame: wm.spectrumWindowFrame.map { NSStringFromRect($0) },
             audioAnalysisWindowFrame: wm.audioAnalysisWindowFrame.map { NSStringFromRect($0) },
             peppyMeterWindowFrame: wm.peppyMeterWindowFrame.map { NSStringFromRect($0) },
+            networkMonitorWindowFrame: wm.networkMonitorWindowFrame.map { NSStringFromRect($0) },
             waveformWindowFrame: nil,
             isProjectMFullscreen: wm.isProjectMFullscreen,
             
@@ -797,6 +807,7 @@ class AppStateManager {
         let spectrumFrame = modeMatches ? state.spectrumWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let audioAnalysisFrame = modeMatches ? state.audioAnalysisWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let peppyMeterFrame = modeMatches ? state.peppyMeterWindowFrame.flatMap({ NSRectFromString($0) }) : nil
+        let networkMonitorFrame = modeMatches ? state.networkMonitorWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let waveformFrame = modeMatches ? state.waveformWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let projectMPresetIndex = state.projectMPresetIndex
         let visualizationEngineType = UserDefaults.standard.string(forKey: "visualizationEngineType")
@@ -829,6 +840,9 @@ class AppStateManager {
             }
             if state.isPeppyMeterVisible {
                 wm.showPeppyMeter(at: peppyMeterFrame)
+            }
+            if state.isNetworkMonitorVisible {
+                wm.showNetworkMonitor(at: networkMonitorFrame)
             }
             if state.isWaveformVisible {
                 wm.showWaveform(at: waveformFrame)
@@ -1076,6 +1090,7 @@ class AppStateManager {
         let waveformFrame: NSRect?
         let audioAnalysisFrame: NSRect?
         let peppyMeterFrame: NSRect?
+        let networkMonitorFrame: NSRect?
         let repaired: Bool
     }
 
@@ -1091,6 +1106,7 @@ class AppStateManager {
         waveformFrame: NSRect?,
         audioAnalysisFrame: NSRect?,
         peppyMeterFrame: NSRect?,
+        networkMonitorFrame: NSRect?,
         scale: CGFloat
     ) -> ClassicCenterStackRepairResult {
         let widthEpsilon: CGFloat = 0.5
@@ -1164,6 +1180,7 @@ class AppStateManager {
             preserveWidth: true,
             targetHeight: (SkinElements.PeppyMeterWindow.windowSize.height * scale).rounded()
         )
+        let adjustedNetworkMonitor = repairCandidate(networkMonitorFrame, preserveWidth: true)
 
         return ClassicCenterStackRepairResult(
             mainFrame: adjustedMain,
@@ -1173,6 +1190,7 @@ class AppStateManager {
             waveformFrame: adjustedWaveform,
             audioAnalysisFrame: adjustedAudioAnalysis,
             peppyMeterFrame: adjustedPeppyMeter,
+            networkMonitorFrame: adjustedNetworkMonitor,
             repaired: repaired
         )
     }
@@ -1191,6 +1209,7 @@ class AppStateManager {
         let waveformWindow = wm.waveformWindow
         let audioAnalysisWindow = wm.audioAnalysisWindow
         let peppyMeterWindow = wm.peppyMeterWindow
+        let networkMonitorWindow = wm.networkMonitorWindow
 
         let equalizerFrame: NSRect?
         if let equalizerWindow, equalizerWindow.isVisible {
@@ -1234,6 +1253,13 @@ class AppStateManager {
             peppyMeterFrame = nil
         }
 
+        let networkMonitorFrame: NSRect?
+        if let networkMonitorWindow, networkMonitorWindow.isVisible {
+            networkMonitorFrame = networkMonitorWindow.frame
+        } else {
+            networkMonitorFrame = nil
+        }
+
         let repairedFrames = Self.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
             equalizerFrame: equalizerFrame,
@@ -1242,6 +1268,7 @@ class AppStateManager {
             waveformFrame: waveformFrame,
             audioAnalysisFrame: audioAnalysisFrame,
             peppyMeterFrame: peppyMeterFrame,
+            networkMonitorFrame: networkMonitorFrame,
             scale: scale
         )
 
@@ -1283,6 +1310,12 @@ class AppStateManager {
            let repairedFrame = repairedFrames.peppyMeterFrame,
            repairedFrame != peppyMeterWindow.frame {
             peppyMeterWindow.setFrame(repairedFrame, display: true)
+        }
+        if let networkMonitorWindow,
+           networkMonitorWindow.isVisible,
+           let repairedFrame = repairedFrames.networkMonitorFrame,
+           repairedFrame != networkMonitorWindow.frame {
+            networkMonitorWindow.setFrame(repairedFrame, display: true)
         }
 
         if repairedFrames.repaired {

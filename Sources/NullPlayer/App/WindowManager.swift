@@ -107,6 +107,7 @@ private struct CompactWindowSnapshot {
     var spectrum: WindowSnapshot?
     var audioAnalysis: WindowSnapshot?
     var peppyMeter: WindowSnapshot?
+    var networkMonitor: WindowSnapshot?
     var waveform: WindowSnapshot?
     var projectM: WindowSnapshot?
     var library: WindowSnapshot?
@@ -323,6 +324,7 @@ class WindowManager {
                               spectrumWindowController?.window,
                               audioAnalysisWindowController?.window,
                               peppyMeterWindowController?.window,
+                              networkMonitorWindowController?.window,
                               waveformWindowController?.window].compactMap { $0 }
             var windowsBelow: [NSWindow] = []
             var frontier: [NSRect] = [mainWindow.frame]
@@ -382,10 +384,11 @@ class WindowManager {
         for controller in [mainWindowController as? NSWindowController,
                            equalizerWindowController as? NSWindowController,
                            playlistWindowController as? NSWindowController,
-                           spectrumWindowController as? NSWindowController,
-                           audioAnalysisWindowController as? NSWindowController,
-                           peppyMeterWindowController as? NSWindowController,
-                           waveformWindowController as? NSWindowController,
+                          spectrumWindowController as? NSWindowController,
+                          audioAnalysisWindowController as? NSWindowController,
+                          peppyMeterWindowController as? NSWindowController,
+                          networkMonitorWindowController as? NSWindowController,
+                          waveformWindowController as? NSWindowController,
                            projectMWindowController as? NSWindowController,
                            plexBrowserWindowController as? NSWindowController] {
             if let view = controller?.window?.contentView {
@@ -413,7 +416,8 @@ class WindowManager {
                           window === spectrumWindowController?.window ||
                           window === waveformWindowController?.window ||
                           window === audioAnalysisWindowController?.window ||
-                          window === peppyMeterWindowController?.window
+                          window === peppyMeterWindowController?.window ||
+                          window === networkMonitorWindowController?.window
         if isSubWindow && isWindowDocked(window) {
             return true
         }
@@ -460,6 +464,9 @@ class WindowManager {
 
     /// PeppyMeter (analog VU meter) window controller for the active UI mode, accessed via protocol.
     private var peppyMeterWindowController: PeppyMeterWindowProviding?
+
+    /// Network monitor window controller for the active UI mode, accessed via protocol.
+    private var networkMonitorWindowController: NetworkMonitorWindowProviding?
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
@@ -563,7 +570,7 @@ class WindowManager {
         // Register and load preferences
         registerPreferenceDefaults()
         loadPreferences()
-        
+
         // Load default skin
         loadDefaultSkin()
 
@@ -675,7 +682,7 @@ class WindowManager {
             }
         }
         markModeDependentWindow(playlistWindowController?.window)
-        
+
         // Position BEFORE showing (unless restoring from saved state)
         if let playlistWindow = playlistWindowController?.window {
             applyCenterStackSizingConstraints(playlistWindow, kind: .playlist)
@@ -794,6 +801,7 @@ class WindowManager {
         if let w = spectrumWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = audioAnalysisWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = peppyMeterWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
+        if let w = networkMonitorWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         
         // Sort top-to-bottom (highest minY first, since macOS Y increases upward)
@@ -845,6 +853,7 @@ class WindowManager {
                           spectrumWindowController?.window,
                           audioAnalysisWindowController?.window,
                           peppyMeterWindowController?.window,
+                          networkMonitorWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
 
         // BFS: find windows directly docked below closingFrame, then those below them
@@ -1272,6 +1281,7 @@ class WindowManager {
             spectrum: snap(spectrumWindowController),
             audioAnalysis: snap(audioAnalysisWindowController),
             peppyMeter: snap(peppyMeterWindowController),
+            networkMonitor: snap(networkMonitorWindowController),
             waveform: snap(waveformWindowController),
             projectM: snap(projectMWindowController, sideWindow: true),
             // Library stores its position frame for restoration after Compact-mode rebuild.
@@ -1299,6 +1309,7 @@ class WindowManager {
                        spectrumWindowController?.window,
                        audioAnalysisWindowController?.window,
                        peppyMeterWindowController?.window,
+                       networkMonitorWindowController?.window,
                        waveformWindowController?.window,
                        projectMWindowController?.window,
                        plexBrowserWindowController?.window].compactMap({ $0 })
@@ -1319,6 +1330,7 @@ class WindowManager {
             spectrumWindowController?.window,
             audioAnalysisWindowController?.window,
             peppyMeterWindowController?.window,
+            networkMonitorWindowController?.window,
             waveformWindowController?.window,
             projectMWindowController?.window,
             plexBrowserWindowController?.window
@@ -1388,6 +1400,7 @@ class WindowManager {
         restore(snapshot.spectrum, controller: spectrumWindowController)
         restore(snapshot.audioAnalysis, controller: audioAnalysisWindowController)
         restore(snapshot.peppyMeter, controller: peppyMeterWindowController)
+        restore(snapshot.networkMonitor, controller: networkMonitorWindowController)
         restore(snapshot.waveform, controller: waveformWindowController)
         restore(snapshot.projectM, controller: projectMWindowController)
         restore(snapshot.library, controller: plexBrowserWindowController)
@@ -1417,6 +1430,7 @@ class WindowManager {
         case "spectrum": return snapshot.spectrum?.wasVisible ?? current
         case "audioAnalysis": return snapshot.audioAnalysis?.wasVisible ?? current
         case "peppyMeter": return snapshot.peppyMeter?.wasVisible ?? current
+        case "networkMonitor": return snapshot.networkMonitor?.wasVisible ?? current
         case "waveform": return snapshot.waveform?.wasVisible ?? current
         case "projectM": return snapshot.projectM?.wasVisible ?? current
         case "plexBrowser": return snapshot.library?.wasVisible ?? current
@@ -2490,6 +2504,68 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
+    // MARK: - Network Monitor Window
+
+    func showNetworkMonitor(at restoredFrame: NSRect? = nil) {
+        let runningModernMode = isRunningModernUI
+        if networkMonitorWindowController == nil {
+            if runningModernMode {
+                networkMonitorWindowController = ModernNetworkMonitorWindowController()
+            } else {
+                networkMonitorWindowController = NetworkMonitorWindowController()
+            }
+        }
+        markModeDependentWindow(networkMonitorWindowController?.window)
+
+        if let window = networkMonitorWindowController?.window {
+            applyCenterStackSizingConstraints(window, kind: .networkMonitor)
+            if let frame = restoredFrame, frame != .zero {
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .networkMonitor), display: true)
+            } else {
+                if runningModernMode {
+                    applyDefaultCenterStackFrameForCurrentHT(window, kind: .networkMonitor)
+                } else {
+                    (networkMonitorWindowController as? NetworkMonitorWindowController)?.resetToDefaultFrame()
+                }
+                positionSubWindow(window)
+            }
+        }
+
+        networkMonitorWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(networkMonitorWindowController?.window)
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+    }
+
+    var isNetworkMonitorVisible: Bool {
+        networkMonitorWindowController?.window?.isVisible == true
+    }
+
+    var networkMonitorWindowFrame: NSRect? {
+        networkMonitorWindowController?.window?.frame
+    }
+
+    var networkMonitorWindow: NSWindow? {
+        networkMonitorWindowController?.window
+    }
+
+    func toggleNetworkMonitor() {
+        if let controller = networkMonitorWindowController,
+           let window = controller.window,
+           window.isVisible {
+            let closingFrame = window.frame
+            controller.stopMonitoringForHide()
+            window.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
+        } else {
+            showNetworkMonitor()
+        }
+        notifyMainWindowVisibilityChanged()
+        _ = tightenClassicCenterStackIfNeeded()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
     // MARK: - Waveform Window
 
     func showWaveform(at restoredFrame: NSRect? = nil) {
@@ -2891,6 +2967,7 @@ class WindowManager {
         spectrumWindowController?.skinDidChange()
         audioAnalysisWindowController?.skinDidChange()
         peppyMeterWindowController?.skinDidChange()
+        networkMonitorWindowController?.skinDidChange()
         waveformWindowController?.skinDidChange()
         compactWindowController?.skinDidChange()
     }
@@ -3193,6 +3270,41 @@ class WindowManager {
             }
         }
 
+        // Network Monitor window - position below previous stack window.
+        if let networkMonitorWindow = networkMonitorWindowController?.window {
+            let baseMinSize: NSSize = runningModernMode
+                ? ModernSkinElements.spectrumMinSize
+                : SkinElements.SpectrumWindow.minSize
+            let heightMultiplier = centerStackHeightMultiplier(for: .networkMonitor)
+            let minHeight = runningModernMode
+                ? expectedMainHeightForCurrentHT(mainWindowController?.window)
+                : baseMinSize.height * scale
+            let adjustedMinHeight = minHeight * heightMultiplier
+            let minWidth = runningModernMode
+                ? ModernSkinElements.spectrumMinSize.width
+                : baseMinSize.width * scale
+            networkMonitorWindow.minSize = NSSize(width: minWidth, height: adjustedMinHeight)
+            networkMonitorWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+            let currentFrame = networkMonitorWindow.frame
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let newHeight = max(adjustedMinHeight, currentFrame.height * heightScaleMultiplier)
+            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
+            if networkMonitorWindow.isVisible {
+                let monitorFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - newHeight,
+                    width: newWidth,
+                    height: newHeight
+                )
+                networkMonitorWindow.setFrame(monitorFrame, display: true, animate: false)
+                nextY = monitorFrame.minY
+            } else {
+                networkMonitorWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
+            }
+        }
+
         // Side windows - match the vertical stack height and reposition
         let stackTopY = mainFrame.maxY
         let stackHeight = stackTopY - nextY
@@ -3230,6 +3342,7 @@ class WindowManager {
         for controller in [mainWindowController, equalizerWindowController, playlistWindowController,
                            spectrumWindowController, waveformWindowController, audioAnalysisWindowController,
                            peppyMeterWindowController,
+                           networkMonitorWindowController,
                            plexBrowserWindowController, projectMWindowController] {
             guard let window = controller?.window, window.isVisible,
                   let contentView = window.contentView else { continue }
@@ -3251,6 +3364,7 @@ class WindowManager {
         spectrumWindowController?.window?.level = level
         audioAnalysisWindowController?.window?.level = level
         peppyMeterWindowController?.window?.level = level
+        networkMonitorWindowController?.window?.level = level
         waveformWindowController?.window?.level = level
         if compactWindowEnabled {
             compactWindowController?.window?.level = level
@@ -3275,6 +3389,7 @@ class WindowManager {
             spectrumWindowController?.window,
             audioAnalysisWindowController?.window,
             peppyMeterWindowController?.window,
+            networkMonitorWindowController?.window,
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
@@ -3302,6 +3417,7 @@ class WindowManager {
                           spectrumWindowController?.window,
                           audioAnalysisWindowController?.window,
                           peppyMeterWindowController?.window,
+                          networkMonitorWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
         var docked: [NSWindow] = []
         var frontier: [NSRect] = [mainFrame]
@@ -3359,6 +3475,7 @@ class WindowManager {
         case waveform
         case audioAnalysis
         case peppyMeter
+        case networkMonitor
     }
 
     private func centerStackWindowKind(for window: NSWindow) -> CenterStackWindowKind? {
@@ -3368,6 +3485,7 @@ class WindowManager {
         if window === waveformWindowController?.window { return .waveform }
         if window === audioAnalysisWindowController?.window { return .audioAnalysis }
         if window === peppyMeterWindowController?.window { return .peppyMeter }
+        if window === networkMonitorWindowController?.window { return .networkMonitor }
         return nil
     }
 
@@ -3513,6 +3631,10 @@ class WindowManager {
                 height: peppyMeterHeight(for: targetHeight)
             )
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        case .networkMonitor:
+            // Matches the center-stack width; stretchable above its single-height floor.
+            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
     }
 
@@ -3532,10 +3654,16 @@ class WindowManager {
 
     private func normalizedCenterStackRestoredFrame(_ frame: NSRect, kind: CenterStackWindowKind) -> NSRect {
         guard isRunningModernUI else {
-            guard kind == .peppyMeter else { return frame }
+            guard kind == .peppyMeter || kind == .networkMonitor else { return frame }
             var normalized = frame
             let topY = normalized.maxY
-            normalized.size.height = (SkinElements.PeppyMeterWindow.windowSize.height * classicScaleMultiplier).rounded()
+            if kind == .peppyMeter {
+                normalized.size.height = (SkinElements.PeppyMeterWindow.windowSize.height * classicScaleMultiplier).rounded()
+            } else if let mainWindow = mainWindowController?.window {
+                normalized.size.height = mainWindow.frame.height
+            } else {
+                normalized.size.height = SkinElements.SpectrumWindow.windowSize.height * classicScaleMultiplier
+            }
             normalized.origin.y = topY - normalized.size.height
             return normalized
         }
@@ -3548,7 +3676,7 @@ class WindowManager {
         let topY = normalized.maxY
         let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
         switch kind {
-        case .equalizer, .spectrum:
+        case .equalizer, .spectrum, .networkMonitor:
             normalized.size.height = target
         case .playlist, .waveform, .audioAnalysis:
             // Accept legacy compact saved frames but normalize to current full-height minimum.
@@ -3588,6 +3716,7 @@ class WindowManager {
         let waveformWindow = waveformWindowController?.window
         let audioAnalysisWindow = audioAnalysisWindowController?.window
         let peppyMeterWindow = peppyMeterWindowController?.window
+        let networkMonitorWindow = networkMonitorWindowController?.window
 
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
@@ -3597,6 +3726,7 @@ class WindowManager {
             waveformFrame: (waveformWindow?.isVisible == true) ? waveformWindow?.frame : nil,
             audioAnalysisFrame: (audioAnalysisWindow?.isVisible == true) ? audioAnalysisWindow?.frame : nil,
             peppyMeterFrame: (peppyMeterWindow?.isVisible == true) ? peppyMeterWindow?.frame : nil,
+            networkMonitorFrame: (networkMonitorWindow?.isVisible == true) ? networkMonitorWindow?.frame : nil,
             scale: scale
         )
 
@@ -3648,6 +3778,12 @@ class WindowManager {
            let repairedFrame = repaired.peppyMeterFrame,
            repairedFrame != peppyMeterWindow.frame {
             peppyMeterWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
+        if let networkMonitorWindow,
+           networkMonitorWindow.isVisible,
+           let repairedFrame = repaired.networkMonitorFrame,
+           repairedFrame != networkMonitorWindow.frame {
+            networkMonitorWindow.setFrame(repairedFrame, display: true, animate: false)
         }
 
         return true
@@ -3728,6 +3864,14 @@ class WindowManager {
             peppyMeterFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
         }
 
+        var networkMonitorFrame: NSRect?
+        if let networkMonitorWindow = networkMonitorWindowController?.window, networkMonitorWindow.isVisible {
+            let h = networkMonitorWindow.frame.height
+            let w = networkMonitorWindow.frame.width
+            nextY -= h
+            networkMonitorFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
+        }
+
         // Side windows span the full stack height
         let stackTopY = mainFrame.maxY
         let stackBottomY = nextY
@@ -3757,6 +3901,7 @@ class WindowManager {
         defaults.removeObject(forKey: "SpectrumWindowFrame")
         defaults.removeObject(forKey: "WaveformWindowFrame")
         defaults.removeObject(forKey: "PeppyMeterWindowFrame")
+        defaults.removeObject(forKey: "NetworkMonitorWindowFrame")
         
         // Disable snapping during programmatic frame changes to prevent interference
         isSnappingWindow = true
@@ -3782,6 +3927,9 @@ class WindowManager {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = peppyMeterFrame, let window = peppyMeterWindowController?.window {
+            window.setFrame(frame, display: true, animate: false)
+        }
+        if let frame = networkMonitorFrame, let window = networkMonitorWindowController?.window {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
@@ -4725,6 +4873,7 @@ class WindowManager {
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
         if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = peppyMeterWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = networkMonitorWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
@@ -4738,6 +4887,7 @@ class WindowManager {
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
         if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = peppyMeterWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = networkMonitorWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
@@ -4765,6 +4915,7 @@ class WindowManager {
                window === spectrumWindowController?.window ||
                window === audioAnalysisWindowController?.window ||
                window === peppyMeterWindowController?.window ||
+               window === networkMonitorWindowController?.window ||
                window === waveformWindowController?.window
     }
     
@@ -4792,6 +4943,7 @@ class WindowManager {
          spectrumWindowController,
          audioAnalysisWindowController,
          peppyMeterWindowController,
+         networkMonitorWindowController,
          waveformWindowController].compactMap { $0 }
     }
 
@@ -4852,6 +5004,8 @@ class WindowManager {
         audioAnalysisWindowController = nil
         peppyMeterWindowController?.window?.close()
         peppyMeterWindowController = nil
+        networkMonitorWindowController?.window?.close()
+        networkMonitorWindowController = nil
         waveformWindowController?.window?.close()
         waveformWindowController = nil
 
@@ -4895,6 +5049,7 @@ class WindowManager {
         var spectrum: UIWindowSnapshot?
         var audioAnalysis: UIWindowSnapshot?
         var peppyMeter: UIWindowSnapshot?
+        var networkMonitor: UIWindowSnapshot?
         var waveform: UIWindowSnapshot?
         /// Live ProjectM preset index, carried across the rebuild so the visualization stays on the
         /// exact preset the user was viewing rather than reverting to the saved startup default.
@@ -4920,6 +5075,7 @@ class WindowManager {
             spectrum: snap(spectrumWindowController),
             audioAnalysis: snap(audioAnalysisWindowController),
             peppyMeter: snap(peppyMeterWindowController),
+            networkMonitor: snap(networkMonitorWindowController),
             waveform: snap(waveformWindowController),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
@@ -4962,6 +5118,7 @@ class WindowManager {
         }
         if snapshot.audioAnalysis?.visible == true { showAudioAnalysis(at: snapshot.audioAnalysis?.frame) }
         if snapshot.peppyMeter?.visible == true { showPeppyMeter(at: snapshot.peppyMeter?.frame) }
+        if snapshot.networkMonitor?.visible == true { showNetworkMonitor(at: snapshot.networkMonitor?.frame) }
         if let waveform = snapshot.waveform, waveform.visible {
             showWaveform(at: waveform.frame)
         }
@@ -5004,6 +5161,7 @@ class WindowManager {
                        spectrumWindowController?.window,
                        audioAnalysisWindowController?.window,
                        peppyMeterWindowController?.window,
+                       networkMonitorWindowController?.window,
                        waveformWindowController?.window,
                        videoPlayerWindowController?.window,
                        debugWindowController?.window].compactMap({ $0 }) {
@@ -5292,6 +5450,7 @@ class WindowManager {
             spectrum: convScaled(snapshot.spectrum),
             audioAnalysis: convScaled(snapshot.audioAnalysis),
             peppyMeter: convScaled(snapshot.peppyMeter),
+            networkMonitor: convScaled(snapshot.networkMonitor),
             waveform: convScaled(snapshot.waveform),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )

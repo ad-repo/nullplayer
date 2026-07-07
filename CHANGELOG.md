@@ -4,7 +4,9 @@
 
 ### New Features
 
+- **Flow network monitor window** — a new **Flow** entry in the Windows menu and main-window context menu opens a live network throughput meter in both classic and modern UI. It docks in the center window stack at the normal single-window height, shows either download or upload throughput with a scrolling history graph, and tracks the selected network interface. Double-click the window or use its right-click menu to switch between download and upload views; the chosen view persists across launches.
 - **PeppyMeter analog VU meter window** — a new **PeppyMeter** entry in the Windows menu and main-window context menu opens a skinnable analog VU meter (a port of PeppyMeter) in both classic and modern UI. Left/right levels drive rotating **needle** meters or **bar** meters composited from bundled image templates (25 meters, including `vintage`, `bar`, `compass`, `chillout`, and `big-bang`). Right-click the window to pick a meter or enable **Random**, which auto-switches meters on an interval. It docks and snaps in the window stack, remembers its position across launches, supports fullscreen mode with sharper high-resolution templates when available, and consumes the shared stereo audio tap so it stays idle when closed. Bundled meter artwork is GPL-3.0 (see the third-party notices).
+- **Modern main-window button row updated** — the main toggle row now starts with **CP** for Compact Mode, **VZ** for Visualizations, **FL** for Flow, and **PM** for PeppyMeter, followed by the existing EQ/PL/SP/AA/WV/LB window toggles.
 
 ### Bug Fixes
 

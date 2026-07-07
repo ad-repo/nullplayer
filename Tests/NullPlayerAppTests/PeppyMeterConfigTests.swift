@@ -189,6 +189,7 @@ final class PeppyMeterConfigTests: XCTestCase {
             waveformFrame: nil,
             audioAnalysisFrame: nil,
             peppyMeterFrame: legacyPeppyFrame,
+            networkMonitorFrame: nil,
             scale: 1
         )
 

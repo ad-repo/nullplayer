@@ -708,8 +708,6 @@ class ModernMainWindowView: NSView {
     }
     
     private func drawEQPlaylistButtons(context: CGContext) {
-        let audioEngine = WindowManager.shared.audioEngine
-        
         // 10 toggle buttons aligned with marquee panel (x:93 to x:267)
         let y: CGFloat = 42
         let h: CGFloat = 14
@@ -720,10 +718,10 @@ class ModernMainWindowView: NSView {
         let startX = leftEdge
         
         let buttonDefs: [(String, String, Bool)] = [
-            ("btn_shuffle", "SH", audioEngine.shuffleEnabled),
-            ("btn_repeat", "RP", audioEngine.repeatEnabled),
             ("btn_compact", "CP", WindowManager.shared.compactModeEnabled || compactButtonActivating),
             ("btn_projectm", "VZ", WindowManager.shared.isProjectMVisible),
+            ("btn_networkmonitor", "FL", WindowManager.shared.isNetworkMonitorVisible),
+            ("btn_peppymeter", "PM", WindowManager.shared.isPeppyMeterVisible),
             ("btn_eq", "EQ", WindowManager.shared.isEqualizerVisible),
             ("btn_playlist", "PL", WindowManager.shared.isPlaylistVisible),
             ("btn_spectrum", "SP", WindowManager.shared.isSpectrumVisible),
@@ -1412,7 +1410,7 @@ class ModernMainWindowView: NSView {
             let rightEdge: CGFloat = 269
             let bw: CGFloat = 16
             let bs = (rightEdge - leftEdge - 10 * bw) / 9
-            let ids = ["btn_shuffle", "btn_repeat", "btn_compact", "btn_projectm",
+            let ids = ["btn_compact", "btn_projectm", "btn_networkmonitor", "btn_peppymeter",
                        "btn_eq", "btn_playlist", "btn_spectrum", "btn_audioanalysis",
                        "btn_waveform", "btn_library"]
             for (i, id) in ids.enumerated() {
@@ -1669,6 +1667,12 @@ class ModernMainWindowView: NSView {
         case "btn_projectm":
             WindowManager.shared.toggleProjectM()
             
+        case "btn_networkmonitor":
+            WindowManager.shared.toggleNetworkMonitor()
+
+        case "btn_peppymeter":
+            WindowManager.shared.togglePeppyMeter()
+
         case "btn_spectrum":
             WindowManager.shared.toggleSpectrum()
 

@@ -198,10 +198,10 @@ When adding or refactoring top menu bar content:
 
 ## Dockable Center-Stack Windows
 
-Main, EQ, Playlist, Spectrum, and Waveform all participate in the center stack managed by `WindowManager`.
+Main, EQ, Playlist, Spectrum, Waveform, Audio Analysis, PeppyMeter, and Flow all participate in the center stack managed by `WindowManager`.
 
 - Width is normalized to the main stack
-- Height is window-specific
+- Height is window-specific: Flow is single-height; PeppyMeter is double-height
 - Saved frames are restored through `WindowManager` rather than ad hoc per-window logic
 - Modern and classic implementations should expose a provider protocol in `App/` so `WindowManager` can manage both without mode-specific branching outside window creation
 
