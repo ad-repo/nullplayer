@@ -54,6 +54,17 @@ enum ModernSkinElements {
     /// Title bar height in base coordinates (all modern windows)
     static let titleBarBaseHeight: CGFloat = 18
 
+    /// Shared border inset for auxiliary sub-windows.
+    ///
+    /// Modern skins keep the established thicker inset. Metal skins draw a thinner
+    /// chrome stroke, so dockable sub-windows use that smaller width consistently.
+    static var auxiliaryWindowBorderWidth: CGFloat {
+        if ModernSkinEngine.shared.currentRenderStyle == .metal {
+            return max(1.0, ModernSkinEngine.shared.currentSkin?.config.window.borderWidth ?? 1.0)
+        }
+        return 3 * scaleFactor
+    }
+
     // MARK: - Title Bar (top 18px)
 
     static let titleBar = Element("titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
@@ -167,7 +178,7 @@ enum ModernSkinElements {
     static var playlistBottomBarHeight: CGFloat { 20 * scaleFactor }
     
     /// Playlist window border width
-    static var playlistBorderWidth: CGFloat { 3 * scaleFactor }
+    static var playlistBorderWidth: CGFloat { auxiliaryWindowBorderWidth }
     
     /// Playlist track row height
     static var playlistItemHeight: CGFloat { 15 * scaleFactor }
@@ -193,7 +204,7 @@ enum ModernSkinElements {
     static var eqTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
     /// EQ window border width
-    static var eqBorderWidth: CGFloat { 3 * scaleFactor }
+    static var eqBorderWidth: CGFloat { auxiliaryWindowBorderWidth }
     
     /// EQ title bar element (per-window skinning)
     static let eqTitleBar = Element("eq_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
@@ -235,7 +246,7 @@ enum ModernSkinElements {
     static var spectrumTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
     /// Spectrum window border width
-    static var spectrumBorderWidth: CGFloat { 3 * scaleFactor }
+    static var spectrumBorderWidth: CGFloat { auxiliaryWindowBorderWidth }
     
     /// Number of bars in the standalone spectrum window
     static let spectrumBarCount = 84
@@ -261,7 +272,7 @@ enum ModernSkinElements {
     static var waveformTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
 
     /// Waveform window border width.
-    static var waveformBorderWidth: CGFloat { 3 * scaleFactor }
+    static var waveformBorderWidth: CGFloat { auxiliaryWindowBorderWidth }
 
     /// Waveform window title bar.
     static let waveformTitleBar = Element("waveform_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
@@ -284,7 +295,7 @@ enum ModernSkinElements {
     static var projectMTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
     /// ProjectM window border width
-    static var projectMBorderWidth: CGFloat { 3 * scaleFactor }
+    static var projectMBorderWidth: CGFloat { auxiliaryWindowBorderWidth }
     
     /// ProjectM window title bar (per-window skinning)
     static let projectMTitleBar = Element("projectm_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
@@ -307,7 +318,7 @@ enum ModernSkinElements {
     static var libraryTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
     /// Library browser border width
-    static var libraryBorderWidth: CGFloat { 3 * scaleFactor }
+    static var libraryBorderWidth: CGFloat { auxiliaryWindowBorderWidth }
     
     /// Library browser title bar (per-window skinning)
     static let libraryTitleBar = Element("library_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
