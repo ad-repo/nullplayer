@@ -47,6 +47,10 @@ extension PeppyMeterWindowProviding {
     func prepareForUITeardown() { tearDown() }
 }
 
+extension NetworkMonitorWindowProviding {
+    func prepareForUITeardown() { tearDownMonitoring() }
+}
+
 extension WaveformWindowProviding {
     func prepareForUITeardown() { stopLoadingForHide() }
 }

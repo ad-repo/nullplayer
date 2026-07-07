@@ -41,6 +41,7 @@ vorbis-binary-xcframework	vorbis.xcframework	BSD-3-Clause	Copyright (c) 2002-202
 vis_classic	vis_classic (Winamp AVS classic)	MIT	Copyright (c) 1998-2018 Mike Lynch; (c) 2018 WACUP	https://github.com/WACUP/vis_classic	bundled source	vis_classic/LICENSE.txt	-
 geiss	Geiss	BSD-3-Clause	Copyright (c) 1998-2022 Ryan Geiss	https://www.geisswerks.com/about_geiss.html	bundled source	ThirdPartyLicenses/GEISS_LICENSE.txt	-
 tripex	Tripex	MIT	Copyright (c) 2025 Ben Marsh	https://github.com/ben-marsh/tripex	bundled source	ThirdPartyLicenses/TRIPEX_LICENSE.txt	-
+flow	Flow	MIT	Copyright (c) 2026 flow contributors	https://github.com/programmersd21/flow	Swift port / visual reference	ThirdPartyLicenses/Flow_LICENSE.txt	-
 fft-nullsoft	Nullsoft FFT	BSD-3-Clause	Copyright 2005-2013 Nullsoft, Inc.	https://github.com/WACUP/vis_classic	bundled source	ThirdPartyLicenses/FFTNullsoft_LICENSE.txt	-
 #
 # === Fonts and bundled assets ===
