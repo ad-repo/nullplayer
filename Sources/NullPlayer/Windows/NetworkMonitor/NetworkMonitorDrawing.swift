@@ -3,11 +3,18 @@ import AppKit
 final class NetworkMonitorRenderState {
     var displayDownBytesPerSecond: Double = 0
     var displayUpBytesPerSecond: Double = 0
-    var downPulse: CGFloat = 0
-    var upPulse: CGFloat = 0
-    var lastPeakDownBytesPerSecond: Double = 0
-    var lastPeakUpBytesPerSecond: Double = 0
     var lastUpdateAt: Date = Date()
+    private var lastTargetDown: Double = 0
+    private var lastTargetUp: Double = 0
+
+    /// Whether the render state still needs per-frame redraws (values still converging
+    /// toward their target). When this is false the network is idle/steady and the
+    /// driving view can skip its 30fps invalidation until the next data snapshot arrives.
+    var hasActiveAnimation: Bool {
+        let threshold = max(1, max(lastTargetDown, lastTargetUp) * 0.01)
+        return abs(displayDownBytesPerSecond - lastTargetDown) > threshold
+            || abs(displayUpBytesPerSecond - lastTargetUp) > threshold
+    }
 
     func advance(toward snapshot: NetworkThroughputSnapshot?, now: Date = Date()) {
         let elapsed = max(0, min(0.1, now.timeIntervalSince(lastUpdateAt)))
@@ -15,23 +22,16 @@ final class NetworkMonitorRenderState {
 
         let targetDown = snapshot?.downBytesPerSecond ?? 0
         let targetUp = snapshot?.upBytesPerSecond ?? 0
+        lastTargetDown = targetDown
+        lastTargetUp = targetUp
         let stiffness = 1 - pow(0.001, elapsed)
         displayDownBytesPerSecond += (targetDown - displayDownBytesPerSecond) * stiffness
         displayUpBytesPerSecond += (targetUp - displayUpBytesPerSecond) * stiffness
+    }
 
-        if let snapshot {
-            if snapshot.sessionPeakDownBytesPerSecond > lastPeakDownBytesPerSecond, lastPeakDownBytesPerSecond > 0 {
-                downPulse = 1
-            }
-            if snapshot.sessionPeakUpBytesPerSecond > lastPeakUpBytesPerSecond, lastPeakUpBytesPerSecond > 0 {
-                upPulse = 1
-            }
-            lastPeakDownBytesPerSecond = snapshot.sessionPeakDownBytesPerSecond
-            lastPeakUpBytesPerSecond = snapshot.sessionPeakUpBytesPerSecond
-        }
-
-        downPulse = max(0, downPulse - CGFloat(elapsed * 2.8))
-        upPulse = max(0, upPulse - CGFloat(elapsed * 2.8))
+    func graphPhase(for snapshot: NetworkThroughputSnapshot?, now: Date = Date()) -> CGFloat {
+        guard let snapshot, snapshot.sampleInterval > 0 else { return 0 }
+        return CGFloat(min(1, max(0, now.timeIntervalSince(snapshot.updatedAt) / snapshot.sampleInterval)))
     }
 }
 
@@ -65,7 +65,9 @@ enum NetworkMonitorDrawing {
         guard rect.width > 20, rect.height > 20 else { return }
 
         let palette = Palette()
-        renderState.advance(toward: snapshot)
+        let now = Date()
+        renderState.advance(toward: snapshot, now: now)
+        let graphPhase = renderState.graphPhase(for: snapshot, now: now)
 
         palette.background.setFill()
         rect.fill()
@@ -76,22 +78,19 @@ enum NetworkMonitorDrawing {
             return
         }
 
-        let content = rect.insetBy(dx: 8, dy: 7)
-        var cursorY = content.maxY
+        // Keep all panel/footer drawing inside the content area so nothing bleeds onto
+        // the surrounding skin chrome.
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: rect).setClip()
+        defer { NSGraphicsContext.restoreGraphicsState() }
 
-        if mode == .hero {
-            drawHeroTitle(in: NSRect(x: content.minX, y: cursorY - 25, width: content.width, height: 22), palette: palette)
-            cursorY -= 31
-        } else if mode == .compact {
-            drawTitleRow(in: NSRect(x: content.minX, y: cursorY - 14, width: content.width, height: 14), palette: palette)
-            cursorY -= 19
-        }
+        let content = rect.insetBy(dx: 5, dy: 4)
+        let cursorY = content.maxY
 
-        let footerHeight: CGFloat = mode == .mini ? 0 : min(24, max(0, content.height * 0.18))
-        let availablePanelHeight = max(30, cursorY - content.minY - footerHeight - 5)
-        let gap: CGFloat = 5
+        let gap: CGFloat = 3
+        let availablePanelHeight = max(30, cursorY - content.minY)
         let panelHeight = floor((availablePanelHeight - gap) / 2)
-        let uploadRect = NSRect(x: content.minX, y: content.minY + footerHeight, width: content.width, height: panelHeight)
+        let uploadRect = NSRect(x: content.minX, y: content.minY, width: content.width, height: panelHeight)
         let downloadRect = NSRect(x: content.minX, y: uploadRect.maxY + gap, width: content.width, height: panelHeight)
 
         drawPanel(
@@ -99,9 +98,9 @@ enum NetworkMonitorDrawing {
             arrow: "↓",
             value: renderState.displayDownBytesPerSecond,
             peak: snapshot?.sessionPeakDownBytesPerSecond ?? 0,
-            pulse: renderState.downPulse,
             samples: snapshot?.downloadHistory ?? [],
             rollingMax: snapshot?.rollingMaxDownBytesPerSecond ?? 1,
+            graphPhase: graphPhase,
             rect: downloadRect,
             isDownload: true,
             compact: mode == .mini,
@@ -112,24 +111,15 @@ enum NetworkMonitorDrawing {
             arrow: "↑",
             value: renderState.displayUpBytesPerSecond,
             peak: snapshot?.sessionPeakUpBytesPerSecond ?? 0,
-            pulse: renderState.upPulse,
             samples: snapshot?.uploadHistory ?? [],
             rollingMax: snapshot?.rollingMaxUpBytesPerSecond ?? 1,
+            graphPhase: graphPhase,
             rect: uploadRect,
             isDownload: false,
             compact: mode == .mini,
             palette: palette
         )
 
-        if footerHeight > 0 {
-            drawFooter(
-                in: NSRect(x: content.minX, y: content.minY, width: content.width, height: footerHeight),
-                snapshot: snapshot,
-                down: renderState.displayDownBytesPerSecond,
-                up: renderState.displayUpBytesPerSecond,
-                palette: palette
-            )
-        }
     }
 
     private static func mode(for rect: NSRect) -> ViewMode {
@@ -149,49 +139,11 @@ enum NetworkMonitorDrawing {
         let up = NetworkThroughputFormatting.bytesPerSecond(renderState.displayUpBytesPerSecond)
         let line = "↓ \(down)   ↑ \(up)"
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
+            .font: monoDigitFont(ofSize: 11, weight: .semibold),
             .foregroundColor: palette.textBright
         ]
         drawText(line, centeredIn: rect, attributes: attrs)
 
-        let iface = snapshot?.interface?.name ?? "auto"
-        let smallAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 7, weight: .regular),
-            .foregroundColor: palette.textMuted
-        ]
-        drawText(iface, centeredIn: NSRect(x: rect.minX, y: rect.minY + 4, width: rect.width, height: 9), attributes: smallAttrs)
-    }
-
-    private static func drawHeroTitle(in rect: NSRect, palette: Palette) {
-        let dotRect = NSRect(x: rect.minX, y: rect.midY - 3, width: 6, height: 6)
-        palette.accent.setFill()
-        NSBezierPath(ovalIn: dotRect).fill()
-        drawText(
-            "flow",
-            at: NSPoint(x: rect.minX + 12, y: rect.minY + 2),
-            attributes: [.font: NSFont.monospacedSystemFont(ofSize: 18, weight: .bold), .foregroundColor: palette.textBright]
-        )
-        drawText(
-            "bandwidth monitor",
-            at: NSPoint(x: rect.minX + 58, y: rect.minY + 5),
-            attributes: [.font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular), .foregroundColor: palette.textMuted]
-        )
-    }
-
-    private static func drawTitleRow(in rect: NSRect, palette: Palette) {
-        let breathe = 0.5 + 0.5 * sin(Date().timeIntervalSince1970 * 2)
-        colorBetween(palette.accent, .white, CGFloat(breathe * 0.35)).setFill()
-        NSBezierPath(ovalIn: NSRect(x: rect.minX, y: rect.midY - 2.5, width: 5, height: 5)).fill()
-        drawText(
-            "flow",
-            at: NSPoint(x: rect.minX + 10, y: rect.minY + 1),
-            attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .bold), .foregroundColor: palette.textBright]
-        )
-        drawText(
-            "bandwidth monitor",
-            at: NSPoint(x: rect.minX + 45, y: rect.minY + 2),
-            attributes: [.font: NSFont.monospacedSystemFont(ofSize: 8, weight: .regular), .foregroundColor: palette.textMuted]
-        )
     }
 
     private static func drawPanel(
@@ -199,9 +151,9 @@ enum NetworkMonitorDrawing {
         arrow: String,
         value: Double,
         peak: Double,
-        pulse: CGFloat,
         samples: [Double],
         rollingMax: Double,
+        graphPhase: CGFloat,
         rect: NSRect,
         isDownload: Bool,
         compact: Bool,
@@ -218,19 +170,27 @@ enum NetworkMonitorDrawing {
         fillColor.setFill()
         let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
         path.fill()
-        strokeColor.withAlphaComponent(0.72 + pulse * 0.28).setStroke()
-        path.lineWidth = 1.2 + pulse * 1.2
+        // Constant stroke width and brightness so the border stays steady instead of
+        // flashing every time a new session peak is reached.
+        strokeColor.withAlphaComponent(0.82).setStroke()
+        path.lineWidth = 1
         path.stroke()
+
+        // Clip inner content to the panel so the value/peak text and waveform can't
+        // spill over the rounded border into the adjacent panel at small window sizes.
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(roundedRect: rect.insetBy(dx: 1.5, dy: 1.5), xRadius: 6, yRadius: 6).setClip()
+        defer { NSGraphicsContext.restoreGraphicsState() }
 
         let inner = rect.insetBy(dx: 8, dy: 5)
         drawText(
             title,
             at: NSPoint(x: inner.minX, y: inner.maxY - 9),
-            attributes: [.font: NSFont.monospacedSystemFont(ofSize: compact ? 7.5 : 8.5, weight: .bold), .foregroundColor: palette.textMuted]
+            attributes: [.font: monoFont(ofSize: compact ? 7.5 : 8.5, weight: .bold), .foregroundColor: palette.textMuted]
         )
 
         let valueAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: compact ? 10 : 13, weight: .bold),
+            .font: monoDigitFont(ofSize: compact ? 10 : 13, weight: .bold),
             .foregroundColor: colorBetween(base, .white, ratio * 0.38)
         ]
         drawText(
@@ -240,8 +200,8 @@ enum NetworkMonitorDrawing {
         )
 
         let peakAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: compact ? 7.5 : 8.5, weight: .medium),
-            .foregroundColor: colorBetween(palette.textMuted, .white, pulse)
+            .font: monoDigitFont(ofSize: compact ? 7.5 : 8.5, weight: .medium),
+            .foregroundColor: palette.textMuted
         ]
         let peakText = "peak: \(NetworkThroughputFormatting.bytesPerSecond(peak))"
         drawText(
@@ -256,10 +216,10 @@ enum NetworkMonitorDrawing {
             width: inner.width,
             height: max(6, inner.height - (compact ? 24 : 29))
         )
-        drawWaveform(samples: samples, maxValue: max(rollingMax, value, 1), in: graphRect, color: strokeColor)
+        drawWaveform(samples: samples, maxValue: max(rollingMax, value, 1), phase: graphPhase, in: graphRect, color: strokeColor)
     }
 
-    private static func drawWaveform(samples: [Double], maxValue: Double, in rect: NSRect, color: NSColor) {
+    private static func drawWaveform(samples: [Double], maxValue: Double, phase: CGFloat, in rect: NSRect, color: NSColor) {
         guard rect.width > 4, rect.height > 4 else { return }
 
         NSColor.white.withAlphaComponent(0.07).setStroke()
@@ -270,15 +230,21 @@ enum NetworkMonitorDrawing {
         baseline.stroke()
 
         guard !samples.isEmpty else { return }
-        let columns = max(2, Int(rect.width / 2))
-        let visible = resampled(samples, count: columns)
+        let sampleSpacing: CGFloat = 2
+        let maxVisibleSamples = max(2, Int(ceil(rect.width / sampleSpacing)) + 2)
+        let visible = Array(samples.suffix(maxVisibleSamples))
         let path = NSBezierPath()
         let fillPath = NSBezierPath()
-        let step = rect.width / CGFloat(max(visible.count - 1, 1))
+        let clampedPhase = min(1, max(0, phase))
+
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: rect).setClip()
+        defer { NSGraphicsContext.restoreGraphicsState() }
 
         for (index, sample) in visible.enumerated() {
+            let age = CGFloat(visible.count - index - 1)
             let ratio = easeOutQuad(CGFloat(min(1, max(0, sample / maxValue))))
-            let point = NSPoint(x: rect.minX + CGFloat(index) * step, y: rect.minY + ratio * rect.height)
+            let point = NSPoint(x: rect.maxX - (age + clampedPhase) * sampleSpacing, y: rect.minY + ratio * rect.height)
             if index == 0 {
                 path.move(to: point)
                 fillPath.move(to: NSPoint(x: point.x, y: rect.minY))
@@ -287,6 +253,12 @@ enum NetworkMonitorDrawing {
                 path.line(to: point)
                 fillPath.line(to: point)
             }
+        }
+        if let last = visible.last {
+            let ratio = easeOutQuad(CGFloat(min(1, max(0, last / maxValue))))
+            let point = NSPoint(x: rect.maxX, y: rect.minY + ratio * rect.height)
+            path.line(to: point)
+            fillPath.line(to: point)
         }
         fillPath.line(to: NSPoint(x: rect.maxX, y: rect.minY))
         fillPath.close()
@@ -298,41 +270,6 @@ enum NetworkMonitorDrawing {
         path.stroke()
     }
 
-    private static func drawFooter(
-        in rect: NSRect,
-        snapshot: NetworkThroughputSnapshot?,
-        down: Double,
-        up: Double,
-        palette: Palette
-    ) {
-        guard rect.height > 12 else { return }
-        let iface = snapshot?.interface?.name ?? "auto"
-        let status = "● \(iface)"
-        let statusAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 8, weight: .medium),
-            .foregroundColor: palette.accent
-        ]
-        drawText(status, centeredIn: NSRect(x: rect.minX, y: rect.maxY - 11, width: rect.width, height: 10), attributes: statusAttrs)
-
-        if rect.height >= 22 {
-            let todayDown = NetworkThroughputFormatting.bytes(snapshot?.dailyDownBytes ?? 0)
-            let todayUp = NetworkThroughputFormatting.bytes(snapshot?.dailyUpBytes ?? 0)
-            let line = "today  ↓ \(todayDown)  ↑ \(todayUp)"
-            drawText(
-                line,
-                centeredIn: NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: 10),
-                attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 7.5, weight: .regular), .foregroundColor: palette.textMuted]
-            )
-        } else {
-            let line = "↓ \(NetworkThroughputFormatting.bytesPerSecond(down))   ↑ \(NetworkThroughputFormatting.bytesPerSecond(up))"
-            drawText(
-                line,
-                centeredIn: NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: 10),
-                attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 7.5, weight: .regular), .foregroundColor: palette.textMuted]
-            )
-        }
-    }
-
     private static func speedRatio(_ value: Double, _ maxValue: Double) -> CGFloat {
         guard maxValue > 0 else { return 0 }
         return CGFloat(min(1, max(0, value / maxValue)))
@@ -340,24 +277,6 @@ enum NetworkMonitorDrawing {
 
     private static func easeOutQuad(_ value: CGFloat) -> CGFloat {
         value * (2 - value)
-    }
-
-    private static func resampled(_ samples: [Double], count: Int) -> [Double] {
-        guard count > 0 else { return [] }
-        guard !samples.isEmpty else { return Array(repeating: 0, count: count) }
-        if samples.count == 1 { return Array(repeating: samples[0], count: count) }
-
-        let start = max(0, samples.count - count * 2)
-        let source = Array(samples[start...])
-        guard source.count > 1 else { return Array(repeating: source.first ?? 0, count: count) }
-
-        return (0..<count).map { index in
-            let position = Double(index) * Double(source.count - 1) / Double(max(count - 1, 1))
-            let lower = Int(floor(position))
-            let upper = min(source.count - 1, lower + 1)
-            let fraction = position - Double(lower)
-            return source[lower] * (1 - fraction) + source[upper] * fraction
-        }
     }
 
     private static func velocityGlyph(_ samples: [Double]) -> String {
@@ -382,6 +301,20 @@ enum NetworkMonitorDrawing {
             blue: left.blueComponent + (right.blueComponent - left.blueComponent) * amount,
             alpha: left.alphaComponent + (right.alphaComponent - left.alphaComponent) * amount
         )
+    }
+
+    // `NSFont.monospaced(Digit)SystemFont` is imported as non-optional but can return
+    // nil for some size/weight combinations on some systems. A nil font pointer flowing
+    // into a text-attributes dictionary crashes CoreText ("attempt to insert nil object")
+    // when the string is drawn, so route every font through a guaranteed non-nil fallback.
+    private static func monoFont(ofSize size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let font: NSFont? = NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        return font ?? NSFont.systemFont(ofSize: size, weight: weight)
+    }
+
+    private static func monoDigitFont(ofSize size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let font: NSFont? = NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+        return font ?? NSFont.systemFont(ofSize: size, weight: weight)
     }
 
     private static func drawText(_ text: String, at point: NSPoint, attributes: [NSAttributedString.Key: Any]) {

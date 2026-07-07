@@ -72,7 +72,7 @@ final class NetworkMonitorView: NSView {
             isActive: window?.isKeyWindow ?? true,
             pressedButton: pressedButton,
             controlScale: WindowManager.shared.playlistChromeScale,
-            title: "NETWORK MONITOR"
+            title: "FLOW"
         )
         context.restoreGState()
 
@@ -106,6 +106,10 @@ final class NetworkMonitorView: NSView {
         guard animationTimer == nil else { return }
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             guard let self, self.window?.isVisible == true else { return }
+            // Only repaint while values are still animating; when the network is idle
+            // or steady the next data snapshot will invalidate us instead. This avoids
+            // repainting the full window chrome 30 fps for a static picture.
+            guard self.renderState.hasActiveAnimation else { return }
             self.needsDisplay = true
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -177,6 +181,7 @@ final class NetworkMonitorView: NSView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        controller?.refreshInterfaces()
         let menu = NSMenu()
         if !interfaces.isEmpty {
             let selectedName = snapshot?.interface?.name

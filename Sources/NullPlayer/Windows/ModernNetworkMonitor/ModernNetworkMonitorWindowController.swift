@@ -33,7 +33,7 @@ final class ModernNetworkMonitorWindowController: NSWindowController, NetworkMon
         window.isOpaque = false
         window.hasShadow = true
         window.minSize = ModernSkinElements.peppyMeterMinSize
-        window.title = "NullPlayer Network Monitor"
+        window.title = "flow"
         window.isReleasedWhenClosed = false
         window.center()
         window.delegate = self
@@ -48,7 +48,6 @@ final class ModernNetworkMonitorWindowController: NSWindowController, NetworkMon
         monitor.onUpdate = { [weak self] snapshot in
             DispatchQueue.main.async {
                 self?.monitorView.snapshot = snapshot
-                self?.monitorView.interfaces = self?.monitor.availableInterfaces() ?? []
             }
         }
         window?.contentView = monitorView
@@ -77,6 +76,12 @@ final class ModernNetworkMonitorWindowController: NSWindowController, NetworkMon
 
     func skinDidChange() {
         monitorView.skinDidChange()
+    }
+
+    /// Refresh the interface list on demand (e.g. just before a context menu opens),
+    /// so we avoid the per-tick `getifaddrs`/SCNetwork sweep on the main thread.
+    func refreshInterfaces() {
+        monitorView.interfaces = monitor.availableInterfaces()
     }
 
     func cycleInterface() {
