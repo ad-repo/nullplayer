@@ -225,7 +225,9 @@ enum ModernSkinElements {
 
     /// PeppyMeter window size. Matches center-stack width, with a landscape-friendly meter height.
     static let peppyMeterHeightMultiplier: CGFloat = 1.75
-    static var peppyMeterContentPadding: CGFloat { 2 * scaleFactor }
+    static var peppyMeterContentPadding: CGFloat {
+        ModernSkinEngine.shared.currentRenderStyle == .metal ? 0 : 2 * scaleFactor
+    }
     static var peppyMeterWindowHeight: CGFloat {
         (spectrumWindowSize.height * peppyMeterHeightMultiplier).rounded()
     }

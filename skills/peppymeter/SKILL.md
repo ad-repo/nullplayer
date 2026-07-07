@@ -82,6 +82,8 @@ chrome:
   static window border is not repainted at 60 Hz.
 - Both views clip `PeppyMeterDrawing.draw(...)` to an inset content rect. Keep this clip in place; some
   templates have artwork near their own edges and must never paint over the app window border.
+  Modern skins keep a small content padding; Metal skins use zero extra padding so PeppyMeter matches
+  the standard thin dockable-window border.
 - Classic PeppyMeter draws the skin chrome after the meter content by using
   `SkinRenderer.drawSpectrumAnalyzerWindowChromeOverlay(...)`. The normal spectrum chrome method fills
   the whole window and is not suitable as a border-only overlay.
