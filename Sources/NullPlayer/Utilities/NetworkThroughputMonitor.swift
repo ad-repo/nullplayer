@@ -404,33 +404,45 @@ final class NetworkThroughputMonitor {
     }
 
     static func readCountersByInterface() -> [String: NetworkByteCounters] {
+        // Read via NET_RT_IFLIST2, which exposes the 64-bit `if_data64` counters.
+        // getifaddrs() only provides the legacy 32-bit `if_data`, whose ifi_ibytes/
+        // ifi_obytes wrap at 4 GiB and make evaluateTick misread the rollover as a
+        // counter decrease (dropping that sample from the daily totals).
         var counters: [String: NetworkByteCounters] = [:]
-        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
 
-        guard getifaddrs(&ifaddr) == 0 else { return [:] }
-        defer { freeifaddrs(ifaddr) }
+        var len = 0
+        guard sysctl(&mib, UInt32(mib.count), nil, &len, nil, 0) == 0, len > 0 else { return [:] }
 
-        var ptr = ifaddr
-        while ptr != nil {
-            defer { ptr = ptr?.pointee.ifa_next }
+        var buffer = [UInt8](repeating: 0, count: len)
+        guard sysctl(&mib, UInt32(mib.count), &buffer, &len, nil, 0) == 0 else { return [:] }
 
-            guard let interface = ptr?.pointee,
-                  let socketAddress = interface.ifa_addr,
-                  Int32(socketAddress.pointee.sa_family) == AF_LINK,
-                  let dataPointer = interface.ifa_data else {
-                continue
+        buffer.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            var offset = 0
+            while offset + MemoryLayout<if_msghdr>.size <= len {
+                let header = base.advanced(by: offset).assumingMemoryBound(to: if_msghdr.self).pointee
+                let msgLen = Int(header.ifm_msglen)
+                guard msgLen > 0 else { break }
+                defer { offset += msgLen }
+
+                guard Int32(header.ifm_type) == RTM_IFINFO2,
+                      offset + MemoryLayout<if_msghdr2>.size <= len else { continue }
+
+                let info = base.advanced(by: offset).assumingMemoryBound(to: if_msghdr2.self).pointee
+                let flags = info.ifm_flags
+                guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0 else { continue }
+
+                var nameBuffer = [CChar](repeating: 0, count: Int(IF_NAMESIZE))
+                guard if_indextoname(UInt32(info.ifm_index), &nameBuffer) != nil else { continue }
+                let name = String(cString: nameBuffer)
+
+                counters[name] = NetworkByteCounters(
+                    interfaceName: name,
+                    inputBytes: info.ifm_data.ifi_ibytes,
+                    outputBytes: info.ifm_data.ifi_obytes
+                )
             }
-
-            let flags = interface.ifa_flags
-            guard flags & UInt32(IFF_UP) != 0, flags & UInt32(IFF_LOOPBACK) == 0 else { continue }
-
-            let data = dataPointer.assumingMemoryBound(to: if_data.self).pointee
-            let name = String(cString: interface.ifa_name)
-            counters[name] = NetworkByteCounters(
-                interfaceName: name,
-                inputBytes: UInt64(data.ifi_ibytes),
-                outputBytes: UInt64(data.ifi_obytes)
-            )
         }
 
         return counters
