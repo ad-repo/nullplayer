@@ -3589,6 +3589,14 @@ class WindowManager {
         (baseHeight * centerStackHeightMultiplier(for: .peppyMeter)).rounded()
     }
 
+    /// Height for a restored PeppyMeter frame. Collapses the previous double-height default
+    /// down to the current 1.75x landscape floor, but otherwise honors a user-stretched height
+    /// so the window remembers its size like the other stack windows.
+    private func restoredPeppyMeterHeight(saved: CGFloat, floor: CGFloat, legacyDoubleHeight: CGFloat) -> CGFloat {
+        if abs(saved - legacyDoubleHeight) <= 2 { return floor }
+        return max(floor, saved)
+    }
+
     private func targetCenterStackHeight(for kind: CenterStackWindowKind,
                                          currentHeight: CGFloat,
                                          titleBarDelta: CGFloat,
@@ -3658,7 +3666,11 @@ class WindowManager {
             var normalized = frame
             let topY = normalized.maxY
             if kind == .peppyMeter {
-                normalized.size.height = (SkinElements.PeppyMeterWindow.windowSize.height * classicScaleMultiplier).rounded()
+                normalized.size.height = restoredPeppyMeterHeight(
+                    saved: normalized.height,
+                    floor: (SkinElements.PeppyMeterWindow.windowSize.height * classicScaleMultiplier).rounded(),
+                    legacyDoubleHeight: (SkinElements.SpectrumWindow.windowSize.height * 2 * classicScaleMultiplier).rounded()
+                )
             } else if let mainWindow = mainWindowController?.window {
                 normalized.size.height = mainWindow.frame.height
             } else {
@@ -3682,7 +3694,11 @@ class WindowManager {
             // Accept legacy compact saved frames but normalize to current full-height minimum.
             normalized.size.height = max(target, normalized.height)
         case .peppyMeter:
-            normalized.size.height = peppyMeterHeight(for: target)
+            normalized.size.height = restoredPeppyMeterHeight(
+                saved: normalized.height,
+                floor: peppyMeterHeight(for: target),
+                legacyDoubleHeight: (target * 2).rounded()
+            )
         }
         normalized.origin.y = topY - normalized.size.height
         return normalized

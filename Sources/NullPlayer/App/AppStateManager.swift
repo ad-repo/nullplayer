@@ -1175,10 +1175,16 @@ class AppStateManager {
         let adjustedSpectrum = repairCandidate(spectrumFrame, preserveWidth: true)
         let adjustedWaveform = repairCandidate(waveformFrame, preserveWidth: true)
         let adjustedAudioAnalysis = repairCandidate(audioAnalysisFrame, preserveWidth: true)
+        // Collapse only the previous double-height default to the current 1.75x floor; otherwise
+        // preserve the saved (possibly user-stretched) height so PeppyMeter remembers its size.
         let adjustedPeppyMeter = repairCandidate(
             peppyMeterFrame,
             preserveWidth: true,
-            targetHeight: (SkinElements.PeppyMeterWindow.windowSize.height * scale).rounded()
+            targetHeight: peppyMeterFrame.flatMap { frame -> CGFloat? in
+                let legacyDoubleHeight = (SkinElements.SpectrumWindow.windowSize.height * 2 * scale).rounded()
+                let floor = (SkinElements.PeppyMeterWindow.windowSize.height * scale).rounded()
+                return abs(frame.height - legacyDoubleHeight) <= 2 ? floor : nil
+            }
         )
         let adjustedNetworkMonitor = repairCandidate(networkMonitorFrame, preserveWidth: true)
 
