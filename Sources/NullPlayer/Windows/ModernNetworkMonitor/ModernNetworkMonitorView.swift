@@ -109,11 +109,16 @@ final class ModernNetworkMonitorView: NSView {
     }
 
     private func contentAreaRect() -> NSRect {
-        NSRect(
+        let rect = NSRect(
             x: borderWidth + contentPadding,
             y: borderWidth + contentPadding,
             width: max(0, bounds.width - borderWidth * 2 - contentPadding * 2),
             height: max(0, bounds.height - titleBarHeight - borderWidth - contentPadding * 2)
+        )
+        return rect.expandingThroughMetalJoinedEdges(
+            in: bounds,
+            borderWidth: borderWidth,
+            adjacentEdges: adjacentEdges
         )
     }
 

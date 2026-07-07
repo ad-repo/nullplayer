@@ -119,7 +119,13 @@ final class ModernPeppyMeterView: NSView {
             width: max(0, bounds.width - borderWidth * 2),
             height: max(0, bounds.height - titleBarHeight - borderWidth)
         )
-        return rect.insetBy(dx: ModernSkinElements.peppyMeterContentPadding, dy: ModernSkinElements.peppyMeterContentPadding)
+        return rect
+            .insetBy(dx: ModernSkinElements.peppyMeterContentPadding, dy: ModernSkinElements.peppyMeterContentPadding)
+            .expandingThroughMetalJoinedEdges(
+                in: bounds,
+                borderWidth: borderWidth,
+                adjacentEdges: adjacentEdges
+            )
     }
 
     private func drawMeterContent(in rect: NSRect, presenter: PeppyMeterPresenter, context: CGContext) {

@@ -201,7 +201,7 @@ When adding or refactoring top menu bar content:
 Main, EQ, Playlist, Spectrum, Waveform, Audio Analysis, PeppyMeter, and Flow all participate in the center stack managed by `WindowManager`.
 
 - Width is normalized to the main stack
-- Height is window-specific: Flow is single-height; PeppyMeter is double-height
+- Height is window-specific: Flow is single-height; PeppyMeter uses a 1.75x landscape height
 - Saved frames are restored through `WindowManager` rather than ad hoc per-window logic
 - Modern and classic implementations should expose a provider protocol in `App/` so `WindowManager` can manage both without mode-specific branching outside window creation
 
