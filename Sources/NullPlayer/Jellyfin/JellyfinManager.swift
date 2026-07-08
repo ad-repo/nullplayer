@@ -651,7 +651,9 @@ class JellyfinManager {
         guard let client = serverClient else {
             return JellyfinSearchResults()
         }
-        return try await client.search(query: query)
+        // Scope to the selected music library, consistent with artist/album browsing
+        // (which already filter on currentMusicLibrary?.id). nil = search all libraries.
+        return try await client.search(query: query, parentId: currentMusicLibrary?.id)
     }
     
     // MARK: - Favorites

@@ -598,8 +598,8 @@ class EmbyServerClient {
     // MARK: - Search
 
     /// Search for artists, albums, songs, movies, shows, and episodes
-    func search(query: String) async throws -> EmbySearchResults {
-        let params = [
+    func search(query: String, parentId: String? = nil) async throws -> EmbySearchResults {
+        var params = [
             URLQueryItem(name: "searchTerm", value: query),
             URLQueryItem(name: "IncludeItemTypes", value: "Audio,MusicAlbum,MusicArtist,Movie,Series,Episode"),
             URLQueryItem(name: "Recursive", value: "true"),
@@ -607,6 +607,11 @@ class EmbyServerClient {
             URLQueryItem(name: "Fields", value: "Overview,MediaSources"),
             URLQueryItem(name: "Limit", value: "50")
         ]
+        // Scope the search to a specific library when requested (matches how browsing
+        // is scoped to the selected library). Omitting it searches the whole server.
+        if let parentId {
+            params.append(URLQueryItem(name: "parentId", value: parentId))
+        }
 
         guard let request = buildRequest(path: "/Items", params: params) else {
             throw EmbyClientError.invalidURL
