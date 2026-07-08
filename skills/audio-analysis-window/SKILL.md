@@ -23,9 +23,9 @@ Spectrum windows in each UI mode.
   `applyCenterStackSizingConstraints` / `applyDefaultCenterStackFrameForCurrentHT` /
   `normalizedCenterStackRestoredFrame` exactly like `showSpectrum`. The controller's default size is
   `ModernSkinElements.spectrumWindowSize`.
-- **Double Size (Large UI).** `WindowManager.applyDoubleSize()` has an explicit audio-analysis block
-  (after the waveform block) that rescales the frame by `classicScaleMultiplier`. Without it the
-  window is the one stack window that doesn't follow Large UI when toggled.
+- **UI Size.** `WindowManager.applyDoubleSize(previousScale:)` has an explicit audio-analysis block
+  (after the waveform block) that rescales the frame by the current UI Size transition ratio. Without it the
+  window is the one stack window that doesn't follow Medium/Large size changes.
 - **Hide Title Bars.** Included in `effectiveHideTitleBars(for:)` (sub-window list), so it auto-hides
   when docked and follows the global HT toggle. The view reads `effectiveHideTitleBars` for its
   title-bar height, drawing, and hit-testing.

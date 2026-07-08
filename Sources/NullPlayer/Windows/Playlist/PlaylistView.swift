@@ -425,8 +425,7 @@ class PlaylistView: NSView {
            mainWidth > 0 {
             return mainWidth / Skin.baseMainSize.width
         }
-        let largeUIMultiplier: CGFloat = WindowManager.shared.isDoubleSize ? 1.5 : 1.0
-        return Skin.scaleFactor * largeUIMultiplier
+        return Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier
     }
 
     /// Get the original window size (unscaled base size)
