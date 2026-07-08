@@ -248,7 +248,7 @@ class AppStateManager {
         // -- v2 fields (added for comprehensive state restoration) --
         
         // UI size mode (both modes)
-        var uiScaleLevel: UIScaleLevel = .normal
+        var uiScaleLevel: UIScaleLevel = .p100
 
         // Legacy double size mode (both modes)
         var isDoubleSize: Bool = false
@@ -369,10 +369,11 @@ class AppStateManager {
             
             // v2 fields - all use decodeIfPresent for backward compatibility
             let legacyDoubleSize = try container.decodeIfPresent(Bool.self, forKey: .isDoubleSize) ?? false
-            let decodedScaleLevel = try container.decodeIfPresent(UIScaleLevel.self, forKey: .uiScaleLevel)
-                ?? (legacyDoubleSize ? .large : .normal)
+            let decodedScaleLevel = try container.decodeIfPresent(String.self, forKey: .uiScaleLevel)
+                .flatMap(UIScaleLevel.init(storedRawValue:))
+                ?? (legacyDoubleSize ? .p150 : .p100)
             uiScaleLevel = decodedScaleLevel
-            isDoubleSize = decodedScaleLevel != .normal
+            isDoubleSize = decodedScaleLevel != .p100
             modernSkinName = try container.decodeIfPresent(String.self, forKey: .modernSkinName)
             metalSkinName = try container.decodeIfPresent(String.self, forKey: .metalSkinName)
             selectedOutputDeviceUID = try container.decodeIfPresent(String.self, forKey: .selectedOutputDeviceUID)
@@ -426,7 +427,7 @@ class AppStateManager {
             isAlwaysOnTop: Bool,
             customSkinPath: String? = nil,
             projectMPresetIndex: Int? = nil,
-            uiScaleLevel: UIScaleLevel = .normal,
+            uiScaleLevel: UIScaleLevel = .p100,
             isDoubleSize: Bool = false,
             modernSkinName: String? = nil,
             metalSkinName: String? = nil,
@@ -477,9 +478,9 @@ class AppStateManager {
             self.isAlwaysOnTop = isAlwaysOnTop
             self.customSkinPath = customSkinPath
             self.projectMPresetIndex = projectMPresetIndex
-            let effectiveScaleLevel = uiScaleLevel == .normal && isDoubleSize ? UIScaleLevel.large : uiScaleLevel
+            let effectiveScaleLevel = uiScaleLevel == .p100 && isDoubleSize ? UIScaleLevel.p150 : uiScaleLevel
             self.uiScaleLevel = effectiveScaleLevel
-            self.isDoubleSize = effectiveScaleLevel != .normal
+            self.isDoubleSize = effectiveScaleLevel != .p100
             self.modernSkinName = modernSkinName
             self.metalSkinName = metalSkinName
             self.selectedOutputDeviceUID = selectedOutputDeviceUID
@@ -832,7 +833,7 @@ class AppStateManager {
             // doesn't re-scale frames that are already at their saved sizes.
             // At this point only the main window is visible, so applyDoubleSize
             // correctly updates its minSize/frame without touching sub-window heights.
-            if savedScaleLevel != .normal {
+            if savedScaleLevel != .p100 {
                 wm.uiScaleLevel = savedScaleLevel
                 NSLog("AppStateManager: Restored UI scale level: %@", savedScaleLevel.rawValue)
             }

@@ -518,14 +518,8 @@ class ContextMenuBuilder {
     private static func buildUISizeMenuItem(wm: WindowManager) -> NSMenuItem {
         let parent = NSMenuItem(title: "UI Size", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
-        let rows: [(String, UIScaleLevel)] = [
-            ("Normal (100%)", .normal),
-            ("Medium (125%)", .medium),
-            ("Large (150%)", .large)
-        ]
-
-        for (title, level) in rows {
-            let item = NSMenuItem(title: title, action: #selector(MenuActions.setUIScaleLevel(_:)), keyEquivalent: "")
+        for level in UIScaleLevel.allCases {
+            let item = NSMenuItem(title: level.menuTitle, action: #selector(MenuActions.setUIScaleLevel(_:)), keyEquivalent: "")
             item.target = MenuActions.shared
             item.representedObject = level.rawValue
             item.state = wm.uiScaleLevel == level ? .on : .off
@@ -4764,7 +4758,7 @@ class MenuActions: NSObject {
 
     @objc func setUIScaleLevel(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
-              let level = UIScaleLevel(rawValue: rawValue) else { return }
+              let level = UIScaleLevel(storedRawValue: rawValue) else { return }
         WindowManager.shared.uiScaleLevel = level
     }
 

@@ -74,19 +74,38 @@ enum TimeDisplayNumberSystem: String, CaseIterable {
 }
 
 enum UIScaleLevel: String, Codable, CaseIterable {
-    case normal
-    case medium
-    case large
+    case p100 = "100"
+    case p105 = "105"
+    case p110 = "110"
+    case p115 = "115"
+    case p125 = "125"
+    case p135 = "135"
+    case p150 = "150"
+    case p200 = "200"
+
+    var percent: Int {
+        Int(rawValue) ?? 100
+    }
+
+    var menuTitle: String {
+        "\(percent)%"
+    }
 
     /// Linear scale multiplier applied on top of Skin.scaleFactor.
     var scaleFactor: CGFloat {
-        switch self {
-        case .normal:
-            return 1.0
-        case .medium:
-            return 1.25
-        case .large:
-            return 1.5
+        CGFloat(percent) / 100.0
+    }
+
+    init?(storedRawValue: String) {
+        switch storedRawValue {
+        case "normal":
+            self = .p100
+        case "medium":
+            self = .p125
+        case "large":
+            self = .p150
+        default:
+            self.init(rawValue: storedRawValue)
         }
     }
 }
@@ -194,7 +213,7 @@ class WindowManager {
     }
     
     /// UI scale mode - not persisted here, restored by AppStateManager when Remember State is enabled.
-    var uiScaleLevel: UIScaleLevel = .normal {
+    var uiScaleLevel: UIScaleLevel = .p100 {
         didSet {
             guard oldValue != uiScaleLevel else { return }
             applyDoubleSize(previousScale: oldValue.scaleFactor)
@@ -204,8 +223,8 @@ class WindowManager {
 
     /// Back-compat shim for callers that only need to know whether the UI is enlarged.
     var isDoubleSize: Bool {
-        get { uiScaleLevel != .normal }
-        set { uiScaleLevel = newValue ? .large : .normal }
+        get { uiScaleLevel != .p100 }
+        set { uiScaleLevel = newValue ? .p150 : .p100 }
     }
 
     /// Classic UI size multiplier driven by the UI Size menu.
@@ -5240,7 +5259,7 @@ class WindowManager {
         if compactModeEnabled {
             // Same-mode rebuild: UI Size is not collapsed/re-applied here, so restore the snapshot
             // frames as-is (no 1x collapse — they'd never be re-scaled).
-            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingScaleLevel: .normal)
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingScaleLevel: .p100)
             let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
                 guard let self else { return }
@@ -5333,14 +5352,14 @@ class WindowManager {
         // Compact entry) instead.
         let restoreScaleLevel = uiScaleLevel
         let preservedSideFrames: SideWindowFrames
-        if restoreScaleLevel != .normal {
+        if restoreScaleLevel != .p100 {
             preservedSideFrames = compactModeEnabled
                 ? sideWindowFrames(from: regularWindowSnapshot)
                 : captureSideWindowFrames()
         } else {
             preservedSideFrames = SideWindowFrames()
         }
-        if restoreScaleLevel != .normal { uiScaleLevel = .normal }
+        if restoreScaleLevel != .p100 { uiScaleLevel = .p100 }
 
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
         // on exit. When in Compact Mode, derive the layout to rebuild from the pre-compact capture
@@ -5505,7 +5524,7 @@ class WindowManager {
         // windows exist. This must happen *before* enterCompactMode() so the compact capture records
         // the enlarged regular layout, not a 1x one. applyDoubleSize (via the scale setter)
         // also re-docks the side windows, so restore any preserved detached frames afterward.
-        if restoreScaleLevel != .normal {
+        if restoreScaleLevel != .p100 {
             uiScaleLevel = restoreScaleLevel
             restoreSideWindowFrames(preservedSideFrames)
         }

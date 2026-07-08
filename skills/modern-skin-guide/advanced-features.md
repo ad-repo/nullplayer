@@ -412,7 +412,7 @@ Float `0.0...1.0` opacity override for the waveform window background. Falls bac
 
 ## UI Size Mode
 
-UI label is **UI Size**. Choose **Normal (100%)**, **Medium (125%)**, or **Large (150%)** from the Windows menu or right-click context menu. Available in modern, metal, and classic UI modes.
+UI label is **UI Size**. Choose **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%** from the Windows menu or right-click context menu. Available in modern, metal, and classic UI modes.
 
 - **Modern UI**: live change -- windows resize immediately, views recreate their renderers
 - **Classic UI**: live change -- windows resize immediately with no restart
@@ -422,7 +422,7 @@ UI label is **UI Size**. Choose **Normal (100%)**, **Medium (125%)**, or **Large
 `ModernSkinElements.scaleFactor` is a computed property: `baseScaleFactor * sizeMultiplier`.
 
 - `baseScaleFactor` -- set by skin.json `window.scale` (default 1.25)
-- `sizeMultiplier` -- set by UI Size (1.0 normal, 1.25 medium, 1.5 large)
+- `sizeMultiplier` -- set by UI Size (1.0 = 100%, 1.25 = 125%, 2.0 = 200%)
 
 When UI Size changes:
 1. `WindowManager` sets `ModernSkinElements.sizeMultiplier` from `uiScaleLevel.scaleFactor`
@@ -437,7 +437,7 @@ Side windows scale their width by `sizeMultiplier` and match the vertical stack 
 
 ### Interaction with Skin Scale
 
-A skin with `"window": { "scale": 1.5 }` sets `baseScaleFactor` to 1.5. In Medium UI Size, effective `scaleFactor` becomes 1.875 (1.5 x 1.25); in Large, it becomes 2.25 (1.5 x 1.5).
+A skin with `"window": { "scale": 1.5 }` sets `baseScaleFactor` to 1.5. At 125% UI Size, effective `scaleFactor` becomes 1.875 (1.5 x 1.25); at 200%, it becomes 3.0 (1.5 x 2.0).
 
 ## Marquee Album Art
 
