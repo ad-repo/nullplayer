@@ -646,12 +646,12 @@ class JellyfinManager {
         )
     }
     
-    /// Search the library
-    func search(query: String) async throws -> JellyfinSearchResults {
+    /// Search the server, optionally scoped to a specific library.
+    func search(query: String, parentId: String? = nil) async throws -> JellyfinSearchResults {
         guard let client = serverClient else {
             return JellyfinSearchResults()
         }
-        return try await client.search(query: query)
+        return try await client.search(query: query, parentId: parentId)
     }
     
     // MARK: - Favorites

@@ -37,6 +37,14 @@ struct CLIQueryHandler {
         if opts.isSearchQuery {
             let source = opts.source ?? "local"
             try await CLISourceResolver.checkConnectivity(source: source)
+            // Server search is scoped to the selected library, so honor --library (or
+            // fall back to a music library) — otherwise search runs against whatever
+            // non-music section was last selected and returns nothing.
+            if let libraryName = opts.library {
+                try await CLISourceResolver.applyLibrary(source: source, name: libraryName)
+            } else {
+                try CLISourceResolver.ensureMusicLibrarySelected(source: source)
+            }
             try await searchAndPrint(source: source, query: opts.search!, json: opts.json)
             return
         }
@@ -46,6 +54,10 @@ struct CLIQueryHandler {
         try await CLISourceResolver.checkConnectivity(source: source)
         if let libraryName = opts.library {
             try await CLISourceResolver.applyLibrary(source: source, name: libraryName)
+        } else if opts.listArtists || opts.listAlbums || opts.listTracks {
+            // These queries are music-only; make sure a music library is selected
+            // (or surface a clear "specify --library" message) instead of returning empty.
+            try CLISourceResolver.ensureMusicLibrarySelected(source: source)
         }
 
         if opts.listArtists {
@@ -71,6 +83,13 @@ struct CLIQueryHandler {
         }
 
         var sources: [SourceStatus] = []
+
+        // Wait for the background connect/refresh tasks so status reflects the configured
+        // servers instead of racing startup and reporting them all "Not configured".
+        await PlexManager.shared.serverRefreshTask?.value
+        await SubsonicManager.shared.serverConnectTask?.value
+        await JellyfinManager.shared.serverConnectTask?.value
+        await EmbyManager.shared.serverConnectTask?.value
 
         sources.append(SourceStatus(name: "local", connected: true, detail: "Local Library"))
         sources.append(SourceStatus(name: "plex", connected: PlexManager.shared.isLinked, detail: "Plex"))
@@ -464,10 +483,16 @@ struct CLIQueryHandler {
             let results = try await SubsonicManager.shared.search(query: query)
             tracks = SubsonicManager.shared.convertToTracks(results.songs)
         case "jellyfin":
-            let results = try await JellyfinManager.shared.search(query: query)
+            let results = try await JellyfinManager.shared.search(
+                query: query,
+                parentId: JellyfinManager.shared.currentMusicLibrary?.id
+            )
             tracks = JellyfinManager.shared.convertToTracks(results.songs)
         case "emby":
-            let results = try await EmbyManager.shared.search(query: query)
+            let results = try await EmbyManager.shared.search(
+                query: query,
+                parentId: EmbyManager.shared.currentMusicLibrary?.id
+            )
             tracks = EmbyManager.shared.convertToTracks(results.songs)
         case "radio":
             let stations = RadioManager.shared.searchStations(query: query)

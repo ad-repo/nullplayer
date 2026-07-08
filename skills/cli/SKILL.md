@@ -220,6 +220,31 @@ Selects a source-specific sub-library before any query or playback. All subseque
 
 Use `--list-libraries --source <name>` to see available libraries. The current selection (marked `*`) is from the GUI's saved preference.
 
+### Implicit music-library selection (Plex, Jellyfin, Emby)
+
+The CLI is audio-only, but Plex, Jellyfin, and Emby all expose non-music sections and carry over the GUI's last-selected library, which may be one of them (a Plex Movies/TV section, or a Jellyfin/Emby `Playlists`/`Video`/`Movies`/`TV shows` view). A music query against a non-music library returns `[]`, surfacing as "artist not found" / "0 artist(s)".
+
+`CLISourceResolver.ensureMusicLibrarySelected(source:)` runs before music-only operations (`--list-artists/albums/tracks`, and artist/album/search playback — **not** playlists, which are server-level, and **not** Subsonic, see below):
+
+- If the current library is already a music library, it is kept.
+- If there is exactly one music library, it is auto-selected (and persists, since selection is written to UserDefaults).
+- If there are several and the current one isn't music, it throws a clear "specify one with `--library <name>`" error listing the available music libraries.
+
+How "is this a music library?" is decided per source:
+
+- **Plex:** `PlexLibrary.isMusicLibrary` (from `availableLibraries`).
+- **Jellyfin / Emby:** `collectionType == "music"`. **Gotcha:** `JellyfinManager.musicLibraries` / `EmbyManager.musicLibraries` are misnamed — `fetchMusicLibraries()` maps **every** view (`/Users/{id}/Views`) with no filtering, so those arrays include `Playlists`/`Video`/`Movies`/`TV shows`. Always filter by `collectionType` before treating an entry as music. `connectInBackground` only auto-selects a music library when there is exactly one view or a saved ID, so with multiple views the restored `currentMusicLibrary` is often a non-music view.
+
+`ensureMusicLibrarySelected` is applied before **every** music-only path: query-mode `--list-artists/albums/tracks`, `--search` (both the query-mode `searchAndPrint` branch and playback), and server `--radio` modes. Playlists skip it. It runs after `applyLibrary` so an explicit `--library` always wins.
+
+Selecting the library is necessary but not sufficient for **search** on Jellyfin/Emby: `client.search(query:)` used to hit `/Items` with `Recursive=true` and no `parentId`, so it searched the whole server regardless of the selection. `JellyfinManager.search` / `EmbyManager.search` accept an optional `parentId`; CLI search paths pass `currentMusicLibrary?.id` after `applyLibrary` / `ensureMusicLibrarySelected`, while GUI Library Browser search omits `parentId` to keep mixed global results (music, movies, TV). Plex search is already library-scoped via `currentLibrary`; Subsonic is music-only.
+
+This pairs with the connectivity fix: `checkConnectivity` now `await`s the background connect/refresh task for **all** server sources (`serverRefreshTask` for Plex, `serverConnectTask` for Subsonic/Jellyfin/Emby) so `serverClient`/`currentLibrary` are populated before any query. `listSources()` awaits the same tasks so configured servers report **Connected** instead of racing to "Not configured".
+
+**Preload is detached from the awaited task.** The connect/refresh tasks used to `await preloadLibraryContent()` (which fetches artists + up to 10k albums, and on Emby also movies/shows) inline, so awaiting them blocked one-shot CLI queries and `--list-sources` on a full library scan. Preload now runs in a `Task.detached(priority: .utility)` after connection (Jellyfin already did this), so the awaited task resolves once the connection and library selection are ready. Nothing outside the CLI awaits these tasks, so this doesn't change GUI behavior; browsing still gets a warm cache from the detached preload.
+
+**Subsonic/Navidrome is exempt** (`ensureMusicLibrarySelected` no-ops for it): it is a music-only server with no music/video split. `fetchArtists()` passes `musicFolderId: currentMusicFolder?.id`, and `nil` (the default, "all folders") returns every artist — there is no non-music library to land on.
+
 ## Radio Modes (`--radio <mode>`)
 
 | Mode | Required flags | Source availability |
@@ -381,57 +406,48 @@ Available `LibrarySortOption` cases: `.title`, `.artist`, `.album`, `.dateAdded`
 
 ### Test Files
 
-| File | Type | Tests |
-|------|------|-------|
-| `Tests/NullPlayerTests/CLIOptionsTests.swift` | Unit | 3 — argument parsing |
-| `Tests/NullPlayerTests/CLIDisplayTests.swift` | Unit | 2 — output formatting |
-| `Tests/NullPlayerTests/CLIProcessTests.swift` | Integration | 8 — real binary, all sources |
+| File | Target | Tests | Covers |
+|------|--------|-------|--------|
+| `Tests/NullPlayerAppTests/CLIOptionsTests.swift` | `NullPlayerAppTests` | 12 unit | `CLIOptions.parse`, `isQueryMode`, `isSearchQuery` |
 
-Run all CLI tests:
+Run them:
 ```bash
-swift test --filter CLI
+swift test --filter CLIOptionsTests
 ```
 
-### CLIOptionsTests (3 tests)
-
-Uses `@testable import NullPlayer` and calls `CLIOptions.parse([String])` directly. Index 0 of the array is the executable path (skipped by the parser).
-
-| Test | What it covers |
-|------|---------------|
-| `testFlagParsing` | All boolean flags: `--json`, `--shuffle`, `--repeat-all`, `--repeat-one`, `--no-art`, all 11 `--list-*` flags, `--cli` silently ignored |
-| `testValueParsing` | All string flags (source, artist, album, track, genre, playlist, search, radio, station, library, folder, channel, region, cast, cast-type, sonos-rooms, eq, output) and integer flags (`--volume 75`, `--decade 1990`) |
-| `testQueryModeDetection` | `isQueryMode` true for each `--list-*` flag; `isSearchQuery` true for `--search` alone, false when combined with `--artist`, `--album`, `--playlist`, `--radio`, or `--station` |
-
-### CLIDisplayTests (2 tests)
-
-Tests `CLIDisplay` static methods. Captures stdout via `dup`/`dup2`/`Pipe()` redirect.
-
-| Test | What it covers |
-|------|---------------|
-| `testPrintTableFormatting` | With data: header line, separator dashes, data rows, `N result(s)` footer. With empty rows: `"No results found."` |
-| `testPrintJSONEncoding` | Encodes a `Codable` struct; output is valid JSON with sorted keys and pretty-print indentation |
-
-### CLIProcessTests (8 tests)
-
-Spawns the real NullPlayer binary via `Process()`. Binary discovery looks next to the test runner:
-
-```swift
-let testBinary = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
-let binary = testBinary.deletingLastPathComponent().appendingPathComponent("NullPlayer")
+`swift test` needs the projectM dylibs on the runner's rpath — if it fails to launch,
+symlink them first (see the `swift-test-dylib-rpath` note):
+```bash
+for d in Frameworks/libprojectM-4*.dylib; do ln -sf "$PWD/$d" ".build/debug/$(basename "$d")"; done
 ```
 
-All 8 tests skip via `XCTSkip` when the binary is absent (i.e., when running `swift test` without a prior app build). They run automatically after building the app with Xcode or `./scripts/kill_build_run.sh`.
+### What is and isn't covered
 
-| Test | Args | Assertions |
-|------|------|------------|
-| `testHelp` | `--cli --help` | exit 0; stdout contains `"USAGE:"`, `"PLAYBACK:"`, `"KEYBOARD CONTROLS"` |
-| `testVersion` | `--cli --version` | exit 0; stdout matches `NullPlayer \d+\.\d+` |
-| `testListEQAndOutputs` | `--cli --list-eq` and `--cli --list-outputs` | both exit 0; each contains `"---"` separator and at least one data row |
-| `testListSources` | `--cli --list-sources` | exit 0; output contains `"---"` |
-| `testListStations` | table, `--json`, and `--folder genre` variants | all exit 0; JSON parses; filtered count ≤ total count |
-| `testErrorCases` | `--repeat-all --repeat-one` and `--unknown-flag` | both exit 1; stderr contains `"Error:"` |
-| `testLocalSourceQueries` | `--source local` + `--list-artists/albums/genres/tracks/playlists`, `--search "a"` | all exit 0; `XCTSkip` if local library is empty |
-| `testRemoteSourceQueries` | `--source <name> --list-artists` for plex, subsonic, jellyfin, emby | exit 0 → assert tabular output; exit 1 with `"not configured"` / `"not connected"` → skip; other non-zero → `XCTFail` |
+`CLIOptionsTests` uses `@testable import NullPlayer` and calls `CLIOptions.parse([String])`
+directly (index 0 is the executable path, skipped by the parser). It covers the pure,
+deterministic surface: default values, every boolean/`--list-*` flag, `--cli` being a
+no-op, all string/int/double value flags, and the query-vs-playback classification
+(`isQueryMode`, and `isSearchQuery` flipping to playback when `--search` is combined with
+`--artist`/`--album`/`--playlist`/`--radio`/`--station`). The original Plex bug command
+shape (`--source plex --list-albums --artist …`) is pinned as a regression guard.
+
+**Not unit-tested (needs live servers or a spawned binary — do via manual QA):**
+
+- `CLISourceResolver` source resolution and `ensureMusicLibrarySelected` — depend on
+  `PlexManager`/`Subsonic`/`Jellyfin`/`Emby` singletons connected to real servers. Verify
+  by hand against a configured server (e.g. `--source jellyfin --list-artists` returns rows,
+  not `0 artist(s)`).
+- `CLIDisplay` table/JSON formatting and `CLIQueryHandler` output — no tests yet.
+
+### Testability limitations (known quality gaps)
+
+- **`CLIOptions.parse` calls `exit(1)` on invalid input** (bad `--decade`/`--volume`/
+  `--tuning-offset-cents`, unknown flags, or a flag missing its value). That terminates the
+  process, so error paths can't be unit-tested without spawning a subprocess. Parsing and
+  validation should be separated (return an error instead of exiting) before those cases can
+  be covered in-process — keep test inputs valid until then.
+- A string flag whose value begins with `--` is treated as "missing value" (the parser
+  guards `!args[i+1].hasPrefix("--")`), so values like `--search "--foo"` are rejected.
 
 ---
 

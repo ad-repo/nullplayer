@@ -311,9 +311,13 @@ class PlexManager {
             NSLog("PlexManager: Background refresh of servers starting...")
             try await refreshServers()
             NSLog("PlexManager: Background refresh completed, found %d servers", servers.count)
-            
-            // Preload library content after successful server connection
-            await preloadLibraryContent()
+
+            // Preload library content in the background without blocking the refresh
+            // task itself. Callers that await serverRefreshTask (e.g. the CLI) only need
+            // the connection and library selection to be ready, not a full library scan.
+            Task.detached(priority: .utility) { [weak self] in
+                await self?.preloadLibraryContent()
+            }
         } catch {
             NSLog("PlexManager: Background refresh failed: %@", error.localizedDescription)
         }

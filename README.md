@@ -226,40 +226,71 @@ Supported playback targets include:
 Typical automation shape:
 
 ```bash
-nullplayer --cli --source plex --playlist "Morning Rotation" --cast "Living Room" --cast-type sonos
-nullplayer --cli --source local --artist "Boards of Canada" --output "MacBook Pro Speakers"
-nullplayer --cli --station "KEXP" --source radio --cast "Kitchen Speaker" --cast-type chromecast
+nullplayer --cli --source plex --playlist "All Music" --cast "Living Room" --cast-type sonos
+nullplayer --cli --source local --artist "Courtney Barnett" --output "MacBook Pro Speakers"
+nullplayer --cli --source radio --station "Radio Paradise: Mellow Mix" --cast "Kitchen Speaker" --cast-type chromecast
 ```
+
+> **Audio only.** The CLI plays and queries *music*. Video libraries (Plex/Jellyfin/Emby Movies and TV) are not playable or browsable from the CLI — the artist/album/track/search queries all target music libraries. `--list-libraries` will still show video sections, but use the GUI to watch video. Casting a music track to a TV target (Chromecast/DLNA) is audio playback, not video.
 
 ### Query commands (print results and exit)
 
 ```bash
-nullplayer --cli --list-sources                          # show configured sources
-nullplayer --cli --list-artists --source plex            # list artists
-nullplayer --cli --list-albums  --source local           # list albums
-nullplayer --cli --list-tracks  --source subsonic        # list tracks
-nullplayer --cli --list-genres  --source local           # list genres
-nullplayer --cli --list-playlists --source jellyfin      # list playlists
-nullplayer --cli --list-stations                         # list internet radio stations
-nullplayer --cli --list-eq                               # list EQ presets
-nullplayer --cli --list-outputs                          # list audio output devices
-nullplayer --cli --list-devices                          # list cast devices
-nullplayer --cli --search "radiohead" --source local     # search library
-nullplayer --cli --list-artists --source plex --json     # JSON output
+nullplayer --cli --list-sources                                        # show configured sources
+nullplayer --cli --list-libraries --source plex                        # list Plex libraries
+nullplayer --cli --list-artists   --source plex --library AD-FLAC      # list artists in a Plex library
+nullplayer --cli --list-albums    --source plex --library AD-FLAC --artist "Soundgarden"
+nullplayer --cli --list-albums    --source local                       # list local albums
+nullplayer --cli --list-tracks    --source local --artist "Rush"       # list tracks
+nullplayer --cli --list-genres    --source local                       # list local genres
+nullplayer --cli --list-artists   --source subsonic                    # Navidrome/Subsonic artists
+nullplayer --cli --list-albums    --source jellyfin --artist "3rd Bass" # Jellyfin albums by artist
+nullplayer --cli --list-libraries --source emby                        # Emby libraries
+nullplayer --cli --list-playlists --source plex                        # list playlists
+nullplayer --cli --list-stations                                       # list internet radio stations
+nullplayer --cli --list-eq                                             # list EQ presets
+nullplayer --cli --list-outputs                                        # list audio output devices
+nullplayer --cli --list-devices                                        # list cast devices
+nullplayer --cli --search "soundgarden" --source plex --library AD-FLAC  # search a library
+nullplayer --cli --list-artists   --source plex --library AD-FLAC --json # JSON output
 ```
+
+> **Selecting a Plex library.** Plex servers often expose several music libraries (e.g. `AD-FLAC`, `AD-MP3`, `Classical-FLAC`). Pass `--library <name>` to pick one. If you omit it, the CLI uses your last-selected music library; if that is ambiguous it prints the available music libraries so you can choose. Run `nullplayer --cli --list-libraries --source plex` to see the exact names.
 
 ### Playback
 
 ```bash
-nullplayer --cli --source local --artist "Pink Floyd"
-nullplayer --cli --source plex --album "OK Computer" --shuffle
-nullplayer --cli --source local --genre "Jazz" --repeat-all
-nullplayer --cli --station "KEXP" --source radio
-nullplayer --cli --source local --radio artist --artist "Björk"
-nullplayer --cli --source local --volume 80 --eq "Rock"
-nullplayer --cli --source plex --album "Kind of Blue" --tuning 432
-nullplayer --cli --source jellyfin --playlist "Late Night" --cast "Bedroom" --cast-type sonos
-nullplayer --cli --source local --album "Selected Ambient Works 85-92" --cast "Office TV" --cast-type dlna
+# Local library
+nullplayer --cli --source local --artist "Courtney Barnett"
+nullplayer --cli --source local --album "Dub Side Of The Moon"
+nullplayer --cli --source local --genre "Reggae" --repeat-all
+nullplayer --cli --source local --artist "Rush" --shuffle
+
+# Plex — pick a music library with --library (omit to use your last-selected one)
+nullplayer --cli --source plex --library AD-FLAC --artist "Soundgarden" --album "SuperUnknown"
+nullplayer --cli --source plex --library AD-FLAC --artist "AC/DC" --shuffle
+nullplayer --cli --source plex --library AD-FLAC --artist "AC/DC" --album "Black Ice" --tuning 432
+nullplayer --cli --source plex --playlist "All Music"
+
+# Subsonic / Navidrome (music-only server; --library selects a music folder)
+nullplayer --cli --source subsonic --artist "ZZ Top" --album "Eliminator"
+nullplayer --cli --source subsonic --artist "ZZ Top" --shuffle
+
+# Jellyfin (--library selects a music library; omit to use the current one)
+nullplayer --cli --source jellyfin --library "Music" --artist "3rd Bass" --album "The Cactus Album"
+nullplayer --cli --source jellyfin --artist "3rd Bass" --shuffle
+
+# Emby
+nullplayer --cli --source emby --library "Music" --artist "ZZ Top" --album "La Futura"
+nullplayer --cli --source emby --artist "ZZ Top"
+
+# Internet radio
+nullplayer --cli --source radio --station "Radio Paradise: Mellow Mix"
+nullplayer --cli --source radio --station "Heart 80s UK"
+
+# Outputs and casting
+nullplayer --cli --source local --artist "Augustus Pablo" --output "MacBook Pro Speakers"
+nullplayer --cli --source plex --playlist "Recently Added" --cast "Living Room" --cast-type sonos
 ```
 
 ### Volume control
@@ -267,8 +298,8 @@ nullplayer --cli --source local --album "Selected Ambient Works 85-92" --cast "O
 Set the initial playback volume at launch:
 
 ```bash
-nullplayer --cli --source local --artist "Björk" --volume 80
-nullplayer --cli --source plex --playlist "Focus" --cast "Living Room" --cast-type sonos --volume 35
+nullplayer --cli --source local --artist "Rush" --volume 80
+nullplayer --cli --source plex --playlist "All Music" --cast "Living Room" --cast-type sonos --volume 35
 ```
 
 During playback:
@@ -286,9 +317,9 @@ Reference Tuning pitch-shifts local output to a selected reference frequency, su
 CLI overrides are session-only:
 
 ```bash
-nullplayer --cli --source local --artist "Björk" --tuning 432
-nullplayer --cli --source plex --playlist "Focus" --tuning 432 --tuning-source 440
-nullplayer --cli --source radio --station "KEXP" --tuning-offset-cents -31.766
+nullplayer --cli --source local --artist "Rush" --tuning 432
+nullplayer --cli --source plex --library AD-FLAC --artist "Soundgarden" --tuning 432 --tuning-source 440
+nullplayer --cli --source radio --station "Radio Paradise: Mellow Mix" --tuning-offset-cents -31.766
 ```
 
 ### Keyboard controls (during playback)
