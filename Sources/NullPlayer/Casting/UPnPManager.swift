@@ -1580,7 +1580,7 @@ class UPnPManager {
             throw CastError.sessionNotActive
         }
         
-        NSLog("UPnPManager: Casting %@ to %@", url.absoluteString, session.device.name)
+        NSLog("UPnPManager: Casting %@ to %@", url.redacted, session.device.name)
         
         // Generate DIDL-Lite metadata
         let didlMetadata = metadata.toDIDLLite(streamURL: url)

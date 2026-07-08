@@ -210,7 +210,7 @@ class CLIMode: NSObject, NSApplicationDelegate {
                     try await CLIQueryHandler.handle(opts)
                     exit(0)
                 } catch {
-                    fputs("Error: \(error.localizedDescription)\n", stderr)
+                    fputs("Error: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", stderr)
                     exit(1)
                 }
             }
@@ -242,7 +242,7 @@ class CLIMode: NSObject, NSApplicationDelegate {
                 self.keyboard = kb
                 kb.start()
             } catch {
-                fputs("Error: \(error.localizedDescription)\n", stderr)
+                fputs("Error: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", stderr)
                 exit(1)
             }
         }

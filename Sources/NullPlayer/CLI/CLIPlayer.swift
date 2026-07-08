@@ -180,7 +180,7 @@ class CLIPlayer: AudioEngineDelegate {
                 }
             }
         } catch {
-            fputs("Error: Cast failed: \(error.localizedDescription)\n", stderr)
+            fputs("Error: Cast failed: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", stderr)
         }
     }
 
@@ -368,6 +368,6 @@ class CLIPlayer: AudioEngineDelegate {
     }
 
     func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {
-        fputs("Error loading '\(track.title ?? "Unknown")': \(error.localizedDescription)\n", stderr)
+        fputs("Error loading '\(track.title)': \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", stderr)
     }
 }

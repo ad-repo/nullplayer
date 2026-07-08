@@ -832,13 +832,13 @@ class StreamingAudioPlayer {
 
 extension StreamingAudioPlayer: AudioPlayerDelegate {
     func audioPlayerDidStartPlaying(player: AudioPlayer, with entryId: AudioEntryId) {
-        NSLog("StreamingAudioPlayer: Started playing entry: %@", entryId.id)
+        NSLog("StreamingAudioPlayer: Started playing entry: %@", entryId.id.redactingSensitiveURLQueryItems)
         hasReportedFormat = false  // Reset for new track (including gapless queue transitions)
         delegate?.streamingPlayerDidChangeState(.playing)
     }
     
     func audioPlayerDidFinishBuffering(player: AudioPlayer, with entryId: AudioEntryId) {
-        NSLog("StreamingAudioPlayer: Finished buffering entry: %@", entryId.id)
+        NSLog("StreamingAudioPlayer: Finished buffering entry: %@", entryId.id.redactingSensitiveURLQueryItems)
     }
     
     func audioPlayerStateChanged(player: AudioPlayer, with newState: AudioPlayerState, previous: AudioPlayerState) {
@@ -847,7 +847,11 @@ extension StreamingAudioPlayer: AudioPlayerDelegate {
     }
     
     func audioPlayerDidFinishPlaying(player: AudioPlayer, entryId: AudioEntryId, stopReason: AudioPlayerStopReason, progress: Double, duration: Double) {
-        NSLog("StreamingAudioPlayer: Finished playing entry: %@, reason: %@", entryId.id, String(describing: stopReason))
+        NSLog(
+            "StreamingAudioPlayer: Finished playing entry: %@, reason: %@",
+            entryId.id.redactingSensitiveURLQueryItems,
+            String(describing: stopReason).redactingSensitiveURLQueryItems
+        )
         
         // Notify on natural completion (.eof = queue empty, .none = gapless transition)
         // Do not notify on .userAction (skip/stop) or .error
@@ -859,7 +863,7 @@ extension StreamingAudioPlayer: AudioPlayerDelegate {
     }
     
     func audioPlayerUnexpectedError(player: AudioPlayer, error: AudioPlayerError) {
-        NSLog("StreamingAudioPlayer: Unexpected error: %@", String(describing: error))
+        NSLog("StreamingAudioPlayer: Unexpected error: %@", String(describing: error).redactingSensitiveURLQueryItems)
         delegate?.streamingPlayerDidEncounterError(error)
     }
     
@@ -868,7 +872,7 @@ extension StreamingAudioPlayer: AudioPlayerDelegate {
     }
     
     func audioPlayerDidReadMetadata(player: AudioPlayer, metadata: [String: String]) {
-        NSLog("StreamingAudioPlayer: Read metadata: %@", metadata.description)
+        NSLog("StreamingAudioPlayer: Read metadata: %@", metadata.description.redactingSensitiveURLQueryItems)
         
         // Forward metadata to delegate (for ICY stream info like current song)
         DispatchQueue.main.async { [weak self] in
