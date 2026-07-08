@@ -342,7 +342,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Bundled modern skins: NeonWave (default), Skulls
 
 ### UI Size Mode
-- **Modern/Metal UI**: choose context menu -> **UI Size** -> **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
+- **Modern/Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
 - **Classic UI**: choose context menu -> **UI Size** or use the classic size control to enlarge
 - Scales all windows to the selected percentage
 - Persists across restarts
@@ -439,4 +439,4 @@ For comprehensive documentation, see:
 - **Shift+Click** for multi-select in playlist/browser
 - **Cmd+J** to jump to currently playing track
 - Windows **dock automatically** when dragged near each other
-- **UI Size** offers 100%, 105%, 110%, 115%, 125%, 135%, 150%, and 200% in both modern and classic UI; size changes apply live instantly (no restart)
+- **UI Size** offers 50%, 90%, 100%, 105%, 110%, 115%, 125%, 135%, 150%, and 200% in both modern and classic UI; size changes apply live instantly (no restart)

@@ -74,6 +74,8 @@ enum TimeDisplayNumberSystem: String, CaseIterable {
 }
 
 enum UIScaleLevel: String, Codable, CaseIterable {
+    case p50 = "50"
+    case p90 = "90"
     case p100 = "100"
     case p105 = "105"
     case p110 = "110"
@@ -216,12 +218,15 @@ class WindowManager {
     var uiScaleLevel: UIScaleLevel = .p100 {
         didSet {
             guard oldValue != uiScaleLevel else { return }
-            applyDoubleSize(previousScale: oldValue.scaleFactor)
-            NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
+            applyUIScaleLevelChangeIfNeeded()
         }
     }
 
-    /// Back-compat shim for callers that only need to know whether the UI is enlarged.
+    private var appliedUIScaleLevel: UIScaleLevel = .p100
+    private var isApplyingUIScaleLevel = false
+    private var pendingUIScaleLevel: UIScaleLevel?
+
+    /// Back-compat shim for callers that only need to know whether the UI is at a non-default size.
     var isDoubleSize: Bool {
         get { uiScaleLevel != .p100 }
         set { uiScaleLevel = newValue ? .p150 : .p100 }
@@ -3071,11 +3076,34 @@ class WindowManager {
     }
     
     // MARK: - UI Size
-    
+
+    private func applyUIScaleLevelChangeIfNeeded() {
+        guard !isApplyingUIScaleLevel else {
+            pendingUIScaleLevel = uiScaleLevel
+            return
+        }
+
+        isApplyingUIScaleLevel = true
+        defer {
+            isApplyingUIScaleLevel = false
+            pendingUIScaleLevel = nil
+        }
+
+        repeat {
+            pendingUIScaleLevel = nil
+            let targetLevel = uiScaleLevel
+            guard targetLevel != appliedUIScaleLevel else { continue }
+
+            applyDoubleSize(previousScale: appliedUIScaleLevel.scaleFactor, targetLevel: targetLevel)
+            appliedUIScaleLevel = targetLevel
+            NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
+        } while pendingUIScaleLevel != nil && uiScaleLevel != appliedUIScaleLevel
+    }
+
     /// Apply UI scaling to all windows.
-    private func applyDoubleSize(previousScale: CGFloat = 1.0) {
+    private func applyDoubleSize(previousScale: CGFloat = 1.0, targetLevel: UIScaleLevel? = nil) {
         let runningModernMode = isRunningModernUI
-        let targetScale = uiScaleLevel.scaleFactor
+        let targetScale = (targetLevel ?? uiScaleLevel).scaleFactor
         let ratio = targetScale / previousScale
 
         // For modern UI, set the sizeMultiplier so all ModernSkinElements computed

@@ -412,7 +412,7 @@ Float `0.0...1.0` opacity override for the waveform window background. Falls bac
 
 ## UI Size Mode
 
-UI label is **UI Size**. Choose **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%** from the Windows menu or right-click context menu. Available in modern, metal, and classic UI modes.
+UI label is **UI Size**. Choose **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%** from the Windows menu or right-click context menu. Available in modern, metal, and classic UI modes.
 
 - **Modern UI**: live change -- windows resize immediately, views recreate their renderers
 - **Classic UI**: live change -- windows resize immediately with no restart
@@ -422,7 +422,7 @@ UI label is **UI Size**. Choose **100%**, **105%**, **110%**, **115%**, **125%**
 `ModernSkinElements.scaleFactor` is a computed property: `baseScaleFactor * sizeMultiplier`.
 
 - `baseScaleFactor` -- set by skin.json `window.scale` (default 1.25)
-- `sizeMultiplier` -- set by UI Size (1.0 = 100%, 1.25 = 125%, 2.0 = 200%)
+- `sizeMultiplier` -- set by UI Size (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
 
 When UI Size changes:
 1. `WindowManager` sets `ModernSkinElements.sizeMultiplier` from `uiScaleLevel.scaleFactor`
