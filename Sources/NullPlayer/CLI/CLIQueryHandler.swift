@@ -46,6 +46,10 @@ struct CLIQueryHandler {
         try await CLISourceResolver.checkConnectivity(source: source)
         if let libraryName = opts.library {
             try await CLISourceResolver.applyLibrary(source: source, name: libraryName)
+        } else if opts.listArtists || opts.listAlbums || opts.listTracks {
+            // These queries are music-only; make sure a music library is selected
+            // (or surface a clear "specify --library" message) instead of returning empty.
+            try CLISourceResolver.ensureMusicLibrarySelected(source: source)
         }
 
         if opts.listArtists {
@@ -71,6 +75,13 @@ struct CLIQueryHandler {
         }
 
         var sources: [SourceStatus] = []
+
+        // Wait for the background connect/refresh tasks so status reflects the configured
+        // servers instead of racing startup and reporting them all "Not configured".
+        await PlexManager.shared.serverRefreshTask?.value
+        await SubsonicManager.shared.serverConnectTask?.value
+        await JellyfinManager.shared.serverConnectTask?.value
+        await EmbyManager.shared.serverConnectTask?.value
 
         sources.append(SourceStatus(name: "local", connected: true, detail: "Local Library"))
         sources.append(SourceStatus(name: "plex", connected: PlexManager.shared.isLinked, detail: "Plex"))

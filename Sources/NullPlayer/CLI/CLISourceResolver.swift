@@ -60,7 +60,11 @@ struct CLISourceResolver {
             return .radioStation
         }
 
-        // Standard content resolution
+        // Standard content resolution — artist/album/search need a music library.
+        // (Playlists are server-level and don't depend on the selected library.)
+        if opts.library == nil && opts.playlist == nil {
+            try ensureMusicLibrarySelected(source: source)
+        }
         var tracks = try await resolveContent(source: source, opts: opts)
 
         // Post-filter by --track
@@ -81,6 +85,10 @@ struct CLISourceResolver {
             guard PlexManager.shared.isLinked else {
                 throw CLISourceError.sourceNotConfigured("Plex")
             }
+            // Wait for the background server refresh so serverClient / currentLibrary
+            // are populated before we query. Without this, queries race the refresh
+            // and silently return empty results ("artist not found").
+            await PlexManager.shared.serverRefreshTask?.value
         case "subsonic":
             await SubsonicManager.shared.serverConnectTask?.value
             if case .connected = SubsonicManager.shared.connectionState { } else {
@@ -137,6 +145,67 @@ struct CLISourceResolver {
             EmbyManager.shared.selectMusicLibrary(lib)
         default:
             break // local and radio don't have sub-libraries
+        }
+    }
+
+    /// Ensure a *music* library is selected for music-only queries/playback when the
+    /// user did not pass an explicit `--library`. Plex, Jellyfin, and Emby all expose
+    /// non-music sections (Movies/TV, and on Jellyfin/Emby also Playlists), and the
+    /// restored "current library" — carried over from the GUI's last selection — may be
+    /// one of those. Music queries against a non-music library silently return nothing.
+    /// Call only after `checkConnectivity`.
+    ///
+    /// - If the current library is already a music library, it is kept.
+    /// - If there is exactly one music library, it is auto-selected.
+    /// - If there are several, throws a clear "specify --library" error listing them.
+    ///
+    /// Subsonic/Navidrome is a music-only server (a nil music-folder selection means
+    /// "all folders"), so it needs no adjustment.
+    static func ensureMusicLibrarySelected(source: String) throws {
+        switch source {
+        case "plex":
+            if PlexManager.shared.currentLibrary?.isMusicLibrary == true { return }
+            let musicLibs = PlexManager.shared.availableLibraries.filter { $0.isMusicLibrary }
+            guard let first = musicLibs.first else {
+                throw CLISourceError.noTracksFound("— no music library found on Plex")
+            }
+            if musicLibs.count > 1 {
+                throw CLISourceError.noTracksFound(
+                    "— Plex has multiple music libraries; specify one with --library <name>. "
+                    + "Available: \(musicLibs.map { $0.title }.joined(separator: ", "))")
+            }
+            PlexManager.shared.selectLibrary(first)
+
+        case "jellyfin":
+            // JellyfinManager.musicLibraries actually holds every view (Music, Playlists,
+            // Video), so filter by collectionType to find the real music libraries.
+            if JellyfinManager.shared.currentMusicLibrary?.collectionType?.lowercased() == "music" { return }
+            let musicLibs = JellyfinManager.shared.musicLibraries.filter { $0.collectionType?.lowercased() == "music" }
+            guard let first = musicLibs.first else {
+                throw CLISourceError.noTracksFound("— no music library found on Jellyfin")
+            }
+            if musicLibs.count > 1 {
+                throw CLISourceError.noTracksFound(
+                    "— Jellyfin has multiple music libraries; specify one with --library <name>. "
+                    + "Available: \(musicLibs.map { $0.name }.joined(separator: ", "))")
+            }
+            JellyfinManager.shared.selectMusicLibrary(first)
+
+        case "emby":
+            if EmbyManager.shared.currentMusicLibrary?.collectionType?.lowercased() == "music" { return }
+            let musicLibs = EmbyManager.shared.musicLibraries.filter { $0.collectionType?.lowercased() == "music" }
+            guard let first = musicLibs.first else {
+                throw CLISourceError.noTracksFound("— no music library found on Emby")
+            }
+            if musicLibs.count > 1 {
+                throw CLISourceError.noTracksFound(
+                    "— Emby has multiple music libraries; specify one with --library <name>. "
+                    + "Available: \(musicLibs.map { $0.name }.joined(separator: ", "))")
+            }
+            EmbyManager.shared.selectMusicLibrary(first)
+
+        default:
+            break // subsonic (music-only), local, radio: nothing to adjust
         }
     }
 
