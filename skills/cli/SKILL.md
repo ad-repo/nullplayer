@@ -235,7 +235,11 @@ How "is this a music library?" is decided per source:
 - **Plex:** `PlexLibrary.isMusicLibrary` (from `availableLibraries`).
 - **Jellyfin / Emby:** `collectionType == "music"`. **Gotcha:** `JellyfinManager.musicLibraries` / `EmbyManager.musicLibraries` are misnamed — `fetchMusicLibraries()` maps **every** view (`/Users/{id}/Views`) with no filtering, so those arrays include `Playlists`/`Video`/`Movies`/`TV shows`. Always filter by `collectionType` before treating an entry as music. `connectInBackground` only auto-selects a music library when there is exactly one view or a saved ID, so with multiple views the restored `currentMusicLibrary` is often a non-music view.
 
+`ensureMusicLibrarySelected` is applied before **every** music-only path: query-mode `--list-artists/albums/tracks`, `--search` (both the query-mode `searchAndPrint` branch and playback), and server `--radio` modes. Playlists skip it. It runs after `applyLibrary` so an explicit `--library` always wins.
+
 This pairs with the connectivity fix: `checkConnectivity` now `await`s the background connect/refresh task for **all** server sources (`serverRefreshTask` for Plex, `serverConnectTask` for Subsonic/Jellyfin/Emby) so `serverClient`/`currentLibrary` are populated before any query. `listSources()` awaits the same tasks so configured servers report **Connected** instead of racing to "Not configured".
+
+**Preload is detached from the awaited task.** The connect/refresh tasks used to `await preloadLibraryContent()` (which fetches artists + up to 10k albums, and on Emby also movies/shows) inline, so awaiting them blocked one-shot CLI queries and `--list-sources` on a full library scan. Preload now runs in a `Task.detached(priority: .utility)` after connection (Jellyfin already did this), so the awaited task resolves once the connection and library selection are ready. Nothing outside the CLI awaits these tasks, so this doesn't change GUI behavior; browsing still gets a warm cache from the detached preload.
 
 **Subsonic/Navidrome is exempt** (`ensureMusicLibrarySelected` no-ops for it): it is a music-only server with no music/video split. `fetchArtists()` passes `musicFolderId: currentMusicFolder?.id`, and `nil` (the default, "all folders") returns every artist — there is no non-music library to land on.
 

@@ -347,8 +347,11 @@ class EmbyManager {
 
             NSLog("EmbyManager: Connected to '%@' with %d music libraries, %d video libraries", server.name, libraries.count, vidLibraries.count)
 
-            // Preload library content in background
-            await preloadLibraryContent()
+            // Preload in the background without blocking the connect task. Callers that
+            // await serverConnectTask (e.g. the CLI) only need the connection to be ready.
+            Task.detached(priority: .utility) { [weak self] in
+                await self?.preloadLibraryContent()
+            }
 
         } catch {
             await MainActor.run {

@@ -37,6 +37,14 @@ struct CLIQueryHandler {
         if opts.isSearchQuery {
             let source = opts.source ?? "local"
             try await CLISourceResolver.checkConnectivity(source: source)
+            // Server search is scoped to the selected library, so honor --library (or
+            // fall back to a music library) — otherwise search runs against whatever
+            // non-music section was last selected and returns nothing.
+            if let libraryName = opts.library {
+                try await CLISourceResolver.applyLibrary(source: source, name: libraryName)
+            } else {
+                try CLISourceResolver.ensureMusicLibrarySelected(source: source)
+            }
             try await searchAndPrint(source: source, query: opts.search!, json: opts.json)
             return
         }

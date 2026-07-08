@@ -39,9 +39,13 @@ struct CLISourceResolver {
         // Check connectivity
         try await checkConnectivity(source: source)
 
-        // Apply library selection if specified
+        // Apply the explicit library, or ensure a music library is selected for the
+        // music-only operations that follow (artist/album/search AND server radio).
+        // Playlists are server-level, so they skip selection. No-op for local/subsonic/radio.
         if let libraryName = opts.library {
             try await applyLibrary(source: source, name: libraryName)
+        } else if opts.playlist == nil {
+            try ensureMusicLibrarySelected(source: source)
         }
 
         // Radio mode
@@ -60,11 +64,7 @@ struct CLISourceResolver {
             return .radioStation
         }
 
-        // Standard content resolution — artist/album/search need a music library.
-        // (Playlists are server-level and don't depend on the selected library.)
-        if opts.library == nil && opts.playlist == nil {
-            try ensureMusicLibrarySelected(source: source)
-        }
+        // Standard content resolution (music library already ensured above).
         var tracks = try await resolveContent(source: source, opts: opts)
 
         // Post-filter by --track
