@@ -483,10 +483,16 @@ struct CLIQueryHandler {
             let results = try await SubsonicManager.shared.search(query: query)
             tracks = SubsonicManager.shared.convertToTracks(results.songs)
         case "jellyfin":
-            let results = try await JellyfinManager.shared.search(query: query)
+            let results = try await JellyfinManager.shared.search(
+                query: query,
+                parentId: JellyfinManager.shared.currentMusicLibrary?.id
+            )
             tracks = JellyfinManager.shared.convertToTracks(results.songs)
         case "emby":
-            let results = try await EmbyManager.shared.search(query: query)
+            let results = try await EmbyManager.shared.search(
+                query: query,
+                parentId: EmbyManager.shared.currentMusicLibrary?.id
+            )
             tracks = EmbyManager.shared.convertToTracks(results.songs)
         case "radio":
             let stations = RadioManager.shared.searchStations(query: query)

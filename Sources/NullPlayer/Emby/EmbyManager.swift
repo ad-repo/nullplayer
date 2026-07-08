@@ -669,14 +669,12 @@ class EmbyManager {
         )
     }
 
-    /// Search the library
-    func search(query: String) async throws -> EmbySearchResults {
+    /// Search the server, optionally scoped to a specific library.
+    func search(query: String, parentId: String? = nil) async throws -> EmbySearchResults {
         guard let client = serverClient else {
             return EmbySearchResults()
         }
-        // Scope to the selected music library, consistent with artist/album browsing
-        // (which already filter on currentMusicLibrary?.id). nil = search all libraries.
-        return try await client.search(query: query, parentId: currentMusicLibrary?.id)
+        return try await client.search(query: query, parentId: parentId)
     }
 
     // MARK: - Favorites

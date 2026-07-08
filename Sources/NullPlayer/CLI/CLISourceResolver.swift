@@ -368,7 +368,7 @@ struct CLISourceResolver {
         let mgr = JellyfinManager.shared
 
         if let query = opts.search {
-            let results = try await mgr.search(query: query)
+            let results = try await mgr.search(query: query, parentId: mgr.currentMusicLibrary?.id)
             return mgr.convertToTracks(results.songs)
         }
 
@@ -418,7 +418,7 @@ struct CLISourceResolver {
         let mgr = EmbyManager.shared
 
         if let query = opts.search {
-            let results = try await mgr.search(query: query)
+            let results = try await mgr.search(query: query, parentId: mgr.currentMusicLibrary?.id)
             return mgr.convertToTracks(results.songs)
         }
 
@@ -639,7 +639,7 @@ struct CLISourceResolver {
             guard let trackName = opts.track ?? opts.search else {
                 throw CLISourceError.missingRequiredArg("--radio track", "--track <name>")
             }
-            let results = try await mgr.search(query: trackName)
+            let results = try await mgr.search(query: trackName, parentId: mgr.currentMusicLibrary?.id)
             guard let song = results.songs.first else {
                 throw CLISourceError.noTracksFound("for track '\(trackName)' on Jellyfin")
             }
@@ -696,7 +696,7 @@ struct CLISourceResolver {
             guard let trackName = opts.track ?? opts.search else {
                 throw CLISourceError.missingRequiredArg("--radio track", "--track <name>")
             }
-            let results = try await mgr.search(query: trackName)
+            let results = try await mgr.search(query: trackName, parentId: mgr.currentMusicLibrary?.id)
             guard let song = results.songs.first else {
                 throw CLISourceError.noTracksFound("for track '\(trackName)' on Emby")
             }
