@@ -228,8 +228,7 @@ class WindowManager {
 
     /// Back-compat shim for callers that only need to know whether the UI is at a non-default size.
     var isDoubleSize: Bool {
-        get { uiScaleLevel != .p100 }
-        set { uiScaleLevel = newValue ? .p150 : .p100 }
+        uiScaleLevel != .p100
     }
 
     /// Classic UI size multiplier driven by the UI Size menu.

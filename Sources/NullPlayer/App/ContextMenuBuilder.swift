@@ -4749,13 +4749,6 @@ class MenuActions: NSObject {
         WindowManager.shared.toggleCompactWindow()
     }
 
-    @objc func toggleDoubleSize() {
-        // Live toggle in both modern and classic UI — applyDoubleSize() rescales every
-        // window in place (classic windows self-scale their skin rendering from their bounds),
-        // so no restart is needed.
-        WindowManager.shared.isDoubleSize.toggle()
-    }
-
     @objc func setUIScaleLevel(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
               let level = UIScaleLevel(storedRawValue: rawValue) else { return }
