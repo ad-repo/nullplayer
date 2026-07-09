@@ -107,7 +107,7 @@ struct CLISourceResolver {
         case "radio":
             break // Always available
         default:
-            fputs("Error: Unknown source '\(source)'. Use: local, plex, subsonic, jellyfin, emby, radio\n", stderr)
+            fputs("Error: Unknown source '\(source)'. Use: local, plex, subsonic, jellyfin, emby, radio\n", cliStderr)
             exit(1)
         }
     }

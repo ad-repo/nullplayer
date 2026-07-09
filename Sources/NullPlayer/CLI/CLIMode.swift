@@ -46,6 +46,11 @@ struct CLIOptions {
     var repeatAll = false
     var repeatOne = false
     var art = true
+    // Album art rendering. Default (both false) auto-detects the terminal's color
+    // support and picks color or a monochrome ramp accordingly. The flags force it.
+    var artColor = false   // --color-art: force color half-block art
+    var artAscii = false   // --ascii-art: force monochrome character ramp
+    var verbose = false    // --verbose: keep framework NSLog output (handled in main.swift)
     var volume: Int?
 
     // Casting
@@ -87,6 +92,9 @@ struct CLIOptions {
             case "--repeat-all": opts.repeatAll = true
             case "--repeat-one": opts.repeatOne = true
             case "--no-art": opts.art = false
+            case "--color-art": opts.artColor = true
+            case "--ascii-art": opts.artAscii = true
+            case "--verbose": opts.verbose = true
             case "--list-sources": opts.listSources = true
             case "--list-libraries": opts.listLibraries = true
             case "--list-artists": opts.listArtists = true
@@ -111,7 +119,7 @@ struct CLIOptions {
                     case "--genre": opts.genre = value
                     case "--decade":
                         guard let intVal = Int(value) else {
-                            fputs("Error: --decade requires an integer value (e.g. 1970)\n", stderr)
+                            fputs("Error: --decade requires an integer value (e.g. 1970)\n", cliStderr)
                             exit(1)
                         }
                         opts.decade = intVal
@@ -124,7 +132,7 @@ struct CLIOptions {
                     case "--region": opts.region = value
                     case "--volume":
                         guard let intVal = Int(value) else {
-                            fputs("Error: --volume requires an integer value (0-100)\n", stderr)
+                            fputs("Error: --volume requires an integer value (0-100)\n", cliStderr)
                             exit(1)
                         }
                         opts.volume = intVal
@@ -137,17 +145,17 @@ struct CLIOptions {
                     case "--tuning-source": opts.tuningSource = value
                     case "--tuning-offset-cents":
                         guard let d = Double(value) else {
-                            fputs("Error: --tuning-offset-cents requires a number\n", stderr)
+                            fputs("Error: --tuning-offset-cents requires a number\n", cliStderr)
                             exit(1)
                         }
                         opts.tuningOffsetCents = d
                     default:
-                        fputs("Error: Unknown flag '\(arg)'\n", stderr)
+                        fputs("Error: Unknown flag '\(arg)'\n", cliStderr)
                         exit(1)
                     }
                     i += 1 // skip value
                 } else if arg.hasPrefix("--") {
-                    fputs("Error: Flag '\(arg)' requires a value\n", stderr)
+                    fputs("Error: Flag '\(arg)' requires a value\n", cliStderr)
                     exit(1)
                 }
             }
@@ -199,7 +207,7 @@ class CLIMode: NSObject, NSApplicationDelegate {
 
         // Validate mutually exclusive flags
         if opts.repeatAll && opts.repeatOne {
-            fputs("Error: --repeat-all and --repeat-one are mutually exclusive\n", stderr)
+            fputs("Error: --repeat-all and --repeat-one are mutually exclusive\n", cliStderr)
             exit(1)
         }
 
@@ -210,7 +218,7 @@ class CLIMode: NSObject, NSApplicationDelegate {
                     try await CLIQueryHandler.handle(opts)
                     exit(0)
                 } catch {
-                    fputs("Error: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", stderr)
+                    fputs("Error: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
                     exit(1)
                 }
             }
@@ -229,7 +237,7 @@ class CLIMode: NSObject, NSApplicationDelegate {
                 switch result {
                 case .tracks(let tracks):
                     if tracks.isEmpty {
-                        fputs("Error: No tracks found for the given criteria.\n", stderr)
+                        fputs("Error: No tracks found for the given criteria.\n", cliStderr)
                         exit(1)
                     }
                     cliPlayer.play(tracks: tracks)
@@ -242,7 +250,7 @@ class CLIMode: NSObject, NSApplicationDelegate {
                 self.keyboard = kb
                 kb.start()
             } catch {
-                fputs("Error: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", stderr)
+                fputs("Error: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
                 exit(1)
             }
         }
