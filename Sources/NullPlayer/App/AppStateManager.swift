@@ -13,7 +13,7 @@ import NullPlayerCore
 /// - **EQ**: enabled, auto, preamp, active-layout bands (10 classic / 21 modern)
 /// - **Playlist**: all tracks (local, Plex, Subsonic, Jellyfin, radio) with metadata
 /// - **Playback state**: playlist only; the current track is intentionally not saved
-/// - **Skins**: timeDisplayMode, isAlwaysOnTop, double size mode (modern UI)
+/// - **Skins**: timeDisplayMode, isAlwaysOnTop, UI Size
 /// - **Skin**: classic custom skin path, modern skin name, metal skin name
 /// - **Visualization**: engine type, ProjectM preset index, fullscreen state
 /// - **Audio output**: selected device UID
@@ -247,7 +247,10 @@ class AppStateManager {
         
         // -- v2 fields (added for comprehensive state restoration) --
         
-        // Double size mode (both modes)
+        // UI size mode (both modes)
+        var uiScaleLevel: UIScaleLevel = .p100
+
+        // Legacy double size mode (both modes)
         var isDoubleSize: Bool = false
         
         // Modern-family skin names
@@ -280,7 +283,7 @@ class AppStateManager {
             case customSkinPath
             case projectMPresetIndex
             // v2 fields
-            case isDoubleSize, modernSkinName, metalSkinName, selectedOutputDeviceUID
+            case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, selectedOutputDeviceUID
             case browserBrowseMode, uiMode, savedInModernMode
             case stateVersion
         }
@@ -365,7 +368,12 @@ class AppStateManager {
             projectMPresetIndex = try container.decodeIfPresent(Int.self, forKey: .projectMPresetIndex)
             
             // v2 fields - all use decodeIfPresent for backward compatibility
-            isDoubleSize = try container.decodeIfPresent(Bool.self, forKey: .isDoubleSize) ?? false
+            let legacyDoubleSize = try container.decodeIfPresent(Bool.self, forKey: .isDoubleSize) ?? false
+            let decodedScaleLevel = try container.decodeIfPresent(String.self, forKey: .uiScaleLevel)
+                .flatMap(UIScaleLevel.init(storedRawValue:))
+                ?? (legacyDoubleSize ? .p150 : .p100)
+            uiScaleLevel = decodedScaleLevel
+            isDoubleSize = decodedScaleLevel != .p100
             modernSkinName = try container.decodeIfPresent(String.self, forKey: .modernSkinName)
             metalSkinName = try container.decodeIfPresent(String.self, forKey: .metalSkinName)
             selectedOutputDeviceUID = try container.decodeIfPresent(String.self, forKey: .selectedOutputDeviceUID)
@@ -419,6 +427,7 @@ class AppStateManager {
             isAlwaysOnTop: Bool,
             customSkinPath: String? = nil,
             projectMPresetIndex: Int? = nil,
+            uiScaleLevel: UIScaleLevel = .p100,
             isDoubleSize: Bool = false,
             modernSkinName: String? = nil,
             metalSkinName: String? = nil,
@@ -469,7 +478,9 @@ class AppStateManager {
             self.isAlwaysOnTop = isAlwaysOnTop
             self.customSkinPath = customSkinPath
             self.projectMPresetIndex = projectMPresetIndex
-            self.isDoubleSize = isDoubleSize
+            let effectiveScaleLevel = uiScaleLevel == .p100 && isDoubleSize ? UIScaleLevel.p150 : uiScaleLevel
+            self.uiScaleLevel = effectiveScaleLevel
+            self.isDoubleSize = effectiveScaleLevel != .p100
             self.modernSkinName = modernSkinName
             self.metalSkinName = metalSkinName
             self.selectedOutputDeviceUID = selectedOutputDeviceUID
@@ -590,6 +601,7 @@ class AppStateManager {
             projectMPresetIndex: wm.visualizationPresetIndex,
             
             // v2 fields
+            uiScaleLevel: wm.uiScaleLevel,
             isDoubleSize: wm.isDoubleSize,
             modernSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.modern.skinNameKey),
             metalSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.metal.skinNameKey),
@@ -814,16 +826,16 @@ class AppStateManager {
             .flatMap(VisualizationType.init(rawValue:)) ?? .projectM
         let projectMFullscreen = state.isProjectMFullscreen
         let savedBrowseMode = state.browserBrowseMode
-        let savedDoubleSize = state.isDoubleSize
+        let savedScaleLevel = state.uiScaleLevel
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            // Restore double size BEFORE showing sub-windows so applyDoubleSize
-            // doesn't re-scale frames that are already at their saved 1.5x sizes.
+            // Restore UI size BEFORE showing sub-windows so applyDoubleSize
+            // doesn't re-scale frames that are already at their saved sizes.
             // At this point only the main window is visible, so applyDoubleSize
             // correctly updates its minSize/frame without touching sub-window heights.
-            if savedDoubleSize {
-                wm.isDoubleSize = true
-                NSLog("AppStateManager: Restored double size mode")
+            if savedScaleLevel != .p100 {
+                wm.uiScaleLevel = savedScaleLevel
+                NSLog("AppStateManager: Restored UI scale level: %@", savedScaleLevel.rawValue)
             }
             
             if state.isEqualizerVisible {
@@ -1208,7 +1220,7 @@ class AppStateManager {
         guard !wm.isRunningModernUI else { return }
         guard let mainWindow = wm.mainWindowController?.window else { return }
 
-        let scale: CGFloat = wm.isDoubleSize ? 1.5 : 1.0
+        let scale = wm.classicScaleMultiplier
         let equalizerWindow = wm.equalizerWindowController?.window
         let playlistWindow = wm.playlistWindowController?.window
         let spectrumWindow = wm.spectrumWindow

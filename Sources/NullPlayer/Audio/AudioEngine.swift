@@ -6309,11 +6309,11 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // If a refresh is already in-flight for this track, suppress duplicate callbacks.
         if let identity = currentTrack?.streamingServiceIdentity,
            staleStreamingRefreshRetriedServiceIdentity == identity {
-            NSLog("AudioEngine: Ignoring duplicate streaming error - %@", String(describing: error))
+            NSLog("AudioEngine: Ignoring duplicate streaming error - %@", String(describing: error).redactingSensitiveURLQueryItems)
             return
         }
 
-        NSLog("AudioEngine: Streaming error - %@", String(describing: error))
+        NSLog("AudioEngine: Streaming error - %@", String(describing: error).redactingSensitiveURLQueryItems)
 
         // Check if this is a radio stream - let RadioManager handle reconnection
         if RadioManager.shared.isActive {
@@ -6322,7 +6322,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             return
         }
 
-        let errorDescription = String(describing: error)
+        let errorDescription = String(describing: error).redactingSensitiveURLQueryItems
         if Self.shouldAttemptStreamingURLRefreshAfterError(
             track: currentTrack,
             isRadioActive: RadioManager.shared.isActive,

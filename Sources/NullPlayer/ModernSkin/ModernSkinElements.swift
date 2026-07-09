@@ -19,7 +19,7 @@ enum ModernSkinElements {
     /// Base scale factor for modern UI rendering (configurable via skin.json window.scale)
     static var baseScaleFactor: CGFloat = 1.25
     
-    /// Large UI multiplier (1.0 = normal, 1.5 = large UI)
+    /// UI Size multiplier (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
     static var sizeMultiplier: CGFloat = 1.0
     
     /// Effective scale factor combining base scale and size multiplier

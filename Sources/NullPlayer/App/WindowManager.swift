@@ -73,6 +73,45 @@ enum TimeDisplayNumberSystem: String, CaseIterable {
     }
 }
 
+enum UIScaleLevel: String, Codable, CaseIterable {
+    case p50 = "50"
+    case p90 = "90"
+    case p100 = "100"
+    case p105 = "105"
+    case p110 = "110"
+    case p115 = "115"
+    case p125 = "125"
+    case p135 = "135"
+    case p150 = "150"
+    case p200 = "200"
+
+    var percent: Int {
+        Int(rawValue) ?? 100
+    }
+
+    var menuTitle: String {
+        "\(percent)%"
+    }
+
+    /// Linear scale multiplier applied on top of Skin.scaleFactor.
+    var scaleFactor: CGFloat {
+        CGFloat(percent) / 100.0
+    }
+
+    init?(storedRawValue: String) {
+        switch storedRawValue {
+        case "normal":
+            self = .p100
+        case "medium":
+            self = .p125
+        case "large":
+            self = .p150
+        default:
+            self.init(rawValue: storedRawValue)
+        }
+    }
+}
+
 /// Determines how a window drag affects its connected group.
 enum DragMode {
     case pending   // mouseDown received, drag not yet started
@@ -95,7 +134,7 @@ private struct WindowSnapshot {
     /// nil for windows with no special frame handling.
     var normalFrame: NSRect?
     /// Whether a side window (Library/ProjectM) was detached from the main-window edge (not docked)
-    /// at capture time. Used to re-detach it after a Large-UI re-apply force-docks it. Always false
+    /// at capture time. Used to re-detach it after a UI Size re-apply force-docks it. Always false
     /// for non-side windows.
     var wasDetached: Bool = false
 }
@@ -175,18 +214,28 @@ class WindowManager {
         }
     }
     
-    /// Enlarged UI mode - not persisted, always starts at 1x (both modern and classic UI)
-    var isDoubleSize: Bool = false {
+    /// UI scale mode - not persisted here, restored by AppStateManager when Remember State is enabled.
+    var uiScaleLevel: UIScaleLevel = .p100 {
         didSet {
-            applyDoubleSize()
-            NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
+            guard oldValue != uiScaleLevel else { return }
+            applyUIScaleLevelChangeIfNeeded()
         }
     }
 
-    /// Classic UI size multiplier driven by the Large UI mode toggle.
-    /// Stays discrete (1x / 1.5x) so free window stretching does not alter skin scale.
+    private var appliedUIScaleLevel: UIScaleLevel = .p100
+    private var isApplyingUIScaleLevel = false
+    private var pendingUIScaleLevel: UIScaleLevel?
+
+    /// Back-compat shim for callers that only need to know whether the UI is at a non-default size.
+    var isDoubleSize: Bool {
+        get { uiScaleLevel != .p100 }
+        set { uiScaleLevel = newValue ? .p150 : .p100 }
+    }
+
+    /// Classic UI size multiplier driven by the UI Size menu.
+    /// Stays discrete so free window stretching does not alter skin scale.
     var classicScaleMultiplier: CGFloat {
-        isDoubleSize ? 1.5 : 1.0
+        uiScaleLevel.scaleFactor
     }
 
     /// Scale factor for playlist-style title-bar controls on classic secondary windows,
@@ -620,8 +669,8 @@ class WindowManager {
            let numberSystem = TimeDisplayNumberSystem(rawValue: rawValue) {
             storedTimeDisplayNumberSystem = numberSystem
         }
-        // Note: isDoubleSize always starts false - windows are created at 1x size
-        // and we apply double size after they're created if needed
+        // Note: uiScaleLevel always starts normal - windows are created at 1x size
+        // and AppStateManager applies the saved UI Size after they're created if needed.
         let savedAlwaysOnTop = UserDefaults.standard.bool(forKey: "isAlwaysOnTop")
         isAlwaysOnTop = savedAlwaysOnTop
         NSLog("WindowManager: Loaded isAlwaysOnTop = %d from UserDefaults", savedAlwaysOnTop ? 1 : 0)
@@ -3026,22 +3075,45 @@ class WindowManager {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
     
-    // MARK: - Double Size
-    
-    /// Apply enlarged UI scaling to all windows
-    private func applyDoubleSize() {
+    // MARK: - UI Size
+
+    private func applyUIScaleLevelChangeIfNeeded() {
+        guard !isApplyingUIScaleLevel else {
+            pendingUIScaleLevel = uiScaleLevel
+            return
+        }
+
+        isApplyingUIScaleLevel = true
+        defer {
+            isApplyingUIScaleLevel = false
+            pendingUIScaleLevel = nil
+        }
+
+        repeat {
+            pendingUIScaleLevel = nil
+            let targetLevel = uiScaleLevel
+            guard targetLevel != appliedUIScaleLevel else { continue }
+
+            applyDoubleSize(previousScale: appliedUIScaleLevel.scaleFactor, targetLevel: targetLevel)
+            appliedUIScaleLevel = targetLevel
+            NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
+        } while pendingUIScaleLevel != nil && uiScaleLevel != appliedUIScaleLevel
+    }
+
+    /// Apply UI scaling to all windows.
+    private func applyDoubleSize(previousScale: CGFloat = 1.0, targetLevel: UIScaleLevel? = nil) {
         let runningModernMode = isRunningModernUI
-        let classicScaleMultiplier: CGFloat = 1.5
-        let classicInverseScaleMultiplier: CGFloat = 1.0 / classicScaleMultiplier
+        let targetScale = (targetLevel ?? uiScaleLevel).scaleFactor
+        let ratio = targetScale / previousScale
 
         // For modern UI, set the sizeMultiplier so all ModernSkinElements computed
-        // sizes (window sizes, title bar heights, border widths, etc.) reflect the large mode.
+        // sizes (window sizes, title bar heights, border widths, etc.) reflect the UI size.
         // This must happen BEFORE reading any ModernSkinElements sizes.
         if runningModernMode {
-            ModernSkinElements.sizeMultiplier = isDoubleSize ? 1.5 : 1.0
+            ModernSkinElements.sizeMultiplier = targetScale
         }
         
-        let scale: CGFloat = isDoubleSize ? classicScaleMultiplier : 1.0
+        let scale = targetScale
         
         // Get main window position as anchor point
         guard let mainWindow = mainWindowController?.window else { return }
@@ -3117,10 +3189,8 @@ class WindowManager {
 
             // Scale height proportionally
             let currentFrame = playlistWindow.frame
-            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
-            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
+            let newHeight = max(minHeight, currentFrame.height * ratio)
+            let newWidth = max(minWidth, currentFrame.width * ratio)
 
             if playlistWindow.isVisible {
                 let playlistFrame = NSRect(
@@ -3149,10 +3219,8 @@ class WindowManager {
             spectrumWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             let currentFrame = spectrumWindow.frame
-            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
-            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
+            let newHeight = max(minHeight, currentFrame.height * ratio)
+            let newWidth = max(minWidth, currentFrame.width * ratio)
             if spectrumWindow.isVisible {
                 let spectrumFrame = NSRect(
                     x: mainFrame.minX,
@@ -3181,12 +3249,10 @@ class WindowManager {
             waveformWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             let currentFrame = waveformWindow.frame
-            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
-            // Waveform width should transition with Large UI in both modes so toggling off
+            let newHeight = max(minHeight, currentFrame.height * ratio)
+            // Waveform width should transition with UI Size in both modes so toggling off
             // reliably returns to the prior 1x geometry.
-            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newWidth = max(skinMinWidth, currentFrame.width * widthScaleMultiplier)
+            let newWidth = max(skinMinWidth, currentFrame.width * ratio)
 
             if waveformWindow.isVisible {
                 let waveformFrame = NSRect(
@@ -3217,10 +3283,8 @@ class WindowManager {
             audioAnalysisWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             let currentFrame = audioAnalysisWindow.frame
-            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
-            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
+            let newHeight = max(minHeight, currentFrame.height * ratio)
+            let newWidth = max(minWidth, currentFrame.width * ratio)
             if audioAnalysisWindow.isVisible {
                 let analysisFrame = NSRect(
                     x: mainFrame.minX,
@@ -3252,10 +3316,8 @@ class WindowManager {
             peppyMeterWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             let currentFrame = peppyMeterWindow.frame
-            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newHeight = max(adjustedMinHeight, currentFrame.height * heightScaleMultiplier)
-            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
+            let newHeight = max(adjustedMinHeight, currentFrame.height * ratio)
+            let newWidth = max(minWidth, currentFrame.width * ratio)
             if peppyMeterWindow.isVisible {
                 let meterFrame = NSRect(
                     x: mainFrame.minX,
@@ -3287,10 +3349,8 @@ class WindowManager {
             networkMonitorWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             let currentFrame = networkMonitorWindow.frame
-            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newHeight = max(adjustedMinHeight, currentFrame.height * heightScaleMultiplier)
-            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
+            let newHeight = max(adjustedMinHeight, currentFrame.height * ratio)
+            let newWidth = max(minWidth, currentFrame.width * ratio)
             if networkMonitorWindow.isVisible {
                 let monitorFrame = NSRect(
                     x: mainFrame.minX,
@@ -3310,8 +3370,7 @@ class WindowManager {
         let stackHeight = stackTopY - nextY
         
         if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
-            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newWidth = plexWindow.frame.width * widthScaleMultiplier
+            let newWidth = plexWindow.frame.width * ratio
             let plexFrame = NSRect(
                 x: mainFrame.maxX,
                 y: nextY,
@@ -3322,10 +3381,9 @@ class WindowManager {
         }
 
         if let projectMWindow = projectMWindowController?.window, projectMWindow.isVisible {
-            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
-            let newWidth = projectMWindow.frame.width * widthScaleMultiplier
+            let newWidth = projectMWindow.frame.width * ratio
             let projectMFrame = NSRect(
-                x: mainFrame.minX - (projectMWindow.frame.width * widthScaleMultiplier),
+                x: mainFrame.minX - (projectMWindow.frame.width * ratio),
                 y: nextY,
                 width: newWidth,
                 height: stackHeight
@@ -3725,7 +3783,7 @@ class WindowManager {
         guard !isTighteningClassicCenterStack else { return false }
         guard let mainWindow = mainWindowController?.window else { return false }
 
-        let scale: CGFloat = isDoubleSize ? 1.5 : 1.0
+        let scale = uiScaleLevel.scaleFactor
         let equalizerWindow = equalizerWindowController?.window
         let playlistWindow = playlistWindowController?.window
         let spectrumWindow = spectrumWindowController?.window
@@ -5227,9 +5285,9 @@ class WindowManager {
         // until that completes so the snapshot captures the real windows and the re-enter is not
         // swallowed by the `.exiting` guard. Mirrors the production reloadUI path.
         if compactModeEnabled {
-            // Same-mode rebuild: Large UI is not collapsed/re-applied here, so restore the snapshot
+            // Same-mode rebuild: UI Size is not collapsed/re-applied here, so restore the snapshot
             // frames as-is (no 1x collapse — they'd never be re-scaled).
-            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingLargeUI: false)
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingScaleLevel: .p100)
             let preSwitchSnapshot = regularWindowSnapshot
             exitCompactMode(restoreRegularWindows: false) { [weak self] in
                 guard let self else { return }
@@ -5306,30 +5364,30 @@ class WindowManager {
             exitCompactWindow(restoreMainWindow: false)
         }
 
-        // If Large UI is active, collapse it to 1x in the *current* mode before the switch and
+        // If an enlarged UI size is active, collapse it to 1x in the *current* mode before the switch and
         // re-apply it in the target mode afterward (inside performReloadUI). The two UI systems
         // have different window geometry (and modern layout is driven by the global
         // ModernSkinElements.sizeMultiplier), so forcing the old mode's enlarged frames onto
         // freshly-created target-mode windows renders them distorted. Collapsing first lets each
-        // mode drive its own tested 1x→1.5x scaling. The 1x windows are torn down immediately, so
+        // mode drive its own tested 1x-to-target scaling. The 1x windows are torn down immediately, so
         // no flash is visible.
         //
         // Collapsing runs applyDoubleSize(), which force-docks the side windows (Library/ProjectM)
         // to the main-window edge — capture their detached frames first so a user's detached position
-        // survives the switch (restored after Large UI is re-applied). In Compact Mode the regular
+        // survives the switch (restored after UI Size is re-applied). In Compact Mode the regular
         // windows are hidden, so captureSideWindowFrames() would see nothing; derive the detached
         // frames from `regularWindowSnapshot` (which recorded each side window's detached state at
         // Compact entry) instead.
-        let restoreLargeUI = isDoubleSize
+        let restoreScaleLevel = uiScaleLevel
         let preservedSideFrames: SideWindowFrames
-        if restoreLargeUI {
+        if restoreScaleLevel != .p100 {
             preservedSideFrames = compactModeEnabled
                 ? sideWindowFrames(from: regularWindowSnapshot)
                 : captureSideWindowFrames()
         } else {
             preservedSideFrames = SideWindowFrames()
         }
-        if restoreLargeUI { isDoubleSize = false }
+        if restoreScaleLevel != .p100 { uiScaleLevel = .p100 }
 
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
         // on exit. When in Compact Mode, derive the layout to rebuild from the pre-compact capture
@@ -5338,7 +5396,7 @@ class WindowManager {
         // Defer the swap until the compact teardown completes so the re-enter sees
         // `compactModeState == .regular` instead of a no-op `.exiting` guard.
         if compactModeEnabled {
-            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingLargeUI: restoreLargeUI)
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingScaleLevel: restoreScaleLevel)
             // The hidden mode-independent windows (app panels) survive teardown but were
             // hidden on compact entry and are not re-shown here. enterCompactMode() will re-capture
             // the snapshot from the live (still-hidden) windows, losing their visibility — so carry
@@ -5349,7 +5407,7 @@ class WindowManager {
                 guard let self else { return }
                 self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true,
                                      reenterCompactWindow: false,
-                                     restoreLargeUI: restoreLargeUI, preservedSideFrames: preservedSideFrames)
+                                     restoreScaleLevel: restoreScaleLevel, preservedSideFrames: preservedSideFrames)
                 self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
                 completion?()
             }
@@ -5357,13 +5415,13 @@ class WindowManager {
             performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false,
                             reenterCompactWindow: restoreCompactWindow,
                             compactWindowTreatMainAsVisible: compactWindowMainWasVisible,
-                            restoreLargeUI: restoreLargeUI, preservedSideFrames: preservedSideFrames)
+                            restoreScaleLevel: restoreScaleLevel, preservedSideFrames: preservedSideFrames)
             completion?()
         }
     }
 
     /// Frames of the side windows that `applyDoubleSize()` force-docks to the main-window edge.
-    /// Captured before a Large-UI collapse so a user's detached Library/ProjectM position can be
+    /// Captured before a UI Size collapse so a user's detached Library/ProjectM position can be
     /// restored after a mode switch.
     private struct SideWindowFrames {
         var library: NSRect?
@@ -5371,7 +5429,7 @@ class WindowManager {
     }
 
     /// Capture only *detached* side windows. A docked side window is re-docked to the
-    /// target-mode main edge by `applyDoubleSize()` during the Large-UI re-apply; restoring its
+    /// target-mode main edge by `applyDoubleSize()` during the UI Size re-apply; restoring its
     /// old-mode frame on top of that would fight the target mode's docking and misalign it (the
     /// old frame was measured against the old main width). A detached window has no docking to
     /// recompute, so its exact floating position must be carried across the switch.
@@ -5389,7 +5447,7 @@ class WindowManager {
     /// Detached side-window frames drawn from a Compact-Mode capture. The live windows are hidden in
     /// Compact Mode, so `captureSideWindowFrames()` would see nothing; instead read each side
     /// window's Compact-entry frame, carrying only those that were detached then (docked ones are
-    /// left to `applyDoubleSize()`'s target-mode docking). Frames were captured at the Large-UI
+    /// left to `applyDoubleSize()`'s target-mode docking). Frames were captured at the UI Size
     /// scale, matching the scale `restoreSideWindowFrames` re-applies them at.
     private func sideWindowFrames(from snapshot: CompactWindowSnapshot?) -> SideWindowFrames {
         guard let snapshot else { return SideWindowFrames() }
@@ -5430,17 +5488,16 @@ class WindowManager {
     /// can rebuild the regular windows without first re-showing them. Falls back to a live capture
     /// if no Compact snapshot exists.
     private func modeDependentLayout(from snapshot: CompactWindowSnapshot?,
-                                     collapsingLargeUI: Bool) -> ModeDependentLayoutSnapshot {
+                                     collapsingScaleLevel: UIScaleLevel) -> ModeDependentLayoutSnapshot {
         guard let snapshot else { return captureModeDependentLayout() }
 
         // The regular windows were snapshotted at Compact-Mode *entry*, so their frames still carry
-        // the Large-UI (1.5x) scale if it was active. performReloadUI re-applies Large UI after the
+        // the enlarged UI scale if it was active. performReloadUI re-applies that scale after the
         // rebuild, and applyDoubleSize scales the relative-sized stack/side windows off their
-        // *current* frame — so an already-1.5x frame would be scaled to 2.25x. Collapse those frames
-        // back to 1x here so the re-apply lands on a single 1.5x, matching the non-Compact path
+        // *current* frame. Collapse those frames back to 1x here so the re-apply lands once, matching the non-Compact path
         // (which captures its frames *after* the 1x collapse). Main and EQ use absolute target sizes
         // in applyDoubleSize, so they are left untouched.
-        let inverse: CGFloat = collapsingLargeUI ? (1.0 / 1.5) : 1.0
+        let inverse: CGFloat = 1.0 / collapsingScaleLevel.scaleFactor
         func collapsed(_ rect: NSRect?) -> NSRect? {
             guard var rect else { return nil }
             rect.size.width *= inverse
@@ -5477,7 +5534,7 @@ class WindowManager {
     private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool,
                                  reenterCompactWindow: Bool = false,
                                  compactWindowTreatMainAsVisible: Bool = false,
-                                 restoreLargeUI: Bool, preservedSideFrames: SideWindowFrames) {
+                                 restoreScaleLevel: UIScaleLevel, preservedSideFrames: SideWindowFrames) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
@@ -5491,12 +5548,12 @@ class WindowManager {
 
         recreateModeDependentLayout(snapshot, revealMainWindow: !reenterCompactWindow)
 
-        // Re-apply Large UI (collapsed to 1x in reloadUI before the switch) now that the target-mode
+        // Re-apply UI size (collapsed to 1x in reloadUI before the switch) now that the target-mode
         // windows exist. This must happen *before* enterCompactMode() so the compact capture records
-        // the enlarged regular layout, not a 1x one. applyDoubleSize (via the isDoubleSize setter)
+        // the enlarged regular layout, not a 1x one. applyDoubleSize (via the scale setter)
         // also re-docks the side windows, so restore any preserved detached frames afterward.
-        if restoreLargeUI {
-            isDoubleSize = true
+        if restoreScaleLevel != .p100 {
+            uiScaleLevel = restoreScaleLevel
             restoreSideWindowFrames(preservedSideFrames)
         }
 
@@ -5519,11 +5576,11 @@ class WindowManager {
     private func prepareUIRuntime(for targetMode: PlayerUIMode) {
         if let family = targetMode.modernSkinFamily {
             // Modern window sizes are derived from this global multiplier, so pin it to the
-            // current Large UI state before any modern controller is created — otherwise a
+            // current UI Size state before any modern controller is created — otherwise a
             // stale value left over from a previous modern session would create the windows
-            // at the wrong scale. reloadUI collapses isDoubleSize to 1x before switching, so
-            // this is normally 1.0 here; Large UI is re-applied via applyDoubleSize afterward.
-            ModernSkinElements.sizeMultiplier = isDoubleSize ? 1.5 : 1.0
+            // at the wrong scale. reloadUI collapses uiScaleLevel to 1x before switching, so
+            // this is normally 1.0 here; UI Size is re-applied via applyDoubleSize afterward.
+            ModernSkinElements.sizeMultiplier = uiScaleLevel.scaleFactor
             ModernSkinEngine.shared.loadPreferredSkin(for: family)
         } else {
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)

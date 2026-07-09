@@ -1,6 +1,6 @@
 # Advanced Modern Skin Features
 
-This document covers advanced topics: title text system, animations, Large UI mode, and adding new sub-windows.
+This document covers advanced topics: title text system, animations, UI Size mode, and adding new sub-windows.
 
 ## Title Text System
 
@@ -410,24 +410,24 @@ Float `0.0...1.0` opacity override for the waveform window background. Falls bac
 }
 ```
 
-## Large UI (1.5x) Mode
+## UI Size Mode
 
-UI label is **Large UI**. Toggle via the **2X** button on the main window or right-click context menu. Available in both modern and classic UI modes.
+UI label is **UI Size**. Choose **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%** from the Windows menu or right-click context menu. Available in modern, metal, and classic UI modes.
 
-- **Modern UI**: live toggle — windows resize immediately, views recreate their renderers
-- **Classic UI**: requires restart — a "Restart Required" dialog is shown before any UI change; the flag is toggled then `relaunchApp()` is called so `saveState()` captures the new value on termination
+- **Modern UI**: live change -- windows resize immediately, views recreate their renderers
+- **Classic UI**: live change -- windows resize immediately with no restart
 
 ### How It Works (Modern UI)
 
 `ModernSkinElements.scaleFactor` is a computed property: `baseScaleFactor * sizeMultiplier`.
 
 - `baseScaleFactor` -- set by skin.json `window.scale` (default 1.25)
-- `sizeMultiplier` -- set by Large UI mode (1.0 normal, 1.5 large)
+- `sizeMultiplier` -- set by UI Size (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
 
-When Large UI is toggled:
-1. `WindowManager` sets `ModernSkinElements.sizeMultiplier` to 1.5 (or 1.0)
+When UI Size changes:
+1. `WindowManager` sets `ModernSkinElements.sizeMultiplier` from `uiScaleLevel.scaleFactor`
 2. All computed sizes automatically update (window sizes, title bar heights, border widths, etc.)
-3. `WindowManager.applyDoubleSize()` resizes all windows
+3. `WindowManager.applyDoubleSize(previousScale:)` resizes all windows
 4. `doubleSizeDidChange` notification triggers views to recreate their renderers
 5. All rendering scales correctly with the updated `scaleFactor`
 
@@ -437,7 +437,7 @@ Side windows scale their width by `sizeMultiplier` and match the vertical stack 
 
 ### Interaction with Skin Scale
 
-A skin with `"window": { "scale": 1.5 }` sets `baseScaleFactor` to 1.5. In Large UI mode, effective `scaleFactor` becomes 2.25 (1.5 x 1.5).
+A skin with `"window": { "scale": 1.5 }` sets `baseScaleFactor` to 1.5. At 125% UI Size, effective `scaleFactor` becomes 1.875 (1.5 x 1.25); at 200%, it becomes 3.0 (1.5 x 2.0).
 
 ## Marquee Album Art
 
@@ -535,7 +535,7 @@ This section documents the repeatable pattern for creating modern-skinned versio
 
 - **Zero classic imports**: Files in `ModernSkin/` and `Windows/Modern{Window}/` must NEVER import or reference anything from `Skin/` or `Windows/{ClassicWindow}/`
 - **Skin changes**: Observe `ModernSkinEngine.skinDidChangeNotification` to re-create renderer
-- **Double size changes**: Observe `.doubleSizeDidChange` notification and call `skinDidChange()` to recreate the renderer with the updated scale factor
+- **UI Size changes**: Observe `.doubleSizeDidChange` notification and call `skinDidChange()` to recreate the renderer with the updated scale factor
 - **Scale factor**: Use `ModernSkinElements.scaleFactor` for all geometry. This is a computed property: `baseScaleFactor * sizeMultiplier`. Do NOT cache in a `let` -- use a computed `var` or reference `ModernSkinElements.scaleFactor` directly
 - **Coordinates**: Standard macOS bottom-left origin (no flipping needed, unlike classic skin system)
 - **Dockable borders**: Dockable sub-windows must use `ModernSkinElements.auxiliaryWindowBorderWidth` for their outer chrome/content inset. Do not add per-window Metal border constants; Metal intentionally uses the smallest shared border width.

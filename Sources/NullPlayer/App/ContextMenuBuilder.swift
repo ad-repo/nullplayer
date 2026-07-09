@@ -59,10 +59,7 @@ class ContextMenuBuilder {
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
 
-        let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
-        doubleSize.target = MenuActions.shared
-        doubleSize.state = wm.isDoubleSize ? .on : .off
-        menu.addItem(doubleSize)
+        menu.addItem(buildUISizeMenuItem(wm: wm))
 
         menu.addItem(buildWindowLockMenuItem())
         menu.addItem(NSMenuItem.separator())
@@ -144,10 +141,7 @@ class ContextMenuBuilder {
             menu.addItem(hideTitleBars)
         }
 
-        let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
-        doubleSize.target = MenuActions.shared
-        doubleSize.state = wm.isDoubleSize ? .on : .off
-        menu.addItem(doubleSize)
+        menu.addItem(buildUISizeMenuItem(wm: wm))
 
         menu.addItem(buildWindowLockMenuItem())
 
@@ -519,6 +513,21 @@ class ContextMenuBuilder {
         let item = NSMenuItem(title: title, action: #selector(MenuActions.toggleWindowLayoutLock), keyEquivalent: "")
         item.target = MenuActions.shared
         return item
+    }
+
+    private static func buildUISizeMenuItem(wm: WindowManager) -> NSMenuItem {
+        let parent = NSMenuItem(title: "UI Size", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for level in UIScaleLevel.allCases {
+            let item = NSMenuItem(title: level.menuTitle, action: #selector(MenuActions.setUIScaleLevel(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = level.rawValue
+            item.state = wm.uiScaleLevel == level ? .on : .off
+            submenu.addItem(item)
+        }
+
+        parent.submenu = submenu
+        return parent
     }
 
     private static func moveMenuItems(from source: NSMenu, to destination: NSMenu) {
@@ -4745,6 +4754,12 @@ class MenuActions: NSObject {
         // window in place (classic windows self-scale their skin rendering from their bounds),
         // so no restart is needed.
         WindowManager.shared.isDoubleSize.toggle()
+    }
+
+    @objc func setUIScaleLevel(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let level = UIScaleLevel(storedRawValue: rawValue) else { return }
+        WindowManager.shared.uiScaleLevel = level
     }
 
     @objc func toggleWindowLayoutLock() {
