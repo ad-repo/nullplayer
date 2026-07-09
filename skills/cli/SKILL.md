@@ -447,7 +447,7 @@ RadioManager.cliAudioEngine = audioEngine
 CastManager.cliAudioEngine = audioEngine
 ```
 
-All `WindowManager.shared.audioEngine` references in the cast/radio path use `resolvedAudioEngine` instead.
+All `WindowManager.shared.audioEngine` references in the cast/radio path use `resolvedAudioEngine` instead — **including the cast-control, status-poll, and teardown paths**, not just the initial cast handoff. This covers `stopCastPlayback` (natural cast end), `resetCastTime`, `pauseCastPlayback`/`resumeCastPlayback`, the `isAudioCastRoutingActive` poll guards, the Sonos poll-result engine, the Sonos advance-on-unsupported-format branch in `castNewTrack`, and the post-sleep-wake Sonos check. If any of these hit `WindowManager.shared.audioEngine` directly, cast end/pause/resume/status updates never reach the CLI-owned engine and the attached `--cli` session sits with stale state (e.g. a Chromecast cast ends but the CLI still thinks it's casting). The **only** intended `WindowManager.shared.audioEngine` reference is the fallback inside `resolvedAudioEngine` itself.
 
 ## `currentMetadataTitle`
 

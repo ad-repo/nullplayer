@@ -1179,7 +1179,7 @@ class CastManager {
             // operation. Recursing into castNewTrack() from here would enqueue a task
             // behind the current inflight task and deadlock the cast handoff.
             if session.device.type == .sonos {
-                let engine = WindowManager.shared.audioEngine
+                let engine = self.resolvedAudioEngine
                 var requestedTrackRejected = false
 
                 while true {
@@ -1970,7 +1970,7 @@ class CastManager {
                 WindowManager.shared.mainWindowController?.clearVideoTrackInfo()
             }
             
-            WindowManager.shared.audioEngine.stopCastPlayback(resumeLocally: false)
+            self.resolvedAudioEngine.stopCastPlayback(resumeLocally: false)
             NotificationCenter.default.post(name: Self.sessionDidChangeNotification, object: nil)
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
         }
@@ -2086,7 +2086,7 @@ class CastManager {
                 self.isVideoCastPlaying = false
             } else {
                 // Reset time to 0 but keep cast session active
-                WindowManager.shared.audioEngine.resetCastTime()
+                self.resolvedAudioEngine.resetCastTime()
             }
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
         }
@@ -2113,7 +2113,7 @@ class CastManager {
                 self.activeSession?.isPlaying = false
                 self.isVideoCastPlaying = false
             } else {
-                WindowManager.shared.audioEngine.pauseCastPlayback()
+                self.resolvedAudioEngine.pauseCastPlayback()
             }
         }
     }
@@ -2135,7 +2135,7 @@ class CastManager {
                 self.activeSession?.isPlaying = true
                 self.isVideoCastPlaying = true
             } else {
-                WindowManager.shared.audioEngine.resumeCastPlayback()
+                self.resolvedAudioEngine.resumeCastPlayback()
             }
         }
     }
@@ -2239,7 +2239,7 @@ class CastManager {
                         return
                     }
                     // Ignore poll failures once we're no longer routing audio to a cast (post-stop races).
-                    guard WindowManager.shared.audioEngine.isAudioCastRoutingActive else { return }
+                    guard self.resolvedAudioEngine.isAudioCastRoutingActive else { return }
                     consecutiveSonosPollFailures += 1
                     NSLog("CastManager: Sonos poll failed (%d consecutive) — %@",
                           consecutiveSonosPollFailures, self.activeSession?.device.name ?? "nil")
@@ -2266,7 +2266,7 @@ class CastManager {
                     return
                 }
                 consecutiveSonosPollFailures = 0
-                let engine = WindowManager.shared.audioEngine
+                let engine = self.resolvedAudioEngine
                 guard engine.isAudioCastRoutingActive else {
                     NSLog("CastManager: Sonos poll result ignored — audio cast routing inactive")
                     return
@@ -2370,7 +2370,7 @@ class CastManager {
                 if result.state == "STOPPED" || result.state == "NO_MEDIA_PRESENT" {
                     NSLog("CastManager: Sonos stopped during sleep")
                     await MainActor.run {
-                        WindowManager.shared.audioEngine.pauseCastPlayback()
+                        self.resolvedAudioEngine.pauseCastPlayback()
                         NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
                     }
                 }
