@@ -7,6 +7,10 @@ if args.contains("--cli") && args.contains("--ui-testing") {
 }
 
 if args.contains("--cli") {
+    // Silence the app's pervasive NSLog output before anything can log, keeping the
+    // CLI's own messages (via cliStderr) visible. --verbose keeps logs for debugging.
+    suppressFrameworkLoggingForCLI(verbose: args.contains("--verbose"))
+
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)   // no Dock icon, no menu bar
     let cliDelegate = CLIMode()

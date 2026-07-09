@@ -6,6 +6,7 @@ class CLIPlayer: AudioEngineDelegate {
     let display = CLIDisplay()
     private var previousVolume: Float = 0.5
     private var lastArtworkKey: String?
+    private var lastTrackInfoKey: String?
 
     init(options: CLIOptions) {
         self.options = options
@@ -41,7 +42,7 @@ class CLIPlayer: AudioEngineDelegate {
         // Precedence: --tuning-offset-cents → --tuning off → --tuning <Hz> → persisted state.
         if let cents = options.tuningOffsetCents {
             guard cents.isFinite else {
-                fputs("Error: --tuning-offset-cents must be a finite number\n", stderr)
+                fputs("Error: --tuning-offset-cents must be a finite number\n", cliStderr)
                 exit(1)
             }
             audioEngine.setTuningOffsetCents(cents, persist: false)
@@ -52,7 +53,7 @@ class CLIPlayer: AudioEngineDelegate {
                 let sourceHz: Double
                 if let src = options.tuningSource {
                     guard let parsed = Double(src), parsed.isFinite, parsed > 0 else {
-                        fputs("Error: --tuning-source requires a positive number (Hz)\n", stderr)
+                        fputs("Error: --tuning-source requires a positive number (Hz)\n", cliStderr)
                         exit(1)
                     }
                     sourceHz = parsed
@@ -61,7 +62,7 @@ class CLIPlayer: AudioEngineDelegate {
                 }
                 audioEngine.setTuningPreset(.custom(source: sourceHz, target: targetHz), persist: false)
             } else {
-                fputs("Error: --tuning requires 'off' or a positive number in Hz (e.g. 432)\n", stderr)
+                fputs("Error: --tuning requires 'off' or a positive number in Hz (e.g. 432)\n", cliStderr)
                 exit(1)
             }
         }
@@ -78,7 +79,7 @@ class CLIPlayer: AudioEngineDelegate {
                 audioEngine.setEQEnabled(true)
             } else {
                 let names = EQPreset.allPresets.map { $0.name }.joined(separator: ", ")
-                fputs("Error: Unknown EQ preset '\(eqName)'. Available: \(names)\n", stderr)
+                fputs("Error: Unknown EQ preset '\(eqName)'. Available: \(names)\n", cliStderr)
                 exit(1)
             }
         }
@@ -91,7 +92,7 @@ class CLIPlayer: AudioEngineDelegate {
                 audioEngine.setOutputDevice(device.id)
             } else {
                 let names = AudioOutputManager.shared.outputDevices.map { $0.name }.joined(separator: ", ")
-                fputs("Error: Unknown output device '\(outputName)'. Available: \(names)\n", stderr)
+                fputs("Error: Unknown output device '\(outputName)'. Available: \(names)\n", cliStderr)
                 exit(1)
             }
         }
@@ -99,6 +100,13 @@ class CLIPlayer: AudioEngineDelegate {
 
     private var currentPlaylist: [Track] = []
     private var hasStartedPlaying = false
+
+    /// Set once we commit to casting. During the cast handoff the local engine is
+    /// deliberately stopped (`stopLocalForCasting`) and emits `.stopped` even though
+    /// audio is now playing on the cast device (the engine re-enters `.playing` once
+    /// the device reports status). Without this flag the CLI would mistake that
+    /// handoff `.stopped` for end-of-playlist and quit exactly when casting begins.
+    private var castSessionActive = false
 
     /// Set when the streaming player enters an error state. The engine surfaces
     /// both error-induced and natural end-of-playlist stops as `.stopped`, so this
@@ -110,7 +118,7 @@ class CLIPlayer: AudioEngineDelegate {
         currentPlaylist = tracks
         audioEngine.loadTracks(tracks)
         audioEngine.play()
-        display.printTrackInfo(tracks.first)
+        printTrackInfoIfChanged(tracks.first)
         if options.art, let first = tracks.first {
             showArtworkIfChanged(for: first)
         }
@@ -130,40 +138,58 @@ class CLIPlayer: AudioEngineDelegate {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         guard audioEngine.currentTrack != nil else {
-            fputs("Error: No track loaded for casting\n", stderr)
+            fputs("Error: No track loaded for casting\n", cliStderr)
             return
         }
 
-        CastManager.shared.startDiscovery()
+        // Resolve and validate cast type once up front
+        let typeFilter: CastDeviceType?
+        if let castType = options.castType {
+            switch castType.lowercased() {
+            case "sonos": typeFilter = .sonos
+            case "chromecast": typeFilter = .chromecast
+            case "dlna": typeFilter = .dlnaTV
+            default:
+                fputs("Error: Unknown cast type '\(castType)'. Use: sonos, chromecast, dlna\n", cliStderr)
+                return
+            }
+        } else {
+            typeFilter = nil
+        }
 
-        // Poll for devices with 10s timeout
-        let deadline = Date().addingTimeInterval(10)
-        while CastManager.shared.discoveredDevices.isEmpty && Date() < deadline {
+        CastManager.shared.startDiscovery()
+        fputs("Discovering cast devices…\n", cliStderr)
+
+        // Poll for matching device with 15s timeout
+        let deadline = Date().addingTimeInterval(15)
+        var device: CastDevice?
+
+        while Date() < deadline {
+            let allDevices = CastManager.shared.discoveredDevices
+            let filteredDevices = typeFilter.map { type in allDevices.filter { $0.type == type } } ?? allDevices
+
+            if let match = filteredDevices.first(where: {
+                $0.name.caseInsensitiveCompare(deviceName) == .orderedSame
+            }) {
+                device = match
+                break
+            }
+
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
 
-        // Filter by cast type if specified
-        var devices = CastManager.shared.discoveredDevices
-        if let castType = options.castType {
-            switch castType.lowercased() {
-            case "sonos": devices = devices.filter { $0.type == .sonos }
-            case "chromecast": devices = devices.filter { $0.type == .chromecast }
-            case "dlna": devices = devices.filter { $0.type == .dlnaTV }
-            default:
-                fputs("Error: Unknown cast type '\(castType)'. Use: sonos, chromecast, dlna\n", stderr)
-                return
-            }
-        }
-
-        guard let device = devices.first(where: {
-            $0.name.caseInsensitiveCompare(deviceName) == .orderedSame
-        }) else {
-            let available = devices.map { "\($0.name) (\($0.type))" }.joined(separator: ", ")
-            fputs("Error: Cast device '\(deviceName)' not found. Available: \(available)\n", stderr)
+        guard let device else {
+            let allDevices = CastManager.shared.discoveredDevices
+            let filteredDevices = typeFilter.map { type in allDevices.filter { $0.type == type } } ?? allDevices
+            let available = filteredDevices.map { "\($0.name) (\($0.type))" }.joined(separator: ", ")
+            fputs("Error: Cast device '\(deviceName)' not found. Available: \(available)\n", cliStderr)
             return
         }
 
         do {
+            // Commit to casting before the handoff. castCurrentTrack triggers
+            // stopLocalForCasting, whose `.stopped` must not exit the CLI (see flag docs).
+            castSessionActive = true
             try await CastManager.shared.castCurrentTrack(to: device)
 
             // Sonos multi-room
@@ -181,12 +207,12 @@ class CLIPlayer: AudioEngineDelegate {
                             coordinatorUDN: coordinatorUDN
                         )
                     } else {
-                        fputs("Warning: Sonos room '\(roomName)' not found\n", stderr)
+                        fputs("Warning: Sonos room '\(roomName)' not found\n", cliStderr)
                     }
                 }
             }
         } catch {
-            fputs("Error: Cast failed: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", stderr)
+            fputs("Error: Cast failed: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
         }
     }
 
@@ -297,6 +323,14 @@ class CLIPlayer: AudioEngineDelegate {
     }
 
     func audioEngineDidChangeState(_ state: PlaybackState) {
+        // While a cast session owns playback, the local engine is intentionally
+        // stopped for the handoff and re-enters .playing once the device reports
+        // status. Never treat a local .stopped as end-of-playlist here — audio is
+        // playing on the cast device, and exiting/restarting would kill or fight it.
+        if state == .stopped && castSessionActive {
+            return
+        }
+
         // An error-induced stop (e.g. seek into EOF, network drop, dead server)
         // surfaces as .stopped just like a natural end-of-playlist. Don't treat it
         // as completion: skip both the repeat-all restart (which would hammer a
@@ -340,10 +374,23 @@ class CLIPlayer: AudioEngineDelegate {
     }
 
     func audioEngineDidChangeTrack(_ track: Track?) {
-        display.printTrackInfo(track)
+        printTrackInfoIfChanged(track)
         if options.art, let track {
             showArtworkIfChanged(for: track)
         }
+    }
+
+    /// Print the "Now Playing" block only when the track actually changes. The
+    /// track-change delegate fires several times for the same track during load and
+    /// stream-format detection (and `play()` prints once up front), so a plain print
+    /// would repeat the same block 4–5×. The `i` key calls `display.printTrackInfo`
+    /// directly and is intentionally not deduped — it's an explicit on-demand reprint.
+    private func printTrackInfoIfChanged(_ track: Track?) {
+        guard let track else { return }
+        let key = "\(track.artist ?? "")|\(track.title ?? "")|\(track.album ?? "")"
+        guard key != lastTrackInfoKey else { return }
+        lastTrackInfoKey = key
+        display.printTrackInfo(track)
     }
 
     private func showArtworkIfChanged(for track: Track) {
@@ -377,7 +424,9 @@ class CLIPlayer: AudioEngineDelegate {
             }
             NSLog("[CLIArt] got image %@ x %@, rendering ASCII art", "\(image.size.width)", "\(image.size.height)")
             await MainActor.run {
-                self.display.printAsciiArt(image)
+                self.display.printAsciiArt(image,
+                                           forceColor: self.options.artColor,
+                                           forceAscii: self.options.artAscii)
             }
         }
     }
@@ -391,6 +440,6 @@ class CLIPlayer: AudioEngineDelegate {
     }
 
     func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {
-        fputs("Error loading '\(track.title)': \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", stderr)
+        fputs("Error loading '\(track.title)': \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
     }
 }

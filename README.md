@@ -336,6 +336,31 @@ nullplayer --cli --source radio --station "Radio Paradise: Mellow Mix" --tuning-
 | `m` | Toggle mute |
 | `i` | Show track info |
 
+### Terminal display
+
+During playback the CLI shows album art in the terminal. The render mode is auto-detected from the terminal's color support and can be forced:
+
+- default: color half-block art on color-capable terminals (truecolor or 256-color), otherwise a monochrome character-ramp
+- `--color-art`: force color art
+- `--ascii-art`: force the monochrome character-ramp — use this if your terminal reports color but renders the art as flat blocks
+- `--no-art`: disable album art
+
+```bash
+nullplayer --cli --source local --artist "Rush" --ascii-art
+```
+
+If a terminal misreports its color support (some shell profiles `export COLORTERM=truecolor` globally, making every terminal claim color it can't paint), set a per-terminal default in that terminal's shell profile instead of passing a flag each time:
+
+```sh
+export NULLPLAYER_ART=ascii   # or: color, auto (default). Flags still override.
+```
+
+Framework log output is suppressed by default so the session stays clean. Pass `--verbose` to keep it for debugging:
+
+```bash
+nullplayer --cli --source plex --playlist "All Music" --cast "Living Room" --cast-type sonos --verbose
+```
+
 See `nullplayer --cli --help` for the full flag reference. If you have not installed the launcher yet, the underlying app binary is still available at `NullPlayer.app/Contents/MacOS/NullPlayer`.
 
 ## Development

@@ -83,16 +83,17 @@ Avoid vague phrasing like "CLI browser" when the real value is orchestration acr
 | `CLIMode.swift` | `NSApplicationDelegate` for CLI mode; `CLIOptions` struct with arg parsing; signal handling |
 | `CLIPlayer.swift` | Headless playback controller; owns `AudioEngine`; implements `AudioEngineDelegate` |
 | `CLIKeyboard.swift` | Raw terminal input via `tcsetattr`; ANSI escape sequence handling on background queue |
-| `CLIDisplay.swift` | Terminal output: progress bar, status lines, ASCII art, `--json` formatting |
-| `CLIArtwork.swift` | Artwork loading from local/Plex/Subsonic/Jellyfin/Emby; ASCII art rendering |
+| `CLIDisplay.swift` | Terminal output: progress bar, status lines, album art, `--json` formatting; terminal color detection |
+| `CLIArtwork.swift` | Artwork loading from local/Plex/Subsonic/Jellyfin/Emby |
 | `CLISourceResolver.swift` | Resolves all flags to `[Track]` or `.radioStation`; `CLISourceError` enum |
 | `CLIQueryHandler.swift` | Handles `--list-*` and `--search` queries; prints results then calls `exit()` |
+| `CLIStderr.swift` | `cliStderr` handle + `suppressFrameworkLoggingForCLI(verbose:)` — silences `NSLog` noise while keeping CLI messages visible |
 
 ### Modified Files
 
 | File | Change |
 |------|--------|
-| `App/main.swift` | Branch on `--cli` flag; `--cli`+`--ui-testing` mutual exclusion |
+| `App/main.swift` | Branch on `--cli` flag; `--cli`+`--ui-testing` mutual exclusion; calls `suppressFrameworkLoggingForCLI(verbose:)` before `app.run()` |
 | `Audio/AudioEngine.swift` | `static var isHeadless = false`; guards on all 10 `WindowManager.shared` video references |
 | `Radio/RadioManager.swift` | `static weak var cliAudioEngine`; `resolvedAudioEngine`; `currentMetadataTitle`; 4 `play(station:)` replacements |
 | `Casting/CastManager.swift` | `static weak var cliAudioEngine`; `resolvedAudioEngine`; replacements in `castCurrentTrack`, `castNewTrack`, `pauseLocalPlayback`, Chromecast status handler |
@@ -115,9 +116,14 @@ Avoid vague phrasing like "CLI browser" when the real value is orchestration acr
 | `--shuffle` | Enable shuffle mode |
 | `--repeat-all` | Repeat entire playlist (CLIPlayer-managed; restarts on `.stopped`) |
 | `--repeat-one` | Repeat current track (`AudioEngine.repeatEnabled = true`) |
-| `--no-art` | Disable ASCII album art (art is shown by default; 256-color half-block) |
+| `--no-art` | Disable album art entirely (art is shown by default) |
+| `--color-art` | Force color half-block art (truecolor/256) |
+| `--ascii-art` | Force monochrome character-ramp art |
+| `--verbose` | Keep framework `NSLog` output (suppressed by default) |
 
 `--repeat-all` and `--repeat-one` are mutually exclusive; validated at startup.
+
+Art rendering and log suppression each have their own section below.
 
 ### Query Commands (print and exit)
 
@@ -314,6 +320,78 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 - `CLIMode.applicationDidFinishLaunching` spawns `Task { @MainActor in ... }` for all async resolution
 
 ---
+
+## Album Art Rendering
+
+`CLIDisplay.printAsciiArt(_:forceColor:forceAscii:)` renders album art three ways. The
+mode is **auto-detected by default** and can be forced by flags.
+
+`CLIDisplay.detectColorMode()` → `.truecolor` / `.ansi256` / `.mono`, purely from the
+environment (declarative — it reports what the terminal *claims*):
+
+- Not a TTY (`isatty(fileno(stdout)) == 0`, i.e. piped/redirected) → `.mono`
+- `COLORTERM` contains `truecolor`/`24bit` → `.truecolor`
+- `TERM` contains `truecolor`/`direct` → `.truecolor`
+- `TERM` contains `256color` → `.ansi256`
+- otherwise (no positive color signal) → `.mono`
+
+Rendering per mode:
+
+- **Color** (`.truecolor`/`.ansi256`): every cell is a `▀` half-block; the image is carried
+  entirely by per-cell color codes (`\e[38;2;…` truecolor or `\e[38;5;…` 256-color via
+  `ansi256Index(r:g:b:)`, which picks the nearest of the 6×6×6 cube or the grayscale ramp).
+  Samples a 60×60 pixel grid → 30 char rows (2 pixels per row).
+- **Mono** (`.mono`): a luminance→character ramp (` .:-=+*#%@`, `asciiRamp`) using **no color
+  codes at all** — the only thing that renders on terminals that ignore ANSI color (where the
+  color path collapses to a flat wall of `▀`). Samples 60×30 (one char per pixel). Assumes a
+  **dark background** (denser glyph = brighter pixel); on a light background it reads inverted.
+
+Mode precedence (in `printAsciiArt`): `forceAscii` (`--ascii-art`) → mono; else `forceColor`
+(`--color-art`) → color (truecolor if detected, else 256); else the `NULLPLAYER_ART` env var
+(`ascii`/`mono` → mono, `color` → color, unset/`auto`/unrecognized → auto-detect). `--no-art`
+(in `CLIOptions.art`) short-circuits before any of this and skips art entirely.
+
+**Why the overrides exist:** detection is env-based and a terminal can misreport — most
+commonly `export COLORTERM=truecolor` in a shell profile makes *every* terminal claim
+truecolor even when it renders monochrome, so auto-detect picks color and the art collapses to
+blocks. `--ascii-art` is the per-invocation escape hatch; `NULLPLAYER_ART=ascii` is the
+per-terminal one (pin it in that terminal's shell profile so the default renders ascii with no
+flag). There is no runtime way to know a terminal actually renders monochrome short of an
+escape-sequence round-trip (OSC 4 / DA query with a timed stdin read), which is fragile across
+tmux/ssh and not done.
+
+## Log Suppression
+
+The app calls `NSLog` in ~80 files; that output goes to **stderr** and floods a headless
+session endlessly. `CLIStderr.swift` handles this:
+
+- `suppressFrameworkLoggingForCLI(verbose:)` — called from `main.swift` in the `--cli` branch
+  **before `app.run()`** (so it's active before any `NSLog` fires). It `dup`s the real stderr,
+  redirects fd 2 to `/dev/null` (swallowing all `NSLog`), and exposes the saved terminal
+  stderr as the global `cliStderr`.
+- **All CLI diagnostics write to `cliStderr`, not `stderr`** — every `fputs(…, cliStderr)` in
+  `CLIMode`/`CLIPlayer`/`CLIQueryHandler`/`CLISourceResolver`. This is a hard rule: a bare
+  `fputs(…, stderr)` in CLI code would be silently swallowed by the redirect. (The one
+  exception is `main.swift`'s pre-redirect `--cli`+`--ui-testing` error, which runs before the
+  redirect and correctly uses `stderr`.)
+- `--verbose` sets `CLIOptions.verbose` and makes `suppressFrameworkLoggingForCLI` a no-op, so
+  framework logs return for debugging. `main.swift` reads it directly via
+  `args.contains("--verbose")` (before options are parsed).
+
+## Casting Keep-Alive
+
+When `--cast` hands off to a device, `CastManager` calls `AudioEngine.stopLocalForCasting()`,
+which sets local `state = .stopped`. Without guarding, `CLIPlayer.audioEngineDidChangeState`
+treats that as end-of-playlist (`hasStartedPlaying && !repeatAll`) and calls `exit(0)` — the
+CLI would quit the instant the cast starts.
+
+`CLIPlayer` guards this with `castSessionActive`, set `true` right before
+`CastManager.shared.castCurrentTrack(to:)`. While set, a local `.stopped` is ignored (no exit,
+no repeat-all restart) — audio is on the cast device, and the engine re-enters `.playing` from
+`updateCastPosition` once the device reports status. The flag can't rely on
+`CastManager.isCasting` at the handoff instant: `stopLocalForCasting` runs *before*
+`upnpManager.connect`, so `activeSession` is still nil and `isCasting` is false when the
+`.stopped` fires. Once set, the CLI never auto-exits on `.stopped`; the user quits with `q`.
 
 ## Exit Codes
 

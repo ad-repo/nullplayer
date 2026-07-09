@@ -948,8 +948,10 @@ class CastManager {
                 }
 
                 // Close the video player only when this audio cast superseded a video cast.
-                NSLog("CastManager: cast() audio — closing video player if video cast was superseded")
-                WindowManager.shared.closeVideoPlayerForCastTransition(wasVideoCast: supersededVideoCast)
+                if !AudioEngine.isHeadless {
+                    NSLog("CastManager: cast() audio — closing video player if video cast was superseded")
+                    WindowManager.shared.closeVideoPlayerForCastTransition(wasVideoCast: supersededVideoCast)
+                }
             }
             NotificationCenter.default.post(name: Self.sessionDidChangeNotification, object: nil)
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)

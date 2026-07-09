@@ -167,7 +167,7 @@ struct CLIQueryHandler {
                 )
             }
         default:
-            fputs("Error: --list-libraries not supported for source '\(source)'\n", stderr)
+            fputs("Error: --list-libraries not supported for source '\(source)'\n", cliStderr)
         }
     }
 
@@ -314,7 +314,7 @@ struct CLIQueryHandler {
                 print("\n\(names.count) artist(s)")
             }
         default:
-            fputs("Error: --list-artists not supported for source '\(source)'\n", stderr)
+            fputs("Error: --list-artists not supported for source '\(source)'\n", cliStderr)
         }
     }
 
@@ -332,12 +332,12 @@ struct CLIQueryHandler {
             }
         case "plex":
             guard let artistName = artist else {
-                fputs("Error: --list-albums for plex requires --artist <name>\n", stderr)
+                fputs("Error: --list-albums for plex requires --artist <name>\n", cliStderr)
                 return
             }
             let artists = try await PlexManager.shared.fetchArtists()
             guard let plexArtist = artists.first(where: { $0.title.caseInsensitiveCompare(artistName) == .orderedSame }) else {
-                fputs("Error: Artist '\(artistName)' not found on Plex\n", stderr)
+                fputs("Error: Artist '\(artistName)' not found on Plex\n", cliStderr)
                 return
             }
             let albums = try await PlexManager.shared.fetchAlbums(forArtist: plexArtist)
@@ -349,12 +349,12 @@ struct CLIQueryHandler {
             }
         case "subsonic":
             guard let artistName = artist else {
-                fputs("Error: --list-albums for subsonic requires --artist <name>\n", stderr)
+                fputs("Error: --list-albums for subsonic requires --artist <name>\n", cliStderr)
                 return
             }
             let artists = try await SubsonicManager.shared.fetchArtists()
             guard let a = artists.first(where: { $0.name.caseInsensitiveCompare(artistName) == .orderedSame }) else {
-                fputs("Error: Artist '\(artistName)' not found on Subsonic\n", stderr)
+                fputs("Error: Artist '\(artistName)' not found on Subsonic\n", cliStderr)
                 return
             }
             let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: a)
@@ -366,12 +366,12 @@ struct CLIQueryHandler {
             }
         case "jellyfin":
             guard let artistName = artist else {
-                fputs("Error: --list-albums for jellyfin requires --artist <name>\n", stderr)
+                fputs("Error: --list-albums for jellyfin requires --artist <name>\n", cliStderr)
                 return
             }
             let artists = try await JellyfinManager.shared.fetchArtists()
             guard let a = artists.first(where: { $0.name.caseInsensitiveCompare(artistName) == .orderedSame }) else {
-                fputs("Error: Artist '\(artistName)' not found on Jellyfin\n", stderr)
+                fputs("Error: Artist '\(artistName)' not found on Jellyfin\n", cliStderr)
                 return
             }
             let albums = try await JellyfinManager.shared.fetchAlbums(forArtist: a)
@@ -383,12 +383,12 @@ struct CLIQueryHandler {
             }
         case "emby":
             guard let artistName = artist else {
-                fputs("Error: --list-albums for emby requires --artist <name>\n", stderr)
+                fputs("Error: --list-albums for emby requires --artist <name>\n", cliStderr)
                 return
             }
             let artists = try await EmbyManager.shared.fetchArtists()
             guard let a = artists.first(where: { $0.name.caseInsensitiveCompare(artistName) == .orderedSame }) else {
-                fputs("Error: Artist '\(artistName)' not found on Emby\n", stderr)
+                fputs("Error: Artist '\(artistName)' not found on Emby\n", cliStderr)
                 return
             }
             let albums = try await EmbyManager.shared.fetchAlbums(forArtist: a)
@@ -399,7 +399,7 @@ struct CLIQueryHandler {
                 print("\n\(names.count) album(s)")
             }
         default:
-            fputs("Error: --list-albums not supported for source '\(source)'\n", stderr)
+            fputs("Error: --list-albums not supported for source '\(source)'\n", cliStderr)
         }
     }
 
@@ -418,13 +418,13 @@ struct CLIQueryHandler {
             }
         case "plex":
             guard let artistName = artist else {
-                fputs("Error: --list-tracks for plex requires --artist <name>\n", stderr)
+                fputs("Error: --list-tracks for plex requires --artist <name>\n", cliStderr)
                 return
             }
             let mgr = PlexManager.shared
             let artists = try await mgr.fetchArtists()
             guard let a = artists.first(where: { $0.title.caseInsensitiveCompare(artistName) == .orderedSame }) else {
-                fputs("Error: Artist '\(artistName)' not found on Plex\n", stderr)
+                fputs("Error: Artist '\(artistName)' not found on Plex\n", cliStderr)
                 return
             }
             let albums = try await mgr.fetchAlbums(forArtist: a)
@@ -442,7 +442,7 @@ struct CLIQueryHandler {
             }
         case "subsonic", "jellyfin", "emby":
             guard let artistName = artist else {
-                fputs("Error: --list-tracks for \(source) requires --artist <name>\n", stderr)
+                fputs("Error: --list-tracks for \(source) requires --artist <name>\n", cliStderr)
                 return
             }
             var opts = CLIOptions()
@@ -457,7 +457,7 @@ struct CLIQueryHandler {
                 print("\n\(names.count) track(s)")
             }
         default:
-            fputs("Error: --list-tracks not supported for source '\(source)'\n", stderr)
+            fputs("Error: --list-tracks not supported for source '\(source)'\n", cliStderr)
         }
     }
 
@@ -506,7 +506,7 @@ struct CLIQueryHandler {
             }
             return
         default:
-            fputs("Error: --search not supported for source '\(source)'\n", stderr)
+            fputs("Error: --search not supported for source '\(source)'\n", cliStderr)
             return
         }
 
@@ -535,7 +535,7 @@ struct CLIQueryHandler {
             let playlists = try await EmbyManager.shared.fetchPlaylists()
             names = playlists.map { $0.name }
         default:
-            fputs("Error: --list-playlists not supported for source '\(source)'\n", stderr)
+            fputs("Error: --list-playlists not supported for source '\(source)'\n", cliStderr)
             return
         }
 
