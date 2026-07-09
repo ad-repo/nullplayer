@@ -100,6 +100,12 @@ class CLIPlayer: AudioEngineDelegate {
     private var currentPlaylist: [Track] = []
     private var hasStartedPlaying = false
 
+    /// Set when the streaming player enters an error state. The engine surfaces
+    /// both error-induced and natural end-of-playlist stops as `.stopped`, so this
+    /// flag lets us tell them apart and avoid quitting (or restart-looping) on an
+    /// error such as a mid-stream network drop.
+    private var lastStopWasError = false
+
     func play(tracks: [Track]) {
         currentPlaylist = tracks
         audioEngine.loadTracks(tracks)
@@ -286,7 +292,23 @@ class CLIPlayer: AudioEngineDelegate {
 
     // MARK: - AudioEngineDelegate
 
+    func audioEngineDidEncounterPlaybackError() {
+        lastStopWasError = true
+    }
+
     func audioEngineDidChangeState(_ state: PlaybackState) {
+        // An error-induced stop (e.g. seek into EOF, network drop, dead server)
+        // surfaces as .stopped just like a natural end-of-playlist. Don't treat it
+        // as completion: skip both the repeat-all restart (which would hammer a
+        // failing stream in a tight loop) and the exit. Stay alive so the user can
+        // press > to skip or q to quit.
+        if state == .stopped && lastStopWasError {
+            lastStopWasError = false
+            display.printState(state)
+            display.printAboveProgress("Playback error — press > to skip or q to quit")
+            return
+        }
+
         // Implement repeat-all: when playlist ends (state == .stopped),
         // reload and restart from the beginning
         if state == .stopped && options.repeatAll && !currentPlaylist.isEmpty {
@@ -296,6 +318,7 @@ class CLIPlayer: AudioEngineDelegate {
         }
         if state == .playing {
             hasStartedPlaying = true
+            lastStopWasError = false  // Recovered — a later stop is a real one
         }
         display.printState(state)
         // Exit when playback finishes naturally and there is nothing left to play
