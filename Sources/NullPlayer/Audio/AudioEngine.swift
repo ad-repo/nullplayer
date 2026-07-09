@@ -73,6 +73,16 @@ protocol AudioEngineDelegate: AnyObject {
     func audioEngineDidUpdateSpectrum(_ levels: [Float])
     func audioEngineDidChangePlaylist()
     func audioEngineDidFailToLoadTrack(_ track: Track, error: Error)
+    /// Fired when the streaming player enters an error state, immediately before
+    /// `state` is set to `.stopped`. Lets observers distinguish an error-induced
+    /// stop from a natural end-of-playlist stop (both surface as `.stopped`).
+    func audioEngineDidEncounterPlaybackError()
+}
+
+extension AudioEngineDelegate {
+    // Default no-op: only observers that care about error-vs-natural stops
+    // (e.g. the headless CLI) need to implement this.
+    func audioEngineDidEncounterPlaybackError() {}
 }
 
 /// Core audio engine using AVAudioEngine for playback and DSP
@@ -2561,6 +2571,16 @@ class AudioEngine {
         // Use 1.0s buffer for streaming (seeking too close to EOF can crash the player)
         // Use 0.5s buffer for local files
         let eofBuffer: TimeInterval = isStreamingPlayback ? 1.0 : 0.5
+
+        // Seeking into the final EOF region of a fully-buffered stream drives the
+        // AudioStreaming player into an error state (which stops playback). When a
+        // forward seek reaches the end of a streaming track, let the track finish
+        // playing instead of issuing a doomed seek — it will advance naturally.
+        if isStreamingPlayback && time >= currentDuration - eofBuffer && time > currentTime {
+            NSLog("AudioEngine: Ignoring forward streaming seek into EOF region (%.2f/%.2f) - letting track finish", time, currentDuration)
+            return
+        }
+
         let seekTime = max(0, min(time, currentDuration - eofBuffer))
         
         if isStreamingPlayback {
@@ -6162,6 +6182,10 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         case .error:
             NSLog("AudioEngine: Streaming player entered error state")
             streamingPlaybackConfirmed = false
+            // Signal the error BEFORE flipping to .stopped so observers can tell
+            // this apart from a natural end-of-playlist stop (the didSet on `state`
+            // fires audioEngineDidChangeState(.stopped) synchronously below).
+            delegate?.audioEngineDidEncounterPlaybackError()
             self.state = .stopped
             isSeekingStreaming = false
             // Cancel any pending seeks and reset work items
