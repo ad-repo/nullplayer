@@ -106,6 +106,10 @@ class CLIPlayer: AudioEngineDelegate {
     /// audio is now playing on the cast device (the engine re-enters `.playing` once
     /// the device reports status). Without this flag the CLI would mistake that
     /// handoff `.stopped` for end-of-playlist and quit exactly when casting begins.
+    /// It stays set for the life of a successful cast (auto-advance between cast
+    /// tracks can emit `.stopped`, so a one-shot would exit mid-playlist), and is
+    /// cleared if cast setup throws — otherwise a failed cast would swallow every
+    /// future `.stopped` and hang the CLI at natural end (see the catch in setupCasting).
     private var castSessionActive = false
 
     /// Set when the streaming player enters an error state. The engine surfaces
@@ -196,48 +200,66 @@ class CLIPlayer: AudioEngineDelegate {
             return
         }
 
+        // Commit to casting before the handoff. castCurrentTrack triggers
+        // stopLocalForCasting, whose `.stopped` must not exit the CLI (see flag docs).
+        castSessionActive = true
         do {
-            // Commit to casting before the handoff. castCurrentTrack triggers
-            // stopLocalForCasting, whose `.stopped` must not exit the CLI (see flag docs).
-            castSessionActive = true
             try await CastManager.shared.castCurrentTrack(to: device)
-
-            // Rooms to group: inline (from --cast "A,B,C") plus --sonos-rooms.
-            let explicitRooms = options.sonosRooms?
-                .split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) } ?? []
-            // Dedupe case-insensitively and drop the coordinator itself.
-            var seen = Set([deviceName.lowercased()])
-            var roomNames: [String] = []
-            for room in inlineRooms + explicitRooms where !room.isEmpty {
-                if seen.insert(room.lowercased()).inserted {
-                    roomNames.append(room)
-                }
-            }
-
-            if !roomNames.isEmpty {
-                guard device.type == .sonos else {
-                    fputs("Warning: multi-room grouping is only supported for Sonos; ignoring \(roomNames.joined(separator: ", "))\n", cliStderr)
-                    return
-                }
-                let sonosDevices = CastManager.shared.discoveredDevices.filter { $0.type == .sonos }
-                let coordinatorUDN = device.id
-
-                for roomName in roomNames {
-                    if let room = sonosDevices.first(where: {
-                        $0.name.caseInsensitiveCompare(roomName) == .orderedSame
-                    }) {
-                        try await CastManager.shared.joinSonosToGroup(
-                            zoneUDN: room.id,
-                            coordinatorUDN: coordinatorUDN
-                        )
-                    } else {
-                        fputs("Warning: Sonos room '\(roomName)' not found\n", cliStderr)
-                    }
-                }
-            }
         } catch {
+            // Cast setup failed — undo the handoff guard so normal stop handling
+            // resumes. Left set, the guard would swallow every future .stopped and the
+            // CLI would hang at natural end instead of exiting/repeating. If local
+            // playback was already stopped for the (failed) handoff there is nothing
+            // left to play, so exit with an error; otherwise (e.g. an all-Sonos-
+            // incompatible playlist that threw before local playback was touched) let
+            // local playback continue and exit naturally at its end.
+            castSessionActive = false
             fputs("Error: Cast failed: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
+            if audioEngine.state != .playing {
+                metadataTimer?.invalidate()
+                CLIKeyboard.restoreTerminal()
+                exit(1)
+            }
+            return
+        }
+
+        // Cast is now active. Grouping is best-effort: a room that fails to join must
+        // not tear down the working cast, so failures here are per-room warnings only
+        // (they do NOT clear castSessionActive).
+        let explicitRooms = options.sonosRooms?
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? []
+        // Dedupe case-insensitively and drop the coordinator itself.
+        var seen = Set([deviceName.lowercased()])
+        var roomNames: [String] = []
+        for room in inlineRooms + explicitRooms where !room.isEmpty {
+            if seen.insert(room.lowercased()).inserted {
+                roomNames.append(room)
+            }
+        }
+
+        guard !roomNames.isEmpty else { return }
+        guard device.type == .sonos else {
+            fputs("Warning: multi-room grouping is only supported for Sonos; ignoring \(roomNames.joined(separator: ", "))\n", cliStderr)
+            return
+        }
+        let sonosDevices = CastManager.shared.discoveredDevices.filter { $0.type == .sonos }
+        let coordinatorUDN = device.id
+        for roomName in roomNames {
+            guard let room = sonosDevices.first(where: {
+                $0.name.caseInsensitiveCompare(roomName) == .orderedSame
+            }) else {
+                fputs("Warning: Sonos room '\(roomName)' not found\n", cliStderr)
+                continue
+            }
+            do {
+                try await CastManager.shared.joinSonosToGroup(
+                    zoneUDN: room.id,
+                    coordinatorUDN: coordinatorUDN
+                )
+            } catch {
+                fputs("Warning: failed to group '\(roomName)': \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
+            }
         }
     }
 

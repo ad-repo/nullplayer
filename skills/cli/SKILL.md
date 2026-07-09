@@ -391,7 +391,17 @@ no repeat-all restart) — audio is on the cast device, and the engine re-enters
 `updateCastPosition` once the device reports status. The flag can't rely on
 `CastManager.isCasting` at the handoff instant: `stopLocalForCasting` runs *before*
 `upnpManager.connect`, so `activeSession` is still nil and `isCasting` is false when the
-`.stopped` fires. Once set, the CLI never auto-exits on `.stopped`; the user quits with `q`.
+`.stopped` fires.
+
+It's a **session** flag, not a one-shot: it stays set for the life of a successful cast so the
+CLI doesn't auto-exit on the `.stopped` events cast auto-advance can emit between tracks (a
+one-shot cleared after the first `.stopped` would exit mid-playlist). The user quits with `q`.
+
+**Failure must clear it.** If `castCurrentTrack` throws (e.g. an all-Sonos-incompatible
+playlist), the `catch` sets `castSessionActive = false` — otherwise the guard would swallow
+every future `.stopped` and hang the CLI at natural end. It then exits (code 1) if local
+playback is no longer running (it was stopped for the failed handoff), or lets local playback
+continue to its natural end if the throw happened before local playback was touched.
 
 ## Exit Codes
 
