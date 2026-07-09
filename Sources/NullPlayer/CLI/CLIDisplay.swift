@@ -170,9 +170,11 @@ class CLIDisplay {
             --tuning <off|Hz>           Reference Tuning target Hz
             --tuning-source <Hz>        Source reference Hz (default: 440)
             --tuning-offset-cents <n>   Direct tuning offset in cents
-            --cast <device>             Cast to device
+            --cast <device[,rooms…]>    Cast to device. For Sonos, a comma-separated
+                                        list groups the extra rooms onto the first
             --cast-type <type>          Filter: sonos, chromecast, dlna
-            --sonos-rooms <rooms>       Group rooms (comma-separated) to --cast device
+            --sonos-rooms <rooms>       Extra Sonos rooms to group (comma-separated;
+                                        merged with any rooms listed in --cast)
             --folder <name>             Radio folder: all, favorites, top-rated,
                                         unrated, recent, channels, genres, regions,
                                         genre, channel, region

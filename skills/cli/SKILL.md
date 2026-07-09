@@ -162,9 +162,9 @@ Art rendering and log suppression each have their own section below.
 | `--channel <name>` | string | Radio channel (with `--folder channel`) |
 | `--region <name>` | string | Radio region (with `--folder region`) |
 | `--volume <0-100>` | int | Initial volume (divided by 100 for `AudioEngine.volume`) |
-| `--cast <device>` | string | Cast to named device (case-insensitive match) |
+| `--cast <device[,rooms…]>` | string | Cast to named device (case-insensitive match). Comma-separated: the **first** entry is the cast target / Sonos group coordinator; remaining entries are Sonos rooms grouped onto it (merged with `--sonos-rooms`, deduped, coordinator dropped). Grouping is Sonos-only — a non-Sonos target with extra rooms warns and ignores them. |
 | `--cast-type <type>` | string | `sonos`, `chromecast`, `dlna` (UPnP/DLNA target filter) |
-| `--sonos-rooms <rooms>` | string | Comma-separated Sonos room names for multi-room |
+| `--sonos-rooms <rooms>` | string | Extra comma-separated Sonos room names to group, merged with any rooms in `--cast` |
 | `--eq <preset>` | string | EQ preset name (case-insensitive; from `EQPreset.allPresets`) |
 | `--output <device>` | string | Audio output device name (case-insensitive) |
 | `--tuning <off\|Hz>` | string | Reference Tuning: `off`, or target reference frequency in Hz (e.g. `432`). Enables pitch shift for local output only (local files and HTTP streams) — not casting. Session-only override. |

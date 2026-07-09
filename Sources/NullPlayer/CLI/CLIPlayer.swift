@@ -126,12 +126,12 @@ class CLIPlayer: AudioEngineDelegate {
         // Casting
         if let castName = options.cast {
             Task { @MainActor in
-                await setupCasting(deviceName: castName)
+                await setupCasting(castValue: castName)
             }
         }
     }
 
-    private func setupCasting(deviceName: String) async {
+    private func setupCasting(castValue: String) async {
         // Wait for AudioEngine to have a current track loaded before casting
         let trackDeadline = Date().addingTimeInterval(5)
         while audioEngine.currentTrack == nil && Date() < trackDeadline {
@@ -141,6 +141,16 @@ class CLIPlayer: AudioEngineDelegate {
             fputs("Error: No track loaded for casting\n", cliStderr)
             return
         }
+
+        // --cast accepts a comma-separated list: the first entry is the device we cast
+        // to (the Sonos group coordinator); any remaining entries are Sonos rooms to
+        // group onto it, merged with --sonos-rooms. Grouping is Sonos-only.
+        let castComponents = castValue
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let deviceName = castComponents.first ?? castValue.trimmingCharacters(in: .whitespaces)
+        let inlineRooms = Array(castComponents.dropFirst())
 
         // Resolve and validate cast type once up front
         let typeFilter: CastDeviceType?
@@ -192,9 +202,24 @@ class CLIPlayer: AudioEngineDelegate {
             castSessionActive = true
             try await CastManager.shared.castCurrentTrack(to: device)
 
-            // Sonos multi-room
-            if let roomsStr = options.sonosRooms {
-                let roomNames = roomsStr.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            // Rooms to group: inline (from --cast "A,B,C") plus --sonos-rooms.
+            let explicitRooms = options.sonosRooms?
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) } ?? []
+            // Dedupe case-insensitively and drop the coordinator itself.
+            var seen = Set([deviceName.lowercased()])
+            var roomNames: [String] = []
+            for room in inlineRooms + explicitRooms where !room.isEmpty {
+                if seen.insert(room.lowercased()).inserted {
+                    roomNames.append(room)
+                }
+            }
+
+            if !roomNames.isEmpty {
+                guard device.type == .sonos else {
+                    fputs("Warning: multi-room grouping is only supported for Sonos; ignoring \(roomNames.joined(separator: ", "))\n", cliStderr)
+                    return
+                }
                 let sonosDevices = CastManager.shared.discoveredDevices.filter { $0.type == .sonos }
                 let coordinatorUDN = device.id
 
