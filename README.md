@@ -66,13 +66,20 @@ https://github.com/ad-repo/nullplayer/releases/latest/download/NullPlayer.dmg
 
 Requires macOS 14 Sonoma or newer.
 
+NullPlayer is not signed with an Apple Developer ID — that requires a paid Apple developer account, which this project does not have and has no plans to buy. Because of that, **macOS Gatekeeper will block the app on first launch** with an "app is damaged" or "cannot verify that it is free from malware" message. This is expected, not a sign anything is wrong. Clearing the quarantine flag is a required install step — run it every time you install or update via the DMG:
+
 1. Open `NullPlayer.dmg`.
 2. Drag `NullPlayer.app` to Applications.
-3. Open NullPlayer from Applications.
+3. Clear the quarantine flag so macOS will open the app. Open **Terminal** (`Cmd + Space`, type `Terminal`, press Return) and run:
+
+   ```bash
+   xattr -cr /Applications/NullPlayer.app
+   ```
+4. Open NullPlayer from Applications.
 
 See [docs/download.md](docs/download.md) for the same install steps in a short download-only page.
 
-> **Tip:** Installing with Homebrew (next section) clears the macOS quarantine flag for you, so you skip the "app is damaged" security warning entirely.
+> **Tip:** Don't want to run a Terminal command every time you update? Install with Homebrew (next section) instead — the cask clears the quarantine flag for you automatically, so the app just opens.
 
 ### Install with Homebrew (recommended — no security warnings)
 
@@ -119,24 +126,16 @@ security delete-generic-password -s com.nullplayer.app
 
 </details>
 
-### Fixing "App is damaged" or "macOS cannot verify that this app is free from malware" Error
+### Opening the DMG build without the Terminal
 
-NullPlayer releases are currently ad-hoc signed, not Developer ID notarized. Because of that, macOS Gatekeeper may block the app on first launch.
+If you'd rather not run the `xattr` command in step 3 above, you can clear the block through System Settings instead:
 
-**Option 1: Terminal**
-
-```bash
-xattr -cr /Applications/NullPlayer.app
-```
-
-**Option 2: System Settings**
-
-1. Try to open NullPlayer once.
+1. Drag `NullPlayer.app` to Applications and double-click it once. macOS will refuse to open it — that's expected.
 2. Go to **System Settings -> Privacy & Security**.
 3. Scroll down and click **Open Anyway** next to the NullPlayer message.
 4. Click **Open** in the confirmation dialog.
 
-After either option, NullPlayer will open normally.
+After this NullPlayer opens normally. (Installing with Homebrew avoids this entirely — the cask clears the flag for you.)
 
 ### Optional command-line launcher
 
