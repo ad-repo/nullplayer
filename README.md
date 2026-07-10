@@ -83,7 +83,7 @@ See [docs/download.md](docs/download.md) for the same install steps in a short d
 
 ### Install with Homebrew (recommended — no security warnings)
 
-Homebrew is a free package manager for macOS. This is the smoothest way to install NullPlayer: Homebrew removes the Gatekeeper quarantine flag automatically, so you never see the "app is damaged" warning, and updates are a single command.
+[Homebrew](https://brew.sh/) is a free package manager for macOS. This is the smoothest way to install NullPlayer: Homebrew removes the Gatekeeper quarantine flag automatically, so you never see the "app is damaged" warning, and updates are a single command.
 
 **New to Homebrew? Here's the whole thing, start to finish:**
 

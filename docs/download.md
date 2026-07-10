@@ -34,7 +34,7 @@ After this NullPlayer opens normally.
 
 ## Install with Homebrew (recommended — no security warnings)
 
-Homebrew is a free package manager for macOS. This is the smoothest way to install NullPlayer: Homebrew removes the Gatekeeper quarantine flag automatically, so the app just opens with no security warning and no `xattr` command, and updates are a single command.
+[Homebrew](https://brew.sh/) is a free package manager for macOS. This is the smoothest way to install NullPlayer: Homebrew removes the Gatekeeper quarantine flag automatically, so the app just opens with no security warning and no `xattr` command, and updates are a single command.
 
 New to Homebrew? Here is the whole thing, start to finish:
 
