@@ -321,6 +321,8 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 
 In video-cast mode, `Space` maps to cast pause/resume, left/right arrows seek on the cast session, and `q` stops casting before exiting. Track navigation, shuffle, repeat, mute, and volume are no-ops for video. Chromecast video exits automatically after active playback ends and the cast session is torn down. DLNA video has no reliable end-of-stream signal in the current stack, so it prints approximate progress and requires `q` to stop the CLI.
 
+Local video files are served through `LocalMediaServer` on port `8765` before being handed to Chromecast or DLNA targets. If the main NullPlayer UI is already open, that process may own the port; CLI local-video casts should fail with a descriptive "port 8765 is unavailable" error. Tell users to quit the app UI or stop the other NullPlayer process, then retry. A port conflict can otherwise look like a DLNA `716 Resource not found` because the TV receives a `/media/<token>` URL that belongs to the CLI process, while another process is actually serving the port.
+
 ---
 
 ## Thread Safety

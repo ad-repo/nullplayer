@@ -2,6 +2,7 @@ import Foundation
 import FlyingFox
 import FlyingSocks
 import Network
+import Darwin
 
 /// Embedded HTTP server for serving local audio files to cast devices.
 ///
@@ -199,6 +200,8 @@ class LocalMediaServer {
         }
         _localIPAddress = ip
         NSLog("LocalMediaServer: Local IP address: %@", ip)
+
+        try ensurePortAvailable(port)
         
         // Create server bound to all interfaces (0.0.0.0) so network devices can reach it
         let address = try sockaddr_in.inet(ip4: "0.0.0.0", port: port)
@@ -375,6 +378,42 @@ class LocalMediaServer {
         // Start network monitoring (Fix 4) and health checks (Fix 5)
         startNetworkMonitoring()
         startHealthCheck()
+    }
+
+    private func ensurePortAvailable(_ port: UInt16) throws {
+        let socketFD = socket(AF_INET, SOCK_STREAM, 0)
+        guard socketFD >= 0 else {
+            throw LocalServerError.serverStartFailed(String(cString: strerror(errno)))
+        }
+        defer { close(socketFD) }
+
+        var reuseAddress: Int32 = 1
+        _ = setsockopt(
+            socketFD,
+            SOL_SOCKET,
+            SO_REUSEADDR,
+            &reuseAddress,
+            socklen_t(MemoryLayout<Int32>.size)
+        )
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr = in_addr(s_addr: INADDR_ANY)
+
+        let result = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                bind(socketFD, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+
+        guard result == 0 else {
+            let reason = String(cString: strerror(errno))
+            throw LocalServerError.serverStartFailed(
+                "port \(port) is unavailable (\(reason)). Another NullPlayer process may already be running, such as the main app UI. Quit NullPlayer or stop the other process and retry."
+            )
+        }
     }
     
     /// Stop the HTTP server
