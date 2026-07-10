@@ -81,6 +81,9 @@ struct CLISourceResolver {
 
         if opts.movie != nil || opts.episode != nil {
             try await checkConnectivity(source: source)
+            if source == "local" {
+                return try await resolveVideo(source: source, opts: opts)
+            }
             if let libraryName = opts.library {
                 try await applyVideoLibrary(source: source, name: libraryName, wantsShows: opts.episode != nil)
             } else {
@@ -736,10 +739,12 @@ struct CLISourceResolver {
         let limit = 500
         var all: [PlexShow] = []
         while true {
-            let page = try await PlexManager.shared.fetchShows(offset: offset, limit: limit)
-            all.append(contentsOf: page)
-            if page.count < limit { break }
-            offset += limit
+            let page = try await PlexManager.shared.fetchShowsPage(offset: offset, limit: limit)
+            all.append(contentsOf: page.shows)
+            offset += page.rawCount
+            if page.rawCount == 0 { break }
+            if let totalSize = page.totalSize, offset >= totalSize { break }
+            if page.rawCount < limit { break }
         }
         return all
     }
