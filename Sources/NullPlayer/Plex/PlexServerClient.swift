@@ -43,6 +43,12 @@ enum RadioConfig {
 }
 
 /// Client for communicating with a Plex Media Server
+struct PlexShowPage {
+    let shows: [PlexShow]
+    let rawCount: Int
+    let totalSize: Int?
+}
+
 class PlexServerClient {
     
     // MARK: - Properties
@@ -415,6 +421,14 @@ class PlexServerClient {
     /// Fetch all shows in a TV show library
     /// Filters out bonus content that Plex misclassifies as TV shows
     func fetchShows(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
+        try await fetchShowsPage(libraryID: libraryID, offset: offset, limit: limit).shows
+    }
+
+    /// Fetch one raw Plex show page plus filtered show results.
+    /// `rawCount`/`totalSize` reflect Plex's unfiltered page metadata and must be
+    /// used for pagination because `shows.count` can be smaller after bonus-content
+    /// filtering.
+    func fetchShowsPage(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> PlexShowPage {
         let queryItems = [
             URLQueryItem(name: "type", value: "2"),  // type 2 = show
             URLQueryItem(name: "X-Plex-Container-Start", value: String(offset)),
@@ -430,7 +444,7 @@ class PlexServerClient {
         // Filter out shows that are likely misclassified bonus content:
         // - Shows with very few episodes (2 or less) AND only 1 season
         // - Shows marked as extras
-        return response.mediaContainer.metadata?
+        let shows = response.mediaContainer.metadata?
             .filter { item in
                 // Skip items marked as extras
                 if item.isExtra { return false }
@@ -447,6 +461,12 @@ class PlexServerClient {
                 return true
             }
             .map { $0.toShow() } ?? []
+
+        return PlexShowPage(
+            shows: shows,
+            rawCount: response.mediaContainer.size ?? response.mediaContainer.metadata?.count ?? 0,
+            totalSize: response.mediaContainer.totalSize
+        )
     }
     
     /// Fetch seasons for a specific TV show

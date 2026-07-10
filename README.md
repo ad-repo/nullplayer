@@ -86,7 +86,7 @@
 
 ### Optional command-line launcher
 
-If you want to use NullPlayer as a scriptable command in terminal workflows or automation pipelines without digging into `NullPlayer.app/Contents/MacOS`, the DMG includes:
+If you want to use NullPlayer as a scriptable command in terminal workflows or automation pipelines, the DMG includes:
 
 - `nullplayer` — launcher wrapper
 - `Install NullPlayer CLI.command` — one-click installer for `/usr/local/bin/nullplayer`
@@ -197,6 +197,7 @@ This is not just a hidden debug flag. `nullplayer` is a supported command surfac
 - querying and searching local, Plex, Subsonic/Navidrome, Jellyfin, Emby, and radio sources
 - starting playback from those sources with a stable command-line interface
 - routing playback to local outputs or casting to Sonos, Chromecast, and UPnP/DLNA devices
+- casting local, Plex, Jellyfin, and Emby video to Chromecast or DLNA TV targets
 - emitting machine-friendly query output with `--json`
 
 ```bash
@@ -209,7 +210,7 @@ nullplayer --cli [OPTIONS]
 
 Supported media sources include:
 
-- local library
+- local files and library
 - Plex
 - Subsonic / Navidrome
 - Jellyfin
@@ -229,9 +230,11 @@ Typical automation shape:
 nullplayer --cli --source plex --playlist "All Music" --cast "Living Room" --cast-type sonos
 nullplayer --cli --source local --artist "Courtney Barnett" --output "MacBook Pro Speakers"
 nullplayer --cli --source radio --station "Radio Paradise: Mellow Mix" --cast "Kitchen Speaker" --cast-type chromecast
+nullplayer --cli --source plex --library Movies --movie "Alien: Romulus" --cast "Living Room TV" --cast-type chromecast
+nullplayer --cli --file "/path/to/video.mkv" --cast "Samsung QN90BA 75" --cast-type dlna
 ```
 
-> **Audio only.** The CLI plays and queries *music*. Video libraries (Plex/Jellyfin/Emby Movies and TV) are not playable or browsable from the CLI — the artist/album/track/search queries all target music libraries. `--list-libraries` will still show video sections, but use the GUI to watch video. Casting a music track to a TV target (Chromecast/DLNA) is audio playback, not video.
+> **Audio and video scope.** Music playback supports local output, Sonos, Chromecast, and DLNA targets. Video is cast-only in CLI mode: use `--file` for local video files or `--movie` / `--show` / `--episode` for Plex, Jellyfin, and Emby video libraries. Video requires `--cast` and supports Chromecast or DLNA TV targets; Sonos is audio-only.
 
 ### Query commands (print results and exit)
 
@@ -297,6 +300,46 @@ nullplayer --cli --source plex --playlist "Recently Added" --cast "Living Room,K
 # (equivalent to --cast "Living Room" --sonos-rooms "Kitchen,Office")
 ```
 
+### Video casting
+
+Video commands require `--cast` and route to Chromecast or DLNA TV targets. Use `nullplayer --cli --list-devices` to get the exact device names on your network.
+
+Local video files are served through NullPlayer's embedded local media server on port `8765`. If the main NullPlayer app is already open, it may already own that port; quit the app UI or stop the other NullPlayer process before retrying the CLI cast. Videos added with **Add Video Files...** stay at their original file paths; cast them from the CLI with `--file`.
+
+```bash
+# Local video file
+nullplayer --cli --file "/path/to/video.mkv" --cast "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911" --cast-type chromecast
+nullplayer --cli --file "/path/to/video.mkv" --cast "Samsung QN90BA 75" --cast-type dlna
+
+# Local video file from Downloads
+nullplayer --cli --file "$HOME/Downloads/My Movie.mp4" --cast "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911" --cast-type chromecast --verbose
+nullplayer --cli --file "$HOME/Downloads/My Movie.mp4" --cast "Samsung QN90BA 75" --cast-type dlna --verbose
+
+# Plex movies
+nullplayer --cli --source plex --library Movies --movie "Alien: Romulus" --cast "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911" --cast-type chromecast
+nullplayer --cli --source plex --library Movies --movie "Alien: Romulus" --cast "Samsung QN90BA 75" --cast-type dlna
+
+# Plex TV episodes
+nullplayer --cli --source plex --library "TV Shows" --show "Alien: Earth" --episode "Neverland" --season 1 --number 1 --cast "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911" --cast-type chromecast
+nullplayer --cli --source plex --library "TV Shows" --show "Alien: Earth" --episode "Neverland" --season 1 --number 1 --cast "Samsung QN90BA 75" --cast-type dlna
+
+# Emby movies
+nullplayer --cli --source emby --library Movies --movie "Alien: Romulus" --cast "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911" --cast-type chromecast
+nullplayer --cli --source emby --library Movies --movie "Alien: Romulus" --cast "Samsung QN90BA 75" --cast-type dlna
+
+# Emby TV episodes
+nullplayer --cli --source emby --library "TV shows" --show "Abbott Elementary" --episode "Ava & Fest" --season 5 --number 21 --cast "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911" --cast-type chromecast
+nullplayer --cli --source emby --library "TV shows" --show "Abbott Elementary" --episode "Ava & Fest" --season 5 --number 21 --cast "Samsung QN90BA 75" --cast-type dlna
+
+# Jellyfin movies and TV episodes
+nullplayer --cli --source jellyfin --library "Movies" --movie "Alien: Romulus" --cast "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911" --cast-type chromecast
+nullplayer --cli --source jellyfin --library "Movies" --movie "Alien: Romulus" --cast "Samsung QN90BA 75" --cast-type dlna
+nullplayer --cli --source jellyfin --library "TV Shows" --show "Alien: Earth" --episode "Neverland" --season 1 --number 1 --cast "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911" --cast-type chromecast
+nullplayer --cli --source jellyfin --library "TV Shows" --show "Alien: Earth" --episode "Neverland" --season 1 --number 1 --cast "Samsung QN90BA 75" --cast-type dlna
+```
+
+DLNA video devices do not report reliable end-of-stream status, so press `q` to stop the CLI when the video ends. Chromecast video exits automatically after playback ends and the cast session is torn down.
+
 ### Volume control
 
 Set the initial playback volume at launch:
@@ -312,7 +355,7 @@ During playback:
 - `↓` decreases volume by 5%
 - `m` toggles mute
 
-When casting is active, the same CLI volume control path is used for the cast target as well.
+For audio casting, the same CLI volume control path is used for the cast target as well.
 
 ### Reference Tuning
 
@@ -340,9 +383,11 @@ nullplayer --cli --source radio --station "Radio Paradise: Mellow Mix" --tuning-
 | `m` | Toggle mute |
 | `i` | Show track info |
 
+For video casting, `Space` pauses/resumes the cast, `→` / `←` seek on the cast session, and `q` stops casting before exiting. Track navigation, shuffle, repeat, mute, and volume controls are audio-only.
+
 ### Terminal display
 
-During playback the CLI shows album art in the terminal. The render mode is auto-detected from the terminal's color support and can be forced:
+During music playback the CLI shows album art in the terminal. The render mode is auto-detected from the terminal's color support and can be forced:
 
 - default: color half-block art on color-capable terminals (truecolor or 256-color), otherwise a monochrome character-ramp
 - `--color-art`: force color art
@@ -365,7 +410,7 @@ Framework log output is suppressed by default so the session stays clean. Pass `
 nullplayer --cli --source plex --playlist "All Music" --cast "Living Room" --cast-type sonos --verbose
 ```
 
-See `nullplayer --cli --help` for the full flag reference. If you have not installed the launcher yet, the underlying app binary is still available at `NullPlayer.app/Contents/MacOS/NullPlayer`.
+See `nullplayer --cli --help` for the full flag reference.
 
 ## Development
 

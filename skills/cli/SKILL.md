@@ -17,8 +17,8 @@ The right mental model is:
 
 Be explicit about both sides of the pipeline:
 
-- Sources in: local library, Plex, Subsonic/Navidrome, Jellyfin, Emby, internet radio
-- Targets out: local audio outputs, Sonos, Chromecast, UPnP/DLNA
+- Sources in: local files/library, Plex, Subsonic/Navidrome, Jellyfin, Emby, internet radio
+- Targets out: local audio outputs, Sonos, Chromecast, UPnP/DLNA. Video casting is limited to Chromecast and DLNA TV targets.
 
 Do not describe it as a daemon, background control server, or remote-control protocol unless that is separately implemented. It is a command you invoke to query, resolve, start playback, and optionally cast.
 
@@ -62,6 +62,8 @@ nullplayer --cli --source jellyfin --album "Moon Safari"
 nullplayer --cli --source radio --station "KEXP" --cast "Living Room" --cast-type sonos
 nullplayer --cli --source local --album "Kid A" --cast "Office TV" --cast-type dlna
 nullplayer --cli --source subsonic --artist "Massive Attack" --cast "Kitchen Speaker" --cast-type chromecast
+nullplayer --cli --file ~/Movies/sample.mkv --cast "Living Room TV" --cast-type chromecast
+nullplayer --cli --source jellyfin --show "The Office" --episode "Dinner Party" --cast "Bedroom TV" --cast-type dlna
 ```
 
 When documenting or selling the feature, good phrasing is:
@@ -85,7 +87,7 @@ Avoid vague phrasing like "CLI browser" when the real value is orchestration acr
 | `CLIKeyboard.swift` | Raw terminal input via `tcsetattr`; ANSI escape sequence handling on background queue |
 | `CLIDisplay.swift` | Terminal output: progress bar, status lines, album art, `--json` formatting; terminal color detection |
 | `CLIArtwork.swift` | Artwork loading from local/Plex/Subsonic/Jellyfin/Emby |
-| `CLISourceResolver.swift` | Resolves all flags to `[Track]` or `.radioStation`; `CLISourceError` enum |
+| `CLISourceResolver.swift` | Resolves all flags to audio tracks, `.radioStation`, or `.video(CLIVideoItem)`; `CLISourceError` enum |
 | `CLIQueryHandler.swift` | Handles `--list-*` and `--search` queries; prints results then calls `exit()` |
 | `CLIStderr.swift` | `cliStderr` handle + `suppressFrameworkLoggingForCLI(verbose:)` — silences `NSLog` noise while keeping CLI messages visible |
 
@@ -141,7 +143,7 @@ Art rendering and log suppression each have their own section below.
 | `--list-outputs` | No |
 | `--list-eq` | No |
 
-`--search` without playback flags (`--artist`, `--album`, `--playlist`, `--radio`, `--station`) is also a query command.
+`--search` without playback flags (`--artist`, `--album`, `--playlist`, `--radio`, `--station`, `--file`, `--movie`, `--episode`) is also a query command.
 
 ### String/Int Parameters
 
@@ -155,6 +157,12 @@ Art rendering and log suppression each have their own section below.
 | `--genre <name>` | string | Filter by genre |
 | `--decade <year>` | int | Decade start year (e.g. 1970); passed as `start:end+9` |
 | `--playlist <name>` | string | Select playlist by exact name (case-insensitive) |
+| `--file <path>` | string | Play a local audio file, or cast a local video file when the extension is video (`.mp4`, `.mkv`, `.mov`, etc.). |
+| `--movie <title>` | string | Cast a movie by title from `--source plex\|jellyfin\|emby`; list-then-filter matching, exact match preferred. Requires `--cast`. |
+| `--show <name>` | string | TV show scope for `--episode`; required for episode casting. |
+| `--episode <title>` | string | Cast an episode by title from `--source plex\|jellyfin\|emby`; requires `--show` and `--cast`. |
+| `--season <n>` | int | Optional season filter for `--episode`. |
+| `--number <n>` | int | Optional episode-number filter for `--episode`. |
 | `--search <query>` | string | Search within source |
 | `--radio <mode>` | string | See radio modes below |
 | `--station <name>` | string | Internet radio station name (`--source radio` required) |
@@ -163,7 +171,7 @@ Art rendering and log suppression each have their own section below.
 | `--region <name>` | string | Radio region (with `--folder region`) |
 | `--volume <0-100>` | int | Initial volume (divided by 100 for `AudioEngine.volume`) |
 | `--cast <device[,rooms…]>` | string | Cast to named device (case-insensitive match). Comma-separated: the **first** entry is the cast target / Sonos group coordinator; remaining entries are Sonos rooms grouped onto it (merged with `--sonos-rooms`, deduped, coordinator dropped). Grouping is Sonos-only — a non-Sonos target with extra rooms warns and ignores them. |
-| `--cast-type <type>` | string | `sonos`, `chromecast`, `dlna` (UPnP/DLNA target filter) |
+| `--cast-type <type>` | string | `sonos`, `chromecast`, `dlna` (UPnP/DLNA target filter). Video rejects `sonos`. |
 | `--sonos-rooms <rooms>` | string | Extra comma-separated Sonos room names to group, merged with any rooms in `--cast` |
 | `--eq <preset>` | string | EQ preset name (case-insensitive; from `EQPreset.allPresets`) |
 | `--output <device>` | string | Audio output device name (case-insensitive) |
@@ -186,6 +194,7 @@ Playback routing is handled by:
 - `--output <device>` for local audio device selection
 - `--cast <device>` with optional `--cast-type` for network playback targets
 - `--sonos-rooms <rooms>` when targeting grouped Sonos playback
+- video files/movies/episodes require `--cast` and route only to Chromecast or DLNA TV targets
 
 That is why "media control command" is more accurate than "terminal player". The command is not limited to local playback; it also chooses where playback goes.
 
@@ -228,7 +237,7 @@ Use `--list-libraries --source <name>` to see available libraries. The current s
 
 ### Implicit music-library selection (Plex, Jellyfin, Emby)
 
-The CLI is audio-only, but Plex, Jellyfin, and Emby all expose non-music sections and carry over the GUI's last-selected library, which may be one of them (a Plex Movies/TV section, or a Jellyfin/Emby `Playlists`/`Video`/`Movies`/`TV shows` view). A music query against a non-music library returns `[]`, surfacing as "artist not found" / "0 artist(s)".
+The CLI's music paths are audio-only, but Plex, Jellyfin, and Emby all expose non-music sections and carry over the GUI's last-selected library, which may be one of them (a Plex Movies/TV section, or a Jellyfin/Emby `Playlists`/`Video`/`Movies`/`TV shows` view). A music query against a non-music library returns `[]`, surfacing as "artist not found" / "0 artist(s)". Video flags (`--movie`, `--episode`) use the corresponding movie/TV library selection instead.
 
 `CLISourceResolver.ensureMusicLibrarySelected(source:)` runs before music-only operations (`--list-artists/albums/tracks`, and artist/album/search playback — **not** playlists, which are server-level, and **not** Subsonic, see below):
 
@@ -309,6 +318,10 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 | `i` / `I` | Show current track info |
 
 `CLIKeyboard` reads stdin on a background `DispatchQueue` and dispatches all player calls to `DispatchQueue.main.async`.
+
+In video-cast mode, `Space` maps to cast pause/resume, left/right arrows seek on the cast session, and `q` stops casting before exiting. Track navigation, shuffle, repeat, mute, and volume are no-ops for video. Chromecast video exits automatically after active playback ends and the cast session is torn down. DLNA video has no reliable end-of-stream signal in the current stack, so it prints approximate progress and requires `q` to stop the CLI.
+
+Local video files are served through `LocalMediaServer` on port `8765` before being handed to Chromecast or DLNA targets. If the main NullPlayer UI is already open, that process may own the port; CLI local-video casts should fail with a descriptive "port 8765 is unavailable" error. Tell users to quit the app UI or stop the other NullPlayer process, then retry. A port conflict can otherwise look like a DLNA `716 Resource not found` because the TV receives a `/media/<token>` URL that belongs to the CLI process, while another process is actually serving the port.
 
 ---
 

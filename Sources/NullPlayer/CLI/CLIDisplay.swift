@@ -26,6 +26,29 @@ class CLIDisplay {
 
     enum RepeatMode { case off, one, all }
 
+    func printVideoInfo(title: String, device: String, manualQuitOnly: Bool) {
+        var info = "\nCasting Video: \(title)\n       Device: \(device)"
+        if manualQuitOnly {
+            info += "\n         Note: DLNA video casts require q to stop the CLI."
+        }
+        printAboveProgress(info)
+    }
+
+    func updateVideoProgress(current: TimeInterval, duration: TimeInterval, paused: Bool) {
+        let cur = formatTime(current)
+        let dur = duration > 0 ? formatTime(duration) : "--:--"
+        let pct = duration > 0 ? min(max(current / duration, 0), 1) : 0
+        let barWidth = 30
+        let filled = Int(pct * Double(barWidth))
+        let bar = String(repeating: "=", count: filled) +
+                  (filled < barWidth ? ">" : "") +
+                  String(repeating: " ", count: max(0, barWidth - filled - 1))
+        let state = paused ? "  [Paused]" : ""
+        let line = "\r[\(bar)] \(cur) / \(dur)\(state)\u{1B}[K"
+        fputs(line, stdout)
+        fflush(stdout)
+    }
+
     func updateProgress(current: TimeInterval, duration: TimeInterval,
                         volume: Float, shuffle: Bool, repeat repeatMode: RepeatMode) {
         let cur = formatTime(current)
@@ -154,6 +177,12 @@ class CLIDisplay {
             --genre <name>              Select by genre
             --search <query>            Search within source
             --playlist <name>           Play playlist
+            --file <path>               Play local audio or cast local video
+            --movie <title>             Cast a movie from Plex, Jellyfin, or Emby
+            --show <name>               TV show for --episode
+            --episode <title>           Cast an episode from Plex, Jellyfin, or Emby
+            --season <n>                Scope --episode to a season number
+            --number <n>                Scope --episode to an episode number
             --radio <mode>              Radio: library, genre, decade, hits, deep-cuts,
                                         rating, favorites, artist, album, track
             --station <name>            Play internet radio station
@@ -198,6 +227,10 @@ class CLIDisplay {
             r           Cycle repeat (off -> all -> one -> off)
             m           Toggle mute
             i           Show track info
+
+        VIDEO CASTING:
+            Videos require --cast and support Chromecast or DLNA TV targets.
+            Sonos is audio-only. DLNA video casts require q to stop the CLI.
         """)
     }
 

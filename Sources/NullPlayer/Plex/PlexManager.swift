@@ -657,10 +657,15 @@ class PlexManager {
     
     /// Fetch TV shows from the current library if it's a show library, otherwise from the first available show library
     func fetchShows(offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
-        guard let client = serverClient else { return [] }
+        try await fetchShowsPage(offset: offset, limit: limit).shows
+    }
+
+    /// Fetch one Plex show page with raw server page metadata for pagination.
+    func fetchShowsPage(offset: Int = 0, limit: Int = 100) async throws -> PlexShowPage {
+        guard let client = serverClient else { return PlexShowPage(shows: [], rawCount: 0, totalSize: 0) }
         let library = currentLibrary?.isShowLibrary == true ? currentLibrary! : availableLibraries.first(where: { $0.isShowLibrary })
-        guard let library else { return [] }
-        return try await client.fetchShows(libraryID: library.id, offset: offset, limit: limit)
+        guard let library else { return PlexShowPage(shows: [], rawCount: 0, totalSize: 0) }
+        return try await client.fetchShowsPage(libraryID: library.id, offset: offset, limit: limit)
     }
     
     /// Fetch seasons for a TV show

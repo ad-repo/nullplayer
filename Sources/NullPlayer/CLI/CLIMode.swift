@@ -19,6 +19,12 @@ struct CLIOptions {
     var search: String?
     var radio: String?
     var station: String?
+    var file: String?
+    var movie: String?
+    var show: String?
+    var episode: String?
+    var season: Int?
+    var number: Int?
 
     // Query commands
     var listSources = false
@@ -77,6 +83,7 @@ struct CLIOptions {
     /// is treated as a query: print results and exit.
     var isSearchQuery: Bool {
         search != nil && artist == nil && album == nil && playlist == nil && radio == nil && station == nil
+            && file == nil && movie == nil && episode == nil
     }
 
     static func parse(_ args: [String]) -> CLIOptions {
@@ -120,20 +127,36 @@ struct CLIOptions {
                     case "--decade":
                         guard let intVal = Int(value) else {
                             fputs("Error: --decade requires an integer value (e.g. 1970)\n", cliStderr)
-                            exit(1)
+                            CLIPlayer.exitAndRestoreTerminal(code: 1)
                         }
                         opts.decade = intVal
                     case "--playlist": opts.playlist = value
                     case "--search": opts.search = value
                     case "--radio": opts.radio = value
                     case "--station": opts.station = value
+                    case "--file": opts.file = value
+                    case "--movie": opts.movie = value
+                    case "--show": opts.show = value
+                    case "--episode": opts.episode = value
+                    case "--season":
+                        guard let intVal = Int(value) else {
+                            fputs("Error: --season requires an integer value\n", cliStderr)
+                            CLIPlayer.exitAndRestoreTerminal(code: 1)
+                        }
+                        opts.season = intVal
+                    case "--number":
+                        guard let intVal = Int(value) else {
+                            fputs("Error: --number requires an integer value\n", cliStderr)
+                            CLIPlayer.exitAndRestoreTerminal(code: 1)
+                        }
+                        opts.number = intVal
                     case "--folder": opts.folder = value
                     case "--channel": opts.channel = value
                     case "--region": opts.region = value
                     case "--volume":
                         guard let intVal = Int(value) else {
                             fputs("Error: --volume requires an integer value (0-100)\n", cliStderr)
-                            exit(1)
+                            CLIPlayer.exitAndRestoreTerminal(code: 1)
                         }
                         opts.volume = intVal
                     case "--cast": opts.cast = value
@@ -146,17 +169,17 @@ struct CLIOptions {
                     case "--tuning-offset-cents":
                         guard let d = Double(value) else {
                             fputs("Error: --tuning-offset-cents requires a number\n", cliStderr)
-                            exit(1)
+                            CLIPlayer.exitAndRestoreTerminal(code: 1)
                         }
                         opts.tuningOffsetCents = d
                     default:
                         fputs("Error: Unknown flag '\(arg)'\n", cliStderr)
-                        exit(1)
+                        CLIPlayer.exitAndRestoreTerminal(code: 1)
                     }
                     i += 1 // skip value
                 } else if arg.hasPrefix("--") {
                     fputs("Error: Flag '\(arg)' requires a value\n", cliStderr)
-                    exit(1)
+                    CLIPlayer.exitAndRestoreTerminal(code: 1)
                 }
             }
             i += 1
@@ -180,35 +203,33 @@ class CLIMode: NSObject, NSApplicationDelegate {
         signal(SIGINT, SIG_IGN)
         sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
         sigintSource?.setEventHandler {
-            CLIKeyboard.restoreTerminal()
-            exit(130)
+            CLIPlayer.exitAndRestoreTerminal(code: 130)
         }
         sigintSource?.resume()
 
         signal(SIGTERM, SIG_IGN)
         sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         sigtermSource?.setEventHandler {
-            CLIKeyboard.restoreTerminal()
-            exit(0)
+            CLIPlayer.exitAndRestoreTerminal(code: 0)
         }
         sigtermSource?.resume()
 
         // Help
         if opts.help {
             CLIDisplay.printHelp()
-            exit(0)
+            CLIPlayer.exitAndRestoreTerminal(code: 0)
         }
 
         // Version
         if opts.version {
             CLIDisplay.printVersion()
-            exit(0)
+            CLIPlayer.exitAndRestoreTerminal(code: 0)
         }
 
         // Validate mutually exclusive flags
         if opts.repeatAll && opts.repeatOne {
             fputs("Error: --repeat-all and --repeat-one are mutually exclusive\n", cliStderr)
-            exit(1)
+            CLIPlayer.exitAndRestoreTerminal(code: 1)
         }
 
         // Query mode
@@ -216,10 +237,10 @@ class CLIMode: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 do {
                     try await CLIQueryHandler.handle(opts)
-                    exit(0)
+                    CLIPlayer.exitAndRestoreTerminal(code: 0)
                 } catch {
                     fputs("Error: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
-                    exit(1)
+                    CLIPlayer.exitAndRestoreTerminal(code: 1)
                 }
             }
             return
@@ -238,12 +259,14 @@ class CLIMode: NSObject, NSApplicationDelegate {
                 case .tracks(let tracks):
                     if tracks.isEmpty {
                         fputs("Error: No tracks found for the given criteria.\n", cliStderr)
-                        exit(1)
+                        CLIPlayer.exitAndRestoreTerminal(code: 1)
                     }
                     cliPlayer.play(tracks: tracks)
                 case .radioStation:
                     // RadioManager is already playing; CLIPlayer just monitors
                     cliPlayer.monitorRadio()
+                case .video(let item):
+                    try await cliPlayer.castVideo(item, castValue: opts.cast)
                 }
 
                 let kb = CLIKeyboard(player: cliPlayer)
@@ -251,7 +274,7 @@ class CLIMode: NSObject, NSApplicationDelegate {
                 kb.start()
             } catch {
                 fputs("Error: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
-                exit(1)
+                CLIPlayer.exitAndRestoreTerminal(code: 1)
             }
         }
     }
