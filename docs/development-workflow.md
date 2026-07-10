@@ -90,6 +90,8 @@ The helper uses `.github/release_template.md`, extracts the matching changelog s
 - `NullPlayer-X.Y.Z.dmg` — use for Homebrew and archived release references
 - `NullPlayer.dmg` — use for download pages and `releases/latest/download/NullPlayer.dmg`
 
+After publishing the release, the helper also updates the Homebrew cask (see below) so `brew upgrade` picks up the new version — no separate step is needed for a normal release.
+
 Useful helper options:
 
 ```bash
@@ -98,13 +100,18 @@ Useful helper options:
 ./scripts/create_release.sh --draft       # Create/update the release as a draft
 ./scripts/create_release.sh --prerelease  # Mark the release as a prerelease
 ./scripts/create_release.sh --replace-versioned  # Re-upload the versioned DMG on an existing release
+./scripts/create_release.sh --skip-tap    # Publish the release but do not touch the Homebrew cask
 ```
 
 When updating an existing release, the helper always refreshes `NullPlayer.dmg` but leaves `NullPlayer-X.Y.Z.dmg` unchanged unless `--replace-versioned` is passed. This protects Homebrew users because the cask checksum is tied to the versioned asset.
 
 ### Homebrew Cask
 
-NullPlayer is distributed via a personal tap at `ad-repo/homebrew-nullplayer` (`Casks/nullplayer.rb`). After the GitHub release:
+NullPlayer is distributed via a personal tap at `ad-repo/homebrew-nullplayer` (`Casks/nullplayer.rb`). `create_release.sh` updates this cask automatically once the release is published: it hashes the versioned DMG it just uploaded and edits `version` and `sha256` in the cask via the GitHub API (the tap is a separate repo and is **not** cloned locally). The cask `url` is templated on `#{version}` and is left untouched.
+
+The automatic update runs only when the versioned asset actually changed — a fresh release, a first upload, or an explicit `--replace-versioned` — and never for `--draft`/`--prerelease` builds, whose download URL is not live yet. Pass `--skip-tap` to publish the release without touching the cask.
+
+To update the cask by hand (e.g. after `--skip-tap`, or if the automatic update fails):
 
 1. Note the SHA256 printed by `./scripts/build_dmg.sh` for `dist/NullPlayer-X.Y.Z.dmg`.
 2. In the `ad-repo/homebrew-nullplayer` repo, update `Casks/nullplayer.rb`:

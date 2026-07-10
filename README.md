@@ -72,6 +72,53 @@ Requires macOS 14 Sonoma or newer.
 
 See [docs/download.md](docs/download.md) for the same install steps in a short download-only page.
 
+> **Tip:** Installing with Homebrew (next section) clears the macOS quarantine flag for you, so you skip the "app is damaged" security warning entirely.
+
+### Install with Homebrew (recommended — no security warnings)
+
+Homebrew is a free package manager for macOS. This is the smoothest way to install NullPlayer: Homebrew removes the Gatekeeper quarantine flag automatically, so you never see the "app is damaged" warning, and updates are a single command.
+
+**New to Homebrew? Here's the whole thing, start to finish:**
+
+1. Open **Terminal** — press `Cmd + Space`, type `Terminal`, and press Return.
+2. Install Homebrew by pasting this line and pressing Return. It asks for your Mac login password (the cursor stays still while you type — that's normal) and takes a few minutes:
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+   Already have Homebrew? Skip this step.
+3. Install NullPlayer:
+
+   ```bash
+   brew install --cask ad-repo/nullplayer/nullplayer
+   ```
+4. Open NullPlayer from your Applications folder or Launchpad — no security prompt.
+
+**Updating to a new release:**
+
+```bash
+brew update
+brew upgrade --cask ad-repo/nullplayer/nullplayer
+```
+
+<details>
+<summary>Homebrew power-user notes</summary>
+
+Verify the tap is serving the latest version:
+
+```bash
+brew livecheck --cask ad-repo/nullplayer/nullplayer
+```
+
+`brew uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
+
+```bash
+security delete-generic-password -s com.nullplayer.app
+```
+
+</details>
+
 ### Fixing "App is damaged" or "macOS cannot verify that this app is free from malware" Error
 
 NullPlayer releases are currently ad-hoc signed, not Developer ID notarized. Because of that, macOS Gatekeeper may block the app on first launch.
@@ -90,33 +137,6 @@ xattr -cr /Applications/NullPlayer.app
 4. Click **Open** in the confirmation dialog.
 
 After either option, NullPlayer will open normally.
-
-### Advanced: Homebrew
-
-Terminal users can install NullPlayer through the personal Homebrew tap:
-
-```bash
-brew install --cask ad-repo/nullplayer/nullplayer
-```
-
-To upgrade to a new release:
-
-```bash
-brew update
-brew upgrade --cask ad-repo/nullplayer/nullplayer
-```
-
-To verify the tap is picking up the latest version:
-
-```bash
-brew livecheck --cask ad-repo/nullplayer/nullplayer
-```
-
-The Homebrew cask strips the quarantine attribute on install because the app is currently ad-hoc signed. `brew uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
-
-```bash
-security delete-generic-password -s com.nullplayer.app
-```
 
 ### Optional command-line launcher
 
