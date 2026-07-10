@@ -19,6 +19,7 @@ Flow is a dockable network throughput meter available in classic and modern UI.
 - Open from the `Windows` menu or the main-window context menu as **Flow**.
 - Shows one direction at a time: download or upload.
 - Double-click anywhere in the window body to toggle download/upload.
+- The entire non-control face drags the window; see the ui-guide window-dragging requirement.
 - Right-click opens the Flow menu:
   - Network interfaces, with the selected interface checked
   - **Next Interface**

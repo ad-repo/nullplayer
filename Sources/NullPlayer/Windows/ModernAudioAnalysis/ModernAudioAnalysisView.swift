@@ -274,6 +274,12 @@ class ModernAudioAnalysisView: NSView {
             }
             return
         }
+
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
+        if let window = window {
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.effectiveHideTitleBars(for: window))
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
