@@ -317,6 +317,7 @@ class AudioEngine {
     /// Shuffle enabled
     var shuffleEnabled: Bool = false {
         didSet {
+            clearCrossfadeDeclineLatch()
             if shuffleEnabled {
                 rebuildShufflePlaybackOrder(anchoredAt: currentIndex)
             } else {
@@ -329,6 +330,7 @@ class AudioEngine {
     /// Repeat mode
     var repeatEnabled: Bool = false {
         didSet {
+            clearCrossfadeDeclineLatch()
             notifyPlaybackOptionsChanged()
         }
     }
@@ -371,6 +373,7 @@ class AudioEngine {
     /// Sweet Fades (crossfade) enabled - smooth transition between tracks
     var sweetFadeEnabled: Bool = false {
         didSet {
+            clearCrossfadeDeclineLatch()
             UserDefaults.standard.set(sweetFadeEnabled, forKey: "sweetFadeEnabled")
             NSLog("AudioEngine: Sweet Fades %@", sweetFadeEnabled ? "enabled" : "disabled")
             notifyPlaybackOptionsChanged()
@@ -407,6 +410,12 @@ class AudioEngine {
     /// Track whether primary or crossfade player is currently "active" for local playback
     /// When a crossfade completes, the crossfade player becomes the primary
     private var crossfadePlayerIsActive: Bool = false
+
+    /// Wall-clock time when the incoming local crossfade node started rendering.
+    private var crossfadeIncomingStartDate: Date?
+
+    /// Boundary where Sweet Fades was declined, to avoid re-checking every timer tick.
+    private var crossfadeDeclinedForBoundary: (index: Int, count: Int)?
 
     /// Secondary guard for stale in-flight Sweet Fades file opens.
     /// Incremented on each `startLocalCrossfade` call so a late-arriving callback can
@@ -829,6 +838,8 @@ class AudioEngine {
     }
 
     private func invalidateShufflePlaybackStateAfterPlaylistMutation() {
+        clearCrossfadeDeclineLatch()
+
         guard shuffleEnabled else {
             clearShufflePlaybackState()
             return
@@ -2124,15 +2135,13 @@ class AudioEngine {
                 // start, not a fold (state can still be .playing there). After a completed
                 // Sweet Fades crossfade the active node is crossfadePlayerNode, so check
                 // whichever node currently owns playback.
-                let activeLocalNodeIsPlaying = crossfadePlayerIsActive
-                    ? crossfadePlayerNode.isPlaying
-                    : playerNode.isPlaying
-                if state == .playing, activeLocalNodeIsPlaying {
+                let activeNode = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+                if state == .playing, activeNode.isPlaying {
                     _currentTime = currentTime
                     lastReportedTime = _currentTime
                 }
 
-                playerNode.play()
+                activeNode.play()
                 playbackStartDate = Date()  // Start tracking time
                 suspendedLocalPlaybackClockForSleep = false
                 state = .playing
@@ -2200,7 +2209,8 @@ class AudioEngine {
         if isStreamingPlayback {
             streamingPlayer?.pause()
         } else {
-            playerNode.pause()
+            let activeNode = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+            activeNode.pause()
             // Remove spectrum tap when paused to save CPU (FFT is expensive)
             // Tap will be reinstalled when playback resumes
             mixerNode.removeTap(onBus: 0)  // Changed from playerNode - tap is now on mixerNode
@@ -2562,6 +2572,7 @@ class AudioEngine {
     func seek(to time: TimeInterval) {
         // Cancel any in-progress crossfade
         cancelCrossfade()
+        clearCrossfadeDeclineLatch()
 
         // If casting is active, forward command to CastManager
         if isCastingActive {
@@ -3766,6 +3777,7 @@ class AudioEngine {
     /// Used during state restoration when the real stream URL is pending an async fetch.
     func selectTrackForDisplay(at index: Int) {
         guard index >= 0 && index < playlist.count else { return }
+        clearCrossfadeDeclineLatch()
         currentIndex = index
         currentTrack = playlist[index]
         state = .stopped
@@ -3779,6 +3791,7 @@ class AudioEngine {
     /// during state restoration.
     func replaceTrack(at index: Int, with track: Track) {
         guard index >= 0 && index < playlist.count else { return }
+        clearCrossfadeDeclineLatch()
         playlist[index] = track
         delegate?.audioEngineDidChangePlaylist()
     }
@@ -4036,6 +4049,7 @@ class AudioEngine {
     
     private func loadTrack(at index: Int) {
         guard index >= 0 && index < playlist.count else { return }
+        clearCrossfadeDeclineLatch()
 
         // Any explicit track load supersedes pending deferred local-load completions.
         deferredLocalTrackLoadToken &+= 1
@@ -4122,6 +4136,7 @@ class AudioEngine {
     
     private func loadLocalTrackForImmediatePlayback(_ track: Track, at index: Int) {
         NSLog("loadLocalTrackForImmediatePlayback: %@", track.url.lastPathComponent)
+        clearCrossfadeDeclineLatch()
 
         // Invalidate any prior deferred local opens; only latest selection should win.
         deferredLocalTrackLoadToken &+= 1
@@ -4256,6 +4271,8 @@ class AudioEngine {
     }
 
     private func prepareForLocalTrackLoad() {
+        clearCrossfadeDeclineLatch()
+
         // Clean up temp files from previous NAS copies.
         if let tmp = tempPlaybackFileURL {
             try? FileManager.default.removeItem(at: tmp)
@@ -4405,6 +4422,7 @@ class AudioEngine {
 
     private func commitLoadedLocalTrack(_ newAudioFile: AVAudioFile, track: Track, generation: Int, reuseExistingFile: Bool = false) {
         NSLog("loadLocalTrack: file loaded successfully, format: %@", newAudioFile.processingFormat.description)
+        clearCrossfadeDeclineLatch()
 
         // Install spectrum analyzer tap.
         installSpectrumTap(format: nil)
@@ -4677,6 +4695,7 @@ class AudioEngine {
             NSLog("trackDidFinish: Ignoring during crossfade")
             return
         }
+        clearCrossfadeDeclineLatch()
 
         // Notify observers that the current track finished naturally BEFORE advancing.
         // This lets SleepTimerManager distinguish natural completion from user skip.
@@ -5047,6 +5066,14 @@ class AudioEngine {
             return next < playlist.count ? next : -1
         }
     }
+
+    private func clearCrossfadeDeclineLatch() {
+        crossfadeDeclinedForBoundary = nil
+    }
+
+    private func markCrossfadeDeclinedForCurrentBoundary() {
+        crossfadeDeclinedForBoundary = (currentIndex, playlist.count)
+    }
     
     // MARK: - Sweet Fades (Crossfade)
     
@@ -5054,15 +5081,22 @@ class AudioEngine {
     private func startCrossfade() {
         guard !isCrossfading else { return }
         guard !isCastingActive else { return }
+        if let declined = crossfadeDeclinedForBoundary,
+           declined.index == currentIndex,
+           declined.count == playlist.count {
+            return
+        }
         
         // Don't crossfade in repeat-one mode (unusual UX)
         if repeatEnabled && !shuffleEnabled {
+            markCrossfadeDeclinedForCurrentBoundary()
             NSLog("Sweet Fades: Skipping crossfade - repeat single mode")
             return
         }
         
         let nextIndex = calculateNextTrackIndex()
         guard nextIndex >= 0 && nextIndex < playlist.count else {
+            markCrossfadeDeclinedForCurrentBoundary()
             NSLog("Sweet Fades: No next track available")
             return
         }
@@ -5074,16 +5108,19 @@ class AudioEngine {
         let nextIsStreaming = nextTrack.url.scheme == "http" || nextTrack.url.scheme == "https"
         
         guard currentIsStreaming == nextIsStreaming else {
+            markCrossfadeDeclinedForCurrentBoundary()
             NSLog("Sweet Fades: Skipping crossfade - mixed source types")
             return
         }
         
         // Check track duration is sufficient (must be at least 2x fade duration)
         if let nextDuration = nextTrack.duration, nextDuration < sweetFadeDuration * 2 {
+            markCrossfadeDeclinedForCurrentBoundary()
             NSLog("Sweet Fades: Skipping crossfade - next track too short (%.1fs < %.1fs)", nextDuration, sweetFadeDuration * 2)
             return
         }
         
+        clearCrossfadeDeclineLatch()
         isCrossfading = true
         crossfadeTargetIndex = nextIndex
         NSLog("Sweet Fades: Starting crossfade to '%@'", nextTrack.title)
@@ -5100,6 +5137,7 @@ class AudioEngine {
         // on NAS/network volumes block the main thread for seconds.
         // isCrossfading = true was already set by startCrossfade() before calling us,
         // so the periodic timer cannot start a duplicate crossfade while the open is in flight.
+        crossfadeIncomingStartDate = nil
         crossfadeFileLoadToken &+= 1
         let token = crossfadeFileLoadToken
 
@@ -5133,6 +5171,7 @@ class AudioEngine {
 
                     // Start the incoming player
                     incomingPlayer.play()
+                    self.crossfadeIncomingStartDate = Date()
 
                     // Store the file for later
                     if self.crossfadePlayerIsActive {
@@ -5158,6 +5197,7 @@ class AudioEngine {
                     NSLog("Sweet Fades: Failed to load next track: %@", error.localizedDescription)
                     self.isCrossfading = false
                     self.crossfadeTargetIndex = -1
+                    self.crossfadeIncomingStartDate = nil
                 }
             }
         }
@@ -5320,12 +5360,14 @@ class AudioEngine {
         currentTrack = playlist[nextIndex]
         _currentTime = 0
         lastReportedTime = 0
-        playbackStartDate = Date()
+        playbackStartDate = crossfadeIncomingStartDate ?? Date()
         suspendedLocalPlaybackClockForSleep = false
 
         // Reset crossfade state
         isCrossfading = false
         crossfadeTargetIndex = -1
+        crossfadeIncomingStartDate = nil
+        clearCrossfadeDeclineLatch()
 
         // Notify delegate
         delegate?.audioEngineDidChangeTrack(currentTrack)
@@ -5447,6 +5489,7 @@ class AudioEngine {
         // Reset crossfade state
         isCrossfading = false
         crossfadeTargetIndex = -1
+        clearCrossfadeDeclineLatch()
 
         // Notify delegate
         delegate?.audioEngineDidChangeTrack(currentTrack)
@@ -5510,6 +5553,8 @@ class AudioEngine {
         isCrossfading = false
         crossfadeFileLoadToken &+= 1  // cancel any in-flight deferredIOQueue file open
         crossfadeTargetIndex = -1
+        crossfadeIncomingStartDate = nil
+        clearCrossfadeDeclineLatch()
         // Reset to playerNode as primary (crossfade was incomplete, outgoing player continues)
         crossfadePlayerIsActive = false
         NSLog("Sweet Fades: Crossfade cancelled")
@@ -5524,6 +5569,8 @@ class AudioEngine {
         isCrossfading = false
         crossfadeFileLoadToken &+= 1  // cancel any in-flight deferredIOQueue file open
         crossfadeTargetIndex = -1
+        crossfadeIncomingStartDate = nil
+        clearCrossfadeDeclineLatch()
 
         crossfadeStreamingPlayer?.stop()
         crossfadeStreamingPlayer?.volume = 0
@@ -5815,6 +5862,7 @@ class AudioEngine {
     
     func clearPlaylist() {
         NSLog("clearPlaylist: isStreamingPlayback=%d", isStreamingPlayback)
+        clearCrossfadeDeclineLatch()
         placeholderResolutionTasks.values.forEach { $0.cancel() }
         placeholderResolutionTasks.removeAll()
         staleStreamingRefreshRetriedServiceIdentity = nil
