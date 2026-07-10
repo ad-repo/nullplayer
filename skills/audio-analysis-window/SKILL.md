@@ -29,6 +29,8 @@ Spectrum windows in each UI mode.
 - **Hide Title Bars.** Included in `effectiveHideTitleBars(for:)` (sub-window list), so it auto-hides
   when docked and follows the global HT toggle. The view reads `effectiveHideTitleBars` for its
   title-bar height, drawing, and hit-testing.
+- **Dragging.** The entire non-control face drags the window; see the ui-guide window-dragging
+  requirement.
 - **Chrome rendering — modern.** `ModernAudioAnalysisView` draws the modern skin title bar + close
   button (`spectrum_` prefix) and insets the SwiftUI hosting view into the content area via
   `contentAreaRect()` / `layoutHostingView()`. Its hosting view uses an aqua/darkAqua appearance

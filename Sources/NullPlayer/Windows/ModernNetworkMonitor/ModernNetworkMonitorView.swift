@@ -224,6 +224,13 @@ final class ModernNetworkMonitorView: NSView {
             if let window {
                 WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
             }
+            return
+        }
+
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
+        if let window {
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.effectiveHideTitleBars(for: window))
         }
     }
 

@@ -211,6 +211,15 @@ For new center-stack windows, follow the waveform/spectrum pattern:
 3. Modern chrome in `Windows/Modern...`
 4. Registration and docking behavior in `WindowManager`
 
+### Window Dragging (MUST)
+
+Every center-stack window's `mouseDown` must end with a content-area fallthrough that starts a window
+drag for any click that did not hit an interactive control such as the close button, sliders, playlist
+rows, or a seek/scrub area. Use `SpectrumView.mouseDown` as the canonical implementation: close button
+returns, title bar starts a title-bar drag and returns, then the remaining face starts a window drag.
+Classic views should pass `fromTitleBar: WindowManager.shared.hideTitleBars` for the fallthrough drag;
+modern views should pass `fromTitleBar: WindowManager.shared.effectiveHideTitleBars(for: window)`.
+
 ## Library Window Position Memory
 
 The Library/browser window is **not** a center-stack window — it does not snap back into the

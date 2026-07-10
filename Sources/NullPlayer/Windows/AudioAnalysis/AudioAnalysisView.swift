@@ -146,12 +146,21 @@ final class AudioAnalysisView: NSView {
         if hitTestCloseButton(at: point) {
             pressedButton = .close
             needsDisplay = true
-        } else if hitTestTitleBar(at: point) {
+            return
+        }
+        if hitTestTitleBar(at: point) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
             if let window {
                 WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
             }
+            return
+        }
+
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
+        if let window {
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
         }
     }
 
