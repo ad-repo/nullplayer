@@ -16,6 +16,10 @@
 - **CLI server queries no longer return empty results at launch** — headless `--cli` queries and playback against Plex, Jellyfin, and Emby (`--list-artists`, `--list-albums`, `--list-tracks`, `--artist`, `--search`, `--radio`, etc.) now wait for the background server connection before running, instead of racing it and silently returning nothing (which surfaced as "artist not found" / "0 artist(s)"). When the restored current library is a non-music section — a Plex Movies/TV library, or a Jellyfin/Emby "Playlists", "Video", "Movies", or "TV shows" view — the CLI now auto-selects a music library for every music operation (queries, `--search`, and server `--radio`), or prints the available music libraries and asks you to pick one with `--library` instead of returning empty. `--search` also honors an explicit `--library`. `--list-sources` shows configured Subsonic/Navidrome, Jellyfin, and Emby servers as **Connected** instead of momentarily "Not configured", and now returns promptly because the CLI waits only for the connection, not for the full background library preload.
 - **Play button no longer rewinds the clock during local playback** — pressing ▶ while a local file was already playing snapped the progress bar and the elapsed-time display backward (by a fraction of a second, or all the way to the start), making the track look like it ended early even though the audio kept playing uninterrupted. The play button now preserves the true playback position on a redundant press. Streaming and cast playback were never affected.
 
+### Documentation
+
+- **Non-affiliation disclaimer now names the full Winamp Group** — the README disclaimer previously listed only Winamp, Nullsoft, and Radionomy Group. It now enumerates the entire Winamp Group SA family — Winamp Group SA, Llama Group (former name), Jamendo, Hotmix, Bridger, and SHOUTcast — alongside the existing Sonos and Plex mentions, and clarifies the project is "not affiliated with, endorsed by, or connected to" those parties.
+
 ## 0.27.0
 
 ### New Features
