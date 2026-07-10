@@ -20,9 +20,6 @@ final class ModernNetworkMonitorView: NSView {
 
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
     private var borderWidth: CGFloat { ModernSkinElements.spectrumBorderWidth }
-    private var contentPadding: CGFloat {
-        ModernSkinEngine.shared.currentRenderStyle == .metal ? 0 : 6
-    }
     private var titleBarHeight: CGFloat {
         let hide = WindowManager.shared.effectiveHideTitleBars(for: window)
         return hide ? borderWidth : ModernSkinElements.titleBarBaseHeight * scale
@@ -110,10 +107,10 @@ final class ModernNetworkMonitorView: NSView {
 
     private func contentAreaRect() -> NSRect {
         let rect = NSRect(
-            x: borderWidth + contentPadding,
-            y: borderWidth + contentPadding,
-            width: max(0, bounds.width - borderWidth * 2 - contentPadding * 2),
-            height: max(0, bounds.height - titleBarHeight - borderWidth - contentPadding * 2)
+            x: borderWidth,
+            y: borderWidth,
+            width: max(0, bounds.width - borderWidth * 2),
+            height: max(0, bounds.height - titleBarHeight - borderWidth)
         )
         return rect.expandingThroughMetalJoinedEdges(
             in: bounds,

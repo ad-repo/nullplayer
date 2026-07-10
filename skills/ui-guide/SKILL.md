@@ -203,6 +203,7 @@ Main, EQ, Playlist, Spectrum, Waveform, Audio Analysis, PeppyMeter, and Flow all
 - Height is window-specific: Flow is single-height; PeppyMeter uses a 1.75x landscape height
 - Saved frames are restored through `WindowManager` rather than ad hoc per-window logic
 - Modern and classic implementations should expose a provider protocol in `App/` so `WindowManager` can manage both without mode-specific branching outside window creation
+- Modern dockable windows must not create a second visual border by adding their own outer content gutter or rounded inner panel around the main content. Use the shared auxiliary chrome inset (`ModernSkinElements.*BorderWidth`) as the only window border. If content needs internal breathing room, apply it inside the renderer/content layout, not by shrinking the whole chrome content rect. Flow and PeppyMeter are explicit regression examples: extra content padding made their modern windows look like they had heavy borders, while Metal already used the correct thin-edge treatment.
 
 For new center-stack windows, follow the waveform/spectrum pattern:
 
