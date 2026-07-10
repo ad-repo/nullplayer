@@ -186,12 +186,19 @@ update_homebrew_tap() {
 
     sha=$(shasum -a 256 "$VERSIONED_DMG" | awk '{print $1}')
 
-    if ! old_content=$(gh api "repos/$TAP_REPO/contents/$CASK_PATH" -q .content | base64 -d); then
+    # Fetch the blob sha and content from one API response. Two separate calls
+    # could race a concurrent edit to the tap and PUT a newer sha with older
+    # content, silently clobbering the intervening change. gsub flattens the
+    # base64 (GitHub wraps it in newlines) so it reads back as a single line.
+    local cask_meta content_b64
+    if ! cask_meta=$(gh api "repos/$TAP_REPO/contents/$CASK_PATH" --jq '.sha, (.content | gsub("\n"; ""))'); then
         log_error "Could not read $CASK_PATH from $TAP_REPO; update the cask manually"
         rm -f "$cask_file"
         return 1
     fi
-    blob_sha=$(gh api "repos/$TAP_REPO/contents/$CASK_PATH" -q .sha)
+    blob_sha=${cask_meta%%$'\n'*}
+    content_b64=${cask_meta#*$'\n'}
+    old_content=$(base64 -d <<<"$content_b64")
 
     printf '%s\n' "$old_content" > "$cask_file"
 

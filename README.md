@@ -95,17 +95,25 @@ See [docs/download.md](docs/download.md) for the same install steps in a short d
    ```
 
    Already have Homebrew? Skip this step.
-3. Add the NullPlayer tap (one-time configuration):
+3. Add Homebrew to your shell so the `brew` command is found. The installer finishes by printing a **Next steps** section — run the two commands it lists. On Apple Silicon Macs (M1/M2/M3/M4) they are:
+
+   ```bash
+   echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+   eval "$(/opt/homebrew/bin/brew shellenv)"
+   ```
+
+   On older Intel Macs, replace `/opt/homebrew` with `/usr/local`. If `brew` already worked before you started, skip this step.
+4. Add the NullPlayer tap (one-time configuration):
 
    ```bash
    brew tap ad-repo/nullplayer
    ```
-4. Install NullPlayer:
+5. Install NullPlayer:
 
    ```bash
    brew install --cask ad-repo/nullplayer/nullplayer
    ```
-5. Open NullPlayer from your Applications folder or Launchpad — no security prompt.
+6. Open NullPlayer from your Applications folder or Launchpad — no security prompt.
 
 **Updating to a new release:**
 
