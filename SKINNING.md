@@ -2,7 +2,7 @@
 
 This guide walks you through creating custom skins for NullPlayer's modern UI mode. You can create a skin with nothing more than a text editor -- no programming required.
 
-> **Classic Mode skins**: NullPlayer also supports classic `.wsz` skins in Classic Mode. No skins are bundled -- load a `.wsz` file via **Skins > Load Skin...** or place files in `~/Library/Application Support/NullPlayer/Skins/`. Official skin packages are available in `dist/Skins/`. Use **Skins > Get More Skins...** to find community-created skins online.
+> **Classic Mode skins**: NullPlayer also supports classic `.wsz` skins in Classic Mode. It ships with one original NullPlayer skin (Silver) -- load your own `.wsz` file via **Skins > Load Skin...** or place files in `~/Library/Application Support/NullPlayer/Skins/`. Use **Skins > Get More Skins...** to browse thousands of community-created skins at the [Winamp Skin Museum](https://skins.webamp.org/).
 
 > **Metal mode skins**: Metal uses the modern skin engine, but it is a separate skin family. User-installed metal skins live in `~/Library/Application Support/NullPlayer/MetalSkins/`, the current selection is stored under `metalSkinName`, and the built-in default is `Brushed Steel`.
 
