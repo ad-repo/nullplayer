@@ -95,12 +95,17 @@ See [docs/download.md](docs/download.md) for the same install steps in a short d
    ```
 
    Already have Homebrew? Skip this step.
-3. Install NullPlayer:
+3. Add the NullPlayer tap (one-time configuration):
+
+   ```bash
+   brew tap ad-repo/nullplayer
+   ```
+4. Install NullPlayer:
 
    ```bash
    brew install --cask ad-repo/nullplayer/nullplayer
    ```
-4. Open NullPlayer from your Applications folder or Launchpad — no security prompt.
+5. Open NullPlayer from your Applications folder or Launchpad — no security prompt.
 
 **Updating to a new release:**
 
