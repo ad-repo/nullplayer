@@ -354,7 +354,9 @@ class CastManager {
             guard self.activeSession?.state != .loaded else { return }
             let current = self.videoCastCurrentTime
             let duration = self.videoCastDuration
-            WindowManager.shared.videoDidUpdateTime(current: current, duration: duration)
+            if !AudioEngine.isHeadless {
+                WindowManager.shared.videoDidUpdateTime(current: current, duration: duration)
+            }
         }
         // Don't fire immediately - wait for first Chromecast status update
     }
@@ -500,7 +502,9 @@ class CastManager {
                     self.activeSession?.isPlaying = false
                     self.isVideoCastPlaying = false
                     if isFirstActive {
-                        WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
+                        if !AudioEngine.isHeadless {
+                            WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
+                        }
                     }
                 } else if isPlaying {
                     let isFirstActive = !self.chromecastHasSeenActivePlayback
@@ -513,7 +517,9 @@ class CastManager {
                     self.activeSession?.isPlaying = true
                     self.isVideoCastPlaying = true
                     if isFirstActive {
-                        WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
+                        if !AudioEngine.isHeadless {
+                            WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
+                        }
                     }
                 } else {
                     self.activeSession?.playbackStartDate = nil
@@ -908,7 +914,9 @@ class CastManager {
                     mediaType: .video,
                     contentType: metadata.contentType
                 )
-                WindowManager.shared.mainWindowController?.updateVideoTrackInfo(title: metadata.title, artworkTrack: artworkTrack)
+                if !AudioEngine.isHeadless {
+                    WindowManager.shared.mainWindowController?.updateVideoTrackInfo(title: metadata.title, artworkTrack: artworkTrack)
+                }
                 
                 NSLog("CastManager: Video cast state initialized - title='%@', duration=%.1f, startPosition=%.1f, state=%@", metadata.title, self.videoCastDuration, startPosition, String(describing: self.activeSession?.state))
             } else {
@@ -1464,7 +1472,9 @@ class CastManager {
 
             // Close the video player if it was showing a video cast that this audio cast supersedes.
             NSLog("CastManager: castNewTrack audio succeeded — closing video player if casting video")
-            WindowManager.shared.closeVideoPlayerForCastTransition(wasVideoCast: supersededVideoCast)
+            if !AudioEngine.isHeadless {
+                WindowManager.shared.closeVideoPlayerForCastTransition(wasVideoCast: supersededVideoCast)
+            }
         }
         }
 
@@ -1967,7 +1977,9 @@ class CastManager {
                 self.isVideoCastPlaying = false
 
                 // Clear video title from main window
-                WindowManager.shared.mainWindowController?.clearVideoTrackInfo()
+                if !AudioEngine.isHeadless {
+                    WindowManager.shared.mainWindowController?.clearVideoTrackInfo()
+                }
             }
             
             self.resolvedAudioEngine.stopCastPlayback(resumeLocally: false)

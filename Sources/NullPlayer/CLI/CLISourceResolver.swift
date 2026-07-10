@@ -7,6 +7,7 @@ enum CLISourceError: LocalizedError {
     case noTracksFound(String)
     case invalidRadioMode(String, String, [String])
     case missingRequiredArg(String, String)
+    case unsupportedVideoSource(String)
 
     var errorDescription: String? {
         switch self {
@@ -21,20 +22,72 @@ enum CLISourceError: LocalizedError {
             return "Radio mode '\(mode)' not available for \(source). Available: \(available.joined(separator: ", "))"
         case .missingRequiredArg(let flag, let requires):
             return "\(flag) requires \(requires)"
+        case .unsupportedVideoSource(let source):
+            return "Video casting is supported for local files, Plex, Jellyfin, and Emby, not \(source)."
         }
     }
 }
 
-/// Result type to distinguish track-based playback from radio station playback
+/// Result type to distinguish audio playback, radio station playback, and video casting.
 enum CLIResolveResult {
     case tracks([Track])
     case radioStation  // RadioManager handles playback directly
+    case video(CLIVideoItem)
+}
+
+enum CLIVideoItem {
+    case localFile(URL, title: String)
+    case plexMovie(PlexMovie)
+    case plexEpisode(PlexEpisode)
+    case jellyfinMovie(JellyfinMovie)
+    case jellyfinEpisode(JellyfinEpisode)
+    case embyMovie(EmbyMovie)
+    case embyEpisode(EmbyEpisode)
+
+    var displayTitle: String {
+        switch self {
+        case .localFile(_, let title):
+            return title
+        case .plexMovie(let movie):
+            return movie.title
+        case .plexEpisode(let episode):
+            return [episode.grandparentTitle, episode.episodeIdentifier, episode.title]
+                .compactMap { $0 }
+                .joined(separator: " - ")
+        case .jellyfinMovie(let movie):
+            return movie.title
+        case .jellyfinEpisode(let episode):
+            return [episode.seriesName, episode.episodeIdentifier, episode.title]
+                .compactMap { $0 }
+                .joined(separator: " - ")
+        case .embyMovie(let movie):
+            return movie.title
+        case .embyEpisode(let episode):
+            return [episode.seriesName, episode.episodeIdentifier, episode.title]
+                .compactMap { $0 }
+                .joined(separator: " - ")
+        }
+    }
 }
 
 struct CLISourceResolver {
 
     static func resolve(_ opts: CLIOptions) async throws -> CLIResolveResult {
         let source = opts.source ?? "local"
+
+        if let filePath = opts.file {
+            return try resolveFile(filePath)
+        }
+
+        if opts.movie != nil || opts.episode != nil {
+            try await checkConnectivity(source: source)
+            if let libraryName = opts.library {
+                try await applyVideoLibrary(source: source, name: libraryName, wantsShows: opts.episode != nil)
+            } else {
+                try ensureVideoLibrarySelected(source: source, wantsShows: opts.episode != nil)
+            }
+            return try await resolveVideo(source: source, opts: opts)
+        }
 
         // Check connectivity
         try await checkConnectivity(source: source)
@@ -108,7 +161,7 @@ struct CLISourceResolver {
             break // Always available
         default:
             fputs("Error: Unknown source '\(source)'. Use: local, plex, subsonic, jellyfin, emby, radio\n", cliStderr)
-            exit(1)
+            CLIPlayer.exitAndRestoreTerminal(code: 1)
         }
     }
 
@@ -210,6 +263,22 @@ struct CLISourceResolver {
     }
 
     // MARK: - Content Resolution
+
+    private static func resolveFile(_ path: String) throws -> CLIResolveResult {
+        let expandedPath = (path as NSString).expandingTildeInPath
+        let url = URL(fileURLWithPath: expandedPath)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw CLISourceError.noTracksFound("— file '\(path)' not found")
+        }
+
+        let detected = detectContentType(for: url)
+        let title = url.deletingPathExtension().lastPathComponent
+        if detected.mediaType == .video {
+            return .video(.localFile(url, title: title))
+        }
+
+        return .tracks([Track(url: url, title: title, contentType: detected.contentType)])
+    }
 
     // internal (not private) so CLIQueryHandler.listTracks can reuse it
     static func resolveContent(source: String, opts: CLIOptions) async throws -> [Track] {
@@ -462,6 +531,297 @@ struct CLISourceResolver {
         }
 
         throw CLISourceError.noTracksFound("— specify --artist, --playlist, or --search for Emby")
+    }
+
+    // MARK: - Video Resolution
+
+    private enum VideoMatch {
+        static func exactOrContains<T>(
+            _ items: [T],
+            query: String,
+            title: (T) -> String,
+            candidateDescription: (T) -> String
+        ) throws -> T {
+            let exact = items.filter { title($0).caseInsensitiveCompare(query) == .orderedSame }
+            if exact.count == 1 { return exact[0] }
+
+            let matches = exact.isEmpty
+                ? items.filter { title($0).localizedCaseInsensitiveContains(query) }
+                : exact
+            guard let first = matches.first else {
+                throw CLISourceError.noTracksFound("for '\(query)'")
+            }
+            guard matches.count == 1 else {
+                let candidates = matches.prefix(10).map(candidateDescription).joined(separator: ", ")
+                throw CLISourceError.noTracksFound("— ambiguous match for '\(query)'. Candidates: \(candidates)")
+            }
+            return first
+        }
+    }
+
+    private static func resolveVideo(source: String, opts: CLIOptions) async throws -> CLIResolveResult {
+        switch source {
+        case "plex":
+            return try await resolvePlexVideo(opts)
+        case "jellyfin":
+            return try await resolveJellyfinVideo(opts)
+        case "emby":
+            return try await resolveEmbyVideo(opts)
+        case "local":
+            throw CLISourceError.missingRequiredArg("--movie/--episode", "--source plex|jellyfin|emby")
+        default:
+            throw CLISourceError.unsupportedVideoSource(source)
+        }
+    }
+
+    private static func resolvePlexVideo(_ opts: CLIOptions) async throws -> CLIResolveResult {
+        let mgr = PlexManager.shared
+        if let title = opts.movie {
+            let movies = try await fetchAllPlexMovies()
+            let movie = try VideoMatch.exactOrContains(
+                movies,
+                query: title,
+                title: { $0.title },
+                candidateDescription: { movie in
+                    movie.year.map { "\(movie.title) (\($0))" } ?? movie.title
+                }
+            )
+            return .video(.plexMovie(movie))
+        }
+
+        guard let episodeTitle = opts.episode else {
+            throw CLISourceError.missingRequiredArg("--movie/--episode", "--movie <title> or --episode <title>")
+        }
+        guard let showName = opts.show else {
+            throw CLISourceError.missingRequiredArg("--episode", "--show <name>")
+        }
+        let shows = try await fetchAllPlexShows()
+        let show = try VideoMatch.exactOrContains(
+            shows,
+            query: showName,
+            title: { $0.title },
+            candidateDescription: { $0.title }
+        )
+        var seasons = try await mgr.fetchSeasons(forShow: show)
+        if let seasonNumber = opts.season {
+            seasons = seasons.filter { $0.index == seasonNumber }
+        }
+        var episodes: [PlexEpisode] = []
+        for season in seasons {
+            episodes.append(contentsOf: try await mgr.fetchEpisodes(forSeason: season))
+        }
+        if let episodeNumber = opts.number {
+            episodes = episodes.filter { $0.index == episodeNumber }
+        }
+        let episode = try VideoMatch.exactOrContains(
+            episodes,
+            query: episodeTitle,
+            title: { $0.title },
+            candidateDescription: { "\($0.episodeIdentifier) \($0.title)" }
+        )
+        return .video(.plexEpisode(episode))
+    }
+
+    private static func resolveJellyfinVideo(_ opts: CLIOptions) async throws -> CLIResolveResult {
+        let mgr = JellyfinManager.shared
+        if let title = opts.movie {
+            let movies = try await mgr.fetchMovies()
+            let movie = try VideoMatch.exactOrContains(
+                movies,
+                query: title,
+                title: { $0.title },
+                candidateDescription: { movie in
+                    movie.year.map { "\(movie.title) (\($0))" } ?? movie.title
+                }
+            )
+            return .video(.jellyfinMovie(movie))
+        }
+
+        guard let episodeTitle = opts.episode else {
+            throw CLISourceError.missingRequiredArg("--movie/--episode", "--movie <title> or --episode <title>")
+        }
+        guard let showName = opts.show else {
+            throw CLISourceError.missingRequiredArg("--episode", "--show <name>")
+        }
+        let shows = try await mgr.fetchShows()
+        let show = try VideoMatch.exactOrContains(
+            shows,
+            query: showName,
+            title: { $0.title },
+            candidateDescription: { $0.title }
+        )
+        var seasons = try await mgr.fetchSeasons(forShow: show)
+        if let seasonNumber = opts.season {
+            seasons = seasons.filter { $0.index == seasonNumber }
+        }
+        var episodes: [JellyfinEpisode] = []
+        for season in seasons {
+            episodes.append(contentsOf: try await mgr.fetchEpisodes(forSeason: season))
+        }
+        if let episodeNumber = opts.number {
+            episodes = episodes.filter { $0.index == episodeNumber }
+        }
+        let episode = try VideoMatch.exactOrContains(
+            episodes,
+            query: episodeTitle,
+            title: { $0.title },
+            candidateDescription: { "\($0.episodeIdentifier) \($0.title)" }
+        )
+        return .video(.jellyfinEpisode(episode))
+    }
+
+    private static func resolveEmbyVideo(_ opts: CLIOptions) async throws -> CLIResolveResult {
+        let mgr = EmbyManager.shared
+        if let title = opts.movie {
+            let movies = try await mgr.fetchMovies()
+            let movie = try VideoMatch.exactOrContains(
+                movies,
+                query: title,
+                title: { $0.title },
+                candidateDescription: { movie in
+                    movie.year.map { "\(movie.title) (\($0))" } ?? movie.title
+                }
+            )
+            return .video(.embyMovie(movie))
+        }
+
+        guard let episodeTitle = opts.episode else {
+            throw CLISourceError.missingRequiredArg("--movie/--episode", "--movie <title> or --episode <title>")
+        }
+        guard let showName = opts.show else {
+            throw CLISourceError.missingRequiredArg("--episode", "--show <name>")
+        }
+        let shows = try await mgr.fetchShows()
+        let show = try VideoMatch.exactOrContains(
+            shows,
+            query: showName,
+            title: { $0.title },
+            candidateDescription: { $0.title }
+        )
+        var seasons = try await mgr.fetchSeasons(forShow: show)
+        if let seasonNumber = opts.season {
+            seasons = seasons.filter { $0.index == seasonNumber }
+        }
+        var episodes: [EmbyEpisode] = []
+        for season in seasons {
+            episodes.append(contentsOf: try await mgr.fetchEpisodes(forSeason: season))
+        }
+        if let episodeNumber = opts.number {
+            episodes = episodes.filter { $0.index == episodeNumber }
+        }
+        let episode = try VideoMatch.exactOrContains(
+            episodes,
+            query: episodeTitle,
+            title: { $0.title },
+            candidateDescription: { "\($0.episodeIdentifier) \($0.title)" }
+        )
+        return .video(.embyEpisode(episode))
+    }
+
+    private static func fetchAllPlexMovies() async throws -> [PlexMovie] {
+        var offset = 0
+        let limit = 500
+        var all: [PlexMovie] = []
+        while true {
+            let page = try await PlexManager.shared.fetchMovies(offset: offset, limit: limit)
+            all.append(contentsOf: page)
+            if page.count < limit { break }
+            offset += limit
+        }
+        return all
+    }
+
+    private static func fetchAllPlexShows() async throws -> [PlexShow] {
+        var offset = 0
+        let limit = 500
+        var all: [PlexShow] = []
+        while true {
+            let page = try await PlexManager.shared.fetchShows(offset: offset, limit: limit)
+            all.append(contentsOf: page)
+            if page.count < limit { break }
+            offset += limit
+        }
+        return all
+    }
+
+    private static func applyVideoLibrary(source: String, name: String, wantsShows: Bool) async throws {
+        switch source {
+        case "plex":
+            await PlexManager.shared.serverRefreshTask?.value
+            let libs = PlexManager.shared.availableLibraries.filter { wantsShows ? $0.isShowLibrary : $0.isMovieLibrary }
+            guard let lib = libs.first(where: { $0.title.caseInsensitiveCompare(name) == .orderedSame }) else {
+                throw CLISourceError.noTracksFound("— video library '\(name)' not found on Plex. Available: \(libs.map { $0.title }.joined(separator: ", "))")
+            }
+            PlexManager.shared.selectLibrary(lib)
+        case "jellyfin":
+            let expectedType = wantsShows ? "tvshows" : "movies"
+            let libs = JellyfinManager.shared.musicLibraries.filter { $0.collectionType?.lowercased() == expectedType }
+            guard let lib = libs.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+                throw CLISourceError.noTracksFound("— video library '\(name)' not found on Jellyfin. Available: \(libs.map { $0.name }.joined(separator: ", "))")
+            }
+            wantsShows ? JellyfinManager.shared.selectShowLibrary(lib) : JellyfinManager.shared.selectMovieLibrary(lib)
+        case "emby":
+            let expectedType = wantsShows ? "tvshows" : "movies"
+            let libs = EmbyManager.shared.musicLibraries.filter { $0.collectionType?.lowercased() == expectedType }
+            guard let lib = libs.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+                throw CLISourceError.noTracksFound("— video library '\(name)' not found on Emby. Available: \(libs.map { $0.name }.joined(separator: ", "))")
+            }
+            wantsShows ? EmbyManager.shared.selectShowLibrary(lib) : EmbyManager.shared.selectMovieLibrary(lib)
+        default:
+            throw CLISourceError.unsupportedVideoSource(source)
+        }
+    }
+
+    private static func ensureVideoLibrarySelected(source: String, wantsShows: Bool) throws {
+        switch source {
+        case "plex":
+            if wantsShows, PlexManager.shared.currentLibrary?.isShowLibrary == true { return }
+            if !wantsShows, PlexManager.shared.currentLibrary?.isMovieLibrary == true { return }
+            let libs = PlexManager.shared.availableLibraries.filter { wantsShows ? $0.isShowLibrary : $0.isMovieLibrary }
+            guard let first = libs.first else {
+                throw CLISourceError.noTracksFound("— no \(wantsShows ? "TV" : "movie") library found on Plex")
+            }
+            if libs.count > 1 {
+                throw CLISourceError.noTracksFound(
+                    "— Plex has multiple \(wantsShows ? "TV" : "movie") libraries; specify one with --library <name>. "
+                    + "Available: \(libs.map { $0.title }.joined(separator: ", "))")
+            }
+            PlexManager.shared.selectLibrary(first)
+        case "jellyfin":
+            let expectedType = wantsShows ? "tvshows" : "movies"
+            let currentType = wantsShows
+                ? JellyfinManager.shared.currentShowLibrary?.collectionType?.lowercased()
+                : JellyfinManager.shared.currentMovieLibrary?.collectionType?.lowercased()
+            if currentType == expectedType { return }
+            let libs = JellyfinManager.shared.musicLibraries.filter { $0.collectionType?.lowercased() == expectedType }
+            guard let first = libs.first else {
+                throw CLISourceError.noTracksFound("— no \(wantsShows ? "TV" : "movie") library found on Jellyfin")
+            }
+            if libs.count > 1 {
+                throw CLISourceError.noTracksFound(
+                    "— Jellyfin has multiple \(wantsShows ? "TV" : "movie") libraries; specify one with --library <name>. "
+                    + "Available: \(libs.map { $0.name }.joined(separator: ", "))")
+            }
+            wantsShows ? JellyfinManager.shared.selectShowLibrary(first) : JellyfinManager.shared.selectMovieLibrary(first)
+        case "emby":
+            let expectedType = wantsShows ? "tvshows" : "movies"
+            let currentType = wantsShows
+                ? EmbyManager.shared.currentShowLibrary?.collectionType?.lowercased()
+                : EmbyManager.shared.currentMovieLibrary?.collectionType?.lowercased()
+            if currentType == expectedType { return }
+            let libs = EmbyManager.shared.musicLibraries.filter { $0.collectionType?.lowercased() == expectedType }
+            guard let first = libs.first else {
+                throw CLISourceError.noTracksFound("— no \(wantsShows ? "TV" : "movie") library found on Emby")
+            }
+            if libs.count > 1 {
+                throw CLISourceError.noTracksFound(
+                    "— Emby has multiple \(wantsShows ? "TV" : "movie") libraries; specify one with --library <name>. "
+                    + "Available: \(libs.map { $0.name }.joined(separator: ", "))")
+            }
+            wantsShows ? EmbyManager.shared.selectShowLibrary(first) : EmbyManager.shared.selectMovieLibrary(first)
+        default:
+            throw CLISourceError.unsupportedVideoSource(source)
+        }
     }
 
     // MARK: - Radio Resolution

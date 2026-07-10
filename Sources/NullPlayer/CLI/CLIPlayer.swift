@@ -1,5 +1,26 @@
 import Foundation
 
+private enum CLIPlayerError: LocalizedError {
+    case videoRequiresCast
+    case unknownCastType(String)
+    case castDeviceNotFound(String, [String])
+    case sonosVideoUnsupported
+
+    var errorDescription: String? {
+        switch self {
+        case .videoRequiresCast:
+            return "Video casting in CLI mode requires --cast <Chromecast or DLNA TV>."
+        case .unknownCastType(let type):
+            return "Unknown cast type '\(type)'. Use: sonos, chromecast, dlna"
+        case .castDeviceNotFound(let name, let available):
+            let list = available.isEmpty ? "none discovered" : available.joined(separator: ", ")
+            return "Cast device '\(name)' not found. Available: \(list)"
+        case .sonosVideoUnsupported:
+            return "Sonos does not support video; use a Chromecast or DLNA TV."
+        }
+    }
+}
+
 class CLIPlayer: AudioEngineDelegate {
     let audioEngine: AudioEngine
     private var options: CLIOptions
@@ -7,6 +28,11 @@ class CLIPlayer: AudioEngineDelegate {
     private var previousVolume: Float = 0.5
     private var lastArtworkKey: String?
     private var lastTrackInfoKey: String?
+
+    static func exitAndRestoreTerminal(code: Int32) -> Never {
+        CLIKeyboard.restoreTerminal()
+        exit(code)
+    }
 
     init(options: CLIOptions) {
         self.options = options
@@ -43,7 +69,7 @@ class CLIPlayer: AudioEngineDelegate {
         if let cents = options.tuningOffsetCents {
             guard cents.isFinite else {
                 fputs("Error: --tuning-offset-cents must be a finite number\n", cliStderr)
-                exit(1)
+                Self.exitAndRestoreTerminal(code: 1)
             }
             audioEngine.setTuningOffsetCents(cents, persist: false)
         } else if let tuning = options.tuning {
@@ -54,7 +80,7 @@ class CLIPlayer: AudioEngineDelegate {
                 if let src = options.tuningSource {
                     guard let parsed = Double(src), parsed.isFinite, parsed > 0 else {
                         fputs("Error: --tuning-source requires a positive number (Hz)\n", cliStderr)
-                        exit(1)
+                        Self.exitAndRestoreTerminal(code: 1)
                     }
                     sourceHz = parsed
                 } else {
@@ -63,7 +89,7 @@ class CLIPlayer: AudioEngineDelegate {
                 audioEngine.setTuningPreset(.custom(source: sourceHz, target: targetHz), persist: false)
             } else {
                 fputs("Error: --tuning requires 'off' or a positive number in Hz (e.g. 432)\n", cliStderr)
-                exit(1)
+                Self.exitAndRestoreTerminal(code: 1)
             }
         }
 
@@ -80,7 +106,7 @@ class CLIPlayer: AudioEngineDelegate {
             } else {
                 let names = EQPreset.allPresets.map { $0.name }.joined(separator: ", ")
                 fputs("Error: Unknown EQ preset '\(eqName)'. Available: \(names)\n", cliStderr)
-                exit(1)
+                Self.exitAndRestoreTerminal(code: 1)
             }
         }
 
@@ -93,7 +119,7 @@ class CLIPlayer: AudioEngineDelegate {
             } else {
                 let names = AudioOutputManager.shared.outputDevices.map { $0.name }.joined(separator: ", ")
                 fputs("Error: Unknown output device '\(outputName)'. Available: \(names)\n", cliStderr)
-                exit(1)
+                Self.exitAndRestoreTerminal(code: 1)
             }
         }
     }
@@ -135,6 +161,67 @@ class CLIPlayer: AudioEngineDelegate {
         }
     }
 
+    private func parseCastRequest(_ castValue: String) -> (deviceName: String, inlineRooms: [String]) {
+        let castComponents = castValue
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let deviceName = castComponents.first ?? castValue.trimmingCharacters(in: .whitespaces)
+        return (deviceName, Array(castComponents.dropFirst()))
+    }
+
+    private func castTypeFilter(videoOnly: Bool) throws -> CastDeviceType? {
+        guard let castType = options.castType else {
+            return nil
+        }
+        switch castType.lowercased() {
+        case "sonos":
+            if videoOnly { throw CLIPlayerError.sonosVideoUnsupported }
+            return .sonos
+        case "chromecast":
+            return .chromecast
+        case "dlna":
+            return .dlnaTV
+        default:
+            throw CLIPlayerError.unknownCastType(castType)
+        }
+    }
+
+    private func resolveCastDevice(castValue: String, videoOnly: Bool) async throws -> CastDevice {
+        let request = parseCastRequest(castValue)
+        let typeFilter = try castTypeFilter(videoOnly: videoOnly)
+
+        CastManager.shared.startDiscovery()
+        fputs("Discovering cast devices...\n", cliStderr)
+
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline {
+            let allDevices = CastManager.shared.discoveredDevices
+            let filteredDevices = allDevices.filter { device in
+                if videoOnly && !device.supportsVideo { return false }
+                if let typeFilter, device.type != typeFilter { return false }
+                return true
+            }
+
+            if let match = filteredDevices.first(where: {
+                $0.name.caseInsensitiveCompare(request.deviceName) == .orderedSame
+            }) {
+                return match
+            }
+
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+
+        let available = CastManager.shared.discoveredDevices
+            .filter { device in
+                if videoOnly && !device.supportsVideo { return false }
+                if let typeFilter, device.type != typeFilter { return false }
+                return true
+            }
+            .map { "\($0.name) (\($0.type))" }
+        throw CLIPlayerError.castDeviceNotFound(request.deviceName, available)
+    }
+
     private func setupCasting(castValue: String) async {
         // Wait for AudioEngine to have a current track loaded before casting
         let trackDeadline = Date().addingTimeInterval(5)
@@ -146,57 +233,12 @@ class CLIPlayer: AudioEngineDelegate {
             return
         }
 
-        // --cast accepts a comma-separated list: the first entry is the device we cast
-        // to (the Sonos group coordinator); any remaining entries are Sonos rooms to
-        // group onto it, merged with --sonos-rooms. Grouping is Sonos-only.
-        let castComponents = castValue
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        let deviceName = castComponents.first ?? castValue.trimmingCharacters(in: .whitespaces)
-        let inlineRooms = Array(castComponents.dropFirst())
-
-        // Resolve and validate cast type once up front
-        let typeFilter: CastDeviceType?
-        if let castType = options.castType {
-            switch castType.lowercased() {
-            case "sonos": typeFilter = .sonos
-            case "chromecast": typeFilter = .chromecast
-            case "dlna": typeFilter = .dlnaTV
-            default:
-                fputs("Error: Unknown cast type '\(castType)'. Use: sonos, chromecast, dlna\n", cliStderr)
-                return
-            }
-        } else {
-            typeFilter = nil
-        }
-
-        CastManager.shared.startDiscovery()
-        fputs("Discovering cast devices…\n", cliStderr)
-
-        // Poll for matching device with 15s timeout
-        let deadline = Date().addingTimeInterval(15)
-        var device: CastDevice?
-
-        while Date() < deadline {
-            let allDevices = CastManager.shared.discoveredDevices
-            let filteredDevices = typeFilter.map { type in allDevices.filter { $0.type == type } } ?? allDevices
-
-            if let match = filteredDevices.first(where: {
-                $0.name.caseInsensitiveCompare(deviceName) == .orderedSame
-            }) {
-                device = match
-                break
-            }
-
-            try? await Task.sleep(nanoseconds: 500_000_000)
-        }
-
-        guard let device else {
-            let allDevices = CastManager.shared.discoveredDevices
-            let filteredDevices = typeFilter.map { type in allDevices.filter { $0.type == type } } ?? allDevices
-            let available = filteredDevices.map { "\($0.name) (\($0.type))" }.joined(separator: ", ")
-            fputs("Error: Cast device '\(deviceName)' not found. Available: \(available)\n", cliStderr)
+        let request = parseCastRequest(castValue)
+        let device: CastDevice
+        do {
+            device = try await resolveCastDevice(castValue: castValue, videoOnly: false)
+        } catch {
+            fputs("Error: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
             return
         }
 
@@ -217,8 +259,7 @@ class CLIPlayer: AudioEngineDelegate {
             fputs("Error: Cast failed: \(error.localizedDescription.redactingSensitiveURLQueryItems)\n", cliStderr)
             if audioEngine.state != .playing {
                 metadataTimer?.invalidate()
-                CLIKeyboard.restoreTerminal()
-                exit(1)
+                Self.exitAndRestoreTerminal(code: 1)
             }
             return
         }
@@ -230,9 +271,9 @@ class CLIPlayer: AudioEngineDelegate {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) } ?? []
         // Dedupe case-insensitively and drop the coordinator itself.
-        var seen = Set([deviceName.lowercased()])
+        var seen = Set([request.deviceName.lowercased()])
         var roomNames: [String] = []
-        for room in inlineRooms + explicitRooms where !room.isEmpty {
+        for room in request.inlineRooms + explicitRooms where !room.isEmpty {
             if seen.insert(room.lowercased()).inserted {
                 roomNames.append(room)
             }
@@ -277,6 +318,12 @@ class CLIPlayer: AudioEngineDelegate {
     }
 
     private var metadataTimer: Timer?
+    private var videoProgressTimer: Timer?
+    private var videoCastActive = false
+    private var videoCastHasStartedPlaying = false
+    private var videoSessionObserver: NSObjectProtocol?
+    private var videoMediaStatusObserver: NSObjectProtocol?
+    private var videoCastIsPaused = false
 
     private func startRadioMetadataPoller() {
         // Poll RadioManager for metadata changes every 5 seconds
@@ -291,7 +338,142 @@ class CLIPlayer: AudioEngineDelegate {
         }
     }
 
+    // MARK: - Video Casting
+
+    @MainActor
+    func castVideo(_ item: CLIVideoItem, castValue: String?) async throws {
+        guard let castValue, !castValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CLIPlayerError.videoRequiresCast
+        }
+
+        if options.castType?.caseInsensitiveCompare("sonos") == .orderedSame {
+            throw CLIPlayerError.sonosVideoUnsupported
+        }
+
+        videoCastActive = true
+        videoCastHasStartedPlaying = false
+        videoCastIsPaused = false
+        installVideoCastObservers()
+
+        do {
+            let device = try await resolveCastDevice(castValue: castValue, videoOnly: true)
+            guard device.supportsVideo, device.type != .sonos else {
+                throw CLIPlayerError.sonosVideoUnsupported
+            }
+
+            display.printVideoInfo(title: item.displayTitle, device: device.name, manualQuitOnly: device.type == .dlnaTV)
+
+            switch item {
+            case .localFile(let url, let title):
+                try await CastManager.shared.castLocalVideo(url, title: title, to: device)
+            case .plexMovie(let movie):
+                try await CastManager.shared.castPlexMovie(movie, to: device)
+            case .plexEpisode(let episode):
+                try await CastManager.shared.castPlexEpisode(episode, to: device)
+            case .jellyfinMovie(let movie):
+                try await CastManager.shared.castJellyfinMovie(movie, to: device)
+            case .jellyfinEpisode(let episode):
+                try await CastManager.shared.castJellyfinEpisode(episode, to: device)
+            case .embyMovie(let movie):
+                try await CastManager.shared.castEmbyMovie(movie, to: device)
+            case .embyEpisode(let episode):
+                try await CastManager.shared.castEmbyEpisode(episode, to: device)
+            }
+        } catch {
+            videoCastActive = false
+            removeVideoCastObservers()
+            throw error
+        }
+
+        startVideoProgressTimer()
+    }
+
+    private func installVideoCastObservers() {
+        removeVideoCastObservers()
+        videoSessionObserver = NotificationCenter.default.addObserver(
+            forName: CastManager.sessionDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            if self.videoCastActive,
+               self.videoCastHasStartedPlaying,
+               CastManager.shared.currentCast == .none {
+                self.exitAndRestoreTerminalAfterVideo(code: 0)
+            }
+        }
+
+        videoMediaStatusObserver = NotificationCenter.default.addObserver(
+            forName: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  self.videoCastActive,
+                  let status = notification.userInfo?["status"] as? CastMediaStatus
+            else { return }
+            if status.playerState == .playing || status.playerState == .buffering {
+                self.videoCastHasStartedPlaying = true
+                self.videoCastIsPaused = false
+            } else if status.playerState == .paused {
+                self.videoCastIsPaused = true
+            }
+        }
+    }
+
+    private func removeVideoCastObservers() {
+        if let videoSessionObserver {
+            NotificationCenter.default.removeObserver(videoSessionObserver)
+            self.videoSessionObserver = nil
+        }
+        if let videoMediaStatusObserver {
+            NotificationCenter.default.removeObserver(videoMediaStatusObserver)
+            self.videoMediaStatusObserver = nil
+        }
+    }
+
+    private func startVideoProgressTimer() {
+        videoProgressTimer?.invalidate()
+        videoProgressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self, self.videoCastActive else { return }
+            self.display.updateVideoProgress(
+                current: CastManager.shared.videoCastCurrentTime,
+                duration: CastManager.shared.videoCastDuration,
+                paused: self.videoCastIsPaused
+            )
+        }
+    }
+
+    private func stopVideoProgressTimer() {
+        videoProgressTimer?.invalidate()
+        videoProgressTimer = nil
+    }
+
+    private func exitAndRestoreTerminalAfterVideo(code: Int32) -> Never {
+        stopVideoProgressTimer()
+        removeVideoCastObservers()
+        videoCastActive = false
+        Self.exitAndRestoreTerminal(code: code)
+    }
+
     func togglePlayPause() {
+        if videoCastActive {
+            Task { @MainActor in
+                do {
+                    if CastManager.shared.isVideoCastPlaying {
+                        try await CastManager.shared.pause()
+                        videoCastIsPaused = true
+                        display.printAboveProgress("[Paused]")
+                    } else {
+                        try await CastManager.shared.resume()
+                        videoCastIsPaused = false
+                    }
+                } catch {
+                    display.printAboveProgress("Cast control failed: \(error.localizedDescription.redactingSensitiveURLQueryItems)")
+                }
+            }
+            return
+        }
         if audioEngine.state == .playing {
             audioEngine.pause()
         } else {
@@ -299,36 +481,70 @@ class CLIPlayer: AudioEngineDelegate {
         }
     }
 
-    func nextTrack() { audioEngine.next() }
-    func previousTrack() { audioEngine.previous() }
+    func nextTrack() {
+        guard !videoCastActive else { return }
+        audioEngine.next()
+    }
+
+    func previousTrack() {
+        guard !videoCastActive else { return }
+        audioEngine.previous()
+    }
 
     func seekForward(_ seconds: TimeInterval = 10) {
+        if videoCastActive {
+            Task { @MainActor in
+                let duration = CastManager.shared.videoCastDuration
+                let target = CastManager.shared.videoCastCurrentTime + seconds
+                do {
+                    try await CastManager.shared.seek(to: duration > 0 ? min(target, duration) : target)
+                } catch {
+                    display.printAboveProgress("Cast seek failed: \(error.localizedDescription.redactingSensitiveURLQueryItems)")
+                }
+            }
+            return
+        }
         let newTime = audioEngine.currentTime + seconds
         audioEngine.seek(to: min(newTime, audioEngine.duration))
     }
 
     func seekBackward(_ seconds: TimeInterval = 10) {
+        if videoCastActive {
+            Task { @MainActor in
+                let target = max(CastManager.shared.videoCastCurrentTime - seconds, 0)
+                do {
+                    try await CastManager.shared.seek(to: target)
+                } catch {
+                    display.printAboveProgress("Cast seek failed: \(error.localizedDescription.redactingSensitiveURLQueryItems)")
+                }
+            }
+            return
+        }
         let newTime = audioEngine.currentTime - seconds
         audioEngine.seek(to: max(newTime, 0))
     }
 
     func volumeUp() {
+        guard !videoCastActive else { return }
         audioEngine.volume = min(audioEngine.volume + 0.05, 1.0)
         display.printVolume(audioEngine.volume)
     }
 
     func volumeDown() {
+        guard !videoCastActive else { return }
         audioEngine.volume = max(audioEngine.volume - 0.05, 0.0)
         display.printVolume(audioEngine.volume)
     }
 
     func toggleShuffle() {
+        guard !videoCastActive else { return }
         audioEngine.shuffleEnabled.toggle()
         display.printStatus(shuffle: audioEngine.shuffleEnabled,
                            repeat: audioEngine.repeatEnabled)
     }
 
     func cycleRepeat() {
+        guard !videoCastActive else { return }
         if !options.repeatAll && !audioEngine.repeatEnabled {
             // Off -> Repeat All (managed by CLIPlayer)
             options.repeatAll = true
@@ -347,6 +563,7 @@ class CLIPlayer: AudioEngineDelegate {
     }
 
     func toggleMute() {
+        guard !videoCastActive else { return }
         if audioEngine.volume > 0 {
             previousVolume = audioEngine.volume
             audioEngine.volume = 0
@@ -358,9 +575,17 @@ class CLIPlayer: AudioEngineDelegate {
 
     func quit() {
         metadataTimer?.invalidate()
+        stopVideoProgressTimer()
+        removeVideoCastObservers()
+        if videoCastActive {
+            Task { @MainActor in
+                await CastManager.shared.stopCasting()
+                Self.exitAndRestoreTerminal(code: 0)
+            }
+            return
+        }
         audioEngine.stop()
-        CLIKeyboard.restoreTerminal()
-        exit(0)
+        Self.exitAndRestoreTerminal(code: 0)
     }
 
     // MARK: - AudioEngineDelegate
@@ -405,8 +630,7 @@ class CLIPlayer: AudioEngineDelegate {
         // Exit when playback finishes naturally and there is nothing left to play
         if state == .stopped && hasStartedPlaying && !options.repeatAll {
             metadataTimer?.invalidate()
-            CLIKeyboard.restoreTerminal()
-            exit(0)
+            Self.exitAndRestoreTerminal(code: 0)
         }
     }
 

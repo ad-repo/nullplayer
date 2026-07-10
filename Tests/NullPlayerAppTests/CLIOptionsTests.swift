@@ -81,6 +81,10 @@ final class CLIOptionsTests: XCTestCase {
             "--search", "soundgarden",
             "--radio", "artist",
             "--station", "Radio Paradise",
+            "--file", "~/Movies/sample.mkv",
+            "--movie", "Blade Runner",
+            "--show", "The Office",
+            "--episode", "Dinner Party",
             "--folder", "genre",
             "--channel", "Jazz",
             "--region", "US",
@@ -102,6 +106,10 @@ final class CLIOptionsTests: XCTestCase {
         XCTAssertEqual(opts.search, "soundgarden")
         XCTAssertEqual(opts.radio, "artist")
         XCTAssertEqual(opts.station, "Radio Paradise")
+        XCTAssertEqual(opts.file, "~/Movies/sample.mkv")
+        XCTAssertEqual(opts.movie, "Blade Runner")
+        XCTAssertEqual(opts.show, "The Office")
+        XCTAssertEqual(opts.episode, "Dinner Party")
         XCTAssertEqual(opts.folder, "genre")
         XCTAssertEqual(opts.channel, "Jazz")
         XCTAssertEqual(opts.region, "US")
@@ -115,9 +123,11 @@ final class CLIOptionsTests: XCTestCase {
     }
 
     func testNumericValueFlags() {
-        let opts = parse("--volume", "75", "--decade", "1990", "--tuning-offset-cents", "-31.766")
+        let opts = parse("--volume", "75", "--decade", "1990", "--season", "4", "--number", "9", "--tuning-offset-cents", "-31.766")
         XCTAssertEqual(opts.volume, 75)
         XCTAssertEqual(opts.decade, 1990)
+        XCTAssertEqual(opts.season, 4)
+        XCTAssertEqual(opts.number, 9)
         XCTAssertEqual(opts.tuningOffsetCents, -31.766)
     }
 
@@ -140,7 +150,9 @@ final class CLIOptionsTests: XCTestCase {
     func testSearchWithPlaybackFlagIsNotQuery() {
         // --search combined with a playback selector means "resolve and play", not "print".
         for playbackFlag in [("--artist", "Rush"), ("--album", "Moving Pictures"),
-                             ("--playlist", "Focus"), ("--radio", "artist"), ("--station", "KEXP")] {
+                             ("--playlist", "Focus"), ("--radio", "artist"), ("--station", "KEXP"),
+                             ("--file", "~/song.flac"), ("--movie", "Blade Runner"),
+                             ("--episode", "Dinner Party")] {
             let opts = parse("--search", "x", playbackFlag.0, playbackFlag.1)
             XCTAssertFalse(opts.isSearchQuery, "--search + \(playbackFlag.0) is playback, not a query")
             XCTAssertFalse(opts.isQueryMode, "--search + \(playbackFlag.0) is playback, not a query")
@@ -161,5 +173,21 @@ final class CLIOptionsTests: XCTestCase {
         XCTAssertTrue(opts.listAlbums)
         XCTAssertEqual(opts.artist, "Soundgarden")
         XCTAssertTrue(opts.isQueryMode)
+    }
+
+    func testVideoFlagsArePlaybackMode() {
+        XCTAssertFalse(parse("--file", "~/Movies/sample.mkv").isQueryMode)
+        XCTAssertFalse(parse("--source", "plex", "--movie", "Blade Runner").isQueryMode)
+        XCTAssertFalse(parse("--source", "jellyfin", "--show", "The Office", "--episode", "Dinner Party").isQueryMode)
+    }
+
+    func testDetectContentTypeForLocalVideoAndAudio() {
+        let video = detectContentType(for: URL(fileURLWithPath: "/tmp/sample.mkv"))
+        XCTAssertEqual(video.mediaType, .video)
+        XCTAssertEqual(video.contentType, "video/x-matroska")
+
+        let audio = detectContentType(for: URL(fileURLWithPath: "/tmp/sample.flac"))
+        XCTAssertEqual(audio.mediaType, .audio)
+        XCTAssertEqual(audio.contentType, "audio/flac")
     }
 }
