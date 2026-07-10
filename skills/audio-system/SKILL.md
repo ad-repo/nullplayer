@@ -236,6 +236,20 @@ Cents offset = `1200 · log2(target / source)` (e.g. 440 → 432 ≈ −31.766 c
 
 Playback Speed clamps via `PitchTuningController.minRate` / `maxRate` (`0.25...4.0`). Local file time display is wall-clock based, so local `currentTime` must multiply elapsed wall time by `playbackSpeed`; streaming time comes from AudioStreaming's own player progress.
 
+### Local time baseline (`_currentTime` + `playbackStartDate`)
+
+For local playback the `currentTime` getter returns `_currentTime + (now − playbackStartDate) · playbackSpeed` while `state == .playing` (`AudioEngine.swift`, `currentTime`). `_currentTime` is a base offset re-established only at discrete events (load → 0, seek, pause, speed change); the 0.1s UI timer (`startTimeUpdates`) only *reads* `currentTime`, it never advances the baseline. The streaming and cast branches of the getter ignore `playbackStartDate` entirely.
+
+**Invariant:** any code that resets `playbackStartDate = Date()` while already playing locally must first fold the elapsed time into the baseline, or `currentTime` collapses back to the stale `_currentTime`:
+
+```swift
+_currentTime = currentTime          // capture true position (old startDate still set)
+lastReportedTime = _currentTime
+playbackStartDate = Date()          // now safe to re-baseline
+```
+
+`setPlaybackSpeed(_:)` follows this idiom. `play()` also folds on a redundant press while playing (issue #348) but gates on `state == .playing` **and the active local node still playing**. The node clause is essential: the pipeline-reload path (`commitLoadedLocalTrack`) zeroes `_currentTime` and stops the node while leaving `state == .playing`, so folding there would read a stale `playbackStartDate` and jump the clock *forward*. The active node is `crossfadePlayerNode` when `crossfadePlayerIsActive` (e.g. after a completed Sweet Fades crossfade) and `playerNode` otherwise — check the right one (`crossfadePlayerIsActive ? crossfadePlayerNode.isPlaying : playerNode.isPlaying`), or a post-crossfade press folds against the wrong (stopped) node and the rewind returns. A genuine continuous-playback press is the only case that folds.
+
 ### Persistence and overrides
 
 UserDefaults keys (mirrors EQ/volume normalization pattern):

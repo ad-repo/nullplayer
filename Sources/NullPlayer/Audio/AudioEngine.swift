@@ -2114,7 +2114,24 @@ class AudioEngine {
                 // Reinstall spectrum tap if it was removed during pause
                 // The tap is removed on pause to save CPU from FFT processing
                 installSpectrumTap(format: nil)
-                
+
+                // #348: A redundant play() press while already playing must not rewind the
+                // clock. playerNode.play() is a no-op here, but resetting playbackStartDate
+                // below would collapse currentTime back to the stale _currentTime baseline.
+                // Fold accumulated elapsed time in first (same idiom as setPlaybackSpeed()).
+                // Gate on the active local node still playing so the pipeline-reload path —
+                // which stops the node and resets _currentTime to 0 — is treated as a fresh
+                // start, not a fold (state can still be .playing there). After a completed
+                // Sweet Fades crossfade the active node is crossfadePlayerNode, so check
+                // whichever node currently owns playback.
+                let activeLocalNodeIsPlaying = crossfadePlayerIsActive
+                    ? crossfadePlayerNode.isPlaying
+                    : playerNode.isPlaying
+                if state == .playing, activeLocalNodeIsPlaying {
+                    _currentTime = currentTime
+                    lastReportedTime = _currentTime
+                }
+
                 playerNode.play()
                 playbackStartDate = Date()  // Start tracking time
                 suspendedLocalPlaybackClockForSleep = false
