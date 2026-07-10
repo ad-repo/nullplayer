@@ -76,14 +76,19 @@ NullPlayer releases use the plain `X.Y.Z` tag format, matching `CFBundleShortVer
 
 ### GitHub Release
 
-The preferred release helper builds the DMG, creates or updates the GitHub release, and uploads both the immutable versioned asset and the stable human-friendly asset:
+The preferred release helper builds the DMG, creates or updates the GitHub release, and uploads both the immutable versioned asset and the stable human-friendly asset. It must be run from a clean, up-to-date `main` checkout so the DMG, release tag, and source archive all describe the same commit.
 
 1. Bump `CFBundleShortVersionString` (and `CFBundleVersion` if needed) in `Sources/NullPlayer/Resources/Info.plist`.
 2. Update `CHANGELOG.md` with a matching `## X.Y.Z` section.
-3. Run:
+3. Commit, merge to `main`, and push.
+4. Pull the final release commit and run the helper from `main`:
    ```bash
+   git switch main
+   git pull --ff-only origin main
    ./scripts/create_release.sh
    ```
+
+The helper fails before building if the checkout is not `main`, has uncommitted changes, is behind/ahead of `origin/main`, or if the release tag already exists on a different commit.
 
 The helper uses `.github/release_template.md`, extracts the matching changelog section, and publishes these assets:
 

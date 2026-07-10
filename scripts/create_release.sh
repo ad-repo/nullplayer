@@ -42,6 +42,7 @@ SKIP_TAP=false
 DRAFT_OR_PRERELEASE=false
 VERSIONED_PUBLISHED=false
 RELEASE_FLAGS=()
+RELEASE_TARGET=""
 
 cleanup() {
     rm -f "$NOTES_FILE" "$CHANGELOG_FILE"
@@ -77,10 +78,59 @@ for arg in "$@"; do
     esac
 done
 
+require_release_source() {
+    local current_branch local_head remote_main remote_tag_sha status_output
+
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        log_error "Release must be run from the NullPlayer git checkout"
+        exit 1
+    fi
+
+    current_branch=$(git branch --show-current)
+    if [[ "$current_branch" != "main" ]]; then
+        log_error "Release must be run from main, not '$current_branch'"
+        log_error "Run: git switch main && git pull --ff-only origin main"
+        exit 1
+    fi
+
+    status_output=$(git status --porcelain)
+    if [[ -n "$status_output" ]]; then
+        log_error "Release checkout has uncommitted changes"
+        log_error "Commit or stash them, then run from a clean main checkout"
+        exit 1
+    fi
+
+    log_info "Checking origin/main"
+    git fetch --quiet origin main:refs/remotes/origin/main
+
+    local_head=$(git rev-parse HEAD)
+    remote_main=$(git rev-parse origin/main)
+    if [[ "$local_head" != "$remote_main" ]]; then
+        log_error "Local main is not up to date with origin/main"
+        log_error "Run: git pull --ff-only origin main"
+        exit 1
+    fi
+
+    remote_tag_sha=$(git ls-remote origin "refs/tags/$TAG^{}" | awk '{print $1}' | head -n 1)
+    if [[ -z "$remote_tag_sha" ]]; then
+        remote_tag_sha=$(git ls-remote origin "refs/tags/$TAG" | awk '{print $1}' | head -n 1)
+    fi
+    if [[ -n "$remote_tag_sha" && "$remote_tag_sha" != "$local_head" ]]; then
+        log_error "Remote tag $TAG already points at $remote_tag_sha, not current main $local_head"
+        log_error "Refusing to publish assets that would not match the release tag"
+        exit 1
+    fi
+
+    RELEASE_TARGET="$local_head"
+    log_info "Release source: main@$RELEASE_TARGET"
+}
+
 if [[ ! -f "$RELEASE_TEMPLATE" ]]; then
     log_error "Missing release template: $RELEASE_TEMPLATE"
     exit 1
 fi
+
+require_release_source
 
 if [[ "$SKIP_BUILD" == true ]]; then
     log_info "Using existing DMG build"
@@ -167,6 +217,7 @@ else
         "$STABLE_DMG#Download for macOS" \
         "$VERSIONED_DMG#Versioned archive / Homebrew" \
         --title "$VERSION" \
+        --target "$RELEASE_TARGET" \
         --notes-file "$NOTES_FILE" \
         "${RELEASE_FLAGS[@]}"
     VERSIONED_PUBLISHED=true
