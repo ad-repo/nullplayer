@@ -383,6 +383,7 @@ class AudioEngine {
     /// Crossfade duration in seconds (default 5s)
     var sweetFadeDuration: TimeInterval = 5.0 {
         didSet {
+            clearCrossfadeDeclineLatch()
             UserDefaults.standard.set(sweetFadeDuration, forKey: "sweetFadeDuration")
             NSLog("AudioEngine: Sweet Fades duration set to %.1fs", sweetFadeDuration)
             notifyPlaybackOptionsChanged()
