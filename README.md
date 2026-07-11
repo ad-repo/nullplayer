@@ -342,6 +342,7 @@ nullplayer --cli --source radio --station "Heart 80s UK"
 # Outputs and casting
 nullplayer --cli --source local --artist "Augustus Pablo" --output "MacBook Pro Speakers"
 nullplayer --cli --source plex --playlist "Recently Added" --cast "Living Room" --cast-type sonos
+nullplayer --cli --source plex --library AD-FLAC --artist "Soundgarden" --album "Louder Than Love" --library AD-FLAC --cast "Dining Room" --cast-type sonos
 
 # Sonos multi-room: the first name is the group coordinator, the rest are grouped onto it
 nullplayer --cli --source plex --playlist "Recently Added" --cast "Living Room,Kitchen,Office" --cast-type sonos
