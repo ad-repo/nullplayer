@@ -60,29 +60,95 @@
 
 ## Installation
 
-    brew install --cask ad-repo/nullplayer/nullplayer
-    brew tap ad-repo/nullplayer        # one-time configuration  
+Download the latest DMG:
 
-    brew install --cask ad-repo/nullplayer/nullplayer  
-    or if already installed manually
-    brew install --cask --force ad-repo/nullplayer/nullplayer 
-    
-    To upgrade to a new release:   
-    brew update   
-    brew upgrade --cask ad-repo/nullplayer/nullplayer   
-    
-    To verify the tap is picking up the latest version:   
-    brew livecheck --cask ad-repo/nullplayer/nullplayer   
-    
-    Notes from the cask:   
-    - App is ad-hoc signed (not notarized). 
-    The cask's postflight runs xattr -cr to strip the quarantine bit so Gatekeeper allows first launch.   
-    - Requires macOS Sonoma or newer.   
-    - brew uninstall --cask --zap nullplayer removes app support/caches/prefs, but Keychain tokens (service com.nullplayer.app) must be removed manually: security 
-    
-    The Homebrew cask strips the quarantine attribute on install because the app is currently ad-hoc signed (Apple Developer ID notarization is on the roadmap). `brew     uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
+https://github.com/ad-repo/nullplayer/releases/latest/download/NullPlayer.dmg
 
-    security delete-generic-password -s com.nullplayer.app
+Requires macOS 14 Sonoma or newer.
+
+NullPlayer is not signed with an Apple Developer ID — that requires a paid Apple developer account, which this project does not have and has no plans to buy. Because of that, **macOS Gatekeeper will block the app on first launch** with an "app is damaged" or "cannot verify that it is free from malware" message. This is expected, not a sign anything is wrong. Clearing the quarantine flag is a required install step — run it every time you install or update via the DMG:
+
+1. Open `NullPlayer.dmg`.
+2. Drag `NullPlayer.app` to Applications.
+3. Clear the quarantine flag so macOS will open the app. Open **Terminal** (`Cmd + Space`, type `Terminal`, press Return) and run:
+
+   ```bash
+   xattr -cr /Applications/NullPlayer.app
+   ```
+4. Open NullPlayer from Applications.
+
+See [docs/download.md](docs/download.md) for the same install steps in a short download-only page.
+
+> **Tip:** Don't want to run a Terminal command every time you update? Install with Homebrew (next section) instead — the cask clears the quarantine flag for you automatically, so the app just opens.
+
+### Install with Homebrew (recommended — no security warnings)
+
+[Homebrew](https://brew.sh/) is a free package manager for macOS. This is the smoothest way to install NullPlayer: Homebrew removes the Gatekeeper quarantine flag automatically, so you never see the "app is damaged" warning, and updates are a single command.
+
+**New to Homebrew? Here's the whole thing, start to finish:**
+
+1. Open **Terminal** — press `Cmd + Space`, type `Terminal`, and press Return.
+2. Install Homebrew by pasting this line and pressing Return. It asks for your Mac login password (the cursor stays still while you type — that's normal) and takes a few minutes:
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+   Already have Homebrew? Skip this step.
+3. Add Homebrew to your shell so the `brew` command is found. The installer finishes by printing a **Next steps** section — run the two commands it lists. On Apple Silicon Macs (M1/M2/M3/M4) they are:
+
+   ```bash
+   echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+   eval "$(/opt/homebrew/bin/brew shellenv)"
+   ```
+
+   On older Intel Macs, replace `/opt/homebrew` with `/usr/local`. If `brew` already worked before you started, skip this step.
+4. Add the NullPlayer tap (one-time configuration):
+
+   ```bash
+   brew tap ad-repo/nullplayer
+   ```
+5. Install NullPlayer:
+
+   ```bash
+   brew install --cask ad-repo/nullplayer/nullplayer
+   ```
+6. Open NullPlayer from your Applications folder or Launchpad — no security prompt.
+
+**Updating to a new release:**
+
+```bash
+brew update
+brew upgrade --cask ad-repo/nullplayer/nullplayer
+```
+
+<details>
+<summary>Homebrew power-user notes</summary>
+
+Verify the tap is serving the latest version:
+
+```bash
+brew livecheck --cask ad-repo/nullplayer/nullplayer
+```
+
+`brew uninstall --cask --zap nullplayer` removes app data under `~/Library/Application Support/NullPlayer` and the app's preferences/caches, but **does not** remove Keychain entries for Plex/Subsonic/Jellyfin/Emby tokens. To clear those:
+
+```bash
+security delete-generic-password -s com.nullplayer.app
+```
+
+</details>
+
+### Opening the DMG build without the Terminal
+
+If you'd rather not run the `xattr` command in step 3 above, you can clear the block through System Settings instead:
+
+1. Drag `NullPlayer.app` to Applications and double-click it once. macOS will refuse to open it — that's expected.
+2. Go to **System Settings -> Privacy & Security**.
+3. Scroll down and click **Open Anyway** next to the NullPlayer message.
+4. Click **Open** in the confirmation dialog.
+
+After this NullPlayer opens normally. (Installing with Homebrew avoids this entirely — the cask clears the flag for you.)
 
 ### Optional command-line launcher
 
@@ -102,24 +168,6 @@ The launcher looks for:
 
 - `/Applications/NullPlayer.app`
 - `~/Applications/NullPlayer.app`
-
-
-### Fixing "App is damaged" or "macOS cannot verify that this app is free from malware" Error
-
-Since the app is in beta testing and not code-signed (it costs $99 a year to sign the app and I am not sure yet I want to pay that yet) macOS Gatekeeper will block it. To fix this:
-
-**Option 1: Terminal (Recommended)**
-```bash
-xattr -cr /Applications/NullPlayer.app
-```
-
-**Option 2: System Settings**
-1. Try to open NullPlayer (it will be blocked)
-2. Go to **System Settings → Privacy & Security**
-3. Scroll down and click **Open Anyway** next to the NullPlayer message
-4. Click **Open** in the confirmation dialog
-
-After either option, NullPlayer will open normally.
 
 ## Requirements
 

@@ -93,6 +93,8 @@ log_info "Creating DMG..."
 
 DMG_NAME="$APP_NAME-$VERSION.dmg"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
+STABLE_DMG_NAME="$APP_NAME.dmg"
+STABLE_DMG_PATH="$DIST_DIR/$STABLE_DMG_NAME"
 STAGING_DIR="$DIST_DIR/dmg_staging"
 
 # Create staging directory
@@ -135,6 +137,11 @@ rm -rf "$STAGING_DIR"
 
 log_success "DMG created at $DMG_PATH"
 
+# Keep an immutable, versioned DMG for checksums/Homebrew and a stable filename
+# for human-facing download links such as GitHub Releases' latest/download URL.
+cp "$DMG_PATH" "$STABLE_DMG_PATH"
+log_success "Stable DMG copy created at $STABLE_DMG_PATH"
+
 # Summary
 echo ""
 echo "======================================"
@@ -142,6 +149,7 @@ log_success "Build complete!"
 echo ""
 echo "  App Bundle: $APP_BUNDLE"
 echo "  DMG File:   $DMG_PATH"
+echo "  Stable DMG: $STABLE_DMG_PATH"
 echo "  Size:       $(du -h "$DMG_PATH" | cut -f1)"
 echo "  SHA256:     $(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
 echo "======================================"
