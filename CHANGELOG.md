@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.1
+
+### Bug Fixes
+
+- **Command-line tool installer no longer blocked by Gatekeeper** — installing the optional `nullplayer` command-line launcher from the DMG previously failed with a Gatekeeper "unidentified developer" error (`-128`), because the bundled installer scripts inherit macOS's download quarantine flag and a quarantined script cannot be launched directly. The `Install NullPlayer CLI.command` helper now runs its inner installer through `bash` (which reads the script as data rather than executing the quarantined file), and clears the quarantine flag on the installed `/usr/local/bin/nullplayer` launcher so the `nullplayer` command runs afterward.
+
 ## 0.28.0
 
 ### New Features
