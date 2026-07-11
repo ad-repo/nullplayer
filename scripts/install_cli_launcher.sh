@@ -40,13 +40,19 @@ target_dir="/usr/local/bin"
 mkdir_cmd=(mkdir -p "$target_dir")
 install_cmd=(install -m 755 "$LAUNCHER_SOURCE" "$target_dir/nullplayer")
 
+# Clear the quarantine flag on the installed launcher. When installing off a
+# downloaded DMG the source `nullplayer` file is quarantined, and `install`
+# carries that xattr to the destination, which would make Gatekeeper block the
+# `nullplayer` command when it is later run.
 if [[ -w "$target_dir" ]] || { [[ ! -e "$target_dir" ]] && [[ -w "/usr/local" ]]; }; then
     "${mkdir_cmd[@]}"
     "${install_cmd[@]}"
+    xattr -c "$target_dir/nullplayer" 2>/dev/null || true
 else
     echo "Installing to $target_dir requires administrator privileges."
     sudo "${mkdir_cmd[@]}"
     sudo "${install_cmd[@]}"
+    sudo xattr -c "$target_dir/nullplayer" 2>/dev/null || true
 fi
 
 echo "Installed nullplayer to $target_dir/nullplayer"
