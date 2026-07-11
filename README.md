@@ -160,9 +160,11 @@ If you want to use NullPlayer as a scriptable command in terminal workflows or a
 Install flow:
 
 ```bash
-open "/Volumes/NullPlayer/Install NullPlayer CLI.command"
+bash "/Volumes/NullPlayer/Install NullPlayer CLI.command"
 nullplayer --cli --help
 ```
+
+> **Why `bash` and not double-click?** Like the app, the `.command` file inherits macOS's quarantine flag when the DMG is downloaded, so double-clicking it (or `open`-ing it) is blocked by Gatekeeper with a `-128` / "unidentified developer" error. Running it through `bash` invokes the script directly and bypasses the Gatekeeper check. If you'd rather double-click, right-click the file → **Open** → **Open** in the dialog, or copy it out of the DMG first and clear the flag with `xattr -c "Install NullPlayer CLI.command"`.
 
 The launcher looks for:
 
