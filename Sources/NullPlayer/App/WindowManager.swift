@@ -839,15 +839,11 @@ class WindowManager {
         let newHeight = window.frame.size.height
         let newWidth = window.frame.size.width
         
-        // Collect all visible stack windows except the one being positioned
+        // Detached windows moved aside should not affect where new stack windows open.
         var visibleWindows: [NSWindow] = [mainWindow]
-        if let w = equalizerWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
-        if let w = playlistWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
-        if let w = spectrumWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
-        if let w = audioAnalysisWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
-        if let w = peppyMeterWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
-        if let w = networkMonitorWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
-        if let w = waveformWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
+        for win in dockedCenterStackWindowsBelowMain(mainFrame: mainFrame) where win !== window {
+            visibleWindows.append(win)
+        }
         
         // Sort top-to-bottom (highest minY first, since macOS Y increases upward)
         visibleWindows.sort { $0.frame.minY > $1.frame.minY }
