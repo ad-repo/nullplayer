@@ -214,12 +214,33 @@ For new center-stack windows, follow the waveform/spectrum pattern:
 
 ### Window Dragging (MUST)
 
-Every center-stack window's `mouseDown` must end with a content-area fallthrough that starts a window
-drag for any click that did not hit an interactive control such as the close button, sliders, playlist
-rows, or a seek/scrub area. Use `SpectrumView.mouseDown` as the canonical implementation: close button
-returns, title bar starts a title-bar drag and returns, then the remaining face starts a window drag.
-Classic views should pass `fromTitleBar: WindowManager.shared.hideTitleBars` for the fallthrough drag;
-modern views should pass `fromTitleBar: WindowManager.shared.effectiveHideTitleBars(for: window)`.
+A center-stack window's `mouseDown` must end with a content-area fallthrough that starts a window
+drag for any click that did not hit an interactive region — the close button, sliders, playlist rows,
+a seek/scrub area, or a body that is itself a click target. Windows whose body is a control are the
+exceptions and do **not** whole-face drag: Waveform's body is a scrub area, and ProjectM drags only
+from its top-quarter zone because the lower body opens the preset-ratings overlay. For every other
+"plain display" window (Spectrum, Flow, Audio Analysis, PeppyMeter) the whole face drags.
+
+Use `SpectrumView.mouseDown` as the canonical implementation. Order the checks:
+
+1. Close button → set pressed state, `return`.
+2. Any `clickCount == 2` action (e.g. Flow's direction toggle, Spectrum's quality cycle) → `return`.
+   This must come before the fallthrough or it becomes dead code.
+3. Title bar → start a title-bar drag, `return`.
+4. Fallthrough → start a window drag for the remaining face.
+
+Dragging is not just `mouseDown`. A draggable window also needs, mirroring `SpectrumView`:
+
+- `override func acceptsFirstMouse(...) -> Bool { true }`
+- `isDraggingWindow` / `windowDragStartPoint` state set in `mouseDown`
+- `mouseDragged` that moves the window origin through `WindowManager.shared.windowWillMove(_:to:)`
+- `mouseUp` that calls `WindowManager.shared.windowDidFinishDragging(_:)` and clears `isDraggingWindow`
+
+Pass `WindowManager.shared.windowWillStartDragging(window, fromTitleBar:)` to begin the drag. The
+`fromTitleBar` argument is currently inert (the drag logic ignores it); pass whatever documents the
+click origin — title-bar branches pass `true`, and the fallthrough conventionally passes the window's
+Hide-Title-Bars state (`hideTitleBars` classic / `effectiveHideTitleBars(for:)` modern). Do not agonize
+over the value; it does not change behavior today.
 
 ## Library Window Position Memory
 

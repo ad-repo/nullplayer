@@ -571,10 +571,7 @@ class WindowManager {
 
     /// Local monitor used to guarantee drag teardown even when a view misses mouseUp.
     private var dragMouseUpMonitor: Any?
-    
-    /// Track if current drag is from title bar (retained for context; does not gate separation logic)
-    private var isTitleBarDrag = false
-    
+
     /// Track the last drag delta for grouped movement
     private var lastDragDelta: NSPoint = .zero
     
@@ -4073,11 +4070,11 @@ class WindowManager {
     /// Called when a window drag begins
     /// - Parameters:
     ///   - window: The window being dragged
-    ///   - fromTitleBar: Whether the drag originated from the title bar (recorded for reference)
+    ///   - fromTitleBar: Whether the drag originated from the title bar. Currently unused by the drag
+    ///     logic; retained so call sites can document drag origin and for future title-bar-specific behavior.
     func windowWillStartDragging(_ window: NSWindow, fromTitleBar: Bool = false) {
         let usingPrimedHold = (primedDragWindow === window && holdStartTime != nil)
         draggingWindow = window
-        isTitleBarDrag = fromTitleBar
         installDragMouseUpMonitorIfNeeded()
         if !usingPrimedHold {
             holdStartTime = CACurrentMediaTime()
