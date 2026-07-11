@@ -80,10 +80,13 @@ chrome:
 - `PeppyMeterPresenter.onNeedsDisplay` must call the view's `requestMeterRedraw()` method, not
   `needsDisplay = true`, for normal VU ticks. This invalidates only the meter content rect, so the
   static window border is not repainted at 60 Hz.
-- Both views clip `PeppyMeterDrawing.draw(...)` to an inset content rect. Keep this clip in place; some
+- Both views clip `PeppyMeterDrawing.draw(...)` to the chrome content rect. Keep this clip in place; some
   templates have artwork near their own edges and must never paint over the app window border.
-  Modern skins keep a small content padding; Metal skins use zero extra padding and expand through
-  joined edges so PeppyMeter matches the standard thin dockable-window border.
+  Modern skins do not add an extra PeppyMeter-specific gutter beyond the shared auxiliary chrome inset.
+  Metal skins also expand through joined edges so PeppyMeter matches the standard thin dockable-window border.
+- Do not add a PeppyMeter-specific outer padding around the modern meter content. That recreates the
+  old heavy-border look. If a template needs spacing, handle it inside the meter compositor or template
+  layout, not by shrinking the whole window content rect.
 - Classic PeppyMeter draws the skin chrome after the meter content by using
   `SkinRenderer.drawSpectrumAnalyzerWindowChromeOverlay(...)`. The normal spectrum chrome method fills
   the whole window and is not suitable as a border-only overlay.

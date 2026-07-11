@@ -55,8 +55,9 @@ Flow is a dockable network throughput meter available in classic and modern UI.
 - `NetworkMonitorRenderState` smooths displayed download/upload values toward the latest snapshot.
 - `NetworkMonitorDrawing.drawContent` advances both directions every frame, but draws only the selected direction.
 - Flow intentionally does not draw an inner rounded panel border. The outer window chrome is the only border.
+- Do not shrink the modern Flow content rect with an additional outer padding/gutter. That creates the old heavy-border appearance. Keep the content rect at the shared chrome inset and put any spacing inside `NetworkMonitorDrawing` instead.
 - Classic Flow uses tighter content insets than modern so the meter fills the classic skin interior.
-- Modern Flow keeps extra breathing room, but Metal Flow removes that outer content padding and expands through joined edges so its interior edge matches the thinner Metal border used by the other dockable windows.
+- Modern Flow uses the standard auxiliary chrome inset without an extra window-specific gutter. Metal Flow also expands through joined edges so its interior edge matches the thinner Metal border used by the other dockable windows.
 - Tiny mode renders a compact single-line rate for the selected direction.
 
 ## Monitoring Lifecycle
