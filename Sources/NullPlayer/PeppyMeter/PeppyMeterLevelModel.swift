@@ -42,14 +42,20 @@ final class PeppyMeterLevelModel {
         guard !running else { return }
         running = true
         WindowManager.shared.audioEngine.addStereoConsumer(consumerId)
+        // Receive on the posting thread (`queue: nil`) and hop to main ourselves. Registering
+        // with `queue: .main` makes NotificationCenter deliver synchronously (addOperation +
+        // waitUntilFinished), which blocks the real-time audio tap thread on the main queue and
+        // deadlocks against tap teardown (removeTap during rapid track loads).
         observer = NotificationCenter.default.addObserver(
-            forName: .audioStereoPCMDataUpdated, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self else { return }
+            forName: .audioStereoPCMDataUpdated, object: nil, queue: nil
+        ) { note in
             let left = note.userInfo?["left"] as? [Float] ?? []
             let right = note.userInfo?["right"] as? [Float] ?? []
-            self.targetLeft = PeppyMeterLevels.volume(fromDBFS: Double(AudioAnalysisDSP.rmsDBFS(left)), floor: self.floorDB)
-            self.targetRight = PeppyMeterLevels.volume(fromDBFS: Double(AudioAnalysisDSP.rmsDBFS(right)), floor: self.floorDB)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.targetLeft = PeppyMeterLevels.volume(fromDBFS: Double(AudioAnalysisDSP.rmsDBFS(left)), floor: self.floorDB)
+                self.targetRight = PeppyMeterLevels.volume(fromDBFS: Double(AudioAnalysisDSP.rmsDBFS(right)), floor: self.floorDB)
+            }
         }
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)
