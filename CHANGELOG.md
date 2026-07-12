@@ -6,6 +6,7 @@
 
 - **Classic 16-color skins and themed EQ art render correctly** — packed 1-bit/4-bit BMP rows now use the BMP bit stride instead of treating every pixel as a byte, fixing scrambled transport buttons, numbers, and playlist art in skins such as `ascii.wsz`. The classic EQ also draws its slider tracks and graph curve from each skin's `eqmain.bmp`, so non-default skins such as `Purple_Glow.wsz` no longer fall back to hardcoded green/yellow/red art.
 - **Docked PeppyMeter and Flow windows no longer show a thin seam under the main window** — dragging the PeppyMeter or Flow window to dock it below the main window could leave a roughly 1-pixel line where the desktop showed through the join, most visible on standard-resolution (non-Retina) displays. Classic skins left a sub-pixel gap between the two window frames, and modern translucent skins exposed a strip of window background at the shared edge. Both now dock flush with no gap, matching the seamless docking that Metal skins already had.
+- **App no longer freezes when Play is pressed rapidly with a VU or Audio Analysis window open** — quickly re-triggering track loads while the PeppyMeter/VU meter or the Audio Analysis Scope/Octave panes were open could deadlock the app. Those windows subscribed to realtime audio-tap notifications with main-thread delivery, which blocked the audio tap thread while the main thread was tearing the tap down during a track load. The affected windows now receive tap updates without blocking the audio thread.
 
 ## 0.28.1
 
