@@ -160,6 +160,11 @@ class ContextMenuBuilder {
         rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
         menu.addItem(rememberState)
 
+        let resetSavedState = NSMenuItem(title: "Reset Saved State...", action: #selector(MenuActions.resetSavedState), keyEquivalent: "")
+        resetSavedState.target = MenuActions.shared
+        resetSavedState.isEnabled = AppStateManager.shared.hasSavedState
+        menu.addItem(resetSavedState)
+
         menu.autoenablesItems = false
         return menu
     }
@@ -202,6 +207,11 @@ class ContextMenuBuilder {
         rememberState.target = MenuActions.shared
         rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
         menu.addItem(rememberState)
+
+        let resetSavedState = NSMenuItem(title: "Reset Saved State...", action: #selector(MenuActions.resetSavedState), keyEquivalent: "")
+        resetSavedState.target = MenuActions.shared
+        resetSavedState.isEnabled = AppStateManager.shared.hasSavedState
+        menu.addItem(resetSavedState)
 
         menu.autoenablesItems = false
         return menu
@@ -420,6 +430,10 @@ class ContextMenuBuilder {
         let menu = NSMenu()
         menu.addItem(buildVisualizationsMenuItem())
         menu.addItem(buildSpectrumAnalyzerMenuItem())
+        menu.addItem(NSMenuItem.separator())
+        let resetAll = NSMenuItem(title: "Reset All Visualization Preferences...", action: #selector(MenuActions.resetAllVisualizationPreferences), keyEquivalent: "")
+        resetAll.target = MenuActions.shared
+        menu.addItem(resetAll)
         menu.autoenablesItems = false
         return menu
     }
@@ -753,6 +767,10 @@ class ContextMenuBuilder {
             visMenu.addItem(buildVisualizationEngineMenuItem())
             visMenu.addItem(NSMenuItem.separator())
         }
+
+        let resetItem = NSMenuItem(title: "Reset Visualizations Window", action: #selector(MenuActions.resetVisualizationWindowPreferences), keyEquivalent: "")
+        resetItem.target = MenuActions.shared
+        visMenu.addItem(resetItem)
 
         return visMenu
     }
@@ -1207,7 +1225,13 @@ class ContextMenuBuilder {
         modeItem.submenu = modeMenu
         visMenu.addItem(modeItem)
 
-        guard currentMode != .none else { return visMenu }
+        if currentMode == .none {
+            visMenu.addItem(NSMenuItem.separator())
+            let resetItem = NSMenuItem(title: "Reset Main Window Visualization", action: #selector(MenuActions.resetMainWindowVisualizationPreferences), keyEquivalent: "")
+            resetItem.target = MenuActions.shared
+            visMenu.addItem(resetItem)
+            return visMenu
+        }
         
         // Responsiveness submenu
         let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
@@ -1424,6 +1448,11 @@ class ContextMenuBuilder {
             exportItem.target = MenuActions.shared
             visMenu.addItem(exportItem)
         }
+
+        visMenu.addItem(NSMenuItem.separator())
+        let resetItem = NSMenuItem(title: "Reset Main Window Visualization", action: #selector(MenuActions.resetMainWindowVisualizationPreferences), keyEquivalent: "")
+        resetItem.target = MenuActions.shared
+        visMenu.addItem(resetItem)
         
         return visMenu
     }
@@ -1696,6 +1725,11 @@ class ContextMenuBuilder {
             exportItem.target = MenuActions.shared
             spectrumWindowMenu.addItem(exportItem)
         }
+
+        spectrumWindowMenu.addItem(NSMenuItem.separator())
+        let resetItem = NSMenuItem(title: "Reset Spectrum Window Visualization", action: #selector(MenuActions.resetSpectrumWindowVisualizationPreferences), keyEquivalent: "")
+        resetItem.target = MenuActions.shared
+        spectrumWindowMenu.addItem(resetItem)
         
         spectrumWindowItem.submenu = spectrumWindowMenu
         spectrumMenu.addItem(spectrumWindowItem)
@@ -4731,6 +4765,40 @@ class MenuActions: NSObject {
         if AppStateManager.shared.isEnabled {
             AppStateManager.shared.saveState()
         }
+    }
+
+    @objc func resetSavedState() {
+        let alert = NSAlert()
+        alert.messageText = "Reset Saved State?"
+        alert.informativeText = "This clears only the Remember State on Quit snapshot used to restore windows and playlist contents on launch. Preferences such as skins, visualization settings, library columns, server accounts, and compact mode are not changed."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        AppStateManager.shared.clearSavedState()
+    }
+
+    @objc func resetMainWindowVisualizationPreferences() {
+        VisualizationPreferences.reset(.mainWindow)
+    }
+
+    @objc func resetSpectrumWindowVisualizationPreferences() {
+        VisualizationPreferences.reset(.spectrumWindow)
+    }
+
+    @objc func resetVisualizationWindowPreferences() {
+        VisualizationPreferences.reset(.visualizationWindow)
+    }
+
+    @objc func resetAllVisualizationPreferences() {
+        let alert = NSAlert()
+        alert.messageText = "Reset All Visualization Preferences?"
+        alert.informativeText = "This resets analyzer modes, visualization engine settings, vis_classic options, ProjectM/Tripex/Geiss/Met settings, and browser artwork visualizer preferences. Custom ProjectM folders and saved app state are not changed."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        VisualizationPreferences.reset(.all)
     }
     
     @objc func toggleAlwaysOnTop() {

@@ -68,32 +68,10 @@ class ModernSkinEngine {
     /// dedicated spectrum windows), reload the skin re-applying its shipped defaults,
     /// then push the live windows back to the default analyzer immediately.
     func resetCurrentSkinToDefault() {
-        let defaults = UserDefaults.standard
+        VisualizationPreferences.reset(.mainWindow, applySkinDefaults: false, postNotifications: false)
+        VisualizationPreferences.reset(.spectrumWindow, applySkinDefaults: false, postNotifications: false)
 
-        // 1. Clear persisted visualization overrides so skin/app defaults take effect.
-        var keys: [String] = [
-            "mainWindowVisMode", "modernMainWindowVisMode", "spectrumQualityMode",
-            "spectrumNormalizationMode", "mainWindowNormalizationMode",
-            // Fire
-            "mainWindowFlameStyle", "mainWindowFlameIntensity", "flameStyle", "flameIntensity",
-            // Lightning
-            "mainWindowLightningStyle", "lightningStyle",
-            // Matrix
-            "mainWindowMatrixColorScheme", "mainWindowMatrixIntensity", "matrixColorScheme", "matrixIntensity",
-            // EKG / decay
-            "mainWindowEKGStyle", "ekgStyle", "mainWindowDecayMode", "decayMode",
-            // Legacy vis_classic (pre-scoped keys)
-            "visClassicLastProfileName", "visClassicFitToWidth",
-        ]
-        for scope in [VisClassicBridge.PreferenceScope.mainWindow, .spectrumWindow] {
-            keys.append(scope.lastProfileNameKey)
-            keys.append(scope.fitToWidthKey)
-            keys.append(scope.transparentBgKey)
-            keys.append(scope.opacityKey)
-        }
-        for key in keys { defaults.removeObject(forKey: key) }
-
-        // 2. Reload the active skin, re-applying its shipped visualization defaults.
+        // Reload the active skin, re-applying its shipped visualization defaults.
         let family = currentFamily
         if let name = currentSkinName {
             _ = loadSkin(named: name, family: family, preservePersistedProfiles: false)
@@ -101,14 +79,15 @@ class ModernSkinEngine {
             loadDefaultSkin(for: family, preservePersistedProfiles: false)
         }
 
-        // 3. If the skin didn't re-seed a main-window analyzer mode, fall back to the
-        //    app default (Spectrum) so the live window leaves any black vis_classic box.
+        // If the skin didn't re-seed a main-window analyzer mode, fall back to the
+        // app default (Spectrum) so the live window leaves any black vis_classic box.
+        let defaults = UserDefaults.standard
         if defaults.string(forKey: "mainWindowVisMode") == nil {
             defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: "mainWindowVisMode")
             defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: "modernMainWindowVisMode")
         }
 
-        // 4. Push the live windows to re-read the (reset) analyzer mode/settings now.
+        // Push the live windows to re-read the (reset) analyzer mode/settings now.
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }

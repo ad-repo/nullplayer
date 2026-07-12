@@ -32,6 +32,12 @@ import NullPlayerCore
 /// frames are NOT restored (they have incompatible sizes). Audio, playlist, and non-frame
 /// settings are still restored normally.
 ///
+/// ## State Policy
+/// `AppState` is the quit-session snapshot: window visibility/layout, playlist contents,
+/// and audio/EQ state that should be restored only when Remember State is enabled.
+/// Durable preferences that should survive independently of Remember State remain in
+/// `UserDefaults` and should expose their own reset path when needed.
+///
 /// ## Independent UserDefaults (persist regardless of Remember State)
 /// Visualization modes, browser columns, radio stations, hide title bars, server credentials,
 /// and other preferences are saved to UserDefaults on every change and are NOT part of AppState.
@@ -503,6 +509,10 @@ class AppStateManager {
             NSLog("AppStateManager: Remember State %@", newValue ? "enabled" : "disabled")
         }
     }
+
+    var hasSavedState: Bool {
+        UserDefaults.standard.data(forKey: Keys.savedAppState) != nil
+    }
     
     // MARK: - Initialization
     
@@ -559,7 +569,7 @@ class AppStateManager {
             audioAnalysisWindowFrame: wm.audioAnalysisWindowFrame.map { NSStringFromRect($0) },
             peppyMeterWindowFrame: wm.peppyMeterWindowFrame.map { NSStringFromRect($0) },
             networkMonitorWindowFrame: wm.networkMonitorWindowFrame.map { NSStringFromRect($0) },
-            waveformWindowFrame: nil,
+            waveformWindowFrame: wm.waveformWindowFrame.map { NSStringFromRect($0) },
             isProjectMFullscreen: wm.isProjectMFullscreen,
             
             // Audio settings
