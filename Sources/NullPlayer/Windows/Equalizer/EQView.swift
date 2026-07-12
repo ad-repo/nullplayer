@@ -5,10 +5,6 @@ import AppKit
 // =============================================================================
 // For skin format documentation, see: skills/ui-guide/SKILL.md
 //
-// Color scale for sliders and graph curve:
-// - RED at top (+12dB boost)
-// - YELLOW at middle (0dB)
-// - GREEN at bottom (-12dB cut)
 // =============================================================================
 
 /// Equalizer view - 10-band graphic equalizer with skin support
@@ -63,9 +59,6 @@ class EQView: NSView {
         static let bandWidth: CGFloat = 14
         static let bandHeight: CGFloat = 63
         static let bandY: CGFloat = 38
-        
-        // Graph display
-        static let graphRect = NSRect(x: 86, y: 17, width: 113, height: 19)
         
         // Frequency labels
         static let frequencies = ["60", "170", "310", "600", "1K", "3K", "6K", "12K", "14K", "16K"]
@@ -404,97 +397,8 @@ class EQView: NSView {
             renderer.drawEQSlider(bandIndex: i, value: CGFloat(bands[i]), isPreamp: false, in: context)
         }
         
-        // Draw EQ curve graph
-        drawEQGraph(context: context)
-    }
-    
-    private func drawEQGraph(context: CGContext) {
-        let rect = Layout.graphRect
-        
-        // Background
-        NSColor.black.setFill()
-        context.fill(rect)
-        
-        // Grid lines
-        NSColor(calibratedWhite: 0.2, alpha: 1.0).setStroke()
-        context.setLineWidth(0.5)
-        
-        // Horizontal center line (0 dB)
-        context.move(to: CGPoint(x: rect.minX, y: rect.midY))
-        context.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
-        context.strokePath()
-        
-        // Draw EQ curve with colors matching band values
-        if isEnabled {
-            context.setLineWidth(1.0)
-            
-            // Calculate all points first
-            var points: [(x: CGFloat, y: CGFloat, value: Float)] = []
-            for i in 0..<10 {
-                let x = rect.minX + (rect.width / 9) * CGFloat(i)
-                let normalizedValue = (bands[i] + 12) / 24  // 0 = -12dB, 1 = +12dB
-                let y = rect.minY + rect.height * (1.0 - CGFloat(normalizedValue))
-                points.append((x: x, y: y, value: bands[i]))
-            }
-            
-            // Draw line segments with colors based on the average value of each segment
-            for i in 0..<(points.count - 1) {
-                let startPoint = points[i]
-                let endPoint = points[i + 1]
-                
-                // Use average value of the two endpoints for segment color
-                let avgValue = (startPoint.value + endPoint.value) / 2
-                let color = eqValueToColor(avgValue)
-                
-                color.setStroke()
-                context.move(to: CGPoint(x: startPoint.x, y: startPoint.y))
-                context.addLine(to: CGPoint(x: endPoint.x, y: endPoint.y))
-                context.strokePath()
-            }
-        }
-        
-        // Border
-        NSColor.gray.setStroke()
-        context.stroke(rect)
-    }
-    
-    /// Convert EQ band value (-12 to +12) to color using the same scale as slider bars
-    /// +12dB (top) = RED, 0dB (middle) = YELLOW, -12dB (bottom) = GREEN
-    private func eqValueToColor(_ value: Float) -> NSColor {
-        // Normalize to 0-1 range (0 = -12dB, 1 = +12dB)
-        let normalized = CGFloat((value + 12) / 24)
-        
-        // Color stops: green (bottom/-12dB) → yellow (middle/0dB) → red (top/+12dB)
-        let colorStops: [(position: CGFloat, r: CGFloat, g: CGFloat, b: CGFloat)] = [
-            (0.0, 0.0, 0.85, 0.0),    // Green at -12dB
-            (0.33, 0.5, 0.85, 0.0),   // Yellow-green
-            (0.5, 0.85, 0.85, 0.0),   // Yellow at 0dB
-            (0.66, 0.85, 0.5, 0.0),   // Orange
-            (1.0, 0.85, 0.15, 0.0),   // Red at +12dB
-        ]
-        
-        // Find the two stops we're between
-        var lowerStop = colorStops[0]
-        var upperStop = colorStops[colorStops.count - 1]
-        
-        for i in 0..<colorStops.count - 1 {
-            if normalized >= colorStops[i].position && normalized <= colorStops[i + 1].position {
-                lowerStop = colorStops[i]
-                upperStop = colorStops[i + 1]
-                break
-            }
-        }
-        
-        // Interpolate
-        let range = upperStop.position - lowerStop.position
-        let factor = range > 0 ? (normalized - lowerStop.position) / range : 0
-        
-        return NSColor(
-            calibratedRed: lowerStop.r + (upperStop.r - lowerStop.r) * factor,
-            green: lowerStop.g + (upperStop.g - lowerStop.g) * factor,
-            blue: lowerStop.b + (upperStop.b - lowerStop.b) * factor,
-            alpha: 1.0
-        )
+        // Draw EQ curve graph over the skin-provided graph well.
+        renderer.drawEQGraph(bands: bands, isEnabled: isEnabled, in: context)
     }
     
     // MARK: - Public Methods

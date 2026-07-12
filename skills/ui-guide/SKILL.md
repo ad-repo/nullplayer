@@ -145,6 +145,19 @@ private func convertToWinampCoordinates(_ point: NSPoint) -> NSPoint {
 | PLEDIT.BMP | Playlist sprites |
 | PLEDIT.TXT | Playlist colors |
 
+### BMP Parsing
+
+Classic skin BMPs may be 1-bit, 4-bit, 8-bit, 24-bit, or 32-bit. Row stride must be computed in
+bits and then aligned to 4 bytes:
+
+```swift
+let rowSize = ((width * bitsPerPixel + 31) / 32) * 4
+```
+
+Do not approximate packed formats as `max(1, bitsPerPixel / 8)` bytes per pixel. That treats 4-bit
+skins as one byte per pixel and misaligns every row after the first, which scrambles 16-color skin
+sprites such as `CBUTTONS.BMP`, `NUMBERS.BMP`, and `PLEDIT.BMP`.
+
 ## Sprite Drawing
 
 Sprites are defined in `SkinElements.swift` and drawn via `SkinRenderer`:
@@ -284,15 +297,30 @@ let sourceRect = isActive ?
     NSRect(x: 0, y: 0, width: 27, height: 12)
 ```
 
-## EQ Slider Colors
+## Classic EQ Skin Art
 
-Sliders use programmatic color based on knob position (not sprites):
+The classic EQ should use `EQMAIN.BMP` for themed slider and graph art, not hardcoded color bars.
 
-| Position | dB | Color |
-|----------|-----|-------|
-| Top | +12 | Red |
-| Middle | 0 | Yellow |
-| Bottom | -12 | Green |
+Slider tracks use the 28-state spline sprites in `EQMAIN.BMP`:
+
+| States | Source region |
+|--------|---------------|
+| 0-13 | `x = 13 + state * 15`, `y = 164`, `15x63` |
+| 14-27 | `x = 13 + (state - 14) * 15`, `y = 229`, `15x63` |
+
+Map EQ values with `state = round(normalizedValue * 27)`, where `normalizedValue = (value + 12) / 24`.
+State 0 is lowest/cut (green in the default skin), and state 27 is highest/boost (red in the default
+skin). Draw the track sprite first, then draw the 11x11 thumb (`x=0, y=164`) on top.
+Before drawing a skin-art track, validate that the full source rect is present in `EQMAIN.BMP`.
+Some placeholder or partial skins omit the extended 315px EQ art region; those must fall back to the
+programmatic slider track/knob instead of stretching a partial crop or silently drawing nothing.
+
+The graph well is already part of the `EQMAIN.BMP` background (`0,0,275,116`). Do not paint a
+separate black background, grid, or border over it. The classic graph curve samples its color ramp
+from the 1x19 vertical gradient at `EQMAIN.BMP` coordinate `(115,294)`, with top = +12 dB and
+bottom = -12 dB. This keeps non-default skins (for example purple or monochrome EQ themes) visually
+consistent with their source artwork. If that gradient is absent, keep the built-in fallback color
+ramp.
 
 ## Playlist Text Rendering
 

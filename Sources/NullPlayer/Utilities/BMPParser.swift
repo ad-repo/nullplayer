@@ -46,10 +46,9 @@ class BMPParser {
             return nil
         }
         
-        // Calculate row padding (rows are aligned to 4 bytes)
-        let bytesPerPixel = bitsPerPixel / 8
-        let rowSizeUnpadded = width * max(1, bytesPerPixel)
-        let rowSize = (rowSizeUnpadded + 3) & ~3
+        // Row size in bytes, aligned to 4 bytes. Compute in bits so sub-byte
+        // depths (1-bit, 4-bit) stay packed instead of becoming 1 byte/pixel.
+        let rowSize = ((width * bitsPerPixel + 31) / 32) * 4
         
         // Create pixel buffer
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
