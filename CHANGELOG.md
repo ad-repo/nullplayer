@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+### Improvements
+
+- **Saved state and visualization preferences now have explicit reset controls** — the app menu exposes **Reset Saved State...** next to Remember State so users can clear only the launch-restore snapshot without touching durable preferences. Visualization menus now include reset actions for the main-window analyzer, Spectrum window, standalone Visualizations window, and all visualization preferences, restoring skin/app defaults while preserving unrelated preferences such as custom ProjectM folders, library columns, accounts, and compact mode.
+
 ### Bug Fixes
 
+- **Modern skin visualization choices persist across app relaunches** — modern/metal skin visualization defaults now act as first-use defaults on launch instead of overwriting user-selected modes and options. Main-window Fire/Lightning/Matrix choices, Fire intensity, Spectrum-window mode/style settings, and scoped `vis_classic` options still reset when explicitly changing skins or using skin reset, but no longer revert just because the app reopened.
+- **Waveform window frame now saves with Remember State** — the Waveform window's frame was included in the AppState schema but was serialized as `nil`, so it could not restore to the prior position. It now saves through `WindowManager.waveformWindowFrame` like the other remembered utility windows.
 - **Classic 16-color skins and themed EQ art render correctly** — packed 1-bit/4-bit BMP rows now use the BMP bit stride instead of treating every pixel as a byte, fixing scrambled transport buttons, numbers, and playlist art in skins such as `ascii.wsz`. The classic EQ also draws its slider tracks and graph curve from each skin's `eqmain.bmp`, so non-default skins such as `Purple_Glow.wsz` no longer fall back to hardcoded green/yellow/red art.
 - **Docked PeppyMeter and Flow windows no longer show a thin seam under the main window** — dragging the PeppyMeter or Flow window to dock it below the main window could leave a roughly 1-pixel line where the desktop showed through the join, most visible on standard-resolution (non-Retina) displays. Classic skins left a sub-pixel gap between the two window frames, and modern translucent skins exposed a strip of window background at the shared edge. Both now dock flush with no gap, matching the seamless docking that Metal skins already had.
 

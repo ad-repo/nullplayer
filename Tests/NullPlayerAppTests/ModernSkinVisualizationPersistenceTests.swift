@@ -36,9 +36,9 @@ final class ModernSkinVisualizationPersistenceTests: XCTestCase {
         let key = VisClassicBridge.PreferenceScope.spectrumWindow.lastProfileNameKey
 
         XCTAssertTrue(
-            ModernSkinEngine.shouldApplyProfileDefault(
+            ModernSkinEngine.shouldApplyDefault(
                 forKey: key,
-                preservePersistedProfiles: true,
+                preservePersistedPreferences: true,
                 defaults: defaults
             )
         )
@@ -52,6 +52,54 @@ final class ModernSkinVisualizationPersistenceTests: XCTestCase {
             ModernSkinEngine.shouldApplyProfileDefault(
                 forKey: key,
                 preservePersistedProfiles: false,
+                defaults: defaults
+            )
+        )
+    }
+
+    func testPreferredSkinLaunchPreservesExistingMainWindowVisualizationSettings() {
+        defaults.set(MainWindowVisMode.fire.rawValue, forKey: "mainWindowVisMode")
+        defaults.set(MainWindowVisMode.fire.rawValue, forKey: "modernMainWindowVisMode")
+        defaults.set(FlameIntensity.intense.rawValue, forKey: "mainWindowFlameIntensity")
+
+        XCTAssertFalse(
+            ModernSkinEngine.shouldApplyDefault(
+                forKey: "mainWindowVisMode",
+                preservePersistedPreferences: true,
+                defaults: defaults
+            )
+        )
+        XCTAssertFalse(
+            ModernSkinEngine.shouldApplyDefault(
+                forKey: "modernMainWindowVisMode",
+                preservePersistedPreferences: true,
+                defaults: defaults
+            )
+        )
+        XCTAssertFalse(
+            ModernSkinEngine.shouldApplyDefault(
+                forKey: "mainWindowFlameIntensity",
+                preservePersistedPreferences: true,
+                defaults: defaults
+            )
+        )
+    }
+
+    func testExplicitSkinChangeAppliesMainWindowVisualizationDefaults() {
+        defaults.set(MainWindowVisMode.fire.rawValue, forKey: "mainWindowVisMode")
+        defaults.set(FlameIntensity.intense.rawValue, forKey: "mainWindowFlameIntensity")
+
+        XCTAssertTrue(
+            ModernSkinEngine.shouldApplyDefault(
+                forKey: "mainWindowVisMode",
+                preservePersistedPreferences: false,
+                defaults: defaults
+            )
+        )
+        XCTAssertTrue(
+            ModernSkinEngine.shouldApplyDefault(
+                forKey: "mainWindowFlameIntensity",
+                preservePersistedPreferences: false,
                 defaults: defaults
             )
         )

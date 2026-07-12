@@ -350,14 +350,32 @@ class ModernSkinEngine {
         var visClassicMainTransparentBackground: Bool?
         // Seed from window-level setting; visualization.visClassic overrides if also set
         var visClassicSpectrumTransparentBackground: Bool? = windowSpectrumTransparentBackground
-        if let transparent = windowSpectrumTransparentBackground {
+        if let transparent = windowSpectrumTransparentBackground,
+           Self.shouldApplyDefault(
+               forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey,
+               preservePersistedPreferences: preservePersistedProfiles,
+               forceDefaults: forceProfileDefaults,
+               defaults: defaults
+           ) {
             defaults.set(transparent, forKey: "visClassicTransparentBg.spectrumWindow")
             spectrumSettingsChanged = true
         }
         var visClassicMainOpacity: Double?
         var visClassicSpectrumOpacity: Double?
 
-        if let modeRaw = config?.mainWindowMode {
+        if let modeRaw = config?.mainWindowMode,
+           Self.shouldApplyDefault(
+               forKey: "mainWindowVisMode",
+               preservePersistedPreferences: preservePersistedProfiles,
+               forceDefaults: forceProfileDefaults,
+               defaults: defaults
+           ),
+           Self.shouldApplyDefault(
+               forKey: "modernMainWindowVisMode",
+               preservePersistedPreferences: preservePersistedProfiles,
+               forceDefaults: forceProfileDefaults,
+               defaults: defaults
+           ) {
             if let mode = MainWindowVisMode(rawValue: modeRaw) {
                 if let qualityMode = mode.spectrumQualityMode,
                    !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
@@ -372,7 +390,13 @@ class ModernSkinEngine {
             }
         }
 
-        if let modeRaw = config?.spectrumWindowMode {
+        if let modeRaw = config?.spectrumWindowMode,
+           Self.shouldApplyDefault(
+               forKey: "spectrumQualityMode",
+               preservePersistedPreferences: preservePersistedProfiles,
+               forceDefaults: forceProfileDefaults,
+               defaults: defaults
+           ) {
             if let mode = SpectrumQualityMode(rawValue: modeRaw) {
                 if SpectrumAnalyzerView.isShaderAvailable(for: mode) {
                     defaults.set(mode.rawValue, forKey: "spectrumQualityMode")
@@ -387,10 +411,10 @@ class ModernSkinEngine {
 
         if let visClassic = config?.visClassic {
             if let profile = visClassic.mainWindowProfile,
-               Self.shouldApplyProfileDefault(
+               Self.shouldApplyDefault(
                    forKey: VisClassicBridge.PreferenceScope.mainWindow.lastProfileNameKey,
-                   preservePersistedProfiles: preservePersistedProfiles,
-                   forceProfileDefaults: forceProfileDefaults,
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 defaults.set(profile, forKey: "visClassicLastProfileName.mainWindow")
@@ -398,43 +422,79 @@ class ModernSkinEngine {
                 mainVisChanged = true
             }
             if let profile = visClassic.spectrumWindowProfile,
-               Self.shouldApplyProfileDefault(
+               Self.shouldApplyDefault(
                    forKey: VisClassicBridge.PreferenceScope.spectrumWindow.lastProfileNameKey,
-                   preservePersistedProfiles: preservePersistedProfiles,
-                   forceProfileDefaults: forceProfileDefaults,
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 defaults.set(profile, forKey: "visClassicLastProfileName.spectrumWindow")
                 visClassicSpectrumProfileToLoad = profile
                 spectrumSettingsChanged = true
             }
-            if let fit = visClassic.mainWindowFitToWidth {
+            if let fit = visClassic.mainWindowFitToWidth,
+               Self.shouldApplyDefault(
+                   forKey: VisClassicBridge.PreferenceScope.mainWindow.fitToWidthKey,
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ) {
                 defaults.set(fit, forKey: "visClassicFitToWidth.mainWindow")
                 visClassicMainFitToWidth = fit
                 mainVisChanged = true
             }
-            if let fit = visClassic.spectrumWindowFitToWidth {
+            if let fit = visClassic.spectrumWindowFitToWidth,
+               Self.shouldApplyDefault(
+                   forKey: VisClassicBridge.PreferenceScope.spectrumWindow.fitToWidthKey,
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ) {
                 defaults.set(fit, forKey: "visClassicFitToWidth.spectrumWindow")
                 visClassicSpectrumFitToWidth = fit
                 spectrumSettingsChanged = true
             }
-            if let transparent = visClassic.mainWindowTransparentBackground {
+            if let transparent = visClassic.mainWindowTransparentBackground,
+               Self.shouldApplyDefault(
+                   forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey,
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ) {
                 defaults.set(transparent, forKey: "visClassicTransparentBg.mainWindow")
                 visClassicMainTransparentBackground = transparent
                 mainVisChanged = true
             }
-            if let transparent = visClassic.spectrumWindowTransparentBackground {
+            if let transparent = visClassic.spectrumWindowTransparentBackground,
+               Self.shouldApplyDefault(
+                   forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey,
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ) {
                 defaults.set(transparent, forKey: "visClassicTransparentBg.spectrumWindow")
                 visClassicSpectrumTransparentBackground = transparent
                 spectrumSettingsChanged = true
             }
-            if let opacity = visClassic.mainWindowOpacity {
+            if let opacity = visClassic.mainWindowOpacity,
+               Self.shouldApplyDefault(
+                   forKey: VisClassicBridge.PreferenceScope.mainWindow.opacityKey,
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ) {
                 let clamped = max(0.0, min(1.0, Double(opacity)))
                 defaults.set(clamped, forKey: VisClassicBridge.PreferenceScope.mainWindow.opacityKey)
                 visClassicMainOpacity = clamped
                 mainVisChanged = true
             }
-            if let opacity = visClassic.spectrumWindowOpacity {
+            if let opacity = visClassic.spectrumWindowOpacity,
+               Self.shouldApplyDefault(
+                   forKey: VisClassicBridge.PreferenceScope.spectrumWindow.opacityKey,
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ) {
                 let clamped = max(0.0, min(1.0, Double(opacity)))
                 defaults.set(clamped, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.opacityKey)
                 visClassicSpectrumOpacity = clamped
@@ -444,6 +504,12 @@ class ModernSkinEngine {
 
         if let fire = config?.fire {
             if let styleRaw = fire.mainWindowStyle,
+               Self.shouldApplyDefault(
+                   forKey: "mainWindowFlameStyle",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let style = FlameStyle(rawValue: styleRaw) {
                 defaults.set(style.rawValue, forKey: "mainWindowFlameStyle")
                 mainVisChanged = true
@@ -452,6 +518,12 @@ class ModernSkinEngine {
             }
 
             if let intensityRaw = fire.mainWindowIntensity,
+               Self.shouldApplyDefault(
+                   forKey: "mainWindowFlameIntensity",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let intensity = FlameIntensity(rawValue: intensityRaw) {
                 defaults.set(intensity.rawValue, forKey: "mainWindowFlameIntensity")
                 mainVisChanged = true
@@ -460,6 +532,12 @@ class ModernSkinEngine {
             }
 
             if let styleRaw = fire.spectrumWindowStyle,
+               Self.shouldApplyDefault(
+                   forKey: "flameStyle",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let style = FlameStyle(rawValue: styleRaw) {
                 defaults.set(style.rawValue, forKey: "flameStyle")
                 spectrumSettingsChanged = true
@@ -468,6 +546,12 @@ class ModernSkinEngine {
             }
 
             if let intensityRaw = fire.spectrumWindowIntensity,
+               Self.shouldApplyDefault(
+                   forKey: "flameIntensity",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let intensity = FlameIntensity(rawValue: intensityRaw) {
                 defaults.set(intensity.rawValue, forKey: "flameIntensity")
                 spectrumSettingsChanged = true
@@ -478,6 +562,12 @@ class ModernSkinEngine {
 
         if let lightning = config?.lightning {
             if let styleRaw = lightning.mainWindowStyle,
+               Self.shouldApplyDefault(
+                   forKey: "mainWindowLightningStyle",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let style = LightningStyle(rawValue: styleRaw) {
                 defaults.set(style.rawValue, forKey: "mainWindowLightningStyle")
                 mainVisChanged = true
@@ -486,6 +576,12 @@ class ModernSkinEngine {
             }
 
             if let styleRaw = lightning.spectrumWindowStyle,
+               Self.shouldApplyDefault(
+                   forKey: "lightningStyle",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let style = LightningStyle(rawValue: styleRaw) {
                 defaults.set(style.rawValue, forKey: "lightningStyle")
                 spectrumSettingsChanged = true
@@ -496,6 +592,12 @@ class ModernSkinEngine {
 
         if let matrix = config?.matrix {
             if let schemeRaw = matrix.mainWindowColorScheme,
+               Self.shouldApplyDefault(
+                   forKey: "mainWindowMatrixColorScheme",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let scheme = MatrixColorScheme(rawValue: schemeRaw) {
                 defaults.set(scheme.rawValue, forKey: "mainWindowMatrixColorScheme")
                 mainVisChanged = true
@@ -504,6 +606,12 @@ class ModernSkinEngine {
             }
 
             if let intensityRaw = matrix.mainWindowIntensity,
+               Self.shouldApplyDefault(
+                   forKey: "mainWindowMatrixIntensity",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let intensity = MatrixIntensity(rawValue: intensityRaw) {
                 defaults.set(intensity.rawValue, forKey: "mainWindowMatrixIntensity")
                 mainVisChanged = true
@@ -512,6 +620,12 @@ class ModernSkinEngine {
             }
 
             if let schemeRaw = matrix.spectrumWindowColorScheme,
+               Self.shouldApplyDefault(
+                   forKey: "matrixColorScheme",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let scheme = MatrixColorScheme(rawValue: schemeRaw) {
                 defaults.set(scheme.rawValue, forKey: "matrixColorScheme")
                 spectrumSettingsChanged = true
@@ -520,6 +634,12 @@ class ModernSkinEngine {
             }
 
             if let intensityRaw = matrix.spectrumWindowIntensity,
+               Self.shouldApplyDefault(
+                   forKey: "matrixIntensity",
+                   preservePersistedPreferences: preservePersistedProfiles,
+                   forceDefaults: forceProfileDefaults,
+                   defaults: defaults
+               ),
                let intensity = MatrixIntensity(rawValue: intensityRaw) {
                 defaults.set(intensity.rawValue, forKey: "matrixIntensity")
                 spectrumSettingsChanged = true
@@ -593,17 +713,31 @@ class ModernSkinEngine {
         }
     }
 
-    /// On app launch, a skin's profile acts as a first-use default rather than
-    /// replacing a profile the user selected during an earlier session. Explicit
-    /// skin changes still apply the newly selected skin's profile defaults.
+    /// On app launch, a skin's visualization config acts as a first-use default rather than
+    /// replacing values the user selected during an earlier session. Explicit skin changes
+    /// and skin resets still apply the newly selected skin's visualization defaults.
+    static func shouldApplyDefault(
+        forKey key: String,
+        preservePersistedPreferences: Bool,
+        forceDefaults: Bool = false,
+        defaults: UserDefaults
+    ) -> Bool {
+        let shouldPreserve = preservePersistedPreferences && !forceDefaults
+        return !shouldPreserve || defaults.object(forKey: key) == nil
+    }
+
     static func shouldApplyProfileDefault(
         forKey key: String,
         preservePersistedProfiles: Bool,
         forceProfileDefaults: Bool = false,
         defaults: UserDefaults
     ) -> Bool {
-        let shouldPreserve = preservePersistedProfiles && !forceProfileDefaults
-        return !shouldPreserve || defaults.object(forKey: key) == nil
+        shouldApplyDefault(
+            forKey: key,
+            preservePersistedPreferences: preservePersistedProfiles,
+            forceDefaults: forceProfileDefaults,
+            defaults: defaults
+        )
     }
     
     private func notifySkinChanged() {
