@@ -112,7 +112,7 @@ final class ModernNetworkMonitorView: NSView {
             width: max(0, bounds.width - borderWidth * 2),
             height: max(0, bounds.height - titleBarHeight - borderWidth)
         )
-        return rect.expandingThroughMetalJoinedEdges(
+        return rect.expandingThroughJoinedEdges(
             in: bounds,
             borderWidth: borderWidth,
             adjacentEdges: adjacentEdges

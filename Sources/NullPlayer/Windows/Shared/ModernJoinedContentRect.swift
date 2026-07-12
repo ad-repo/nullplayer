@@ -1,10 +1,13 @@
 import AppKit
 
 extension NSRect {
-    func expandingThroughMetalJoinedEdges(in bounds: NSRect,
-                                          borderWidth: CGFloat,
-                                          adjacentEdges: AdjacentEdges) -> NSRect {
-        guard ModernSkinEngine.shared.currentRenderStyle == .metal else { return self }
+    /// Bleeds the content rect back across any docked (joined) edge so no leftover
+    /// background strip shows where the shared window border has been suppressed.
+    /// Applies to every render style (classic flush docking, modern seamless docking,
+    /// and metal's thin border) — see issue #364.
+    func expandingThroughJoinedEdges(in bounds: NSRect,
+                                     borderWidth: CGFloat,
+                                     adjacentEdges: AdjacentEdges) -> NSRect {
         guard borderWidth > 0, !adjacentEdges.isEmpty else { return self }
 
         var rect = self

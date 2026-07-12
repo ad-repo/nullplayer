@@ -4631,12 +4631,29 @@ class WindowManager {
             }
         }
         
-        // Apply best snaps
+        // Apply best snaps.
+        //
+        // Classic windows are opaque and square-cornered, so their docked edge must land
+        // exactly on the neighbor's edge. `bestVerticalSnap.value` / `bestHorizontalSnap.value`
+        // are edge-derived (e.g. `otherFrame.minY - frame.height`), so using them directly makes
+        // the shared edges coincide. Rounding the snapped *origin* to an integer while the
+        // neighbor's edge sits on a fractional pixel — main's origin becomes fractional after any
+        // free drag on a 1x display — leaves a gap of `frac(neighborEdge)` that shows the desktop
+        // as a ~1px seam between the two opaque frames (issue #364). Only the drag-snap path has
+        // this bug: default-open (`positionSubWindow`) and restore
+        // (`normalizedCenterStackRestoredFrame`) already place the docked edge edge-exact.
+        //
+        // Modern/metal keep the integer round: their windows are translucent with rounded corners,
+        // and a fractional origin would rasterize those corners across pixel boundaries and soften
+        // them on 1x displays. Modern's seam is a separate mechanism (translucent background exposed
+        // by seamless docking) handled by the joined-edge content bleed in each view's
+        // `contentAreaRect()`, not by this snap.
+        let pixelSnapOrigin = isRunningModernUI
         if let hSnap = bestHorizontalSnap {
-            snappedX = round(hSnap.value)
+            snappedX = pixelSnapOrigin ? round(hSnap.value) : hSnap.value
         }
         if let vSnap = bestVerticalSnap {
-            snappedY = round(vSnap.value)
+            snappedY = pixelSnapOrigin ? round(vSnap.value) : vSnap.value
         }
 
         // Hard-clamp to screen top: macOS enforces this on setFrameOrigin to keep the
