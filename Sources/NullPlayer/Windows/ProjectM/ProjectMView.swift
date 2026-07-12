@@ -41,15 +41,8 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
     /// Observer for playback state changes
     private var playbackStateObserver: NSObjectProtocol?
     
-    /// Preset cycling mode
-    enum PresetCycleMode {
-        case off       // Manual only
-        case cycle     // Sequential cycling
-        case random    // Random on timer
-    }
-    
     /// Current preset cycle mode
-    private var presetCycleMode: PresetCycleMode = .off
+    private var presetCycleMode: VisualizationCycleMode = .off
 
     /// Timer for preset cycling
     private var presetCycleTimer: Timer?
@@ -59,7 +52,7 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
 
     /// Tripex cycle state — mirrors the ProjectM cycle controls for a
     /// uniform UX across visualization engines.
-    private var tripexCycleMode: PresetCycleMode = .cycle
+    private var tripexCycleMode: VisualizationCycleMode = .cycle
     private var tripexCycleTimer: Timer?
     private var tripexCycleInterval: TimeInterval = 30.0
 
@@ -99,6 +92,9 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
 
         // Create and add OpenGL visualization view
         setupVisualizationView()
+
+        loadProjectMPresetCycleStateFromDefaults()
+        applyProjectMPresetCycleModeIfActive()
 
         // Restore Tripex cycle state from defaults; applied if/when Tripex
         // becomes the active engine (handled in switchVisualizationEngine,
@@ -640,15 +636,18 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
             switch presetCycleMode {
             case .off:
                 presetCycleMode = .cycle
-                startPresetCycleTimer()
+                saveProjectMPresetCycleStateToDefaults()
+                applyProjectMPresetCycleMode()
                 NSLog("ProjectMView: Auto-cycle enabled")
             case .cycle:
                 presetCycleMode = .random
-                startPresetCycleTimer()
+                saveProjectMPresetCycleStateToDefaults()
+                applyProjectMPresetCycleMode()
                 NSLog("ProjectMView: Auto-random enabled")
             case .random:
                 presetCycleMode = .off
-                stopPresetCycleTimer()
+                saveProjectMPresetCycleStateToDefaults()
+                applyProjectMPresetCycleMode()
                 NSLog("ProjectMView: Auto-cycle disabled")
             }
             return true
@@ -1227,27 +1226,54 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
     }
     
     // MARK: - Preset Cycle Mode
+
+    private func loadProjectMPresetCycleStateFromDefaults() {
+        presetCycleMode = ProjectMPresetCycleSettings.loadMode()
+        presetCycleInterval = ProjectMPresetCycleSettings.loadInterval()
+    }
+
+    private func saveProjectMPresetCycleStateToDefaults() {
+        ProjectMPresetCycleSettings.save(mode: presetCycleMode, interval: presetCycleInterval)
+    }
+
+    private func applyProjectMPresetCycleModeIfActive() {
+        guard visualizationGLView?.currentEngineType == .projectM else {
+            stopPresetCycleTimer()
+            return
+        }
+        applyProjectMPresetCycleMode()
+    }
+
+    private func applyProjectMPresetCycleMode() {
+        if presetCycleMode == .off {
+            stopPresetCycleTimer()
+        } else {
+            startPresetCycleTimer()
+        }
+    }
     
     @objc private func setCycleModeOff(_ sender: Any?) {
         presetCycleMode = .off
-        stopPresetCycleTimer()
+        saveProjectMPresetCycleStateToDefaults()
+        applyProjectMPresetCycleMode()
     }
     
     @objc private func setCycleModeCycle(_ sender: Any?) {
         presetCycleMode = .cycle
-        startPresetCycleTimer()
+        saveProjectMPresetCycleStateToDefaults()
+        applyProjectMPresetCycleMode()
     }
     
     @objc private func setCycleModeRandom(_ sender: Any?) {
         presetCycleMode = .random
-        startPresetCycleTimer()
+        saveProjectMPresetCycleStateToDefaults()
+        applyProjectMPresetCycleMode()
     }
     
     @objc private func setCycleInterval(_ sender: NSMenuItem) {
         presetCycleInterval = TimeInterval(sender.tag)
-        if presetCycleMode != .off {
-            startPresetCycleTimer()  // Restart with new interval
-        }
+        saveProjectMPresetCycleStateToDefaults()
+        applyProjectMPresetCycleMode()
     }
 
     // MARK: - Visualization Engine Switching
@@ -1266,6 +1292,9 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMenuTarg
         if type == .tripex {
             loadTripexCycleStateFromDefaults()
             applyTripexCycleMode()
+        } else if type == .projectM {
+            loadProjectMPresetCycleStateFromDefaults()
+            applyProjectMPresetCycleMode()
         }
     }
 
