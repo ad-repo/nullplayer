@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+- **Docked PeppyMeter and Flow windows no longer show a thin seam under the main window** — dragging the PeppyMeter or Flow window to dock it below the main window could leave a roughly 1-pixel line where the desktop showed through the join, most visible on standard-resolution (non-Retina) displays. Classic skins left a sub-pixel gap between the two window frames, and modern translucent skins exposed a strip of window background at the shared edge. Both now dock flush with no gap, matching the seamless docking that Metal skins already had.
+
 ## 0.28.1
 
 ### Bug Fixes

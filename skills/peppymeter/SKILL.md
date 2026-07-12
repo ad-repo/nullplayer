@@ -83,7 +83,10 @@ chrome:
 - Both views clip `PeppyMeterDrawing.draw(...)` to the chrome content rect. Keep this clip in place; some
   templates have artwork near their own edges and must never paint over the app window border.
   Modern skins do not add an extra PeppyMeter-specific gutter beyond the shared auxiliary chrome inset.
-  Metal skins also expand through joined edges so PeppyMeter matches the standard thin dockable-window border.
+  In every render style the modern meter content rect expands through adjacent joined chrome strips (via
+  `NSRect.expandingThroughJoinedEdges`) so no ~1px seam shows on a docked edge — this is not metal-only
+  (issue #364). The helper is bounded to small edge-adjacent gaps so content cannot jump across a
+  visible title bar/chrome gap.
 - Do not add a PeppyMeter-specific outer padding around the modern meter content. That recreates the
   old heavy-border look. If a template needs spacing, handle it inside the meter compositor or template
   layout, not by shrinking the whole window content rect.
