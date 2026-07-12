@@ -732,7 +732,7 @@ class WindowManager {
         if let playlistWindow = playlistWindowController?.window {
             applyCenterStackSizingConstraints(playlistWindow, kind: .playlist)
             if let frame = restoredFrame, frame != .zero {
-                applyRestoredCenterStackFrame(frame, to: playlistWindow, kind: .playlist)
+                playlistWindow.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .playlist), display: true)
             } else {
                 // By design: always reset to default when showing without a saved frame.
                 // This keeps the window snapped below main whenever the user opens it fresh,
@@ -790,7 +790,7 @@ class WindowManager {
         if let eqWindow = equalizerWindowController?.window {
             applyCenterStackSizingConstraints(eqWindow, kind: .equalizer)
             if let frame = restoredFrame, frame != .zero {
-                applyRestoredCenterStackFrame(frame, to: eqWindow, kind: .equalizer)
+                eqWindow.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .equalizer), display: true)
             } else {
                 if isNewWindow {
                     applyDefaultCenterStackFrameForCurrentHT(eqWindow, kind: .equalizer)
@@ -2353,7 +2353,7 @@ class WindowManager {
         if let window = spectrumWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .spectrum)
             if let frame = restoredFrame, frame != .zero {
-                applyRestoredCenterStackFrame(frame, to: window, kind: .spectrum)
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .spectrum), display: true)
             } else {
                 // By design: always reset to default when showing without a saved frame.
                 // Same rationale as showPlaylist — stretch state is not persisted across toggles.
@@ -2420,7 +2420,7 @@ class WindowManager {
         if let window = audioAnalysisWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .audioAnalysis)
             if let frame = restoredFrame, frame != .zero {
-                applyRestoredCenterStackFrame(frame, to: window, kind: .audioAnalysis)
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .audioAnalysis), display: true)
             } else {
                 if runningModernMode {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .audioAnalysis)
@@ -2483,7 +2483,7 @@ class WindowManager {
         if let window = peppyMeterWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .peppyMeter)
             if let frame = restoredFrame, frame != .zero {
-                applyRestoredCenterStackFrame(frame, to: window, kind: .peppyMeter)
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .peppyMeter), display: true)
             } else {
                 if runningModernMode {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .peppyMeter)
@@ -2561,7 +2561,7 @@ class WindowManager {
         if let window = networkMonitorWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .networkMonitor)
             if let frame = restoredFrame, frame != .zero {
-                applyRestoredCenterStackFrame(frame, to: window, kind: .networkMonitor)
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .networkMonitor), display: true)
             } else {
                 if runningModernMode {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .networkMonitor)
@@ -2625,7 +2625,7 @@ class WindowManager {
             applyCenterStackSizingConstraints(window, kind: .waveform)
             if let frame = restoredFrame, frame != .zero {
                 classicController?.clearPendingFrameReset()
-                applyRestoredCenterStackFrame(frame, to: window, kind: .waveform)
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .waveform), display: true)
             } else {
                 if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .waveform)
@@ -3518,7 +3518,7 @@ class WindowManager {
         return bounds
     }
 
-    enum CenterStackWindowKind {
+    private enum CenterStackWindowKind {
         case equalizer
         case playlist
         case spectrum
@@ -3710,57 +3710,6 @@ class WindowManager {
         window.setFrame(frame, display: true)
     }
 
-    private func applyRestoredCenterStackFrame(_ frame: NSRect, to window: NSWindow, kind: CenterStackWindowKind) {
-        let normalizedFrame = normalizedCenterStackRestoredFrame(frame, kind: kind)
-        withProgrammaticWindowFrameChange {
-            window.setFrame(normalizedFrame, display: true)
-        }
-    }
-
-    private func modernMinimumRestoredWidth(for kind: CenterStackWindowKind) -> CGFloat {
-        switch kind {
-        case .equalizer:
-            return mainWindowController?.window?.frame.width ?? ModernSkinElements.mainWindowSize.width
-        case .playlist:
-            return ModernSkinElements.playlistMinSize.width
-        case .spectrum, .audioAnalysis, .peppyMeter, .networkMonitor:
-            return ModernSkinElements.spectrumMinSize.width
-        case .waveform:
-            return ModernSkinElements.waveformMinSize.width
-        }
-    }
-
-    static func normalizedModernCenterStackRestoredFrame(
-        _ frame: NSRect,
-        kind: CenterStackWindowKind,
-        mainWidth: CGFloat,
-        minimumWidth: CGFloat,
-        targetHeight: CGFloat,
-        peppyMeterFloor: CGFloat,
-        peppyMeterLegacyDoubleHeight: CGFloat
-    ) -> NSRect {
-        var normalized = frame
-        if kind == .equalizer {
-            normalized.size.width = mainWidth
-        } else {
-            normalized.size.width = max(minimumWidth, normalized.width)
-        }
-
-        let topY = normalized.maxY
-        switch kind {
-        case .equalizer, .networkMonitor:
-            normalized.size.height = targetHeight
-        case .playlist, .spectrum, .waveform, .audioAnalysis:
-            normalized.size.height = max(targetHeight, normalized.height)
-        case .peppyMeter:
-            normalized.size.height = abs(normalized.height - peppyMeterLegacyDoubleHeight) <= 2
-                ? peppyMeterFloor
-                : max(peppyMeterFloor, normalized.height)
-        }
-        normalized.origin.y = topY - normalized.size.height
-        return normalized
-    }
-
     private func normalizedCenterStackRestoredFrame(_ frame: NSRect, kind: CenterStackWindowKind) -> NSRect {
         guard isRunningModernUI else {
             guard kind == .peppyMeter || kind == .networkMonitor else { return frame }
@@ -3780,16 +3729,29 @@ class WindowManager {
             normalized.origin.y = topY - normalized.size.height
             return normalized
         }
+        var normalized = frame
+        if let mainWindow = mainWindowController?.window, kind != .waveform {
+            normalized.origin.x = mainWindow.frame.minX
+            normalized.size.width = mainWindow.frame.width
+        }
+
+        let topY = normalized.maxY
         let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
-        return Self.normalizedModernCenterStackRestoredFrame(
-            frame,
-            kind: kind,
-            mainWidth: mainWindowController?.window?.frame.width ?? ModernSkinElements.mainWindowSize.width,
-            minimumWidth: modernMinimumRestoredWidth(for: kind),
-            targetHeight: target,
-            peppyMeterFloor: peppyMeterHeight(for: target),
-            peppyMeterLegacyDoubleHeight: (target * 2).rounded()
-        )
+        switch kind {
+        case .equalizer, .spectrum, .networkMonitor:
+            normalized.size.height = target
+        case .playlist, .waveform, .audioAnalysis:
+            // Accept legacy compact saved frames but normalize to current full-height minimum.
+            normalized.size.height = max(target, normalized.height)
+        case .peppyMeter:
+            normalized.size.height = restoredPeppyMeterHeight(
+                saved: normalized.height,
+                floor: peppyMeterHeight(for: target),
+                legacyDoubleHeight: (target * 2).rounded()
+            )
+        }
+        normalized.origin.y = topY - normalized.size.height
+        return normalized
     }
 
     /// Baseline center-stack height in modern UI.
