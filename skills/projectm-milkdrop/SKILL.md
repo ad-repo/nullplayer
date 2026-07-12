@@ -52,6 +52,10 @@ Place `.milk` files there and use "Reload Presets" from the context menu.
 
 Auto-switching modes are disabled by default for stability — some presets may glitch during transitions.
 
+Cycle mode and interval are persistent user preferences:
+- Mode: `projectM.cycleMode` (`off`, `cycle`, `random`)
+- Interval: `projectM.cycleInterval` (seconds, default 30)
+
 ## Audio Sensitivity (PCM Gain)
 
 Amplitude of audio samples fed to the visualization engine:
