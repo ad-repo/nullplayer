@@ -25,6 +25,9 @@ class SkinRenderer {
     
     /// Cached white-tinted version of the text font image
     private var _whiteTextImage: NSImage?
+
+    /// Cached graph curve colors sampled from eqmain.bmp.
+    private var _eqGraphGradientColors: [NSColor]?
     
     /// Lazily creates and caches a white-tinted version of the skin's text image
     private var whiteTextImage: NSImage? {
@@ -1217,93 +1220,164 @@ class SkinRenderer {
         // Value is -12 to +12 dB, convert to 0-1
         let normalizedValue = (value + 12) / 24
         
-        // Calculate thumb position - thumb slides from top (-12dB) to bottom (+12dB)
+        // Calculate thumb position - thumb slides from top (+12dB) to bottom (-12dB)
         // In skin coordinates (y increases downward from top)
         let thumbY = sliderY + (sliderHeight - thumbSize) * (1 - normalizedValue)
         
-        // Draw colored level indicator bars on the sides of the slider
-        drawEQSliderColorBars(at: xPos, sliderY: sliderY, sliderHeight: sliderHeight, 
-                              normalizedValue: normalizedValue, in: context)
-        
-        // Draw slider knob from eqmain.bmp (x=0, y=164, 11x11)
-        let thumbRect = NSRect(x: xPos, y: thumbY, width: thumbSize, height: thumbSize)
-        
         if let eqImage = skin.eqmain {
-            // Use eqmain.bmp for slider knob (NOT eq_ex.bmp)
+            let sliderState = Int(round(normalizedValue * CGFloat(SkinElements.Equalizer.sliderBarStateCount - 1)))
+            let trackSource = SkinElements.Equalizer.sliderBarSource(state: sliderState)
+            let trackRect = NSRect(
+                x: xPos + (thumbSize - trackSource.width) / 2,
+                y: sliderY,
+                width: trackSource.width,
+                height: sliderHeight
+            )
+            drawSprite(from: eqImage, sourceRect: trackSource, to: trackRect, in: context)
+
+            let thumbRect = NSRect(x: xPos, y: thumbY, width: thumbSize, height: thumbSize)
             drawSprite(from: eqImage, sourceRect: SkinElements.Equalizer.sliderThumbNormal, to: thumbRect, in: context)
         } else {
             // Fallback: Draw knob as a small rectangle
             drawFallbackEQSliderKnob(at: NSPoint(x: xPos, y: thumbY), value: normalizedValue, in: context)
         }
     }
-    
-    /// Draw colored bar in the EQ slider track
-    /// The ENTIRE track is filled with a SINGLE color based on knob position
-    /// Color scale: green (top/+12dB) → yellow (middle/0dB) → red (bottom/-12dB)
-    /// - Parameters:
-    ///   - xPos: X position of the slider (left edge of thumb)
-    ///   - sliderY: Y position of the slider track top
-    ///   - sliderHeight: Height of the slider track (63px)
-    ///   - normalizedValue: Value from 0 (bottom/-12dB) to 1 (top/+12dB)
-    ///   - context: Graphics context
-    private func drawEQSliderColorBars(at xPos: CGFloat, sliderY: CGFloat, sliderHeight: CGFloat,
-                                        normalizedValue: CGFloat, in context: CGContext) {
-        let thumbSize: CGFloat = 11
-        // Slim bar centered in track
-        let barWidth: CGFloat = 4
-        let barX = xPos + (thumbSize - barWidth) / 2  // Center in track
-        
-        // Color scale: knob position determines the single color for entire track
-        // normalizedValue=1 (top, +12dB): RED (boost)
-        // normalizedValue=0.5 (middle, 0dB): YELLOW
-        // normalizedValue=0 (bottom, -12dB): GREEN (cut)
-        let colorStops: [(position: CGFloat, color: NSColor)] = [
-            (0.0, NSColor(calibratedRed: 0.0, green: 0.85, blue: 0.0, alpha: 1.0)),   // Green at bottom (-12dB)
-            (0.33, NSColor(calibratedRed: 0.5, green: 0.85, blue: 0.0, alpha: 1.0)),  // Yellow-green
-            (0.5, NSColor(calibratedRed: 0.85, green: 0.85, blue: 0.0, alpha: 1.0)),  // Yellow at middle (0dB)
-            (0.66, NSColor(calibratedRed: 0.85, green: 0.5, blue: 0.0, alpha: 1.0)),  // Orange
-            (1.0, NSColor(calibratedRed: 0.85, green: 0.15, blue: 0.0, alpha: 1.0)),  // Red at top (+12dB)
-        ]
-        
-        // Get the single color based on knob position
-        let trackColor = interpolateColor(at: normalizedValue, stops: colorStops)
-        
-        // Draw rounded rect for the track (rounded top and bottom)
-        let barRect = NSRect(x: barX, y: sliderY, width: barWidth, height: sliderHeight)
-        let cornerRadius: CGFloat = 2  // Slight rounding at top and bottom
-        
-        trackColor.setFill()
-        let path = NSBezierPath(roundedRect: barRect, xRadius: cornerRadius, yRadius: cornerRadius)
-        path.fill()
+
+    /// Draw the EQ curve over the skin-provided graph well.
+    func drawEQGraph(bands: [Float], isEnabled: Bool, in context: CGContext) {
+        guard isEnabled, bands.count >= 10 else { return }
+
+        let rect = SkinElements.Equalizer.graphRect
+        let gradient = eqGraphGradientColors()
+        guard !gradient.isEmpty else { return }
+
+        context.saveGState()
+        context.clip(to: rect)
+        context.setLineWidth(1.0)
+        context.setShouldAntialias(false)
+
+        let maxXIndex = max(1, Int(rect.width.rounded(.down)) - 1)
+        var previousPoint: CGPoint?
+        var previousValue: CGFloat?
+
+        for xIndex in 0...maxXIndex {
+            let bandPosition = CGFloat(xIndex) / CGFloat(maxXIndex) * 9.0
+            let lowerBand = min(8, Int(floor(bandPosition)))
+            let upperBand = min(9, lowerBand + 1)
+            let t = bandPosition - CGFloat(lowerBand)
+            let value = CGFloat(bands[lowerBand]) + (CGFloat(bands[upperBand]) - CGFloat(bands[lowerBand])) * t
+            let normalizedValue = min(1, max(0, (value + 12) / 24))
+            let y = rect.minY + rect.height * (1 - normalizedValue)
+            let point = CGPoint(x: rect.minX + CGFloat(xIndex), y: y)
+
+            if let previousPoint, let previousValue {
+                let averageValue = (previousValue + value) / 2
+                eqGraphColor(for: averageValue, gradient: gradient).setStroke()
+                context.move(to: previousPoint)
+                context.addLine(to: point)
+                context.strokePath()
+            }
+
+            previousPoint = point
+            previousValue = value
+        }
+
+        context.restoreGState()
     }
-    
-    /// Interpolate color between gradient stops
-    private func interpolateColor(at position: CGFloat, stops: [(position: CGFloat, color: NSColor)]) -> NSColor {
+
+    private func eqGraphGradientColors() -> [NSColor] {
+        if let cached = _eqGraphGradientColors {
+            return cached
+        }
+
+        if let eqImage = skin.eqmain,
+           let sampled = sampleEQGraphGradient(from: eqImage) {
+            _eqGraphGradientColors = sampled
+            return sampled
+        }
+
+        let fallback = fallbackEQGraphGradient()
+        _eqGraphGradientColors = fallback
+        return fallback
+    }
+
+    private func sampleEQGraphGradient(from image: NSImage) -> [NSColor]? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        let sourceRect = CGRect(x: 115, y: 294, width: 1, height: 19)
+        guard let cropped = cgImage.cropping(to: sourceRect) else { return nil }
+
+        let width = cropped.width
+        let height = cropped.height
+        let bytesPerRow = width * 4
+        var data = [UInt8](repeating: 0, count: bytesPerRow * height)
+
+        guard let bitmapContext = CGContext(data: &data,
+                                            width: width,
+                                            height: height,
+                                            bitsPerComponent: 8,
+                                            bytesPerRow: bytesPerRow,
+                                            space: CGColorSpaceCreateDeviceRGB(),
+                                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return nil
+        }
+
+        bitmapContext.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        return (0..<height).map { y in
+            let index = y * bytesPerRow
+            return NSColor(
+                calibratedRed: CGFloat(data[index]) / 255,
+                green: CGFloat(data[index + 1]) / 255,
+                blue: CGFloat(data[index + 2]) / 255,
+                alpha: CGFloat(data[index + 3]) / 255
+            )
+        }
+    }
+
+    private func fallbackEQGraphGradient() -> [NSColor] {
+        let stops: [(position: CGFloat, r: CGFloat, g: CGFloat, b: CGFloat)] = [
+            (0.0, 0.85, 0.15, 0.0),
+            (0.34, 0.85, 0.5, 0.0),
+            (0.5, 0.85, 0.85, 0.0),
+            (0.67, 0.5, 0.85, 0.0),
+            (1.0, 0.0, 0.85, 0.0),
+        ]
+
+        return (0..<19).map { index in
+            let position = CGFloat(index) / 18
+            return interpolateEQGraphFallbackColor(at: position, stops: stops)
+        }
+    }
+
+    private func interpolateEQGraphFallbackColor(at position: CGFloat,
+                                                 stops: [(position: CGFloat, r: CGFloat, g: CGFloat, b: CGFloat)]) -> NSColor {
         var lowerStop = stops[0]
         var upperStop = stops[stops.count - 1]
-        
-        for i in 0..<stops.count - 1 {
-            if position >= stops[i].position && position <= stops[i + 1].position {
-                lowerStop = stops[i]
-                upperStop = stops[i + 1]
+
+        for index in 0..<(stops.count - 1) {
+            if position >= stops[index].position && position <= stops[index + 1].position {
+                lowerStop = stops[index]
+                upperStop = stops[index + 1]
                 break
             }
         }
-        
+
         let range = upperStop.position - lowerStop.position
         let factor = range > 0 ? (position - lowerStop.position) / range : 0
-        
-        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
-        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
-        lowerStop.color.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
-        upperStop.color.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-        
+
         return NSColor(
-            calibratedRed: r1 + (r2 - r1) * factor,
-            green: g1 + (g2 - g1) * factor,
-            blue: b1 + (b2 - b1) * factor,
+            calibratedRed: lowerStop.r + (upperStop.r - lowerStop.r) * factor,
+            green: lowerStop.g + (upperStop.g - lowerStop.g) * factor,
+            blue: lowerStop.b + (upperStop.b - lowerStop.b) * factor,
             alpha: 1.0
         )
+    }
+
+    private func eqGraphColor(for value: CGFloat, gradient: [NSColor]) -> NSColor {
+        let normalizedValue = min(1, max(0, (value + 12) / 24))
+        let index = Int(round((1 - normalizedValue) * CGFloat(gradient.count - 1)))
+        return gradient[min(gradient.count - 1, max(0, index))]
     }
     
     /// Draw fallback EQ slider knob when skin not available

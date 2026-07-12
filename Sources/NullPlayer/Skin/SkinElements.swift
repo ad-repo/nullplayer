@@ -528,23 +528,29 @@ struct SkinElements {
         static let sliderThumbNormal = NSRect(x: 0, y: 164, width: 11, height: 11)
         static let sliderThumbPressed = NSRect(x: 0, y: 176, width: 11, height: 11)
         
-        /// Colored slider bar sprites - 28 fill states horizontally arranged
-        /// Located in eqmain.bmp at y=164, each state shows different fill level
-        /// Colors: green (top/boost) → yellow → orange → red (bottom/cut)
+        /// Colored slider bar sprites - 28 fill states in a measured 2-row grid
+        /// Located in eqmain.bmp. State 0 is lowest/cut (green), state 27 is
+        /// highest/boost (red).
         static let sliderBarSpriteX: CGFloat = 13
-        static let sliderBarSpriteY: CGFloat = 164
-        static let sliderBarSpriteWidth: CGFloat = 209
-        static let sliderBarStateWidth: CGFloat = 209.0 / 28.0  // ~7.46 pixels per state
+        static let sliderBarFirstRowY: CGFloat = 164
+        static let sliderBarSecondRowY: CGFloat = 229
+        static let sliderBarColumns: Int = 14
+        static let sliderBarStateWidth: CGFloat = 15
         static let sliderBarStateCount: Int = 28
         static let sliderBarHeight: CGFloat = 63
         
         /// Get source rect for a specific fill state (0-27)
-        /// State 0 = minimal fill (knob at top), State 27 = full fill (knob at bottom)
         static func sliderBarSource(state: Int) -> NSRect {
-            let clampedState = min(27, max(0, state))
-            let x = sliderBarSpriteX + CGFloat(clampedState) * sliderBarStateWidth
-            return NSRect(x: x, y: sliderBarSpriteY, width: sliderBarStateWidth, height: sliderBarHeight)
+            let clampedState = min(sliderBarStateCount - 1, max(0, state))
+            let row = clampedState / sliderBarColumns
+            let col = clampedState % sliderBarColumns
+            let x = sliderBarSpriteX + CGFloat(col) * sliderBarStateWidth
+            let y = row == 0 ? sliderBarFirstRowY : sliderBarSecondRowY
+            return NSRect(x: x, y: y, width: sliderBarStateWidth, height: sliderBarHeight)
         }
+
+        /// Graph display in the EQ window.
+        static let graphRect = NSRect(x: 86, y: 17, width: 113, height: 19)
         
         /// Positions on EQ window
         struct Positions {
