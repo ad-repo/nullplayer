@@ -311,12 +311,16 @@ Slider tracks use the 28-state spline sprites in `EQMAIN.BMP`:
 Map EQ values with `state = round(normalizedValue * 27)`, where `normalizedValue = (value + 12) / 24`.
 State 0 is lowest/cut (green in the default skin), and state 27 is highest/boost (red in the default
 skin). Draw the track sprite first, then draw the 11x11 thumb (`x=0, y=164`) on top.
+Before drawing a skin-art track, validate that the full source rect is present in `EQMAIN.BMP`.
+Some placeholder or partial skins omit the extended 315px EQ art region; those must fall back to the
+programmatic slider track/knob instead of stretching a partial crop or silently drawing nothing.
 
 The graph well is already part of the `EQMAIN.BMP` background (`0,0,275,116`). Do not paint a
 separate black background, grid, or border over it. The classic graph curve samples its color ramp
 from the 1x19 vertical gradient at `EQMAIN.BMP` coordinate `(115,294)`, with top = +12 dB and
 bottom = -12 dB. This keeps non-default skins (for example purple or monochrome EQ themes) visually
-consistent with their source artwork.
+consistent with their source artwork. If that gradient is absent, keep the built-in fallback color
+ramp.
 
 ## Playlist Text Rendering
 

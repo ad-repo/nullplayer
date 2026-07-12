@@ -1224,23 +1224,50 @@ class SkinRenderer {
         // In skin coordinates (y increases downward from top)
         let thumbY = sliderY + (sliderHeight - thumbSize) * (1 - normalizedValue)
         
+        let thumbSource = SkinElements.Equalizer.sliderThumbNormal
+        let thumbRect = NSRect(x: xPos, y: thumbY, width: thumbSize, height: thumbSize)
+
         if let eqImage = skin.eqmain {
             let sliderState = Int(round(normalizedValue * CGFloat(SkinElements.Equalizer.sliderBarStateCount - 1)))
             let trackSource = SkinElements.Equalizer.sliderBarSource(state: sliderState)
-            let trackRect = NSRect(
-                x: xPos + (thumbSize - trackSource.width) / 2,
-                y: sliderY,
-                width: trackSource.width,
-                height: sliderHeight
-            )
-            drawSprite(from: eqImage, sourceRect: trackSource, to: trackRect, in: context)
 
-            let thumbRect = NSRect(x: xPos, y: thumbY, width: thumbSize, height: thumbSize)
-            drawSprite(from: eqImage, sourceRect: SkinElements.Equalizer.sliderThumbNormal, to: thumbRect, in: context)
+            if skinImage(eqImage, containsSourceRect: trackSource) {
+                let trackRect = NSRect(
+                    x: xPos + (thumbSize - trackSource.width) / 2,
+                    y: sliderY,
+                    width: trackSource.width,
+                    height: sliderHeight
+                )
+                drawSprite(from: eqImage, sourceRect: trackSource, to: trackRect, in: context)
+            } else {
+                drawFallbackEQSliderTrack(at: xPos,
+                                          sliderY: sliderY,
+                                          sliderHeight: sliderHeight,
+                                          normalizedValue: normalizedValue,
+                                          in: context)
+            }
+
+            if skinImage(eqImage, containsSourceRect: thumbSource) {
+                drawSprite(from: eqImage, sourceRect: thumbSource, to: thumbRect, in: context)
+            } else {
+                drawFallbackEQSliderKnob(at: NSPoint(x: xPos, y: thumbY), value: normalizedValue, in: context)
+            }
         } else {
-            // Fallback: Draw knob as a small rectangle
+            drawFallbackEQSliderTrack(at: xPos,
+                                      sliderY: sliderY,
+                                      sliderHeight: sliderHeight,
+                                      normalizedValue: normalizedValue,
+                                      in: context)
             drawFallbackEQSliderKnob(at: NSPoint(x: xPos, y: thumbY), value: normalizedValue, in: context)
         }
+    }
+
+    private func skinImage(_ image: NSImage, containsSourceRect sourceRect: NSRect) -> Bool {
+        let size = image.size
+        return sourceRect.minX >= 0 &&
+               sourceRect.minY >= 0 &&
+               sourceRect.maxX <= size.width &&
+               sourceRect.maxY <= size.height
     }
 
     /// Draw the EQ curve over the skin-provided graph well.
@@ -1378,6 +1405,55 @@ class SkinRenderer {
         let normalizedValue = min(1, max(0, (value + 12) / 24))
         let index = Int(round((1 - normalizedValue) * CGFloat(gradient.count - 1)))
         return gradient[min(gradient.count - 1, max(0, index))]
+    }
+
+    private func drawFallbackEQSliderTrack(at xPos: CGFloat,
+                                           sliderY: CGFloat,
+                                           sliderHeight: CGFloat,
+                                           normalizedValue: CGFloat,
+                                           in context: CGContext) {
+        let thumbSize: CGFloat = 11
+        let barWidth: CGFloat = 4
+        let barX = xPos + (thumbSize - barWidth) / 2
+        let colorStops: [(position: CGFloat, color: NSColor)] = [
+            (0.0, NSColor(calibratedRed: 0.0, green: 0.85, blue: 0.0, alpha: 1.0)),
+            (0.33, NSColor(calibratedRed: 0.5, green: 0.85, blue: 0.0, alpha: 1.0)),
+            (0.5, NSColor(calibratedRed: 0.85, green: 0.85, blue: 0.0, alpha: 1.0)),
+            (0.66, NSColor(calibratedRed: 0.85, green: 0.5, blue: 0.0, alpha: 1.0)),
+            (1.0, NSColor(calibratedRed: 0.85, green: 0.15, blue: 0.0, alpha: 1.0)),
+        ]
+
+        interpolateEQSliderFallbackColor(at: normalizedValue, stops: colorStops).setFill()
+        let barRect = NSRect(x: barX, y: sliderY, width: barWidth, height: sliderHeight)
+        NSBezierPath(roundedRect: barRect, xRadius: 2, yRadius: 2).fill()
+    }
+
+    private func interpolateEQSliderFallbackColor(at position: CGFloat,
+                                                  stops: [(position: CGFloat, color: NSColor)]) -> NSColor {
+        var lowerStop = stops[0]
+        var upperStop = stops[stops.count - 1]
+
+        for index in 0..<(stops.count - 1) {
+            if position >= stops[index].position && position <= stops[index + 1].position {
+                lowerStop = stops[index]
+                upperStop = stops[index + 1]
+                break
+            }
+        }
+
+        let range = upperStop.position - lowerStop.position
+        let factor = range > 0 ? (position - lowerStop.position) / range : 0
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        lowerStop.color.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        upperStop.color.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+
+        return NSColor(
+            calibratedRed: r1 + (r2 - r1) * factor,
+            green: g1 + (g2 - g1) * factor,
+            blue: b1 + (b2 - b1) * factor,
+            alpha: a1 + (a2 - a1) * factor
+        )
     }
     
     /// Draw fallback EQ slider knob when skin not available
