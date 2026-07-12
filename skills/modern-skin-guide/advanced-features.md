@@ -539,7 +539,7 @@ This section documents the repeatable pattern for creating modern-skinned versio
 - **Scale factor**: Use `ModernSkinElements.scaleFactor` for all geometry. This is a computed property: `baseScaleFactor * sizeMultiplier`. Do NOT cache in a `let` -- use a computed `var` or reference `ModernSkinElements.scaleFactor` directly
 - **Coordinates**: Standard macOS bottom-left origin (no flipping needed, unlike classic skin system)
 - **Dockable borders**: Dockable sub-windows must use `ModernSkinElements.auxiliaryWindowBorderWidth` for their outer chrome/content inset. Do not add per-window Metal border constants; Metal intentionally uses the smallest shared border width.
-- **Joined edges (all render styles)**: If a dockable window draws its own animated/content rect directly (rather than hosting a child view that naturally fills the content area), pass that rect through `expandingThroughJoinedEdges(in:borderWidth:adjacentEdges:)` before drawing. This bleeds the content back across a docked edge so no leftover background strip shows wherever the shared border is suppressed — modern seamless docking, Metal's thin border, **and classic flush docking** alike. It is **not** metal-only: skipping it in non-metal modes leaves the ~1px seam of issue #364. The helper self-guards (`borderWidth > 0 && !adjacentEdges.isEmpty`), so non-docked edges are untouched.
+- **Joined edges (all render styles)**: If a dockable window draws its own animated/content rect directly (rather than hosting a child view that naturally fills the content area), pass that rect through `expandingThroughJoinedEdges(in:borderWidth:adjacentEdges:)` before drawing. This bleeds the content back across the small chrome/border strip immediately adjacent to a docked edge so no leftover background strip shows wherever the shared border is suppressed — modern seamless docking, Metal's thin border, **and classic flush docking** alike. It is **not** metal-only: skipping it in non-metal modes leaves the ~1px seam of issue #364. The helper self-guards (`borderWidth > 0 && !adjacentEdges.isEmpty`) and only expands when the gap to the bounds is roughly one border wide, so non-docked edges and visible title-bar gaps are untouched.
 - **Extra content padding**: Avoid Metal-only outer padding on dockable windows. If normal Modern needs breathing room, make the padding conditional so Metal uses the standard thin border only.
 
 ### Dockable Window Checklist
@@ -550,7 +550,7 @@ Metal skins share the Modern window classes, but the chrome is visually thinner.
 2. Draw chrome with `drawWindowBackground(... adjacentEdges:sharpCorners:)` and `drawWindowBorder(... occlusionSegments:)`.
 3. Subscribe to `.windowLayoutDidChange` and refresh `adjacentEdges`, `sharpCorners`, and `edgeOcclusionSegments` from `WindowManager`.
 4. Do not add permanent extra outer padding around content in Metal mode.
-5. If the window draws content itself, expand the content rect through joined edges (`expandingThroughJoinedEdges`) before filling/drawing it — in **every** render style, not just Metal.
+5. If the window draws content itself, expand the content rect through adjacent joined chrome strips (`expandingThroughJoinedEdges`) before filling/drawing it — in **every** render style, not just Metal.
 6. If the window hosts a child content view, keep the child view's frame aligned to the same standardized content rect.
 
 Self-drawn content should follow this shape:
@@ -573,4 +573,4 @@ private func contentAreaRect() -> NSRect {
 }
 ```
 
-This is required for windows like Flow and PeppyMeter: their animated content fills a rect directly, so a joined edge would otherwise show a leftover strip of window background after the shared border stroke is suppressed. This applies in every render style — the seam of issue #364 appeared precisely because the helper used to bail out in non-metal modes.
+This is required for windows like Flow and PeppyMeter: their animated content fills a rect directly, so a joined edge would otherwise show a leftover strip of window background after the shared border stroke is suppressed. This applies in every render style — the seam of issue #364 appeared precisely because the helper used to bail out in non-metal modes. The expansion is intentionally bounded to small edge-adjacent gaps; it must not let body content cross a larger visible title-bar/chrome gap.
