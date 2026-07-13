@@ -56,4 +56,62 @@ final class WindowRestoreGeometryTests: XCTestCase {
         XCTAssertEqual(restored.height, savedSpectrumFrame.height, accuracy: 0.001)
         XCTAssertEqual(restored.maxY, savedSpectrumFrame.maxY, accuracy: 0.001)
     }
+
+    func testModernRestorePreservesStretchableNetworkMonitorHeight() {
+        let savedNetworkMonitorFrame = NSRect(x: 100, y: 252, width: 275, height: 132)
+
+        let restored = WindowManager.normalizedModernCenterStackRestoredFrame(
+            savedNetworkMonitorFrame,
+            kind: .networkMonitor,
+            mainWidth: 275,
+            minimumWidth: 275,
+            targetHeight: 116,
+            peppyMeterFloor: 203,
+            peppyMeterLegacyDoubleHeight: 232
+        )
+
+        XCTAssertEqual(restored.height, savedNetworkMonitorFrame.height, accuracy: 0.001)
+        XCTAssertEqual(restored.maxY, savedNetworkMonitorFrame.maxY, accuracy: 0.001)
+    }
+
+    func testModernRestoreClampsShortNetworkMonitorHeightToBaseline() {
+        let savedNetworkMonitorFrame = NSRect(x: 100, y: 280, width: 275, height: 90)
+
+        let restored = WindowManager.normalizedModernCenterStackRestoredFrame(
+            savedNetworkMonitorFrame,
+            kind: .networkMonitor,
+            mainWidth: 275,
+            minimumWidth: 275,
+            targetHeight: 116,
+            peppyMeterFloor: 203,
+            peppyMeterLegacyDoubleHeight: 232
+        )
+
+        XCTAssertEqual(restored.height, 116, accuracy: 0.001)
+        XCTAssertEqual(restored.maxY, savedNetworkMonitorFrame.maxY, accuracy: 0.001)
+    }
+
+    func testClassicRestorePreservesStretchableNetworkMonitorHeight() {
+        let savedNetworkMonitorFrame = NSRect(x: 650, y: 420, width: 275, height: 132)
+
+        let restored = WindowManager.normalizedClassicNetworkMonitorRestoredFrame(
+            savedNetworkMonitorFrame,
+            minimumHeight: 116
+        )
+
+        XCTAssertEqual(restored.height, savedNetworkMonitorFrame.height, accuracy: 0.001)
+        XCTAssertEqual(restored.maxY, savedNetworkMonitorFrame.maxY, accuracy: 0.001)
+    }
+
+    func testClassicRestoreClampsShortNetworkMonitorHeightToMinimum() {
+        let savedNetworkMonitorFrame = NSRect(x: 650, y: 440, width: 275, height: 90)
+
+        let restored = WindowManager.normalizedClassicNetworkMonitorRestoredFrame(
+            savedNetworkMonitorFrame,
+            minimumHeight: 116
+        )
+
+        XCTAssertEqual(restored.height, 116, accuracy: 0.001)
+        XCTAssertEqual(restored.maxY, savedNetworkMonitorFrame.maxY, accuracy: 0.001)
+    }
 }

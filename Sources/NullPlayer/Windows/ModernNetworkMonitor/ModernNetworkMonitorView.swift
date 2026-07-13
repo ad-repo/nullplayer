@@ -59,6 +59,13 @@ final class ModernNetworkMonitorView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let contentRect = contentAreaRect()
+        let animationRect = contentAnimationRect(from: contentRect)
+
+        if !isHighlighted && animationRect.contains(dirtyRect) {
+            drawNetworkContent(in: contentRect, clippedTo: animationRect)
+            return
+        }
 
         renderer.drawWindowBackground(
             in: bounds,
@@ -67,6 +74,9 @@ final class ModernNetworkMonitorView: NSView {
             sharpCorners: sharpCorners,
             backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity
         )
+
+        drawNetworkContent(in: contentRect, clippedTo: contentRect)
+
         renderer.drawWindowBorder(
             in: bounds,
             context: context,
@@ -91,14 +101,6 @@ final class ModernNetworkMonitorView: NSView {
             )
         }
 
-        NetworkMonitorDrawing.drawContent(
-            in: contentAreaRect(),
-            snapshot: snapshot,
-            direction: direction,
-            isModern: true,
-            renderState: renderState
-        )
-
         if isHighlighted {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
@@ -117,6 +119,30 @@ final class ModernNetworkMonitorView: NSView {
             borderWidth: borderWidth,
             adjacentEdges: adjacentEdges
         )
+    }
+
+    private func contentAnimationRect(from contentRect: NSRect) -> NSRect {
+        guard adjacentEdges.contains(.bottom) else { return contentRect }
+        let bottomGuard = max(1, borderWidth)
+        return NSRect(
+            x: contentRect.minX,
+            y: contentRect.minY + bottomGuard,
+            width: contentRect.width,
+            height: max(0, contentRect.height - bottomGuard)
+        )
+    }
+
+    private func drawNetworkContent(in contentRect: NSRect, clippedTo clipRect: NSRect) {
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: clipRect).setClip()
+        NetworkMonitorDrawing.drawContent(
+            in: contentRect,
+            snapshot: snapshot,
+            direction: direction,
+            isModern: true,
+            renderState: renderState
+        )
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     func skinDidChange() {
@@ -146,7 +172,7 @@ final class ModernNetworkMonitorView: NSView {
             // or steady the next data snapshot will invalidate us instead. This avoids
             // repainting the full window chrome 30 fps for a static picture.
             guard self.renderState.hasActiveAnimation else { return }
-            self.needsDisplay = true
+            self.setNeedsDisplay(self.contentAnimationRect(from: self.contentAreaRect()))
         }
         RunLoop.main.add(timer, forMode: .common)
         animationTimer = timer

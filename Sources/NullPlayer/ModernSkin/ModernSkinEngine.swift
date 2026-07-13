@@ -354,7 +354,6 @@ class ModernSkinEngine {
            Self.shouldApplyDefault(
                forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey,
                preservePersistedPreferences: preservePersistedProfiles,
-               forceDefaults: forceProfileDefaults,
                defaults: defaults
            ) {
             defaults.set(transparent, forKey: "visClassicTransparentBg.spectrumWindow")
@@ -367,13 +366,11 @@ class ModernSkinEngine {
            Self.shouldApplyDefault(
                forKey: "mainWindowVisMode",
                preservePersistedPreferences: preservePersistedProfiles,
-               forceDefaults: forceProfileDefaults,
                defaults: defaults
            ),
            Self.shouldApplyDefault(
                forKey: "modernMainWindowVisMode",
                preservePersistedPreferences: preservePersistedProfiles,
-               forceDefaults: forceProfileDefaults,
                defaults: defaults
            ) {
             if let mode = MainWindowVisMode(rawValue: modeRaw) {
@@ -394,7 +391,6 @@ class ModernSkinEngine {
            Self.shouldApplyDefault(
                forKey: "spectrumQualityMode",
                preservePersistedPreferences: preservePersistedProfiles,
-               forceDefaults: forceProfileDefaults,
                defaults: defaults
            ) {
             if let mode = SpectrumQualityMode(rawValue: modeRaw) {
@@ -436,7 +432,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: VisClassicBridge.PreferenceScope.mainWindow.fitToWidthKey,
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 defaults.set(fit, forKey: "visClassicFitToWidth.mainWindow")
@@ -447,7 +442,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: VisClassicBridge.PreferenceScope.spectrumWindow.fitToWidthKey,
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 defaults.set(fit, forKey: "visClassicFitToWidth.spectrumWindow")
@@ -458,7 +452,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey,
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 defaults.set(transparent, forKey: "visClassicTransparentBg.mainWindow")
@@ -469,7 +462,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey,
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 defaults.set(transparent, forKey: "visClassicTransparentBg.spectrumWindow")
@@ -480,7 +472,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: VisClassicBridge.PreferenceScope.mainWindow.opacityKey,
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 let clamped = max(0.0, min(1.0, Double(opacity)))
@@ -492,7 +483,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: VisClassicBridge.PreferenceScope.spectrumWindow.opacityKey,
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ) {
                 let clamped = max(0.0, min(1.0, Double(opacity)))
@@ -507,7 +497,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "mainWindowFlameStyle",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let style = FlameStyle(rawValue: styleRaw) {
@@ -521,7 +510,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "mainWindowFlameIntensity",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let intensity = FlameIntensity(rawValue: intensityRaw) {
@@ -535,7 +523,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "flameStyle",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let style = FlameStyle(rawValue: styleRaw) {
@@ -549,7 +536,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "flameIntensity",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let intensity = FlameIntensity(rawValue: intensityRaw) {
@@ -565,7 +551,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "mainWindowLightningStyle",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let style = LightningStyle(rawValue: styleRaw) {
@@ -579,7 +564,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "lightningStyle",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let style = LightningStyle(rawValue: styleRaw) {
@@ -595,7 +579,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "mainWindowMatrixColorScheme",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let scheme = MatrixColorScheme(rawValue: schemeRaw) {
@@ -609,7 +592,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "mainWindowMatrixIntensity",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let intensity = MatrixIntensity(rawValue: intensityRaw) {
@@ -623,7 +605,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "matrixColorScheme",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let scheme = MatrixColorScheme(rawValue: schemeRaw) {
@@ -637,7 +618,6 @@ class ModernSkinEngine {
                Self.shouldApplyDefault(
                    forKey: "matrixIntensity",
                    preservePersistedPreferences: preservePersistedProfiles,
-                   forceDefaults: forceProfileDefaults,
                    defaults: defaults
                ),
                let intensity = MatrixIntensity(rawValue: intensityRaw) {
