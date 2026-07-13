@@ -59,6 +59,9 @@ protocol ProjectMWindowProviding: ModeDependentWindow {
 
     /// Switch active visualization engine
     func switchEngine(to type: VisualizationType)
+
+    /// Apply visualization-window reset defaults to the live window, if created.
+    func resetVisualizationWindowPreferences()
     
     /// Current preset name
     var currentPresetName: String { get }

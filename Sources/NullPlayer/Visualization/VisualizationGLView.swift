@@ -484,9 +484,9 @@ class VisualizationGLView: NSOpenGLView {
     ///
     /// This method can be called from any thread - it will defer the actual switch
     /// to the render thread to ensure proper OpenGL context.
-    func switchEngine(to type: VisualizationType) {
+    func switchEngine(to type: VisualizationType, forceReload: Bool = false) {
         // Skip if already using this engine type
-        guard type != currentEngineType else {
+        guard forceReload || type != currentEngineType else {
             NSLog("VisualizationGLView: Already using %@", type.displayName)
             return
         }

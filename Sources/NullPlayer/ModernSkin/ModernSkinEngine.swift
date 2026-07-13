@@ -362,25 +362,38 @@ class ModernSkinEngine {
         var visClassicMainOpacity: Double?
         var visClassicSpectrumOpacity: Double?
 
-        if let modeRaw = config?.mainWindowMode,
-           Self.shouldApplyDefault(
-               forKey: "mainWindowVisMode",
-               preservePersistedPreferences: preservePersistedProfiles,
-               defaults: defaults
-           ),
-           Self.shouldApplyDefault(
-               forKey: "modernMainWindowVisMode",
-               preservePersistedPreferences: preservePersistedProfiles,
-               defaults: defaults
-           ) {
+        if let modeRaw = config?.mainWindowMode {
             if let mode = MainWindowVisMode(rawValue: modeRaw) {
                 if let qualityMode = mode.spectrumQualityMode,
                    !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
                     NSLog("ModernSkinEngine: Ignoring unsupported mainWindowMode '%@' (shader unavailable)", modeRaw)
                 } else {
-                    defaults.set(mode.rawValue, forKey: "mainWindowVisMode")
-                    defaults.set(mode.rawValue, forKey: "modernMainWindowVisMode")
-                    mainVisChanged = true
+                    let shouldApplyMain = Self.shouldApplyDefault(
+                        forKey: "mainWindowVisMode",
+                        preservePersistedPreferences: preservePersistedProfiles,
+                        defaults: defaults
+                    )
+                    let shouldApplyModern = Self.shouldApplyDefault(
+                        forKey: "modernMainWindowVisMode",
+                        preservePersistedPreferences: preservePersistedProfiles,
+                        defaults: defaults
+                    )
+
+                    if shouldApplyMain {
+                        let raw = preservePersistedProfiles && !shouldApplyModern
+                            ? Self.validMainWindowModeRaw(forKey: "modernMainWindowVisMode", defaults: defaults) ?? mode.rawValue
+                            : mode.rawValue
+                        defaults.set(raw, forKey: "mainWindowVisMode")
+                        mainVisChanged = true
+                    }
+
+                    if shouldApplyModern {
+                        let raw = preservePersistedProfiles && !shouldApplyMain
+                            ? Self.validMainWindowModeRaw(forKey: "mainWindowVisMode", defaults: defaults) ?? mode.rawValue
+                            : mode.rawValue
+                        defaults.set(raw, forKey: "modernMainWindowVisMode")
+                        mainVisChanged = true
+                    }
                 }
             } else {
                 NSLog("ModernSkinEngine: Ignoring unknown mainWindowMode '%@'", modeRaw)
@@ -718,6 +731,16 @@ class ModernSkinEngine {
             forceDefaults: forceProfileDefaults,
             defaults: defaults
         )
+    }
+
+    private static func validMainWindowModeRaw(forKey key: String, defaults: UserDefaults) -> String? {
+        guard let raw = defaults.string(forKey: key),
+              let mode = MainWindowVisMode(rawValue: raw) else { return nil }
+        if let qualityMode = mode.spectrumQualityMode,
+           !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+            return nil
+        }
+        return mode.rawValue
     }
     
     private func notifySkinChanged() {

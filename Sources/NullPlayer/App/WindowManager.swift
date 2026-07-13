@@ -2780,6 +2780,12 @@ class WindowManager {
         UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
         projectMWindowController?.switchEngine(to: type)
     }
+
+    /// Reset visualization-window preferences to defaults and force the live view to re-read them.
+    func resetVisualizationWindowPreferences() {
+        UserDefaults.standard.set(VisualizationType.projectM.rawValue, forKey: "visualizationEngineType")
+        projectMWindowController?.resetVisualizationWindowPreferences()
+    }
     
     /// Get information about loaded presets (bundled count, custom count, custom path)
     var visualizationPresetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {

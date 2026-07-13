@@ -241,7 +241,7 @@ enum VisualizationPreferences {
             postVisClassicOptionRefresh(for: .spectrumWindow)
         }
         if scope == .visualizationWindow || scope == .all {
-            WindowManager.shared.switchVisualizationEngine(to: .projectM)
+            WindowManager.shared.resetVisualizationWindowPreferences()
         }
     }
 
