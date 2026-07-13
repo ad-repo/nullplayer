@@ -2780,6 +2780,12 @@ class WindowManager {
         UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
         projectMWindowController?.switchEngine(to: type)
     }
+
+    /// Reset visualization-window preferences to defaults and force the live view to re-read them.
+    func resetVisualizationWindowPreferences() {
+        UserDefaults.standard.set(VisualizationType.projectM.rawValue, forKey: "visualizationEngineType")
+        projectMWindowController?.resetVisualizationWindowPreferences()
+    }
     
     /// Get information about loaded presets (bundled count, custom count, custom path)
     var visualizationPresetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
@@ -3748,15 +3754,26 @@ class WindowManager {
 
         let topY = normalized.maxY
         switch kind {
-        case .equalizer, .networkMonitor:
+        case .equalizer:
             normalized.size.height = targetHeight
-        case .playlist, .spectrum, .waveform, .audioAnalysis:
+        case .playlist, .spectrum, .waveform, .audioAnalysis, .networkMonitor:
             normalized.size.height = max(targetHeight, normalized.height)
         case .peppyMeter:
             normalized.size.height = abs(normalized.height - peppyMeterLegacyDoubleHeight) <= 2
                 ? peppyMeterFloor
                 : max(peppyMeterFloor, normalized.height)
         }
+        normalized.origin.y = topY - normalized.size.height
+        return normalized
+    }
+
+    static func normalizedClassicNetworkMonitorRestoredFrame(
+        _ frame: NSRect,
+        minimumHeight: CGFloat
+    ) -> NSRect {
+        var normalized = frame
+        let topY = normalized.maxY
+        normalized.size.height = max(minimumHeight, normalized.height)
         normalized.origin.y = topY - normalized.size.height
         return normalized
     }
@@ -3772,10 +3789,11 @@ class WindowManager {
                     floor: (SkinElements.PeppyMeterWindow.windowSize.height * classicScaleMultiplier).rounded(),
                     legacyDoubleHeight: (SkinElements.SpectrumWindow.windowSize.height * 2 * classicScaleMultiplier).rounded()
                 )
-            } else if let mainWindow = mainWindowController?.window {
-                normalized.size.height = mainWindow.frame.height
             } else {
-                normalized.size.height = SkinElements.SpectrumWindow.windowSize.height * classicScaleMultiplier
+                return Self.normalizedClassicNetworkMonitorRestoredFrame(
+                    frame,
+                    minimumHeight: SkinElements.SpectrumWindow.minSize.height * classicScaleMultiplier
+                )
             }
             normalized.origin.y = topY - normalized.size.height
             return normalized

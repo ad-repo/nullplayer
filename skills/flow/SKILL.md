@@ -35,7 +35,7 @@ Flow is a dockable network throughput meter available in classic and modern UI.
 - PeppyMeter uses a taller `1.75x` landscape stack height; do not reuse PeppyMeter sizing for Flow.
 - Classic uses `SkinElements.SpectrumWindow.windowSize` / `minSize`.
 - Modern uses `ModernSkinElements.spectrumWindowSize` / `spectrumMinSize`.
-- Restored Flow frames are normalized to the current single-height stack height so older double-height saved frames collapse to the current layout.
+- Restored Flow frames are normalized to at least the current single-height stack height, but user-stretched heights above that floor are preserved.
 
 ## Key Source Files
 
@@ -58,6 +58,7 @@ Flow is a dockable network throughput meter available in classic and modern UI.
 - Do not shrink the modern Flow content rect with an additional outer padding/gutter. That creates the old heavy-border appearance. Keep the content rect at the shared chrome inset and put any spacing inside `NetworkMonitorDrawing` instead.
 - Classic Flow uses tighter content insets than modern so the meter fills the classic skin interior.
 - Modern Flow uses the standard auxiliary chrome inset without an extra window-specific gutter. The modern content rect expands through adjacent joined chrome strips (via `NSRect.expandingThroughJoinedEdges`) in every render style — not just Metal — so no ~1px seam shows on a docked edge (issue #364). The helper must not expand across a visible title bar gap; Flow's body content must never paint over the title bar or close button.
+- Flow's animated content reaches the bottom/joined edge, unlike PeppyMeter's padded meter art. Do not use a broad Peppy-style `setNeedsDisplay(contentAreaRect())` fast path for timer redraws; it can flicker the bottom edge when Flow is locked above another window. Timer redraws should invalidate a guarded animation rect that excludes the bottom strip, while `NetworkMonitorDrawing.drawContent` still receives the full content rect so graph layout remains stable. Full-window paints should draw content first and chrome/borders after it.
 - Tiny mode renders a compact single-line rate for the selected direction.
 
 ## Monitoring Lifecycle

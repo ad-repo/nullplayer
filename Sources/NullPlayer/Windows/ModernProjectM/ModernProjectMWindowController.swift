@@ -233,6 +233,10 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
     func switchEngine(to type: VisualizationType) {
         projectMView.visualizationGLView?.switchEngine(to: type)
     }
+
+    func resetVisualizationWindowPreferences() {
+        projectMView.resetVisualizationWindowPreferences()
+    }
     
     var currentPresetName: String {
         return projectMView.visualizationGLView?.currentPresetName ?? ""

@@ -9,6 +9,15 @@ NullPlayer has several visualization stacks. Each has its own skill; this file i
 
 The standalone waveform window is **not** a Metal visualization mode. It reuses audio waveform notifications and the cache service. Do not treat it as part of this stack.
 
+## Persistence and Reset Policy
+
+Visualization choices are durable `UserDefaults` preferences, not AppState session fields. AppState only remembers quit-session state such as window visibility/layout and playlist/audio state.
+
+- Main-window, Spectrum-window, Visualizations-window, `vis_classic`, and browser artwork visualizer settings must remain resettable through `VisualizationPreferences`.
+- Modern/metal skin `visualization` defaults are first-use defaults on app launch. They may seed missing keys, but must not overwrite user-selected mode/style/profile keys during a normal relaunch.
+- Explicit skin changes and **Reset Skin to Default** still reapply the selected skin's visualization defaults.
+- When adding a new visualization preference that can be hard to recover manually, add it to the appropriate `VisualizationPreferenceResetScope`.
+
 ## Sub-Skills
 
 | Skill | Scope |

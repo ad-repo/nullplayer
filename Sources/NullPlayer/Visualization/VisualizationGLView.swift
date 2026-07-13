@@ -391,7 +391,9 @@ class VisualizationGLView: NSOpenGLView {
                 }
                 // Restore last selected effect if persisted.
                 let stored = UserDefaults.standard.integer(forKey: TripexEngine.DefaultsKey.lastEffectIndex)
-                if stored > 0, stored < tripex.effectCount {
+                if UserDefaults.standard.object(forKey: TripexEngine.DefaultsKey.lastEffectIndex) != nil,
+                   stored >= 0,
+                   stored < tripex.effectCount {
                     tripex.selectEffect(at: stored)
                 }
                 return tripex
@@ -482,9 +484,9 @@ class VisualizationGLView: NSOpenGLView {
     ///
     /// This method can be called from any thread - it will defer the actual switch
     /// to the render thread to ensure proper OpenGL context.
-    func switchEngine(to type: VisualizationType) {
+    func switchEngine(to type: VisualizationType, forceReload: Bool = false) {
         // Skip if already using this engine type
-        guard type != currentEngineType else {
+        guard forceReload || type != currentEngineType else {
             NSLog("VisualizationGLView: Already using %@", type.displayName)
             return
         }
@@ -1342,9 +1344,26 @@ class VisualizationGLView: NSOpenGLView {
         return t.effectName(at: index)
     }
 
-    func nextTripexEffect()     { withTripex { $0.nextEffect() } }
-    func previousTripexEffect() { withTripex { $0.previousEffect() } }
-    func randomTripexEffect()   { withTripex { $0.randomEffect() } }
+    func nextTripexEffect() {
+        withTripex {
+            $0.nextEffect()
+            persistTripexEffectIndex($0.currentEffectIndex)
+        }
+    }
+
+    func previousTripexEffect() {
+        withTripex {
+            $0.previousEffect()
+            persistTripexEffectIndex($0.currentEffectIndex)
+        }
+    }
+
+    func randomTripexEffect() {
+        withTripex {
+            $0.randomEffect()
+            persistTripexEffectIndex($0.currentEffectIndex)
+        }
+    }
     func reconfigureTripex()    { withTripex { $0.reconfigure() } }
     func toggleTripexHold()     { withTripex { $0.toggleHold() } }
     func setTripexHold(_ on: Bool) { withTripex { $0.setHold(on) } }
@@ -1354,8 +1373,13 @@ class VisualizationGLView: NSOpenGLView {
     func selectTripexEffect(at index: Int) {
         withTripex { t in
             t.selectEffect(at: index)
-            UserDefaults.standard.set(index, forKey: TripexEngine.DefaultsKey.lastEffectIndex)
+            persistTripexEffectIndex(t.currentEffectIndex)
         }
+    }
+
+    private func persistTripexEffectIndex(_ index: Int) {
+        guard index >= 0 else { return }
+        UserDefaults.standard.set(index, forKey: TripexEngine.DefaultsKey.lastEffectIndex)
     }
 
     private func withTripex(_ body: (TripexEngine) -> Void) {

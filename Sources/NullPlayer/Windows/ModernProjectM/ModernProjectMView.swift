@@ -1260,6 +1260,16 @@ class ModernProjectMView: NSView, GeissMenuTarget, TripexMenuTarget, MetMuseumMe
         }
     }
 
+    func resetVisualizationWindowPreferences() {
+        hidePresetRatingOverlay()
+        stopPresetCycleTimer()
+        stopTripexCycleTimer()
+        loadProjectMPresetCycleStateFromDefaults()
+        loadTripexCycleStateFromDefaults()
+        visualizationGLView?.switchEngine(to: .projectM, forceReload: true)
+        applyProjectMPresetCycleMode()
+    }
+
     // MARK: - Tripex cycle controls (uniform with ProjectM)
 
     private func loadTripexCycleStateFromDefaults() {

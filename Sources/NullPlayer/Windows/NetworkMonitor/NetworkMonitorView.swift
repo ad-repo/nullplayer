@@ -58,8 +58,21 @@ final class NetworkMonitorView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let contentRect = contentAreaRect()
+        let animationRect = contentAnimationRect(from: contentRect)
+
+        if !isHighlighted && animationRect.contains(dirtyRect) {
+            drawNetworkContent(in: contentRect, clippedTo: animationRect)
+            return
+        }
+
         let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
         let renderer = SkinRenderer(skin: skin)
+
+        NSColor.black.setFill()
+        bounds.fill()
+
+        drawNetworkContent(in: contentRect, clippedTo: contentRect)
 
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
@@ -67,7 +80,7 @@ final class NetworkMonitorView: NSView {
         if WindowManager.shared.hideTitleBars {
             context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
         }
-        renderer.drawSpectrumAnalyzerWindow(
+        renderer.drawSpectrumAnalyzerWindowChromeOverlay(
             in: context,
             bounds: bounds,
             isActive: window?.isKeyWindow ?? true,
@@ -77,18 +90,33 @@ final class NetworkMonitorView: NSView {
         )
         context.restoreGState()
 
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
+    }
+
+    private func contentAnimationRect(from contentRect: NSRect) -> NSRect {
+        let bottomGuard: CGFloat = 1
+        return NSRect(
+            x: contentRect.minX,
+            y: contentRect.minY + bottomGuard,
+            width: contentRect.width,
+            height: max(0, contentRect.height - bottomGuard)
+        )
+    }
+
+    private func drawNetworkContent(in contentRect: NSRect, clippedTo clipRect: NSRect) {
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: clipRect).setClip()
         NetworkMonitorDrawing.drawContent(
-            in: contentAreaRect(),
+            in: contentRect,
             snapshot: snapshot,
             direction: direction,
             isModern: false,
             renderState: renderState
         )
-
-        if isHighlighted {
-            NSColor.white.withAlphaComponent(0.15).setFill()
-            bounds.fill()
-        }
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     func skinDidChange() {
@@ -112,7 +140,7 @@ final class NetworkMonitorView: NSView {
             // or steady the next data snapshot will invalidate us instead. This avoids
             // repainting the full window chrome 30 fps for a static picture.
             guard self.renderState.hasActiveAnimation else { return }
-            self.needsDisplay = true
+            self.setNeedsDisplay(self.contentAnimationRect(from: self.contentAreaRect()))
         }
         RunLoop.main.add(timer, forMode: .common)
         animationTimer = timer
