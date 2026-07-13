@@ -39,18 +39,23 @@ class OctaveCanvasView: NSView {
         layer?.backgroundColor = NSColor.black.cgColor
 
         // Observe magnitudes updates from the audio engine
+        // Receive on the posting thread (`queue: nil`) and hop to main ourselves. `queue: .main`
+        // makes NotificationCenter deliver synchronously and blocks the real-time audio tap
+        // thread on the main queue, deadlocking against tap teardown during rapid track loads.
         magnitudesObserver = NotificationCenter.default.addObserver(
             forName: .audioFFTMagnitudesUpdated,
             object: nil,
-            queue: .main
-        ) { [weak self] notification in
+            queue: nil
+        ) { notification in
             guard let userInfo = notification.userInfo,
                   let magnitudes = userInfo["magnitudes"] as? [Float],
                   let sampleRate = userInfo["sampleRate"] as? Double,
                   let fftSize = userInfo["fftSize"] as? Int else { return }
 
-            self?.updateWithMagnitudes(magnitudes, sampleRate: sampleRate, fftSize: fftSize)
-            self?.needsDisplay = true
+            DispatchQueue.main.async { [weak self] in
+                self?.updateWithMagnitudes(magnitudes, sampleRate: sampleRate, fftSize: fftSize)
+                self?.needsDisplay = true
+            }
         }
     }
 

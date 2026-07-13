@@ -364,6 +364,40 @@ consumer set so it costs nothing when unused:
 identical payload shape.** A consumer listening to only one path silently misses the other engine — the
 `stereoNeeded`/`magnitudesNeeded` mirror flags bridge engine → streaming the same way `spectrumNeeded` does.
 
+### Consuming tap notifications safely — never observe on `queue: .main` ⚠️
+
+`.audioPCMDataUpdated`, `.audioStereoPCMDataUpdated`, `.audioFFTMagnitudesUpdated`, and
+`.audioWaveform576DataUpdated` are posted **directly from the realtime audio tap thread** (see
+`AudioEngine.processAudioBuffer`; `.audioSpectrumDataUpdated` is the exception — it is dispatched to
+main at the source). `NotificationCenter` delivers a `queue:`-based observer **synchronously**: it
+enqueues an `NSOperation` on that queue and calls `waitUntilFinished`. So an observer registered with
+`queue: .main` blocks the audio tap thread on the main queue.
+
+That deadlocks against tap teardown: `AudioEngine.commitLoadedLocalTrack` calls
+`mixerNode.removeTap(onBus:)` on the **main thread**, which waits on the AVFoundation RealtimeMessenger
+lock the tap thread holds while it is blocked posting to main. Rapid track loads (e.g. spamming Play)
+make teardown coincide with a tap callback and hang the app.
+
+**Correct pattern for any window/view consuming these tap notifications** — register with `queue: nil`
+(runs synchronously on the posting thread, no `OperationQueue` wait) and hop to main yourself:
+
+```swift
+observer = NotificationCenter.default.addObserver(
+    forName: .audioPCMDataUpdated, object: nil, queue: nil   // NOT .main
+) { note in
+    guard let pcm = note.userInfo?["pcm"] as? [Float] else { return }
+    DispatchQueue.main.async { [weak self] in
+        self?.ingest(pcm)   // UI / mutable state touched only on main
+    }
+}
+```
+
+This is poster-agnostic, so it covers both the `AudioEngine` and `StreamingAudioPlayer` posting paths.
+Reference implementations: `BaseWaveformView`, `PeppyMeterLevelModel`, `ScopePaneView`, `OctavePaneView`.
+Views needing lowest latency (e.g. `ProjectMView`, `SpectrumAnalyzerView`) instead do their work
+directly on the posting thread with their own locking — also `queue: nil`, just no main hop. Either way,
+**never `queue: .main`** for a tap-posted notification.
+
 ## BPM Detection
 
 Real-time BPM detection using **aubio** library (`libaubio.5.dylib`):

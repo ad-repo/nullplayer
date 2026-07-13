@@ -44,14 +44,19 @@ class ScopeCanvasView: NSView {
         layer?.backgroundColor = NSColor.black.cgColor
 
         // Observe PCM data updates from the audio engine
+        // Receive on the posting thread (`queue: nil`) and hop to main ourselves. `queue: .main`
+        // makes NotificationCenter deliver synchronously and blocks the real-time audio tap
+        // thread on the main queue, deadlocking against tap teardown during rapid track loads.
         pcmObserver = NotificationCenter.default.addObserver(
             forName: .audioPCMDataUpdated,
             object: nil,
-            queue: .main
-        ) { [weak self] notification in
+            queue: nil
+        ) { notification in
             guard let userInfo = notification.userInfo,
                   let pcm = userInfo["pcm"] as? [Float] else { return }
-            self?.ingest(pcm)
+            DispatchQueue.main.async { [weak self] in
+                self?.ingest(pcm)
+            }
         }
     }
 
