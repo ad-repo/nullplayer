@@ -625,7 +625,7 @@ class ContextMenuBuilder {
         // Active indicator on the submenu item
         if activeMode == .classic { classicItem.state = .on }
         classicItem.submenu = classicMenu
-        uiMenu.addItem(classicItem)
+        if AppCapabilities.supports(.classicMode) { uiMenu.addItem(classicItem) }
 
         // --- Modern submenu ---
         let modernItem = NSMenuItem(title: "Modern", action: nil, keyEquivalent: "")
@@ -682,7 +682,7 @@ class ContextMenuBuilder {
 
         if activeMode == .modern { modernItem.state = .on }
         modernItem.submenu = modernMenu
-        uiMenu.addItem(modernItem)
+        if AppCapabilities.supports(.modernMode) { uiMenu.addItem(modernItem) }
 
         // --- Metal submenu ---
         let metalItem = NSMenuItem(title: "Metal", action: nil, keyEquivalent: "")
@@ -733,8 +733,8 @@ class ContextMenuBuilder {
 
         if activeMode == .metal { metalItem.state = .on }
         metalItem.submenu = metalMenu
-        uiMenu.addItem(metalItem)
-        
+        if AppCapabilities.supports(.metalMode) { uiMenu.addItem(metalItem) }
+
         return uiMenu
     }
     
@@ -4020,18 +4020,21 @@ class MenuActions: NSObject {
     // MARK: - UI Mode Switching
     
     @objc func setClassicMode() {
+        guard AppCapabilities.supports(.classicMode) else { return }
         let wm = WindowManager.shared
         guard wm.uiMode != .classic else { return }
         wm.reloadUI(to: .classic)
     }
 
     @objc func setModernMode() {
+        guard AppCapabilities.supports(.modernMode) else { return }
         let wm = WindowManager.shared
         guard wm.uiMode != .modern else { return }
         wm.reloadUI(to: .modern)
     }
 
     @objc func setMetalMode() {
+        guard AppCapabilities.supports(.metalMode) else { return }
         let wm = WindowManager.shared
         guard wm.uiMode != .metal else { return }
         wm.reloadUI(to: .metal)
