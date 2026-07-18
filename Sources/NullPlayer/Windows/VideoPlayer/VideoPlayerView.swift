@@ -702,8 +702,12 @@ class VideoPlayerView: NSView {
         mediaPlayer?.stop()
         mediaPlayer = nil
         previousState = nil
+        isActivelyPlaying = false
         availableAudioTracks = []
         availableSubtitleTracks = []
+        // Clear Plex external-subtitle entries so a stale set can't carry into
+        // the next item; callers re-populate via setPlexStreams() after play().
+        plexStreams = []
 
         // Build the media. VLC has no arbitrary-header API; for remote/relay Plex
         // the auth token rides in the URL query string, and only the user-agent
@@ -728,11 +732,13 @@ class VideoPlayerView: NSView {
         player.drawable = playerHostView
         player.delegate = self
         player.media = media
-        player.audio?.volume = Int32(volume * 100)
+        player.audio?.volume = Int32(max(0, min(1, volume)) * 100)
         mediaPlayer = player
         player.play()
 
-        NSLog("VideoPlayerView: Playing %@ from %@", title, url.absoluteString)
+        // Redact auth query params (e.g. Plex X-Plex-Token) — the token rides in
+        // the URL for query-param auth and must not leak into system logs.
+        NSLog("VideoPlayerView: Playing %@ from %@", title, url.redacted)
     }
     
     /// Stop playback
@@ -803,18 +809,22 @@ class VideoPlayerView: NSView {
         }
     }
 
+    // Note: VLCKit's `player.time` / `player.position` setters don't change the
+    // play/pause state — a playing player keeps playing after a seek and a paused
+    // one stays paused. These helpers deliberately do NOT force play(), so a
+    // caller that seeks and then resumes explicitly (e.g. stopCasting: seek +
+    // togglePlayPause) isn't flipped back to paused by an implicit resume here.
+
     /// Seek to normalized position (0-1)
     func seekToPosition(_ position: Double) {
         guard let player = mediaPlayer else { return }
         player.position = Float(position)
-        if !player.isPlaying { player.play() }
     }
 
     /// Seek to time
     func seek(to time: TimeInterval) {
         guard let player = mediaPlayer else { return }
         player.time = VLCTime(int: Int32(max(0, time) * 1000))
-        if !player.isPlaying { player.play() }
     }
 
     /// Skip forward by seconds
@@ -823,7 +833,6 @@ class VideoPlayerView: NSView {
         let current = Double(player.time.intValue) / 1000.0
         let newTime = totalDuration > 0 ? min(current + seconds, totalDuration) : current + seconds
         player.time = VLCTime(int: Int32(newTime * 1000))
-        if !player.isPlaying { player.play() }
     }
 
     /// Skip backward by seconds
@@ -832,7 +841,6 @@ class VideoPlayerView: NSView {
         let current = Double(player.time.intValue) / 1000.0
         let newTime = max(0, current - seconds)
         player.time = VLCTime(int: Int32(newTime * 1000))
-        if !player.isPlaying { player.play() }
     }
     
     // MARK: - Track Selection
@@ -966,7 +974,7 @@ class VideoPlayerView: NSView {
             } else if let externalURL = track.externalURL, externalURL.scheme != nil {
                 // External subtitle from an absolute URL (e.g. a sidecar file).
                 player.addPlaybackSlave(externalURL, type: .subtitle, enforce: true)
-                NSLog("VideoPlayerView: Loaded external subtitle from: %@", externalURL.absoluteString)
+                NSLog("VideoPlayerView: Loaded external subtitle from: %@", externalURL.redacted)
             } else {
                 // Plex external-subtitle keys are server-relative API paths; loading
                 // them needs the Plex server base URL + token, which lives in

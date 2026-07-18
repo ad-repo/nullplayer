@@ -527,7 +527,7 @@ Bundled third-party components:
 - **FlyingFox** (MIT) — local HTTP server for casting
 
 **Bundled frameworks / dynamic libraries**
-- **VLCKit / libVLC** (LGPL-2.1+) — video playback engine (MKV/MP4/etc.) and casting
+- **VLCKit / libVLC** (LGPL-2.1+) — video playback engine (MKV/MP4/etc.)
 - **libprojectM** (LGPL-2.1) — ProjectM/MilkDrop visualizations
 - **aubio** (GPL-3.0) — BPM/tempo detection
 - **libsndfile** (LGPL-2.1), **FLAC** (BSD-3), **libogg** (BSD-3), **libvorbis** (BSD-3), **Opus** (BSD-3), **LAME** (LGPL-2.0+), **mpg123** (LGPL-2.1) — audio codecs
