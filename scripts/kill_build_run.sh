@@ -47,11 +47,25 @@ else
     BUILD_DIR=".build/arm64-apple-macosx/${CONFIG}"
 fi
 
-# Copy projectM library to build frameworks directory
-echo "📦 Copying projectM libraries..."
+# Copy vendored frameworks to the build frameworks directory so the app's
+# @executable_path/../Frameworks rpath resolves them at runtime.
+echo "📦 Copying vendored frameworks..."
 mkdir -p "${BUILD_DIR%/$CONFIG}/Frameworks"
 cp -f Frameworks/libprojectM-4.dylib "${BUILD_DIR%/$CONFIG}/Frameworks/" 2>/dev/null || true
 cp -f Frameworks/libprojectM-4.4.dylib "${BUILD_DIR%/$CONFIG}/Frameworks/" 2>/dev/null || true
+# VLCKit.framework (LGPL video engine) is self-contained; copy the whole bundle.
+# The vendored framework ships with an invalid ad-hoc signature, so re-sign it
+# ad-hoc (matching build_dmg.sh) — otherwise dyld kills the app with a
+# CODESIGNING "Invalid Page" fault when it maps the framework at launch.
+# Staging + re-signing the ~600 MB bundle is slow, so only do it when the copy
+# is missing or its signature doesn't verify.
+VLCKIT_DEST="${BUILD_DIR%/$CONFIG}/Frameworks/VLCKit.framework"
+if [[ ! -d "$VLCKIT_DEST" ]] || ! codesign --verify "$VLCKIT_DEST" 2>/dev/null; then
+    echo "   Staging + re-signing VLCKit.framework..."
+    rm -rf "$VLCKIT_DEST"
+    cp -R Frameworks/VLCKit.framework "${BUILD_DIR%/$CONFIG}/Frameworks/"
+    codesign --force --sign - "$VLCKIT_DEST" 2>/dev/null || true
+fi
 
 echo "🚀 Launching NullPlayer..."
 "$BUILD_DIR/NullPlayer" &

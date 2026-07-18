@@ -1,8 +1,7 @@
 import AppKit
 import NullPlayerCore
-@preconcurrency import KSPlayer
 
-/// Window controller for video playback with KSPlayer and skinned UI
+/// Window controller for video playback with VLCKit and skinned UI
 class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     // MARK: - Properties
@@ -214,7 +213,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Record analytics before clearing state, matching stop() and windowWillClose.
         recordVideoPlayEvent()
 
-        // Stop local KSPlayer and clear content state
+        // Stop local playback and clear content state
         videoPlayerView.stop()
         isPlaying = false
         clearLoadedContentState()
@@ -264,21 +263,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     // MARK: - Static Configuration
     
-    /// Configure KSPlayer globally (call once at app startup)
-    static func configureKSPlayer() {
-        // Use FFmpeg-only backend for consistent behavior across all formats
-        // KSMEPlayer is the FFmpeg-based player, KSAVPlayer is the AVPlayer-based one
-        KSOptions.firstPlayerType = KSMEPlayer.self
-        KSOptions.secondPlayerType = nil  // No fallback - use FFmpeg only
-        
-        // Enable hardware acceleration
-        KSOptions.hardwareDecode = true
-        
-        // Configure playback behavior
-        KSOptions.isAutoPlay = true
-        KSOptions.isSecondOpen = false
-        
-        NSLog("VideoPlayerWindowController: KSPlayer configured for FFmpeg-only playback")
+    /// Global one-time video-engine configuration hook (call once at app startup).
+    ///
+    /// VLCKit needs no global player-type / hardware-decode configuration — each
+    /// `VLCMediaPlayer` is configured per-instance — so this is intentionally a
+    /// no-op. Retained as a call site so startup wiring stays explicit.
+    static func configureVideoEngine() {
+        // No global VLCKit configuration required.
     }
     
     // MARK: - Initialization

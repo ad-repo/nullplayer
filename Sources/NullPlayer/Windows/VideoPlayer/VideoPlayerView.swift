@@ -1,13 +1,22 @@
 import AppKit
 import NullPlayerCore
-@preconcurrency import KSPlayer
+import VLCKit
 
-/// Video player view using KSPlayer with FFmpeg backend, skinned title bar, and controls
+/// Lightweight descriptor for a VLCKit media track. VLCKit exposes tracks as
+/// parallel index/name arrays rather than objects, so we carry the VLC track
+/// index (the value from `audioTrackIndexes` / `videoSubTitlesIndexes`, not the
+/// array position) alongside its display name.
+private struct VideoTrackInfo {
+    let index: Int32
+    let name: String
+}
+
+/// Video player view using VLCKit (libVLC), skinned title bar, and controls
 class VideoPlayerView: NSView {
-    
+
     // MARK: - Properties
-    
-    private var playerLayer: KSPlayerLayer?
+
+    private var mediaPlayer: VLCMediaPlayer?
     private var playerHostView: NSView!
     private var loadingIndicator: NSProgressIndicator?
     private var currentTitle: String = ""
@@ -24,11 +33,11 @@ class VideoPlayerView: NSView {
     /// Track selection panel
     private var trackSelectionPanel: TrackSelectionPanelView?
     
-    /// Available audio tracks (from KSPlayer)
-    private var availableAudioTracks: [MediaPlayerTrack] = []
-    
-    /// Available subtitle tracks (from KSPlayer)
-    private var availableSubtitleTracks: [MediaPlayerTrack] = []
+    /// Available audio tracks (from VLCKit)
+    private var availableAudioTracks: [VideoTrackInfo] = []
+
+    /// Available subtitle tracks (from VLCKit)
+    private var availableSubtitleTracks: [VideoTrackInfo] = []
     
     /// Plex streams for external subtitles
     private var plexStreams: [PlexStream] = []
@@ -44,6 +53,11 @@ class VideoPlayerView: NSView {
     /// Auto-hide timer for controls
     private var controlsHideTimer: Timer?
     private var controlsVisible: Bool = true
+
+    /// Whether playback is actively running, tracked from the player delegate.
+    /// Used to gate control auto-hide instead of polling `mediaPlayer.isPlaying`,
+    /// whose value isn't reliable at arbitrary times with VLCKit.
+    private var isActivelyPlaying: Bool = false
     
     /// Resize zone handling for borderless window
     private var resizeZone: ResizeZone = .none
@@ -63,12 +77,13 @@ class VideoPlayerView: NSView {
     /// Public accessors for playback time
     var currentPlaybackTime: TimeInterval { currentTime }
     var totalPlaybackDuration: TimeInterval { totalDuration }
-    var isPlaying: Bool { playerLayer?.state.isPlaying == true }
-    
+    var isPlaying: Bool { mediaPlayer?.isPlaying == true }
+
     /// Volume level (0.0 - 1.0)
     var volume: Float = 1.0 {
         didSet {
-            playerLayer?.player.playbackVolume = volume
+            // VLCKit expresses volume as 0–100 (up to 200 for boost).
+            mediaPlayer?.audio?.volume = Int32(max(0, min(1, volume)) * 100)
         }
     }
     
@@ -115,7 +130,7 @@ class VideoPlayerView: NSView {
     var onSkipBackwardRequested: ((TimeInterval) -> Void)?
     
     /// Track previous state to detect pause/resume transitions
-    private var previousState: KSPlayerState?
+    private var previousState: VLCMediaPlayerState?
     
     // MARK: - Initialization
     
@@ -131,8 +146,8 @@ class VideoPlayerView: NSView {
     
     deinit {
         controlsHideTimer?.invalidate()
-        playerLayer?.pause()
-        playerLayer?.stop()
+        mediaPlayer?.pause()
+        mediaPlayer?.stop()
     }
     
     // MARK: - Setup
@@ -362,12 +377,12 @@ class VideoPlayerView: NSView {
         let index = sender.tag
         if index >= 0 && index < availableAudioTracks.count {
             let track = availableAudioTracks[index]
-            playerLayer?.player.select(track: track)
-            NSLog("VideoPlayerView: Selected audio track from menu: %@", track.name ?? "Track \(index + 1)")
+            mediaPlayer?.currentAudioTrackIndex = track.index
+            NSLog("VideoPlayerView: Selected audio track from menu: %@", track.name)
             updateTrackSelectionPanel()
         }
     }
-    
+
     @objc private func contextSelectSubtitleTrack(_ sender: NSMenuItem) {
         let index = sender.tag
         if index == -1 {
@@ -376,8 +391,8 @@ class VideoPlayerView: NSView {
             NSLog("VideoPlayerView: Subtitles turned off from menu")
         } else if index >= 0 && index < availableSubtitleTracks.count {
             let track = availableSubtitleTracks[index]
-            playerLayer?.player.select(track: track)
-            NSLog("VideoPlayerView: Selected subtitle track from menu: %@", track.name ?? "Track \(index + 1)")
+            mediaPlayer?.currentVideoSubTitleIndex = track.index
+            NSLog("VideoPlayerView: Selected subtitle track from menu: %@", track.name)
             updateTrackSelectionPanel()
         }
     }
@@ -393,8 +408,8 @@ class VideoPlayerView: NSView {
     }
     
     private func hideControls() {
-        guard playerLayer?.state.isPlaying == true else { return }
-        
+        guard isActivelyPlaying else { return }
+
         controlsVisible = false
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
@@ -427,18 +442,25 @@ class VideoPlayerView: NSView {
         showControls()
         // Make this view the first responder to capture keyboard events
         window?.makeFirstResponder(self)
-        
-        // Show center overlay on single click
-        if event.clickCount == 1 {
-            showCenterOverlay()
-        } else if event.clickCount == 2 {
+
+        if event.clickCount == 2 {
             // Double-click toggles play/pause
             if let callback = onPlayPauseToggled {
                 callback()
             } else {
                 togglePlayPause()
             }
+            return
         }
+
+        // Single click: show the center overlay, then hand the event to the
+        // window so a drag moves it. The borderless window isn't movable by
+        // background and VLCKit's drawable subview doesn't pass through window
+        // moves the way KSPlayer's view did, so we drive the drag explicitly.
+        // performDrag only moves the window if the pointer actually moves, so a
+        // plain click still just shows the overlay.
+        showCenterOverlay()
+        window?.performDrag(with: event)
     }
     
     override func mouseDragged(with event: NSEvent) {
@@ -464,7 +486,7 @@ class VideoPlayerView: NSView {
         guard let overlay = centerOverlayView else { return }
         
         // Update overlay state
-        overlay.updatePlayState(isPlaying: playerLayer?.state.isPlaying ?? false)
+        overlay.updatePlayState(isPlaying: mediaPlayer?.isPlaying ?? false)
         
         // Show with animation
         overlay.isHidden = false
@@ -676,98 +698,149 @@ class VideoPlayerView: NSView {
         // Reset cast state when starting a new video (ensures UI shows local playback)
         controlBarView.updateCastState(isPlaying: false, deviceName: nil)
         
-        // Configure options
-        let options = KSOptions()
-        if isPlexURL, let headers = plexHeaders {
-            // Remote/relay Plex connections require full client identification headers
-            options.appendHeader(headers)
-            NSLog("VideoPlayerView: Attaching %d Plex headers for streaming", headers.count)
-        }
-        
         // Stop existing player if any
-        playerLayer?.stop()
-        playerLayer = nil
-        
-        // Create new player layer with the URL
-        let layer = KSPlayerLayer(url: url, options: options, delegate: self)
-        playerLayer = layer
-        
-        // Apply current volume to the new player
-        layer.player.playbackVolume = volume
-        
-        // Add player view to host
-        if let playerView = layer.player.view {
-            playerView.frame = playerHostView.bounds
-            playerView.autoresizingMask = [.width, .height]
-            // Set background to black on all layers to prevent white line flashing
-            playerView.wantsLayer = true
-            playerView.layer?.backgroundColor = NSColor.black.cgColor
-            // Also set black background on any sublayers (KSPlayer internal views)
-            func setBlackBackground(on view: NSView) {
-                view.wantsLayer = true
-                view.layer?.backgroundColor = NSColor.black.cgColor
-                for subview in view.subviews {
-                    setBlackBackground(on: subview)
-                }
+        mediaPlayer?.stop()
+        mediaPlayer = nil
+        previousState = nil
+        isActivelyPlaying = false
+        availableAudioTracks = []
+        availableSubtitleTracks = []
+        // Clear Plex external-subtitle entries so a stale set can't carry into
+        // the next item; callers re-populate via setPlexStreams() after play().
+        plexStreams = []
+
+        // Build the media. VLC has no arbitrary-header API; for remote/relay Plex
+        // the auth token rides in the URL query string, and only the user-agent
+        // maps to a VLC option. Map what VLC supports and rely on query-param auth.
+        let media = VLCMedia(url: url)
+        if isPlexURL, let headers = plexHeaders {
+            var options: [String: Any] = [:]
+            if let userAgent = headers["User-Agent"] ?? headers["user-agent"] {
+                options[":http-user-agent"] = userAgent
             }
-            setBlackBackground(on: playerView)
-            playerHostView.subviews.forEach { $0.removeFromSuperview() }
-            playerHostView.addSubview(playerView)
+            if !options.isEmpty {
+                media.addOptions(options)
+            }
+            NSLog("VideoPlayerView: Plex stream — mapped %d of %d headers to VLC options (auth via URL query)",
+                  options.count, headers.count)
         }
-        
-        NSLog("VideoPlayerView: Playing %@ from %@", title, url.absoluteString)
+
+        // VLCKit renders directly into the NSView assigned to `drawable`; no
+        // subview insertion or sublayer black-out walk is needed. Keeping the
+        // host layer black avoids a white flash before the first frame.
+        let player = VLCMediaPlayer()
+        player.drawable = playerHostView
+        player.delegate = self
+        player.media = media
+        player.audio?.volume = Int32(max(0, min(1, volume)) * 100)
+        mediaPlayer = player
+        player.play()
+
+        // Redact auth query params (e.g. Plex X-Plex-Token) — the token rides in
+        // the URL for query-param auth and must not leak into system logs.
+        NSLog("VideoPlayerView: Playing %@ from %@", title, url.redacted)
     }
     
     /// Stop playback
     func stop() {
         controlsHideTimer?.invalidate()
-        playerLayer?.pause()
-        playerLayer?.stop()
+        isActivelyPlaying = false
+        mediaPlayer?.pause()
+        mediaPlayer?.stop()
         showLoading(false)
         controlBarView.updatePlayState(isPlaying: false)
     }
-    
+
+    /// Ensure VLCKit is producing audio: an audio track is selected, output is
+    /// unmuted, and the volume matches `volume`. Safe to call repeatedly; the
+    /// `audio` controller is nil until the audio pipeline exists, so this becomes
+    /// effective once an audio elementary stream has been added.
+    private func applyAudioOutput() {
+        guard let player = mediaPlayer else { return }
+        // If VLC hasn't auto-selected an audio track, pick the first real one.
+        if player.currentAudioTrackIndex < 0 {
+            let audioIndexes = (player.audioTrackIndexes as? [NSNumber]) ?? []
+            if let first = audioIndexes.map({ $0.int32Value }).first(where: { $0 >= 0 }) {
+                player.currentAudioTrackIndex = first
+            }
+        }
+        if let audio = player.audio {
+            audio.isMuted = false
+            audio.volume = Int32(max(0, min(1, volume)) * 100)
+        }
+    }
+
+    /// Handle the player actually running. VLCKit reports either `.playing` or
+    /// `.buffering` (with `isPlaying == true`) during smooth playback, so this is
+    /// driven off `isPlaying`, not a single state. Idempotent: the one-time
+    /// "just started" work (hide-timer start, track discovery, resume callback)
+    /// runs only on the transition into playing, so the controls-hide countdown
+    /// and track list aren't reset on every buffering notification.
+    private func markPlaying() {
+        showLoading(false)
+        controlBarView.updatePlayState(isPlaying: true)
+        guard !isActivelyPlaying else { return }
+        NSLog("VideoPlayerView: Playing")
+        let wasPaused = (previousState == .paused)
+        isActivelyPlaying = true
+        resetControlsHideTimer()
+        applyAudioOutput()
+        onPlaybackStateChanged?(true)
+        if wasPaused {
+            onPlaybackResumed?(currentTime)
+        }
+        discoverTracks()
+    }
+
     /// Toggle play/pause
     func togglePlayPause() {
-        guard let layer = playerLayer else { return }
-        
-        if layer.state.isPlaying {
-            layer.pause()
+        guard let player = mediaPlayer else { return }
+
+        if player.isPlaying {
+            player.pause()
             controlBarView.updatePlayState(isPlaying: false)
             centerOverlayView?.updatePlayState(isPlaying: false)
             showControls()
         } else {
-            layer.play()
+            player.play()
             controlBarView.updatePlayState(isPlaying: true)
             centerOverlayView?.updatePlayState(isPlaying: true)
             resetControlsHideTimer()
         }
     }
-    
+
+    // Note: VLCKit's `player.time` / `player.position` setters don't change the
+    // play/pause state — a playing player keeps playing after a seek and a paused
+    // one stays paused. These helpers deliberately do NOT force play(), so a
+    // caller that seeks and then resumes explicitly (e.g. stopCasting: seek +
+    // togglePlayPause) isn't flipped back to paused by an implicit resume here.
+
     /// Seek to normalized position (0-1)
     func seekToPosition(_ position: Double) {
-        guard totalDuration > 0 else { return }
-        let time = position * totalDuration
-        playerLayer?.seek(time: time, autoPlay: true) { _ in }
+        guard let player = mediaPlayer else { return }
+        player.position = Float(position)
     }
-    
+
     /// Seek to time
     func seek(to time: TimeInterval) {
-        playerLayer?.seek(time: time, autoPlay: true) { _ in }
+        guard let player = mediaPlayer else { return }
+        player.time = VLCTime(int: Int32(max(0, time) * 1000))
     }
-    
+
     /// Skip forward by seconds
     func skipForward(_ seconds: TimeInterval = 10) {
-        guard let layer = playerLayer else { return }
-        let newTime = min(layer.player.currentPlaybackTime + seconds, totalDuration)
-        layer.seek(time: newTime, autoPlay: true) { _ in }
+        guard let player = mediaPlayer else { return }
+        let current = Double(player.time.intValue) / 1000.0
+        let newTime = totalDuration > 0 ? min(current + seconds, totalDuration) : current + seconds
+        player.time = VLCTime(int: Int32(newTime * 1000))
     }
-    
+
     /// Skip backward by seconds
     func skipBackward(_ seconds: TimeInterval = 10) {
-        guard let layer = playerLayer else { return }
-        let newTime = max(0, layer.player.currentPlaybackTime - seconds)
-        layer.seek(time: newTime, autoPlay: true) { _ in }
+        guard let player = mediaPlayer else { return }
+        let current = Double(player.time.intValue) / 1000.0
+        let newTime = max(0, current - seconds)
+        player.time = VLCTime(int: Int32(newTime * 1000))
     }
     
     // MARK: - Track Selection
@@ -778,16 +851,31 @@ class VideoPlayerView: NSView {
         updateTrackSelectionPanel()
     }
     
-    /// Discover available tracks from KSPlayer
+    /// Discover available tracks from VLCKit.
+    ///
+    /// VLCKit exposes tracks as parallel index/name arrays that are only
+    /// populated once playback has started, so this is driven from the player
+    /// delegate (`.playing` / `.esAdded`), not synchronously from `play()`.
+    /// VLC includes a built-in "Disable" pseudo-entry (index −1) in both arrays;
+    /// we filter it out because the UI supplies its own "Off" affordance.
     private func discoverTracks() {
-        guard let layer = playerLayer else { return }
-        
-        availableAudioTracks = layer.player.tracks(mediaType: .audio)
-        availableSubtitleTracks = layer.player.tracks(mediaType: .subtitle)
-        
-        NSLog("VideoPlayerView: Discovered %d audio tracks, %d subtitle tracks", 
+        guard let player = mediaPlayer else { return }
+
+        func tracks(indexes: [Any]?, names: [Any]?) -> [VideoTrackInfo] {
+            let idx = (indexes as? [NSNumber]) ?? []
+            let nms = (names as? [String]) ?? []
+            return zip(idx, nms).compactMap { number, name in
+                let index = number.int32Value
+                return index >= 0 ? VideoTrackInfo(index: index, name: name) : nil
+            }
+        }
+
+        availableAudioTracks = tracks(indexes: player.audioTrackIndexes, names: player.audioTrackNames)
+        availableSubtitleTracks = tracks(indexes: player.videoSubTitlesIndexes, names: player.videoSubTitlesNames)
+
+        NSLog("VideoPlayerView: Discovered %d audio tracks, %d subtitle tracks",
               availableAudioTracks.count, availableSubtitleTracks.count)
-        
+
         updateTrackSelectionPanel()
     }
     
@@ -810,39 +898,42 @@ class VideoPlayerView: NSView {
     /// Update the track selection panel with current tracks
     private func updateTrackSelectionPanel() {
         guard let panel = trackSelectionPanel else { return }
-        
-        // Convert KSPlayer audio tracks to SelectableTracks
-        let audioTracks = availableAudioTracks.enumerated().map { index, track in
+
+        let currentAudioIndex = mediaPlayer?.currentAudioTrackIndex ?? -1
+        let currentSubtitleIndex = mediaPlayer?.currentVideoSubTitleIndex ?? -1
+
+        // Convert VLCKit audio tracks to SelectableTracks
+        let audioTracks = availableAudioTracks.map { track in
             SelectableTrack(
-                id: "audio_\(index)",
+                id: "audio_\(track.index)",
                 type: .audio,
-                name: track.name ?? "Audio Track \(index + 1)",
-                language: track.language,
+                name: track.name,
+                language: nil,
                 codec: nil,
-                isSelected: track.isEnabled,
+                isSelected: track.index == currentAudioIndex,
                 isExternal: false,
                 externalURL: nil,
-                ksTrack: track,
+                vlcTrackIndex: track.index,
                 plexStream: nil
             )
         }
-        
-        // Convert KSPlayer subtitle tracks to SelectableTracks
-        var subtitleTracks = availableSubtitleTracks.enumerated().map { index, track in
+
+        // Convert VLCKit subtitle tracks to SelectableTracks
+        var subtitleTracks = availableSubtitleTracks.map { track in
             SelectableTrack(
-                id: "subtitle_\(index)",
+                id: "subtitle_\(track.index)",
                 type: .subtitle,
-                name: track.name ?? "Subtitle Track \(index + 1)",
-                language: track.language,
+                name: track.name,
+                language: nil,
                 codec: nil,
-                isSelected: track.isEnabled,
+                isSelected: track.index == currentSubtitleIndex,
                 isExternal: false,
                 externalURL: nil,
-                ksTrack: track,
+                vlcTrackIndex: track.index,
                 plexStream: nil
             )
         }
-        
+
         // Add Plex external subtitles
         let externalSubtitles = plexStreams.filter { $0.streamType == .subtitle && $0.isExternal }.map { stream in
             SelectableTrack(
@@ -854,79 +945,82 @@ class VideoPlayerView: NSView {
                 isSelected: false,  // External subtitles need to be explicitly selected
                 isExternal: true,
                 externalURL: stream.key.flatMap { URL(string: $0) },
-                ksTrack: nil,
+                vlcTrackIndex: nil,
                 plexStream: stream
             )
         }
         subtitleTracks.append(contentsOf: externalSubtitles)
-        
+
         panel.updateTracks(audioTracks: audioTracks, subtitleTracks: subtitleTracks)
     }
     
     /// Select an audio track
     func selectAudioTrack(_ track: SelectableTrack?) {
-        guard let layer = playerLayer, let track = track, let ksTrack = track.ksTrack else { return }
-        layer.player.select(track: ksTrack)
+        guard let player = mediaPlayer, let track = track, let vlcIndex = track.vlcTrackIndex else { return }
+        player.currentAudioTrackIndex = vlcIndex
         NSLog("VideoPlayerView: Selected audio track: %@", track.name)
         updateTrackSelectionPanel()
     }
-    
+
     /// Select a subtitle track (nil to disable subtitles)
     func selectSubtitleTrack(_ track: SelectableTrack?) {
-        guard let layer = playerLayer else { return }
-        
+        guard let player = mediaPlayer else { return }
+
         if let track = track {
-            if let ksTrack = track.ksTrack {
+            if let vlcIndex = track.vlcTrackIndex {
                 // Embedded subtitle
-                layer.player.select(track: ksTrack)
+                player.currentVideoSubTitleIndex = vlcIndex
                 NSLog("VideoPlayerView: Selected subtitle track: %@", track.name)
-            } else if let plexStream = track.plexStream, let subtitleKey = plexStream.key {
-                // External Plex subtitle - need to load from URL
-                NSLog("VideoPlayerView: Loading external subtitle from: %@", subtitleKey)
-                // KSPlayer handles external subtitles via subtitleDataSource
-                // This would need additional implementation for external subtitle loading
+            } else if let externalURL = track.externalURL, externalURL.scheme != nil {
+                // External subtitle from an absolute URL (e.g. a sidecar file).
+                player.addPlaybackSlave(externalURL, type: .subtitle, enforce: true)
+                NSLog("VideoPlayerView: Loaded external subtitle from: %@", externalURL.redacted)
+            } else {
+                // Plex external-subtitle keys are server-relative API paths; loading
+                // them needs the Plex server base URL + token, which lives in
+                // PlexManager rather than this view. Left as a follow-up.
+                NSLog("VideoPlayerView: External subtitle '%@' has no absolute URL; skipping", track.name)
             }
         } else {
-            // Disable all subtitles
-            for track in availableSubtitleTracks {
-                if track.isEnabled {
-                    // KSPlayer doesn't have a direct "disable" - select another track or implement disable
-                    NSLog("VideoPlayerView: Subtitles disabled")
-                }
-            }
+            // Real "Off" — VLCKit disables subtitles at index -1.
+            player.currentVideoSubTitleIndex = -1
+            NSLog("VideoPlayerView: Subtitles disabled")
         }
         updateTrackSelectionPanel()
     }
-    
+
     /// Cycle to next audio track
     func cycleAudioTrack() {
-        guard !availableAudioTracks.isEmpty else { return }
-        
-        let currentIndex = availableAudioTracks.firstIndex { $0.isEnabled } ?? -1
-        let nextIndex = (currentIndex + 1) % availableAudioTracks.count
-        let nextTrack = availableAudioTracks[nextIndex]
-        
-        playerLayer?.player.select(track: nextTrack)
-        NSLog("VideoPlayerView: Cycled to audio track: %@", nextTrack.name ?? "Track \(nextIndex + 1)")
+        guard !availableAudioTracks.isEmpty, let player = mediaPlayer else { return }
+
+        let currentVLCIndex = player.currentAudioTrackIndex
+        let currentPosition = availableAudioTracks.firstIndex { $0.index == currentVLCIndex } ?? -1
+        let nextPosition = (currentPosition + 1) % availableAudioTracks.count
+        let nextTrack = availableAudioTracks[nextPosition]
+
+        player.currentAudioTrackIndex = nextTrack.index
+        NSLog("VideoPlayerView: Cycled to audio track: %@", nextTrack.name)
         updateTrackSelectionPanel()
     }
-    
+
     /// Cycle to next subtitle track (including "Off")
     func cycleSubtitleTrack() {
+        guard let player = mediaPlayer else { return }
         let totalOptions = availableSubtitleTracks.count + 1  // +1 for "Off"
         guard totalOptions > 1 else { return }
-        
-        let currentIndex = availableSubtitleTracks.firstIndex { $0.isEnabled } ?? -1
-        let nextIndex = currentIndex + 1  // -1 -> 0 (first subtitle), last -> totalOptions-1 (off)
-        
-        if nextIndex >= availableSubtitleTracks.count {
+
+        let currentVLCIndex = player.currentVideoSubTitleIndex
+        let currentPosition = availableSubtitleTracks.firstIndex { $0.index == currentVLCIndex } ?? -1
+        let nextPosition = currentPosition + 1  // -1 -> 0 (first subtitle), last -> off
+
+        if nextPosition >= availableSubtitleTracks.count {
             // Select "Off" - disable subtitles
             selectSubtitleTrack(nil)
             NSLog("VideoPlayerView: Subtitles turned off")
         } else {
-            let nextTrack = availableSubtitleTracks[nextIndex]
-            playerLayer?.player.select(track: nextTrack)
-            NSLog("VideoPlayerView: Cycled to subtitle track: %@", nextTrack.name ?? "Track \(nextIndex + 1)")
+            let nextTrack = availableSubtitleTracks[nextPosition]
+            player.currentVideoSubTitleIndex = nextTrack.index
+            NSLog("VideoPlayerView: Cycled to subtitle track: %@", nextTrack.name)
         }
         updateTrackSelectionPanel()
     }
@@ -1017,99 +1111,108 @@ class VideoPlayerView: NSView {
     }
 }
 
-// MARK: - KSPlayerLayerDelegate
+// MARK: - VLCMediaPlayerDelegate
 
-// MARK: - KSPlayerLayerDelegate
-
-extension VideoPlayerView: KSPlayerLayerDelegate {
-    func player(layer: KSPlayerLayer, state: KSPlayerState) {
+extension VideoPlayerView: VLCMediaPlayerDelegate {
+    func mediaPlayerStateChanged(_ aNotification: Notification) {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            let previousWasPlaying = self.previousState == .readyToPlay || self.previousState == .bufferFinished
-            
+            guard let self = self, let player = self.mediaPlayer else { return }
+            let state = player.state
+
             switch state {
-            case .initialized:
-                NSLog("VideoPlayerView: Initialized")
-            case .preparing:
-                NSLog("VideoPlayerView: Preparing to play")
+            case .opening:
+                NSLog("VideoPlayerView: Opening")
                 self.showLoading(true)
-            case .readyToPlay:
-                NSLog("VideoPlayerView: Ready to play")
-                self.showLoading(false)
-                self.controlBarView.updatePlayState(isPlaying: true)
-                self.resetControlsHideTimer()
-                self.onPlaybackStateChanged?(true)
-                // Check if resuming from pause
-                if self.previousState == .paused {
-                    self.onPlaybackResumed?(self.currentTime)
-                }
-                // Discover available tracks
-                self.discoverTracks()
             case .buffering:
-                NSLog("VideoPlayerView: Buffering")
-                self.showLoading(true)
-            case .bufferFinished:
-                NSLog("VideoPlayerView: Buffer finished")
-                self.showLoading(false)
-                self.onPlaybackStateChanged?(true)
-                // Check if resuming from pause
-                if self.previousState == .paused {
-                    self.onPlaybackResumed?(self.currentTime)
+                // VLCKit reports `.buffering` during smooth playback in this
+                // build (not only while pre-buffering), so gate on whether
+                // libVLC is actually playing rather than on the state alone.
+                if player.isPlaying {
+                    self.markPlaying()
+                } else {
+                    NSLog("VideoPlayerView: Buffering")
+                    self.showLoading(true)
                 }
+            case .playing:
+                self.markPlaying()
+            case .esAdded:
+                // An elementary stream was added — refresh the track list and
+                // (re)apply audio, since the audio ES may have just appeared.
+                self.discoverTracks()
+                self.applyAudioOutput()
+                if player.isPlaying { self.markPlaying() }
             case .paused:
                 NSLog("VideoPlayerView: Paused")
+                let wasPlaying = self.isActivelyPlaying
+                self.isActivelyPlaying = false
+                self.showLoading(false)
                 self.controlBarView.updatePlayState(isPlaying: false)
                 self.showControls()
                 self.onPlaybackStateChanged?(false)
-                // Report pause if was playing
-                if previousWasPlaying {
+                if wasPlaying {
                     self.onPlaybackPaused?(self.currentTime)
                 }
-            case .playedToTheEnd:
+            case .ended:
                 NSLog("VideoPlayerView: Played to end")
+                self.isActivelyPlaying = false
+                self.showLoading(false)
                 self.controlBarView.updatePlayState(isPlaying: false)
                 self.showControls()
                 self.onPlaybackStateChanged?(false)
                 // Report finished
                 self.onPlaybackFinished?(self.currentTime)
-            case .error:
-                NSLog("VideoPlayerView: Playback error")
+            case .stopped:
+                NSLog("VideoPlayerView: Stopped")
+                self.isActivelyPlaying = false
                 self.showLoading(false)
                 self.controlBarView.updatePlayState(isPlaying: false)
                 self.onPlaybackStateChanged?(false)
+            case .error:
+                NSLog("VideoPlayerView: Playback error")
+                self.isActivelyPlaying = false
+                self.showLoading(false)
+                self.controlBarView.updatePlayState(isPlaying: false)
+                self.onPlaybackStateChanged?(false)
+            @unknown default:
+                break
             }
-            
+
             self.previousState = state
         }
     }
-    
-    func player(layer: KSPlayerLayer, currentTime: TimeInterval, totalTime: TimeInterval) {
+
+    func mediaPlayerTimeChanged(_ aNotification: Notification) {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.currentTime = currentTime
-            self.totalDuration = totalTime
-            self.controlBarView.updateTime(current: currentTime, total: totalTime)
-            
+            guard let self = self, let player = self.mediaPlayer else { return }
+
+            // Robust playing signal: time only advances during playback, and
+            // VLCKit's state enum is unreliable here — so if we haven't yet
+            // registered playback, do it now (stops the spinner, starts the
+            // controls-hide countdown).
+            if !self.isActivelyPlaying && player.isPlaying {
+                self.markPlaying()
+            }
+
+            let current = Double(player.time.intValue) / 1000.0
+
+            // VLCMedia.length may be 0 until parsed; fall back to time / position.
+            var total = self.totalDuration
+            if let lengthMs = player.media?.length.intValue, lengthMs > 0 {
+                total = Double(lengthMs) / 1000.0
+            } else if player.position > 0 {
+                total = current / Double(player.position)
+            }
+
+            self.currentTime = current
+            self.totalDuration = total
+            self.controlBarView.updateTime(current: current, total: total)
+
             // Report to WindowManager so main window can display video time
-            WindowManager.shared.videoDidUpdateTime(current: currentTime, duration: totalTime)
-            
+            WindowManager.shared.videoDidUpdateTime(current: current, duration: total)
+
             // Report position update for Plex tracking
-            self.onPositionUpdate?(currentTime)
+            self.onPositionUpdate?(current)
         }
-    }
-    
-    func player(layer: KSPlayerLayer, finish error: Error?) {
-        if let error = error {
-            NSLog("VideoPlayerView: Finished with error - %@", error.localizedDescription)
-        } else {
-            NSLog("VideoPlayerView: Finished playback")
-        }
-        showLoading(false)
-    }
-    
-    func player(layer: KSPlayerLayer, bufferedCount: Int, consumeTime: TimeInterval) {
-        // Buffering progress
     }
 }
 
@@ -1533,8 +1636,8 @@ extension VideoPlayerView: TrackSelectionPanelDelegate {
     
     func trackSelectionPanel(_ panel: TrackSelectionPanelView, didChangeSubtitleDelay delay: TimeInterval) {
         currentSubtitleDelay = delay
-        // KSPlayer uses subtitleDelay option - this would need to be set on the options
-        // For now, just store the value
+        // VLCKit expresses subtitle delay in microseconds.
+        mediaPlayer?.currentVideoSubTitleDelay = Int(delay * 1_000_000)
         NSLog("VideoPlayerView: Subtitle delay changed to: %.1fs", delay)
     }
     
@@ -1563,38 +1666,38 @@ extension VideoPlayerView: NSMenuDelegate {
         
         if parentItem.tag == 100 {
             // Audio submenu
+            let currentAudioIndex = mediaPlayer?.currentAudioTrackIndex ?? -1
             if availableAudioTracks.isEmpty {
                 let noTracksItem = NSMenuItem(title: "No Audio Tracks", action: nil, keyEquivalent: "")
                 noTracksItem.isEnabled = false
                 menu.addItem(noTracksItem)
             } else {
                 for (index, track) in availableAudioTracks.enumerated() {
-                    let title = track.name ?? "Audio Track \(index + 1)"
-                    let item = NSMenuItem(title: title, action: #selector(contextSelectAudioTrack(_:)), keyEquivalent: "")
+                    let item = NSMenuItem(title: track.name, action: #selector(contextSelectAudioTrack(_:)), keyEquivalent: "")
                     item.target = self
                     item.tag = index
-                    item.state = track.isEnabled ? .on : .off
+                    item.state = track.index == currentAudioIndex ? .on : .off
                     menu.addItem(item)
                 }
             }
         } else if parentItem.tag == 101 {
             // Subtitles submenu
+            let currentSubtitleIndex = mediaPlayer?.currentVideoSubTitleIndex ?? -1
             // "Off" option
             let offItem = NSMenuItem(title: "Off", action: #selector(contextSelectSubtitleTrack(_:)), keyEquivalent: "")
             offItem.target = self
             offItem.tag = -1
-            offItem.state = availableSubtitleTracks.allSatisfy { !$0.isEnabled } ? .on : .off
+            offItem.state = currentSubtitleIndex == -1 ? .on : .off
             menu.addItem(offItem)
-            
+
             if !availableSubtitleTracks.isEmpty {
                 menu.addItem(NSMenuItem.separator())
-                
+
                 for (index, track) in availableSubtitleTracks.enumerated() {
-                    let title = track.name ?? "Subtitle Track \(index + 1)"
-                    let item = NSMenuItem(title: title, action: #selector(contextSelectSubtitleTrack(_:)), keyEquivalent: "")
+                    let item = NSMenuItem(title: track.name, action: #selector(contextSelectSubtitleTrack(_:)), keyEquivalent: "")
                     item.target = self
                     item.tag = index
-                    item.state = track.isEnabled ? .on : .off
+                    item.state = track.index == currentSubtitleIndex ? .on : .off
                     menu.addItem(item)
                 }
             }

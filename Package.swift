@@ -17,8 +17,8 @@ let package = Package(
         .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.0"),
         // SQLite for media library — pinned to 0.15.x; 0.16+ changed Expression<T> init API
         .package(url: "https://github.com/stephencelis/SQLite.swift.git", .upToNextMinor(from: "0.15.4")),
-        // KSPlayer for MKV and extended codec support via FFmpeg
-        .package(url: "https://github.com/kingslay/KSPlayer.git", branch: "main"),
+        // Video playback uses the vendored VLCKit.framework (LGPL) in Frameworks/,
+        // linked via unsafeFlags on the NullPlayer target — not an SPM dependency.
         // Audio streaming with AVAudioEngine support (for Plex EQ)
         .package(url: "https://github.com/dimitris-c/AudioStreaming.git", from: "1.4.0"),
         // Lightweight HTTP server for local file casting
@@ -142,7 +142,6 @@ let package = Package(
                 "CTripexCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
-                "KSPlayer",
                 "AudioStreaming",
                 "CProjectM",
                 "CAubio",
@@ -161,10 +160,18 @@ let package = Package(
                 .copy("Visualization/EKGShaders.metal"),
                 .copy("ModernSkin/BloomShader.metal")
             ],
+            swiftSettings: [
+                // Let the compiler find the vendored VLCKit.framework module map
+                // (Frameworks/VLCKit.framework) so `import VLCKit` resolves.
+                .unsafeFlags(["-F", "Frameworks"]),
+            ],
             linkerSettings: [
                 .unsafeFlags([
                     "-L", "Frameworks",
                     "-L", "/opt/homebrew/lib",
+                    // Link the vendored VLCKit.framework (LGPL video engine).
+                    "-F", "Frameworks",
+                    "-framework", "VLCKit",
                     "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
                 ]),
             ]

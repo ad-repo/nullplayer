@@ -13,9 +13,6 @@
 # See docs/third-party-notices.md for the refresh process.
 #
 # === SPM dependencies compiled into the NullPlayer binary ===
-ksplayer	KSPlayer	GPL-3.0-or-later	Copyright (c) kingslay and the KSPlayer contributors	https://github.com/kingslay/KSPlayer	main @ a7cddd8	ThirdPartyLicenses/licenses/GPL-3.0.txt	-
-ffmpegkit	FFmpegKit	GPL-3.0-or-later	Copyright (c) 2018-2023 Taner Sener; kingslay fork	https://github.com/kingslay/FFmpegKit	6.1.3	ThirdPartyLicenses/licenses/GPL-3.0.txt	-
-ffmpeg	FFmpeg	LGPL-2.1-or-later	Copyright (c) 2000-2024 the FFmpeg developers	https://ffmpeg.org	6.1.x (via FFmpegKit)	ThirdPartyLicenses/licenses/LGPL-2.1.txt	-
 sqlite.swift	SQLite.swift	MIT	Copyright (c) 2014-2015 Stephen Celis	https://github.com/stephencelis/SQLite.swift	0.15.4	ThirdPartyLicenses/SQLiteSwift_LICENSE.txt	-
 swift-toolchain-sqlite	swift-toolchain-sqlite	Apache-2.0	Copyright Apple Inc. and the Swift project authors	https://github.com/swiftlang/swift-toolchain-sqlite	1.0.4	ThirdPartyLicenses/licenses/Apache-2.0.txt	-
 sqlite	SQLite	blessing (public domain)	D. Richard Hipp and the SQLite authors	https://www.sqlite.org	bundled via swift-toolchain-sqlite	ThirdPartyLicenses/SQLite_PublicDomain.txt	-
