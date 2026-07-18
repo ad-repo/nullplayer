@@ -15,7 +15,7 @@ NullPlayer is submitted to the Mac App Store (MAS) with full feature parity to t
 |---------|-----|-----|-----------------|----------|
 | **Playback** | ✓ | ✓ | — | Local + streaming |
 | Audio formats (MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG) | ✓ | ✓ | — | `Sources/NullPlayer/Resources/Info.plist` document types |
-| Video formats (MKV, MP4, MOV, AVI, WebM, HEVC) | ✓ | ✓ | Requires file access | `Windows/VideoPlayer/VideoPlayerWindowController.swift` (KSPlayer/FFmpeg libraries) |
+| Video formats (MKV, MP4, MOV, AVI, WebM, HEVC) | ✓ | ✓ | Requires file access | `Windows/VideoPlayer/VideoPlayerView.swift` (VLCKit/libVLC, LGPL-2.1+) |
 | **Casting** | ✓ | ✓ | High | See Review Notes |
 | Chromecast | ✓ | ✓ | Local network + HTTP | `Casting/ChromecastManager.swift` |
 | Sonos (multi-room) | ✓ | ✓ | Local network + HTTP | `Casting/CastManager.swift` |
@@ -120,16 +120,16 @@ The app stores media server credentials (Plex auth token, Jellyfin/Emby auth + s
 
 ### GPL-3.0 Components (Flagged Risk)
 
-The app bundles GPL-3.0-licensed video/analysis libraries:
-- **KSPlayer** (SPM library; used in `Windows/VideoPlayer/VideoPlayerWindowController.swift`): Video playback via FFmpeg.
-- **FFmpegKit** and **FFmpeg**: Video decoding (LGPL-2.1 + GPL-3.0 parts).
-- **aubio**: Audio spectrum analysis via FFmpeg pipeline.
+The video engine is no longer a GPL blocker: **KSPlayer and its transitive FFmpegKit
+(both GPL-3.0) have been replaced by VLCKit/libVLC (LGPL-2.1+)**, which keeps MKV/MP4
+playback. The app still bundles these GPL-3.0-licensed components:
+- **aubio**: Audio spectrum / BPM analysis.
+- **PeppyMeter meter templates**: analog VU meter artwork (GPL-3.0).
 
 GPL-3.0 licenses are known to be in tension with App Store distribution terms (Apple requires source code availability for derivative works; MAS terms do not permit external source redistribution). **This is a known compatibility risk.** If Apple rejects the submission, the following remediation options exist (in priority order):
 
-1. **Remove video playback** (MKV/MP4/WebM via KSPlayer/FFmpeg), keeping audio-only formats.
-2. **Replace FFmpeg with native macOS codecs** (AudioToolbox, VideoToolbox, VTDecoderSession).
-3. **Remove spectrum analysis** (aubio) and retain static visualizations.
+1. **Replace aubio** with a non-GPL BPM/tempo path (e.g. Accelerate/vDSP) or drop spectrum/BPM analysis.
+2. **Replace the PeppyMeter templates** with non-GPL meter artwork, or drop the bundled GPL templates.
 
 **Current stance:** Proceed with submission as-is. Only split/remove stacks if Apple explicitly rejects. Reference `docs/third-party-notices.md` and issue #240 (third-party notices audit) for the full component license list.
 
@@ -164,7 +164,7 @@ The following MAS-specific blockers remain before release:
    - **Does NOT** execute the CLI installer copy step (`scripts/build_dmg.sh:324-327`).
    - Uploads to App Store Connect via Xcode, Transporter, or `xcrun altool`.
 
-6. **GPL-3.0 Risk Assessment** — Monitor Apple's response to KSPlayer/FFmpeg/aubio. If rejected, prioritize video stack removal or native codec replacement. Track in a follow-up issue.
+6. **GPL-3.0 Risk Assessment** — The GPL video stack (KSPlayer/FFmpegKit) has been swapped to LGPL VLCKit/libVLC. Remaining GPL-3.0 exposure is aubio and the PeppyMeter templates; monitor Apple's response and, if rejected, replace aubio (Accelerate/vDSP) and swap the GPL meter artwork. Track in a follow-up issue.
 
 Related issue: **#240** (third-party notices audit and validation) provides the foundational component licensing audit. The MAS entitlements, Info.plist declarations, and privacy manifest (items 1–3 above) depend on #240 being merged.
 

@@ -26,8 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Set the application dock icon
         setupDockIcon()
         
-        // Configure KSPlayer for FFmpeg-only playback
-        VideoPlayerWindowController.configureKSPlayer()
+        // One-time video-engine configuration hook
+        VideoPlayerWindowController.configureVideoEngine()
         
         // Initialize Plex manager early to start preloading library data
         // Accessing .shared triggers the singleton init which loads saved account and starts preload
@@ -127,8 +127,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Set the application dock icon
         setupDockIcon()
         
-        // Configure KSPlayer for FFmpeg-only playback
-        VideoPlayerWindowController.configureKSPlayer()
+        // One-time video-engine configuration hook
+        VideoPlayerWindowController.configureVideoEngine()
         
         // Skip Plex initialization in test mode
         // PlexManager.shared will still be initialized but won't auto-connect

@@ -1,6 +1,5 @@
 import AppKit
 import NullPlayerCore
-@preconcurrency import KSPlayer
 
 /// Track type for the selection panel
 enum TrackType {
@@ -8,7 +7,7 @@ enum TrackType {
     case subtitle
 }
 
-/// Represents a track that can be selected (either from KSPlayer or Plex)
+/// Represents a track that can be selected (either from VLCKit or Plex)
 struct SelectableTrack: Identifiable, Equatable {
     let id: String
     let type: TrackType
@@ -18,7 +17,7 @@ struct SelectableTrack: Identifiable, Equatable {
     let isSelected: Bool
     let isExternal: Bool      // For Plex external subtitles
     let externalURL: URL?     // URL for external subtitle download
-    let ksTrack: MediaPlayerTrack?  // Reference to KSPlayer track
+    let vlcTrackIndex: Int32?  // VLCKit track index (nil for external Plex subtitles)
     let plexStream: PlexStream?     // Reference to Plex stream
     
     static func == (lhs: SelectableTrack, rhs: SelectableTrack) -> Bool {

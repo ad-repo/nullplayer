@@ -46,7 +46,7 @@
 - Compact Mode — collapse to a single menu-bar app (Dock icon hidden, status-bar item) showing the Library Browser with an embedded mini player bar; works in both classic and modern UI
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
-- Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (KSPlayer/FFmpeg)
+- Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (VLCKit/libVLC)
 - Gapless playback for seamless track transitions
 - Sweet Fades (crossfade) with configurable fade duration
 - Sleep Timer — timed (5 min – 12 hr with volume fade-out), end of current track, or end of queue
@@ -216,7 +216,6 @@ open Package.swift
 |---------|---------|
 | [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | .wsz skin file extraction |
 | [SQLite.swift](https://github.com/stephencelis/SQLite.swift) | Media library storage |
-| [KSPlayer](https://github.com/kingslay/KSPlayer) | Video playback with FFmpeg backend |
 | [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) | HTTP audio streaming for Plex |
 | [FlyingFox](https://github.com/swhitty/FlyingFox) | Embedded HTTP server for local file casting |
 | [libprojectM](https://github.com/projectM-visualizer/projectm) | ProjectM visualizations |
@@ -499,8 +498,9 @@ A hi-fi hardware faceplate look, selected from **Skins > Metal**, with seven fin
 ## License
 
 This project is open source. Because it bundles GPL-licensed components
-(KSPlayer, FFmpegKit, and aubio), the combined application is distributed under
-the terms of the **GNU GPL v3.0 only**.
+(aubio and the PeppyMeter meter templates), the combined application is
+distributed under the terms of the **GNU GPL v3.0 only**. (The video engine
+is VLCKit/libVLC, which is LGPL — see below.)
 
 The **NullPlayer** name, logo, icon, and other brand identifiers are not licensed
 for use by modified distributions. Forks, derivative works, and redistributed
@@ -521,15 +521,13 @@ authoritative component/version/license list.
 Bundled third-party components:
 
 **Swift packages (compiled into the binary)**
-- **KSPlayer** (GPL-3.0) — video playback
-- **FFmpegKit / FFmpeg** (GPL-3.0 fork / FFmpeg LGPL-2.1+) — codec backend
 - **SQLite.swift** (MIT) + **swift-toolchain-sqlite** (Apache-2.0) / **SQLite** (public domain) — media library
 - **ZIPFoundation** (MIT) — `.wsz`/`.nps` extraction
 - **AudioStreaming** (MIT) — streaming audio engine
 - **FlyingFox** (MIT) — local HTTP server for casting
 
 **Bundled frameworks / dynamic libraries**
-- **VLCKit / libVLC** (LGPL-2.1+) — video casting/playback
+- **VLCKit / libVLC** (LGPL-2.1+) — video playback engine (MKV/MP4/etc.) and casting
 - **libprojectM** (LGPL-2.1) — ProjectM/MilkDrop visualizations
 - **aubio** (GPL-3.0) — BPM/tempo detection
 - **libsndfile** (LGPL-2.1), **FLAC** (BSD-3), **libogg** (BSD-3), **libvorbis** (BSD-3), **Opus** (BSD-3), **LAME** (LGPL-2.0+), **mpg123** (LGPL-2.1) — audio codecs

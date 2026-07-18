@@ -1,5 +1,5 @@
 {
-  "originHash" : "63736a2db5604c76dc859bb250e88748e0d2137c640d4b957f6f884017d2bac4",
+  "originHash" : "d3b9e225cbf3475f5572d87968f356b39efa9ac70776a9505464d7bd8d044900",
   "pins" : [
     {
       "identity" : "audiostreaming",
@@ -11,30 +11,12 @@
       }
     },
     {
-      "identity" : "ffmpegkit",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/kingslay/FFmpegKit.git",
-      "state" : {
-        "revision" : "85b77c589de0360c111de16752db86b60496d70b",
-        "version" : "6.1.3"
-      }
-    },
-    {
       "identity" : "flyingfox",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swhitty/FlyingFox.git",
       "state" : {
         "revision" : "de38230104cf63ef4843cb569ba11c13f8165685",
         "version" : "0.26.2"
-      }
-    },
-    {
-      "identity" : "ksplayer",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/kingslay/KSPlayer.git",
-      "state" : {
-        "branch" : "main",
-        "revision" : "a7cddd878f557afa6a1f2faad9d756949406adde"
       }
     },
     {
