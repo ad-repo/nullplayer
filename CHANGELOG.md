@@ -8,6 +8,7 @@
 
 ### Bug Fixes
 
+- **Modern/metal library browser alphabet picker no longer ignores clicks** — in the modern UI, clicking a letter in the right-side alphabet index could jump to the wrong letter or do nothing, most often on a local library after a watch folder went offline. The offline-volume banner shifts the alphabet strip upward when drawn, but the click hit-testing ignored that offset (and used a different column-header check), so the clickable region drifted away from the drawn letters whenever the banner appeared. Drawing, hit-testing, and click-to-letter mapping now share a single geometry, so the picker stays aligned in all states. (Classic UI was unaffected.)
 - **Ripping and YouTube downloads to a NAS no longer fail with "Bad file descriptor"** — ripping a URL, or downloading from the YouTube source, directly to a network-mounted folder (SMB/AFP) could fail with *Bad file descriptor* and similar errors, while the same operation to a local folder worked. yt-dlp streams to a `.part` file, `fsync`s it, and renames it into place, and video rips then transcode with ffmpeg `+faststart`; network filesystems reject those random-access/rename patterns. The download and transcode now run in a local staging folder, and only the finished file (plus any `.cue`) is moved to the destination as a single sequential copy, which network volumes handle reliably.
 
 ## 0.28.2

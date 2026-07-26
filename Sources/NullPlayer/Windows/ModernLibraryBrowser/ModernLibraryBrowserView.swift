@@ -1988,10 +1988,7 @@ class ModernLibraryBrowserView: NSView {
         
         guard visibleStart < visibleEnd else {
             context.restoreGState()
-            let alphabetHeight = listAreaHeight - (headerColumns != nil ? columnHeaderHeight : 0)
-            let alphabetRect = NSRect(x: bounds.width - Layout.borderWidth - Layout.scrollbarWidth - alphabetWidth,
-                                     y: listAreaY, width: alphabetWidth, height: alphabetHeight)
-            drawAlphabetIndex(in: context, rect: alphabetRect, skin: skin)
+            drawAlphabetIndex(in: context, rect: alphabetIndexRect(), skin: skin)
             return
         }
         
@@ -2091,10 +2088,7 @@ class ModernLibraryBrowserView: NSView {
         context.restoreGState()
         
         // Draw alphabet index (exclude column header zone so # appears below column headers)
-        let alphabetHeight = listAreaHeight - (headerColumns != nil ? columnHeaderHeight : 0)
-        let alphabetRect = NSRect(x: bounds.width - Layout.borderWidth - Layout.scrollbarWidth - alphabetWidth,
-                                 y: listAreaY, width: alphabetWidth, height: alphabetHeight)
-        drawAlphabetIndex(in: context, rect: alphabetRect, skin: skin)
+        drawAlphabetIndex(in: context, rect: alphabetIndexRect(), skin: skin)
     }
 
     private func drawArtworkBackground(in context: CGContext, listRect: NSRect, artwork: NSImage?) {
@@ -3435,15 +3429,31 @@ class ModernLibraryBrowserView: NSView {
         return nil
     }
     
-    private func hitTestAlphabetIndex(at point: NSPoint) -> Bool {
+    /// Screen-space rect of the right-side alphabet index — the single source of truth
+    /// shared by drawing, hit-testing, and click-to-letter mapping. Mirrors the geometry
+    /// computed in `draw(_:)`/`drawListArea`, including the offline-banner offset and the
+    /// column-header exclusion, so the clickable strip always matches the drawn letters.
+    /// (Previously the hit-test and click math ignored the banner, so the alphabet picker
+    /// drifted and "ignored" clicks whenever a local watch folder went offline.)
+    private func alphabetIndexRect() -> NSRect {
         var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        let listHeight = contentTopY - Layout.statusBarHeight
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
-        let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
+
+        let showOfflineBanner = isLocalSource && !offlineWatchFolders.isEmpty
+        let bannerHeight = showOfflineBanner ? Layout.offlineBannerHeight : 0
+
+        let listAreaY = Layout.statusBarHeight + bannerHeight
+        let listAreaHeight = contentTopY - Layout.statusBarHeight - bannerHeight
+
+        let hasColumns = headerColumnsForCurrentContent() != nil
+        let alphabetHeight = listAreaHeight - (hasColumns ? columnHeaderHeight : 0)
+
         let alphabetX = bounds.width - Layout.borderWidth - Layout.scrollbarWidth - Layout.alphabetWidth
-        return point.x >= alphabetX && point.x < alphabetX + Layout.alphabetWidth &&
-               point.y >= Layout.statusBarHeight && point.y < Layout.statusBarHeight + effectiveHeight
+        return NSRect(x: alphabetX, y: listAreaY, width: Layout.alphabetWidth, height: alphabetHeight)
+    }
+
+    private func hitTestAlphabetIndex(at point: NSPoint) -> Bool {
+        return alphabetIndexRect().contains(point)
     }
     
     private func hitTestContentArea(at point: NSPoint) -> Bool {
@@ -4347,17 +4357,13 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Alphabet Click
     
     private func handleAlphabetClick(at point: NSPoint) {
-        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        let listHeight = contentTopY - Layout.statusBarHeight
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
-        let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
-        let alphabetTopY = Layout.statusBarHeight + effectiveHeight
-
-        // Bottom-left: # at top, Z at bottom
-        let relativeFromTop = alphabetTopY - point.y
+        let rect = alphabetIndexRect()
         let letterCount = CGFloat(alphabetLetters.count)
-        let letterHeight = effectiveHeight / letterCount
+        let letterHeight = rect.height / letterCount
+        guard letterHeight > 0 else { return }
+
+        // Screen coords: maxY is the top of the strip (# at top, Z at bottom).
+        let relativeFromTop = rect.maxY - point.y
         let letterIndex = Int(relativeFromTop / letterHeight)
 
         guard letterIndex >= 0 && letterIndex < alphabetLetters.count else { return }
