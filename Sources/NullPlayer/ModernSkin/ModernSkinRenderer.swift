@@ -833,25 +833,14 @@ class ModernSkinRenderer {
     }
 
     private func drawTimeTextCharacter(_ character: String, in rect: NSRect, context: CGContext) {
-        var font = skin.timeDisplayFont()
+        let font = skin.timeDisplayFont()
         let color = skin.applyTextOpacity(to: skin.timeColor)
-        var attributes: [NSAttributedString.Key: Any] = [
+        let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: color
         ]
-        var attributed = NSAttributedString(string: character, attributes: attributes)
-        var size = attributed.size()
-
-        if size.width > rect.width, size.width > 0 {
-            let fitScale = rect.width / size.width
-            font = NSFont(
-                descriptor: font.fontDescriptor,
-                size: max(1, font.pointSize * fitScale)
-            ) ?? font
-            attributes[.font] = font
-            attributed = NSAttributedString(string: character, attributes: attributes)
-            size = attributed.size()
-        }
+        let attributed = NSAttributedString(string: character, attributes: attributes)
+        let size = attributed.size()
 
         let origin = NSPoint(
             x: rect.midX - size.width / 2,
