@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import AVFoundation
 import NullPlayerCore
 
 /// Unified manager for all casting functionality
@@ -1016,29 +1017,19 @@ class CastManager {
         // For Sonos, advance past incompatible tracks using a fetch-and-verify loop
         var trackToUse = track
         if device.type == .sonos {
-            var fetchedSR: Int? = nil
-            if trackToUse.sampleRate == nil, let rk = trackToUse.plexRatingKey {
-                if Self.sonosLosslessExtension(for: trackToUse) != nil {
-                    fetchedSR = await PlexManager.shared.fetchSampleRate(for: rk)
-                    NSLog("CastManager: castCurrentTrack fetched sample rate for '%@': %@",
-                          trackToUse.title, fetchedSR.map { "\($0) Hz" } ?? "nil")
-                }
-            }
-            while !Self.isSonosCompatible(trackToUse, sampleRateOverride: fetchedSR) {
+            var resolvedSampleRate = await Self.resolveSonosSampleRate(for: trackToUse)
+            while !Self.isSonosCompatible(
+                trackToUse,
+                sampleRateOverride: resolvedSampleRate,
+                allowUnknownSampleRate: trackToUse.url.isFileURL
+            ) {
                 let next = await MainActor.run { engine.advanceToFirstSonosCompatibleTrack() }
                 guard let next else {
                     throw CastError.playbackFailed("No tracks in the playlist are supported by Sonos")
                 }
                 trackToUse = next
                 currentPosition = 0
-                fetchedSR = nil
-                if trackToUse.sampleRate == nil, let rk = trackToUse.plexRatingKey {
-                    if Self.sonosLosslessExtension(for: trackToUse) != nil {
-                        fetchedSR = await PlexManager.shared.fetchSampleRate(for: rk)
-                        NSLog("CastManager: castCurrentTrack fetched sample rate for '%@': %@",
-                              trackToUse.title, fetchedSR.map { "\($0) Hz" } ?? "nil")
-                    }
-                }
+                resolvedSampleRate = await Self.resolveSonosSampleRate(for: trackToUse)
             }
         }
 
@@ -1191,16 +1182,13 @@ class CastManager {
                 var requestedTrackRejected = false
 
                 while true {
-                    var fetchedSampleRate: Int? = nil
-                    if trackToCast.sampleRate == nil,
-                       let ratingKey = trackToCast.plexRatingKey,
-                       Self.sonosLosslessExtension(for: trackToCast) != nil {
-                        fetchedSampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
-                        NSLog("CastManager: castNewTrack Sonos sample-rate check '%@' ratingKey=%@ fetched=%@",
-                              trackToCast.title, ratingKey, fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
-                    }
+                    let resolvedSampleRate = await Self.resolveSonosSampleRate(for: trackToCast)
 
-                    if Self.isSonosCompatible(trackToCast, sampleRateOverride: fetchedSampleRate) {
+                    if Self.isSonosCompatible(
+                        trackToCast,
+                        sampleRateOverride: resolvedSampleRate,
+                        allowUnknownSampleRate: trackToCast.url.isFileURL
+                    ) {
                         if trackToCast.id != track.id {
                             NSLog("CastManager: castNewTrack Sonos using compatible replacement '%@' after skipping '%@'",
                                   trackToCast.title, track.title)
@@ -1208,12 +1196,12 @@ class CastManager {
                         break
                     }
 
-                    NSLog("CastManager: castNewTrack Sonos rejecting '%@' (ext=%@ contentType=%@ sampleRate=%@ fetchedSampleRate=%@) — finding next compatible track",
+                    NSLog("CastManager: castNewTrack Sonos rejecting '%@' (ext=%@ contentType=%@ sampleRate=%@ resolvedSampleRate=%@) — finding next compatible track",
                           trackToCast.title,
                           Self.sonosFormatExtension(for: trackToCast),
                           trackToCast.contentType ?? "nil",
                           trackToCast.sampleRate.map { "\($0) Hz" } ?? "nil",
-                          fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
+                          resolvedSampleRate.map { "\($0) Hz" } ?? "nil")
 
                     if trackToCast.id == track.id {
                         requestedTrackRejected = true
@@ -2532,6 +2520,53 @@ class CastManager {
     private static func sonosLosslessExtension(for track: Track) -> String? {
         let ext = sonosFormatExtension(for: track)
         return sonosLosslessExtensions.contains(ext) ? ext : nil
+    }
+
+    /// Best-effort Sonos sample rate for a lossless track whose metadata has no rate.
+    /// Plex can resolve it from server metadata; local files are probed directly.
+    static func resolveSonosSampleRate(for track: Track) async -> Int? {
+        if let sampleRate = track.sampleRate { return sampleRate }
+        guard sonosLosslessExtension(for: track) != nil else { return nil }
+
+        if let ratingKey = track.plexRatingKey {
+            let sampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
+            NSLog("CastManager: resolved Sonos sample rate for '%@' via Plex: %@",
+                  track.title, sampleRate.map { "\($0) Hz" } ?? "nil")
+            return sampleRate
+        }
+
+        guard track.url.isFileURL else { return nil }
+        let sampleRate = await probeLocalSampleRate(track.url)
+        NSLog("CastManager: resolved Sonos sample rate for '%@' via local file probe: %@",
+              track.title, sampleRate.map { "\($0) Hz" } ?? "nil")
+        return sampleRate
+    }
+
+    private static func probeLocalSampleRate(_ url: URL) async -> Int? {
+        // AVAudioFile is the most reliable path for ordinary local PCM/lossless files.
+        if let audioFile = try? AVAudioFile(forReading: url),
+           let sampleRate = normalizedSampleRate(audioFile.processingFormat.sampleRate) {
+            return sampleRate
+        }
+
+        // Load AVAsset properties asynchronously rather than repeating Track.init's
+        // synchronous fallback, which may have observed an incompletely loaded asset.
+        let asset = AVURLAsset(url: url)
+        guard let audioTracks = try? await asset.loadTracks(withMediaType: .audio),
+              let audioTrack = audioTracks.first,
+              let formatDescriptions = try? await audioTrack.load(.formatDescriptions),
+              let formatDescription = formatDescriptions.first,
+              let description = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)?.pointee else {
+            return nil
+        }
+        return normalizedSampleRate(description.mSampleRate)
+    }
+
+    private static func normalizedSampleRate(_ sampleRate: Double) -> Int? {
+        guard sampleRate.isFinite, sampleRate > 0, sampleRate <= Double(Int.max) else {
+            return nil
+        }
+        return Int(sampleRate.rounded())
     }
 
     /// Returns false if the track format is known to be unsupported by Sonos.

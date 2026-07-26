@@ -541,6 +541,57 @@ final class CastingTests: XCTestCase {
         XCTAssertTrue(CastManager.isSonosCompatible(track))
     }
 
+    func testResolveSonosSampleRateProbesLocalLosslessFileAndRejectsHighResolution() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-sonos-\(UUID().uuidString)")
+            .appendingPathExtension("wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try makePCM16WAV(sampleRate: 96_000, channels: 2, frames: 256).write(to: url)
+
+        let track = Track(url: url, title: "Dragged 24/96 WAV")
+        let resolvedSampleRate = await CastManager.resolveSonosSampleRate(for: track)
+
+        XCTAssertEqual(resolvedSampleRate, 96_000)
+        XCTAssertFalse(CastManager.isSonosCompatible(
+            track,
+            sampleRateOverride: resolvedSampleRate,
+            allowUnknownSampleRate: true
+        ))
+    }
+
+    func testUnknownLocalLosslessTrackIsAttemptedByFinalSonosGate() async {
+        let track = Track(
+            url: URL(fileURLWithPath: "/tmp/nullplayer-undetectable-\(UUID().uuidString).flac"),
+            title: "Dragged FLAC"
+        )
+
+        let resolvedSampleRate = await CastManager.resolveSonosSampleRate(for: track)
+
+        XCTAssertNil(resolvedSampleRate)
+        XCTAssertTrue(CastManager.isSonosCompatible(
+            track,
+            sampleRateOverride: resolvedSampleRate,
+            allowUnknownSampleRate: track.url.isFileURL
+        ))
+    }
+
+    func testUnknownRemoteLosslessTrackRemainsStrictForSonos() async {
+        let track = Track(
+            url: URL(string: "https://server.example.test/audio/unknown.flac")!,
+            title: "Remote FLAC"
+        )
+
+        let resolvedSampleRate = await CastManager.resolveSonosSampleRate(for: track)
+
+        XCTAssertNil(resolvedSampleRate)
+        XCTAssertFalse(CastManager.isSonosCompatible(
+            track,
+            sampleRateOverride: resolvedSampleRate,
+            allowUnknownSampleRate: track.url.isFileURL
+        ))
+    }
+
     func testSonosCastRecoveryClassifiesNetworkAndServerErrorsOnly() {
         XCTAssertTrue(CastManager.isRecoverableSonosCastError(
             CastError.soapError(statusCode: 500, detail: "Internal Server Error")
@@ -604,5 +655,32 @@ final class CastingTests: XCTestCase {
             container: container,
             parts: []
         )
+    }
+
+    private func makePCM16WAV(sampleRate: UInt32, channels: UInt16, frames: UInt32) -> Data {
+        let bytesPerSample: UInt16 = 2
+        let blockAlign = channels * bytesPerSample
+        let dataSize = frames * UInt32(blockAlign)
+        var data = Data()
+
+        data.append(contentsOf: "RIFF".utf8)
+        appendLittleEndian(36 + dataSize, to: &data)
+        data.append(contentsOf: "WAVEfmt ".utf8)
+        appendLittleEndian(UInt32(16), to: &data)
+        appendLittleEndian(UInt16(1), to: &data)
+        appendLittleEndian(channels, to: &data)
+        appendLittleEndian(sampleRate, to: &data)
+        appendLittleEndian(sampleRate * UInt32(blockAlign), to: &data)
+        appendLittleEndian(blockAlign, to: &data)
+        appendLittleEndian(UInt16(16), to: &data)
+        data.append(contentsOf: "data".utf8)
+        appendLittleEndian(dataSize, to: &data)
+        data.append(Data(repeating: 0, count: Int(dataSize)))
+        return data
+    }
+
+    private func appendLittleEndian<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
+        var littleEndian = value.littleEndian
+        withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
     }
 }

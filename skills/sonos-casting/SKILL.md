@@ -398,7 +398,18 @@ Functions that advance the playlist index use `allowUnknownSampleRate: true` bec
 
 ### Cast Functions Are the Final Authority
 
-`castCurrentTrack` and `castNewTrack` in `CastManager.swift` fetch the actual sample rate from the Plex API for lossless tracks with nil SR, then call strict `isSonosCompatible`. The fetch decision must use the same URL-extension-or-content-type classification as `isSonosCompatible`; Plex stream URLs are often extensionless, so `Track.contentType` must identify FLAC/WAV for the fetch to happen. If a track fails there, `advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
+`castCurrentTrack` and `castNewTrack` in `CastManager.swift` call `resolveSonosSampleRate(for:)`
+for lossless tracks with nil SR. Plex tracks fetch the actual rate from the server; local files
+are probed directly with `AVAudioFile` and asynchronously-loaded `AVAsset` format descriptions.
+The resolution decision must use the same URL-extension-or-content-type classification as
+`isSonosCompatible`; Plex stream URLs are often extensionless, so `Track.contentType` must
+identify FLAC/WAV for the fetch to happen. If a track fails there,
+`advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
+
+The final compatibility call remains strict for server tracks. A local file whose sample rate is
+still genuinely undetectable is attempted instead of being skipped, because Sonos can make the
+final decoder decision. Known local rates above 48 kHz remain incompatible even when local-file
+leniency is enabled.
 
 For non-Plex backends, preserve both `Track.contentType` and sample rate from server metadata. If an extensionless FLAC/WAV track reaches strict mode without sample rate, it is rejected conservatively rather than sent to Sonos.
 
