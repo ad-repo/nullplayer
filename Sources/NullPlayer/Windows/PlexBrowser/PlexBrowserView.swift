@@ -340,8 +340,16 @@ class PlexBrowserView: NSView {
     /// Horizontal scroll offset for column headers
     private var horizontalScrollOffset: CGFloat = 0
     
-    /// Item height
-    private let itemHeight: CGFloat = 18
+    /// Classic library content metrics follow UI Size just like the modern/metal browser.
+    /// The window itself is stretchable, so scale the content rather than deriving this from
+    /// the current window dimensions (which would also enlarge text during a manual resize).
+    private var contentScale: CGFloat {
+        WindowManager.shared.classicScaleMultiplier
+    }
+
+    private var itemHeight: CGFloat {
+        18 * contentScale
+    }
 
     /// Extra inset so top bar items don't sit against the window edges.
     private let toolbarItemHorizontalEdgePadding: CGFloat = 5
@@ -353,7 +361,17 @@ class PlexBrowserView: NSView {
     private let rightEdgeItemPaddingBoost: CGFloat = 6
     
     /// Height of column headers
-    private let columnHeaderHeight: CGFloat = 18
+    private var columnHeaderHeight: CGFloat {
+        18 * contentScale
+    }
+
+    private var bitmapTextScale: CGFloat {
+        1.5 * contentScale
+    }
+
+    private func contentFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        NSFont.systemFont(ofSize: size * contentScale, weight: weight)
+    }
     
     /// Stored column widths (persisted)
     private var columnWidths: [String: CGFloat] = [:] {
@@ -1420,7 +1438,7 @@ class PlexBrowserView: NSView {
     /// Compact Mode window so it doesn't launch too thin (mirrors the modern browser).
     var minimumCompactContentWidth: CGFloat {
         // Tab labels are drawn with the bitmap font at this scale (see drawTabBar).
-        let scaledCharWidth = SkinElements.TextFont.charWidth * 1.5
+        let scaledCharWidth = SkinElements.TextFont.charWidth * bitmapTextScale
         // Widest label across all tabs, including the dynamic "Channels"/"Folders" slots.
         var labels = PlexBrowseMode.allCases.map { $0.title }
         labels.append("Channels")
@@ -1454,7 +1472,7 @@ class PlexBrowserView: NSView {
     /// so every tab gets breathing room and short labels (e.g. "TV", "Data") don't hog width.
     /// Shared by `drawTabBar` and `hitTestTabBar` so they stay in sync.
     private func tabBarWidths(tabsWidth: CGFloat) -> [CGFloat] {
-        let scaledCharWidth = SkinElements.TextFont.charWidth * 1.5
+        let scaledCharWidth = SkinElements.TextFont.charWidth * bitmapTextScale
         let boxPadding: CGFloat = 18
         let natural = currentTabLabels().map { CGFloat($0.count) * scaledCharWidth + boxPadding }
         let naturalSum = natural.reduce(0, +)
@@ -2311,7 +2329,6 @@ class PlexBrowserView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
         let originalSize = originalWindowSize
-        let scale = scaleFactor
         
         // Use current skin
         let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
@@ -2524,7 +2541,7 @@ class PlexBrowserView: NSView {
         
         let charWidth = SkinElements.TextFont.charWidth
         let charHeight = SkinElements.TextFont.charHeight
-        let textScale: CGFloat = 1.5
+        let textScale = bitmapTextScale
         let scaledCharWidth = charWidth * textScale
         let scaledCharHeight = charHeight * textScale
         // Round textY to prevent shimmering on non-Retina displays
@@ -3278,7 +3295,7 @@ class PlexBrowserView: NSView {
         
         let charWidth = SkinElements.TextFont.charWidth
         let charHeight = SkinElements.TextFont.charHeight
-        let textScale: CGFloat = 1.5
+        let textScale = bitmapTextScale
         let scaledCharWidth = charWidth * textScale
         let scaledCharHeight = charHeight * textScale
         
@@ -3372,19 +3389,23 @@ class PlexBrowserView: NSView {
             path.stroke()
         }
         
-        let charWidth = SkinElements.TextFont.charWidth
-        let charHeight = SkinElements.TextFont.charHeight
+        // Search text historically renders at the bitmap font's native size at 100%.
+        // Preserve that baseline while still following UI Size.
+        let textScale = contentScale
+        let charWidth = SkinElements.TextFont.charWidth * textScale
+        let charHeight = SkinElements.TextFont.charHeight * textScale
         let textY = searchRect.minY + (searchRect.height - charHeight) / 2
         
         // Search text or placeholder using skin font
         let displayText = searchQuery.isEmpty ? "Type to search..." : searchQuery
-        renderer.drawSkinText(displayText, at: NSPoint(x: searchRect.minX + 6, y: textY), in: context)
+        drawScaledSkinText(displayText, at: NSPoint(x: searchRect.minX + 6, y: textY),
+                           scale: textScale, renderer: renderer, in: context)
         
         // Draw cursor if focused
         if isFocused && !searchQuery.isEmpty {
             let cursorX = searchRect.minX + 6 + CGFloat(searchQuery.count) * charWidth + 1
             colors.normalText.setFill()
-            context.fill(CGRect(x: cursorX, y: textY, width: 1, height: charHeight))
+            context.fill(CGRect(x: cursorX, y: textY, width: max(1, contentScale), height: charHeight))
         }
     }
     
@@ -3408,7 +3429,7 @@ class PlexBrowserView: NSView {
         let message = "Link your Plex account to browse your music library"
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: colors.normalText.withAlphaComponent(0.6),
-            .font: NSFont.systemFont(ofSize: 12)
+            .font: contentFont(ofSize: 12)
         ]
         let size = message.size(withAttributes: attrs)
         message.draw(at: NSPoint(x: listRect.midX - size.width / 2, y: listRect.midY - size.height / 2),
@@ -3418,10 +3439,11 @@ class PlexBrowserView: NSView {
         let hint = "Click the server bar above to link"
         let hintAttrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor(calibratedRed: 0.9, green: 0.6, blue: 0.1, alpha: 1.0),
-            .font: NSFont.systemFont(ofSize: 10)
+            .font: contentFont(ofSize: 10)
         ]
         let hintSize = hint.size(withAttributes: hintAttrs)
-        hint.draw(at: NSPoint(x: listRect.midX - hintSize.width / 2, y: listRect.midY - size.height / 2 - 20),
+        hint.draw(at: NSPoint(x: listRect.midX - hintSize.width / 2,
+                              y: listRect.midY - size.height / 2 - 20 * contentScale),
                  withAttributes: hintAttrs)
         
         context.restoreGState()
@@ -3505,7 +3527,7 @@ class PlexBrowserView: NSView {
         
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: colors.normalText.withAlphaComponent(0.6),
-            .font: NSFont.systemFont(ofSize: 11)
+            .font: contentFont(ofSize: 11)
         ]
         let size = message.size(withAttributes: attrs)
         message.draw(at: NSPoint(x: listRect.midX - size.width / 2, y: listRect.midY - size.height / 2),
@@ -3553,7 +3575,7 @@ class PlexBrowserView: NSView {
         // Draw using green skin text, centered
         let charWidth = SkinElements.TextFont.charWidth
         let charHeight = SkinElements.TextFont.charHeight
-        let textScale: CGFloat = 1.5
+        let textScale = bitmapTextScale
         let scaledCharWidth = charWidth * textScale
         let scaledCharHeight = charHeight * textScale
         let textWidth = CGFloat(message.count) * scaledCharWidth
@@ -3711,7 +3733,7 @@ class PlexBrowserView: NSView {
 
                     let indicatorAttrs: [NSAttributedString.Key: Any] = [
                         .foregroundColor: colors.normalText.withAlphaComponent(0.6),
-                        .font: NSFont.systemFont(ofSize: 8)
+                        .font: contentFont(ofSize: 8)
                     ]
                     indicator.draw(at: NSPoint(x: textX - 12, y: itemRect.midY - 5), withAttributes: indicatorAttrs)
 
@@ -3728,7 +3750,7 @@ class PlexBrowserView: NSView {
                 let textColor = isSelected ? colors.currentText : colors.normalText
                 let attrs: [NSAttributedString.Key: Any] = [
                     .foregroundColor: textColor,
-                    .font: NSFont.systemFont(ofSize: 10)
+                    .font: contentFont(ofSize: 10)
                 ]
                 
                 let textRect = NSRect(x: textX + titleSpinnerInset, y: itemRect.minY + 2,
@@ -3740,7 +3762,7 @@ class PlexBrowserView: NSView {
                     let infoColor = isSelected ? colors.currentText : colors.normalText.withAlphaComponent(0.6)
                     let infoAttrs: [NSAttributedString.Key: Any] = [
                         .foregroundColor: infoColor,
-                        .font: NSFont.systemFont(ofSize: 9)
+                        .font: contentFont(ofSize: 9)
                     ]
                     let infoSize = info.size(withAttributes: infoAttrs)
                     let infoX = browseMode == .radio
@@ -3791,7 +3813,7 @@ class PlexBrowserView: NSView {
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -textCenterY)
         
-        let headerFont = NSFont.systemFont(ofSize: 9, weight: .medium)
+        let headerFont = contentFont(ofSize: 9, weight: .medium)
         let headerColor = colors.normalText.withAlphaComponent(0.7)
         let sortedHeaderColor = colors.normalText.withAlphaComponent(0.9)
         let separatorColor = colors.normalText.withAlphaComponent(0.2)
@@ -3820,7 +3842,7 @@ class PlexBrowserView: NSView {
             if isSortColumn {
                 let indicator = activeColumnSortAscending ? "▲" : "▼"
                 let indicatorAttrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 7),
+                    .font: contentFont(ofSize: 7),
                     .foregroundColor: sortedHeaderColor
                 ]
                 let indicatorX = textX + textSize.width + 3
@@ -3868,8 +3890,8 @@ class PlexBrowserView: NSView {
         
         let textColor = isSelected ? colors.currentText : colors.normalText
         let dimColor = isSelected ? colors.currentText : colors.normalText.withAlphaComponent(0.65)
-        let font = NSFont.systemFont(ofSize: 10)
-        let smallFont = NSFont.systemFont(ofSize: 9)
+        let font = contentFont(ofSize: 10)
+        let smallFont = contentFont(ofSize: 9)
         
         var x = rect.minX + indent + 4 - horizontalScrollOffset
         let group = columnGroup(for: item)
@@ -3970,7 +3992,7 @@ class PlexBrowserView: NSView {
             let message = "No album art"
             let charWidth = SkinElements.TextFont.charWidth
             let charHeight = SkinElements.TextFont.charHeight
-            let textScale: CGFloat = 2.0
+            let textScale = 2.0 * contentScale
             let scaledCharWidth = charWidth * textScale
             let scaledCharHeight = charHeight * textScale
             let textWidth = CGFloat(message.count) * scaledCharWidth
@@ -5671,7 +5693,7 @@ class PlexBrowserView: NSView {
         // Calculate letter height based on available space
         let letterCount = CGFloat(alphabetLetters.count)
         let letterHeight = rect.height / letterCount
-        let fontSize = min(9, letterHeight * 0.8)
+        let fontSize = min(9 * contentScale, letterHeight * 0.8)
         
         // Build set of sort letters that exist in current items
         var availableLetters = Set<String>()
@@ -5702,7 +5724,7 @@ class PlexBrowserView: NSView {
             
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: color,
-                .font: NSFont.boldSystemFont(ofSize: fontSize)
+                .font: NSFont.systemFont(ofSize: fontSize, weight: .bold)
             ]
             
             let letterSize = letter.size(withAttributes: attrs)
@@ -5832,7 +5854,7 @@ class PlexBrowserView: NSView {
     
     private func updateServerNameScroll() {
         let charWidth = SkinElements.TextFont.charWidth
-        let textScale: CGFloat = 1.5
+        let textScale = bitmapTextScale
         let scaledCharWidth = charWidth * textScale
 
         let maxPlexServerWidth = CGFloat(12) * scaledCharWidth
@@ -7197,7 +7219,7 @@ class PlexBrowserView: NSView {
 
         // Calculate sort indicator width (same as in drawTabBar)
         let charWidth = SkinElements.TextFont.charWidth
-        let textScale: CGFloat = 1.5
+        let textScale = bitmapTextScale
         let scaledCharWidth = charWidth * textScale
         let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
@@ -7229,7 +7251,7 @@ class PlexBrowserView: NSView {
         
         // Calculate sort indicator width (must match drawTabBar and hitTestTabBar)
         let charWidth = SkinElements.TextFont.charWidth
-        let textScale: CGFloat = 1.5
+        let textScale = bitmapTextScale
         let scaledCharWidth = charWidth * textScale
         let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
@@ -8125,7 +8147,7 @@ class PlexBrowserView: NSView {
         // Art mode: [Source: Local Files] [+ADD] ... [N items] [VIS] [ART] [F5]
         // Plex:  [Source: ServerName] [LibraryName] ... [N items] [ART] [F5]
         
-        let charWidth = SkinElements.TextFont.charWidth * 1.5  // scaled
+        let charWidth = SkinElements.TextFont.charWidth * bitmapTextScale
         let relativeX = skinPoint.x - Layout.leftBorder
         let toolbarLeftInset = 4 + toolbarItemHorizontalEdgePadding
         
