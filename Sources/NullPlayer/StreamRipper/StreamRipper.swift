@@ -143,6 +143,16 @@ final class StreamRipper {
             throw DownloadAudioError.toolNotFound("yt-dlp is not installed. Install via Homebrew: brew install yt-dlp")
         }
 
+        guard let staging = Self.makeLocalStaging(for: outputTemplate) else {
+            throw DownloadAudioError.processStartFailed("Could not create a temporary download folder")
+        }
+        var stagingHandled = false
+        defer {
+            if !stagingHandled {
+                _ = Self.recoverStagingContents(from: staging.stagingDir)
+            }
+        }
+
         let pathFile = NSTemporaryDirectory() + "nullplayer-yt-audio-\(UUID().uuidString).txt"
         defer { try? FileManager.default.removeItem(atPath: pathFile) }
         let errorFile = FileManager.default.temporaryDirectory
@@ -162,7 +172,7 @@ final class StreamRipper {
             "--no-playlist",
             "--embed-metadata",
             "--print-to-file", "after_move:filepath", pathFile,
-            "-o", outputTemplate,
+            "-o", staging.stagingTemplate,
             sourceURL.absoluteString
         ]
 
@@ -204,7 +214,22 @@ final class StreamRipper {
             throw DownloadAudioError.downloadFailed("Output path is empty")
         }
 
-        return URL(fileURLWithPath: finalPath)
+        do {
+            let destinationURL = try Self.moveDownloaded(
+                stagedPath: finalPath,
+                toDir: staging.destinationDir
+            )
+            try? FileManager.default.removeItem(at: staging.stagingDir)
+            stagingHandled = true
+            return destinationURL
+        } catch {
+            let recovery = Self.recoverStagingContents(from: staging.stagingDir)
+            stagingHandled = true
+            throw DownloadAudioError.downloadFailed(
+                "Downloaded to a temporary folder but could not be moved to the destination: \(error.localizedDescription)\n\n"
+                + recovery.message
+            )
+        }
     }
 
     /// Download video from a URL using yt-dlp, fetched as H.264 video + AAC audio remuxed to MP4.
@@ -225,6 +250,16 @@ final class StreamRipper {
     ) async throws -> URL {
         guard let ytdlp = Self.resolveTool("yt-dlp") else {
             throw DownloadAudioError.toolNotFound("yt-dlp is not installed. Install via Homebrew: brew install yt-dlp")
+        }
+
+        guard let staging = Self.makeLocalStaging(for: outputTemplate) else {
+            throw DownloadAudioError.processStartFailed("Could not create a temporary download folder")
+        }
+        var stagingHandled = false
+        defer {
+            if !stagingHandled {
+                _ = Self.recoverStagingContents(from: staging.stagingDir)
+            }
         }
 
         let pathFile = NSTemporaryDirectory() + "nullplayer-yt-video-\(UUID().uuidString).txt"
@@ -248,7 +283,7 @@ final class StreamRipper {
             "--no-playlist",
             "--embed-metadata",
             "--print-to-file", "after_move:filepath", pathFile,
-            "-o", outputTemplate,
+            "-o", staging.stagingTemplate,
             sourceURL.absoluteString
         ]
 
@@ -290,7 +325,185 @@ final class StreamRipper {
             throw DownloadAudioError.downloadFailed("Output path is empty")
         }
 
-        return URL(fileURLWithPath: finalPath)
+        do {
+            let destinationURL = try Self.moveDownloaded(
+                stagedPath: finalPath,
+                toDir: staging.destinationDir
+            )
+            try? FileManager.default.removeItem(at: staging.stagingDir)
+            stagingHandled = true
+            return destinationURL
+        } catch {
+            let recovery = Self.recoverStagingContents(from: staging.stagingDir)
+            stagingHandled = true
+            throw DownloadAudioError.downloadFailed(
+                "Downloaded to a temporary folder but could not be moved to the destination: \(error.localizedDescription)\n\n"
+                + recovery.message
+            )
+        }
+    }
+
+    // MARK: - Local staging for the download helpers
+
+    /// Rewrites an output template so yt-dlp downloads into a fresh local staging
+    /// directory, returning the caller's original destination directory so the
+    /// finished file can be moved there afterward. yt-dlp streams to a `.part`
+    /// file, `fsync`s it, and renames it into place — patterns that fail on a
+    /// network mount (NAS via SMB/AFP) with "Bad file descriptor" and similar
+    /// errors, but work fine on a local volume. Returns nil if the staging
+    /// directory can't be created.
+    nonisolated private static func makeLocalStaging(for outputTemplate: String)
+        -> (stagingDir: URL, stagingTemplate: String, destinationDir: String)? {
+        let destinationDir: String
+        let filenamePattern: String
+        if let idx = outputTemplate.lastIndex(of: "/") {
+            destinationDir = String(outputTemplate[..<idx])
+            filenamePattern = String(outputTemplate[outputTemplate.index(after: idx)...])
+        } else {
+            destinationDir = FileManager.default.currentDirectoryPath
+            filenamePattern = outputTemplate
+        }
+        let stagingDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-ytdl-\(UUID().uuidString)", isDirectory: true)
+        guard (try? FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)) != nil else {
+            return nil
+        }
+        return (stagingDir, stagingDir.path + "/" + filenamePattern, destinationDir)
+    }
+
+    /// Copy a staged download directly to a collision-free final filename.
+    /// Existing downloads are preserved and no destination-side temporary file
+    /// or rename is used. Returns the final URL.
+    nonisolated private static func moveDownloaded(stagedPath: String, toDir destinationDir: String) throws -> URL {
+        let desiredURL = URL(fileURLWithPath: destinationDir)
+            .appendingPathComponent(URL(fileURLWithPath: stagedPath).lastPathComponent)
+        return try transferStagedFile(
+            from: URL(fileURLWithPath: stagedPath),
+            to: desiredURL,
+            replaceExisting: false
+        )
+    }
+
+    /// Copy a completed local staging file directly to the destination. Normal
+    /// media transfers choose a collision-free final filename, so existing files
+    /// remain untouched and SMB/AFP sees one sequential copy with no destination
+    /// rename. Replacement is reserved for the small CUE sidecar; its temporary
+    /// sibling uses a normal visible filename for NAS compatibility.
+    @discardableResult
+    nonisolated static func transferStagedFile(
+        from sourceURL: URL,
+        to desiredURL: URL,
+        replaceExisting: Bool
+    ) throws -> URL {
+        let fm = FileManager.default
+        let destinationExists = fm.fileExists(atPath: desiredURL.path)
+        let copyURL: URL
+        let finalURL: URL
+
+        if replaceExisting, destinationExists {
+            copyURL = desiredURL.deletingLastPathComponent()
+                .appendingPathComponent(
+                    "\(desiredURL.lastPathComponent).nullplayer-transfer-\(UUID().uuidString)"
+                )
+            finalURL = desiredURL
+        } else {
+            let finalPath = replaceExisting
+                ? desiredURL.path
+                : availableFilePath(for: desiredURL.path)
+            finalURL = URL(fileURLWithPath: finalPath)
+            copyURL = finalURL
+        }
+
+        do {
+            try fm.copyItem(at: sourceURL, to: copyURL)
+            if copyURL != finalURL {
+                _ = try fm.replaceItemAt(finalURL, withItemAt: copyURL)
+            }
+
+            // The destination copy is complete; staging can now be removed.
+            try? fm.removeItem(at: sourceURL)
+            return finalURL
+        } catch {
+            // Remove only the new partial/temporary copy. Existing destinations
+            // are never used as the direct copy target.
+            if copyURL != desiredURL || !destinationExists {
+                try? fm.removeItem(at: copyURL)
+            }
+            throw error
+        }
+    }
+
+    struct StagingRecoveryResult {
+        let recoveryDirectory: URL
+        let recoveredURLs: [URL]
+        let remainingStagingURL: URL?
+
+        var message: String {
+            var parts: [String] = []
+            if recoveredURLs.count == 1, let recovered = recoveredURLs.first {
+                parts.append("The file was recovered to \(recovered.path).")
+            } else if !recoveredURLs.isEmpty {
+                parts.append(
+                    "\(recoveredURLs.count) files were recovered to \(recoveryDirectory.path)."
+                )
+            }
+            if let remainingStagingURL {
+                parts.append(
+                    "Some files could not be recovered and remain at \(remainingStagingURL.path)."
+                )
+            } else if recoveredURLs.isEmpty {
+                parts.append("No recoverable files remained in local staging.")
+            }
+            return parts.joined(separator: "\n\n")
+        }
+    }
+
+    /// Move every remaining staging item into the user's visible Downloads
+    /// folder. Successful recovery removes the temporary `/var/folders` staging
+    /// directory; if Downloads cannot be written, staging is left intact.
+    @discardableResult
+    nonisolated static func recoverStagingContents(
+        from stagingDirectory: URL,
+        to recoveryDirectoryOverride: URL? = nil
+    ) -> StagingRecoveryResult {
+        let fm = FileManager.default
+        let recoveryDirectory = recoveryDirectoryOverride
+            ?? fm.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+        var recoveredURLs: [URL] = []
+
+        do {
+            try fm.createDirectory(
+                at: recoveryDirectory,
+                withIntermediateDirectories: true
+            )
+            let items = try fm.contentsOfDirectory(
+                at: stagingDirectory,
+                includingPropertiesForKeys: nil
+            )
+            for item in items {
+                let desiredPath = recoveryDirectory
+                    .appendingPathComponent(item.lastPathComponent)
+                    .path
+                let recoveredURL = URL(
+                    fileURLWithPath: availableFilePath(for: desiredPath)
+                )
+                try fm.moveItem(at: item, to: recoveredURL)
+                recoveredURLs.append(recoveredURL)
+            }
+            try? fm.removeItem(at: stagingDirectory)
+            return StagingRecoveryResult(
+                recoveryDirectory: recoveryDirectory,
+                recoveredURLs: recoveredURLs,
+                remainingStagingURL: nil
+            )
+        } catch {
+            return StagingRecoveryResult(
+                recoveryDirectory: recoveryDirectory,
+                recoveredURLs: recoveredURLs,
+                remainingStagingURL: stagingDirectory
+            )
+        }
     }
 
     /// Error type for downloadAudio
@@ -419,6 +632,21 @@ final class StreamRipper {
         // file (the extension depends on the native source codec/container).
         let pathFile = NSTemporaryDirectory() + "nullplayer-rip-\(UUID().uuidString).txt"
 
+        // Stage the whole rip on the local disk, then move the finished file(s)
+        // to `folder` at the end. Downloading/transcoding straight onto a network
+        // mount (NAS via SMB/AFP) fails: yt-dlp's `.part` rename + fsync and
+        // ffmpeg's `+faststart` seek-back trigger "Bad file descriptor" and
+        // similar errors that never happen on a local volume.
+        let stagingFolder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-rip-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: stagingFolder, withIntermediateDirectories: true)
+        } catch {
+            presentFailure(message: "Could not create a temporary download folder: \(error.localizedDescription)")
+            return
+        }
+        let stagingPath = stagingFolder.path
+
         // Embed source metadata (title/artist/album/date, etc.) into the file.
         var args: [String] = ["--no-playlist", "--embed-metadata"]
 
@@ -451,9 +679,9 @@ final class StreamRipper {
         let outputTemplate: String
         switch mode {
         case .video:
-            outputTemplate = "\(folder)/%(artist|)s%(artist& - |)s%(title)s [source].%(ext)s"
+            outputTemplate = "\(stagingPath)/%(artist|)s%(artist& - |)s%(title)s [source].%(ext)s"
         case .audio:
-            outputTemplate = "\(folder)/%(artist|)s%(artist& - |)s%(title)s.%(ext)s"
+            outputTemplate = "\(stagingPath)/%(artist|)s%(artist& - |)s%(title)s.%(ext)s"
         }
         args += [
             "--print-to-file", "after_move:filepath", pathFile,
@@ -475,6 +703,15 @@ final class StreamRipper {
         let errPipe = Pipe()
 
         DispatchQueue.global(qos: .userInitiated).async {
+            // Any failure recovers remaining staging files to ~/Downloads. This
+            // defer is a final guard for early-return paths.
+            var stagingHandled = false
+            defer {
+                if !stagingHandled {
+                    _ = Self.recoverStagingContents(from: stagingFolder)
+                }
+            }
+
             let task = Process()
             task.executableURL = URL(fileURLWithPath: ytdlp)
             task.arguments = args
@@ -488,7 +725,13 @@ final class StreamRipper {
             do {
                 try task.run()
             } catch {
-                let message = error.localizedDescription
+                let recovery = Self.recoverStagingContents(from: stagingFolder)
+                stagingHandled = true
+                if let cf = chaptersFile {
+                    try? FileManager.default.removeItem(atPath: cf)
+                }
+                try? FileManager.default.removeItem(atPath: pathFile)
+                let message = error.localizedDescription + "\n\n" + recovery.message
                 DispatchQueue.main.async {
                     self.endActivity()
                     self.presentFailure(message: message)
@@ -518,16 +761,63 @@ final class StreamRipper {
                 }
             }
 
-            // Write a .cue sheet if the source had chapter timestamps.
+            // Move the finished file off the local staging disk onto the
+            // destination folder (which may be a NAS). A single sequential
+            // copy is well supported over SMB/AFP, unlike the streaming write
+            // the download itself performs.
+            if status == 0 {
+                if let staged = outputPath {
+                    switch Self.moveRippedFile(from: staged, toFolder: folder) {
+                    case .success(let moved):
+                        outputPath = moved
+                    case .failure(let error):
+                        status = 1
+                        errText = error.message
+                    }
+                } else {
+                    // yt-dlp succeeded but didn't report the exact path; move
+                    // whatever landed in staging so the file still reaches the
+                    // destination (success dialog falls back to the folder).
+                    do {
+                        try Self.moveAllContents(of: stagingFolder, toFolder: folder)
+                    } catch {
+                        status = 1
+                        errText = "The completed download could not be moved to the destination: "
+                            + error.localizedDescription
+                    }
+                }
+            }
+
+            // Build the .cue locally, then transfer it through the same safe
+            // destination-volume commit used by the media file.
             var cueTrackCount = 0
             if status == 0, let path = outputPath, let cf = chaptersFile {
                 let chapters = Self.readChapters(from: cf)
                 if chapters.count >= 2 {
-                    Self.writeCueFile(audioPath: path, chapters: chapters)
-                    cueTrackCount = chapters.count
+                    do {
+                        try Self.writeCueFile(
+                            audioPath: path,
+                            chapters: chapters,
+                            stagingFolder: stagingFolder
+                        )
+                        cueTrackCount = chapters.count
+                    } catch {
+                        status = 1
+                        errText = "The media file was saved to \(path), but its .cue sheet could not be saved: "
+                            + error.localizedDescription
+                    }
                 }
             }
             if let cf = chaptersFile { try? FileManager.default.removeItem(atPath: cf) }
+
+            if status == 0 {
+                try? FileManager.default.removeItem(at: stagingFolder)
+                stagingHandled = true
+            } else {
+                let recovery = Self.recoverStagingContents(from: stagingFolder)
+                stagingHandled = true
+                errText += "\n\n" + recovery.message
+            }
 
             DispatchQueue.main.async {
                 self.endActivity()
@@ -537,6 +827,44 @@ final class StreamRipper {
                     self.presentFailure(message: errText.isEmpty ? "yt-dlp exited with code \(status)." : errText)
                 }
             }
+        }
+    }
+
+    // MARK: - Staging → destination move
+
+    /// Copy a single finished file from local staging directly to a
+    /// collision-free final filename in `folder`.
+    private nonisolated static func moveRippedFile(from stagingPath: String, toFolder folder: String) -> Result<String, TranscodeError> {
+        let fileName = URL(fileURLWithPath: stagingPath).lastPathComponent
+        let desiredURL = URL(fileURLWithPath: folder).appendingPathComponent(fileName)
+        do {
+            let finalURL = try transferStagedFile(
+                from: URL(fileURLWithPath: stagingPath),
+                to: desiredURL,
+                replaceExisting: false
+            )
+            return .success(finalURL.path)
+        } catch {
+            return .failure(TranscodeError(message: "Downloaded to a temporary folder but could not be moved to the destination: \(error.localizedDescription)"))
+        }
+    }
+
+    /// Best-effort move of every top-level item in the staging dir to `folder`.
+    /// Used as a fallback when yt-dlp didn't report the exact output path.
+    private nonisolated static func moveAllContents(of stagingFolder: URL, toFolder folder: String) throws {
+        let fm = FileManager.default
+        let items = try fm.contentsOfDirectory(at: stagingFolder, includingPropertiesForKeys: nil)
+        guard !items.isEmpty else {
+            throw TranscodeError(message: "yt-dlp did not report an output path and the staging folder is empty")
+        }
+        for item in items {
+            let desiredURL = URL(fileURLWithPath: folder)
+                .appendingPathComponent(item.lastPathComponent)
+            try transferStagedFile(
+                from: item,
+                to: desiredURL,
+                replaceExisting: false
+            )
         }
     }
 
@@ -563,8 +891,12 @@ final class StreamRipper {
         }
     }
 
-    /// Write a CUE sheet next to the audio file, one TRACK per chapter.
-    private nonisolated static func writeCueFile(audioPath: String, chapters: [Chapter]) {
+    /// Build a CUE sheet in local staging, then commit it next to the audio file.
+    private nonisolated static func writeCueFile(
+        audioPath: String,
+        chapters: [Chapter],
+        stagingFolder: URL
+    ) throws {
         let audioURL = URL(fileURLWithPath: audioPath)
         let fileName = audioURL.lastPathComponent
         let base = audioURL.deletingPathExtension().lastPathComponent
@@ -593,8 +925,17 @@ final class StreamRipper {
             lines.append("    INDEX 01 \(cueTimestamp(chapter.start))")
         }
 
-        let cueURL = audioURL.deletingPathExtension().appendingPathExtension("cue")
-        try? (lines.joined(separator: "\n") + "\n").write(to: cueURL, atomically: true, encoding: .utf8)
+        let destinationCueURL = audioURL.deletingPathExtension().appendingPathExtension("cue")
+        let stagedCueURL = stagingFolder
+            .appendingPathComponent(destinationCueURL.lastPathComponent)
+        try (lines.joined(separator: "\n") + "\n")
+            .write(to: stagedCueURL, atomically: true, encoding: .utf8)
+
+        try transferStagedFile(
+            from: stagedCueURL,
+            to: destinationCueURL,
+            replaceExisting: true
+        )
     }
 
     /// Format seconds as a CUE MM:SS:FF timestamp (75 frames per second).

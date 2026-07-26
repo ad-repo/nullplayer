@@ -29,7 +29,7 @@ Ripping shells out to a **system-installed** `yt-dlp` (+ `ffmpeg`) — nothing i
 
 ## yt-dlp invocation (quality-first)
 
-Common: `--no-playlist --embed-metadata`, output template `"<folder>/%(artist|)s%(artist& - |)s%(title)s.%(ext)s"` (→ `Artist - Title.ext`, or just `Title.ext` when no artist), and `--print-to-file after_move:filepath <tmp>` so the **actual** final path (extension depends on the native codec) is read back for "Reveal in Finder" / "Play Now".
+Common: `--no-playlist --embed-metadata`, output template `"<local staging>/%(artist|)s%(artist& - |)s%(title)s.%(ext)s"` (→ `Artist - Title.ext`, or just `Title.ext` when no artist), and `--print-to-file after_move:filepath <tmp>` so the **actual** final path (extension depends on the native codec) is read back. The completed local media file is copied directly to a collision-free final filename on the destination as one sequential write, with no destination-side temporary file or rename. On any failure, remaining staging contents are moved to the user's visible `~/Downloads` folder and the `/var/folders` staging directory is removed after successful recovery.
 
 - **Audio** (`-f bestaudio/best -x --audio-format {flac|mp3} --audio-quality 0 --embed-thumbnail --convert-thumbnails jpg`):
   grabs the best audio-only source, transcodes to the chosen format (FLAC = lossless encode of the decoded source; MP3 = top-VBR). Thumbnail is converted to JPEG before embedding (YouTube serves WebP, which doesn't embed cleanly into FLAC/MP3). Also adds `--print-to-file after_move:%(chapters)j <tmp>` for the cue sheet.
@@ -57,7 +57,7 @@ Audio rips capture the source chapter list via `%(chapters)j` (JSON array of `{s
 - `cueTimestamp` converts seconds → `MM:SS:FF` at **75 frames/second** (CUE standard)
 - album/performer derived from the `Artist - Title` filename; quotes in titles are sanitized to `'`
 
-`readChapters` / `writeCueFile` / `cueTimestamp` are `nonisolated static` (pure, no UI) so they run safely in the background completion block.
+`readChapters` / `writeCueFile` / `cueTimestamp` are `nonisolated static` so they run safely in the background completion block. `writeCueFile` builds the cue in local staging, transfers it only after the media succeeds, and reports transfer errors instead of claiming a cue was written.
 
 The cue this writes is consumed by the **cue-sheets** feature (direct-play virtual split / library split-on-import); its parser's `parseCueTimestamp` is the exact inverse of `cueTimestamp` and must round-trip — see the **cue-sheets** skill.
 
@@ -76,6 +76,6 @@ The cue this writes is consumed by the **cue-sheets** feature (direct-play virtu
 - `--print-to-file after_move:…` only fires after a real download/move — it won't write in `--skip-download` test runs. Use plain `--print "%(chapters)j" --skip-download` to inspect chapter output manually.
 - `start_time` in the chapter JSON can be an integer (`0`); `JSONSerialization` → `NSNumber` bridges to `Double` regardless, so `entry["start_time"] as? Double` is fine.
 - The output extension is **not** fixed for audio when keeping native containers would apply — always trust the `after_move:filepath` value, not an assumed `.flac`/`.mp3`/`.mp4`.
-- During video compatibility encoding, ffmpeg may leave a hidden dot temp file/folder visible near the destination while it finalizes the MP4, especially during the `+faststart` metadata rewrite. This can last minutes even for a ~10-minute source, then clean itself up after ffmpeg exits. Treat it as in-progress scratch unless it remains after the rip has completed or failed.
+- A failed download, transcode, destination copy, or CUE transfer moves every remaining staging item into `~/Downloads` with collision-free names. The error dialog reports the recovered path; `/var/folders` is retained only if Downloads itself cannot be written.
 - Do not call `WindowManager.playVideoTrack` from Stream Ripper's **Play Now** path unless you intend to cast. `playVideoTrack` is playlist-oriented and routes to `targetVideoCastDevice` when a video-capable cast session or preferred video cast device exists. Use `showVideoPlayer(..., allowCasting: false)` for local Play Now.
 - No Spotify/Apple/Amazon sources (project policy) — this is a generic URL ripper backed by yt-dlp.

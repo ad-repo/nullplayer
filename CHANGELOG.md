@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- **Video playback now uses the LGPL VLCKit engine** — the built-in video player and cast-source decoding moved from the KSPlayer/FFmpegKit engine (GPL-3.0) to the already-vendored VLCKit/libVLC (LGPL-2.1+), removing a licensing blocker for a Mac App Store build while keeping MKV/MP4 and other container playback. Play/pause, seek, skip, volume, and audio/subtitle track selection carry over, including a real subtitle **Off** and subtitle-delay control; borderless-window dragging is preserved. (External Plex subtitles are a follow-up.)
+
+### Bug Fixes
+
+- **Ripping and YouTube downloads to a NAS no longer fail with "Bad file descriptor"** — ripping a URL, or downloading from the YouTube source, directly to a network-mounted folder (SMB/AFP) could fail with *Bad file descriptor* and similar errors, while the same operation to a local folder worked. yt-dlp streams to a `.part` file, `fsync`s it, and renames it into place, and video rips then transcode with ffmpeg `+faststart`; network filesystems reject those random-access/rename patterns. The download and transcode now run in a local staging folder, and only the finished file (plus any `.cue`) is moved to the destination as a single sequential copy, which network volumes handle reliably.
+
 ## 0.28.2
 
 ### Improvements
