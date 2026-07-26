@@ -8,6 +8,7 @@
 
 ### Bug Fixes
 
+- **Video now fills the player window immediately instead of the bottom-left corner** — launching a video (most noticeably a just-ripped local clip) could render it into a small patch in the bottom-left of the window until the window was manually resized, which snapped it to fill. VLCKit sizes its video-output subview to the drawable at insertion time, and for instant-starting local files that happened before the window had laid out. The video host now forces VLCKit's output to fill on insertion and on every resize, so playback fills the window from the first frame.
 - **Ripping and YouTube downloads to a NAS no longer fail with "Bad file descriptor"** — ripping a URL, or downloading from the YouTube source, directly to a network-mounted folder (SMB/AFP) could fail with *Bad file descriptor* and similar errors, while the same operation to a local folder worked. yt-dlp streams to a `.part` file, `fsync`s it, and renames it into place, and video rips then transcode with ffmpeg `+faststart`; network filesystems reject those random-access/rename patterns. The download and transcode now run in a local staging folder, and only the finished file (plus any `.cue`) is moved to the destination as a single sequential copy, which network volumes handle reliably.
 
 ## 0.28.2
