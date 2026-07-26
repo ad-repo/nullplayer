@@ -146,10 +146,10 @@ final class StreamRipper {
         guard let staging = Self.makeLocalStaging(for: outputTemplate) else {
             throw DownloadAudioError.processStartFailed("Could not create a temporary download folder")
         }
-        var shouldRemoveStaging = true
+        var stagingHandled = false
         defer {
-            if shouldRemoveStaging {
-                try? FileManager.default.removeItem(at: staging.stagingDir)
+            if !stagingHandled {
+                _ = Self.recoverStagingContents(from: staging.stagingDir)
             }
         }
 
@@ -215,12 +215,19 @@ final class StreamRipper {
         }
 
         do {
-            return try Self.moveDownloaded(stagedPath: finalPath, toDir: staging.destinationDir)
+            let destinationURL = try Self.moveDownloaded(
+                stagedPath: finalPath,
+                toDir: staging.destinationDir
+            )
+            try? FileManager.default.removeItem(at: staging.stagingDir)
+            stagingHandled = true
+            return destinationURL
         } catch {
-            shouldRemoveStaging = false
+            let recovery = Self.recoverStagingContents(from: staging.stagingDir)
+            stagingHandled = true
             throw DownloadAudioError.downloadFailed(
                 "Downloaded to a temporary folder but could not be moved to the destination: \(error.localizedDescription)\n\n"
-                + "The completed download remains at \(finalPath)."
+                + recovery.message
             )
         }
     }
@@ -248,10 +255,10 @@ final class StreamRipper {
         guard let staging = Self.makeLocalStaging(for: outputTemplate) else {
             throw DownloadAudioError.processStartFailed("Could not create a temporary download folder")
         }
-        var shouldRemoveStaging = true
+        var stagingHandled = false
         defer {
-            if shouldRemoveStaging {
-                try? FileManager.default.removeItem(at: staging.stagingDir)
+            if !stagingHandled {
+                _ = Self.recoverStagingContents(from: staging.stagingDir)
             }
         }
 
@@ -319,12 +326,19 @@ final class StreamRipper {
         }
 
         do {
-            return try Self.moveDownloaded(stagedPath: finalPath, toDir: staging.destinationDir)
+            let destinationURL = try Self.moveDownloaded(
+                stagedPath: finalPath,
+                toDir: staging.destinationDir
+            )
+            try? FileManager.default.removeItem(at: staging.stagingDir)
+            stagingHandled = true
+            return destinationURL
         } catch {
-            shouldRemoveStaging = false
+            let recovery = Self.recoverStagingContents(from: staging.stagingDir)
+            stagingHandled = true
             throw DownloadAudioError.downloadFailed(
                 "Downloaded to a temporary folder but could not be moved to the destination: \(error.localizedDescription)\n\n"
-                + "The completed download remains at \(finalPath)."
+                + recovery.message
             )
         }
     }
@@ -357,9 +371,9 @@ final class StreamRipper {
         return (stagingDir, stagingDir.path + "/" + filenamePattern, destinationDir)
     }
 
-    /// Move a staged download to its destination directory through a completed
-    /// temporary sibling. Existing downloads are preserved and a collision-free
-    /// name is selected for the new file. Returns the final URL.
+    /// Copy a staged download directly to a collision-free final filename.
+    /// Existing downloads are preserved and no destination-side temporary file
+    /// or rename is used. Returns the final URL.
     nonisolated private static func moveDownloaded(stagedPath: String, toDir destinationDir: String) throws -> URL {
         let desiredURL = URL(fileURLWithPath: destinationDir)
             .appendingPathComponent(URL(fileURLWithPath: stagedPath).lastPathComponent)
@@ -370,10 +384,11 @@ final class StreamRipper {
         )
     }
 
-    /// Copy a completed local staging file to a hidden temporary sibling on the
-    /// destination volume, then commit it with a same-volume rename. This keeps
-    /// an existing destination intact until the new copy is complete and leaves
-    /// the local staged source available if any transfer step fails.
+    /// Copy a completed local staging file directly to the destination. Normal
+    /// media transfers choose a collision-free final filename, so existing files
+    /// remain untouched and SMB/AFP sees one sequential copy with no destination
+    /// rename. Replacement is reserved for the small CUE sidecar; its temporary
+    /// sibling uses a normal visible filename for NAS compatibility.
     @discardableResult
     nonisolated static func transferStagedFile(
         from sourceURL: URL,
@@ -381,32 +396,113 @@ final class StreamRipper {
         replaceExisting: Bool
     ) throws -> URL {
         let fm = FileManager.default
-        let destinationDirectory = desiredURL.deletingLastPathComponent()
-        let transferURL = destinationDirectory
-            .appendingPathComponent(".nullplayer-transfer-\(UUID().uuidString)")
+        let destinationExists = fm.fileExists(atPath: desiredURL.path)
+        let copyURL: URL
+        let finalURL: URL
+
+        if replaceExisting, destinationExists {
+            copyURL = desiredURL.deletingLastPathComponent()
+                .appendingPathComponent(
+                    "\(desiredURL.lastPathComponent).nullplayer-transfer-\(UUID().uuidString)"
+                )
+            finalURL = desiredURL
+        } else {
+            let finalPath = replaceExisting
+                ? desiredURL.path
+                : availableFilePath(for: desiredURL.path)
+            finalURL = URL(fileURLWithPath: finalPath)
+            copyURL = finalURL
+        }
 
         do {
-            try fm.copyItem(at: sourceURL, to: transferURL)
-
-            let finalURL: URL
-            if replaceExisting, fm.fileExists(atPath: desiredURL.path) {
-                _ = try fm.replaceItemAt(desiredURL, withItemAt: transferURL)
-                finalURL = desiredURL
-            } else {
-                let finalPath = replaceExisting
-                    ? desiredURL.path
-                    : availableFilePath(for: desiredURL.path)
-                finalURL = URL(fileURLWithPath: finalPath)
-                try fm.moveItem(at: transferURL, to: finalURL)
+            try fm.copyItem(at: sourceURL, to: copyURL)
+            if copyURL != finalURL {
+                _ = try fm.replaceItemAt(finalURL, withItemAt: copyURL)
             }
 
-            // The committed destination is complete; staging can now be removed.
+            // The destination copy is complete; staging can now be removed.
             try? fm.removeItem(at: sourceURL)
             return finalURL
         } catch {
-            // A failed copy/commit must not disturb an existing destination.
-            try? fm.removeItem(at: transferURL)
+            // Remove only the new partial/temporary copy. Existing destinations
+            // are never used as the direct copy target.
+            if copyURL != desiredURL || !destinationExists {
+                try? fm.removeItem(at: copyURL)
+            }
             throw error
+        }
+    }
+
+    struct StagingRecoveryResult {
+        let recoveryDirectory: URL
+        let recoveredURLs: [URL]
+        let remainingStagingURL: URL?
+
+        var message: String {
+            var parts: [String] = []
+            if recoveredURLs.count == 1, let recovered = recoveredURLs.first {
+                parts.append("The file was recovered to \(recovered.path).")
+            } else if !recoveredURLs.isEmpty {
+                parts.append(
+                    "\(recoveredURLs.count) files were recovered to \(recoveryDirectory.path)."
+                )
+            }
+            if let remainingStagingURL {
+                parts.append(
+                    "Some files could not be recovered and remain at \(remainingStagingURL.path)."
+                )
+            } else if recoveredURLs.isEmpty {
+                parts.append("No recoverable files remained in local staging.")
+            }
+            return parts.joined(separator: "\n\n")
+        }
+    }
+
+    /// Move every remaining staging item into the user's visible Downloads
+    /// folder. Successful recovery removes the temporary `/var/folders` staging
+    /// directory; if Downloads cannot be written, staging is left intact.
+    @discardableResult
+    nonisolated static func recoverStagingContents(
+        from stagingDirectory: URL,
+        to recoveryDirectoryOverride: URL? = nil
+    ) -> StagingRecoveryResult {
+        let fm = FileManager.default
+        let recoveryDirectory = recoveryDirectoryOverride
+            ?? fm.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+        var recoveredURLs: [URL] = []
+
+        do {
+            try fm.createDirectory(
+                at: recoveryDirectory,
+                withIntermediateDirectories: true
+            )
+            let items = try fm.contentsOfDirectory(
+                at: stagingDirectory,
+                includingPropertiesForKeys: nil
+            )
+            for item in items {
+                let desiredPath = recoveryDirectory
+                    .appendingPathComponent(item.lastPathComponent)
+                    .path
+                let recoveredURL = URL(
+                    fileURLWithPath: availableFilePath(for: desiredPath)
+                )
+                try fm.moveItem(at: item, to: recoveredURL)
+                recoveredURLs.append(recoveredURL)
+            }
+            try? fm.removeItem(at: stagingDirectory)
+            return StagingRecoveryResult(
+                recoveryDirectory: recoveryDirectory,
+                recoveredURLs: recoveredURLs,
+                remainingStagingURL: nil
+            )
+        } catch {
+            return StagingRecoveryResult(
+                recoveryDirectory: recoveryDirectory,
+                recoveredURLs: recoveredURLs,
+                remainingStagingURL: stagingDirectory
+            )
         }
     }
 
@@ -607,12 +703,12 @@ final class StreamRipper {
         let errPipe = Pipe()
 
         DispatchQueue.global(qos: .userInitiated).async {
-            // Keep completed staging files available for recovery if the final
-            // NAS transfer fails; all other completion paths clean them up.
-            var preserveStagingOnFailure = false
+            // Any failure recovers remaining staging files to ~/Downloads. This
+            // defer is a final guard for early-return paths.
+            var stagingHandled = false
             defer {
-                if !preserveStagingOnFailure {
-                    try? FileManager.default.removeItem(at: stagingFolder)
+                if !stagingHandled {
+                    _ = Self.recoverStagingContents(from: stagingFolder)
                 }
             }
 
@@ -629,7 +725,13 @@ final class StreamRipper {
             do {
                 try task.run()
             } catch {
-                let message = error.localizedDescription
+                let recovery = Self.recoverStagingContents(from: stagingFolder)
+                stagingHandled = true
+                if let cf = chaptersFile {
+                    try? FileManager.default.removeItem(atPath: cf)
+                }
+                try? FileManager.default.removeItem(atPath: pathFile)
+                let message = error.localizedDescription + "\n\n" + recovery.message
                 DispatchQueue.main.async {
                     self.endActivity()
                     self.presentFailure(message: message)
@@ -669,10 +771,8 @@ final class StreamRipper {
                     case .success(let moved):
                         outputPath = moved
                     case .failure(let error):
-                        preserveStagingOnFailure = true
                         status = 1
                         errText = error.message
-                            + "\n\nThe completed download remains in \(stagingFolder.path)."
                     }
                 } else {
                     // yt-dlp succeeded but didn't report the exact path; move
@@ -681,11 +781,9 @@ final class StreamRipper {
                     do {
                         try Self.moveAllContents(of: stagingFolder, toFolder: folder)
                     } catch {
-                        preserveStagingOnFailure = true
                         status = 1
                         errText = "The completed download could not be moved to the destination: "
-                            + "\(error.localizedDescription)\n\n"
-                            + "Any files that were not transferred remain in \(stagingFolder.path)."
+                            + error.localizedDescription
                     }
                 }
             }
@@ -704,15 +802,22 @@ final class StreamRipper {
                         )
                         cueTrackCount = chapters.count
                     } catch {
-                        preserveStagingOnFailure = true
                         status = 1
                         errText = "The media file was saved to \(path), but its .cue sheet could not be saved: "
-                            + "\(error.localizedDescription)\n\n"
-                            + "Any recoverable staged .cue data remains in \(stagingFolder.path)."
+                            + error.localizedDescription
                     }
                 }
             }
             if let cf = chaptersFile { try? FileManager.default.removeItem(atPath: cf) }
+
+            if status == 0 {
+                try? FileManager.default.removeItem(at: stagingFolder)
+                stagingHandled = true
+            } else {
+                let recovery = Self.recoverStagingContents(from: stagingFolder)
+                stagingHandled = true
+                errText += "\n\n" + recovery.message
+            }
 
             DispatchQueue.main.async {
                 self.endActivity()
@@ -727,9 +832,8 @@ final class StreamRipper {
 
     // MARK: - Staging → destination move
 
-    /// Transfer a single finished file from local staging to `folder`, choosing
-    /// a collision-free name and committing only after the destination-volume
-    /// temporary copy is complete.
+    /// Copy a single finished file from local staging directly to a
+    /// collision-free final filename in `folder`.
     private nonisolated static func moveRippedFile(from stagingPath: String, toFolder folder: String) -> Result<String, TranscodeError> {
         let fileName = URL(fileURLWithPath: stagingPath).lastPathComponent
         let desiredURL = URL(fileURLWithPath: folder).appendingPathComponent(fileName)
@@ -821,13 +925,12 @@ final class StreamRipper {
             lines.append("    INDEX 01 \(cueTimestamp(chapter.start))")
         }
 
+        let destinationCueURL = audioURL.deletingPathExtension().appendingPathExtension("cue")
         let stagedCueURL = stagingFolder
-            .appendingPathComponent("nullplayer-cue-\(UUID().uuidString)")
-            .appendingPathExtension("cue")
+            .appendingPathComponent(destinationCueURL.lastPathComponent)
         try (lines.joined(separator: "\n") + "\n")
             .write(to: stagedCueURL, atomically: true, encoding: .utf8)
 
-        let destinationCueURL = audioURL.deletingPathExtension().appendingPathExtension("cue")
         try transferStagedFile(
             from: stagedCueURL,
             to: destinationCueURL,

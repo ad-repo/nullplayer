@@ -87,6 +87,54 @@ final class StreamRipperTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: source), Data("completed download".utf8))
     }
 
+    func testRecoveryMovesStagingContentsToVisibleDirectoryAndRemovesStaging() throws {
+        let staging = tempDirectory.appendingPathComponent("staging", isDirectory: true)
+        let recovery = tempDirectory.appendingPathComponent("Downloads", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let stagedFile = staging.appendingPathComponent("Track.flac")
+        try Data("completed download".utf8).write(to: stagedFile)
+
+        let result = StreamRipper.recoverStagingContents(
+            from: staging,
+            to: recovery
+        )
+
+        XCTAssertNil(result.remainingStagingURL)
+        XCTAssertEqual(result.recoveredURLs, [recovery.appendingPathComponent("Track.flac")])
+        XCTAssertEqual(
+            try Data(contentsOf: recovery.appendingPathComponent("Track.flac")),
+            Data("completed download".utf8)
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+    }
+
+    func testRecoveryUsesCollisionFreeFilename() throws {
+        let staging = tempDirectory.appendingPathComponent("staging", isDirectory: true)
+        let recovery = tempDirectory.appendingPathComponent("Downloads", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: recovery, withIntermediateDirectories: true)
+        try Data("recovered".utf8).write(to: staging.appendingPathComponent("Track.flac"))
+        try Data("existing".utf8).write(to: recovery.appendingPathComponent("Track.flac"))
+
+        let result = StreamRipper.recoverStagingContents(
+            from: staging,
+            to: recovery
+        )
+
+        XCTAssertEqual(
+            result.recoveredURLs,
+            [recovery.appendingPathComponent("Track 1.flac")]
+        )
+        XCTAssertEqual(
+            try Data(contentsOf: recovery.appendingPathComponent("Track.flac")),
+            Data("existing".utf8)
+        )
+        XCTAssertEqual(
+            try Data(contentsOf: recovery.appendingPathComponent("Track 1.flac")),
+            Data("recovered".utf8)
+        )
+    }
+
     func testTransferReplacesExistingOnlyAfterCopyCompletes() throws {
         let source = tempDirectory.appendingPathComponent("staged.cue")
         let destination = tempDirectory.appendingPathComponent("Track.cue")
