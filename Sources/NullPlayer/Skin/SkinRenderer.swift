@@ -331,24 +331,64 @@ class SkinRenderer {
             return
         }
         
+        let safeMinutes = max(0, minutes)
+        let usesLongMinuteLayout = safeMinutes >= 100
+
         // Draw minus sign if negative (remaining time mode)
         if isNegative {
             let minusRect = SkinElements.Numbers.minus
-            let minusPos = SkinElements.Numbers.Positions.minus
+            let minusPos = usesLongMinuteLayout
+                ? SkinElements.Numbers.Positions.longTimeMinus
+                : SkinElements.Numbers.Positions.minus
             drawSprite(from: numbersImage, sourceRect: minusRect,
                       to: NSRect(origin: minusPos, size: minusRect.size), in: context)
         }
         
-        // Draw minutes tens digit
-        let minTens = minutes / 10
-        drawDigit(minTens, from: numbersImage, at: SkinElements.Numbers.Positions.minuteTens, in: context)
-        
-        // Draw minutes ones digit
-        let minOnes = minutes % 10
-        drawDigit(minOnes, from: numbersImage, at: SkinElements.Numbers.Positions.minuteOnes, in: context)
+        if usesLongMinuteLayout {
+            // The colon is baked into classic main-window backgrounds. Use the
+            // normal minus-sign slot for a third full-size minute digit.
+            let minuteDigits = String(safeMinutes).compactMap(\.wholeNumberValue)
+            if minuteDigits.count == 3 {
+                let positions = [
+                    SkinElements.Numbers.Positions.minuteHundreds,
+                    SkinElements.Numbers.Positions.minuteTens,
+                    SkinElements.Numbers.Positions.minuteOnes,
+                ]
+                for (digit, position) in zip(minuteDigits, positions) {
+                    drawDigit(digit, from: numbersImage, at: position, in: context)
+                }
+            } else {
+                // Pathological 4+ digit minute values still stay inside the
+                // expanded three-cell field rather than reading past the sheet.
+                let fieldStartX = SkinElements.Numbers.Positions.minuteHundreds.x
+                let fieldEndX = SkinElements.Numbers.Positions.minuteOnes.x
+                    + SkinElements.Numbers.digitWidth
+                let digitWidth = (fieldEndX - fieldStartX) / CGFloat(minuteDigits.count)
+                let digitSize = NSSize(
+                    width: digitWidth,
+                    height: SkinElements.Numbers.digitHeight
+                )
+
+                for (index, digit) in minuteDigits.enumerated() {
+                    let position = NSPoint(
+                        x: fieldStartX + (CGFloat(index) * digitWidth),
+                        y: SkinElements.Numbers.Positions.minuteHundreds.y
+                    )
+                    drawDigit(digit, from: numbersImage, at: position, size: digitSize, in: context)
+                }
+            }
+        } else {
+            // Draw minutes tens digit
+            let minTens = (safeMinutes / 10) % 10
+            drawDigit(minTens, from: numbersImage, at: SkinElements.Numbers.Positions.minuteTens, in: context)
+
+            // Draw minutes ones digit
+            let minOnes = safeMinutes % 10
+            drawDigit(minOnes, from: numbersImage, at: SkinElements.Numbers.Positions.minuteOnes, in: context)
+        }
         
         // Draw seconds tens digit
-        let secTens = seconds / 10
+        let secTens = (seconds / 10) % 10
         drawDigit(secTens, from: numbersImage, at: SkinElements.Numbers.Positions.secondTens, in: context)
         
         // Draw seconds ones digit
@@ -356,9 +396,16 @@ class SkinRenderer {
         drawDigit(secOnes, from: numbersImage, at: SkinElements.Numbers.Positions.secondOnes, in: context)
     }
     
-    private func drawDigit(_ digit: Int, from image: NSImage, at position: NSPoint, in context: CGContext) {
-        let sourceRect = SkinElements.Numbers.digit(digit)
-        let destRect = NSRect(origin: position, size: sourceRect.size)
+    private func drawDigit(
+        _ digit: Int,
+        from image: NSImage,
+        at position: NSPoint,
+        size: NSSize? = nil,
+        in context: CGContext
+    ) {
+        let safeDigit = min(max(digit, 0), 9)
+        let sourceRect = SkinElements.Numbers.digit(safeDigit)
+        let destRect = NSRect(origin: position, size: size ?? sourceRect.size)
         drawSprite(from: image, sourceRect: sourceRect, to: destRect, in: context)
     }
     
@@ -800,9 +847,17 @@ class SkinRenderer {
     // MARK: - Status Indicators
     
     /// Draw playback status indicator (play/pause/stop)
-    func drawPlaybackStatus(_ state: PlaybackState, in context: CGContext) {
+    func drawPlaybackStatus(
+        _ state: PlaybackState,
+        shiftedForLongRemainingTime: Bool = false,
+        in context: CGContext
+    ) {
+        let position = shiftedForLongRemainingTime
+            ? SkinElements.PlayStatus.Positions.longRemainingStatus
+            : SkinElements.PlayStatus.Positions.status
+
         guard let playpausImage = skin.playpaus else {
-            drawFallbackPlaybackStatus(state, in: context)
+            drawFallbackPlaybackStatus(state, at: position, in: context)
             return
         }
         
@@ -816,7 +871,6 @@ class SkinRenderer {
             sourceRect = SkinElements.PlayStatus.stop
         }
         
-        let position = SkinElements.PlayStatus.Positions.status
         let destRect = NSRect(origin: position, size: sourceRect.size)
         drawSprite(from: playpausImage, sourceRect: sourceRect, to: destRect, in: context)
     }
@@ -3902,8 +3956,11 @@ class SkinRenderer {
         timeString.draw(in: rect, withAttributes: attrs)
     }
     
-    private func drawFallbackPlaybackStatus(_ state: PlaybackState, in context: CGContext) {
-        let position = SkinElements.PlayStatus.Positions.status
+    private func drawFallbackPlaybackStatus(
+        _ state: PlaybackState,
+        at position: NSPoint,
+        in context: CGContext
+    ) {
         let rect = NSRect(origin: position, size: NSSize(width: 9, height: 9))
         
         switch state {

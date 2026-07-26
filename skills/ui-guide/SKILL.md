@@ -173,6 +173,22 @@ private func drawSprite(from image: NSImage, sourceRect: NSRect, to destRect: NS
 }
 ```
 
+### Classic Time Display
+
+Classic main-window skins bake the colon into `MAIN.BMP`, while `NUMBERS.BMP` supplies 9×13
+digit sprites. Normal `MM:SS` times use the two standard minute cells at x=48 and x=60.
+
+For times of 100 minutes or more, keep the full `MMM:SS` value and seconds:
+
+- Draw the leading minute digit at x=36, reusing the normal minus-sign slot.
+- Keep the remaining minute digits at x=48 and x=60 so all three use native-size skin art.
+- In remaining mode, draw the minus at x=24 and shift the playback-status icon from x=26 to x=14.
+- Only pathological 4+ digit minute values compress within the expanded three-cell field.
+- Clamp every sprite digit index to `0...9` before calculating its source rectangle.
+
+Do not convert long classic times to `H:MM`; users need the seconds, and the unused left-side
+space makes a native-size third minute digit possible.
+
 ## Tile-Aligned Widths
 
 Windows using PLEDIT tiles (25px) must have tile-aligned widths to avoid artifacts:

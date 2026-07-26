@@ -13,6 +13,17 @@ final class TimeDisplayFormatterTests: XCTestCase {
         )
     }
 
+    func testLongTimesKeepMinutesAndSeconds() {
+        XCTAssertEqual(
+            TimeDisplayFormatter.string(minutes: 158, seconds: 43, isNegative: false, numberSystem: .decimal),
+            "158:43"
+        )
+        XCTAssertEqual(
+            TimeDisplayFormatter.string(minutes: 158, seconds: 43, isNegative: true, numberSystem: .decimal),
+            "-158:43"
+        )
+    }
+
     func testAlternateDecimalScriptsMapDigits() {
         XCTAssertEqual(
             TimeDisplayFormatter.string(minutes: 4, seconds: 32, isNegative: false, numberSystem: .arabicIndic),
