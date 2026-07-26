@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+- **Ripping and YouTube downloads to a NAS no longer fail with "Bad file descriptor"** — ripping a URL, or downloading from the YouTube source, directly to a network-mounted folder (SMB/AFP) could fail with *Bad file descriptor* and similar errors, while the same operation to a local folder worked. yt-dlp streams to a `.part` file, `fsync`s it, and renames it into place, and video rips then transcode with ffmpeg `+faststart`; network filesystems reject those random-access/rename patterns. The download and transcode now run in a local staging folder, and only the finished file (plus any `.cue`) is moved to the destination as a single sequential copy, which network volumes handle reliably.
+
 ## 0.28.2
 
 ### Improvements
@@ -8,7 +14,6 @@
 
 ### Bug Fixes
 
-- **Ripping and YouTube downloads to a NAS no longer fail with "Bad file descriptor"** — ripping a URL, or downloading from the YouTube source, directly to a network-mounted folder (SMB/AFP) could fail with *Bad file descriptor* and similar errors, while the same operation to a local folder worked. yt-dlp streams to a `.part` file, `fsync`s it, and renames it into place, and video rips then transcode with ffmpeg `+faststart`; network filesystems reject those random-access/rename patterns. The download and transcode now run in a local staging folder, and only the finished file (plus any `.cue`) is moved to the destination as a single sequential copy, which network volumes handle reliably.
 - **Modern skin visualization choices persist across app relaunches** — modern/metal skin visualization defaults now act as first-use defaults on launch instead of overwriting user-selected modes and options. Main-window Fire/Lightning/Matrix choices, Fire intensity, Spectrum-window mode/style settings, and scoped `vis_classic` options still reset when explicitly changing skins or using skin reset, but no longer revert just because the app reopened.
 - **Waveform window frame now saves with Remember State** — the Waveform window's frame was included in the AppState schema but was serialized as `nil`, so it could not restore to the prior position. It now saves through `WindowManager.waveformWindowFrame` like the other remembered utility windows.
 - **Classic 16-color skins and themed EQ art render correctly** — packed 1-bit/4-bit BMP rows now use the BMP bit stride instead of treating every pixel as a byte, fixing scrambled transport buttons, numbers, and playlist art in skins such as `ascii.wsz`. The classic EQ also draws its slider tracks and graph curve from each skin's `eqmain.bmp`, so non-default skins such as `Purple_Glow.wsz` no longer fall back to hardcoded green/yellow/red art.
