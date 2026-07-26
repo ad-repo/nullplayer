@@ -34,18 +34,17 @@ extension NSRect {
         return rect
     }
 
-    /// Expands the rect outward to the enclosing whole-device-pixel rect for the given
-    /// backing scale (device pixels per point). A layer-backed view whose bounds have a
-    /// fractional size (common with the modern skin's 1.25 scale factor: 275 * 1.25 =
-    /// 343.75) leaves the outermost fraction of its integer-sized backing store unpainted,
-    /// which composites the desktop through as a ~1px seam on 1x (non-Retina) displays —
-    /// see issue #373. Filling/clipping against this rect paints that sliver instead.
-    func pixelAlignedOutward(scale: CGFloat) -> NSRect {
-        guard scale > 0 else { return self }
-        let minX = (minX * scale).rounded(.down) / scale
-        let minY = (minY * scale).rounded(.down) / scale
-        let maxX = (maxX * scale).rounded(.up) / scale
-        let maxY = (maxY * scale).rounded(.up) / scale
-        return NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    /// Aligns a self-drawn modern auxiliary window's content rect outward to complete
+    /// backing pixels on a 1x display. Modern's standard 3 * 1.25 chrome inset is 3.75
+    /// points, so leaving the content at that fractional boundary can expose a partial
+    /// background pixel as a hairline on the free left, right, and bottom edges.
+    ///
+    /// Metal already uses an integral thin inset and must retain its existing geometry.
+    func alignedContentRectForOneXDisplay(in view: NSView) -> NSRect {
+        guard view.window?.backingScaleFactor == 1,
+              ModernSkinEngine.shared.currentRenderStyle != .metal else {
+            return self
+        }
+        return view.backingAlignedRect(self, options: .alignAllEdgesOutward)
     }
 }

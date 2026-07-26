@@ -124,27 +124,18 @@ class ModernSkinRenderer {
         adjacentEdges: AdjacentEdges = [],
         sharpCorners: CACornerMask = [],
         backgroundOpacity: CGFloat? = nil,
-        drawMetalAccentStrip: Bool = true,
-        pixelAlignmentScale: CGFloat? = nil
+        drawMetalAccentStrip: Bool = true
     ) {
         let cornerRadius = skin.config.window.cornerRadius ?? 0
         let resolvedBackgroundOpacity = min(1.0, max(0.0, backgroundOpacity ?? skin.config.window.opacity))
-        // On 1x (non-Retina) displays a fractional window size leaves the outermost
-        // fraction of the integer backing store unpainted, which shows the desktop
-        // through as a ~1px seam (issue #373). Paint/clip the whole backing pixel there.
-        // Retina (2x) is already pixel-aligned, so it is left untouched.
-        let paintBounds: NSRect = {
-            guard let scale = pixelAlignmentScale, scale == 1 else { return bounds }
-            return bounds.pixelAlignedOutward(scale: scale)
-        }()
         if cornerRadius > 0 {
-            let clipPath = makeRoundedCornerPath(rect: paintBounds, radius: cornerRadius, sharpCorners: sharpCorners)
+            let clipPath = makeRoundedCornerPath(rect: bounds, radius: cornerRadius, sharpCorners: sharpCorners)
             context.saveGState()
             context.addPath(clipPath)
             context.clip()
         }
         if usesMetalAppearance {
-            drawMetalWindowBackground(in: paintBounds, context: context, opacity: resolvedBackgroundOpacity, drawAccentStrip: drawMetalAccentStrip)
+            drawMetalWindowBackground(in: bounds, context: context, opacity: resolvedBackgroundOpacity, drawAccentStrip: drawMetalAccentStrip)
             if cornerRadius > 0 {
                 context.restoreGState()
             }
@@ -156,10 +147,10 @@ class ModernSkinRenderer {
         context.setBlendMode(.copy)
         context.setAlpha(resolvedBackgroundOpacity)
         context.setFillColor(skin.backgroundColor.cgColor)
-        context.fill(paintBounds)
+        context.fill(bounds)
         context.setBlendMode(.normal)
         if let bgImage = skin.backgroundImage {
-            drawImage(bgImage, in: paintBounds, context: context)
+            drawImage(bgImage, in: bounds, context: context)
         }
         context.restoreGState()
         if cornerRadius > 0 {
@@ -343,8 +334,7 @@ class ModernSkinRenderer {
         adjacentEdges: AdjacentEdges = [],
         sharpCorners: CACornerMask = [],
         occlusionSegments: EdgeOcclusionSegments = .empty,
-        borderOpacity: CGFloat? = nil,
-        pixelAlignmentScale: CGFloat? = nil
+        borderOpacity: CGFloat? = nil
     ) {
         let borderWidth = skin.config.window.borderWidth ?? 1.0
         let cornerRadius = skin.config.window.cornerRadius ?? 0
@@ -363,14 +353,7 @@ class ModernSkinRenderer {
         // dark interior seam lines between docked windows.
         effectiveSegments = normalizeNearFullOcclusionSegments(for: bounds, segments: effectiveSegments)
 
-        // Match drawWindowBackground: extend the border to the whole backing pixel on 1x
-        // so the outer sliver carries the border color rather than the plain background
-        // (issue #373). Retina (2x) is already pixel-aligned and left untouched.
-        let strokeBounds: NSRect = {
-            guard let scale = pixelAlignmentScale, scale == 1 else { return bounds }
-            return bounds.pixelAlignedOutward(scale: scale)
-        }()
-        let borderRect = strokeBounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
+        let borderRect = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
         let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, sharpCorners: sharpCorners)
 
         if usesMetalAppearance {

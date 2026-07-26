@@ -67,14 +67,12 @@ final class ModernNetworkMonitorView: NSView {
             return
         }
 
-        let pixelAlignmentScale = window?.backingScaleFactor
         renderer.drawWindowBackground(
             in: bounds,
             context: context,
             adjacentEdges: adjacentEdges,
             sharpCorners: sharpCorners,
-            backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity,
-            pixelAlignmentScale: pixelAlignmentScale
+            backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity
         )
 
         drawNetworkContent(in: contentRect, clippedTo: contentRect)
@@ -84,8 +82,7 @@ final class ModernNetworkMonitorView: NSView {
             context: context,
             adjacentEdges: adjacentEdges,
             sharpCorners: sharpCorners,
-            occlusionSegments: edgeOcclusionSegments,
-            pixelAlignmentScale: pixelAlignmentScale
+            occlusionSegments: edgeOcclusionSegments
         )
 
         if !WindowManager.shared.effectiveHideTitleBars(for: window) {
@@ -117,11 +114,12 @@ final class ModernNetworkMonitorView: NSView {
             width: max(0, bounds.width - borderWidth * 2),
             height: max(0, bounds.height - titleBarHeight - borderWidth)
         )
-        return rect.expandingThroughJoinedEdges(
+        let joinedRect = rect.expandingThroughJoinedEdges(
             in: bounds,
             borderWidth: borderWidth,
             adjacentEdges: adjacentEdges
         )
+        return joinedRect.alignedContentRectForOneXDisplay(in: self)
     }
 
     private func contentAnimationRect(from contentRect: NSRect) -> NSRect {
