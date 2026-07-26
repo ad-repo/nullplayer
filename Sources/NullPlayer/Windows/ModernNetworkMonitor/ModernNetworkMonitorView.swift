@@ -67,12 +67,14 @@ final class ModernNetworkMonitorView: NSView {
             return
         }
 
+        let pixelAlignmentScale = window?.backingScaleFactor
         renderer.drawWindowBackground(
             in: bounds,
             context: context,
             adjacentEdges: adjacentEdges,
             sharpCorners: sharpCorners,
-            backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity
+            backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity,
+            pixelAlignmentScale: pixelAlignmentScale
         )
 
         drawNetworkContent(in: contentRect, clippedTo: contentRect)
@@ -82,7 +84,8 @@ final class ModernNetworkMonitorView: NSView {
             context: context,
             adjacentEdges: adjacentEdges,
             sharpCorners: sharpCorners,
-            occlusionSegments: edgeOcclusionSegments
+            occlusionSegments: edgeOcclusionSegments,
+            pixelAlignmentScale: pixelAlignmentScale
         )
 
         if !WindowManager.shared.effectiveHideTitleBars(for: window) {

@@ -73,12 +73,14 @@ final class ModernPeppyMeterView: NSView {
                 drawMeterContent(in: bounds, presenter: presenter, context: context)
             }
         } else {
+            let pixelAlignmentScale = window?.backingScaleFactor
             renderer.drawWindowBackground(
                 in: bounds,
                 context: context,
                 adjacentEdges: adjacentEdges,
                 sharpCorners: sharpCorners,
-                backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity
+                backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity,
+                pixelAlignmentScale: pixelAlignmentScale
             )
             if let presenter {
                 drawMeterContent(in: contentRect, presenter: presenter, context: context)
@@ -88,7 +90,8 @@ final class ModernPeppyMeterView: NSView {
                 context: context,
                 adjacentEdges: adjacentEdges,
                 sharpCorners: sharpCorners,
-                occlusionSegments: edgeOcclusionSegments
+                occlusionSegments: edgeOcclusionSegments,
+                pixelAlignmentScale: pixelAlignmentScale
             )
         }
 
