@@ -114,11 +114,12 @@ final class ModernNetworkMonitorView: NSView {
             width: max(0, bounds.width - borderWidth * 2),
             height: max(0, bounds.height - titleBarHeight - borderWidth)
         )
-        return rect.expandingThroughJoinedEdges(
+        let joinedRect = rect.expandingThroughJoinedEdges(
             in: bounds,
             borderWidth: borderWidth,
             adjacentEdges: adjacentEdges
         )
+        return joinedRect.alignedContentRectForOneXDisplay(in: self)
     }
 
     private func contentAnimationRect(from contentRect: NSRect) -> NSRect {

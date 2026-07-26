@@ -8,6 +8,7 @@
 
 ### Bug Fixes
 
+- **Modern PeppyMeter and Flow windows no longer show a thin seam on their outer edges** — following the earlier fix for the seam *under* a docked PeppyMeter/Flow window, a roughly 1-pixel gap could still show the desktop through the left, right, and bottom edges on standard-resolution (non-Retina) displays. The standard modern chrome inset lands at a fractional 3.75 points, so the meter/Flow content could leave partial background pixels exposed along its free edges at 1x. Those content edges are now aligned outward through the view's actual backing-pixel transform; Metal and Retina rendering are unchanged.
 - **Ripping and YouTube downloads to a NAS no longer fail with "Bad file descriptor"** — ripping a URL, or downloading from the YouTube source, directly to a network-mounted folder (SMB/AFP) could fail with *Bad file descriptor* and similar errors, while the same operation to a local folder worked. yt-dlp streams to a `.part` file, `fsync`s it, and renames it into place, and video rips then transcode with ffmpeg `+faststart`; network filesystems reject those random-access/rename patterns. The download and transcode now run in a local staging folder, and only the finished file (plus any `.cue`) is moved to the destination as a single sequential copy, which network volumes handle reliably.
 
 ## 0.28.2
