@@ -34,4 +34,73 @@ final class StreamRipperTests: XCTestCase {
 
         XCTAssertEqual(output, tempDirectory.appendingPathComponent("Artist - Title 1.mp4").path)
     }
+
+    func testTransferStagedFileUsesCollisionFreeNameAndPreservesExistingFile() throws {
+        let source = tempDirectory.appendingPathComponent("staged.flac")
+        let destination = tempDirectory.appendingPathComponent("Track.flac")
+        try Data("new".utf8).write(to: source)
+        try Data("old".utf8).write(to: destination)
+
+        let result = try StreamRipper.transferStagedFile(
+            from: source,
+            to: destination,
+            replaceExisting: false
+        )
+
+        XCTAssertEqual(result, tempDirectory.appendingPathComponent("Track 1.flac"))
+        XCTAssertEqual(try Data(contentsOf: destination), Data("old".utf8))
+        XCTAssertEqual(try Data(contentsOf: result), Data("new".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+    }
+
+    func testTransferFailureLeavesExistingDestinationUntouched() throws {
+        let missingSource = tempDirectory.appendingPathComponent("missing.cue")
+        let destination = tempDirectory.appendingPathComponent("Track.cue")
+        try Data("existing cue".utf8).write(to: destination)
+
+        XCTAssertThrowsError(
+            try StreamRipper.transferStagedFile(
+                from: missingSource,
+                to: destination,
+                replaceExisting: true
+            )
+        )
+
+        XCTAssertEqual(try Data(contentsOf: destination), Data("existing cue".utf8))
+    }
+
+    func testTransferFailurePreservesCompletedStagingFile() throws {
+        let source = tempDirectory.appendingPathComponent("staged.flac")
+        let unavailableDestination = tempDirectory
+            .appendingPathComponent("missing-directory", isDirectory: true)
+            .appendingPathComponent("Track.flac")
+        try Data("completed download".utf8).write(to: source)
+
+        XCTAssertThrowsError(
+            try StreamRipper.transferStagedFile(
+                from: source,
+                to: unavailableDestination,
+                replaceExisting: false
+            )
+        )
+
+        XCTAssertEqual(try Data(contentsOf: source), Data("completed download".utf8))
+    }
+
+    func testTransferReplacesExistingOnlyAfterCopyCompletes() throws {
+        let source = tempDirectory.appendingPathComponent("staged.cue")
+        let destination = tempDirectory.appendingPathComponent("Track.cue")
+        try Data("new cue".utf8).write(to: source)
+        try Data("old cue".utf8).write(to: destination)
+
+        let result = try StreamRipper.transferStagedFile(
+            from: source,
+            to: destination,
+            replaceExisting: true
+        )
+
+        XCTAssertEqual(result, destination)
+        XCTAssertEqual(try Data(contentsOf: destination), Data("new cue".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+    }
 }
