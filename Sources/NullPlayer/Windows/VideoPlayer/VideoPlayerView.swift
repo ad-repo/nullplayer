@@ -11,13 +11,39 @@ private struct VideoTrackInfo {
     let name: String
 }
 
+/// Host view for VLCKit's video output.
+///
+/// VLCKit inserts its own rendering subview into whatever NSView is assigned as
+/// the player's `drawable`, and it sizes that subview to the host's bounds *at
+/// insertion time*. For instant-starting local files (e.g. a freshly ripped
+/// clip) that insertion can happen before the window has been laid out, leaving
+/// the video pinned to the bottom-left corner at a stale size until a manual
+/// resize nudges it. Streamed sources avoid this only because their first-frame
+/// delay lets layout settle first. Forcing every subview to fill the host on
+/// insertion and on every resize keeps the video output matched to the host
+/// regardless of when VLCKit attaches it.
+private final class VLCVideoHostView: NSView {
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        subview.autoresizingMask = [.width, .height]
+        subview.frame = bounds
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        for subview in subviews {
+            subview.frame = bounds
+        }
+    }
+}
+
 /// Video player view using VLCKit (libVLC), skinned title bar, and controls
 class VideoPlayerView: NSView {
 
     // MARK: - Properties
 
     private var mediaPlayer: VLCMediaPlayer?
-    private var playerHostView: NSView!
+    private var playerHostView: VLCVideoHostView!
     private var loadingIndicator: NSProgressIndicator?
     private var currentTitle: String = ""
     private var currentURL: URL?
@@ -159,7 +185,7 @@ class VideoPlayerView: NSView {
         let controlBarHeight: CGFloat = 40
         
         // Create a host view for the player layer - fills entire view
-        playerHostView = NSView(frame: bounds)
+        playerHostView = VLCVideoHostView(frame: bounds)
         playerHostView.wantsLayer = true
         playerHostView.layer?.backgroundColor = NSColor.black.cgColor
         playerHostView.autoresizingMask = [.width, .height]

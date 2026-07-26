@@ -33,4 +33,18 @@ extension NSRect {
         }
         return rect
     }
+
+    /// Aligns a self-drawn modern auxiliary window's content rect outward to complete
+    /// backing pixels on a 1x display. Modern's standard 3 * 1.25 chrome inset is 3.75
+    /// points, so leaving the content at that fractional boundary can expose a partial
+    /// background pixel as a hairline on the free left, right, and bottom edges.
+    ///
+    /// Metal already uses an integral thin inset and must retain its existing geometry.
+    func alignedContentRectForOneXDisplay(in view: NSView) -> NSRect {
+        guard view.window?.backingScaleFactor == 1,
+              ModernSkinEngine.shared.currentRenderStyle != .metal else {
+            return self
+        }
+        return view.backingAlignedRect(self, options: .alignAllEdgesOutward)
+    }
 }
