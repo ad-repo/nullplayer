@@ -841,6 +841,7 @@ class ModernSkinRenderer {
         ]
         let attributed = NSAttributedString(string: character, attributes: attributes)
         let size = attributed.size()
+
         let origin = NSPoint(
             x: rect.midX - size.width / 2,
             y: rect.midY - size.height / 2

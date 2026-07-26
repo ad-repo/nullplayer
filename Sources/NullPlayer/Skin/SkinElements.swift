@@ -234,6 +234,10 @@ struct SkinElements {
         struct Positions {
             /// Minus sign position (for remaining time mode)
             static let minus = NSPoint(x: 36, y: 26)
+            /// Minus sign position when a third minute digit occupies `minus`.
+            static let longTimeMinus = NSPoint(x: 24, y: 26)
+            /// Leading minute digit for times of 100 minutes or more.
+            static let minuteHundreds = NSPoint(x: 36, y: 26)
             static let minuteTens = NSPoint(x: 48, y: 26)
             static let minuteOnes = NSPoint(x: 60, y: 26)
             // Colon is baked into background at ~x: 69-77
@@ -352,6 +356,8 @@ struct SkinElements {
         // Position on main window
         struct Positions {
             static let status = NSPoint(x: 26, y: 28)
+            /// Makes room for the minus sign in long remaining-time displays.
+            static let longRemainingStatus = NSPoint(x: 14, y: 28)
             static let work = NSPoint(x: 24, y: 28)
         }
     }

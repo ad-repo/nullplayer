@@ -562,9 +562,10 @@ class ModernMainWindowView: NSView {
     
     private func drawTimeDisplay(context: CGContext) {
         let timeDisplayRect = effectiveTimeDisplayRect
-        let digitWidth = ModernSkinElements.timeDigitSize.width
-        let colonWidth = ModernSkinElements.timeColonSize.width
-        let digitHeight = ModernSkinElements.timeDigitSize.height
+        var digitWidth = ModernSkinElements.timeDigitSize.width
+        var colonWidth = ModernSkinElements.timeColonSize.width
+        var digitHeight = ModernSkinElements.timeDigitSize.height
+        var digitGap: CGFloat = 1
 
         let displayString = TimeDisplayFormatter.string(
             currentTime: currentTime,
@@ -575,11 +576,23 @@ class ModernMainWindowView: NSView {
 
         // Calculate total width to center within time display area
         var totalWidth: CGFloat = 0
-        let digitGap: CGFloat = 1
         for char in displayString {
             totalWidth += (String(char) == ":" ? colonWidth : digitWidth) + digitGap
         }
         totalWidth -= digitGap
+
+        // Preserve the normal digit size, but uniformly shrink longer readouts
+        // (notably negative times with three-digit minutes) to fit the panel.
+        let horizontalPadding: CGFloat = 3
+        let availableWidth = max(0, timeDisplayRect.width - (horizontalPadding * 2))
+        if totalWidth > availableWidth {
+            let fitScale = availableWidth / totalWidth
+            digitWidth *= fitScale
+            colonWidth *= fitScale
+            digitHeight *= fitScale
+            digitGap *= fitScale
+            totalWidth = availableWidth
+        }
         
         // Center horizontally in the time display area, vertically centered
         var x = timeDisplayRect.minX + (timeDisplayRect.width - totalWidth) / 2

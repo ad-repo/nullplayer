@@ -204,6 +204,13 @@ The modern main-window timer supports two rendering paths:
 - Sprite-based rendering for the default 7-segment set: `time_digit_0` through `time_digit_9`, `time_colon`, and `time_minus`
 - Font-based fallback rendering for alternate timer number systems when matching sprites are not present
 
+The timer keeps the full minutes-and-seconds value for long tracks. Its normal digit metrics are
+unchanged while the readout fits; longer strings such as `-158:43` scale all digit, colon, gap,
+and height metrics uniformly into a content width inset by 3 points on each side of the LCD.
+Do not clamp to the panel's full width, because that makes the outer glyph touch the border.
+Font-fallback glyphs must also reduce their configured time font when the measured character is
+wider than its assigned cell.
+
 This means skins can keep the existing LED-style decimal timer sprites, while alternate numeral systems and radix modes still render using the configured time font.
 
 The engine automatically checks for `@2x` variants on Retina displays.

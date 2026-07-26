@@ -1131,7 +1131,11 @@ class MainWindowView: NSView {
         } else {
             playbackState = WindowManager.shared.audioEngine.state
         }
-        renderer.drawPlaybackStatus(playbackState, in: context)
+        renderer.drawPlaybackStatus(
+            playbackState,
+            shiftedForLongRemainingTime: isNegative && minutes >= 100,
+            in: context
+        )
 
         // Draw stereo and cast indicators
         let isStereo = (currentTrack?.channels ?? 2) >= 2
