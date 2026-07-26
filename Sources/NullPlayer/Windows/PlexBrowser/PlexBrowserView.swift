@@ -3389,7 +3389,9 @@ class PlexBrowserView: NSView {
             path.stroke()
         }
         
-        let textScale = bitmapTextScale
+        // Search text historically renders at the bitmap font's native size at 100%.
+        // Preserve that baseline while still following UI Size.
+        let textScale = contentScale
         let charWidth = SkinElements.TextFont.charWidth * textScale
         let charHeight = SkinElements.TextFont.charHeight * textScale
         let textY = searchRect.minY + (searchRect.height - charHeight) / 2
