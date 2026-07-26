@@ -1647,7 +1647,7 @@ class SkinRenderer {
         }
 
         drawGenFontTitleText(title, in: context, bounds: bounds,
-                             titleHeight: titleHeight, isActive: isActive)
+                             titleHeight: titleHeight, isActive: isActive, fontScale: controlScale)
 
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
                                      titleHeight: titleHeight, isActive: isActive,
@@ -1860,7 +1860,7 @@ class SkinRenderer {
         }
 
         if let title {
-            drawGenFontTitleText(title, in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
+            drawGenFontTitleText(title, in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive, fontScale: controlScale)
         }
 
         drawPlaylistTitleBarControls(from: pleditImage, in: context, bounds: bounds,
@@ -1988,8 +1988,10 @@ class SkinRenderer {
     /// Draw title text using GenFont from gen.png with a dark background gap
     /// Reusable across all window title bars (main, playlist, EQ, library, ProjectM, analyzer)
     /// - Parameter fontScale: Font scale factor. Use 1.0 for views that already apply context scaling
-    ///   (main window, EQ, playlist). Use Skin.scaleFactor for views that draw at actual window size
-    ///   (ProjectM, library, analyzer).
+    ///   (main window, EQ, playlist). Views that draw at actual window size (ProjectM, analyzer,
+    ///   PeppyMeter, Flow) should pass their `controlScale` (= `playlistChromeScale`) so the title
+    ///   text follows UI Size in lock-step with the title-bar buttons. The default `Skin.scaleFactor`
+    ///   is the fixed 100% value used only where no UI-Size-aware scale is available.
     private func drawGenFontTitleText(_ text: String, in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true, fontScale: CGFloat = Skin.scaleFactor) {
         // Check if gen.bmp has a valid font - if not, fall back to TEXT.BMP
         if !isGenFontValid {
