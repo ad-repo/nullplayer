@@ -9,6 +9,7 @@
 
 ### Improvements
 
+- **Modern/Metal main window: quick Cava toggle** — the first button in the modern/metal main-window button row now opens the Cava spectrum window (labeled **CV**) instead of toggling Compact Mode. Compact Mode remains available from the main-window right-click menu.
 - **Video playback now uses the LGPL VLCKit engine** — the video player and cast-source decoding moved from KSPlayer/FFmpegKit (GPL-3.0) to the vendored VLCKit/libVLC (LGPL-2.1+). Play/pause, seek, skip, volume, and audio/subtitle track selection carry over, including a subtitle **Off** and subtitle-delay control.
 
 ### Bug Fixes

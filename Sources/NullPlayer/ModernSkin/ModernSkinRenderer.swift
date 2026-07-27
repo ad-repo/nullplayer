@@ -1117,7 +1117,7 @@ class ModernSkinRenderer {
         let isBoxedButton = (id == "btn_eq" ||
                              id == "btn_playlist" ||
                              id == "btn_library" ||
-                             id == "btn_compact" ||
+                             id == "btn_cava" ||
                              id == "btn_projectm" ||
                              id == "btn_networkmonitor" ||
                              id == "btn_peppymeter" ||
