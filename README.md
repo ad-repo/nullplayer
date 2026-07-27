@@ -40,6 +40,9 @@
 - Switch between Classic, Modern, and Metal live, with no restart — playback, casting, and the open playlist continue uninterrupted while the windows rebuild
 - Original Spenctrum analysis visualization system
 - Audio Analysis window — Friture-style multi-pane analyzer with a live oscilloscope, stereo peak/RMS level meters, and a scrolling Metal spectrogram (Viridis colormap)
+- Cava spectrum analyzer — a cava-style bar spectrum in a dedicated window and in the main-window display, with mono/stereo modes, skin-following gradient and metallic color presets, and configurable bars, smoothing, and bass tilt
+- Flow network monitor — a live download/upload throughput window with a scrolling history graph and selectable network interface
+- PeppyMeter — a skinnable analog VU meter window (needle and bar meters) with 25 bundled templates and a random auto-switch mode
 - Album art visualization system with user selected effects
 - Modern mode with 21-band EQ implementation, Classic mode with standard 10-band EQ
 - Reference Tuning for pitch-shifting local playback and HTTP streams to a different reference frequency, with 432 Hz, 440 Hz, and custom source/target Hz options
