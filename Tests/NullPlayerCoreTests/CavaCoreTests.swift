@@ -12,15 +12,11 @@ final class CavaCoreTests: XCTestCase {
         let cava = CavaCore(numberOfBars: 32, rate: 44100, channels: 1)
 
         // Generate 1 kHz sine
-        let sine1kHz = generateSineWave(frequency: 1000, duration: 0.5, sampleRate: 44100, amplitude: 0.8)
+        let sine1kHz = generateSineWave(frequency: 1000, duration: 1.0, sampleRate: 44100, amplitude: 0.8)
 
-        // Run multiple frames to reach steady state (smoothing ramps up)
-        var lastResult: [[Float]] = []
-        let framesPerChunk = 2048
-        for i in stride(from: 0, to: sine1kHz.count, by: framesPerChunk) {
-            let chunk = Array(sine1kHz[i..<min(i + framesPerChunk, sine1kHz.count)])
-            lastResult = cava.execute(chunk)
-        }
+        // Match the app: analyze new 2048-frame audio buffers at ~21 Hz while
+        // smoothing, autosensitivity, and gravity advance on 60 Hz render ticks.
+        let lastResult = runAtPlaybackCadence(cava, interleaved: sine1kHz, channels: 1)
 
         // After steady state, one channel (mono), find max bar
         XCTAssertEqual(lastResult.count, 1, "Mono should return 1 channel")
@@ -49,14 +45,9 @@ final class CavaCoreTests: XCTestCase {
         // 5 kHz should map to a higher bar index than 1 kHz.
         let cava = CavaCore(numberOfBars: 32, rate: 44100, channels: 1)
 
-        let sine5kHz = generateSineWave(frequency: 5000, duration: 0.5, sampleRate: 44100, amplitude: 0.8)
+        let sine5kHz = generateSineWave(frequency: 5000, duration: 1.0, sampleRate: 44100, amplitude: 0.8)
 
-        var lastResult: [[Float]] = []
-        let framesPerChunk = 2048
-        for i in stride(from: 0, to: sine5kHz.count, by: framesPerChunk) {
-            let chunk = Array(sine5kHz[i..<min(i + framesPerChunk, sine5kHz.count)])
-            lastResult = cava.execute(chunk)
-        }
+        let lastResult = runAtPlaybackCadence(cava, interleaved: sine5kHz, channels: 1)
 
         let bars = lastResult[0]
         let maxIdx = bars.indices.max(by: { bars[$0] < bars[$1] }) ?? 0
@@ -78,7 +69,7 @@ final class CavaCoreTests: XCTestCase {
         let cava = CavaCore(numberOfBars: 32, rate: 44100, channels: 2)
 
         // Generate 1 kHz sine for left channel
-        let sine1kHz = generateSineWave(frequency: 1000, duration: 0.5, sampleRate: 44100, amplitude: 0.8)
+        let sine1kHz = generateSineWave(frequency: 1000, duration: 1.0, sampleRate: 44100, amplitude: 0.8)
 
         // Create stereo interleaved: [L, R, L, R, ...]
         var stereoInterleaved = [Float]()
@@ -87,14 +78,7 @@ final class CavaCoreTests: XCTestCase {
             stereoInterleaved.append(0.0)      // Right (silent)
         }
 
-        // Run multiple frames
-        var lastResult: [[Float]] = []
-        let framesPerChunk = 2048
-        for i in stride(from: 0, to: stereoInterleaved.count, by: framesPerChunk * 2) {
-            let end = min(i + framesPerChunk * 2, stereoInterleaved.count)
-            let chunk = Array(stereoInterleaved[i..<end])
-            lastResult = cava.execute(chunk)
-        }
+        let lastResult = runAtPlaybackCadence(cava, interleaved: stereoInterleaved, channels: 2)
 
         XCTAssertEqual(lastResult.count, 2, "Stereo should return 2 channels")
         let leftBars = lastResult[0]
@@ -118,7 +102,7 @@ final class CavaCoreTests: XCTestCase {
         // Right channel bars should have energy; left should be ~0.
         let cava = CavaCore(numberOfBars: 32, rate: 44100, channels: 2)
 
-        let sine1kHz = generateSineWave(frequency: 1000, duration: 0.5, sampleRate: 44100, amplitude: 0.8)
+        let sine1kHz = generateSineWave(frequency: 1000, duration: 1.0, sampleRate: 44100, amplitude: 0.8)
 
         // Create stereo interleaved: [L, R, L, R, ...]
         var stereoInterleaved = [Float]()
@@ -127,13 +111,7 @@ final class CavaCoreTests: XCTestCase {
             stereoInterleaved.append(sample)   // Right
         }
 
-        var lastResult: [[Float]] = []
-        let framesPerChunk = 2048
-        for i in stride(from: 0, to: stereoInterleaved.count, by: framesPerChunk * 2) {
-            let end = min(i + framesPerChunk * 2, stereoInterleaved.count)
-            let chunk = Array(stereoInterleaved[i..<end])
-            lastResult = cava.execute(chunk)
-        }
+        let lastResult = runAtPlaybackCadence(cava, interleaved: stereoInterleaved, channels: 2)
 
         let leftBars = lastResult[0]
         let rightBars = lastResult[1]
@@ -224,29 +202,24 @@ final class CavaCoreTests: XCTestCase {
         // Bars should monotonically decrease toward 0 due to gravity falloff.
         let cava = CavaCore(numberOfBars: 32, rate: 44100, channels: 1)
 
-        // Phase 1: Drive with 1 kHz sine for ~0.2 sec
-        let sine1kHz = generateSineWave(frequency: 1000, duration: 0.2, sampleRate: 44100, amplitude: 0.8)
+        // Phase 1: Drive long enough for the intentional low-start autosensitivity
+        // ramp to converge at the app's 60 Hz render cadence.
+        let sine1kHz = generateSineWave(frequency: 1000, duration: 1.0, sampleRate: 44100, amplitude: 0.8)
 
-        var result = [[Float]]()
-        let framesPerChunk = 2048
-        for i in stride(from: 0, to: sine1kHz.count, by: framesPerChunk) {
-            let chunk = Array(sine1kHz[i..<min(i + framesPerChunk, sine1kHz.count)])
-            result = cava.execute(chunk)
-        }
+        var result = runAtPlaybackCadence(cava, interleaved: sine1kHz, channels: 1)
 
         let barsAfterSignal = result[0]
         let maxAfterSignal = barsAfterSignal.max() ?? 0
         XCTAssertGreaterThan(maxAfterSignal, 0.2, "Signal should drive bars up")
 
-        // Phase 2: Feed silence for ~0.2 sec (200 ms = 8820 samples at 44100)
-        let silenceFrames = [Float](repeating: 0, count: 8820)
-
-        var silenceResults: [Float] = barsAfterSignal
-        for i in stride(from: 0, to: silenceFrames.count, by: framesPerChunk) {
-            let chunk = Array(silenceFrames[i..<min(i + framesPerChunk, silenceFrames.count)])
-            let silenceResult = cava.execute(chunk)
-            silenceResults = silenceResult[0]
-        }
+        // A full-height peak needs 20 render frames to drain at the 0.05/frame
+        // gravity rate, so allow 0.5 seconds (30 display frames).
+        let silenceFrames = [Float](repeating: 0, count: 22050)
+        let silenceResults = runAtPlaybackCadence(
+            cava,
+            interleaved: silenceFrames,
+            channels: 1
+        )[0]
 
         // After silence, bars should have decayed significantly
         let maxAfterSilence = silenceResults.max() ?? 0
@@ -256,15 +229,12 @@ final class CavaCoreTests: XCTestCase {
         // Verify monotonic decrease: check a few frames during silence decay
         cava.reset()
         // Re-drive
-        for i in stride(from: 0, to: sine1kHz.count, by: framesPerChunk) {
-            let chunk = Array(sine1kHz[i..<min(i + framesPerChunk, sine1kHz.count)])
-            result = cava.execute(chunk)
-        }
+        result = runAtPlaybackCadence(cava, interleaved: sine1kHz, channels: 1)
 
         var previousMax = result[0].max() ?? 0
-        for i in stride(from: 0, to: 5 * framesPerChunk, by: framesPerChunk) {
-            let chunk = Array(silenceFrames[i..<min(i + framesPerChunk, silenceFrames.count)])
-            result = cava.execute(chunk)
+        cava.analyze([Float](repeating: 0, count: 2048))
+        for _ in 0..<5 {
+            result = cava.render()
             let currentMax = result[0].max() ?? 0
             // Allow small floating-point tolerance
             XCTAssertLessThanOrEqual(currentMax, previousMax + 0.001,
@@ -425,6 +395,46 @@ final class CavaCoreTests: XCTestCase {
     }
 
     // MARK: - Helper Functions
+
+    /// Feed audio at the tap's 2048-frame cadence while advancing post-processing
+    /// at the app's independent 60 Hz display cadence.
+    private func runAtPlaybackCadence(
+        _ cava: CavaCore,
+        interleaved: [Float],
+        channels: Int,
+        sampleRate: Int = 44100,
+        framesPerChunk: Int = 2048,
+        displayRate: Int = 60
+    ) -> [[Float]] {
+        precondition(channels > 0)
+        precondition(interleaved.count.isMultiple(of: channels))
+
+        let samplesPerChunk = framesPerChunk * channels
+        var totalAudioFrames = 0
+        var renderedFrames = 0
+        var result = [[Float]]()
+
+        for start in stride(from: 0, to: interleaved.count, by: samplesPerChunk) {
+            let end = min(start + samplesPerChunk, interleaved.count)
+            let chunk = Array(interleaved[start..<end])
+            cava.analyze(chunk)
+
+            totalAudioFrames += chunk.count / channels
+            let targetRenderedFrames = Int(
+                Double(totalAudioFrames) * Double(displayRate) / Double(sampleRate)
+            )
+            let rendersThisChunk = targetRenderedFrames - renderedFrames
+            for _ in 0..<rendersThisChunk {
+                result = cava.render()
+            }
+            renderedFrames = targetRenderedFrames
+        }
+
+        if result.isEmpty {
+            result = cava.render()
+        }
+        return result
+    }
 
     /// Generate a sine wave at a specified frequency.
     private func generateSineWave(
