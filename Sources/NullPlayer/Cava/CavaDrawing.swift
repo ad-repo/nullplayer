@@ -106,13 +106,14 @@ enum CavaDrawing {
         // Interpolate color by bar position (low at bottom, high at top).
         let color = interpolateColor(lowColor, to: highColor, intensity: intensity)
 
+        // One path per bar: fill, then a subtle 0.5pt border for definition. (Setting lineWidth on a
+        // separate throwaway path left the border at the default 1.0 and allocated 3 paths per bar.)
+        let path = NSBezierPath(rect: rect)
         color.setFill()
-        NSBezierPath(rect: rect).fill()
-
-        // Optional: subtle border for definition (skip for performance if needed).
+        path.fill()
         NSColor.black.withAlphaComponent(0.2).setStroke()
-        NSBezierPath(rect: rect).lineWidth = 0.5
-        NSBezierPath(rect: rect).stroke()
+        path.lineWidth = 0.5
+        path.stroke()
     }
 
     /// Linearly interpolate between two colors by intensity.

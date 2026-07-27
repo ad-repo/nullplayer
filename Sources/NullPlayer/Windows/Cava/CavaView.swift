@@ -8,9 +8,19 @@ final class CavaView: NSView {
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
+    private var cachedRenderer: SkinRenderer?
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
         SkinElements.SpectrumWindow.Layout.self
+    }
+
+    /// Cached `SkinRenderer`, rebuilt only when the skin changes — not allocated per frame.
+    private func currentRenderer() -> SkinRenderer {
+        if let cachedRenderer { return cachedRenderer }
+        let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+        let renderer = SkinRenderer(skin: skin)
+        cachedRenderer = renderer
+        return renderer
     }
 
     override init(frame frameRect: NSRect) {
@@ -59,6 +69,7 @@ final class CavaView: NSView {
     }
 
     func skinDidChange() {
+        cachedRenderer = nil
         applySkinDefaultColors()
         needsDisplay = true
     }
@@ -85,8 +96,17 @@ final class CavaView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let contentRect = contentAreaRect()
 
-        let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-        let renderer = SkinRenderer(skin: skin)
+        // Content-only fast path for 60 Hz animation ticks: `onNeedsDisplay` only dirties the content
+        // rect, so repaint just the bars and skip re-resolving the skin, allocating a SkinRenderer,
+        // and redrawing the whole chrome. Mirrors ModernCavaView's animation-rect early-out.
+        if !isHighlighted, contentRect.contains(dirtyRect) {
+            NSColor.black.setFill()
+            contentRect.fill()
+            drawCavaContent(in: contentRect)
+            return
+        }
+
+        let renderer = currentRenderer()
 
         NSColor.black.setFill()
         bounds.fill()

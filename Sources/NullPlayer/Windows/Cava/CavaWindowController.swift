@@ -135,7 +135,10 @@ extension CavaWindowController: NSWindowDelegate {
         if let window {
             WindowManager.shared.handleCenterStackWindowWillClose(window)
         }
-        tearDown()
+        // Only stop rendering — the window is reused (isReleasedWhenClosed = false), so tearing down
+        // the lifecycle observers here would leave a reopened window unable to sync rendering with
+        // occlusion/miniaturization. tearDown() is reserved for deinit / mode teardown.
+        stopRenderingForHide()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }
 }

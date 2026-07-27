@@ -20,7 +20,7 @@ Cava consumes the full-stereo audio tap from `AudioEngine`. The tap is emitted b
 - Local file playback via `AVAudioEngine`
 - Streaming audio via `AudioStreaming` library
 
-The tap fires at 44.1/48 kHz (or source rate), producing 2048 samples per notification posted to the main thread.
+The tap fires at the source rate (44.1/48 kHz), producing 2048 samples per notification, **posted from the audio thread**. `CavaRenderModel` observes it with `queue: nil` (posting thread) and explicitly `DispatchQueue.main.async`s before touching any state.
 
 ## DSP (CavaCore Algorithm)
 
@@ -39,7 +39,7 @@ Output: Per-channel bar arrays in 0…1 range. The order matters: **autosens mus
 ## Rendering
 
 `CavaDrawing` (CoreGraphics, mode-neutral) renders gradient bars:
-- Computes color interpolation between low and high frequencies
+- Interpolates each bar's color between the low- and high-**intensity** colors by bar height (not by frequency)
 - Draws solid rectangles per bar with subtle borders for definition
 - Handles both mono (single row) and stereo (mirrored L/R) layouts
 

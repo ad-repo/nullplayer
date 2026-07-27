@@ -230,8 +230,9 @@ public class CavaCore {
     ///
     /// - Parameter interleaved: Audio samples in interleaved format (mono non-interleaved if channels=1).
     ///   For stereo, format is [L, R, L, R, ...].
-    ///   Call with frame-sized chunks (e.g., 2048 samples); the function buffers internally
-    ///   and processes when enough samples accumulate.
+    ///   Each call is stateless w.r.t. sample buffering: it uses the trailing `min(fftSize, count)`
+    ///   samples of what it is handed and zero-pads the rest. With 2048-sample chunks the 4096-point
+    ///   bass FFT is half zero-padded (interpolated spectrum, no extra low-frequency resolution).
     ///
     /// - Returns: Per-channel bar array. Each inner array has length `numberOfBars`, values 0..1.
     ///   Example: stereo → [[bar0_L, bar1_L, ...], [bar0_R, bar1_R, ...]]

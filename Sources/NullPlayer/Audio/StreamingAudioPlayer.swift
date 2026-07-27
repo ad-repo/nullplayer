@@ -464,7 +464,7 @@ class StreamingAudioPlayer {
 
         // Skip FFT/waveform processing when no consumer needs the data to save CPU.
         // The frame filter still receives buffers but we don't need to process them.
-        guard spectrumNeeded || waveformNeeded || stereoNeeded || magnitudesNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || fullStereoNeeded || magnitudesNeeded else { return }
 
         guard let channelData = buffer.floatChannelData else { return }
 

@@ -5276,6 +5276,10 @@ class AudioEngine {
         )
         crossfadeStreamingPlayer?.rate = tuningController.rate
         crossfadeStreamingPlayer?.balance = balance
+        // Mirror the active analyzer-demand flags so the incoming track drives the meters (Cava's
+        // full-rate stereo tap, plus the decimated stereo tap) during the crossfade, not just after.
+        crossfadeStreamingPlayer?.stereoNeeded = stereoNeeded
+        crossfadeStreamingPlayer?.fullStereoNeeded = fullStereoNeeded
         // Note: We don't set delegate - we handle state internally during crossfade
         
         // Sync EQ settings to crossfade player
