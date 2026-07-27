@@ -44,7 +44,7 @@ final class CavaPresenter: NSObject {
 
     func setMode(_ mode: CavaSettings.Mode) {
         CavaSettings.mode = mode
-        onNeedsDisplay?()
+        renderModel.settingsDidChange()
     }
 
     /// Toggle between mono and stereo (used by the window double-click).
@@ -76,7 +76,7 @@ final class CavaPresenter: NSObject {
     /// Restore the exposed tuning knobs (bars, smoothing, bass tilt) to factory defaults.
     func resetTuning() {
         CavaSettings.resetTuning()
-        onNeedsDisplay?()
+        renderModel.settingsDidChange()
     }
 
     // MARK: Menu actions
@@ -98,19 +98,19 @@ final class CavaPresenter: NSObject {
     @objc private func barCountAction(_ sender: NSMenuItem) {
         guard let count = sender.representedObject as? Int else { return }
         CavaSettings.barCount = count
-        onNeedsDisplay?()
+        renderModel.settingsDidChange()
     }
 
     @objc private func smoothingAction(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? Double else { return }
         CavaSettings.noiseReduction = value
-        onNeedsDisplay?()
+        renderModel.settingsDidChange()
     }
 
     @objc private func bassTiltAction(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? Double else { return }
         CavaSettings.bassTilt = value
-        onNeedsDisplay?()
+        renderModel.settingsDidChange()
     }
 
     @objc private func resetAction(_ sender: NSMenuItem) { resetTuning() }

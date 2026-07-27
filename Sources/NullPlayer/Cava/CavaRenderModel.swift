@@ -8,20 +8,46 @@ import NullPlayerCore
 /// with current bar/channel data. A 60 Hz timer drives decay and redraw; redraws skip once bars
 /// have settled (idle costs nothing).
 final class CavaRenderModel {
+    private struct ProcessingConfiguration {
+        let mode: CavaSettings.Mode
+        let barCount: Int
+        let sampleRate: Int
+        let noiseReduction: Double
+        let bassTilt: Double
+    }
+
+    private struct ProcessingResult {
+        let barArrays: [[Float]]
+        let mode: CavaSettings.Mode
+        let barCount: Int
+        let signature: Int
+    }
+
     /// Called on the main thread whenever the view should repaint.
     var onNeedsDisplay: (() -> Void)?
 
     private let consumerId = "cava"
+    private let processingQueue = DispatchQueue(
+        label: "com.nullplayer.cava.processing",
+        qos: .userInteractive
+    )
     private var observer: NSObjectProtocol?
     private var timer: Timer?
     private var running = false
+    private var processingBusy = false
+    private var processingGeneration = 0
+    private var forceDisplayOnNextTick = false
 
+    // Accessed only on processingQueue.
     private var cavaCore: CavaCore?
-    private var currentBarArrays: [[Float]] = []
+    private var processingBarCount = 32
+    private var processingSampleRate = 44100
+    private var processingNoiseReduction = CavaSettings.defaultNoiseReduction
+    private var processingBassTilt = CavaSettings.defaultBassTilt
+    private var processingMode = CavaSettings.Mode.stereo
 
-    // Most recent audio buffer from the tap. The FFT/gravity is driven from the 60 Hz timer
-    // (not the audio callback) so decay is smooth and the display rate is independent of the
-    // audio buffer cadence (~21 Hz), which otherwise makes the bars update in choppy bursts.
+    // Main-thread presentation state.
+    private var currentBarArrays: [[Float]] = []
     private var latestLeft: [Float] = []
     private var latestRight: [Float] = []
     private var pendingSampleRate = 44100
@@ -33,9 +59,10 @@ final class CavaRenderModel {
 
     private var currentMode = CavaSettings.Mode.stereo
     private var currentBarCount = 32
-    private var currentSampleRate = 44100
-    private var currentNoiseReduction = CavaSettings.defaultNoiseReduction
-    private var currentBassTilt = CavaSettings.defaultBassTilt
+
+    deinit {
+        stop()
+    }
 
     func start() {
         guard !running else { return }
@@ -71,12 +98,16 @@ final class CavaRenderModel {
     func stop() {
         guard running else { return }
         running = false
+        processingGeneration &+= 1
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         timer?.invalidate()
         timer = nil
         WindowManager.shared.audioEngine.removeFullStereoConsumer(consumerId)
-        reset()
+        resetPresentationState()
+        processingQueue.async { [weak self] in
+            self?.resetProcessingState()
+        }
     }
 
     /// Current bar values for each channel (0…1 range).
@@ -94,91 +125,160 @@ final class CavaRenderModel {
         currentBarCount
     }
 
-    /// Runs at 60 Hz. The expensive FFT (`analyze`) runs only when a new audio buffer arrived
-    /// (~21 Hz); the cheap post-processing (`render`) runs every tick so gravity/smoothing advance
-    /// at the display rate. Once audio stops (pause), the last frame is held instead of re-rendering
-    /// a stale buffer (which would let autosens hunt and the display throb).
-    private func tick() {
-        guard haveSamples else { return }
+    /// Apply durable setting changes immediately, even when playback is paused and no new
+    /// audio notification will arrive to drive the normal refresh path.
+    func settingsDidChange() {
+        currentMode = CavaSettings.mode
+        currentBarCount = CavaSettings.barCount
+        guard haveSamples else {
+            onNeedsDisplay?()
+            return
+        }
+        receivedSamplesThisInterval = true
+        idleTicks = 0
+        forceDisplayOnNextTick = true
+        tick()
+    }
 
+    /// Runs at 60 Hz and schedules at most one operation on the serial DSP queue. New audio is
+    /// coalesced while processing is busy, so Cava can never build an analysis backlog that blocks
+    /// AppKit. Once audio stops (pause), the last frame is held after a short decay interval.
+    private func tick() {
+        guard haveSamples, !processingBusy else { return }
+
+        let samples: (left: [Float], right: [Float])?
         if receivedSamplesThisInterval {
             receivedSamplesThisInterval = false
             idleTicks = 0
-            refreshCoreIfNeeded()   // read settings + rebuild core only on new audio (not per frame)
-            analyzeLatestBuffer()   // FFT at the audio-buffer rate, not 60 Hz
+            samples = (latestLeft, latestRight)
         } else {
             idleTicks += 1
-            if idleTicks > 6 { return }
+            if idleTicks > 6, !forceDisplayOnNextTick { return }
+            samples = nil
         }
 
-        guard let core = cavaCore else { return }
-        let out = core.render()
-
-        if currentMode == .mono, out.count >= 2 {
-            // Average the per-channel magnitude spectra for a single, artifact-free mono row.
-            let count = out[0].count
-            var avg = [Float](repeating: 0, count: count)
-            for i in 0..<count { avg[i] = (out[0][i] + out[1][i]) * 0.5 }
-            currentBarArrays = [avg]
+        let forceDisplay = forceDisplayOnNextTick
+        forceDisplayOnNextTick = false
+        let configuration: ProcessingConfiguration?
+        if samples != nil || forceDisplay {
+            configuration = ProcessingConfiguration(
+                mode: CavaSettings.mode,
+                barCount: CavaSettings.barCount,
+                sampleRate: pendingSampleRate,
+                noiseReduction: CavaSettings.noiseReduction,
+                bassTilt: CavaSettings.bassTilt
+            )
         } else {
-            currentBarArrays = out
+            configuration = nil
         }
+        let generation = processingGeneration
+        processingBusy = true
 
-        // Compute a simple signature to detect when bars have settled (idle skip).
-        var sig = 0
-        for channel in currentBarArrays {
-            for bar in channel {
-                sig = sig &+ Int(bar * 1000)
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = self.process(samples: samples, configuration: configuration)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.processingGeneration == generation else { return }
+                self.processingBusy = false
+                guard let result else { return }
+                self.currentMode = result.mode
+                self.currentBarCount = result.barCount
+                self.currentBarArrays = result.barArrays
+                if forceDisplay || result.signature != self.lastEmittedSignature {
+                    self.lastEmittedSignature = result.signature
+                    self.onNeedsDisplay?()
+                }
+            }
+        }
+    }
+
+    /// Perform every CavaCore access on the serial processing queue. Channel count remains 2;
+    /// mono is derived by averaging the two magnitude rows, avoiding time-domain comb filtering.
+    private func process(
+        samples: (left: [Float], right: [Float])?,
+        configuration: ProcessingConfiguration?
+    ) -> ProcessingResult? {
+        if let configuration {
+            processingMode = configuration.mode
+            if cavaCore == nil || processingBarCount != configuration.barCount
+                || processingSampleRate != configuration.sampleRate
+                || processingNoiseReduction != configuration.noiseReduction
+                || processingBassTilt != configuration.bassTilt {
+                processingBarCount = configuration.barCount
+                processingSampleRate = configuration.sampleRate
+                processingNoiseReduction = configuration.noiseReduction
+                processingBassTilt = configuration.bassTilt
+                cavaCore = CavaCore(
+                    numberOfBars: configuration.barCount,
+                    rate: configuration.sampleRate,
+                    channels: 2,
+                    autosens: true,
+                    noiseReduction: configuration.noiseReduction,
+                    bandExponent: Float(configuration.bassTilt)
+                )
             }
         }
 
-        if sig == lastEmittedSignature { return }  // Idle skip
-        lastEmittedSignature = sig
-        onNeedsDisplay?()
-    }
-
-    /// Read the (durable) settings and rebuild `CavaCore` if any changed. Called at the audio-buffer
-    /// rate rather than per frame, so the UserDefaults reads and any rebuild aren't paid 60×/sec.
-    /// Channel count is always 2; mono is derived by averaging the two output rows in `tick()` —
-    /// time-domain L+R summing would comb-filter stereo material and read as jitter.
-    private func refreshCoreIfNeeded() {
-        currentMode = CavaSettings.mode
-        let barCount = CavaSettings.barCount
-        let noiseReduction = CavaSettings.noiseReduction
-        let bassTilt = CavaSettings.bassTilt
-        if cavaCore == nil || currentBarCount != barCount || currentSampleRate != pendingSampleRate
-            || currentNoiseReduction != noiseReduction || currentBassTilt != bassTilt {
-            currentBarCount = barCount
-            currentSampleRate = pendingSampleRate
-            currentNoiseReduction = noiseReduction
-            currentBassTilt = bassTilt
-            cavaCore = CavaCore(numberOfBars: barCount, rate: currentSampleRate, channels: 2,
-                                autosens: true, noiseReduction: noiseReduction,
-                                bandExponent: Float(bassTilt))
+        guard let core = cavaCore else { return nil }
+        if let samples {
+            let pairCount = min(samples.left.count, samples.right.count)
+            var interleaved: [Float] = []
+            interleaved.reserveCapacity(pairCount * 2)
+            for i in 0..<pairCount {
+                interleaved.append(samples.left[i])
+                interleaved.append(samples.right[i])
+            }
+            core.analyze(interleaved)
         }
-    }
 
-    /// Interleave the latest L/R buffer and run the FFT into the core's magnitude cache.
-    private func analyzeLatestBuffer() {
-        guard let core = cavaCore else { return }
-        let pairCount = min(latestLeft.count, latestRight.count)
-        var interleaved: [Float] = []
-        interleaved.reserveCapacity(pairCount * 2)
-        for i in 0..<pairCount {
-            interleaved.append(latestLeft[i])
-            interleaved.append(latestRight[i])
+        let rendered = core.render()
+        let bars: [[Float]]
+        if processingMode == .mono, rendered.count >= 2 {
+            let count = rendered[0].count
+            var average = [Float](repeating: 0, count: count)
+            for i in 0..<count {
+                average[i] = (rendered[0][i] + rendered[1][i]) * 0.5
+            }
+            bars = [average]
+        } else {
+            bars = rendered
         }
-        core.analyze(interleaved)
+
+        // Hash ordered, quantized values so equal-energy frames with different distributions
+        // still repaint.
+        var signature = 17
+        for channel in bars {
+            signature = signature &* 31 &+ channel.count
+            for bar in channel {
+                signature = signature &* 31 &+ Int(bar * 1000)
+            }
+        }
+        return ProcessingResult(
+            barArrays: bars,
+            mode: processingMode,
+            barCount: processingBarCount,
+            signature: signature
+        )
     }
 
-    private func reset() {
-        cavaCore?.reset()
+    private func resetPresentationState() {
         currentBarArrays = []
         latestLeft = []
         latestRight = []
         haveSamples = false
         receivedSamplesThisInterval = false
         idleTicks = 0
+        processingBusy = false
+        forceDisplayOnNextTick = false
         lastEmittedSignature = -1
+    }
+
+    private func resetProcessingState() {
+        cavaCore = nil
+        processingBarCount = CavaSettings.defaultBarCount
+        processingSampleRate = 44100
+        processingNoiseReduction = CavaSettings.defaultNoiseReduction
+        processingBassTilt = CavaSettings.defaultBassTilt
+        processingMode = .stereo
     }
 }

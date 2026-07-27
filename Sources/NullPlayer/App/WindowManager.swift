@@ -374,6 +374,7 @@ class WindowManager {
                               audioAnalysisWindowController?.window,
                               peppyMeterWindowController?.window,
                               networkMonitorWindowController?.window,
+                              cavaWindowController?.window,
                               waveformWindowController?.window].compactMap { $0 }
             var windowsBelow: [NSWindow] = []
             var frontier: [NSRect] = [mainWindow.frame]
@@ -437,6 +438,7 @@ class WindowManager {
                           audioAnalysisWindowController as? NSWindowController,
                           peppyMeterWindowController as? NSWindowController,
                           networkMonitorWindowController as? NSWindowController,
+                          cavaWindowController as? NSWindowController,
                           waveformWindowController as? NSWindowController,
                            projectMWindowController as? NSWindowController,
                            plexBrowserWindowController as? NSWindowController] {
@@ -1358,6 +1360,7 @@ class WindowManager {
                        audioAnalysisWindowController?.window,
                        peppyMeterWindowController?.window,
                        networkMonitorWindowController?.window,
+                       cavaWindowController?.window,
                        waveformWindowController?.window,
                        projectMWindowController?.window,
                        plexBrowserWindowController?.window].compactMap({ $0 })
@@ -1379,6 +1382,7 @@ class WindowManager {
             audioAnalysisWindowController?.window,
             peppyMeterWindowController?.window,
             networkMonitorWindowController?.window,
+            cavaWindowController?.window,
             waveformWindowController?.window,
             projectMWindowController?.window,
             plexBrowserWindowController?.window
@@ -3527,6 +3531,7 @@ class WindowManager {
         audioAnalysisWindowController?.window?.level = level
         peppyMeterWindowController?.window?.level = level
         networkMonitorWindowController?.window?.level = level
+        cavaWindowController?.window?.level = level
         waveformWindowController?.window?.level = level
         if compactWindowEnabled {
             compactWindowController?.window?.level = level
@@ -3552,6 +3557,7 @@ class WindowManager {
             audioAnalysisWindowController?.window,
             peppyMeterWindowController?.window,
             networkMonitorWindowController?.window,
+            cavaWindowController?.window,
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
@@ -3952,6 +3958,7 @@ class WindowManager {
         let audioAnalysisWindow = audioAnalysisWindowController?.window
         let peppyMeterWindow = peppyMeterWindowController?.window
         let networkMonitorWindow = networkMonitorWindowController?.window
+        let cavaWindow = cavaWindowController?.window
 
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
@@ -3962,6 +3969,7 @@ class WindowManager {
             audioAnalysisFrame: (audioAnalysisWindow?.isVisible == true) ? audioAnalysisWindow?.frame : nil,
             peppyMeterFrame: (peppyMeterWindow?.isVisible == true) ? peppyMeterWindow?.frame : nil,
             networkMonitorFrame: (networkMonitorWindow?.isVisible == true) ? networkMonitorWindow?.frame : nil,
+            cavaFrame: (cavaWindow?.isVisible == true) ? cavaWindow?.frame : nil,
             scale: scale
         )
 
@@ -4019,6 +4027,12 @@ class WindowManager {
            let repairedFrame = repaired.networkMonitorFrame,
            repairedFrame != networkMonitorWindow.frame {
             networkMonitorWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
+        if let cavaWindow,
+           cavaWindow.isVisible,
+           let repairedFrame = repaired.cavaFrame,
+           repairedFrame != cavaWindow.frame {
+            cavaWindow.setFrame(repairedFrame, display: true, animate: false)
         }
 
         return true
@@ -4107,6 +4121,14 @@ class WindowManager {
             networkMonitorFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
         }
 
+        var cavaFrame: NSRect?
+        if let cavaWindow = cavaWindowController?.window, cavaWindow.isVisible {
+            let h = cavaWindow.frame.height
+            let w = cavaWindow.frame.width
+            nextY -= h
+            cavaFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
+        }
+
         // Side windows span the full stack height
         let stackTopY = mainFrame.maxY
         let stackBottomY = nextY
@@ -4165,6 +4187,9 @@ class WindowManager {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = networkMonitorFrame, let window = networkMonitorWindowController?.window {
+            window.setFrame(frame, display: true, animate: false)
+        }
+        if let frame = cavaFrame, let window = cavaWindowController?.window {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
@@ -5423,6 +5448,7 @@ class WindowManager {
                        audioAnalysisWindowController?.window,
                        peppyMeterWindowController?.window,
                        networkMonitorWindowController?.window,
+                       cavaWindowController?.window,
                        waveformWindowController?.window,
                        videoPlayerWindowController?.window,
                        debugWindowController?.window].compactMap({ $0 }) {

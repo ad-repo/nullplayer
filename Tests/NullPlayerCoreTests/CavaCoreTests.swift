@@ -194,7 +194,7 @@ final class CavaCoreTests: XCTestCase {
         }
     }
 
-    func testNoAutosenseAllowsOverbounds() {
+    func testNoAutosenseStillClampsOutput() {
         // With autosens disabled, output may exceed 1.0 on very loud signals.
         // But clamping in execute() should still enforce [0, 1].
         // (CavaCore clamps at the end: `barOutput.map { min(1.0, max(0.0, $0)) }`)
@@ -238,8 +238,8 @@ final class CavaCoreTests: XCTestCase {
         let maxAfterSignal = barsAfterSignal.max() ?? 0
         XCTAssertGreaterThan(maxAfterSignal, 0.2, "Signal should drive bars up")
 
-        // Phase 2: Feed silence for ~0.2 sec (200 ms ≈ 8800 samples at 44100)
-        let silenceFrames = [Float](repeating: 0, count: 8800)
+        // Phase 2: Feed silence for ~0.2 sec (200 ms = 8820 samples at 44100)
+        let silenceFrames = [Float](repeating: 0, count: 8820)
 
         var silenceResults: [Float] = barsAfterSignal
         for i in stride(from: 0, to: silenceFrames.count, by: framesPerChunk) {
@@ -339,6 +339,33 @@ final class CavaCoreTests: XCTestCase {
         let rightMaxAfter = result[1].max() ?? 0
         XCTAssertLessThan(leftMaxAfter, 0.01, "Left channel should be ~0 after reset")
         XCTAssertLessThan(rightMaxAfter, 0.01, "Right channel should be ~0 after reset")
+    }
+
+    func testLeadingSilenceDoesNotPoisonAutosensitivity() {
+        let cava = CavaCore(numberOfBars: 32, rate: 44100, channels: 1)
+        let silence = [Float](repeating: 0, count: 2048)
+
+        // Four seconds of live silent PCM still drives the display-rate render loop.
+        // Sensitivity must remain parked until an audible frame arrives.
+        cava.analyze(silence)
+        for _ in 0..<240 {
+            _ = cava.render()
+        }
+
+        let tone = generateSineWave(
+            frequency: 1000,
+            duration: Double(2048) / 44100.0,
+            sampleRate: 44100,
+            amplitude: 0.8
+        )
+        cava.analyze(tone)
+        let firstSignalFrame = cava.render()[0]
+
+        XCTAssertLessThan(
+            firstSignalFrame.max() ?? 0,
+            0.99,
+            "Leading silence must not pre-amplify the first audible frame to full scale"
+        )
     }
 
     // MARK: - Configuration Tests

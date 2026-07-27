@@ -8,8 +8,8 @@ enum CavaDrawing {
     /// - Parameters:
     ///   - rect: Bounds to fill with bars
     ///   - barArrays: Per-channel bar values (0…1)
-    ///   - lowColor: Color for low frequencies
-    ///   - highColor: Color for high frequencies
+    ///   - lowColor: Color for short/quiet bars
+    ///   - highColor: Color for tall/loud bars
     ///   - mode: Mono or stereo mode (affects layout)
     static func draw(
         in rect: CGRect,
@@ -94,7 +94,7 @@ enum CavaDrawing {
         }
     }
 
-    /// Draw a single gradient bar from low to high frequency color.
+    /// Draw a single bar colored by its intensity between the low and high colors.
     private static func drawGradientBar(
         in rect: CGRect,
         intensity: CGFloat,
@@ -103,7 +103,7 @@ enum CavaDrawing {
     ) {
         guard rect.height > 0, rect.width > 0 else { return }
 
-        // Interpolate color by bar position (low at bottom, high at top).
+        // Interpolate color by bar intensity (quiet/short → loud/tall).
         let color = interpolateColor(lowColor, to: highColor, intensity: intensity)
 
         // One path per bar: fill, then a subtle 0.5pt border for definition. (Setting lineWidth on a

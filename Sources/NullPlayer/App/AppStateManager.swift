@@ -1127,6 +1127,7 @@ class AppStateManager {
         let audioAnalysisFrame: NSRect?
         let peppyMeterFrame: NSRect?
         let networkMonitorFrame: NSRect?
+        let cavaFrame: NSRect?
         let repaired: Bool
     }
 
@@ -1143,6 +1144,7 @@ class AppStateManager {
         audioAnalysisFrame: NSRect?,
         peppyMeterFrame: NSRect?,
         networkMonitorFrame: NSRect?,
+        cavaFrame: NSRect? = nil,
         scale: CGFloat
     ) -> ClassicCenterStackRepairResult {
         let widthEpsilon: CGFloat = 0.5
@@ -1223,6 +1225,7 @@ class AppStateManager {
             }
         )
         let adjustedNetworkMonitor = repairCandidate(networkMonitorFrame, preserveWidth: true)
+        let adjustedCava = repairCandidate(cavaFrame, preserveWidth: true)
 
         return ClassicCenterStackRepairResult(
             mainFrame: adjustedMain,
@@ -1233,6 +1236,7 @@ class AppStateManager {
             audioAnalysisFrame: adjustedAudioAnalysis,
             peppyMeterFrame: adjustedPeppyMeter,
             networkMonitorFrame: adjustedNetworkMonitor,
+            cavaFrame: adjustedCava,
             repaired: repaired
         )
     }
@@ -1252,6 +1256,7 @@ class AppStateManager {
         let audioAnalysisWindow = wm.audioAnalysisWindow
         let peppyMeterWindow = wm.peppyMeterWindow
         let networkMonitorWindow = wm.networkMonitorWindow
+        let cavaWindow = wm.cavaWindow
 
         let equalizerFrame: NSRect?
         if let equalizerWindow, equalizerWindow.isVisible {
@@ -1302,6 +1307,13 @@ class AppStateManager {
             networkMonitorFrame = nil
         }
 
+        let cavaFrame: NSRect?
+        if let cavaWindow, cavaWindow.isVisible {
+            cavaFrame = cavaWindow.frame
+        } else {
+            cavaFrame = nil
+        }
+
         let repairedFrames = Self.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
             equalizerFrame: equalizerFrame,
@@ -1311,6 +1323,7 @@ class AppStateManager {
             audioAnalysisFrame: audioAnalysisFrame,
             peppyMeterFrame: peppyMeterFrame,
             networkMonitorFrame: networkMonitorFrame,
+            cavaFrame: cavaFrame,
             scale: scale
         )
 
@@ -1358,6 +1371,12 @@ class AppStateManager {
            let repairedFrame = repairedFrames.networkMonitorFrame,
            repairedFrame != networkMonitorWindow.frame {
             networkMonitorWindow.setFrame(repairedFrame, display: true)
+        }
+        if let cavaWindow,
+           cavaWindow.isVisible,
+           let repairedFrame = repairedFrames.cavaFrame,
+           repairedFrame != cavaWindow.frame {
+            cavaWindow.setFrame(repairedFrame, display: true)
         }
 
         if repairedFrames.repaired {

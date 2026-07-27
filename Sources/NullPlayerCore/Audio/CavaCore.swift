@@ -37,7 +37,7 @@ public class CavaCore {
 
     // MARK: - FFT Buffers and Setup
 
-    /// Larger FFT for bass (power of 2, typically 4096 for better low-freq resolution)
+    /// Larger DFT for bass (power of 2, 4096; the normal 2048-sample input is zero-padded)
     private let bassFFTSize = 4096
     /// Smaller FFT for treble (power of 2, typically 2048)
     private let trebleFFTSize = 2048
@@ -90,11 +90,16 @@ public class CavaCore {
     // MARK: - Cutoff Frequency Mapping
 
     /// Maps each bar to bass/treble FFT bin ranges
-    private var barToBassRange: [(low: Int, high: Int)] = []
-    private var barToTrebleRange: [(low: Int, high: Int)] = []
+    private var barToBassRange: [Range<Int>] = []
+    private var barToTrebleRange: [Range<Int>] = []
 
     /// Which FFT source each bar should primarily use (0 = bass, 1 = treble)
     private var barSource: [Int] = []
+
+    /// Hann windows keyed by the number of real input samples. The bass DFT is commonly
+    /// zero-padded from 2048 to 4096 samples, so applying the first half of a 4096-point
+    /// Hann window would end at its peak and introduce a hard midpoint discontinuity.
+    private var analysisWindowCache: [Int: [Float]] = [:]
 
     // MARK: - Initialization
 
@@ -161,6 +166,8 @@ public class CavaCore {
         trebleFFTRealOut = [Float](repeating: 0, count: trebleFFTSize)
         trebleFFTImagOut = [Float](repeating: 0, count: trebleFFTSize)
         trebleFFTMagnitudes = [Float](repeating: 0, count: trebleFFTSize / 2)
+        analysisWindowCache[bassFFTSize] = bassFFTWindow
+        analysisWindowCache[trebleFFTSize] = trebleFFTWindow
 
         // Initialize smoothing memory
         smoothedValues = Array(repeating: [Float](repeating: 0, count: numberOfBars), count: channels)
@@ -190,12 +197,21 @@ public class CavaCore {
         }
     }
 
+    private func analysisWindow(size: Int) -> [Float] {
+        if let cached = analysisWindowCache[size] {
+            return cached
+        }
+        let window = createHannWindow(size: size)
+        analysisWindowCache[size] = window
+        return window
+    }
+
     // MARK: - Frequency Mapping
 
     /// Build the log-spaced cutoff table mapping bars to FFT bins
     private func buildFrequencyMapping() {
-        barToBassRange = Array(repeating: (0, 0), count: numberOfBars)
-        barToTrebleRange = Array(repeating: (0, 0), count: numberOfBars)
+        barToBassRange = Array(repeating: 0..<0, count: numberOfBars)
+        barToTrebleRange = Array(repeating: 0..<0, count: numberOfBars)
         barSource = Array(repeating: 0, count: numberOfBars)
 
         let bassBinWidth = Double(rate) / Double(bassFFTSize)
@@ -214,13 +230,15 @@ public class CavaCore {
             // Use bass FFT for lower bars, treble for higher.
             barSource[barIdx] = fLow < 4000 ? 0 : 1
 
-            let bassLow = max(1, Int(fLow / bassBinWidth))
-            let bassHigh = max(bassLow, min(bassFFTSize / 2 - 1, Int(fHigh / bassBinWidth)))
-            barToBassRange[barIdx] = (bassLow, bassHigh)
+            let bassLimit = bassFFTSize / 2
+            let bassLow = min(bassLimit, max(1, Int(ceil(fLow / bassBinWidth))))
+            let bassHigh = min(bassLimit, max(bassLow, Int(ceil(fHigh / bassBinWidth))))
+            barToBassRange[barIdx] = bassLow..<bassHigh
 
-            let trebleLow = max(1, Int(fLow / trebleBinWidth))
-            let trebleHigh = max(trebleLow, min(trebleFFTSize / 2 - 1, Int(fHigh / trebleBinWidth)))
-            barToTrebleRange[barIdx] = (trebleLow, trebleHigh)
+            let trebleLimit = trebleFFTSize / 2
+            let trebleLow = min(trebleLimit, max(1, Int(ceil(fLow / trebleBinWidth))))
+            let trebleHigh = min(trebleLimit, max(trebleLow, Int(ceil(fHigh / trebleBinWidth))))
+            barToTrebleRange[barIdx] = trebleLow..<trebleHigh
         }
     }
 
@@ -260,7 +278,7 @@ public class CavaCore {
 
             // Process this channel through both FFTs and cache the combined per-bar magnitudes.
             let bassResult = processBassFFT(samples: monoSamples)
-            let trebleResult = processTreebleFFT(samples: monoSamples)
+            let trebleResult = processTrebleFFT(samples: monoSamples)
             for barIdx in 0..<numberOfBars {
                 let source = barSource[barIdx]
                 rawBarMagnitudes[ch][barIdx] = source == 0 ? bassResult[barIdx] : trebleResult[barIdx]
@@ -276,6 +294,7 @@ public class CavaCore {
         // Largest bar value produced this frame (pre-clamp, across all channels), used to
         // adjust the persistent autosens gain once per frame after the channel loop.
         var frameMax: Float = 0
+        var frameRawMax: Float = 0
 
         for ch in 0..<channels {
             // Apply post-processing: neighbor smoothing, noise reduction, autosens, gravity.
@@ -285,6 +304,7 @@ public class CavaCore {
             // gravity pulls settled bars to zero (a per-frame AGC would re-inflate the decaying tail).
             var barOutput = applyMonsterCatSmoothing(rawBarMagnitudes[ch])
             barOutput = applyNoiseReduction(barOutput, forChannel: ch)
+            frameRawMax = max(frameRawMax, barOutput.max() ?? 0)
 
             if autosens {
                 barOutput = barOutput.map { $0 * sens }
@@ -307,7 +327,7 @@ public class CavaCore {
 
         // Adjust the persistent autosens gain based on this frame's overshoot/headroom.
         if autosens {
-            adjustSens(frameMax: frameMax)
+            adjustSens(frameMax: frameMax, hasSignal: frameRawMax > 1e-9)
         }
 
         return result
@@ -322,8 +342,11 @@ public class CavaCore {
 
         // Extract up to fftSize samples, zero-pad if needed
         let processCount = min(fftSize, samples.count)
+        let inputWindow = analysisWindow(size: processCount)
         for i in 0..<fftSize {
-            bassFFTSamples[i] = i < processCount ? samples[samples.count - processCount + i] * bassFFTWindow[i] : 0
+            bassFFTSamples[i] = i < processCount
+                ? samples[samples.count - processCount + i] * inputWindow[i]
+                : 0
         }
 
         // Prepare for DFT_zop: split into real and imaginary
@@ -346,15 +369,15 @@ public class CavaCore {
             bassFFTMagnitudes[i] = sqrt(real * real + imag * imag)
         }
 
-        // Extract bar values from bass FFT: band energy normalized by √(bin count). Plain `sum`
-        // over-weights high bars (their bands span far more FFT bins than bass bands), suppressing
-        // bass; √N is the balance point between `sum` (treble-heavy) and `mean` (bass-heavy).
+        // Extract bar values from bass FFT: band energy normalized by count^bandExponent. Plain
+        // `sum` over-weights high bars (their bands span far more FFT bins than bass bands);
+        // the exponent is the balance control between `sum` (treble-heavy) and `mean` (bass-heavy).
         var barValues = [Float](repeating: 0, count: numberOfBars)
         for barIdx in 0..<numberOfBars {
             let range = barToBassRange[barIdx]
             var sum: Float = 0
             var count = 0
-            for binIdx in range.low...range.high where binIdx < bassFFTMagnitudes.count {
+            for binIdx in range {
                 sum += bassFFTMagnitudes[binIdx]
                 count += 1
             }
@@ -365,14 +388,17 @@ public class CavaCore {
     }
 
     /// Process samples through the treble FFT (2048 samples)
-    private func processTreebleFFT(samples: [Float]) -> [Float] {
+    private func processTrebleFFT(samples: [Float]) -> [Float] {
         let fftSize = trebleFFTSize
         let fftSetup = trebleFFTSetup!
 
         // Extract up to fftSize samples, zero-pad if needed
         let processCount = min(fftSize, samples.count)
+        let inputWindow = analysisWindow(size: processCount)
         for i in 0..<fftSize {
-            trebleFFTSamples[i] = i < processCount ? samples[samples.count - processCount + i] * trebleFFTWindow[i] : 0
+            trebleFFTSamples[i] = i < processCount
+                ? samples[samples.count - processCount + i] * inputWindow[i]
+                : 0
         }
 
         // Prepare for DFT_zop
@@ -395,14 +421,14 @@ public class CavaCore {
             trebleFFTMagnitudes[i] = sqrt(real * real + imag * imag)
         }
 
-        // Extract bar values from treble FFT: band energy normalized by √(bin count) — see the
-        // bass extractor for why (prevents wide high-frequency bands from swamping bass).
+        // Extract bar values from treble FFT using the same count^bandExponent normalization as
+        // the bass extractor (prevents wide high-frequency bands from swamping bass).
         var barValues = [Float](repeating: 0, count: numberOfBars)
         for barIdx in 0..<numberOfBars {
             let range = barToTrebleRange[barIdx]
             var sum: Float = 0
             var count = 0
-            for binIdx in range.low...range.high where binIdx < trebleFFTMagnitudes.count {
+            for binIdx in range {
                 sum += trebleFFTMagnitudes[binIdx]
                 count += 1
             }
@@ -423,10 +449,8 @@ public class CavaCore {
             smoothed[i] = 0.4 * bars[i] + 0.3 * bars[i - 1] + 0.3 * bars[i + 1]
         }
         // Edge cases
-        if numberOfBars > 1 {
-            smoothed[0] = 0.6 * bars[0] + 0.4 * bars[1]
-            smoothed[numberOfBars - 1] = 0.6 * bars[numberOfBars - 1] + 0.4 * bars[numberOfBars - 2]
-        }
+        smoothed[0] = 0.6 * bars[0] + 0.4 * bars[1]
+        smoothed[numberOfBars - 1] = 0.6 * bars[numberOfBars - 1] + 0.4 * bars[numberOfBars - 2]
         return smoothed
     }
 
@@ -477,7 +501,12 @@ public class CavaCore {
     /// (proportional, floored) so bars never stay pinned — at launch or on a mid-track level jump —
     /// then releases slowly to avoid visible pumping. Because `sens` moves at most a few percent
     /// per frame in the release direction, a decaying input still yields a decaying output.
-    private func adjustSens(frameMax: Float) {
+    private func adjustSens(frameMax: Float, hasSignal: Bool) {
+        // Do not amplify digital silence. During the initial grow-in, repeated silent PCM
+        // would otherwise multiply `sens` to its cap before the first audible sample; recovery
+        // from that state takes thousands of frames and leaves every bar pinned at full scale.
+        guard hasSignal else { return }
+
         if frameMax > 1.0 {
             // Gentle attack (cava's value): ease the gain down on overshoot. Kept small so a loud
             // transient doesn't duck the whole spectrum (which reads as jitter/pumping); a single

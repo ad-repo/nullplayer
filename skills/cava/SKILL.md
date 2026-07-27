@@ -20,17 +20,17 @@ Cava consumes the full-stereo audio tap from `AudioEngine`. The tap is emitted b
 - Local file playback via `AVAudioEngine`
 - Streaming audio via `AudioStreaming` library
 
-The tap fires at the source rate (44.1/48 kHz), producing 2048 samples per notification, **posted from the audio thread**. `CavaRenderModel` observes it with `queue: nil` (posting thread) and explicitly `DispatchQueue.main.async`s before touching any state.
+The tap fires at the source rate (typically 44.1/48 kHz), producing 2048 samples per notification. The local `AVAudioEngine` path posts from its audio callback; the streaming path coalesces onto the main queue before `AudioEngine` forwards the notification. `CavaRenderModel` observes with `queue: nil`, marshals buffer ownership to the main thread, and schedules all `CavaCore` access on its serial processing queue.
 
 ## DSP (CavaCore Algorithm)
 
 CavaCore implements the cava spectrum analyzer in pure Swift using Accelerate vDSP. Pipeline per
 channel, in order:
 
-1. **Dual FFT:** Parallel bass (4096-point) and treble (2048-point, used above 4 kHz) FFTs, Hann-windowed.
-2. **Contiguous log bands, energy ÷ √(bin count):** Each bar maps to a **non-overlapping** log-spaced frequency band `[edge(n), edge(n+1))` (50 Hz–10 kHz); its value is the summed magnitude in the band **divided by √(bin count)**. Plain `sum` over-weights high bars (treble bands span far more FFT bins than bass bands) and suppresses bass; `mean`/`max` do the opposite (bass over-active, treble dead — the original "max over ±10% overlapping ranges"). Exponent `bandExponent` (default **0.3**) is the tilt knob: `sum` (÷N^0) = brightest, `mean` (÷N^1) = bassiest, √N (÷N^0.5) is the neutral midpoint; 0.3 keeps bass strong while letting mid/high through.
+1. **Dual FFT:** Parallel bass (4096-point DFT) and treble (2048-point DFT, used above 4 kHz). Each real input chunk receives a matching-length Hann window before any zero-padding; the normal 2048-sample tap is therefore Hann-windowed at 2048 samples before entering the 4096-point bass DFT.
+2. **Contiguous log bands, energy ÷ bin-count exponent:** Each bar maps to a **non-overlapping** log-spaced frequency band `[edge(n), edge(n+1))` (50 Hz–10 kHz); its value is the summed magnitude divided by `binCount^bandExponent`. Plain `sum` over-weights high bars (treble bands span far more FFT bins than bass bands) and suppresses bass; `mean` does the opposite. Exponent `bandExponent` (default **0.3**) is the tilt knob: `sum` (÷N^0) = brightest, `mean` (÷N^1) = bassiest, and √N (÷N^0.5) is the neutral midpoint. The 0.3 default keeps bass strong while letting mid/high frequencies read clearly.
 3. **Monstercat neighbor smoothing:** Spatial blur across adjacent bars (stateless).
-4. **Integral/exponential smoothing:** Per-bar temporal EMA, `alpha = 1 - noiseReduction` (default 0.77). Higher noiseReduction = smoother but less dynamic.
+4. **Integral/exponential smoothing:** Per-bar temporal EMA, `alpha = 1 - noiseReduction` (app default 0.65). Higher noiseReduction = smoother but less dynamic.
 5. **Autosens (before gravity):** A persistent gain (`sens`) scales the magnitudes. See the autosens gotcha for the fast-attack/slow-release + deadband + low-start design.
 6. **Clamp to [0,1], then gravity/falloff:** Instant rise, gravity fall. Clamping BEFORE gravity keeps `peakValues` in the normalized domain (a pre-convergence spike can't poison it). See the gravity gotcha for the `>=` requirement.
 
@@ -43,12 +43,13 @@ Output: Per-channel bar arrays in 0…1 range. The order matters: **autosens mus
 - Draws solid rectangles per bar with subtle borders for definition
 - Handles both mono (single row) and stereo (mirrored L/R) layouts
 
-`CavaRenderModel` drives a **60 Hz timer** on the main thread, splitting the DSP so only the cheap part runs per frame:
-- The audio tap (~21 Hz) *stashes* the latest L/R buffer. On the next tick the model calls `CavaCore.analyze(_:)` (the FFTs — the expensive step, ~90 µs) **once per new buffer**, then `CavaCore.render()` (monstercat/smoothing/autosens/gravity — ~1.6 µs) **every** 60 Hz tick so decay/smoothing advance at the display rate. Re-rendering the cached magnitudes is identical to re-running `execute` on the same buffer but skips the FFT, so it's ~2.7× less main-thread DSP than running the full FFT at 60 Hz — matching the audio-rate cadence of the AudioAnalysis panes. `execute(_:)` (= `analyze` + `render`) is kept for tests/one-shot callers.
-- Settings (mode/bars/smoothing/bass) are read and the core rebuilt only on new-audio ticks (`refreshCoreIfNeeded`), not 60×/sec.
+`CavaRenderModel` drives a **60 Hz scheduler** on the main thread while confining all DSP to one serial worker queue:
+- The audio tap (~21 Hz) *stashes* the latest L/R buffer. On the next tick the worker calls `CavaCore.analyze(_:)` (the FFTs) **once per new buffer**, then `CavaCore.render()` (monstercat/smoothing/autosens/gravity) on render ticks so decay/smoothing advance at the display rate. Only the finished bar arrays return to the main thread. `execute(_:)` (= `analyze` + `render`) is kept for tests/one-shot callers.
+- At most one worker operation is outstanding. Incoming audio is coalesced to the newest buffer while it is busy, preventing a queue backlog during other expensive UI operations.
+- Normal playback reads settings on new-audio ticks rather than 60×/sec. Explicit menu/double-click changes call `settingsDidChange()` so mode and tuning also update immediately while paused or stopped.
 - **Pause-freeze:** if no new audio arrives for >~6 ticks (~100 ms), the timer stops re-running the stale buffer and holds the last frame. Re-running a static buffer indefinitely would let autosens hunt and the display throb; freezing keeps a paused Cava perfectly still.
 - Idle-skip: a per-frame signature detects settled bars and skips the redraw (not the DSP), so a static display costs no repaint.
-- Calls `onNeedsDisplay` (→ `requestMeterRedraw()`, content-rect only) only when bars change.
+- Calls `onNeedsDisplay` (the views invalidate their content/animation rect) only when bars change.
 
 Both classic and modern views call `CavaDrawing.draw()` with current bar data, low/high colors, and mode.
 
@@ -58,7 +59,7 @@ Both classic and modern views call `CavaDrawing.draw()` with current bar data, l
 - **Classic:** `SkinRenderer` draws border-only chrome (title "CAVA" + close button)
 - **Modern:** `ModernSkinRenderer` chrome with `spectrum_*` style elements (title bar + close button)
 - **Whole-face drag:** Click title bar or content area to drag; **double-click anywhere toggles Mono ⇄ Stereo**; close button in top-right
-- **Hide Title Bars:** When docked to other windows and Hide Title Bars is on, title bar hides and close button is unreachable; only drag from content
+- **Hide Title Bars (modern):** Modern center-stack subwindows hide their titlebar whenever docked; the global Hide Title Bars setting also hides it while detached. The close button is then unreachable, but the content remains draggable. Classic Cava always keeps its classic chrome.
 - **Docking:** Participates in center-stack docking (snaps below main/other windows)
 
 ## Right-Click Menu
@@ -72,11 +73,11 @@ Both classic and modern views call `CavaDrawing.draw()` with current bar data, l
 - **Reset to Defaults:** Restores Bars / Smoothing / Bass to factory defaults (`CavaSettings.resetTuning()`); leaves mode, colors, and transparency untouched.
 - **Close:** Hide the window
 
-The menu is built and handled by `CavaPresenter` itself (an `NSObject` with `@objc` actions targeting `self`); the view only supplies the `onNeedsDisplay` / `onNeedsFullDisplay` / `onClose` closures. Changing Bars / Smoothing / Bass updates `CavaSettings`; `CavaRenderModel` rebuilds `CavaCore` on the next tick when any of bar count / sample rate / `noiseReduction` / `bassTilt` differs.
+The menu is built and handled by `CavaPresenter` itself (an `NSObject` with `@objc` actions targeting `self`); the view only supplies the `onNeedsDisplay` / `onNeedsFullDisplay` / `onClose` closures. Changing Bars / Smoothing / Bass updates `CavaSettings`; `CavaRenderModel.settingsDidChange()` applies the change immediately and rebuilds `CavaCore` when bar count, sample rate, `noiseReduction`, or `bassTilt` differs.
 
 ## Persistence (AppStateManager)
 
-- **Window visibility/frame:** Saved in AppState (WindowState struct), restored on launch if UI mode matches (classic/modern)
+- **Window visibility/frame:** Visibility is restored in either UI mode. The exact saved frame is restored only when the saved and running UI modes match; otherwise Cava opens at the target mode's default stack position.
 - **Durable preferences:** `CavaSettings` (UserDefaults) — mode selection, bar count, gradient colors — persist independently of Remember State
 - **Restoration:** On launch, if Cava was visible, `showCava(at:)` repositions it at the saved frame (or default stack position if no frame saved)
 
@@ -95,7 +96,7 @@ Durable UserDefaults-backed preferences:
 | `cavaNoiseReduction` | Double | 0.65 | Smoothing / latency (0…0.95) |
 | `cavaBassTilt` | Double | 0.30 | Bass↔treble tilt (`bandExponent`, 0…1) |
 
-Access via `CavaSettings.mode`, `CavaSettings.barCount`, etc. Changes take effect immediately; CavaCore is recreated on next audio frame if parameters change.
+Access via `CavaSettings.mode`, `CavaSettings.barCount`, etc. Menu and double-click changes take effect immediately; settings that alter DSP construction recreate CavaCore through `settingsDidChange()`.
 
 ## Key Files
 
@@ -132,23 +133,24 @@ Both playback paths (local + streaming) emit the stereo tap:
 **Critical:** If only one playback path is in use, Cava will update while that path plays. The tap is idled when Cava is hidden (no consumer registered).
 
 ### Notification Threading
-`Notification.Name.audioStereoPCMFullDataUpdated` is posted from the audio thread. `CavaRenderModel` observes with `queue: nil` (posting thread) and explicitly marshals to main via `DispatchQueue.main.async` before updating the presenter. Never touch UI directly from the observer block.
+`Notification.Name.audioStereoPCMFullDataUpdated` arrives from different queues: local playback posts from the audio callback, while streaming playback forwards it on the main queue after coalescing. `CavaRenderModel` observes with `queue: nil` and explicitly marshals buffer assignment to main via `DispatchQueue.main.async`. The timer then coalesces the newest buffer onto the serial Cava processing queue; only completed bar arrays and display invalidation return to main. Never touch UI or run FFT work directly from the observer block.
 
 ### Gravity must rise/hold on `>=`, not `>` (the big jitter bug)
-`applyGravityAndFalloff` had `if bars[i] > peakValues[ch][i]` (strict). At steady state `bars[i] == peakValues`, so it fell through to the decay branch, subtracted the `falloff` (0.05), then snapped back up the next frame — a self-sustaining **period-2 flicker of amplitude 0.05 on every bar, even on a perfectly constant signal**. Barely visible on tall bars, a violent ±60% strobe on short bars ("short bars jitter intensely"). Fix: rise/hold on `>=`, and clamp the gravity fall so it never undershoots the current value (`max(bars[i], peak - falloff)`). Verify with the identical-input test below — constant input MUST give constant output.
+`applyGravityAndFalloff` had `if bars[i] > peakValues[ch][i]` (strict). At steady state `bars[i] == peakValues`, so it fell through to the decay branch, subtracted the `falloff` (0.05), then snapped back up the next frame — a self-sustaining **period-2 flicker of amplitude 0.05 on every bar, even on a perfectly constant signal**. Barely visible on tall bars, a violent ±60% strobe on short bars ("short bars jitter intensely"). Fix: rise/hold on `>=`, and clamp the gravity fall so it never undershoots the current value (`max(bars[i], peak - falloff)`). Constant-input test coverage must remain steady.
 
 ### Autosens is a persistent gain: low start, fast attack, slow release, deadband
 `sens` is a single persistent gain (not a per-frame AGC), applied to magnitudes *before* gravity. Design, learned the hard way:
 - **Start LOW (`1e-6`) and grow into the signal** during `sensInit` (×1.2/frame until first overshoot). Starting at 1.0 was far too high for summed-energy magnitudes, so every bar clipped at full scale for ~5 s at launch while the gain ground down. Starting low means bars *ramp up* from small instead of pinning.
+- **Hold gain on digital silence.** Initial grow-in and later recovery are gated on a non-silent raw magnitude. Growing `sens` during leading silence can hit its cap before the first audible sample and pin the display for tens of seconds.
 - **Gentle attack (×0.98) on overshoot**, NOT an aggressive proportional attack — a hard attack ducks the whole spectrum on every transient (reads as pumping/jitter). A single bar briefly touching the ceiling is normal.
 - **Deadband:** only *recover* (×1.001) when the peak is well below the ceiling (< 0.85); hold the gain steady in `[0.85, 1.0]`. Otherwise the gain hunts up-into-clip and back — a global throb, very visible when paused.
 - Do NOT re-introduce a per-frame "divide by the running peak" AGC: it re-inflates a decaying tail so bars never fall to zero on silence.
 
 ### Mono averages magnitude spectra, not the time-domain signals
-Mono is NOT `(L+R)*0.5` in the time domain — summing stereo material comb-filters it (phase differences create moving spectral notches = jitter that only appears in mono). Instead `CavaRenderModel` always runs `CavaCore` with `channels: 2` and, for mono display, **averages the two channels' output bar arrays**. Channel count therefore never changes on a mode switch (only bar count / sample rate rebuild the core).
+Mono is NOT `(L+R)*0.5` in the time domain — summing stereo material comb-filters it (phase differences create moving spectral notches = jitter that only appears in mono). Instead `CavaRenderModel` always runs `CavaCore` with `channels: 2` and, for mono display, **averages the two channels' output bar arrays**. Channel count therefore never changes on a mode switch; bar count, sample rate, smoothing, and bass tilt can rebuild the core.
 
-### Bar energy = band sum ÷ √(bin count) — this sets the bass/treble tilt
-Bars sum magnitudes over contiguous non-overlapping log bands, then divide by `√(binCount)`. This normalization IS the frequency-balance knob, because high-frequency bands span many more FFT bins than bass bands:
+### Bar energy = band sum ÷ bin-count exponent — this sets the bass/treble tilt
+Bars sum magnitudes over contiguous non-overlapping log bands, then divide by `binCount^bandExponent` (default 0.3). This normalization IS the frequency-balance knob, because high-frequency bands span many more FFT bins than bass bands:
 - `max` over overlapping ±10% ranges (original) → bass dominant, treble dead.
 - plain `sum` → treble dominant, **bass suppressed too much**.
 - `sum ÷ N` (mean) → bass-heavy again.
@@ -157,14 +159,14 @@ Bars sum magnitudes over contiguous non-overlapping log bands, then divide by `�
 Tune the single `bandExponent` constant (0=sum … 1=mean) if the tilt needs adjusting; don't reach for a separate EQ table first.
 
 ### Verifying DSP changes without the app
-`swift test` can't launch here (see the [[swift-test-dylib-rpath]] memory / codesign SIGKILL). Test `CavaCore` with a standalone `swiftc` harness linked against the built objects:
-`swiftc -O harness.swift -I .build/arm64-apple-macosx/debug/Modules .build/arm64-apple-macosx/debug/NullPlayerCore.build/*.o -framework Accelerate -o harness`. Key harnesses to keep: **identical-input steadiness** (constant in → constant out, catches gravity/autosens limit cycles), frequency localization, stereo panning, autosens bounds, silence decay, launch ramp (no pin), and paused-buffer stability.
+If the full XCTest bundle cannot launch because of its dynamic-framework rpaths/codesigning, test `CavaCore` with a standalone `swiftc` harness linked against the built objects:
+`swiftc -O harness.swift -I .build/arm64-apple-macosx/debug/Modules .build/arm64-apple-macosx/debug/NullPlayerCore.build/*.o -framework Accelerate -o harness`. Important coverage includes **identical-input steadiness** (constant in → constant out), frequency localization, stereo panning, autosens bounds, silence decay, leading-silence gain stability, launch ramp, and paused-buffer stability.
 
-### Main-thread DSP: keep the FFT at audio rate, not 60 Hz
-The render loop runs on the **main thread**. `CavaCore.execute` (both FFTs) measures ~90 µs in release but ~5.9 ms in a **debug** build (unoptimized — 60× slower), so running it at 60 Hz makes the debug app noticeably janky (~35% of a frame) even though release is fine (~0.6%). The fix (and the pattern the AudioAnalysis panes already follow) is to run the FFT only when a new audio buffer arrives (`analyze`, ~21 Hz) and run only the cheap post-processing (`render`, ~1.6 µs) at 60 Hz. Don't move the FFT back onto the 60 Hz path. The audio-thread side stays trivial regardless: the tap observer (`queue: nil`) just stashes copies and `DispatchQueue.main.async`s — never do heavy work in the observer.
+### Keep all DSP off the main thread and coalesce work
+The 60 Hz `Timer` is only a scheduler. Both `CavaCore.analyze` and `CavaCore.render` run on `com.nullplayer.cava.processing`, and the core is confined to that serial queue. This matters especially in debug builds, where the dual FFTs are much slower and can compound unrelated main-thread work such as library expansion into visible stalls. Keep FFT analysis at the audio-buffer cadence (~21 Hz), permit at most one processing operation at a time, and coalesce incoming audio to the newest buffer while busy. Only immutable bar-array results should cross back to main for display.
 
 ### Idle Skip + Timer
-The 60 Hz timer redraws only if bars changed (signature delta check). When Cava is docked and hidden, the timer is still running but produces no visible updates (window is offscreen). When undocked and visible again, the timer resumes visual updates. This is by design: no CPU waste for invisible windows.
+The 60 Hz timer redraws only if the ordered bar signature changed. Closing, ordering out, miniaturizing, or fully occluding the window stops the render model and unregisters its full-stereo consumer; showing/deminiaturizing it starts them again. A visible settled display keeps the timer but skips redundant repaints.
 
 ### Do NOT inherit the spectrum window's transparency
 `ModernCavaView` draws its background via `renderer.drawWindowBackground(..., backgroundOpacity:)`. Passing `renderer.skin.spectrumWindowBackgroundOpacity` (= the skin's `window.opacity`) made Cava translucent on metal/modern skins that set a low window opacity — not wanted by default. Use `effectiveBackgroundOpacity` (1.0 unless `CavaSettings.transparentBackground` is on). Also fill the content background in `drawCavaContent` when opaque, because the timer fast-path (animation-rect-only redraw) skips `drawWindowBackground` and would otherwise leave the content transparent between frames. `transparentBackground` is a durable `CavaSettings`/UserDefaults pref, default false, modern-only.
@@ -196,8 +198,8 @@ Modern Cava view reads corner radius from the current skin config and applies vi
 
 | Aspect | Cava | Spectrum Analyzer | Audio Analysis | Flow |
 |--------|------|-------------------|-----------------|------|
-| **Input** | Full stereo tap | Full stereo tap | Full stereo tap | Network throughput |
-| **Output** | Bars (32–128) | Waveform (256 freq bins) | Scope/Levels/Spectrogram | Upload/Download |
+| **Input** | Full-rate stereo PCM | Shared spectrum + waveform notifications | Stereo PCM + FFT magnitudes/spectrum | Network throughput |
+| **Output** | Bars (16–64 menu presets) | Spectrum/ambient visualization modes | Scope/Levels/Spectrogram/Octave/Pitch/Delay | Upload/Download |
 | **Rendering** | CoreGraphics bars | Metal GPU spectrum | Metal GPU multi-pane | CoreGraphics bars |
 | **DSP** | cava vDSP FFT+smooth | vis_classic FFT | friture-style analysis | Network syscalls |
 | **CPU** | Low (idle skip) | Medium (Metal overhead) | High (3 panes) | Negligible |

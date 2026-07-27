@@ -29,6 +29,7 @@ enum CavaSettings {
 
     static var mode: Mode {
         get {
+            guard defaults.object(forKey: modeKey) != nil else { return .stereo }
             let raw = defaults.integer(forKey: modeKey)
             return Mode(rawValue: raw) ?? .stereo
         }
