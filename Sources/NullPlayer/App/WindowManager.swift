@@ -3082,6 +3082,8 @@ class WindowManager {
     }
     
     private func notifySkinChanged() {
+        CavaSettings.resetCustomColorsForSkinChange()
+
         // Notify all windows to redraw with new skin
         mainWindowController?.skinDidChange()
         playlistWindowController?.skinDidChange()

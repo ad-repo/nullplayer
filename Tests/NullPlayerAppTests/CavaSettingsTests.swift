@@ -75,6 +75,27 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(CavaSettings.barCount, 48)
     }
 
+    func testSkinChangeClearsCustomColorFlagsForBothScopesWithoutDeletingColors() throws {
+        let fireIndex = try XCTUnwrap(CavaSettings.colorSchemes.firstIndex { $0.name == "Fire" })
+        let iceIndex = try XCTUnwrap(CavaSettings.colorSchemes.firstIndex { $0.name == "Ice" })
+        let fire = CavaSettings.colorSchemes[fireIndex]
+        let ice = CavaSettings.colorSchemes[iceIndex]
+
+        CavaSettings.setLowGradientColor(fire.low, for: .cavaWindow)
+        CavaSettings.setHighGradientColor(fire.high, for: .cavaWindow)
+        CavaSettings.setHasCustomColors(true, for: .cavaWindow)
+        CavaSettings.setLowGradientColor(ice.low, for: .mainWindow)
+        CavaSettings.setHighGradientColor(ice.high, for: .mainWindow)
+        CavaSettings.setHasCustomColors(true, for: .mainWindow)
+
+        CavaSettings.resetCustomColorsForSkinChange()
+
+        XCTAssertFalse(CavaSettings.hasCustomColors(for: .cavaWindow))
+        XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .cavaWindow), fireIndex)
+        XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .mainWindow), iceIndex)
+    }
+
     func testClassicStackRepairIncludesCavaAfterFlow() throws {
         let main = NSRect(x: 100, y: 500, width: 275, height: Skin.mainWindowSize.height)
         let rowHeight = SkinElements.SpectrumWindow.windowSize.height
