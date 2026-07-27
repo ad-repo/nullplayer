@@ -36,6 +36,7 @@ Flow is a dockable network throughput meter available in classic and modern UI.
 - Classic uses `SkinElements.SpectrumWindow.windowSize` / `minSize`.
 - Modern uses `ModernSkinElements.spectrumWindowSize` / `spectrumMinSize`.
 - Restored Flow frames are normalized to at least the current single-height stack height, but user-stretched heights above that floor are preserved.
+- The **Cava** spectrum window ([cava](../cava/SKILL.md)) is another single-height center-stack window built on this same pattern (same sizing constants, whole-face drag, classic/modern chrome) — a good reference when threading a new center-stack window through `WindowManager`.
 
 ## Key Source Files
 

@@ -54,3 +54,7 @@ extension NetworkMonitorWindowProviding {
 extension WaveformWindowProviding {
     func prepareForUITeardown() { stopLoadingForHide() }
 }
+
+extension CavaWindowProviding {
+    func prepareForUITeardown() { tearDown() }
+}

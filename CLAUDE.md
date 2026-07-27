@@ -31,6 +31,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **spectrum-analyzer-window**: Dedicated 84-bar spectrum window — docking, geometry, analyzer curve, vis_classic waveform demand
 - **audio-analysis-window**: Friture-style multi-pane Audio Analysis window — Scope/Levels/Spectrogram panes, stereo PCM path, per-pane consumer gating, AudioAnalysisDSP module
 - **peppymeter**: Skinnable analog VU meter window (PeppyMeter port) — meters.txt geometry, CoreGraphics needle/bar compositor, stereo-tap level model, bundled GPL templates
+- **cava**: cava-style bar spectrum window (clean-room Swift/vDSP port) — dual bass/treble FFT, mono/stereo, full-rate stereo tap, 60 Hz DSP + pause-freeze, skin-following gradient colors + presets/metals, exposed tuning (bars/smoothing/bass tilt), classic+modern center-stack chrome
 - **flow**: Network throughput meter window — single-height center-stack docking, download/upload view switching, interface selection, classic/modern Flow controllers
 - **gpu-vis-modes**: Per-mode shader internals (Fire/JWST/Lightning/Matrix/Snow/EKG) shared by both windows
 - **album-art-visualizer**: Library Browser ART-mode Core Image effects
@@ -62,6 +63,7 @@ Sources/NullPlayer/
 ├── Emby/             # Emby media server integration
 ├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer, vis_classic bridge/core integration
 ├── PeppyMeter/       # Analog VU meter engine (meters.txt parser, CoreGraphics compositor, level model)
+├── Cava/             # Spectrum analyzer engine (vDSP FFT, bar smoothing, mode selection)
 ├── Waveform/         # Shared waveform models, cache service, drawing, and stream accumulation
 └── Models/           # Track, Playlist, MediaLibrary
 ```
@@ -76,6 +78,7 @@ Sources/NullPlayer/
 | Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernWaveform/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, `Windows/ModernLibraryBrowser/` |
 | Visualization | `Visualization/SpectrumAnalyzerView.swift`, `Visualization/VisClassicBridge.swift`, `Visualization/ProjectMWrapper.swift`, `Visualization/*.metal`, `Sources/CVisClassicCore/` |
 | PeppyMeter | `PeppyMeter/PeppyMeterConfig.swift`, `PeppyMeter/PeppyMeterRenderer.swift`, `PeppyMeter/PeppyMeterLibrary.swift`, `PeppyMeter/PeppyMeterPresenter.swift`, `Windows/PeppyMeter/`, `Windows/ModernPeppyMeter/` |
+| Cava | `Cava/CavaSettings.swift`, `Cava/CavaRenderModel.swift`, `Cava/CavaDrawing.swift`, `Cava/CavaPresenter.swift`, `Windows/Cava/`, `Windows/ModernCava/` |
 | Flow | `Utilities/NetworkThroughputMonitor.swift`, `Windows/NetworkMonitor/`, `Windows/ModernNetworkMonitor/` |
 | Waveform | `Waveform/WaveformCacheService.swift`, `Waveform/BaseWaveformView.swift` |
 | App | `App/WindowManager.swift`, `App/AppStateManager.swift`, `App/ContextMenuBuilder.swift` |

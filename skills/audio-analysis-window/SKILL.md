@@ -121,6 +121,9 @@ larger analysis buffer, not pane code.
   engine and the streaming delegate (`streamingPlayerDidUpdateStereoPCM(left:right:sampleRate:)`).
   The **PeppyMeter** window ([peppymeter](../peppymeter/SKILL.md)) is another consumer of this same
   stereo path — any change to it must keep both the Levels/Delay panes and PeppyMeter working.
+  The **Cava** window ([cava](../cava/SKILL.md)) instead adds a sibling **full-rate** tap
+  (`.audioStereoPCMFullDataUpdated`, undecimated 2048-sample L/R) — the audio-analysis skill's own
+  "larger buffer, not pane code" guidance in practice — emitted from both playback paths as well.
 
 - **Magnitudes path** (new): `Audio/AudioEngine.swift` and `Audio/StreamingAudioPlayer.swift` publish
   `.audioFFTMagnitudesUpdated` (userInfo: `"magnitudes"` raw linear half-spectrum, `"sampleRate"`,

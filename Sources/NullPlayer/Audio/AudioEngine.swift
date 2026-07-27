@@ -14,9 +14,13 @@ extension Notification.Name {
     /// userInfo contains: "pcm" ([Float]), "sampleRate" (Double)
     static let audioPCMDataUpdated = Notification.Name("audioPCMDataUpdated")
 
-    /// Posted when new stereo PCM audio data is available for analysis
+    /// Posted when new stereo PCM audio data is available for analysis (decimated to 512 samples)
     /// userInfo contains: "left" ([Float]), "right" ([Float]), "sampleRate" (Double)
     static let audioStereoPCMDataUpdated = Notification.Name("audioStereoPCMDataUpdated")
+
+    /// Posted when new full-rate stereo PCM audio data is available for analysis (full 2048 samples)
+    /// userInfo contains: "left" ([Float]), "right" ([Float]), "sampleRate" (Double)
+    static let audioStereoPCMFullDataUpdated = Notification.Name("audioStereoPCMFullDataUpdated")
 
     /// Posted when new spectrum data is available for visualization
     /// userInfo contains: "spectrum" ([Float]) - 75 bands normalized 0-1
@@ -526,6 +530,9 @@ class AudioEngine {
     /// Stereo PCM consumers — stereo tap is skipped entirely when this is empty
     private var stereoConsumers: [String: Int] = [:]
 
+    /// Full-rate stereo PCM consumers — full-rate stereo tap is skipped entirely when this is empty
+    private var fullStereoConsumers: [String: Int] = [:]
+
     /// Magnitudes consumers — raw FFT magnitude posting is skipped entirely when this is empty
     private var magnitudesConsumers: [String: Int] = [:]
 
@@ -579,6 +586,18 @@ class AudioEngine {
 
     var stereoNeeded: Bool { !stereoConsumers.isEmpty }
 
+    func addFullStereoConsumer(_ id: String) {
+        fullStereoConsumers[id, default: 0] += 1
+        streamingPlayer?.fullStereoNeeded = !fullStereoConsumers.isEmpty
+    }
+
+    func removeFullStereoConsumer(_ id: String) {
+        releaseConsumer(id, from: &fullStereoConsumers)
+        streamingPlayer?.fullStereoNeeded = !fullStereoConsumers.isEmpty
+    }
+
+    var fullStereoNeeded: Bool { !fullStereoConsumers.isEmpty }
+
     func addMagnitudesConsumer(_ id: String) {
         magnitudesConsumers[id, default: 0] += 1
         streamingPlayer?.magnitudesNeeded = !magnitudesConsumers.isEmpty
@@ -607,6 +626,9 @@ class AudioEngine {
     /// Pre-allocated stereo PCM buffers (512 samples each for left and right channels)
     private var stereoPcmLeft = [Float](repeating: 0, count: 512)
     private var stereoPcmRight = [Float](repeating: 0, count: 512)
+    /// Pre-allocated full-rate stereo PCM buffers (2048 samples each for left and right channels)
+    private var fullStereoPcmLeft = [Float](repeating: 0, count: 2048)
+    private var fullStereoPcmRight = [Float](repeating: 0, count: 2048)
 
     /// Pre-computed frequency weights for spectrum analyzer (light compensation)
     private let spectrumFrequencyWeights: [Float] = {
@@ -1593,7 +1615,7 @@ class AudioEngine {
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard spectrumNeeded || waveformNeeded || stereoNeeded || magnitudesNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || fullStereoNeeded || magnitudesNeeded else { return }
         guard let channelData = buffer.floatChannelData else { return }
 
         let frameCount = Int(buffer.frameLength)
@@ -1635,6 +1657,39 @@ class AudioEngine {
             let rightCopy = Array(stereoPcmRight)
             NotificationCenter.default.post(
                 name: .audioStereoPCMDataUpdated,
+                object: self,
+                userInfo: [
+                    "left": leftCopy,
+                    "right": rightCopy,
+                    "sampleRate": bufferSampleRate
+                ]
+            )
+        }
+
+        // Publish full-rate (undecimated) stereo PCM data when needed
+        if fullStereoNeeded && frameCount >= 2048 {
+            // Extract exactly 2048 samples from the buffer
+            let pcmSize = 2048
+            if channelCount == 1 {
+                // Mono: duplicate to both channels
+                for i in 0..<pcmSize {
+                    let sample = channelData[0][i]
+                    fullStereoPcmLeft[i] = sample
+                    fullStereoPcmRight[i] = sample
+                }
+            } else {
+                // Stereo: separate channels
+                for i in 0..<pcmSize {
+                    fullStereoPcmLeft[i] = channelData[0][i]
+                    fullStereoPcmRight[i] = channelData[1][i]
+                }
+            }
+
+            // Post notification with left/right copies
+            let leftCopy = Array(fullStereoPcmLeft)
+            let rightCopy = Array(fullStereoPcmRight)
+            NotificationCenter.default.post(
+                name: .audioStereoPCMFullDataUpdated,
                 object: self,
                 userInfo: [
                     "left": leftCopy,
@@ -4596,6 +4651,7 @@ class AudioEngine {
             streamingPlayer?.spectrumNeeded = spectrumNeeded
             streamingPlayer?.waveformNeeded = waveformNeeded
             streamingPlayer?.stereoNeeded = stereoNeeded
+            streamingPlayer?.fullStereoNeeded = fullStereoNeeded
             streamingPlayer?.magnitudesNeeded = magnitudesNeeded
         }
         streamingPlayer?.balance = balance
@@ -5428,6 +5484,7 @@ class AudioEngine {
         streamingPlayer?.spectrumNeeded = spectrumNeeded
         streamingPlayer?.waveformNeeded = waveformNeeded
         streamingPlayer?.stereoNeeded = stereoNeeded
+        streamingPlayer?.fullStereoNeeded = fullStereoNeeded
         streamingPlayer?.magnitudesNeeded = magnitudesNeeded
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         
@@ -6335,6 +6392,19 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Forward stereo PCM data from streaming player for analysis
         NotificationCenter.default.post(
             name: .audioStereoPCMDataUpdated,
+            object: self,
+            userInfo: [
+                "left": left,
+                "right": right,
+                "sampleRate": sampleRate
+            ]
+        )
+    }
+
+    func streamingPlayerDidUpdateFullStereoPCM(left: [Float], right: [Float], sampleRate: Double) {
+        // Forward full-rate stereo PCM data from streaming player for analysis
+        NotificationCenter.default.post(
+            name: .audioStereoPCMFullDataUpdated,
             object: self,
             userInfo: [
                 "left": left,
