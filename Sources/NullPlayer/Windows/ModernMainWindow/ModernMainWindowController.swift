@@ -92,7 +92,7 @@ class ModernMainWindowController: NSWindowController, MainWindowProviding {
     }
     
     func windowVisibilityDidChange() {
-        modernView.needsDisplay = true
+        modernView.windowVisibilityDidChange()
     }
     
     func setNeedsDisplay() {

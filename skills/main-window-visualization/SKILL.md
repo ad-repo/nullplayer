@@ -1,11 +1,11 @@
 ---
 name: main-window-visualization
-description: The main window's built-in 76×16 (Winamp coordinates) visualization area — eleven display modes, mode switching, persistence, per-mode settings, and the embedded SpectrumAnalyzerView lifecycle. Use when modifying the in-skin visualizer area or its menu.
+description: The main window's built-in 76×16 (Winamp coordinates) visualization area — twelve display modes, mode switching, persistence, per-mode settings, and embedded renderer lifecycles. Use when modifying the in-skin visualizer area or its menu.
 ---
 
 # Main Window Visualization
 
-The main window's built-in visualization area (76×16 pixels in Winamp coordinates) supports eleven display modes. For per-mode shader/algorithm internals see [gpu-vis-modes](../gpu-vis-modes/SKILL.md).
+The main window's built-in visualization area (76×16 pixels in Winamp coordinates) supports twelve display modes. For per-mode shader/algorithm internals see [gpu-vis-modes](../gpu-vis-modes/SKILL.md).
 
 ## Modes
 
@@ -13,6 +13,7 @@ The main window's built-in visualization area (76×16 pixels in Winamp coordinat
 |------|-------------|
 | **Off** | No main-window visualization; leaves the skin's prepared display artwork visible |
 | **Classic** | Low-fi 19-bar spectrum analyzer with skin colors and cropped analyzer sub curve (default; persisted internally as `Spectrum`) |
+| **Cava** | Mono vDSP/Cava bar analyzer drawn with CoreGraphics; colors follow the active skin until overridden |
 | **Enhanced** | Compact professional LED analyzer with cropped sub range, clean peak caps, and restrained meter colors |
 | **Ultra** | Dense professional spectrum analyzer with cropped sub range, fast decay, clean peak caps, and restrained meter colors |
 | **Fire** | GPU flame simulation using Metal compute shaders |
@@ -26,7 +27,7 @@ The main window's built-in visualization area (76×16 pixels in Winamp coordinat
 ## Switching Modes
 
 - **Double-click** the visualization area to cycle through modes
-- **Right-click** → Spectrum Analyzer → Main Window → Mode to select a specific mode, including **Off**
+- **Visuals → Main Window → Mode** selects a specific mode, including **Off**
 - Persisted as `mainWindowVisMode` (UserDefaults)
 
 ## Settings
@@ -36,6 +37,7 @@ All non-`vis_classic` GPU modes share:
 - **Normalization** — level scaling (Accurate/Adaptive/Dynamic) — `mainWindowNormalizationMode`
 
 Mode-specific:
+- **Cava** — Color Preset, Bars, Smoothing, and Bass Tilt. Uses `cava.mainWindow.*` keys, independent from the standalone Cava window.
 - **Fire** — Flame Style + Fire Intensity — `mainWindowFlameStyle`, `mainWindowFlameIntensity`
 - **Lightning** — Lightning Style — `mainWindowLightningStyle`
 - **Matrix** — Matrix Color + Matrix Intensity — `mainWindowMatrixColorScheme`, `mainWindowMatrixIntensity`
@@ -43,12 +45,13 @@ Mode-specific:
 
 ## Implementation
 
-- **Overlay**: `SpectrumAnalyzerView` with `isEmbedded = true` as a subview of the main window
+- **GPU overlay**: `SpectrumAnalyzerView` with `isEmbedded = true` as a subview of the main window
+- **Cava CPU path**: a lazily-created `CavaPresenter(scope: .mainWindow)` feeds `CavaDrawing` in the normal AppKit coordinate space. Classic draws after restoring its flipped skin transform; modern draws inside the scaled spectrum panel.
 - **Embedded EKG sharpness**: EKG history scrolling accumulates fractional motion and shifts the persistent trace texture by whole physical pixels when `isEmbedded = true`. This prevents repeated bilinear resampling from blurring the tiny 76×16 in-skin trace while keeping average scan speed and beat timing unchanged.
 - **vis_classic core**: CPU frame generation via `VisClassicBridge` + `CVisClassicCore`, uploaded to a Metal texture
 - **Positioning**: Winamp coordinates → macOS view coordinates
-- **Lifecycle**: Created lazily on first GPU mode activation
-- **CPU efficiency**: Display link pauses when window is minimized/occluded, in Spectrum mode, or in Off mode
+- **Lifecycle**: GPU overlay and Cava presenter are created lazily on first activation
+- **CPU efficiency**: The Metal display link and Cava timer/audio consumer pause when the main window is minimized, hidden, or occluded. Cava uses a scope-distinct full-stereo consumer ID.
 - **vis_classic state is window-scoped** — main window and spectrum window keep independent profile/fit/transparent-bg. Use `VisClassicBridge.PreferenceScope` and `*.mainWindow` keys
 
 ## Key Files
@@ -56,3 +59,6 @@ Mode-specific:
 - `Windows/MainWindow/MainWindowView.swift` — mode switching, overlay (classic UI)
 - `Windows/ModernMainWindow/ModernMainWindowView.swift` — mode switching, overlay (modern UI)
 - `Visualization/SpectrumAnalyzerView.swift` — shared Metal rendering
+- `Cava/CavaSettings.swift` / `Cava/CavaPresenter.swift` — scoped inline Cava preferences and runtime
+- `App/ContextMenuBuilder.swift` — mode selection and mode-specific settings
+- `Visualization/VisualizationPreferences.swift` — centralized main-window reset coverage

@@ -90,7 +90,7 @@ class MainWindowController: NSWindowController, MainWindowProviding {
     }
 
     func windowVisibilityDidChange() {
-        mainView.needsDisplay = true
+        mainView.windowVisibilityDidChange()
     }
     
     func setNeedsDisplay() {

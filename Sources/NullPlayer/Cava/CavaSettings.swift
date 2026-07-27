@@ -6,19 +6,63 @@ import AppKit
 enum CavaSettings {
     private static let defaults = UserDefaults.standard
 
+    enum Scope: CaseIterable {
+        case cavaWindow
+        case mainWindow
+
+        var identifier: String {
+            switch self {
+            case .cavaWindow: return "window"
+            case .mainWindow: return "mainWindow"
+            }
+        }
+    }
+
     enum Mode: Int {
         case mono = 0
         case stereo = 1
     }
 
-    private static let modeKey = "cavaMode"
-    private static let barCountKey = "cavaBarCount"
-    private static let lowGradientColorKey = "cavaLowGradientColor"
-    private static let highGradientColorKey = "cavaHighGradientColor"
-    private static let colorsCustomizedKey = "cavaColorsCustomized"
-    private static let transparentBackgroundKey = "cavaTransparentBackground"
-    private static let noiseReductionKey = "cavaNoiseReduction"
-    private static let bassTiltKey = "cavaBassTilt"
+    private enum SettingKey: String, CaseIterable {
+        case mode
+        case barCount
+        case lowGradientColor
+        case highGradientColor
+        case colorsCustomized
+        case transparentBackground
+        case noiseReduction
+        case bassTilt
+    }
+
+    /// Preserve the standalone window's legacy keys while giving embedded Cava an independent
+    /// namespace.
+    private static func key(_ setting: SettingKey, for scope: Scope) -> String {
+        switch scope {
+        case .cavaWindow:
+            switch setting {
+            case .mode: return "cavaMode"
+            case .barCount: return "cavaBarCount"
+            case .lowGradientColor: return "cavaLowGradientColor"
+            case .highGradientColor: return "cavaHighGradientColor"
+            case .colorsCustomized: return "cavaColorsCustomized"
+            case .transparentBackground: return "cavaTransparentBackground"
+            case .noiseReduction: return "cavaNoiseReduction"
+            case .bassTilt: return "cavaBassTilt"
+            }
+        case .mainWindow:
+            return "cava.mainWindow.\(setting.rawValue)"
+        }
+    }
+
+    /// Durable keys owned by a scope. Used by the centralized visualization reset path.
+    static func preferenceKeys(for scope: Scope) -> [String] {
+        SettingKey.allCases.compactMap { setting in
+            if scope == .mainWindow && setting == .transparentBackground {
+                return nil
+            }
+            return key(setting, for: scope)
+        }
+    }
 
     // Factory defaults for the exposed tuning knobs (the "Reset to Defaults" target).
     static let defaultBarCount = 32
@@ -27,90 +71,122 @@ enum CavaSettings {
 
     // MARK: - Mode (Mono/Stereo)
 
+    static func mode(for scope: Scope) -> Mode {
+        // Stereo is unreadable in the 16px-tall embedded visualization area.
+        guard scope != .mainWindow else { return .mono }
+        let preferenceKey = key(.mode, for: scope)
+        guard defaults.object(forKey: preferenceKey) != nil else { return .stereo }
+        let raw = defaults.integer(forKey: preferenceKey)
+        return Mode(rawValue: raw) ?? .stereo
+    }
+
+    static func setMode(_ mode: Mode, for scope: Scope) {
+        defaults.set(mode.rawValue, forKey: key(.mode, for: scope))
+    }
+
     static var mode: Mode {
-        get {
-            guard defaults.object(forKey: modeKey) != nil else { return .stereo }
-            let raw = defaults.integer(forKey: modeKey)
-            return Mode(rawValue: raw) ?? .stereo
-        }
-        set {
-            defaults.set(newValue.rawValue, forKey: modeKey)
-        }
+        get { mode(for: .cavaWindow) }
+        set { setMode(newValue, for: .cavaWindow) }
     }
 
     // MARK: - Bar Count
 
+    static func barCount(for scope: Scope) -> Int {
+        let count = defaults.integer(forKey: key(.barCount, for: scope))
+        return count > 0 ? count : defaultBarCount
+    }
+
+    static func setBarCount(_ count: Int, for scope: Scope) {
+        defaults.set(max(1, min(128, count)), forKey: key(.barCount, for: scope))
+    }
+
     static var barCount: Int {
-        get {
-            let count = defaults.integer(forKey: barCountKey)
-            return count > 0 ? count : defaultBarCount
-        }
-        set {
-            let clamped = max(1, min(128, newValue))
-            defaults.set(clamped, forKey: barCountKey)
-        }
+        get { barCount(for: .cavaWindow) }
+        set { setBarCount(newValue, for: .cavaWindow) }
     }
 
     // MARK: - DSP Tuning
 
     /// Temporal smoothing (0…0.95). Higher = smoother but laggier; lower = snappier/more real-time.
+    static func noiseReduction(for scope: Scope) -> Double {
+        let preferenceKey = key(.noiseReduction, for: scope)
+        guard defaults.object(forKey: preferenceKey) != nil else { return defaultNoiseReduction }
+        return min(0.95, max(0.0, defaults.double(forKey: preferenceKey)))
+    }
+
+    static func setNoiseReduction(_ value: Double, for scope: Scope) {
+        defaults.set(min(0.95, max(0.0, value)), forKey: key(.noiseReduction, for: scope))
+    }
+
     static var noiseReduction: Double {
-        get {
-            guard defaults.object(forKey: noiseReductionKey) != nil else { return defaultNoiseReduction }
-            return min(0.95, max(0.0, defaults.double(forKey: noiseReductionKey)))
-        }
-        set { defaults.set(min(0.95, max(0.0, newValue)), forKey: noiseReductionKey) }
+        get { noiseReduction(for: .cavaWindow) }
+        set { setNoiseReduction(newValue, for: .cavaWindow) }
     }
 
     /// Bass↔treble tilt: the per-band bin-count exponent (0…1). 0 = brightest, 1 = bassiest.
+    static func bassTilt(for scope: Scope) -> Double {
+        let preferenceKey = key(.bassTilt, for: scope)
+        guard defaults.object(forKey: preferenceKey) != nil else { return defaultBassTilt }
+        return min(1.0, max(0.0, defaults.double(forKey: preferenceKey)))
+    }
+
+    static func setBassTilt(_ value: Double, for scope: Scope) {
+        defaults.set(min(1.0, max(0.0, value)), forKey: key(.bassTilt, for: scope))
+    }
+
     static var bassTilt: Double {
-        get {
-            guard defaults.object(forKey: bassTiltKey) != nil else { return defaultBassTilt }
-            return min(1.0, max(0.0, defaults.double(forKey: bassTiltKey)))
-        }
-        set { defaults.set(min(1.0, max(0.0, newValue)), forKey: bassTiltKey) }
+        get { bassTilt(for: .cavaWindow) }
+        set { setBassTilt(newValue, for: .cavaWindow) }
     }
 
     /// Restore the exposed tuning knobs (bar count, smoothing, bass tilt) to factory defaults.
     /// Leaves mode / colors / transparency alone (those have their own controls).
-    static func resetTuning() {
-        defaults.removeObject(forKey: barCountKey)
-        defaults.removeObject(forKey: noiseReductionKey)
-        defaults.removeObject(forKey: bassTiltKey)
+    static func resetTuning(scope: Scope = .cavaWindow) {
+        defaults.removeObject(forKey: key(.barCount, for: scope))
+        defaults.removeObject(forKey: key(.noiseReduction, for: scope))
+        defaults.removeObject(forKey: key(.bassTilt, for: scope))
     }
 
     // MARK: - Gradient Colors
 
     /// Low-frequency bar color (default: dark blue).
-    static var lowGradientColor: NSColor {
-        get {
-            let data = defaults.data(forKey: lowGradientColorKey)
-            if let data, let color = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data) {
-                return color
-            }
-            return NSColor(red: 0.0, green: 0.3, blue: 1.0, alpha: 1.0)  // Default: bright blue
+    static func lowGradientColor(for scope: Scope) -> NSColor {
+        let data = defaults.data(forKey: key(.lowGradientColor, for: scope))
+        if let data, let color = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data) {
+            return color
         }
-        set {
-            if let data = try? NSKeyedArchiver.archivedData(withRootObject: newValue, requiringSecureCoding: false) {
-                defaults.set(data, forKey: lowGradientColorKey)
-            }
+        return NSColor(red: 0.0, green: 0.3, blue: 1.0, alpha: 1.0)
+    }
+
+    static func setLowGradientColor(_ color: NSColor, for scope: Scope) {
+        if let data = try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: false) {
+            defaults.set(data, forKey: key(.lowGradientColor, for: scope))
         }
     }
 
+    static var lowGradientColor: NSColor {
+        get { lowGradientColor(for: .cavaWindow) }
+        set { setLowGradientColor(newValue, for: .cavaWindow) }
+    }
+
     /// High-frequency bar color (default: bright magenta).
+    static func highGradientColor(for scope: Scope) -> NSColor {
+        let data = defaults.data(forKey: key(.highGradientColor, for: scope))
+        if let data, let color = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data) {
+            return color
+        }
+        return NSColor(red: 1.0, green: 0.0, blue: 1.0, alpha: 1.0)
+    }
+
+    static func setHighGradientColor(_ color: NSColor, for scope: Scope) {
+        if let data = try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: false) {
+            defaults.set(data, forKey: key(.highGradientColor, for: scope))
+        }
+    }
+
     static var highGradientColor: NSColor {
-        get {
-            let data = defaults.data(forKey: highGradientColorKey)
-            if let data, let color = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data) {
-                return color
-            }
-            return NSColor(red: 1.0, green: 0.0, blue: 1.0, alpha: 1.0)  // Default: magenta
-        }
-        set {
-            if let data = try? NSKeyedArchiver.archivedData(withRootObject: newValue, requiringSecureCoding: false) {
-                defaults.set(data, forKey: highGradientColorKey)
-            }
-        }
+        get { highGradientColor(for: .cavaWindow) }
+        set { setHighGradientColor(newValue, for: .cavaWindow) }
     }
 
     // MARK: - Color Schemes
@@ -180,12 +256,16 @@ enum CavaSettings {
     ]
 
     /// Index of the preset matching the current gradient, or nil if the colors are custom.
-    static var currentColorSchemeIndex: Int? {
-        let low = lowGradientColor
-        let high = highGradientColor
+    static func currentColorSchemeIndex(for scope: Scope) -> Int? {
+        let low = lowGradientColor(for: scope)
+        let high = highGradientColor(for: scope)
         return colorSchemes.firstIndex {
             colorsMatch($0.low, low) && colorsMatch($0.high, high)
         }
+    }
+
+    static var currentColorSchemeIndex: Int? {
+        currentColorSchemeIndex(for: .cavaWindow)
     }
 
     private static func colorsMatch(_ a: NSColor, _ b: NSColor) -> Bool {
@@ -201,33 +281,55 @@ enum CavaSettings {
     /// Whether the (modern) Cava window draws a translucent background. **Off by default** — Cava
     /// is opaque and does not inherit the spectrum window's transparency. Modern only.
     static var transparentBackground: Bool {
-        get { defaults.bool(forKey: transparentBackgroundKey) }
-        set { defaults.set(newValue, forKey: transparentBackgroundKey) }
+        get { defaults.bool(forKey: key(.transparentBackground, for: .cavaWindow)) }
+        set { defaults.set(newValue, forKey: key(.transparentBackground, for: .cavaWindow)) }
     }
 
     // MARK: - Skin-derived default colors
 
     /// True once the user has explicitly picked a color preset. Until then, Cava follows the
     /// active skin's palette (see `effectiveLowColor`/`effectiveHighColor`).
+    static func hasCustomColors(for scope: Scope) -> Bool {
+        defaults.bool(forKey: key(.colorsCustomized, for: scope))
+    }
+
+    static func setHasCustomColors(_ customized: Bool, for scope: Scope) {
+        defaults.set(customized, forKey: key(.colorsCustomized, for: scope))
+    }
+
     static var hasCustomColors: Bool {
-        get { defaults.bool(forKey: colorsCustomizedKey) }
-        set { defaults.set(newValue, forKey: colorsCustomizedKey) }
+        get { hasCustomColors(for: .cavaWindow) }
+        set { setHasCustomColors(newValue, for: .cavaWindow) }
     }
 
     /// Skin-derived default gradient, pushed by the (skin-aware) window views on show / skin change.
     /// In-memory only — recomputed from the skin each session; falls back to the blue→magenta pair.
-    private static var _skinDefaultLow = NSColor(red: 0.0, green: 0.3, blue: 1.0, alpha: 1.0)
-    private static var _skinDefaultHigh = NSColor(red: 1.0, green: 0.0, blue: 1.0, alpha: 1.0)
+    private static var skinDefaultLow: [Scope: NSColor] = [:]
+    private static var skinDefaultHigh: [Scope: NSColor] = [:]
 
     /// Set the skin-derived default gradient. Classic passes green; modern passes primary→accent.
-    static func setSkinDefaultColors(low: NSColor, high: NSColor) {
-        _skinDefaultLow = low
-        _skinDefaultHigh = high
+    static func setSkinDefaultColors(low: NSColor, high: NSColor, scope: Scope = .cavaWindow) {
+        skinDefaultLow[scope] = low
+        skinDefaultHigh[scope] = high
     }
 
     /// The colors actually drawn: the user's pick if customized, otherwise the skin default.
-    static var effectiveLowColor: NSColor { hasCustomColors ? lowGradientColor : _skinDefaultLow }
-    static var effectiveHighColor: NSColor { hasCustomColors ? highGradientColor : _skinDefaultHigh }
+    static func effectiveLowColor(for scope: Scope) -> NSColor {
+        if hasCustomColors(for: scope) {
+            return lowGradientColor(for: scope)
+        }
+        return skinDefaultLow[scope] ?? NSColor(red: 0.0, green: 0.3, blue: 1.0, alpha: 1.0)
+    }
+
+    static func effectiveHighColor(for scope: Scope) -> NSColor {
+        if hasCustomColors(for: scope) {
+            return highGradientColor(for: scope)
+        }
+        return skinDefaultHigh[scope] ?? NSColor(red: 1.0, green: 0.0, blue: 1.0, alpha: 1.0)
+    }
+
+    static var effectiveLowColor: NSColor { effectiveLowColor(for: .cavaWindow) }
+    static var effectiveHighColor: NSColor { effectiveHighColor(for: .cavaWindow) }
 
     /// Look up a preset by name (e.g. the classic "Winamp Green" default).
     static func scheme(named name: String) -> ColorScheme? {
@@ -235,14 +337,9 @@ enum CavaSettings {
     }
 
     /// Reset all settings to defaults.
-    static func reset() {
-        defaults.removeObject(forKey: modeKey)
-        defaults.removeObject(forKey: barCountKey)
-        defaults.removeObject(forKey: lowGradientColorKey)
-        defaults.removeObject(forKey: highGradientColorKey)
-        defaults.removeObject(forKey: colorsCustomizedKey)
-        defaults.removeObject(forKey: transparentBackgroundKey)
-        defaults.removeObject(forKey: noiseReductionKey)
-        defaults.removeObject(forKey: bassTiltKey)
+    static func reset(scope: Scope = .cavaWindow) {
+        for preferenceKey in preferenceKeys(for: scope) {
+            defaults.removeObject(forKey: preferenceKey)
+        }
     }
 }

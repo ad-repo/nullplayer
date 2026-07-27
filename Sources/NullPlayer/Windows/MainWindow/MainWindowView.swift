@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 enum MainWindowVisMode: String, CaseIterable {
     case none = "None"               // No main-window visualization; leaves skin artwork visible
     case spectrum = "Spectrum"       // Classic 19-bar spectrum analyzer (CGContext)
+    case cava = "Cava"               // Cava vDSP spectrum analyzer (CoreGraphics)
     case visClassicExact = "vis_classic" // Exact vis_classic port (CPU frame in Metal overlay)
     case fire = "Fire"               // GPU flame simulation (Metal overlay)
     case enhanced = "Enhanced"       // LED matrix with rainbow (Metal overlay)
@@ -19,25 +20,25 @@ enum MainWindowVisMode: String, CaseIterable {
         switch self {
         case .none: return "Off"
         case .spectrum: return SpectrumQualityMode.classic.displayName
+        case .cava: return "Cava"
         default: return rawValue
         }
     }
 
     /// Shared user-facing order for visualization click cycling.
-    static let visualizationOrder: [MainWindowVisMode] = SpectrumQualityMode.visualizationOrder.compactMap { qualityMode in
-        switch qualityMode {
-        case .classic: return .spectrum
-        case .enhanced: return .enhanced
-        case .ultra: return .ultra
-        case .flame: return .fire
-        case .cosmic: return .cosmic
-        case .electricity: return .electricity
-        case .matrix: return .matrix
-        case .snow: return .snow
-        case .ekg: return .ekg
-        case .visClassicExact: return .visClassicExact
-        }
-    }
+    static let visualizationOrder: [MainWindowVisMode] = [
+        .spectrum,
+        .cava,
+        .enhanced,
+        .ultra,
+        .fire,
+        .cosmic,
+        .electricity,
+        .matrix,
+        .snow,
+        .ekg,
+        .visClassicExact,
+    ]
 
     /// User-facing menu order, including the Winamp-compatible blank display mode.
     static let menuOrder: [MainWindowVisMode] = [.none] + visualizationOrder
@@ -48,7 +49,7 @@ enum MainWindowVisMode: String, CaseIterable {
     /// Map to the corresponding SpectrumQualityMode for the Metal overlay
     var spectrumQualityMode: SpectrumQualityMode? {
         switch self {
-        case .none, .spectrum: return nil
+        case .none, .spectrum, .cava: return nil
         case .visClassicExact: return .visClassicExact
         case .fire: return .flame
         case .enhanced: return .enhanced
@@ -103,6 +104,9 @@ class MainWindowView: NSView {
     
     /// Metal-based visualization overlay for all GPU modes (created lazily on first use)
     private var metalOverlay: SpectrumAnalyzerView?
+
+    /// Embedded Cava runtime, scoped independently from the standalone Cava window.
+    private var cavaPresenter: CavaPresenter?
     
     /// Marquee scroll offset
     private var marqueeOffset: CGFloat = 0
@@ -169,6 +173,11 @@ class MainWindowView: NSView {
         super.init(coder: coder)
         setupView()
     }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateCavaRuntime()
+    }
     
     private func setupView() {
         wantsLayer = true
@@ -180,6 +189,8 @@ class MainWindowView: NSView {
         // Only redraw when explicitly requested via setNeedsDisplay
         // This allows macOS to cache the layer contents between updates
         layerContentsRedrawPolicy = .onSetNeedsDisplay
+
+        applyCavaSkinDefaultColors()
         
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
@@ -305,6 +316,24 @@ class MainWindowView: NSView {
     func skinDidChange() {
         updateMarqueeContent()
         metalOverlay?.skinDidChange()
+        applyCavaSkinDefaultColors()
+        if mainVisMode == .cava {
+            setNeedsDisplay(skinRectToViewRect(SkinElements.Visualization.displayArea))
+        }
+    }
+
+    func windowVisibilityDidChange() {
+        updateCavaRuntime()
+        needsDisplay = true
+    }
+
+    private func applyCavaSkinDefaultColors() {
+        let colors = WindowManager.shared.currentSkin?.visColors ?? []
+        if let low = colors.first, let high = colors.last {
+            CavaSettings.setSkinDefaultColors(low: low, high: high, scope: .mainWindow)
+        } else if let green = CavaSettings.scheme(named: "Winamp Green") {
+            CavaSettings.setSkinDefaultColors(low: green.low, high: green.high, scope: .mainWindow)
+        }
     }
     
     @objc private func windowDidChangeBackingProperties(_ notification: Notification) {
@@ -470,7 +499,33 @@ class MainWindowView: NSView {
             metalOverlay?.stopDisplayLink()
             metalOverlay?.alphaValue = 1.0
         }
+        updateCavaRuntime()
         needsDisplay = true
+    }
+
+    private func updateCavaRuntime() {
+        guard mainVisMode == .cava else {
+            cavaPresenter?.stop()
+            return
+        }
+
+        if cavaPresenter == nil {
+            let presenter = CavaPresenter(scope: .mainWindow)
+            presenter.onNeedsDisplay = { [weak self] in
+                guard let self else { return }
+                self.setNeedsDisplay(self.skinRectToViewRect(SkinElements.Visualization.displayArea))
+            }
+            cavaPresenter = presenter
+        }
+
+        if let window,
+           window.isVisible,
+           !window.isMiniaturized,
+           window.occlusionState.contains(.visible) {
+            cavaPresenter?.start()
+        } else {
+            cavaPresenter?.stop()
+        }
     }
     
     /// Cycle the main window visualization mode through all available modes
@@ -554,6 +609,7 @@ class MainWindowView: NSView {
             overlay.refreshNormalizationMode()
             updateMainVisClassicOverlayOpacity()
         }
+        cavaPresenter?.settingsDidChange()
     }
     
     private func updateMainVisClassicOverlayOpacity() {
@@ -751,6 +807,7 @@ class MainWindowView: NSView {
         marqueeLayer?.removeFromSuperlayer()
         metalOverlay?.stopDisplayLink()
         metalOverlay?.removeFromSuperview()
+        cavaPresenter?.stop()
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -916,6 +973,12 @@ class MainWindowView: NSView {
     /// Convert a skin-coordinate rect (top-left origin) to view coordinates (bottom-left origin),
     /// accounting for scale factor and centering/title bar offset.
     private func skinRectToViewRect(_ skinRect: NSRect) -> NSRect {
+        exactViewRect(forSkinRect: skinRect).insetBy(dx: -1, dy: -1)
+    }
+
+    /// Convert without invalidation padding. Drawing into the padded rect would spill over the
+    /// skin's 76×16 visualization well.
+    private func exactViewRect(forSkinRect skinRect: NSRect) -> NSRect {
         let originalSize = Skin.baseMainSize
         let scale = scaleFactor
         let hidingTitleBar = WindowManager.shared.hideTitleBars
@@ -942,8 +1005,7 @@ class MainWindowView: NSView {
             viewRect.origin.y += (bounds.height - scaledHeight) / 2
         }
 
-        // Expand slightly to avoid sub-pixel clipping artifacts
-        return viewRect.insetBy(dx: -1, dy: -1)
+        return viewRect
     }
 
     override func layout() {
@@ -999,6 +1061,21 @@ class MainWindowView: NSView {
         drawNormalModeScaled(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds, dirtyRect: dirtyRect)
 
         context.restoreGState()
+
+        // CavaDrawing assumes AppKit's unflipped, bottom-left coordinate space. Draw after
+        // restoring the classic skin transform so bars grow upward rather than downward.
+        if mainVisMode == .cava, let presenter = cavaPresenter {
+            let visRect = exactViewRect(forSkinRect: SkinElements.Visualization.displayArea)
+            if dirtyRect.intersects(visRect) {
+                CavaDrawing.draw(
+                    in: visRect,
+                    barArrays: presenter.barArrays,
+                    lowColor: presenter.lowGradientColor,
+                    highColor: presenter.highGradientColor,
+                    mode: presenter.mode
+                )
+            }
+        }
         
         // Draw loading overlay if casting local file
         if isCastingLocalFile {
@@ -1342,6 +1419,7 @@ class MainWindowView: NSView {
         loadingAnimationTimer = nil
         // Pause Metal overlay rendering
         if mainVisMode.usesMetal { metalOverlay?.stopDisplayLink() }
+        cavaPresenter?.stop()
     }
     
     /// Restart timers when window is restored from minimized state
@@ -1355,6 +1433,7 @@ class MainWindowView: NSView {
         }
         // Resume Metal overlay rendering
         if mainVisMode.usesMetal { metalOverlay?.startDisplayLink() }
+        updateCavaRuntime()
         // The layer's cached contents may have been dropped while hidden;
         // force a full redraw so the background isn't left transparent.
         needsDisplay = true
@@ -1371,6 +1450,7 @@ class MainWindowView: NSView {
             }
             // Resume Metal overlay rendering
             if mainVisMode.usesMetal { metalOverlay?.startDisplayLink() }
+            updateCavaRuntime()
             // The layer's cached contents may have been dropped while occluded;
             // force a full redraw so the background isn't left transparent
             // (otherwise per-tick partial setNeedsDisplay(rect:) calls only
@@ -1383,6 +1463,7 @@ class MainWindowView: NSView {
             loadingAnimationTimer = nil
             // Pause Metal overlay rendering
             if mainVisMode.usesMetal { metalOverlay?.stopDisplayLink() }
+            cavaPresenter?.stop()
         }
     }
     

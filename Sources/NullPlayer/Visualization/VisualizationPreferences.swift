@@ -64,7 +64,7 @@ enum VisualizationPreferences {
         VisClassicBridge.PreferenceScope.mainWindow.fitToWidthKey,
         VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey,
         VisClassicBridge.PreferenceScope.mainWindow.opacityKey
-    ] + legacyVisClassicKeys
+    ] + legacyVisClassicKeys + CavaSettings.preferenceKeys(for: .mainWindow)
 
     private static let spectrumWindowKeys = [
         "spectrumQualityMode",

@@ -26,7 +26,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **PeppyMeter** | Skinnable analog VU meter — needle/bar meters that track left/right levels; right-click to pick a meter or enable Random | Context menu or Window menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
-| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art (titled "Visualizations" in menus and window chrome; internally still the ProjectM window) | VZ button, Window menu, or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art (shown as "Visualizations" in the Visuals menu and "Milkdrop" in the Windows menu; window chrome is titled "Visualizations") | VZ button, Windows menu, or context menu |
 
 In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab is also available in the classic library browser. The Data tab shows:
 - **Play Time** summary (day/week/month/year/all-time)
@@ -312,8 +312,14 @@ download and upload views, or right-click and choose **Show Upload View** / **Sh
 right-click menu also selects the network interface or advances to the next interface. See the **flow**
 skill for internals.
 
-### Main Window GPU Modes
-Off, Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow, EKG. Double-click cycles visual modes; choose Off from Visuals > Spectrum Analyzer > Main Window > Mode.
+### Main Window Visualization Modes
+Off, Spectrum, Cava, Enhanced, Ultra, Fire, JWST, Lightning, Matrix, Snow, EKG, vis_classic.
+Double-click cycles visual modes; select one from **Visuals > Main Window > Mode**. When Cava is
+selected, the same submenu exposes its independent Color Preset, Bars, Smoothing, and Bass Tilt
+controls.
+
+The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
+the ProjectM/Geiss/Tripex/Met visualization host.
 
 ### Album Art Visualizer
 30 effects transforming album artwork based on audio

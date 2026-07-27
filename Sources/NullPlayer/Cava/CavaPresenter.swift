@@ -4,7 +4,8 @@ import AppKit
 /// right-click menu. Contains no skin-specific code so both UI modes can reuse it. It is the menu
 /// target itself (an NSObject with @objc actions); the view only supplies `onNeedsDisplay`/`onClose`.
 final class CavaPresenter: NSObject {
-    private let renderModel = CavaRenderModel()
+    private let scope: CavaSettings.Scope
+    private let renderModel: CavaRenderModel
 
     /// Invoked on the main thread whenever the view should repaint (content-rect only).
     var onNeedsDisplay: (() -> Void)?
@@ -22,7 +23,9 @@ final class CavaPresenter: NSObject {
         ("Less", 0.15), ("Balanced", 0.30), ("More", 0.50), ("Max", 0.70),
     ]
 
-    override init() {
+    init(scope: CavaSettings.Scope = .cavaWindow) {
+        self.scope = scope
+        self.renderModel = CavaRenderModel(scope: scope)
         super.init()
         renderModel.onNeedsDisplay = { [weak self] in
             self?.onNeedsDisplay?()
@@ -32,18 +35,19 @@ final class CavaPresenter: NSObject {
     var barArrays: [[Float]] { renderModel.barArrays }
     var mode: CavaSettings.Mode { renderModel.mode }
     var barCount: Int { renderModel.barCount }
-    var lowGradientColor: NSColor { CavaSettings.effectiveLowColor }
-    var highGradientColor: NSColor { CavaSettings.effectiveHighColor }
+    var lowGradientColor: NSColor { CavaSettings.effectiveLowColor(for: scope) }
+    var highGradientColor: NSColor { CavaSettings.effectiveHighColor(for: scope) }
 
     // MARK: Lifecycle
 
     func start() { renderModel.start() }
     func stop() { renderModel.stop() }
+    func settingsDidChange() { renderModel.settingsDidChange() }
 
     // MARK: Settings
 
     func setMode(_ mode: CavaSettings.Mode) {
-        CavaSettings.mode = mode
+        CavaSettings.setMode(mode, for: scope)
         renderModel.settingsDidChange()
     }
 
@@ -56,26 +60,27 @@ final class CavaPresenter: NSObject {
     func applyColorScheme(_ index: Int) {
         guard CavaSettings.colorSchemes.indices.contains(index) else { return }
         let scheme = CavaSettings.colorSchemes[index]
-        CavaSettings.lowGradientColor = scheme.low
-        CavaSettings.highGradientColor = scheme.high
-        CavaSettings.hasCustomColors = true
+        CavaSettings.setLowGradientColor(scheme.low, for: scope)
+        CavaSettings.setHighGradientColor(scheme.high, for: scope)
+        CavaSettings.setHasCustomColors(true, for: scope)
         onNeedsDisplay?()
     }
 
     /// Revert to the skin-derived default gradient (classic green / modern primary→accent).
     func useSkinDefaultColors() {
-        CavaSettings.hasCustomColors = false
+        CavaSettings.setHasCustomColors(false, for: scope)
         onNeedsDisplay?()
     }
 
     func toggleTransparency() {
+        guard scope == .cavaWindow else { return }
         CavaSettings.transparentBackground.toggle()
         (onNeedsFullDisplay ?? onNeedsDisplay)?()
     }
 
     /// Restore the exposed tuning knobs (bars, smoothing, bass tilt) to factory defaults.
     func resetTuning() {
-        CavaSettings.resetTuning()
+        CavaSettings.resetTuning(scope: scope)
         renderModel.settingsDidChange()
     }
 
@@ -97,19 +102,19 @@ final class CavaPresenter: NSObject {
 
     @objc private func barCountAction(_ sender: NSMenuItem) {
         guard let count = sender.representedObject as? Int else { return }
-        CavaSettings.barCount = count
+        CavaSettings.setBarCount(count, for: scope)
         renderModel.settingsDidChange()
     }
 
     @objc private func smoothingAction(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? Double else { return }
-        CavaSettings.noiseReduction = value
+        CavaSettings.setNoiseReduction(value, for: scope)
         renderModel.settingsDidChange()
     }
 
     @objc private func bassTiltAction(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? Double else { return }
-        CavaSettings.bassTilt = value
+        CavaSettings.setBassTilt(value, for: scope)
         renderModel.settingsDidChange()
     }
 
@@ -132,7 +137,7 @@ final class CavaPresenter: NSObject {
 
         menu.addItem(colorSubmenuItem())
 
-        if showTransparency {
+        if showTransparency && scope == .cavaWindow {
             addCheckItem(to: menu, title: "Transparent Background",
                          action: #selector(transparencyAction(_:)), represented: nil,
                          checked: CavaSettings.transparentBackground)
@@ -142,10 +147,10 @@ final class CavaPresenter: NSObject {
 
         menu.addItem(barsSubmenuItem())
         menu.addItem(valueSubmenuItem(title: "Smoothing", presets: smoothingPresets,
-                                      current: CavaSettings.noiseReduction,
+                                      current: CavaSettings.noiseReduction(for: scope),
                                       action: #selector(smoothingAction(_:))))
         menu.addItem(valueSubmenuItem(title: "Bass", presets: bassPresets,
-                                      current: CavaSettings.bassTilt,
+                                      current: CavaSettings.bassTilt(for: scope),
                                       action: #selector(bassTiltAction(_:))))
 
         let resetItem = NSMenuItem(title: "Reset to Defaults", action: #selector(resetAction(_:)), keyEquivalent: "")
@@ -173,14 +178,14 @@ final class CavaPresenter: NSObject {
     private func colorSubmenuItem() -> NSMenuItem {
         let colorItem = NSMenuItem(title: "Color", action: nil, keyEquivalent: "")
         let colorMenu = NSMenu()
-        let usingSkin = !CavaSettings.hasCustomColors
+        let usingSkin = !CavaSettings.hasCustomColors(for: scope)
 
         addCheckItem(to: colorMenu, title: "Match Skin", action: #selector(matchSkinAction(_:)),
                      represented: nil, checked: usingSkin)
         colorMenu.addItem(.separator())
 
         // A preset shows a checkmark only when it is the active user pick (not in Match Skin mode).
-        let selectedScheme = usingSkin ? nil : CavaSettings.currentColorSchemeIndex
+        let selectedScheme = usingSkin ? nil : CavaSettings.currentColorSchemeIndex(for: scope)
         for (i, scheme) in CavaSettings.colorSchemes.enumerated() {
             let item = NSMenuItem(title: scheme.name, action: #selector(colorSchemeAction(_:)), keyEquivalent: "")
             item.target = self
@@ -196,7 +201,7 @@ final class CavaPresenter: NSObject {
     private func barsSubmenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "Bars", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
-        let current = CavaSettings.barCount
+        let current = CavaSettings.barCount(for: scope)
         for count in barCountPresets {
             let sub = NSMenuItem(title: "\(count)", action: #selector(barCountAction(_:)), keyEquivalent: "")
             sub.target = self

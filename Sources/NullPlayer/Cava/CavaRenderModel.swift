@@ -26,11 +26,9 @@ final class CavaRenderModel {
     /// Called on the main thread whenever the view should repaint.
     var onNeedsDisplay: (() -> Void)?
 
-    private let consumerId = "cava"
-    private let processingQueue = DispatchQueue(
-        label: "com.nullplayer.cava.processing",
-        qos: .userInteractive
-    )
+    private let scope: CavaSettings.Scope
+    private let consumerId: String
+    private let processingQueue: DispatchQueue
     private var observer: NSObjectProtocol?
     private var timer: Timer?
     private var running = false
@@ -59,6 +57,15 @@ final class CavaRenderModel {
 
     private var currentMode = CavaSettings.Mode.stereo
     private var currentBarCount = 32
+
+    init(scope: CavaSettings.Scope = .cavaWindow) {
+        self.scope = scope
+        self.consumerId = "cava.\(scope.identifier)"
+        self.processingQueue = DispatchQueue(
+            label: "com.nullplayer.cava.processing.\(scope.identifier)",
+            qos: .userInteractive
+        )
+    }
 
     deinit {
         stop()
@@ -91,8 +98,8 @@ final class CavaRenderModel {
         RunLoop.main.add(t, forMode: .common)
         timer = t
 
-        currentMode = CavaSettings.mode
-        currentBarCount = CavaSettings.barCount
+        currentMode = CavaSettings.mode(for: scope)
+        currentBarCount = CavaSettings.barCount(for: scope)
     }
 
     func stop() {
@@ -128,8 +135,8 @@ final class CavaRenderModel {
     /// Apply durable setting changes immediately, even when playback is paused and no new
     /// audio notification will arrive to drive the normal refresh path.
     func settingsDidChange() {
-        currentMode = CavaSettings.mode
-        currentBarCount = CavaSettings.barCount
+        currentMode = CavaSettings.mode(for: scope)
+        currentBarCount = CavaSettings.barCount(for: scope)
         guard haveSamples else {
             onNeedsDisplay?()
             return
@@ -162,11 +169,11 @@ final class CavaRenderModel {
         let configuration: ProcessingConfiguration?
         if samples != nil || forceDisplay {
             configuration = ProcessingConfiguration(
-                mode: CavaSettings.mode,
-                barCount: CavaSettings.barCount,
+                mode: CavaSettings.mode(for: scope),
+                barCount: CavaSettings.barCount(for: scope),
                 sampleRate: pendingSampleRate,
-                noiseReduction: CavaSettings.noiseReduction,
-                bassTilt: CavaSettings.bassTilt
+                noiseReduction: CavaSettings.noiseReduction(for: scope),
+                bassTilt: CavaSettings.bassTilt(for: scope)
             )
         } else {
             configuration = nil

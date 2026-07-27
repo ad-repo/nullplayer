@@ -51,6 +51,9 @@ class ModernMainWindowView: NSView {
     
     /// Metal overlay for GPU-rendered spectrum modes
     private var metalOverlay: SpectrumAnalyzerView?
+
+    /// Embedded Cava runtime, scoped independently from the standalone Cava window.
+    private var cavaPresenter: CavaPresenter?
     
     /// Mouse tracking state
     private var pressedElement: String?
@@ -114,6 +117,7 @@ class ModernMainWindowView: NSView {
         // Initialize with current skin or fallback
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
+        applyCavaSkinDefaultColors(skin)
         
         // Set up grid background
         setupGridBackground(skin: skin)
@@ -177,6 +181,7 @@ class ModernMainWindowView: NSView {
     deinit {
         visClickTimer?.invalidate()
         timeDisplayClickTimer?.invalidate()
+        cavaPresenter?.stop()
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -238,6 +243,7 @@ class ModernMainWindowView: NSView {
             NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState(_:)),
                 name: NSWindow.didChangeOcclusionStateNotification, object: window)
         }
+        updateCavaRuntime()
     }
 
     @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
@@ -245,10 +251,12 @@ class ModernMainWindowView: NSView {
         if window?.occlusionState.contains(.visible) == true {
             ModernSkinEngine.shared.animationEngine.resumeFromOcclusion()
             marqueeLayer.resumeScrolling()
+            updateCavaRuntime()
             needsDisplay = true
         } else {
             ModernSkinEngine.shared.animationEngine.pauseForOcclusion()
             marqueeLayer.pauseScrolling()
+            cavaPresenter?.stop()
         }
     }
 
@@ -500,6 +508,17 @@ class ModernMainWindowView: NSView {
                                 borderOpacity: spectrumBorderOpacity,
                                 context: context
                             )
+                            if self.mainVisMode == .cava, let presenter = self.cavaPresenter {
+                                self.withContextAlpha(spectrumContentOpacity, context: context) {
+                                    CavaDrawing.draw(
+                                        in: specScaled,
+                                        barArrays: presenter.barArrays,
+                                        lowColor: presenter.lowGradientColor,
+                                        highColor: presenter.highGradientColor,
+                                        mode: presenter.mode
+                                    )
+                                }
+                            }
                         }
                     }
                     drawSpectrumArea()
@@ -863,6 +882,7 @@ class ModernMainWindowView: NSView {
     func skinDidChange() {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
+        applyCavaSkinDefaultColors(skin)
         setupGridBackground(skin: skin)
         marqueeLayer.configure(with: skin)
         marqueeLayer.artworkImage = currentArtworkImage
@@ -881,6 +901,20 @@ class ModernMainWindowView: NSView {
         }
         
         needsDisplay = true
+    }
+
+    func windowVisibilityDidChange() {
+        updateCavaRuntime()
+        needsDisplay = true
+    }
+
+    private func applyCavaSkinDefaultColors(_ skin: ModernSkin) {
+        let palette = skin.config.palette
+        CavaSettings.setSkinDefaultColors(
+            low: palette.resolvedPrimary(),
+            high: palette.resolvedAccent(),
+            scope: .mainWindow
+        )
     }
     
     /// Reposition the marquee
@@ -1238,7 +1272,34 @@ class ModernMainWindowView: NSView {
             metalOverlay?.isHidden = true
             metalOverlay?.stopDisplayLink()
         }
+        updateCavaRuntime()
         needsDisplay = true
+    }
+
+    private func updateCavaRuntime() {
+        guard mainVisMode == .cava else {
+            cavaPresenter?.stop()
+            return
+        }
+
+        if cavaPresenter == nil {
+            let presenter = CavaPresenter(scope: .mainWindow)
+            presenter.onNeedsDisplay = { [weak self] in
+                guard let self else { return }
+                let rect = self.scaledRect(ModernSkinElements.spectrumArea.defaultRect)
+                self.setNeedsDisplay(rect.insetBy(dx: -2, dy: -2))
+            }
+            cavaPresenter = presenter
+        }
+
+        if let window,
+           window.isVisible,
+           !window.isMiniaturized,
+           window.occlusionState.contains(.visible) {
+            cavaPresenter?.start()
+        } else {
+            cavaPresenter?.stop()
+        }
     }
     
     private func restoreVisMode() {
@@ -1307,6 +1368,7 @@ class ModernMainWindowView: NSView {
             updateMainSpectrumOverlayGeometryAndStyle()
         }
         updateSpectrumOverlayOpacity()
+        cavaPresenter?.settingsDidChange()
     }
 
     @objc private func handleVisClassicProfileCommand(_ notification: Notification) {

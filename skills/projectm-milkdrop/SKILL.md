@@ -9,6 +9,12 @@ Renders classic MilkDrop presets using OpenGL. The visualization window has two 
 
 For sibling engines see [geiss-port](../geiss-port/SKILL.md), [tripex-port](../tripex-port/SKILL.md), [met-museum-visualizer](../met-museum-visualizer/SKILL.md).
 
+## Access
+
+Open the host window and its controls from **Visuals > Visualizations**. The engine picker labels the
+projectM-backed engine **ProjectM**. `VisualizationType.projectM` deliberately retains its legacy raw
+value (`ProjectM (ProjectM)`) for existing persisted preferences; use `displayName` for user-facing text.
+
 ## What is ProjectM/MilkDrop?
 
 - **MilkDrop** — iconic Winamp visualization plugin
