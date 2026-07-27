@@ -710,6 +710,7 @@ class WindowManager {
             mainWindowController?.showWindow(nil)
         }
         applyAlwaysOnTopToWindow(mainWindowController?.window)
+        mainWindowController?.windowVisibilityDidChange()
     }
     
     func toggleMainWindow() {
@@ -722,6 +723,7 @@ class WindowManager {
         } else {
             showMainWindow()
         }
+        mainWindowController?.windowVisibilityDidChange()
     }
     
     func showPlaylist(at restoredFrame: NSRect? = nil) {

@@ -29,7 +29,7 @@ class ProjectMWrapper: VisualizationEngine {
 
     /// Display name for the visualization engine
     var displayName: String {
-        return "ProjectM (ProjectM)"
+        return "ProjectM"
     }
 
     /// Current viewport dimensions

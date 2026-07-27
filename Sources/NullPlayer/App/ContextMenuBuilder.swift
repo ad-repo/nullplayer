@@ -429,8 +429,16 @@ class ContextMenuBuilder {
     /// Builds the top-level "Visuals" menu content for the macOS menu bar.
     static func buildMenuBarVisualsMenu() -> NSMenu {
         let menu = NSMenu()
+
+        let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
+        mainWindowItem.submenu = buildMainVisualizationSubmenu()
+        menu.addItem(mainWindowItem)
+
+        let spectrumWindowItem = NSMenuItem(title: "Spectrum Window", action: nil, keyEquivalent: "")
+        spectrumWindowItem.submenu = buildSpectrumWindowMenu()
+        menu.addItem(spectrumWindowItem)
+
         menu.addItem(buildVisualizationsMenuItem())
-        menu.addItem(buildSpectrumAnalyzerMenuItem())
         menu.addItem(NSMenuItem.separator())
         let resetAll = NSMenuItem(title: "Reset All Visualization Preferences...", action: #selector(MenuActions.resetAllVisualizationPreferences), keyEquivalent: "")
         resetAll.target = MenuActions.shared
@@ -753,9 +761,11 @@ class ContextMenuBuilder {
         
         let wm = WindowManager.shared
 
-        let windowItem = NSMenuItem(title: wm.isProjectMVisible ? "Hide Visualization Window" : "Show Visualization Window",
-                                    action: #selector(MenuActions.toggleProjectM),
-                                    keyEquivalent: "")
+        let windowItem = NSMenuItem(
+            title: wm.isProjectMVisible ? "Hide Visualizations Window" : "Show Visualizations Window",
+            action: #selector(MenuActions.toggleProjectM),
+            keyEquivalent: ""
+        )
         windowItem.target = MenuActions.shared
         windowItem.state = wm.isProjectMVisible ? .on : .off
         visMenu.addItem(windowItem)
@@ -1233,27 +1243,118 @@ class ContextMenuBuilder {
             visMenu.addItem(resetItem)
             return visMenu
         }
+
+        if currentMode == .cava {
+            let scope = CavaSettings.Scope.mainWindow
+
+            let colorItem = NSMenuItem(title: "Color Preset", action: nil, keyEquivalent: "")
+            let colorMenu = NSMenu()
+            colorMenu.autoenablesItems = false
+            let usingSkinDefault = !CavaSettings.hasCustomColors(for: scope)
+
+            let skinDefault = NSMenuItem(
+                title: "Skin Default",
+                action: #selector(MenuActions.setMainVisCavaColorScheme(_:)),
+                keyEquivalent: ""
+            )
+            skinDefault.target = MenuActions.shared
+            skinDefault.representedObject = -1
+            skinDefault.state = usingSkinDefault ? .on : .off
+            colorMenu.addItem(skinDefault)
+            colorMenu.addItem(.separator())
+
+            let currentScheme = usingSkinDefault ? nil : CavaSettings.currentColorSchemeIndex(for: scope)
+            for (index, scheme) in CavaSettings.colorSchemes.enumerated() {
+                let item = NSMenuItem(
+                    title: scheme.name,
+                    action: #selector(MenuActions.setMainVisCavaColorScheme(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = MenuActions.shared
+                item.representedObject = index
+                item.state = currentScheme == index ? .on : .off
+                colorMenu.addItem(item)
+            }
+            colorItem.submenu = colorMenu
+            visMenu.addItem(colorItem)
+
+            let barsItem = NSMenuItem(title: "Bars", action: nil, keyEquivalent: "")
+            let barsMenu = NSMenu()
+            barsMenu.autoenablesItems = false
+            let currentBars = CavaSettings.barCount(for: scope)
+            for count in CavaSettings.barCountPresets(for: scope) {
+                let item = NSMenuItem(
+                    title: "\(count)",
+                    action: #selector(MenuActions.setMainVisCavaBars(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = MenuActions.shared
+                item.representedObject = count
+                item.state = currentBars == count ? .on : .off
+                barsMenu.addItem(item)
+            }
+            barsItem.submenu = barsMenu
+            visMenu.addItem(barsItem)
+
+            let smoothingItem = NSMenuItem(title: "Smoothing", action: nil, keyEquivalent: "")
+            let smoothingMenu = NSMenu()
+            smoothingMenu.autoenablesItems = false
+            let currentSmoothing = CavaSettings.noiseReduction(for: scope)
+            for (name, value) in CavaSettings.smoothingPresets {
+                let item = NSMenuItem(
+                    title: name,
+                    action: #selector(MenuActions.setMainVisCavaSmoothing(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = MenuActions.shared
+                item.representedObject = value
+                item.state = abs(currentSmoothing - value) < 0.001 ? .on : .off
+                smoothingMenu.addItem(item)
+            }
+            smoothingItem.submenu = smoothingMenu
+            visMenu.addItem(smoothingItem)
+
+            let bassItem = NSMenuItem(title: "Bass Tilt", action: nil, keyEquivalent: "")
+            let bassMenu = NSMenu()
+            bassMenu.autoenablesItems = false
+            let currentBassTilt = CavaSettings.bassTilt(for: scope)
+            for (name, value) in CavaSettings.bassTiltPresets {
+                let item = NSMenuItem(
+                    title: name,
+                    action: #selector(MenuActions.setMainVisCavaBassTilt(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = MenuActions.shared
+                item.representedObject = value
+                item.state = abs(currentBassTilt - value) < 0.001 ? .on : .off
+                bassMenu.addItem(item)
+            }
+            bassItem.submenu = bassMenu
+            visMenu.addItem(bassItem)
+        }
         
         // Responsiveness submenu
-        let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
-        let responsivenessMenu = NSMenu()
-        responsivenessMenu.autoenablesItems = false
-        
-        let currentDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode")
-            .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
-        
-        for mode in SpectrumDecayMode.allCases {
-            let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setMainVisResponsiveness(_:)), keyEquivalent: "")
-            item.target = MenuActions.shared
-            item.representedObject = mode
-            item.state = (currentDecay == mode) ? .on : .off
-            responsivenessMenu.addItem(item)
+        if currentMode != .cava {
+            let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
+            let responsivenessMenu = NSMenu()
+            responsivenessMenu.autoenablesItems = false
+
+            let currentDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode")
+                .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
+
+            for mode in SpectrumDecayMode.allCases {
+                let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setMainVisResponsiveness(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = mode
+                item.state = (currentDecay == mode) ? .on : .off
+                responsivenessMenu.addItem(item)
+            }
+            responsivenessItem.submenu = responsivenessMenu
+            visMenu.addItem(responsivenessItem)
         }
-        responsivenessItem.submenu = responsivenessMenu
-        visMenu.addItem(responsivenessItem)
         
         // Normalization submenu (not shown for Fire mode)
-        if currentMode != .fire {
+        if currentMode != .fire && currentMode != .cava {
             let normItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
             let normMenu = NSMenu()
             normMenu.autoenablesItems = false
@@ -1458,25 +1559,9 @@ class ContextMenuBuilder {
         return visMenu
     }
     
-    // MARK: - Spectrum Analyzer Submenu
-    
-    private static func buildSpectrumAnalyzerMenuItem() -> NSMenuItem {
-        let spectrumItem = NSMenuItem(title: "Spectrum Analyzer", action: nil, keyEquivalent: "")
-        spectrumItem.submenu = buildSpectrumAnalyzerMenu()
-        return spectrumItem
-    }
+    // MARK: - Spectrum Window Submenu
 
-    private static func buildSpectrumAnalyzerMenu() -> NSMenu {
-        let spectrumMenu = NSMenu()
-        spectrumMenu.autoenablesItems = false
-        
-        // ---- Main Window sub-section ----
-        let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
-        mainWindowItem.submenu = buildMainVisualizationSubmenu()
-        spectrumMenu.addItem(mainWindowItem)
-        
-        // ---- Spectrum Window sub-section ----
-        let spectrumWindowItem = NSMenuItem(title: "Spectrum Window", action: nil, keyEquivalent: "")
+    private static func buildSpectrumWindowMenu() -> NSMenu {
         let spectrumWindowMenu = NSMenu()
         spectrumWindowMenu.autoenablesItems = false
         
@@ -1732,10 +1817,7 @@ class ContextMenuBuilder {
         resetItem.target = MenuActions.shared
         spectrumWindowMenu.addItem(resetItem)
         
-        spectrumWindowItem.submenu = spectrumWindowMenu
-        spectrumMenu.addItem(spectrumWindowItem)
-        
-        return spectrumMenu
+        return spectrumWindowMenu
     }
 
     static func buildWaveformWindowContextMenu() -> NSMenu {
@@ -4537,6 +4619,39 @@ class MenuActions: NSObject {
         guard let mode = sender.representedObject as? MainWindowVisMode else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "mainWindowVisMode")
         // Notify main window to update visualization mode
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+    }
+
+    @objc func setMainVisCavaColorScheme(_ sender: NSMenuItem) {
+        guard let index = sender.representedObject as? Int else { return }
+        let scope = CavaSettings.Scope.mainWindow
+        if index < 0 {
+            CavaSettings.setHasCustomColors(false, for: scope)
+        } else {
+            guard CavaSettings.colorSchemes.indices.contains(index) else { return }
+            let scheme = CavaSettings.colorSchemes[index]
+            CavaSettings.setLowGradientColor(scheme.low, for: scope)
+            CavaSettings.setHighGradientColor(scheme.high, for: scope)
+            CavaSettings.setHasCustomColors(true, for: scope)
+        }
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+    }
+
+    @objc func setMainVisCavaBars(_ sender: NSMenuItem) {
+        guard let count = sender.representedObject as? Int else { return }
+        CavaSettings.setBarCount(count, for: .mainWindow)
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+    }
+
+    @objc func setMainVisCavaSmoothing(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? Double else { return }
+        CavaSettings.setNoiseReduction(value, for: .mainWindow)
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+    }
+
+    @objc func setMainVisCavaBassTilt(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? Double else { return }
+        CavaSettings.setBassTilt(value, for: .mainWindow)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     

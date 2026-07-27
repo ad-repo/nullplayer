@@ -4,7 +4,9 @@ Cava is a responsive, bar-based audio spectrum analyzer window built on a clean-
 
 ## Accessing Cava
 
-Open **Windows > Cava** in the menu bar or right-click any main window to toggle the Cava window.
+Open **Windows > Cava** in the menu bar or right-click any main window to toggle the standalone
+Cava window. Cava is also available inside the 76×16 main-window visualization area via
+**Visuals > Main Window > Mode > Cava**.
 
 ## What It Shows
 
@@ -52,6 +54,9 @@ Output: Per-channel bar arrays in 0…1 range. The order matters: **autosens mus
 - Calls `onNeedsDisplay` (the views invalidate their content/animation rect) only when bars change.
 
 Both classic and modern views call `CavaDrawing.draw()` with current bar data, low/high colors, and mode.
+The embedded main-window instance uses its own `CavaPresenter(scope: .mainWindow)`, always renders
+mono, and has a scope-distinct audio consumer and processing queue so it can run independently beside
+the standalone window.
 
 ## Window Layout
 
@@ -98,6 +103,13 @@ Durable UserDefaults-backed preferences:
 
 Access via `CavaSettings.mode`, `CavaSettings.barCount`, etc. Menu and double-click changes take effect immediately; settings that alter DSP construction recreate CavaCore through `settingsDidChange()`.
 
+`CavaSettings.Scope` separates `.cavaWindow` from `.mainWindow`. The legacy static properties above
+remain wrappers for `.cavaWindow` and continue using the existing keys. Scope-aware accessors use
+`cava.mainWindow.*` keys for the embedded analyzer; its mode accessor always resolves to mono.
+Main-window tuning and color choices are reset with the centralized Main Window visualization reset
+and never modify the standalone window. Bar-count, smoothing, and bass menu presets are canonical
+`CavaSettings` collections shared by both menu builders.
+
 ## Key Files
 
 | File | Role |
@@ -113,6 +125,8 @@ Access via `CavaSettings.mode`, `CavaSettings.barCount`, etc. Menu and double-cl
 | `Windows/ModernCava/ModernCavaView.swift` | Modern view (NSView, modern skin renderer, corner radius) |
 | `App/WindowManager.swift` | Integration: `showCava()`, `toggleCava()`, `cavaWindowFrame`, center-stack logic |
 | `App/ContextMenuBuilder.swift` | Menu item: "Cava" in Windows menu + `toggleCava()` action |
+| `Windows/MainWindow/MainWindowView.swift` | Classic inline Cava rendering + lifecycle |
+| `Windows/ModernMainWindow/ModernMainWindowView.swift` | Modern inline Cava rendering + lifecycle |
 | `App/AppStateManager.swift` | State capture/restore: `isCavaVisible`, `cavaWindowFrame` |
 | `NullPlayerCore/Audio/CavaCore.swift` | DSP engine (pure Swift vDSP FFT + smoothing) |
 
@@ -131,6 +145,8 @@ Both playback paths (local + streaming) emit the stereo tap:
 - Streaming: `AudioStreaming` library's real-time PCM tap (different implementation, same notification)
 
 **Critical:** If only one playback path is in use, Cava will update while that path plays. The tap is idled when Cava is hidden (no consumer registered).
+The standalone and embedded render models use different consumer IDs, so opening or hiding either
+one cannot unregister the other's tap demand.
 
 ### Notification Threading
 `Notification.Name.audioStereoPCMFullDataUpdated` arrives from different queues: local playback posts from the audio callback, while streaming playback forwards it on the main queue after coalescing. `CavaRenderModel` observes with `queue: nil` and explicitly marshals buffer assignment to main via `DispatchQueue.main.async`. The timer then coalesces the newest buffer onto the serial Cava processing queue; only completed bar arrays and display invalidation return to main. Never touch UI or run FFT work directly from the observer block.
@@ -175,8 +191,9 @@ The 60 Hz timer redraws only if the ordered bar signature changed. Closing, orde
 Cava's *default* gradient tracks the active skin; a user pick (via the Color menu) overrides it until they choose **Match Skin**:
 - `CavaSettings.hasCustomColors` (UserDefaults) gates this. `effectiveLowColor`/`effectiveHighColor` return the user's stored colors when true, otherwise the in-memory skin default.
 - The skin default is pushed by the **skin-aware views** (they can import `Skin/`/`ModernSkin/`; `CavaSettings` can't), in `commonInit` and `skinDidChange`:
-  - **Classic** (`CavaView`): the "Winamp Green" preset — green, like the classic Winamp spectrum.
-  - **Modern** (`ModernCavaView`): `skin.config.palette.resolvedPrimary()` → `resolvedAccent()`, so it matches each modern skin's palette automatically.
+  - **Classic standalone** (`CavaView`): the "Winamp Green" preset — green, like the classic Winamp spectrum.
+  - **Classic inline** (`MainWindowView`): the active skin's ordered `visColors` palette, from the one-third point to its brightest endpoint. Starting above index 0 keeps short, quiet bars visible because Cava fills each whole bar with one intensity-derived color.
+  - **Modern standalone and inline** (`ModernCavaView` / `ModernMainWindowView`): `skin.config.palette.resolvedPrimary()` → `resolvedAccent()`, so they match each modern skin's palette automatically.
 - `setSkinDefaultColors(low:high:)` is the plain-NSColor bridge that keeps `CavaSettings` free of skin imports. The default is in-memory (recomputed each session), not persisted — only the user override and the `hasCustomColors` flag persist.
 
 ### Color Persistence

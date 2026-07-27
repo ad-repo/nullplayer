@@ -104,6 +104,11 @@ enum VisualizationType: String, CaseIterable, Codable {
 
     /// Human-readable display name
     var displayName: String {
-        return self.rawValue
+        switch self {
+        case .projectM:
+            return "ProjectM"
+        default:
+            return self.rawValue
+        }
     }
 }

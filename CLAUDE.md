@@ -31,7 +31,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **spectrum-analyzer-window**: Dedicated 84-bar spectrum window — docking, geometry, analyzer curve, vis_classic waveform demand
 - **audio-analysis-window**: Friture-style multi-pane Audio Analysis window — Scope/Levels/Spectrogram panes, stereo PCM path, per-pane consumer gating, AudioAnalysisDSP module
 - **peppymeter**: Skinnable analog VU meter window (PeppyMeter port) — meters.txt geometry, CoreGraphics needle/bar compositor, stereo-tap level model, bundled GPL templates
-- **cava**: cava-style bar spectrum window (clean-room Swift/vDSP port) — dual bass/treble FFT, mono/stereo, full-rate stereo tap, 60 Hz DSP + pause-freeze, skin-following gradient colors + presets/metals, exposed tuning (bars/smoothing/bass tilt), classic+modern center-stack chrome
+- **cava**: cava-style bar spectrum in the standalone window and main-window inline area (clean-room Swift/vDSP port) — dual bass/treble FFT, scoped mono/stereo + tuning, full-rate stereo tap, 60 Hz DSP + pause-freeze, skin-following gradient colors + presets/metals, classic+modern rendering
 - **flow**: Network throughput meter window — single-height center-stack docking, download/upload view switching, interface selection, classic/modern Flow controllers
 - **gpu-vis-modes**: Per-mode shader internals (Fire/JWST/Lightning/Matrix/Snow/EKG) shared by both windows
 - **album-art-visualizer**: Library Browser ART-mode Core Image effects

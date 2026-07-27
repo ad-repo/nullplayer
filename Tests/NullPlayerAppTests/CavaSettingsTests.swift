@@ -3,20 +3,30 @@ import XCTest
 @testable import NullPlayer
 
 final class CavaSettingsTests: XCTestCase {
-    private let modeKey = "cavaMode"
-    private var originalModeValue: Any?
+    private var originalValues: [String: Any] = [:]
+
+    private var preferenceKeys: [String] {
+        CavaSettings.Scope.allCases.flatMap { CavaSettings.preferenceKeys(for: $0) }
+    }
 
     override func setUp() {
         super.setUp()
-        originalModeValue = UserDefaults.standard.object(forKey: modeKey)
-        UserDefaults.standard.removeObject(forKey: modeKey)
+        originalValues = [:]
+        for key in preferenceKeys {
+            if let value = UserDefaults.standard.object(forKey: key) {
+                originalValues[key] = value
+            }
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 
     override func tearDown() {
-        if let originalModeValue {
-            UserDefaults.standard.set(originalModeValue, forKey: modeKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: modeKey)
+        for key in preferenceKeys {
+            if let value = originalValues[key] {
+                UserDefaults.standard.set(value, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
         }
         super.tearDown()
     }
@@ -28,6 +38,41 @@ final class CavaSettingsTests: XCTestCase {
     func testExplicitMonoPreferenceIsPreserved() {
         CavaSettings.mode = .mono
         XCTAssertEqual(CavaSettings.mode, .mono)
+    }
+
+    func testMainWindowModeIsForcedMonoWithoutChangingWindowMode() {
+        CavaSettings.mode = .stereo
+        CavaSettings.setMode(.stereo, for: .mainWindow)
+
+        XCTAssertEqual(CavaSettings.mode(for: .mainWindow), .mono)
+        XCTAssertEqual(CavaSettings.mode, .stereo)
+    }
+
+    func testMainWindowTuningIsIndependentFromStandaloneWindow() {
+        CavaSettings.barCount = 64
+        CavaSettings.noiseReduction = 0.9
+        CavaSettings.bassTilt = 0.7
+
+        CavaSettings.setBarCount(19, for: .mainWindow)
+        CavaSettings.setNoiseReduction(0.5, for: .mainWindow)
+        CavaSettings.setBassTilt(0.15, for: .mainWindow)
+
+        XCTAssertEqual(CavaSettings.barCount(for: .mainWindow), 19)
+        XCTAssertEqual(CavaSettings.noiseReduction(for: .mainWindow), 0.5, accuracy: 0.001)
+        XCTAssertEqual(CavaSettings.bassTilt(for: .mainWindow), 0.15, accuracy: 0.001)
+        XCTAssertEqual(CavaSettings.barCount, 64)
+        XCTAssertEqual(CavaSettings.noiseReduction, 0.9, accuracy: 0.001)
+        XCTAssertEqual(CavaSettings.bassTilt, 0.7, accuracy: 0.001)
+    }
+
+    func testMainWindowResetTuningLeavesStandaloneWindowUntouched() {
+        CavaSettings.barCount = 48
+        CavaSettings.setBarCount(12, for: .mainWindow)
+
+        CavaSettings.resetTuning(scope: .mainWindow)
+
+        XCTAssertEqual(CavaSettings.barCount(for: .mainWindow), CavaSettings.defaultBarCount)
+        XCTAssertEqual(CavaSettings.barCount, 48)
     }
 
     func testClassicStackRepairIncludesCavaAfterFlow() throws {

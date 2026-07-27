@@ -13,7 +13,7 @@ The standalone waveform window is **not** a Metal visualization mode. It reuses 
 
 Visualization choices are durable `UserDefaults` preferences, not AppState session fields. AppState only remembers quit-session state such as window visibility/layout and playlist/audio state.
 
-- Main-window, Spectrum-window, Visualizations-window, `vis_classic`, and browser artwork visualizer settings must remain resettable through `VisualizationPreferences`.
+- Main-window (including embedded Cava), Spectrum-window, Visualizations-window, `vis_classic`, and browser artwork visualizer settings must remain resettable through `VisualizationPreferences`.
 - Modern/metal skin `visualization` defaults are first-use defaults on app launch. They may seed missing keys, but must not overwrite user-selected mode/style/profile keys during a normal relaunch.
 - Explicit skin changes and **Reset Skin to Default** still reapply the selected skin's visualization defaults.
 - When adding a new visualization preference that can be hard to recover manually, add it to the appropriate `VisualizationPreferenceResetScope`.
@@ -22,11 +22,11 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 
 | Skill | Scope |
 |-------|-------|
-| [main-window-visualization](../main-window-visualization/SKILL.md) | The 76×16 main-window display area: 11 modes, switching, mode-specific settings |
+| [main-window-visualization](../main-window-visualization/SKILL.md) | The 76×16 main-window display area: 12 modes, switching, mode-specific settings |
 | [spectrum-analyzer-window](../spectrum-analyzer-window/SKILL.md) | Dedicated 84-bar spectrum window: docking, geometry, mode list, the cropped analyzer curve, vis_classic waveform demand |
 | [audio-analysis-window](../audio-analysis-window/SKILL.md) | Friture-style multi-pane Audio Analyzer window: Scope/Levels/Spectrogram/Octave/Pitch/Delay panes, stereo PCM + FFT-magnitudes paths, per-pane consumer gating, AudioAnalysisDSP module |
 | [peppymeter](../peppymeter/SKILL.md) | Skinnable analog VU meter window (PeppyMeter port): needle/bar meters composited from meters.txt templates, driven by the stereo tap. A CoreGraphics-skinned meter, **not** a Metal visualization mode |
-| [cava](../cava/SKILL.md) | cava-style bar spectrum window (clean-room Swift/vDSP port): dual bass/treble FFT → log bands, mono/stereo, CoreGraphics gradient bars, skin-following colors + presets, exposed tuning (bars/smoothing/bass). A CoreGraphics meter driven by the full-rate stereo tap, **not** a Metal mode |
+| [cava](../cava/SKILL.md) | cava-style bar spectrum in both the standalone window and main-window inline area (clean-room Swift/vDSP port): dual bass/treble FFT → log bands, CoreGraphics gradient bars, scoped skin-following colors + tuning. A CoreGraphics meter driven by the full-rate stereo tap, **not** a Metal mode |
 | [gpu-vis-modes](../gpu-vis-modes/SKILL.md) | Per-mode internals shared by both windows: Fire, JWST, Lightning, Matrix, Snow, EKG, Classic/Enhanced/Ultra |
 | [album-art-visualizer](../album-art-visualizer/SKILL.md) | Library Browser ART-mode effects (30 Core Image filters) |
 | [projectm-milkdrop](../projectm-milkdrop/SKILL.md) | ProjectM/MilkDrop preset engine in the visualization window |
@@ -55,4 +55,4 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 - **Met Museum** — calm gallery slideshow with optional audio reactivity
 - **Main Window Vis** — quick access without a separate window
 - **Spectrum Window** — detailed 84-bar frequency view + ambient modes (Fire/JWST/etc.)
-- **Cava** — responsive bar spectrum with gravity/autosens, mono/stereo mirror, skin-matched gradient colors; low-CPU CoreGraphics, docks in the center stack
+- **Cava** — responsive bar spectrum with gravity/autosens and skin-matched gradient colors; use mono inline in the main window or mono/stereo in the dockable standalone window

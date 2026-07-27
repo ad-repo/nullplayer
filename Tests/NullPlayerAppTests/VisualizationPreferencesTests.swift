@@ -21,6 +21,7 @@ final class VisualizationPreferencesTests: XCTestCase {
     func testMainWindowResetRemovesOnlyMainWindowVisualizationKeys() {
         seed(.mainWindow)
         seed(.spectrumWindow)
+        defaults.set(64, forKey: "cavaBarCount")
         defaults.set("keep", forKey: "unrelatedPreference")
 
         VisualizationPreferences.reset(
@@ -31,9 +32,11 @@ final class VisualizationPreferencesTests: XCTestCase {
         )
 
         XCTAssertNil(defaults.object(forKey: "mainWindowVisMode"))
+        XCTAssertNil(defaults.object(forKey: "cava.mainWindow.barCount"))
         XCTAssertNil(defaults.object(forKey: VisClassicBridge.PreferenceScope.mainWindow.lastProfileNameKey))
         XCTAssertNotNil(defaults.object(forKey: "spectrumQualityMode"))
         XCTAssertNotNil(defaults.object(forKey: VisClassicBridge.PreferenceScope.spectrumWindow.lastProfileNameKey))
+        XCTAssertEqual(defaults.integer(forKey: "cavaBarCount"), 64)
         XCTAssertEqual(defaults.string(forKey: "unrelatedPreference"), "keep")
     }
 
@@ -71,6 +74,11 @@ final class VisualizationPreferencesTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "customPresetsFolder"), "keep-folder")
         XCTAssertTrue(defaults.bool(forKey: "rememberStateEnabled"))
         XCTAssertEqual(defaults.string(forKey: "BrowserVisibleTrackColumns"), "keep")
+    }
+
+    func testProjectMDisplayNamePreservesLegacyPreferenceValue() {
+        XCTAssertEqual(VisualizationType.projectM.rawValue, "ProjectM (ProjectM)")
+        XCTAssertEqual(VisualizationType.projectM.displayName, "ProjectM")
     }
 
     private func seed(_ scope: VisualizationPreferenceResetScope) {
