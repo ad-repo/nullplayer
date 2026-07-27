@@ -46,7 +46,10 @@ PeppyMeter reuses the **existing stereo tap** — it does **not** add a new audi
 
 This is the same stereo path the Audio Analyzer's Levels/Delay panes use — see
 [audio-analysis-window](../audio-analysis-window/SKILL.md). Any change to the stereo tap must still be
-emitted by **both** `AudioEngine` and the `StreamingAudioPlayer` delegate route.
+emitted by **both** `AudioEngine` and the `StreamingAudioPlayer` delegate route. The **Cava** spectrum
+window ([cava](../cava/SKILL.md)) uses a *separate* **full-rate, undecimated** stereo tap
+(`.audioStereoPCMFullDataUpdated`, 2048 samples) because a spectrum needs the full band; the same
+both-playback-paths rule applies to it.
 
 ## Rendering (CoreGraphics compositor)
 

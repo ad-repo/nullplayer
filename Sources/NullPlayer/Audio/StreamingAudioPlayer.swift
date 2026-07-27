@@ -11,6 +11,7 @@ protocol StreamingAudioPlayerDelegate: AnyObject {
     func streamingPlayerDidUpdateSpectrum(_ levels: [Float])
     func streamingPlayerDidUpdatePCM(_ samples: [Float])
     func streamingPlayerDidUpdateStereoPCM(left: [Float], right: [Float], sampleRate: Double)
+    func streamingPlayerDidUpdateFullStereoPCM(left: [Float], right: [Float], sampleRate: Double)
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int)
     func streamingPlayerDidEncounterError(_ error: AudioPlayerError)
     func streamingPlayerDidReceiveMetadata(_ metadata: [String: String])
@@ -53,6 +54,9 @@ class StreamingAudioPlayer {
 
     /// Whether stereo PCM data should be produced — bridged from AudioEngine.stereoNeeded
     var stereoNeeded: Bool = false
+
+    /// Whether full-rate stereo PCM data should be produced — bridged from AudioEngine.fullStereoNeeded
+    var fullStereoNeeded: Bool = false
 
     /// Whether raw FFT magnitudes should be posted — bridged from AudioEngine.magnitudesNeeded
     var magnitudesNeeded: Bool = false
@@ -152,6 +156,11 @@ class StreamingAudioPlayer {
     private var stereoPcmRight = [Float](repeating: 0, count: 512)
     /// Flag to coalesce stereo PCM main queue dispatches
     private var pendingStereoPcmUpdate = false
+    /// Pre-allocated full-rate stereo PCM buffers (2048 samples each for left and right channels)
+    private var fullStereoPcmLeft = [Float](repeating: 0, count: 2048)
+    private var fullStereoPcmRight = [Float](repeating: 0, count: 2048)
+    /// Flag to coalesce full-rate stereo PCM main queue dispatches
+    private var pendingFullStereoPcmUpdate = false
     private var waveformLeftU8 = [UInt8](repeating: 128, count: 576)
     private var waveformRightU8 = [UInt8](repeating: 128, count: 576)
     private var waveformUserInfo: [String: Any] = [:]
@@ -455,7 +464,7 @@ class StreamingAudioPlayer {
 
         // Skip FFT/waveform processing when no consumer needs the data to save CPU.
         // The frame filter still receives buffers but we don't need to process them.
-        guard spectrumNeeded || waveformNeeded || stereoNeeded || magnitudesNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || fullStereoNeeded || magnitudesNeeded else { return }
 
         guard let channelData = buffer.floatChannelData else { return }
 
@@ -513,6 +522,46 @@ class StreamingAudioPlayer {
                     guard let self = self else { return }
                     self.pendingStereoPcmUpdate = false
                     self.delegate?.streamingPlayerDidUpdateStereoPCM(left: leftCopy, right: rightCopy, sampleRate: sampleRateDouble)
+                }
+            }
+        }
+
+        // Publish full-rate (undecimated) stereo PCM data when needed
+        if fullStereoNeeded && frameCount >= 2048 {
+            // Extract exactly 2048 samples from the buffer
+            let pcmSize = 2048
+            if channelCount == 1 {
+                // Mono: duplicate to both channels
+                for i in 0..<pcmSize {
+                    let sample = channelData[0][i]
+                    fullStereoPcmLeft[i] = sample
+                    fullStereoPcmRight[i] = sample
+                }
+            } else {
+                // Stereo: separate channels
+                for i in 0..<pcmSize {
+                    fullStereoPcmLeft[i] = channelData[0][i]
+                    fullStereoPcmRight[i] = channelData[1][i]
+                }
+            }
+
+            // Apply volume compensation (same as decimated stereo path)
+            if volumeCompensation > 1.0 {
+                var compensation = volumeCompensation
+                vDSP_vsmul(fullStereoPcmLeft, 1, &compensation, &fullStereoPcmLeft, 1, vDSP_Length(pcmSize))
+                vDSP_vsmul(fullStereoPcmRight, 1, &compensation, &fullStereoPcmRight, 1, vDSP_Length(pcmSize))
+            }
+
+            // Coalesce full-rate stereo PCM updates to prevent main queue buildup
+            if !pendingFullStereoPcmUpdate {
+                pendingFullStereoPcmUpdate = true
+                let leftCopy = Array(fullStereoPcmLeft)
+                let rightCopy = Array(fullStereoPcmRight)
+                let sampleRateDouble = Double(buffer.format.sampleRate)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.pendingFullStereoPcmUpdate = false
+                    self.delegate?.streamingPlayerDidUpdateFullStereoPCM(left: leftCopy, right: rightCopy, sampleRate: sampleRateDouble)
                 }
             }
         }

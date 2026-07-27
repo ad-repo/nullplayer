@@ -97,6 +97,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis)))
         menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter)))
         menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor)))
+        menu.addItem(buildWindowItem("Cava", visible: wm.isCavaVisible, action: #selector(MenuActions.toggleCava)))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         if wm.isRunningModernUI {
@@ -3153,6 +3154,10 @@ class MenuActions: NSObject {
 
     @objc func toggleNetworkMonitor() {
         WindowManager.shared.toggleNetworkMonitor()
+    }
+
+    @objc func toggleCava() {
+        WindowManager.shared.toggleCava()
     }
 
     @objc func toggleWaveform() {

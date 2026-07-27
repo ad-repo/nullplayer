@@ -147,6 +147,7 @@ private struct CompactWindowSnapshot {
     var audioAnalysis: WindowSnapshot?
     var peppyMeter: WindowSnapshot?
     var networkMonitor: WindowSnapshot?
+    var cava: WindowSnapshot?
     var waveform: WindowSnapshot?
     var projectM: WindowSnapshot?
     var library: WindowSnapshot?
@@ -373,6 +374,7 @@ class WindowManager {
                               audioAnalysisWindowController?.window,
                               peppyMeterWindowController?.window,
                               networkMonitorWindowController?.window,
+                              cavaWindowController?.window,
                               waveformWindowController?.window].compactMap { $0 }
             var windowsBelow: [NSWindow] = []
             var frontier: [NSRect] = [mainWindow.frame]
@@ -436,6 +438,7 @@ class WindowManager {
                           audioAnalysisWindowController as? NSWindowController,
                           peppyMeterWindowController as? NSWindowController,
                           networkMonitorWindowController as? NSWindowController,
+                          cavaWindowController as? NSWindowController,
                           waveformWindowController as? NSWindowController,
                            projectMWindowController as? NSWindowController,
                            plexBrowserWindowController as? NSWindowController] {
@@ -465,7 +468,8 @@ class WindowManager {
                           window === waveformWindowController?.window ||
                           window === audioAnalysisWindowController?.window ||
                           window === peppyMeterWindowController?.window ||
-                          window === networkMonitorWindowController?.window
+                          window === networkMonitorWindowController?.window ||
+                          window === cavaWindowController?.window
         if isSubWindow && isWindowDocked(window) {
             return true
         }
@@ -515,6 +519,9 @@ class WindowManager {
 
     /// Network monitor window controller for the active UI mode, accessed via protocol.
     private var networkMonitorWindowController: NetworkMonitorWindowProviding?
+
+    /// Cava spectrum analyzer window controller for the active UI mode, accessed via protocol.
+    private var cavaWindowController: CavaWindowProviding?
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
@@ -895,6 +902,7 @@ class WindowManager {
                           audioAnalysisWindowController?.window,
                           peppyMeterWindowController?.window,
                           networkMonitorWindowController?.window,
+                          cavaWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
 
         // BFS: find windows directly docked below closingFrame, then those below them
@@ -1323,6 +1331,7 @@ class WindowManager {
             audioAnalysis: snap(audioAnalysisWindowController),
             peppyMeter: snap(peppyMeterWindowController),
             networkMonitor: snap(networkMonitorWindowController),
+            cava: snap(cavaWindowController),
             waveform: snap(waveformWindowController),
             projectM: snap(projectMWindowController, sideWindow: true),
             // Library stores its position frame for restoration after Compact-mode rebuild.
@@ -1351,6 +1360,7 @@ class WindowManager {
                        audioAnalysisWindowController?.window,
                        peppyMeterWindowController?.window,
                        networkMonitorWindowController?.window,
+                       cavaWindowController?.window,
                        waveformWindowController?.window,
                        projectMWindowController?.window,
                        plexBrowserWindowController?.window].compactMap({ $0 })
@@ -1372,6 +1382,7 @@ class WindowManager {
             audioAnalysisWindowController?.window,
             peppyMeterWindowController?.window,
             networkMonitorWindowController?.window,
+            cavaWindowController?.window,
             waveformWindowController?.window,
             projectMWindowController?.window,
             plexBrowserWindowController?.window
@@ -1442,6 +1453,7 @@ class WindowManager {
         restore(snapshot.audioAnalysis, controller: audioAnalysisWindowController)
         restore(snapshot.peppyMeter, controller: peppyMeterWindowController)
         restore(snapshot.networkMonitor, controller: networkMonitorWindowController)
+        restore(snapshot.cava, controller: cavaWindowController)
         restore(snapshot.waveform, controller: waveformWindowController)
         restore(snapshot.projectM, controller: projectMWindowController)
         restore(snapshot.library, controller: plexBrowserWindowController)
@@ -1472,6 +1484,7 @@ class WindowManager {
         case "audioAnalysis": return snapshot.audioAnalysis?.wasVisible ?? current
         case "peppyMeter": return snapshot.peppyMeter?.wasVisible ?? current
         case "networkMonitor": return snapshot.networkMonitor?.wasVisible ?? current
+        case "cava": return snapshot.cava?.wasVisible ?? current
         case "waveform": return snapshot.waveform?.wasVisible ?? current
         case "projectM": return snapshot.projectM?.wasVisible ?? current
         case "plexBrowser": return snapshot.library?.wasVisible ?? current
@@ -2607,6 +2620,68 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
+    // MARK: - Cava Window
+
+    func showCava(at restoredFrame: NSRect? = nil) {
+        let runningModernMode = isRunningModernUI
+        if cavaWindowController == nil {
+            if runningModernMode {
+                cavaWindowController = ModernCavaWindowController()
+            } else {
+                cavaWindowController = CavaWindowController()
+            }
+        }
+        markModeDependentWindow(cavaWindowController?.window)
+
+        if let window = cavaWindowController?.window {
+            applyCenterStackSizingConstraints(window, kind: .cava)
+            if let frame = restoredFrame, frame != .zero {
+                applyRestoredCenterStackFrame(frame, to: window, kind: .cava)
+            } else {
+                if runningModernMode {
+                    applyDefaultCenterStackFrameForCurrentHT(window, kind: .cava)
+                } else {
+                    (cavaWindowController as? CavaWindowController)?.resetToDefaultFrame()
+                }
+                positionSubWindow(window)
+            }
+        }
+
+        cavaWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(cavaWindowController?.window)
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+    }
+
+    var isCavaVisible: Bool {
+        cavaWindowController?.window?.isVisible == true
+    }
+
+    var cavaWindowFrame: NSRect? {
+        cavaWindowController?.window?.frame
+    }
+
+    var cavaWindow: NSWindow? {
+        cavaWindowController?.window
+    }
+
+    func toggleCava() {
+        if let controller = cavaWindowController,
+           let window = controller.window,
+           window.isVisible {
+            let closingFrame = window.frame
+            controller.stopRenderingForHide()
+            window.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
+        } else {
+            showCava()
+        }
+        notifyMainWindowVisibilityChanged()
+        _ = tightenClassicCenterStackIfNeeded()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
     // MARK: - Waveform Window
 
     func showWaveform(at restoredFrame: NSRect? = nil) {
@@ -3015,6 +3090,7 @@ class WindowManager {
         audioAnalysisWindowController?.skinDidChange()
         peppyMeterWindowController?.skinDidChange()
         networkMonitorWindowController?.skinDidChange()
+        cavaWindowController?.skinDidChange()
         waveformWindowController?.skinDidChange()
         compactWindowController?.skinDidChange()
     }
@@ -3363,6 +3439,39 @@ class WindowManager {
             }
         }
 
+        // Cava window - position below previous stack window.
+        if let cavaWindow = cavaWindowController?.window {
+            let baseMinSize: NSSize = runningModernMode
+                ? ModernSkinElements.spectrumMinSize
+                : SkinElements.SpectrumWindow.minSize
+            let heightMultiplier = centerStackHeightMultiplier(for: .cava)
+            let minHeight = runningModernMode
+                ? expectedMainHeightForCurrentHT(mainWindowController?.window)
+                : baseMinSize.height * scale
+            let adjustedMinHeight = minHeight * heightMultiplier
+            let minWidth = runningModernMode
+                ? ModernSkinElements.spectrumMinSize.width
+                : baseMinSize.width * scale
+            cavaWindow.minSize = NSSize(width: minWidth, height: adjustedMinHeight)
+            cavaWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+            let currentFrame = cavaWindow.frame
+            let newHeight = max(adjustedMinHeight, currentFrame.height * ratio)
+            let newWidth = max(minWidth, currentFrame.width * ratio)
+            if cavaWindow.isVisible {
+                let cavaFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - newHeight,
+                    width: newWidth,
+                    height: newHeight
+                )
+                cavaWindow.setFrame(cavaFrame, display: true, animate: false)
+                nextY = cavaFrame.minY
+            } else {
+                cavaWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
+            }
+        }
+
         // Side windows - match the vertical stack height and reposition
         let stackTopY = mainFrame.maxY
         let stackHeight = stackTopY - nextY
@@ -3399,6 +3508,7 @@ class WindowManager {
                            spectrumWindowController, waveformWindowController, audioAnalysisWindowController,
                            peppyMeterWindowController,
                            networkMonitorWindowController,
+                           cavaWindowController,
                            plexBrowserWindowController, projectMWindowController] {
             guard let window = controller?.window, window.isVisible,
                   let contentView = window.contentView else { continue }
@@ -3421,6 +3531,7 @@ class WindowManager {
         audioAnalysisWindowController?.window?.level = level
         peppyMeterWindowController?.window?.level = level
         networkMonitorWindowController?.window?.level = level
+        cavaWindowController?.window?.level = level
         waveformWindowController?.window?.level = level
         if compactWindowEnabled {
             compactWindowController?.window?.level = level
@@ -3446,6 +3557,7 @@ class WindowManager {
             audioAnalysisWindowController?.window,
             peppyMeterWindowController?.window,
             networkMonitorWindowController?.window,
+            cavaWindowController?.window,
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
@@ -3474,6 +3586,7 @@ class WindowManager {
                           audioAnalysisWindowController?.window,
                           peppyMeterWindowController?.window,
                           networkMonitorWindowController?.window,
+                          cavaWindowController?.window,
                           waveformWindowController?.window].compactMap { $0 }
         var docked: [NSWindow] = []
         var frontier: [NSRect] = [mainFrame]
@@ -3532,6 +3645,7 @@ class WindowManager {
         case audioAnalysis
         case peppyMeter
         case networkMonitor
+        case cava
     }
 
     private func centerStackWindowKind(for window: NSWindow) -> CenterStackWindowKind? {
@@ -3542,6 +3656,7 @@ class WindowManager {
         if window === audioAnalysisWindowController?.window { return .audioAnalysis }
         if window === peppyMeterWindowController?.window { return .peppyMeter }
         if window === networkMonitorWindowController?.window { return .networkMonitor }
+        if window === cavaWindowController?.window { return .cava }
         return nil
     }
 
@@ -3699,6 +3814,10 @@ class WindowManager {
             // Matches the center-stack width; stretchable above its single-height floor.
             window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        case .cava:
+            // Matches the center-stack width; stretchable above its single-height floor.
+            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
     }
 
@@ -3729,7 +3848,7 @@ class WindowManager {
             return mainWindowController?.window?.frame.width ?? ModernSkinElements.mainWindowSize.width
         case .playlist:
             return ModernSkinElements.playlistMinSize.width
-        case .spectrum, .audioAnalysis, .peppyMeter, .networkMonitor:
+        case .spectrum, .audioAnalysis, .peppyMeter, .networkMonitor, .cava:
             return ModernSkinElements.spectrumMinSize.width
         case .waveform:
             return ModernSkinElements.waveformMinSize.width
@@ -3756,7 +3875,7 @@ class WindowManager {
         switch kind {
         case .equalizer:
             normalized.size.height = targetHeight
-        case .playlist, .spectrum, .waveform, .audioAnalysis, .networkMonitor:
+        case .playlist, .spectrum, .waveform, .audioAnalysis, .networkMonitor, .cava:
             normalized.size.height = max(targetHeight, normalized.height)
         case .peppyMeter:
             normalized.size.height = abs(normalized.height - peppyMeterLegacyDoubleHeight) <= 2
@@ -3839,6 +3958,7 @@ class WindowManager {
         let audioAnalysisWindow = audioAnalysisWindowController?.window
         let peppyMeterWindow = peppyMeterWindowController?.window
         let networkMonitorWindow = networkMonitorWindowController?.window
+        let cavaWindow = cavaWindowController?.window
 
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
@@ -3849,6 +3969,7 @@ class WindowManager {
             audioAnalysisFrame: (audioAnalysisWindow?.isVisible == true) ? audioAnalysisWindow?.frame : nil,
             peppyMeterFrame: (peppyMeterWindow?.isVisible == true) ? peppyMeterWindow?.frame : nil,
             networkMonitorFrame: (networkMonitorWindow?.isVisible == true) ? networkMonitorWindow?.frame : nil,
+            cavaFrame: (cavaWindow?.isVisible == true) ? cavaWindow?.frame : nil,
             scale: scale
         )
 
@@ -3906,6 +4027,12 @@ class WindowManager {
            let repairedFrame = repaired.networkMonitorFrame,
            repairedFrame != networkMonitorWindow.frame {
             networkMonitorWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
+        if let cavaWindow,
+           cavaWindow.isVisible,
+           let repairedFrame = repaired.cavaFrame,
+           repairedFrame != cavaWindow.frame {
+            cavaWindow.setFrame(repairedFrame, display: true, animate: false)
         }
 
         return true
@@ -3994,6 +4121,14 @@ class WindowManager {
             networkMonitorFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
         }
 
+        var cavaFrame: NSRect?
+        if let cavaWindow = cavaWindowController?.window, cavaWindow.isVisible {
+            let h = cavaWindow.frame.height
+            let w = cavaWindow.frame.width
+            nextY -= h
+            cavaFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
+        }
+
         // Side windows span the full stack height
         let stackTopY = mainFrame.maxY
         let stackBottomY = nextY
@@ -4052,6 +4187,9 @@ class WindowManager {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = networkMonitorFrame, let window = networkMonitorWindowController?.window {
+            window.setFrame(frame, display: true, animate: false)
+        }
+        if let frame = cavaFrame, let window = cavaWindowController?.window {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
@@ -5013,6 +5151,7 @@ class WindowManager {
         if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = peppyMeterWindowController?.window, w.isVisible { windows.append(w) }
         if let w = networkMonitorWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = cavaWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
@@ -5027,6 +5166,7 @@ class WindowManager {
         if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
         if let w = peppyMeterWindowController?.window, w.isVisible { windows.append(w) }
         if let w = networkMonitorWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = cavaWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
@@ -5055,6 +5195,7 @@ class WindowManager {
                window === audioAnalysisWindowController?.window ||
                window === peppyMeterWindowController?.window ||
                window === networkMonitorWindowController?.window ||
+               window === cavaWindowController?.window ||
                window === waveformWindowController?.window
     }
     
@@ -5083,6 +5224,7 @@ class WindowManager {
          audioAnalysisWindowController,
          peppyMeterWindowController,
          networkMonitorWindowController,
+         cavaWindowController,
          waveformWindowController].compactMap { $0 }
     }
 
@@ -5145,6 +5287,8 @@ class WindowManager {
         peppyMeterWindowController = nil
         networkMonitorWindowController?.window?.close()
         networkMonitorWindowController = nil
+        cavaWindowController?.window?.close()
+        cavaWindowController = nil
         waveformWindowController?.window?.close()
         waveformWindowController = nil
 
@@ -5189,6 +5333,7 @@ class WindowManager {
         var audioAnalysis: UIWindowSnapshot?
         var peppyMeter: UIWindowSnapshot?
         var networkMonitor: UIWindowSnapshot?
+        var cava: UIWindowSnapshot?
         var waveform: UIWindowSnapshot?
         /// Live ProjectM preset index, carried across the rebuild so the visualization stays on the
         /// exact preset the user was viewing rather than reverting to the saved startup default.
@@ -5215,6 +5360,7 @@ class WindowManager {
             audioAnalysis: snap(audioAnalysisWindowController),
             peppyMeter: snap(peppyMeterWindowController),
             networkMonitor: snap(networkMonitorWindowController),
+            cava: snap(cavaWindowController),
             waveform: snap(waveformWindowController),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
@@ -5258,6 +5404,7 @@ class WindowManager {
         if snapshot.audioAnalysis?.visible == true { showAudioAnalysis(at: snapshot.audioAnalysis?.frame) }
         if snapshot.peppyMeter?.visible == true { showPeppyMeter(at: snapshot.peppyMeter?.frame) }
         if snapshot.networkMonitor?.visible == true { showNetworkMonitor(at: snapshot.networkMonitor?.frame) }
+        if snapshot.cava?.visible == true { showCava(at: snapshot.cava?.frame) }
         if let waveform = snapshot.waveform, waveform.visible {
             showWaveform(at: waveform.frame)
         }
@@ -5301,6 +5448,7 @@ class WindowManager {
                        audioAnalysisWindowController?.window,
                        peppyMeterWindowController?.window,
                        networkMonitorWindowController?.window,
+                       cavaWindowController?.window,
                        waveformWindowController?.window,
                        videoPlayerWindowController?.window,
                        debugWindowController?.window].compactMap({ $0 }) {
@@ -5589,6 +5737,7 @@ class WindowManager {
             audioAnalysis: convScaled(snapshot.audioAnalysis),
             peppyMeter: convScaled(snapshot.peppyMeter),
             networkMonitor: convScaled(snapshot.networkMonitor),
+            cava: convScaled(snapshot.cava),
             waveform: convScaled(snapshot.waveform),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
