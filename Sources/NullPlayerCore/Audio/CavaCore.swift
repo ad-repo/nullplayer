@@ -71,6 +71,11 @@ public class CavaCore {
     /// Per-channel, per-bar peak memory (for gravity/falloff)
     private var peakValues: [[Float]] = []
 
+    /// Per-channel, per-bar raw magnitudes from the last `analyze()`. `render()` post-processes
+    /// these, so the FFT can run at the audio-buffer rate while post-processing advances at the
+    /// (higher) display rate on the cached values.
+    private var rawBarMagnitudes: [[Float]] = []
+
     /// Exponent for per-band bin-count normalization (`sum / count^bandExponent`), i.e. the
     /// bass↔treble tilt. 0 = `sum` (brightest), 1 = `mean` (bassiest), 0.5 = √N. Lower ⇒ less bass.
     private let bandExponent: Float
@@ -160,6 +165,7 @@ public class CavaCore {
         // Initialize smoothing memory
         smoothedValues = Array(repeating: [Float](repeating: 0, count: numberOfBars), count: channels)
         peakValues = Array(repeating: [Float](repeating: 0, count: numberOfBars), count: channels)
+        rawBarMagnitudes = Array(repeating: [Float](repeating: 0, count: numberOfBars), count: channels)
 
         // Build frequency mapping
         buildFrequencyMapping()
@@ -229,12 +235,17 @@ public class CavaCore {
     ///
     /// - Returns: Per-channel bar array. Each inner array has length `numberOfBars`, values 0..1.
     ///   Example: stereo → [[bar0_L, bar1_L, ...], [bar0_R, bar1_R, ...]]
+    ///
+    /// Convenience that runs `analyze` then `render`. Callers that redraw faster than the audio
+    /// buffer rate should call `analyze(_:)` once per new buffer and `render()` per display frame.
     public func execute(_ interleaved: [Float]) -> [[Float]] {
-        var result: [[Float]] = []
-        // Largest bar value produced this frame (pre-clamp, across all channels), used to
-        // adjust the persistent autosens gain once per frame after the channel loop.
-        var frameMax: Float = 0
+        analyze(interleaved)
+        return render()
+    }
 
+    /// Run the FFTs on a new audio buffer and cache the per-channel raw bar magnitudes.
+    /// The expensive step — call once per new audio buffer (~audio rate).
+    public func analyze(_ interleaved: [Float]) {
         for ch in 0..<channels {
             // Extract mono or one channel from interleaved
             var monoSamples = [Float]()
@@ -246,24 +257,32 @@ public class CavaCore {
                 }
             }
 
-            // Process this channel through both FFTs
+            // Process this channel through both FFTs and cache the combined per-bar magnitudes.
             let bassResult = processBassFFT(samples: monoSamples)
             let trebleResult = processTreebleFFT(samples: monoSamples)
-
-            // Combine bass/treble results per bar
-            var barOutput = [Float](repeating: 0, count: numberOfBars)
             for barIdx in 0..<numberOfBars {
                 let source = barSource[barIdx]
-                let magnitude = source == 0 ? bassResult[barIdx] : trebleResult[barIdx]
-                barOutput[barIdx] = magnitude
+                rawBarMagnitudes[ch][barIdx] = source == 0 ? bassResult[barIdx] : trebleResult[barIdx]
             }
+        }
+    }
 
+    /// Post-process the cached magnitudes into 0..1 bars, advancing smoothing/gravity/autosens by
+    /// one frame. Cheap — safe to call per display frame. Re-running this on unchanged cached
+    /// magnitudes is identical to re-running `execute` on the same buffer, but skips the FFTs.
+    public func render() -> [[Float]] {
+        var result: [[Float]] = []
+        // Largest bar value produced this frame (pre-clamp, across all channels), used to
+        // adjust the persistent autosens gain once per frame after the channel loop.
+        var frameMax: Float = 0
+
+        for ch in 0..<channels {
             // Apply post-processing: neighbor smoothing, noise reduction, autosens, gravity.
             // Autosens scales the magnitudes by a persistent, slowly-adjusted gain BEFORE gravity,
             // so falloff acts in the normalized (0..1) domain. The gain is near-constant frame to
             // frame, so as the smoothed magnitude decays on silence the output decays with it and
             // gravity pulls settled bars to zero (a per-frame AGC would re-inflate the decaying tail).
-            barOutput = applyMonsterCatSmoothing(barOutput)
+            var barOutput = applyMonsterCatSmoothing(rawBarMagnitudes[ch])
             barOutput = applyNoiseReduction(barOutput, forChannel: ch)
 
             if autosens {
@@ -486,6 +505,7 @@ public class CavaCore {
             for i in 0..<numberOfBars {
                 smoothedValues[ch][i] = 0
                 peakValues[ch][i] = 0
+                rawBarMagnitudes[ch][i] = 0
             }
         }
         sens = 1e-6

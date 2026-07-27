@@ -94,58 +94,27 @@ final class CavaRenderModel {
         currentBarCount
     }
 
-    /// Runs at 60 Hz: re-runs the DSP on the most recent audio buffer (so gravity/smoothing
-    /// advance at the display rate for a smooth result), then repaints unless the bars have settled.
+    /// Runs at 60 Hz. The expensive FFT (`analyze`) runs only when a new audio buffer arrived
+    /// (~21 Hz); the cheap post-processing (`render`) runs every tick so gravity/smoothing advance
+    /// at the display rate. Once audio stops (pause), the last frame is held instead of re-rendering
+    /// a stale buffer (which would let autosens hunt and the display throb).
     private func tick() {
         guard haveSamples else { return }
 
-        // Between audio buffers (~21 Hz) we re-run the DSP on the last buffer so decay/smoothing
-        // advance at 60 Hz. But once audio actually stops (pause), re-running a stale buffer
-        // indefinitely lets autosens hunt and the display throb — so after a short gap, freeze the
-        // last frame instead of re-running.
         if receivedSamplesThisInterval {
             receivedSamplesThisInterval = false
             idleTicks = 0
+            refreshCoreIfNeeded()   // read settings + rebuild core only on new audio (not per frame)
+            analyzeLatestBuffer()   // FFT at the audio-buffer rate, not 60 Hz
         } else {
             idleTicks += 1
             if idleTicks > 6 { return }
         }
 
-        let mode = CavaSettings.mode
-        let barCount = CavaSettings.barCount
-        currentMode = mode
-
-        // Always analyze both channels. Mono is derived by averaging the two channels' magnitude
-        // spectra (below), NOT by summing L+R in the time domain — time-domain summing comb-filters
-        // stereo material (phase differences create moving spectral notches) and reads as jitter.
-        // So channel count never changes; only bar count / sample rate force a rebuild.
-        // Higher noise reduction = more temporal smoothing, so bar motion is spread across the
-        // 60 Hz redraw ticks instead of snapping at the ~21 Hz audio-buffer rate.
-        let noiseReduction = CavaSettings.noiseReduction
-        let bassTilt = CavaSettings.bassTilt
-        if cavaCore == nil || currentBarCount != barCount || currentSampleRate != pendingSampleRate
-            || currentNoiseReduction != noiseReduction || currentBassTilt != bassTilt {
-            currentBarCount = barCount
-            currentSampleRate = pendingSampleRate
-            currentNoiseReduction = noiseReduction
-            currentBassTilt = bassTilt
-            cavaCore = CavaCore(numberOfBars: barCount, rate: currentSampleRate, channels: 2,
-                                autosens: true, noiseReduction: noiseReduction,
-                                bandExponent: Float(bassTilt))
-        }
-
         guard let core = cavaCore else { return }
+        let out = core.render()
 
-        let pairCount = min(latestLeft.count, latestRight.count)
-        var interleaved: [Float] = []
-        interleaved.reserveCapacity(pairCount * 2)
-        for i in 0..<pairCount {
-            interleaved.append(latestLeft[i])
-            interleaved.append(latestRight[i])
-        }
-        let out = core.execute(interleaved)
-
-        if mode == .mono, out.count >= 2 {
+        if currentMode == .mono, out.count >= 2 {
             // Average the per-channel magnitude spectra for a single, artifact-free mono row.
             let count = out[0].count
             var avg = [Float](repeating: 0, count: count)
@@ -166,6 +135,40 @@ final class CavaRenderModel {
         if sig == lastEmittedSignature { return }  // Idle skip
         lastEmittedSignature = sig
         onNeedsDisplay?()
+    }
+
+    /// Read the (durable) settings and rebuild `CavaCore` if any changed. Called at the audio-buffer
+    /// rate rather than per frame, so the UserDefaults reads and any rebuild aren't paid 60×/sec.
+    /// Channel count is always 2; mono is derived by averaging the two output rows in `tick()` —
+    /// time-domain L+R summing would comb-filter stereo material and read as jitter.
+    private func refreshCoreIfNeeded() {
+        currentMode = CavaSettings.mode
+        let barCount = CavaSettings.barCount
+        let noiseReduction = CavaSettings.noiseReduction
+        let bassTilt = CavaSettings.bassTilt
+        if cavaCore == nil || currentBarCount != barCount || currentSampleRate != pendingSampleRate
+            || currentNoiseReduction != noiseReduction || currentBassTilt != bassTilt {
+            currentBarCount = barCount
+            currentSampleRate = pendingSampleRate
+            currentNoiseReduction = noiseReduction
+            currentBassTilt = bassTilt
+            cavaCore = CavaCore(numberOfBars: barCount, rate: currentSampleRate, channels: 2,
+                                autosens: true, noiseReduction: noiseReduction,
+                                bandExponent: Float(bassTilt))
+        }
+    }
+
+    /// Interleave the latest L/R buffer and run the FFT into the core's magnitude cache.
+    private func analyzeLatestBuffer() {
+        guard let core = cavaCore else { return }
+        let pairCount = min(latestLeft.count, latestRight.count)
+        var interleaved: [Float] = []
+        interleaved.reserveCapacity(pairCount * 2)
+        for i in 0..<pairCount {
+            interleaved.append(latestLeft[i])
+            interleaved.append(latestRight[i])
+        }
+        core.analyze(interleaved)
     }
 
     private func reset() {

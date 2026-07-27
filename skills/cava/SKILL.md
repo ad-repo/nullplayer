@@ -43,8 +43,9 @@ Output: Per-channel bar arrays in 0…1 range. The order matters: **autosens mus
 - Draws solid rectangles per bar with subtle borders for definition
 - Handles both mono (single row) and stereo (mirrored L/R) layouts
 
-`CavaRenderModel` drives a **60 Hz timer** that **runs the DSP itself** (not just redraw):
-- The audio tap (~21 Hz) only *stashes* the latest L/R buffer; the timer re-runs `CavaCore.execute` on it at 60 Hz so decay/smoothing advance at the display rate (smooth), independent of the audio buffer cadence.
+`CavaRenderModel` drives a **60 Hz timer** on the main thread, splitting the DSP so only the cheap part runs per frame:
+- The audio tap (~21 Hz) *stashes* the latest L/R buffer. On the next tick the model calls `CavaCore.analyze(_:)` (the FFTs — the expensive step, ~90 µs) **once per new buffer**, then `CavaCore.render()` (monstercat/smoothing/autosens/gravity — ~1.6 µs) **every** 60 Hz tick so decay/smoothing advance at the display rate. Re-rendering the cached magnitudes is identical to re-running `execute` on the same buffer but skips the FFT, so it's ~2.7× less main-thread DSP than running the full FFT at 60 Hz — matching the audio-rate cadence of the AudioAnalysis panes. `execute(_:)` (= `analyze` + `render`) is kept for tests/one-shot callers.
+- Settings (mode/bars/smoothing/bass) are read and the core rebuilt only on new-audio ticks (`refreshCoreIfNeeded`), not 60×/sec.
 - **Pause-freeze:** if no new audio arrives for >~6 ticks (~100 ms), the timer stops re-running the stale buffer and holds the last frame. Re-running a static buffer indefinitely would let autosens hunt and the display throb; freezing keeps a paused Cava perfectly still.
 - Idle-skip: a per-frame signature detects settled bars and skips the redraw (not the DSP), so a static display costs no repaint.
 - Calls `onNeedsDisplay` (→ `requestMeterRedraw()`, content-rect only) only when bars change.
@@ -158,6 +159,9 @@ Tune the single `bandExponent` constant (0=sum … 1=mean) if the tilt needs adj
 ### Verifying DSP changes without the app
 `swift test` can't launch here (see the [[swift-test-dylib-rpath]] memory / codesign SIGKILL). Test `CavaCore` with a standalone `swiftc` harness linked against the built objects:
 `swiftc -O harness.swift -I .build/arm64-apple-macosx/debug/Modules .build/arm64-apple-macosx/debug/NullPlayerCore.build/*.o -framework Accelerate -o harness`. Key harnesses to keep: **identical-input steadiness** (constant in → constant out, catches gravity/autosens limit cycles), frequency localization, stereo panning, autosens bounds, silence decay, launch ramp (no pin), and paused-buffer stability.
+
+### Main-thread DSP: keep the FFT at audio rate, not 60 Hz
+The render loop runs on the **main thread**. `CavaCore.execute` (both FFTs) measures ~90 µs in release but ~5.9 ms in a **debug** build (unoptimized — 60× slower), so running it at 60 Hz makes the debug app noticeably janky (~35% of a frame) even though release is fine (~0.6%). The fix (and the pattern the AudioAnalysis panes already follow) is to run the FFT only when a new audio buffer arrives (`analyze`, ~21 Hz) and run only the cheap post-processing (`render`, ~1.6 µs) at 60 Hz. Don't move the FFT back onto the 60 Hz path. The audio-thread side stays trivial regardless: the tap observer (`queue: nil`) just stashes copies and `DispatchQueue.main.async`s — never do heavy work in the observer.
 
 ### Idle Skip + Timer
 The 60 Hz timer redraws only if bars changed (signature delta check). When Cava is docked and hidden, the timer is still running but produces no visible updates (window is offscreen). When undocked and visible again, the timer resumes visual updates. This is by design: no CPU waste for invisible windows.
