@@ -813,6 +813,15 @@ class ModernPlaylistView: NSView {
         // Reset marquee — playlist content changed, current track may be different
         trackMarqueeLayer?.isHidden = true
         trackMarqueeLayer?.text = ""
+        // Re-center on the currently-playing track so a skin change (which recreates
+        // this window) keeps the now-playing row selected and visible instead of
+        // snapping back to slot 0 while audio continues from currentIndex.
+        let currentIndex = WindowManager.shared.audioEngine.currentIndex
+        if currentIndex >= 0 && currentIndex < WindowManager.shared.audioEngine.playlist.count {
+            selectedIndices = [currentIndex]
+            selectionAnchor = currentIndex
+            scrollToSelection()
+        }
         updateMarqueeLayerPosition()
         needsDisplay = true
     }

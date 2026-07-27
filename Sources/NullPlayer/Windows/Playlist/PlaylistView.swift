@@ -976,6 +976,15 @@ class PlaylistView: NSView {
         lastCurrentIndex = -1
         marqueeOffset = 0
         playlistMarqueeLayer?.isHidden = true
+        // Re-center on the currently-playing track so a skin change (which recreates
+        // this window) keeps the now-playing row selected and visible instead of
+        // snapping back to slot 0 while audio continues from currentIndex.
+        let currentIndex = WindowManager.shared.audioEngine.currentIndex
+        if currentIndex >= 0 && currentIndex < WindowManager.shared.audioEngine.playlist.count {
+            selectedIndices = [currentIndex]
+            selectionAnchor = currentIndex
+            scrollToSelection()
+        }
         updateCurrentTrackTextWidth()
         needsDisplay = true
     }
