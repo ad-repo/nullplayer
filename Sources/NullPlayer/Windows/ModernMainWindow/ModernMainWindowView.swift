@@ -57,10 +57,6 @@ class ModernMainWindowView: NSView {
     
     /// Mouse tracking state
     private var pressedElement: String?
-    /// Transiently forces the Compact (CP) button to draw active while the heavy compact-mode
-    /// switch runs on a later runloop tick, so the click registers visually instead of looking
-    /// like a hang. The fallback toggle-button renderer keys its highlight off the on-state only.
-    private var compactButtonActivating = false
     private var isDraggingSeek = false
     private var isDraggingVolume = false
     private var isDraggingWindow = false
@@ -750,7 +746,7 @@ class ModernMainWindowView: NSView {
         let startX = leftEdge
         
         let buttonDefs: [(String, String, Bool)] = [
-            ("btn_compact", "CP", WindowManager.shared.compactModeEnabled || compactButtonActivating),
+            ("btn_cava", "CV", WindowManager.shared.isCavaVisible),
             ("btn_projectm", "VZ", WindowManager.shared.isProjectMVisible),
             ("btn_networkmonitor", "FL", WindowManager.shared.isNetworkMonitorVisible),
             ("btn_peppymeter", "PM", WindowManager.shared.isPeppyMeterVisible),
@@ -1485,7 +1481,7 @@ class ModernMainWindowView: NSView {
             let rightEdge: CGFloat = 269
             let bw: CGFloat = 16
             let bs = (rightEdge - leftEdge - 10 * bw) / 9
-            let ids = ["btn_compact", "btn_projectm", "btn_networkmonitor", "btn_peppymeter",
+            let ids = ["btn_cava", "btn_projectm", "btn_networkmonitor", "btn_peppymeter",
                        "btn_eq", "btn_playlist", "btn_spectrum", "btn_audioanalysis",
                        "btn_waveform", "btn_library"]
             for (i, id) in ids.enumerated() {
@@ -1748,18 +1744,8 @@ class ModernMainWindowView: NSView {
         case "btn_waveform":
             WindowManager.shared.toggleWaveform()
             
-        case "btn_compact":
-            // Compact-mode entry does heavy synchronous AppKit work (activation-policy switch,
-            // window teardown, status-item creation). Force the button's active (on) state and
-            // paint it to screen *first* (synchronously), then run the switch on the next runloop
-            // — otherwise the heavy work runs before any repaint and the click looks like a hang.
-            compactButtonActivating = true
-            invalidateElement(elementId)
-            display()
-            DispatchQueue.main.async {
-                WindowManager.shared.toggleCompactMode()
-                self.compactButtonActivating = false
-            }
+        case "btn_cava":
+            WindowManager.shared.toggleCava()
 
         default:
             break
