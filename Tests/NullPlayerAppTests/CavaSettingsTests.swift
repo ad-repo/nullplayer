@@ -5,14 +5,24 @@ import XCTest
 final class CavaSettingsTests: XCTestCase {
     private var originalValues: [String: Any] = [:]
 
-    private var preferenceKeys: [String] {
-        CavaSettings.Scope.allCases.flatMap { CavaSettings.preferenceKeys(for: $0) }
+    private var protectedPreferenceKeys: [String] {
+        CavaSettings.Scope.allCases.flatMap { CavaSettings.preferenceKeys(for: $0) } + [
+            "mainWindowVisMode",
+            "modernMainWindowVisMode",
+            "spectrumQualityMode",
+            "visClassicLastProfileName.mainWindow",
+            "visClassicLastProfileName.spectrumWindow",
+            "visClassicFitToWidth.mainWindow",
+            "visClassicFitToWidth.spectrumWindow",
+            "visClassicLastProfileName",
+            "visClassicFitToWidth",
+        ]
     }
 
     override func setUp() {
         super.setUp()
         originalValues = [:]
-        for key in preferenceKeys {
+        for key in protectedPreferenceKeys {
             if let value = UserDefaults.standard.object(forKey: key) {
                 originalValues[key] = value
             }
@@ -21,7 +31,7 @@ final class CavaSettingsTests: XCTestCase {
     }
 
     override func tearDown() {
-        for key in preferenceKeys {
+        for key in protectedPreferenceKeys {
             if let value = originalValues[key] {
                 UserDefaults.standard.set(value, forKey: key)
             } else {
@@ -73,6 +83,51 @@ final class CavaSettingsTests: XCTestCase {
 
         XCTAssertEqual(CavaSettings.barCount(for: .mainWindow), CavaSettings.defaultBarCount)
         XCTAssertEqual(CavaSettings.barCount, 48)
+    }
+
+    func testSkinChangeClearsCustomColorFlagsForBothScopesWithoutDeletingColors() throws {
+        let fireIndex = try XCTUnwrap(CavaSettings.colorSchemes.firstIndex { $0.name == "Fire" })
+        let iceIndex = try XCTUnwrap(CavaSettings.colorSchemes.firstIndex { $0.name == "Ice" })
+        let fire = CavaSettings.colorSchemes[fireIndex]
+        let ice = CavaSettings.colorSchemes[iceIndex]
+
+        CavaSettings.setLowGradientColor(fire.low, for: .cavaWindow)
+        CavaSettings.setHighGradientColor(fire.high, for: .cavaWindow)
+        CavaSettings.setHasCustomColors(true, for: .cavaWindow)
+        CavaSettings.setLowGradientColor(ice.low, for: .mainWindow)
+        CavaSettings.setHighGradientColor(ice.high, for: .mainWindow)
+        CavaSettings.setHasCustomColors(true, for: .mainWindow)
+
+        CavaSettings.resetCustomColorsForSkinChange()
+
+        XCTAssertFalse(CavaSettings.hasCustomColors(for: .cavaWindow))
+        XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .cavaWindow), fireIndex)
+        XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .mainWindow), iceIndex)
+    }
+
+    func testClassicSkinRestorePreservesCustomColorsWhileExplicitLoadClearsThem() throws {
+        let skinURL = try XCTUnwrap(
+            BundleHelper.url(
+                forResource: "NullPlayer-Silver",
+                withExtension: "wsz",
+                subdirectory: "Resources/Skins"
+            )
+        )
+        let suiteName = "CavaSettingsTests.classicSkinLoad.\(UUID().uuidString)"
+        let testDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { testDefaults.removePersistentDomain(forName: suiteName) }
+
+        CavaSettings.setHasCustomColors(true, for: .cavaWindow)
+        CavaSettings.setHasCustomColors(true, for: .mainWindow)
+
+        XCTAssertTrue(WindowManager.shared.restoreClassicSkin(from: skinURL, userDefaults: testDefaults))
+        XCTAssertTrue(CavaSettings.hasCustomColors(for: .cavaWindow))
+        XCTAssertTrue(CavaSettings.hasCustomColors(for: .mainWindow))
+
+        XCTAssertTrue(WindowManager.shared.loadSkin(from: skinURL, userDefaults: testDefaults))
+        XCTAssertFalse(CavaSettings.hasCustomColors(for: .cavaWindow))
+        XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
     }
 
     func testClassicStackRepairIncludesCavaAfterFlow() throws {

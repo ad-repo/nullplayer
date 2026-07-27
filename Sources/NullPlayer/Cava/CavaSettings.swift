@@ -321,6 +321,12 @@ enum CavaSettings {
         defaults.set(customized, forKey: key(.colorsCustomized, for: scope))
     }
 
+    /// Forget user-picked gradients after an explicit skin change so the new skin's palette wins.
+    static func resetCustomColorsForSkinChange() {
+        setHasCustomColors(false, for: .cavaWindow)
+        setHasCustomColors(false, for: .mainWindow)
+    }
+
     static var hasCustomColors: Bool {
         get { hasCustomColors(for: .cavaWindow) }
         set { setHasCustomColors(newValue, for: .cavaWindow) }

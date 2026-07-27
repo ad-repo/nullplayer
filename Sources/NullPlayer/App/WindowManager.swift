@@ -2919,12 +2919,30 @@ class WindowManager {
     
     @discardableResult
     func loadSkin(from url: URL, userDefaults: UserDefaults = .standard) -> Bool {
+        loadClassicSkin(from: url, userDefaults: userDefaults, resetCavaCustomColors: true)
+    }
+
+    /// Restore a persisted classic skin without treating launch as an explicit skin change.
+    @discardableResult
+    func restoreClassicSkin(from url: URL, userDefaults: UserDefaults = .standard) -> Bool {
+        loadClassicSkin(from: url, userDefaults: userDefaults, resetCavaCustomColors: false)
+    }
+
+    @discardableResult
+    private func loadClassicSkin(
+        from url: URL,
+        userDefaults: UserDefaults,
+        resetCavaCustomColors: Bool
+    ) -> Bool {
         do {
             let skin = try SkinLoader.shared.load(from: url)
             currentSkin = skin
             currentSkinPath = url.path
             // Persist last used classic skin for easy reload when switching UI modes
             userDefaults.set(url.path, forKey: "lastClassicSkinPath")
+            if resetCavaCustomColors {
+                CavaSettings.resetCustomColorsForSkinChange()
+            }
             applyClassicVisualizationDefaults(notify: true)
             notifySkinChanged()
             return true
@@ -2995,6 +3013,7 @@ class WindowManager {
                 currentSkin = try SkinLoader.shared.load(from: bundledURL)
                 currentSkinPath = nil
                 UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+                CavaSettings.resetCustomColorsForSkinChange()
                 applyClassicVisualizationDefaults(notify: true)
                 notifySkinChanged()
                 return
@@ -3006,6 +3025,7 @@ class WindowManager {
         currentSkin = SkinLoader.shared.loadDefault()
         currentSkinPath = nil
         UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+        CavaSettings.resetCustomColorsForSkinChange()
         applyClassicVisualizationDefaults(notify: true)
         notifySkinChanged()
     }
