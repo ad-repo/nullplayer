@@ -104,7 +104,7 @@ class ContextMenuBuilder {
             menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
                                          action: #selector(MenuActions.toggleLibraryHistory)))
         }
-        menu.addItem(buildWindowItem("Milkdrop", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
+        menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
         menu.addItem(buildWindowItem("Video Player", visible: wm.isVideoPlayerVisible,
                                      action: #selector(MenuActions.toggleVideoPlayer),
                                      enabled: wm.currentVideoPlayerController != nil))
@@ -761,9 +761,11 @@ class ContextMenuBuilder {
         
         let wm = WindowManager.shared
 
-        let windowItem = NSMenuItem(title: wm.isProjectMVisible ? "Hide Window" : "Show Window",
-                                    action: #selector(MenuActions.toggleProjectM),
-                                    keyEquivalent: "")
+        let windowItem = NSMenuItem(
+            title: wm.isProjectMVisible ? "Hide Visualizations Window" : "Show Visualizations Window",
+            action: #selector(MenuActions.toggleProjectM),
+            keyEquivalent: ""
+        )
         windowItem.target = MenuActions.shared
         windowItem.state = wm.isProjectMVisible ? .on : .off
         visMenu.addItem(windowItem)
@@ -1280,7 +1282,7 @@ class ContextMenuBuilder {
             let barsMenu = NSMenu()
             barsMenu.autoenablesItems = false
             let currentBars = CavaSettings.barCount(for: scope)
-            for count in [12, 19, 24, 32] {
+            for count in CavaSettings.barCountPresets(for: scope) {
                 let item = NSMenuItem(
                     title: "\(count)",
                     action: #selector(MenuActions.setMainVisCavaBars(_:)),
@@ -1298,13 +1300,7 @@ class ContextMenuBuilder {
             let smoothingMenu = NSMenu()
             smoothingMenu.autoenablesItems = false
             let currentSmoothing = CavaSettings.noiseReduction(for: scope)
-            let smoothingPresets: [(String, Double)] = [
-                ("Snappy", 0.50),
-                ("Balanced", 0.65),
-                ("Smooth", 0.80),
-                ("Very Smooth", 0.90),
-            ]
-            for (name, value) in smoothingPresets {
+            for (name, value) in CavaSettings.smoothingPresets {
                 let item = NSMenuItem(
                     title: name,
                     action: #selector(MenuActions.setMainVisCavaSmoothing(_:)),
@@ -1322,13 +1318,7 @@ class ContextMenuBuilder {
             let bassMenu = NSMenu()
             bassMenu.autoenablesItems = false
             let currentBassTilt = CavaSettings.bassTilt(for: scope)
-            let bassPresets: [(String, Double)] = [
-                ("Less", 0.15),
-                ("Balanced", 0.30),
-                ("More", 0.50),
-                ("Max", 0.70),
-            ]
-            for (name, value) in bassPresets {
+            for (name, value) in CavaSettings.bassTiltPresets {
                 let item = NSMenuItem(
                     title: name,
                     action: #selector(MenuActions.setMainVisCavaBassTilt(_:)),

@@ -14,15 +14,6 @@ final class CavaPresenter: NSObject {
     /// Invoked when the user chooses Close (the view closes its window).
     var onClose: (() -> Void)?
 
-    /// Menu presets for the exposed tuning knobs.
-    private let barCountPresets = [16, 24, 32, 48, 64]
-    private let smoothingPresets: [(String, Double)] = [
-        ("Snappy", 0.50), ("Balanced", 0.65), ("Smooth", 0.80), ("Very Smooth", 0.90),
-    ]
-    private let bassPresets: [(String, Double)] = [
-        ("Less", 0.15), ("Balanced", 0.30), ("More", 0.50), ("Max", 0.70),
-    ]
-
     init(scope: CavaSettings.Scope = .cavaWindow) {
         self.scope = scope
         self.renderModel = CavaRenderModel(scope: scope)
@@ -146,10 +137,10 @@ final class CavaPresenter: NSObject {
         menu.addItem(.separator())
 
         menu.addItem(barsSubmenuItem())
-        menu.addItem(valueSubmenuItem(title: "Smoothing", presets: smoothingPresets,
+        menu.addItem(valueSubmenuItem(title: "Smoothing", presets: CavaSettings.smoothingPresets,
                                       current: CavaSettings.noiseReduction(for: scope),
                                       action: #selector(smoothingAction(_:))))
-        menu.addItem(valueSubmenuItem(title: "Bass", presets: bassPresets,
+        menu.addItem(valueSubmenuItem(title: "Bass", presets: CavaSettings.bassTiltPresets,
                                       current: CavaSettings.bassTilt(for: scope),
                                       action: #selector(bassTiltAction(_:))))
 
@@ -202,7 +193,7 @@ final class CavaPresenter: NSObject {
         let item = NSMenuItem(title: "Bars", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
         let current = CavaSettings.barCount(for: scope)
-        for count in barCountPresets {
+        for count in CavaSettings.barCountPresets(for: scope) {
             let sub = NSMenuItem(title: "\(count)", action: #selector(barCountAction(_:)), keyEquivalent: "")
             sub.target = self
             sub.representedObject = count
@@ -213,7 +204,7 @@ final class CavaPresenter: NSObject {
         return item
     }
 
-    private func valueSubmenuItem(title: String, presets: [(String, Double)],
+    private func valueSubmenuItem(title: String, presets: [(name: String, value: Double)],
                                   current: Double, action: Selector) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         let submenu = NSMenu()

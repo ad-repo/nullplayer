@@ -26,7 +26,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **PeppyMeter** | Skinnable analog VU meter — needle/bar meters that track left/right levels; right-click to pick a meter or enable Random | Context menu or Window menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
-| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art (shown as "Visualizations" in the Visuals menu and "Milkdrop" in the Windows menu; window chrome is titled "Visualizations") | VZ button, Windows menu, or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
 In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab is also available in the classic library browser. The Data tab shows:
 - **Play Time** summary (day/week/month/year/all-time)

@@ -13,7 +13,7 @@ The main window's built-in visualization area (76×16 pixels in Winamp coordinat
 |------|-------------|
 | **Off** | No main-window visualization; leaves the skin's prepared display artwork visible |
 | **Classic** | Low-fi 19-bar spectrum analyzer with skin colors and cropped analyzer sub curve (default; persisted internally as `Spectrum`) |
-| **Cava** | Mono vDSP/Cava bar analyzer drawn with CoreGraphics; colors follow the active skin until overridden |
+| **Cava** | Mono vDSP/Cava bar analyzer drawn with CoreGraphics; colors follow a visible mid→bright range of the active skin palette until overridden |
 | **Enhanced** | Compact professional LED analyzer with cropped sub range, clean peak caps, and restrained meter colors |
 | **Ultra** | Dense professional spectrum analyzer with cropped sub range, fast decay, clean peak caps, and restrained meter colors |
 | **Fire** | GPU flame simulation using Metal compute shaders |

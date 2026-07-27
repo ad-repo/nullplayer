@@ -329,7 +329,11 @@ class MainWindowView: NSView {
 
     private func applyCavaSkinDefaultColors() {
         let colors = WindowManager.shared.currentSkin?.visColors ?? []
-        if let low = colors.first, let high = colors.last {
+        if let high = colors.last {
+            // visColors is ordered darkest→brightest. Cava colors each whole bar by intensity,
+            // so starting at index 0 makes quiet bars nearly black; begin one-third into the
+            // palette while retaining the skin's brightest endpoint.
+            let low = colors[min(colors.count - 1, colors.count / 3)]
             CavaSettings.setSkinDefaultColors(low: low, high: high, scope: .mainWindow)
         } else if let green = CavaSettings.scheme(named: "Winamp Green") {
             CavaSettings.setSkinDefaultColors(low: green.low, high: green.high, scope: .mainWindow)

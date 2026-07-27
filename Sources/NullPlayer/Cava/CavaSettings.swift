@@ -69,6 +69,30 @@ enum CavaSettings {
     static let defaultNoiseReduction = 0.65   // smoothing / latency; lower = snappier
     static let defaultBassTilt = 0.3          // band bin-count exponent; higher = more bass
 
+    /// Canonical menu presets shared by the standalone and embedded Cava controls.
+    static func barCountPresets(for scope: Scope) -> [Int] {
+        switch scope {
+        case .cavaWindow:
+            return [16, 24, 32, 48, 64]
+        case .mainWindow:
+            return [12, 19, 24, 32]
+        }
+    }
+
+    static let smoothingPresets: [(name: String, value: Double)] = [
+        ("Snappy", 0.50),
+        ("Balanced", 0.65),
+        ("Smooth", 0.80),
+        ("Very Smooth", 0.90),
+    ]
+
+    static let bassTiltPresets: [(name: String, value: Double)] = [
+        ("Less", 0.15),
+        ("Balanced", 0.30),
+        ("More", 0.50),
+        ("Max", 0.70),
+    ]
+
     // MARK: - Mode (Mono/Stereo)
 
     static func mode(for scope: Scope) -> Mode {

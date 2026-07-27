@@ -105,8 +105,10 @@ Access via `CavaSettings.mode`, `CavaSettings.barCount`, etc. Menu and double-cl
 
 `CavaSettings.Scope` separates `.cavaWindow` from `.mainWindow`. The legacy static properties above
 remain wrappers for `.cavaWindow` and continue using the existing keys. Scope-aware accessors use
-`cava.mainWindow.*` keys for the embedded analyzer. Main-window tuning and color choices are reset
-with the centralized Main Window visualization reset and never modify the standalone window.
+`cava.mainWindow.*` keys for the embedded analyzer; its mode accessor always resolves to mono.
+Main-window tuning and color choices are reset with the centralized Main Window visualization reset
+and never modify the standalone window. Bar-count, smoothing, and bass menu presets are canonical
+`CavaSettings` collections shared by both menu builders.
 
 ## Key Files
 
@@ -189,8 +191,9 @@ The 60 Hz timer redraws only if the ordered bar signature changed. Closing, orde
 Cava's *default* gradient tracks the active skin; a user pick (via the Color menu) overrides it until they choose **Match Skin**:
 - `CavaSettings.hasCustomColors` (UserDefaults) gates this. `effectiveLowColor`/`effectiveHighColor` return the user's stored colors when true, otherwise the in-memory skin default.
 - The skin default is pushed by the **skin-aware views** (they can import `Skin/`/`ModernSkin/`; `CavaSettings` can't), in `commonInit` and `skinDidChange`:
-  - **Classic** (`CavaView`): the "Winamp Green" preset — green, like the classic Winamp spectrum.
-  - **Modern** (`ModernCavaView`): `skin.config.palette.resolvedPrimary()` → `resolvedAccent()`, so it matches each modern skin's palette automatically.
+  - **Classic standalone** (`CavaView`): the "Winamp Green" preset — green, like the classic Winamp spectrum.
+  - **Classic inline** (`MainWindowView`): the active skin's ordered `visColors` palette, from the one-third point to its brightest endpoint. Starting above index 0 keeps short, quiet bars visible because Cava fills each whole bar with one intensity-derived color.
+  - **Modern standalone and inline** (`ModernCavaView` / `ModernMainWindowView`): `skin.config.palette.resolvedPrimary()` → `resolvedAccent()`, so they match each modern skin's palette automatically.
 - `setSkinDefaultColors(low:high:)` is the plain-NSColor bridge that keeps `CavaSettings` free of skin imports. The default is in-memory (recomputed each session), not persisted — only the user override and the `hasCustomColors` flag persist.
 
 ### Color Persistence
