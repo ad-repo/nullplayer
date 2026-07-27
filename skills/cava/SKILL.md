@@ -193,8 +193,8 @@ they choose **Match Skin** or explicitly switch/reset skins. A same-skin app rel
 - `CavaSettings.hasCustomColors` (UserDefaults) gates this. `effectiveLowColor`/`effectiveHighColor` return the user's stored colors when true, otherwise the in-memory skin default.
 - Explicit modern skin changes clear both Cava scopes from
   `ModernSkinEngine.configureSkinDependencies(preservePersistedProfiles:)` when persisted profiles are
-  not being preserved. Classic skin changes clear them from `WindowManager.notifySkinChanged()`.
-  Startup restoration does not use either reset path.
+  not being preserved. Explicit classic loads clear them from `WindowManager.loadSkin(from:)` and
+  `loadBundledDefaultSkin()`; launch restoration uses the preserving `restoreClassicSkin(from:)` path.
 - The skin default is pushed by the **skin-aware views** (they can import `Skin/`/`ModernSkin/`; `CavaSettings` can't), in `commonInit` and `skinDidChange`:
   - **Classic standalone** (`CavaView`): the "Winamp Green" preset — green, like the classic Winamp spectrum.
   - **Classic inline** (`MainWindowView`): the active skin's ordered `visColors` palette, from the one-third point to its brightest endpoint. Starting above index 0 keeps short, quiet bars visible because Cava fills each whole bar with one intensity-derived color.

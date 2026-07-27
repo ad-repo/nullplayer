@@ -793,7 +793,7 @@ class AppStateManager {
         if !runningModernMode, let skinPath = state.customSkinPath {
             let skinURL = URL(fileURLWithPath: skinPath)
             if FileManager.default.fileExists(atPath: skinPath) {
-                wm.loadSkin(from: skinURL)
+                wm.restoreClassicSkin(from: skinURL)
             }
         }
         
