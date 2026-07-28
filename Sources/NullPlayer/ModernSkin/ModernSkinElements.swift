@@ -287,8 +287,9 @@ enum ModernSkinElements {
         NSSize(width: 550, height: baseMainSize.height * scaleFactor * 4)
     }
     
-    /// ProjectM window minimum size (resizable)
-    static let projectMMinSize = NSSize(width: 480, height: 300)
+    /// ProjectM window minimum size (resizable). Width floors at the center-stack width so the
+    /// window can be sized to align cleanly when docked top/bottom in a center stack.
+    static var projectMMinSize: NSSize { NSSize(width: spectrumMinSize.width, height: 300) }
 
     /// ProjectM window title bar height
     static var projectMTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
@@ -310,8 +311,9 @@ enum ModernSkinElements {
         NSSize(width: 550, height: baseMainSize.height * scaleFactor * 4)
     }
     
-    /// Library browser minimum size
-    static let libraryMinSize = NSSize(width: 480, height: 300)
+    /// Library browser minimum size. Width floors at the center-stack width so the window can be
+    /// sized to align cleanly when docked top/bottom in a center stack.
+    static var libraryMinSize: NSSize { NSSize(width: spectrumMinSize.width, height: 300) }
 
     /// Library browser title bar height
     static var libraryTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }

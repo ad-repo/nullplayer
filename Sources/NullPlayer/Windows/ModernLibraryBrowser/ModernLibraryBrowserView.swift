@@ -516,6 +516,7 @@ class ModernLibraryBrowserView: NSView {
     private var cachedServerBarFontScale: CGFloat?
     private var cachedServerBarIsMetal: Bool?
     private var cachedServerBarCompact: Bool?
+    private var cachedServerBarChromeScale: CGFloat?
     private var cachedPrefixAttrs: [NSAttributedString.Key: Any]?
     private var cachedDataAttrs: [NSAttributedString.Key: Any]?
     private var cachedActiveAttrs: [NSAttributedString.Key: Any]?
@@ -556,6 +557,14 @@ class ModernLibraryBrowserView: NSView {
     private var pendingArtSingleClickWorkItem: DispatchWorkItem?
     private var currentTrackRating: Int? = nil
     private var rateButtonRect: NSRect = .zero
+    private var refreshButtonRect: NSRect = .zero
+    private var artButtonRect: NSRect = .zero
+    private var visButtonRect: NSRect = .zero
+    private var sourceButtonRect: NSRect = .zero
+    private var libraryButtonRect: NSRect = .zero
+    private var addButtonRect: NSRect = .zero
+    private var tabButtonRects: [NSRect] = []
+    private var sortButtonRect: NSRect = .zero
     private var ratingSubmitTask: Task<Void, Never>?
     
     // Artwork
@@ -1231,9 +1240,10 @@ class ModernLibraryBrowserView: NSView {
     /// Per-tab widths across the tab bar. Content-aware: each tab is sized to its own label
     /// plus padding, then any leftover space is shared equally so every tab gets some
     /// breathing room and short labels (e.g. "TV", "Data") don't hog equal width.
-    private func tabBarWidths(totalWidth: CGFloat, labels: [String], font: NSFont) -> [CGFloat] {
+    private func tabBarWidths(totalWidth: CGFloat, labels: [String], font: NSFont,
+                              horizontalScale: CGFloat) -> [CGFloat] {
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        let padding = 18 * ModernSkinElements.sizeMultiplier
+        let padding = 18 * ModernSkinElements.sizeMultiplier * horizontalScale
         let natural = labels.map { $0.size(withAttributes: attrs).width + padding }
         let naturalSum = natural.reduce(0, +)
         if naturalSum > totalWidth {
@@ -1244,27 +1254,147 @@ class ModernLibraryBrowserView: NSView {
         return natural.map { $0 + extra }
     }
 
-    /// Smallest window width at which every tab label still fits inside its outline.
-    /// Mirrors the layout math in `drawTabBar`: tabs share `bounds.width - borders - sortWidth`
-    /// equally, so the narrowest label-fit is driven by the widest label ("Channels" in the
-    /// YouTube radio slot). Used to floor the Compact Mode window so labels never spill out.
-    var minimumCompactContentWidth: CGFloat {
-        let skin = currentSkin()
+    private var hasRateableServerBarTrack: Bool {
+        guard isArtOnlyMode,
+              let track = WindowManager.shared.audioEngine.currentTrack else { return false }
+        return track.plexRatingKey != nil || track.subsonicId != nil ||
+            track.jellyfinId != nil || track.embyId != nil || track.url.isFileURL
+    }
+
+    private func serverBarCountText() -> String? {
+        guard !isArtOnlyMode else { return nil }
+        switch currentSource {
+        case .local:
+            let count: Int
+            if browseMode == .artists {
+                count = localArtistTotal > 0 ? localArtistTotal : displayItems.count
+            } else if browseMode == .albums {
+                count = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
+            } else {
+                count = displayItems.count
+            }
+            return "\(count) items"
+        case .plex:
+            let manager = PlexManager.shared
+            let count: Int
+            if manager.currentLibrary?.type == "artist" {
+                count = cachedArtists.count
+            } else if manager.currentLibrary?.type == "movie" {
+                count = cachedMovies.count
+            } else {
+                count = displayItems.count
+            }
+            return "\(count) ITEMS"
+        case .radio:
+            return "\(displayItems.count) stations"
+        case .subsonic, .jellyfin, .emby, .youtube:
+            return "\(displayItems.count) items"
+        }
+    }
+
+    /// Full-size content width needed by the current server-bar state.
+    private func serverBarNaturalWidth(font: NSFont) -> CGFloat {
         let m = ModernSkinElements.sizeMultiplier
-        let font = skin.libraryFont(size: 11)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let textWidth: (String) -> CGFloat = { $0.size(withAttributes: attrs).width }
+        let prefixWidth = textWidth("Source: ")
+        let leadingInset = 4 * m
+        let minimumGap = 12 * m
+
+        var centeredOverlayWidth: CGFloat = 0
+        let leftWidth: CGFloat
+        switch currentSource {
+        case .local:
+            leftWidth = leadingInset + prefixWidth + textWidth("Local Files") + 28 * m + textWidth("+ADD")
+        case .radio:
+            leftWidth = leadingInset + prefixWidth + textWidth("Internet Radio") + 28 * m + textWidth("+ADD")
+        case .youtube:
+            leftWidth = leadingInset + prefixWidth + textWidth("YouTube") + 28 * m + textWidth("+ADD")
+        case .plex(let serverId):
+            let configured = PlexManager.shared.servers.contains(where: { $0.id == serverId }) ||
+                PlexManager.shared.isLinked
+            if configured {
+                leftWidth = leadingInset + prefixWidth + 100 * m + 16 * m +
+                    textWidth("Lib:") + 4 * m + 80 * m
+            } else {
+                leftWidth = leadingInset + prefixWidth
+                centeredOverlayWidth = textWidth("Click to link your Plex account")
+            }
+        case .subsonic(let serverId):
+            if SubsonicManager.shared.servers.contains(where: { $0.id == serverId }) {
+                leftWidth = leadingInset + prefixWidth + 100 * m + 16 * m +
+                    textWidth("Lib:") + 4 * m + 80 * m
+            } else {
+                leftWidth = leadingInset + prefixWidth
+                centeredOverlayWidth = textWidth("Click to add a Subsonic server")
+            }
+        case .jellyfin(let serverId):
+            if JellyfinManager.shared.servers.contains(where: { $0.id == serverId }) {
+                leftWidth = leadingInset + prefixWidth + 100 * m + 16 * m +
+                    textWidth("Lib:") + 4 * m + 80 * m
+            } else {
+                leftWidth = leadingInset + prefixWidth
+                centeredOverlayWidth = textWidth("Click to add a Jellyfin server")
+            }
+        case .emby(let serverId):
+            if EmbyManager.shared.servers.contains(where: { $0.id == serverId }) {
+                leftWidth = leadingInset + prefixWidth + 100 * m + 16 * m +
+                    textWidth("Lib:") + 4 * m + 80 * m
+            } else {
+                leftWidth = leadingInset + prefixWidth
+                centeredOverlayWidth = textWidth("Click to add an Emby server")
+            }
+        }
+
+        var rightWidth = 8 * m + textWidth("F5")
+        if currentArtwork != nil {
+            rightWidth += 12 * m + textWidth("ART") + 16 * m
+            if isArtOnlyMode {
+                rightWidth += 8 * m + textWidth("VIS") + 16 * m
+            }
+        }
+        if hasRateableServerBarTrack {
+            let starSize = (compactMode ? 11 : 14) * m
+            let starSpacing = (compactMode ? 2 : 4) * m
+            let starsWidth = 5 * starSize + 4 * starSpacing
+            rightWidth += (compactMode ? 10 : 16) * m + starsWidth
+        } else if let countText = serverBarCountText() {
+            rightWidth += 24 * m + textWidth(countText)
+        }
+
+        let clusteredWidth = leftWidth + minimumGap + rightWidth
+        guard centeredOverlayWidth > 0 else { return clusteredWidth }
+        return max(clusteredWidth,
+                   centeredOverlayWidth + 2 * max(leftWidth, rightWidth) + 2 * minimumGap)
+    }
+
+    private func tabRowNaturalWidth(font: NSFont) -> CGFloat {
+        let m = ModernSkinElements.sizeMultiplier
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
 
-        // Widest possible tab label across all sources (includes the YouTube "Channels" slot).
         var labels = ModernBrowseMode.allCases.map { $0.title }
         labels.append("Channels")
         labels.append("Folders")
         let maxLabelWidth = labels.map { $0.size(withAttributes: attrs).width }.max() ?? 0
 
         let sortWidth = "Sort".size(withAttributes: attrs).width + 16 * m
-        // Per-tab outline keeps a 2pt inset each side; add a little breathing room.
         let perTab = maxLabelWidth + 12 * m
-        let tabsWidth = perTab * CGFloat(ModernBrowseMode.allCases.count)
-        return ceil(tabsWidth + sortWidth + Layout.borderWidth * 2)
+        return perTab * CGFloat(ModernBrowseMode.allCases.count) + sortWidth
+    }
+
+    private func topChromeScale(for skin: ModernSkin) -> CGFloat {
+        let font = skin.libraryFont(size: compactMode ? 11 : 12)
+        let referenceWidth = max(tabRowNaturalWidth(font: font),
+                                 serverBarNaturalWidth(font: font))
+        let availableWidth = max(0, bounds.width - Layout.borderWidth * 2)
+        guard referenceWidth > 0 else { return 1 }
+        return min(1, max(0.66, availableWidth / referenceWidth))
+    }
+
+    /// Smallest window width at which every full-size compact tab label fits its outline.
+    var minimumCompactContentWidth: CGFloat {
+        let font = currentSkin().libraryFont(size: 11)
+        return ceil(tabRowNaturalWidth(font: font) + Layout.borderWidth * 2)
     }
 
     private func drawTabBar(in context: CGContext, tabBarY: CGFloat, skin: ModernSkin) {
@@ -1275,7 +1405,8 @@ class ModernLibraryBrowserView: NSView {
         (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(tabBarRect)
 
-        let font = skin.libraryFont(size: compactMode ? 11 : 12)
+        let chromeScale = topChromeScale(for: skin)
+        let font = skin.libraryFont(size: (compactMode ? 11 : 12) * chromeScale)
         
         // Sort indicator width on right
         let sortText = "Sort"
@@ -1284,15 +1415,17 @@ class ModernLibraryBrowserView: NSView {
             .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
         ]
         let sortSize = sortText.size(withAttributes: sortAttrs)
-        let sortWidth = sortSize.width + 16 * ModernSkinElements.sizeMultiplier
+        let sortWidth = sortSize.width + 16 * ModernSkinElements.sizeMultiplier * chromeScale
         
         let tabsWidth = tabBarRect.width - sortWidth
 
         let modes = ModernBrowseMode.allCases
         // Resolved (possibly dynamic) labels + content-aware widths, shared with hit-testing.
         let labels = currentTabLabels()
-        let widths = tabBarWidths(totalWidth: tabsWidth, labels: labels, font: font)
+        let widths = tabBarWidths(totalWidth: tabsWidth, labels: labels, font: font,
+                                  horizontalScale: chromeScale)
         var tabX = tabBarRect.minX
+        tabButtonRects.removeAll(keepingCapacity: true)
 
         for (index, mode) in modes.enumerated() {
             let tabWidth = widths[index]
@@ -1306,15 +1439,18 @@ class ModernLibraryBrowserView: NSView {
             if mode == .plists, browseMode == .folders, case .local = currentSource {
                 isSelected = true
             }
-            let tabInset = 2 * ModernSkinElements.sizeMultiplier
+            let tabInset = 2 * ModernSkinElements.sizeMultiplier * chromeScale
             drawToggleTab(label: label, isActive: isSelected,
-                          rect: tabRect.insetBy(dx: tabInset, dy: tabInset),
+                          rect: tabRect.insetBy(dx: tabInset,
+                                               dy: 2 * ModernSkinElements.sizeMultiplier),
                           font: font, skin: skin, context: context)
+            tabButtonRects.append(tabRect)
         }
         
         // Sort indicator
         let sortRect = NSRect(x: tabBarRect.maxX - sortWidth, y: tabBarY,
                               width: sortWidth, height: Layout.tabBarHeight)
+        sortButtonRect = sortRect
         drawInlineTabBarLabel(label: sortText, rect: sortRect,
                               font: font, skin: skin, context: context)
     }
@@ -1402,18 +1538,21 @@ class ModernLibraryBrowserView: NSView {
 
         let skinName = ModernSkinEngine.shared.currentSkinName ?? "default"
         let currentScale = ModernSkinElements.sizeMultiplier
+        let chromeScale = topChromeScale(for: skin)
         let isMetal = isMetalRenderStyle
         if cachedServerBarFont == nil ||
             cachedServerBarFontSkinName != skinName ||
             cachedServerBarFontScale != currentScale ||
             cachedServerBarIsMetal != isMetal ||
-            cachedServerBarCompact != compactMode {
-            let font = skin.libraryFont(size: compactMode ? 11 : 12)
+            cachedServerBarCompact != compactMode ||
+            cachedServerBarChromeScale != chromeScale {
+            let font = skin.libraryFont(size: (compactMode ? 11 : 12) * chromeScale)
             cachedServerBarFont = font
             cachedServerBarFontSkinName = skinName
             cachedServerBarFontScale = currentScale
             cachedServerBarIsMetal = isMetal
             cachedServerBarCompact = compactMode
+            cachedServerBarChromeScale = chromeScale
             cachedPrefixAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dimColor)]
             cachedDataAttrs   = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dataColor)]
             cachedActiveAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: isMetal ? skin.textColor : accentColor)]
@@ -1424,29 +1563,41 @@ class ModernLibraryBrowserView: NSView {
         let activeAttrs = cachedActiveAttrs!
 
         let m = ModernSkinElements.sizeMultiplier
+        let hm = m * chromeScale
         let textY = barRect.minY + (barRect.height - font.pointSize - 2 * m) / 2
+
+        refreshButtonRect = .zero
+        artButtonRect = .zero
+        visButtonRect = .zero
+        rateButtonRect = .zero
+        sourceButtonRect = .zero
+        libraryButtonRect = .zero
+        addButtonRect = .zero
 
         // Common prefix
         let prefix = "Source: "
-        drawText(prefix, at: NSPoint(x: barRect.minX + 4 * m, y: textY), withAttributes: prefixAttrs, context: context)
+        drawText(prefix, at: NSPoint(x: barRect.minX + 4 * hm, y: textY), withAttributes: prefixAttrs, context: context)
         let prefixWidth = prefix.size(withAttributes: prefixAttrs).width
-        let sourceNameStartX = barRect.minX + 4 * m + prefixWidth
+        let sourceNameStartX = barRect.minX + 4 * hm + prefixWidth
         
         // Right side: F5 refresh label
         let refreshText = "F5"
         let refreshWidth = refreshText.size(withAttributes: prefixAttrs).width
-        let refreshX = barRect.maxX - refreshWidth - 8 * m
+        let refreshX = barRect.maxX - refreshWidth - 8 * hm
         drawText(refreshText, at: NSPoint(x: refreshX, y: textY), withAttributes: prefixAttrs, context: context)
+        refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
+                                   width: barRect.maxX - refreshX, height: barRect.height)
         
         // ART toggle button (modern boxed toggle style)
         let artText = "ART"
         let artTextWidth = artText.size(withAttributes: prefixAttrs).width
-        let artBtnWidth = artTextWidth + 16 * m  // padding inside button
+        let artBtnWidth = artTextWidth + 16 * hm  // padding inside button
         let artBtnHeight: CGFloat = Layout.serverBarHeight - 6 * m
-        var artX = refreshX - artBtnWidth - 12 * m
+        var artX = refreshX - artBtnWidth - 12 * hm
         
         if currentArtwork != nil {
             let artBtnRect = NSRect(x: artX, y: barRect.minY + 3 * m, width: artBtnWidth, height: artBtnHeight)
+            artButtonRect = artBtnRect
             drawToggleTab(label: artText, isActive: isArtOnlyMode, rect: artBtnRect,
                           font: font, skin: skin, context: context)
         } else {
@@ -1458,9 +1609,10 @@ class ModernLibraryBrowserView: NSView {
         if isArtOnlyMode && currentArtwork != nil {
             let visText = "VIS"
             let visTextWidth = visText.size(withAttributes: prefixAttrs).width
-            let visBtnWidth = visTextWidth + 16 * m
-            let visX = artX - visBtnWidth - 8 * m
+            let visBtnWidth = visTextWidth + 16 * hm
+            let visX = artX - visBtnWidth - 8 * hm
             let visBtnRect = NSRect(x: visX, y: barRect.minY + 3 * m, width: visBtnWidth, height: artBtnHeight)
+            visButtonRect = visBtnRect
             drawToggleTab(label: visText, isActive: isVisualizingArt, rect: visBtnRect,
                           font: font, skin: skin, context: context)
             visEndX = visX
@@ -1470,9 +1622,9 @@ class ModernLibraryBrowserView: NSView {
         if isArtOnlyMode,
            let currentTrack = WindowManager.shared.audioEngine.currentTrack,
            currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
-            let starSize: CGFloat = (compactMode ? 11 : 14) * m
-            let starSpacing: CGFloat = (compactMode ? 2 : 4) * m
-            let starButtonGap: CGFloat = (compactMode ? 10 : 16) * m
+            let starSize: CGFloat = (compactMode ? 11 : 14) * hm
+            let starSpacing: CGFloat = (compactMode ? 2 : 4) * hm
+            let starButtonGap: CGFloat = (compactMode ? 10 : 16) * hm
             let totalStars = 5
             let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
             let starsX = visEndX - starsWidth - starButtonGap
@@ -1506,10 +1658,16 @@ class ModernLibraryBrowserView: NSView {
             let sourceText = "Local Files"
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
+            sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
+                                      width: sourceNameStartX + sourceTextWidth - barRect.minX,
+                                      height: barRect.height)
 
             let addText = "+ADD"
-            let addX = sourceNameStartX + sourceTextWidth + 28 * m
+            let addX = sourceNameStartX + sourceTextWidth + 28 * hm
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
+            addButtonRect = NSRect(x: addX, y: barRect.minY,
+                                   width: max(addText.size(withAttributes: activeAttrs).width, 50 * hm),
+                                   height: barRect.height)
 
             // Item count (only in list mode)
             if !isArtOnlyMode {
@@ -1523,7 +1681,7 @@ class ModernLibraryBrowserView: NSView {
                 }
                 let countText = "\(totalCount) items"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * m
+                let countX = visEndX - countWidth - 24 * hm
                 drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             }
 
@@ -1555,7 +1713,7 @@ class ModernLibraryBrowserView: NSView {
             
             if configuredServer != nil || manager.isLinked {
                 let serverName = configuredServer?.name ?? "Select Server"
-                let maxServerWidth: CGFloat = 100 * m
+                let maxServerWidth: CGFloat = 100 * hm
                 let textH = font.pointSize + 4 * m
 
                 serverNameMaxWidth = maxServerWidth
@@ -1566,13 +1724,19 @@ class ModernLibraryBrowserView: NSView {
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
                 let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * hm
                 drawText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs, context: context)
                 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
-                let libraryX = libraryLabelX + libLabelWidth + 4 * m
+                let libraryX = libraryLabelX + libLabelWidth + 4 * hm
                 let libraryText = manager.currentLibrary?.title ?? "Select"
-                let maxLibraryWidth: CGFloat = 80 * m
+                let maxLibraryWidth: CGFloat = 80 * hm
+                sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
+                                          width: sourceNameStartX + maxServerWidth - barRect.minX,
+                                          height: barRect.height)
+                libraryButtonRect = NSRect(x: libraryLabelX, y: barRect.minY,
+                                           width: libraryX + maxLibraryWidth - libraryLabelX,
+                                           height: barRect.height)
 
                 // Store widths for scroll logic
                 libraryNameMaxWidth = maxLibraryWidth
@@ -1594,7 +1758,7 @@ class ModernLibraryBrowserView: NSView {
                     }
                     let countText = "\(itemCount) ITEMS"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
-                    let countX = visEndX - countWidth - 24 * m
+                    let countX = visEndX - countWidth - 24 * hm
                     drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
                 }
             } else {
@@ -1602,13 +1766,14 @@ class ModernLibraryBrowserView: NSView {
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
                 let linkX = barRect.midX - linkWidth / 2
                 drawText(linkText, at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs, context: context)
+                sourceButtonRect = barRect
             }
             
         case .subsonic(let serverId):
             let configuredServer = SubsonicManager.shared.servers.first(where: { $0.id == serverId })
             if configuredServer != nil {
                 let serverName = configuredServer?.name ?? "Select Server"
-                let maxServerWidth: CGFloat = 100 * m
+                let maxServerWidth: CGFloat = 100 * hm
                 let textH = font.pointSize + 4 * m
 
                 serverNameMaxWidth = maxServerWidth
@@ -1619,13 +1784,19 @@ class ModernLibraryBrowserView: NSView {
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
                 let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * hm
                 drawText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs, context: context)
 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
-                let libraryX = libraryLabelX + libLabelWidth + 4 * m
+                let libraryX = libraryLabelX + libLabelWidth + 4 * hm
                 let folderText = SubsonicManager.shared.currentMusicFolder?.name ?? "All"
-                let maxLibraryWidth: CGFloat = 80 * m
+                let maxLibraryWidth: CGFloat = 80 * hm
+                sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
+                                          width: sourceNameStartX + maxServerWidth - barRect.minX,
+                                          height: barRect.height)
+                libraryButtonRect = NSRect(x: libraryLabelX, y: barRect.minY,
+                                           width: libraryX + maxLibraryWidth - libraryLabelX,
+                                           height: barRect.height)
 
                 libraryNameMaxWidth = maxLibraryWidth
                 libraryNameTextWidth = (folderText as NSString).size(withAttributes: dataAttrs).width
@@ -1638,7 +1809,7 @@ class ModernLibraryBrowserView: NSView {
                 if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
-                    let countX = visEndX - countWidth - 24 * m
+                    let countX = visEndX - countWidth - 24 * hm
                     drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
                 }
             } else {
@@ -1646,13 +1817,14 @@ class ModernLibraryBrowserView: NSView {
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
                 let linkX = barRect.midX - linkWidth / 2
                 drawText(linkText, at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs, context: context)
+                sourceButtonRect = barRect
             }
             
         case .jellyfin(let serverId):
             let configuredServer = JellyfinManager.shared.servers.first(where: { $0.id == serverId })
             if configuredServer != nil {
                 let serverName = configuredServer?.name ?? "Select Server"
-                let maxServerWidth: CGFloat = 100 * m
+                let maxServerWidth: CGFloat = 100 * hm
                 let textH = font.pointSize + 4 * m
 
                 serverNameMaxWidth = maxServerWidth
@@ -1663,13 +1835,19 @@ class ModernLibraryBrowserView: NSView {
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
                 let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * hm
                 drawText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs, context: context)
 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
-                let libraryX = libraryLabelX + libLabelWidth + 4 * m
+                let libraryX = libraryLabelX + libLabelWidth + 4 * hm
                 let libraryText = jellyfinCurrentLibraryName
-                let maxLibraryWidth: CGFloat = 80 * m
+                let maxLibraryWidth: CGFloat = 80 * hm
+                sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
+                                          width: sourceNameStartX + maxServerWidth - barRect.minX,
+                                          height: barRect.height)
+                libraryButtonRect = NSRect(x: libraryLabelX, y: barRect.minY,
+                                           width: libraryX + maxLibraryWidth - libraryLabelX,
+                                           height: barRect.height)
 
                 libraryNameMaxWidth = maxLibraryWidth
                 libraryNameTextWidth = (libraryText as NSString).size(withAttributes: dataAttrs).width
@@ -1682,7 +1860,7 @@ class ModernLibraryBrowserView: NSView {
                 if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
-                    let countX = visEndX - countWidth - 24 * m
+                    let countX = visEndX - countWidth - 24 * hm
                     drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
                 }
             } else {
@@ -1690,13 +1868,14 @@ class ModernLibraryBrowserView: NSView {
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
                 let linkX = barRect.midX - linkWidth / 2
                 drawText(linkText, at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs, context: context)
+                sourceButtonRect = barRect
             }
 
         case .emby(let serverId):
             let configuredServer = EmbyManager.shared.servers.first(where: { $0.id == serverId })
             if configuredServer != nil {
                 let serverName = configuredServer?.name ?? "Select Server"
-                let maxServerWidth: CGFloat = 100 * m
+                let maxServerWidth: CGFloat = 100 * hm
                 let textH = font.pointSize + 4 * m
 
                 serverNameMaxWidth = maxServerWidth
@@ -1707,13 +1886,19 @@ class ModernLibraryBrowserView: NSView {
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
                 let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * hm
                 drawText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs, context: context)
 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
-                let libraryX = libraryLabelX + libLabelWidth + 4 * m
+                let libraryX = libraryLabelX + libLabelWidth + 4 * hm
                 let libraryText = embyCurrentLibraryName
-                let maxLibraryWidth: CGFloat = 80 * m
+                let maxLibraryWidth: CGFloat = 80 * hm
+                sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
+                                          width: sourceNameStartX + maxServerWidth - barRect.minX,
+                                          height: barRect.height)
+                libraryButtonRect = NSRect(x: libraryLabelX, y: barRect.minY,
+                                           width: libraryX + maxLibraryWidth - libraryLabelX,
+                                           height: barRect.height)
 
                 libraryNameMaxWidth = maxLibraryWidth
                 libraryNameTextWidth = (libraryText as NSString).size(withAttributes: dataAttrs).width
@@ -1726,7 +1911,7 @@ class ModernLibraryBrowserView: NSView {
                 if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
-                    let countX = visEndX - countWidth - 24 * m
+                    let countX = visEndX - countWidth - 24 * hm
                     drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
                 }
             } else {
@@ -1734,22 +1919,29 @@ class ModernLibraryBrowserView: NSView {
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
                 let linkX = barRect.midX - linkWidth / 2
                 drawText(linkText, at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs, context: context)
+                sourceButtonRect = barRect
             }
 
         case .radio:
             let sourceText = "Internet Radio"
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
+            sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
+                                      width: sourceNameStartX + sourceTextWidth - barRect.minX,
+                                      height: barRect.height)
 
             let addText = "+ADD"
-            let addX = sourceNameStartX + sourceTextWidth + 28 * m
+            let addX = sourceNameStartX + sourceTextWidth + 28 * hm
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
+            addButtonRect = NSRect(x: addX, y: barRect.minY,
+                                   width: max(addText.size(withAttributes: activeAttrs).width, 50 * hm),
+                                   height: barRect.height)
 
             // Item count (only in list mode)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) stations"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * m
+                let countX = visEndX - countWidth - 24 * hm
                 drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             }
 
@@ -1757,16 +1949,22 @@ class ModernLibraryBrowserView: NSView {
             let sourceText = "YouTube"
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
+            sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
+                                      width: sourceNameStartX + sourceTextWidth - barRect.minX,
+                                      height: barRect.height)
 
             let addText = "+ADD"
-            let addX = sourceNameStartX + sourceTextWidth + 28 * m
+            let addX = sourceNameStartX + sourceTextWidth + 28 * hm
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
+            addButtonRect = NSRect(x: addX, y: barRect.minY,
+                                   width: max(addText.size(withAttributes: activeAttrs).width, 50 * hm),
+                                   height: barRect.height)
 
             // Item count (only in list mode)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) items"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * m
+                let countX = visEndX - countWidth - 24 * hm
                 drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             }
         }
@@ -3315,24 +3513,9 @@ class ModernLibraryBrowserView: NSView {
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return nil }
 
-        let skin = currentSkin()
-        let font = skin.libraryFont(size: 11)
-        let sortText = "Sort"
-        let sortAttrs: [NSAttributedString.Key: Any] = [.font: font]
-        let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
-
-        let tabsWidth = bounds.width - Layout.borderWidth * 2 - sortWidth
-        let widths = tabBarWidths(totalWidth: tabsWidth, labels: currentTabLabels(), font: font)
-        let relativeX = point.x - Layout.borderWidth
-
-        if relativeX >= 0 && relativeX < tabsWidth {
-            var x: CGFloat = 0
-            for (index, width) in widths.enumerated() {
-                if relativeX < x + width {
-                    return ModernBrowseMode.allCases[index]
-                }
-                x += width
-            }
+        for (index, rect) in tabButtonRects.enumerated()
+        where rect.contains(point) && index < ModernBrowseMode.allCases.count {
+            return ModernBrowseMode.allCases[index]
         }
         return nil
     }
@@ -3341,15 +3524,7 @@ class ModernLibraryBrowserView: NSView {
         let tabBarTopY = topChromeBottomY - Layout.serverBarHeight
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return false }
-        
-        let skin = currentSkin()
-        let font = skin.libraryFont(size: 11)
-        let sortText = "Sort"
-        let sortAttrs: [NSAttributedString.Key: Any] = [.font: font]
-        let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
-        
-        let sortX = bounds.width - Layout.borderWidth - sortWidth
-        return point.x >= sortX && point.x < bounds.width - Layout.borderWidth
+        return sortButtonRect.contains(point)
     }
     
     private func hitTestSearchBar(at point: NSPoint) -> Bool {
@@ -4155,114 +4330,48 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Server Bar Click Handling
     
     private func handleServerBarClick(at point: NSPoint, event: NSEvent) {
-        let m = ModernSkinElements.sizeMultiplier
-        let barRect = NSRect(x: Layout.borderWidth, y: topChromeBottomY - Layout.serverBarHeight,
-                            width: bounds.width - Layout.borderWidth * 2, height: Layout.serverBarHeight)
-        let relativeX = point.x - barRect.minX
-        let barWidth = barRect.width
-        
-        let refreshZoneStart = barWidth - 30 * m
-        if relativeX >= refreshZoneStart { handleRefreshClick(); return }
-        
-        // ART toggle - match drawn button positions
-        let skin = currentSkin()
-        let font = skin.libraryFont(size: 11)
-        let fontAttrs: [NSAttributedString.Key: Any] = [.font: font]
-        let artTextWidth = "ART".size(withAttributes: fontAttrs).width
-        let artBtnWidth = artTextWidth + 16 * m
-        let artZoneStart = refreshZoneStart - 12 * m - artBtnWidth
-        let artZoneEnd = artZoneStart + artBtnWidth
-        if currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
+        if refreshButtonRect.contains(point) {
+            handleRefreshClick()
+            return
+        }
+        if artButtonRect.contains(point) {
             isArtOnlyMode.toggle(); return
         }
-        
-        // VIS button - match drawn button positions
-        if isArtOnlyMode && currentArtwork != nil {
-            let visTextWidth = "VIS".size(withAttributes: fontAttrs).width
-            let visBtnWidth = visTextWidth + 16 * m
-            let visZoneStart = artZoneStart - 8 * m - visBtnWidth
-            let visZoneEnd = visZoneStart + visBtnWidth
-            if relativeX >= visZoneStart && relativeX <= visZoneEnd { toggleVisualization(); return }
+        if visButtonRect.contains(point) {
+            toggleVisualization()
+            return
         }
-        
-        // RATE button click (star area in art-only mode)
-        if !rateButtonRect.isEmpty {
-            let rateRelativeStart = rateButtonRect.minX - barRect.minX
-            let rateRelativeEnd = rateButtonRect.maxX - barRect.minX
-            if relativeX >= rateRelativeStart && relativeX <= rateRelativeEnd {
-                showRatingOverlay(); return
-            }
+        if rateButtonRect.contains(point) {
+            showRatingOverlay()
+            return
         }
-        
+
         switch currentSource {
         case .local:
-            let localNameWidth = "Local Files".size(withAttributes: fontAttrs).width
-            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
-            let sourceZoneEnd = sourcePrefix + localNameWidth
-            let addZoneStart = sourceZoneEnd + 28 * m
-            let addZoneEnd = addZoneStart + 50 * m
-            if relativeX >= addZoneStart && relativeX <= addZoneEnd { showAddFilesMenu(at: event) }
-            else if relativeX < sourceZoneEnd { showSourceMenu(at: event) }
+            if addButtonRect.contains(point) { showAddFilesMenu(at: event) }
+            else if sourceButtonRect.contains(point) { showSourceMenu(at: event) }
         case .plex:
-            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
-            let maxServerWidth: CGFloat = 100 * m
-            let serverZoneEnd = sourcePrefix + maxServerWidth
-            let libLabelWidth = "Lib:".size(withAttributes: fontAttrs).width + 4 * m
-            let libraryZoneStart = serverZoneEnd + 12 * m
-            let maxLibraryWidth: CGFloat = 80 * m
-            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
-            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd { showLibraryMenu(at: event) }
-            else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
+            if libraryButtonRect.contains(point) { showLibraryMenu(at: event) }
+            else if sourceButtonRect.contains(point) { showSourceMenu(at: event) }
         case .subsonic:
-            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
-            let maxServerWidth: CGFloat = 100 * m
-            let serverZoneEnd = sourcePrefix + maxServerWidth
-            let libLabelWidth = "Lib:".size(withAttributes: fontAttrs).width + 4 * m
-            let libraryZoneStart = serverZoneEnd + 12 * m
-            let maxLibraryWidth: CGFloat = 80 * m
-            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
-            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd { showSubsonicFolderMenu(at: event) }
-            else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
+            if libraryButtonRect.contains(point) { showSubsonicFolderMenu(at: event) }
+            else if sourceButtonRect.contains(point) { showSourceMenu(at: event) }
         case .jellyfin:
-            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
-            let maxServerWidth: CGFloat = 100 * m
-            let serverZoneEnd = sourcePrefix + maxServerWidth
-            let libLabelWidth = "Lib:".size(withAttributes: fontAttrs).width + 4 * m
-            let libraryZoneStart = serverZoneEnd + 12 * m
-            let maxLibraryWidth: CGFloat = 80 * m
-            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
-            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
+            if libraryButtonRect.contains(point) {
                 if browseMode.isVideoMode { showJellyfinVideoLibraryMenu(at: event) }
                 else { showJellyfinLibraryMenu(at: event) }
-            } else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
+            } else if sourceButtonRect.contains(point) { showSourceMenu(at: event) }
         case .emby:
-            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
-            let maxServerWidth: CGFloat = 100 * m
-            let serverZoneEnd = sourcePrefix + maxServerWidth
-            let libLabelWidth = "Lib:".size(withAttributes: fontAttrs).width + 4 * m
-            let libraryZoneStart = serverZoneEnd + 12 * m
-            let maxLibraryWidth: CGFloat = 80 * m
-            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
-            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
+            if libraryButtonRect.contains(point) {
                 if browseMode.isVideoMode { showEmbyVideoLibraryMenu(at: event) }
                 else { showEmbyLibraryMenu(at: event) }
-            } else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
+            } else if sourceButtonRect.contains(point) { showSourceMenu(at: event) }
         case .radio:
-            let radioNameWidth = "Internet Radio".size(withAttributes: fontAttrs).width
-            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
-            let sourceZoneEnd = sourcePrefix + radioNameWidth
-            let addZoneStart = sourceZoneEnd + 28 * m
-            let addZoneEnd = addZoneStart + 50 * m
-            if relativeX >= addZoneStart && relativeX <= addZoneEnd { showRadioAddMenu(at: event) }
-            else if relativeX < sourceZoneEnd { showSourceMenu(at: event) }
+            if addButtonRect.contains(point) { showRadioAddMenu(at: event) }
+            else if sourceButtonRect.contains(point) { showSourceMenu(at: event) }
         case .youtube:
-            let ytNameWidth = "YouTube".size(withAttributes: fontAttrs).width
-            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
-            let sourceZoneEnd = sourcePrefix + ytNameWidth
-            let addZoneStart = sourceZoneEnd + 28 * m
-            let addZoneEnd = addZoneStart + 50 * m
-            if relativeX >= addZoneStart && relativeX <= addZoneEnd { showYouTubeAddMenu(at: event) }
-            else if relativeX < sourceZoneEnd { showSourceMenu(at: event) }
+            if addButtonRect.contains(point) { showYouTubeAddMenu(at: event) }
+            else if sourceButtonRect.contains(point) { showSourceMenu(at: event) }
         }
     }
 
