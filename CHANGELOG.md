@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.1
+
+### Bug Fixes
+
+- **Plex library no longer freezes on first launch** — on a fresh launch, a background content preload could finish midway through the first library load and supersede it, leaving the artist album-count index unbuilt. The browser then re-parsed every album for every artist on the main thread on each click, freezing all windows until relaunch. The index is now always built before artist rows render, and the per-artist rescan fallback was removed, so the library stays responsive.
+
 ## 0.29.0
 
 ### New Features
