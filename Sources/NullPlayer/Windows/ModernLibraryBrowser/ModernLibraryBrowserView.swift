@@ -9007,25 +9007,31 @@ class ModernLibraryBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedArtists.isEmpty {
+                        // Keep the coupled caches atomic so a superseded load cannot expose
+                        // artists without albums and permanently skip the index rebuild.
+                        let artists: [PlexArtist]
+                        let albums: [PlexAlbum]
+
                         if self.pendingArtistLoadUnfiltered {
-                            self.cachedArtists = try await pm.fetchArtists()
+                            artists = try await pm.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            if self.cachedAlbums.isEmpty {
-                                self.cachedAlbums = try await pm.fetchAlbums(offset: 0, limit: 10000)
-                                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            }
+                            albums = try await pm.fetchAlbums(offset: 0, limit: 10000)
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         } else if pm.isContentPreloaded && !pm.cachedArtists.isEmpty {
-                            self.cachedArtists = pm.cachedArtists; self.cachedAlbums = pm.cachedAlbums
+                            artists = pm.cachedArtists
+                            albums = pm.cachedAlbums
                         } else {
-                            self.cachedArtists = try await pm.fetchArtists()
+                            artists = try await pm.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            if self.cachedAlbums.isEmpty {
-                                self.cachedAlbums = try await pm.fetchAlbums(offset: 0, limit: 10000)
-                                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            }
+                            albums = try await pm.fetchAlbums(offset: 0, limit: 10000)
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
-                        self.buildArtistAlbumCounts()
+
+                        guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                        self.cachedArtists = artists
+                        self.cachedAlbums = albums
                     }
+                    self.buildArtistAlbumCounts()
                     self.pendingArtistLoadUnfiltered = false
                     self.buildArtistItems()
                 case .albums:
@@ -9514,6 +9520,10 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func buildArtistItems() {
+        if plexArtistGroupsByName.isEmpty && !cachedArtists.isEmpty {
+            buildArtistAlbumCounts()
+        }
+
         displayItems.removeAll()
         let sorted = sortPlexArtists(uniquePlexArtistsByName(cachedArtists))
         for artist in sorted {
@@ -10533,16 +10543,6 @@ class ModernLibraryBrowserView: NSView {
         }
 
         let group = plexArtistGroup(for: artist)
-        let memberIds = Set(group.map { $0.id })
-        let cachedGroupAlbums = cachedAlbums.filter { album in
-            guard let parentKey = album.parentKey,
-                  let artistId = extractArtistId(from: parentKey) else { return false }
-            return memberIds.contains(artistId)
-        }
-        if !cachedGroupAlbums.isEmpty {
-            return deduplicatedPlexAlbums(cachedGroupAlbums).count
-        }
-
         var count = 0
         var foundCount = false
         for member in group {

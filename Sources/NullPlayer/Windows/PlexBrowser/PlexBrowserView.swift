@@ -13541,26 +13541,31 @@ class PlexBrowserView: NSView {
                 switch self.browseMode {
                 case .artists:
                     if self.cachedArtists.isEmpty {
+                        // Keep the coupled caches atomic so a superseded load cannot expose
+                        // artists without albums and permanently skip the index rebuild.
+                        let artists: [PlexArtist]
+                        let albums: [PlexAlbum]
+
                         if self.pendingArtistLoadUnfiltered {
-                            self.cachedArtists = try await plexManager.fetchArtists()
+                            artists = try await plexManager.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            if self.cachedAlbums.isEmpty {
-                                self.cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
-                                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            }
+                            albums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         } else if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
-                            self.cachedArtists = plexManager.cachedArtists
-                            self.cachedAlbums = plexManager.cachedAlbums
+                            artists = plexManager.cachedArtists
+                            albums = plexManager.cachedAlbums
                         } else {
-                            self.cachedArtists = try await plexManager.fetchArtists()
+                            artists = try await plexManager.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            if self.cachedAlbums.isEmpty {
-                                self.cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
-                                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            }
+                            albums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
-                        self.buildArtistAlbumCounts()
+
+                        guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                        self.cachedArtists = artists
+                        self.cachedAlbums = albums
                     }
+                    self.buildArtistAlbumCounts()
                     self.pendingArtistLoadUnfiltered = false
                     self.buildArtistItems()
                     
@@ -13688,6 +13693,10 @@ class PlexBrowserView: NSView {
     }
     
     private func buildArtistItems() {
+        if plexArtistGroupsByName.isEmpty && !cachedArtists.isEmpty {
+            buildArtistAlbumCounts()
+        }
+
         displayItems.removeAll()
         
         // Sort artists
@@ -15997,16 +16006,6 @@ class PlexBrowserView: NSView {
         }
 
         let group = plexArtistGroup(for: artist)
-        let memberIds = Set(group.map { $0.id })
-        let cachedGroupAlbums = cachedAlbums.filter { album in
-            guard let parentKey = album.parentKey,
-                  let artistId = extractArtistId(from: parentKey) else { return false }
-            return memberIds.contains(artistId)
-        }
-        if !cachedGroupAlbums.isEmpty {
-            return deduplicatedPlexAlbums(cachedGroupAlbums).count
-        }
-
         var count = 0
         var foundCount = false
         for member in group {
