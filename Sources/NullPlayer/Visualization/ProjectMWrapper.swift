@@ -206,10 +206,11 @@ class ProjectMWrapper: VisualizationEngine {
             projectm_destroy(h)
         }
         #endif
-        // Clear the crash sentinel on clean teardown (engine switch / window close) so a
-        // stale sentinel from a normally-displayed preset never gets misread as a crash on
-        // the next launch. App-quit teardown clears it via AppDelegate.applicationWillTerminate,
-        // since process exit does not run deinit.
+        // Disarm crash detection on clean teardown (engine switch / window close): no preset
+        // is on screen anymore, so a fault elsewhere must not be attributed to one. The
+        // sentinel file is only ever written by the signal handler, so there is normally
+        // nothing on disk to remove; clearCrashSentinel is a defensive belt-and-suspenders.
+        Self.disarmCrashSentinel()
         Self.clearCrashSentinel()
     }
     
@@ -304,7 +305,7 @@ class ProjectMWrapper: VisualizationEngine {
     /// Minimum time (seconds) to wait after preset change before rendering
     /// This ensures textures are fully initialized even if frame timing is inconsistent
     private let minTimeAfterPresetChange: CFAbsoluteTime = 0.25
-    
+
     /// Minimum time (seconds) between preset changes (rate limiting)
     /// Prevents crashes from rapid clicking by ignoring requests that are too close together
     private let minTimeBetweenPresetChanges: CFAbsoluteTime = 0.35
@@ -342,14 +343,15 @@ class ProjectMWrapper: VisualizationEngine {
             _presetLoadInProgress = true
 
             // Arm the crash-detection sentinel for this preset BEFORE any risky libprojectM
-            // call. It names the preset now being displayed and stays on disk for the entire
-            // time this preset renders. If libprojectM SIGSEGVs at ANY point — during load,
-            // the first frame, or minutes into steady-state (e.g. the null-texture deref in
-            // FinalComposite::LoadVariables reported in #328) — the sentinel survives the
-            // crash and the preset is permanently blacklisted on the next launch. It is
-            // cleared on clean teardown (engine deinit / app quit), so a normal exit never
-            // blacklists a good preset.
-            Self.writeCrashSentinel(presetPath: path)
+            // call. This records the preset path in a signal-handler-readable buffer and stays
+            // armed for the ENTIRE time the preset is displayed. The sentinel FILE is only
+            // written from the SIGSEGV/SIGBUS handler, so it materializes only if libprojectM
+            // actually faults — during load, the first frame, OR minutes into steady state
+            // (e.g. the null-texture deref in FinalComposite::LoadVariables reported in #328,
+            // which references a texture that no longer exists long after init). A clean quit,
+            // a force quit, or a dev build script's SIGKILL raises no catchable signal, so no
+            // sentinel is written and no good preset is ever blacklisted by mistake.
+            Self.armCrashSentinel(presetPath: path)
 
             projectm_load_preset_file(h, path, false)  // Always use hard cut for safety
 
@@ -390,10 +392,10 @@ class ProjectMWrapper: VisualizationEngine {
         // Update viewport
         glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
 
-        // The crash-detection sentinel was armed when this preset loaded and remains on
-        // disk for the preset's entire display lifetime. If projectm_opengl_render_frame
-        // SIGSEGVs on ANY frame — the first or the ten-thousandth — the sentinel survives
-        // and the offending preset is blacklisted on the next launch (see #328).
+        // The crash-detection sentinel stays armed for the preset's entire display lifetime.
+        // If projectm_opengl_render_frame SIGSEGVs/SIGBUSes on ANY frame — the first or the
+        // ten-thousandth, including the #328 late null-texture deref — the signal handler
+        // writes the sentinel naming this preset, and it is blacklisted on the next launch.
         projectm_opengl_render_frame(h)
         #endif
     }
@@ -937,17 +939,59 @@ extension ProjectMWrapper {
 
 // MARK: - Crash Detection
 
+// Signal-handler state for ProjectM crash detection (file-scope so the @convention(c) handler
+// can reach it without capturing context).
+//
+// The sentinel file is written ONLY from the fatal-signal handler below, so it materializes
+// only when libprojectM actually faults (SIGSEGV/SIGBUS) — at ANY point in a preset's life,
+// from load to minutes into steady state (e.g. the #328 null-texture deref that references a
+// texture freed long after init). A clean quit, a force quit, or a dev build script's SIGKILL
+// raises no catchable signal and so never writes the file — which is exactly what stops
+// healthy presets from being blacklisted by mistake. Everything the handler touches must be
+// async-signal-safe: it only reads these globals and calls open/write/close/sigaction/raise.
+
+/// C string of the sentinel file path, populated once when handlers are installed.
+private var _pmSentinelPathC: UnsafeMutablePointer<CChar>?
+/// Buffer holding the armed preset's path bytes (length excludes any null terminator).
+private var _pmPresetPathC: UnsafeMutablePointer<CChar>?
+private let _pmPresetPathCap = 4096
+private var _pmPresetPathLen = 0
+/// Nonzero while a preset is on screen and a fault should be recorded against it.
+private var _pmSentinelArmed: sig_atomic_t = 0
+/// Prior signal dispositions, restored before re-raising so the real crash still surfaces.
+private var _pmOldSegvAction = sigaction()
+private var _pmOldBusAction = sigaction()
+
+/// Fatal-signal handler. Records the armed preset into the sentinel file, then restores the
+/// previous disposition and re-raises so the process still crashes and the OS reports it.
+private func _pmCrashSignalHandler(_ sig: Int32) {
+    if _pmSentinelArmed != 0, _pmPresetPathLen > 0,
+       let pathC = _pmSentinelPathC, let presetC = _pmPresetPathC {
+        let fd = open(pathC, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+        if fd >= 0 {
+            _ = write(fd, presetC, _pmPresetPathLen)
+            close(fd)
+        }
+    }
+    if sig == SIGSEGV {
+        sigaction(SIGSEGV, &_pmOldSegvAction, nil)
+    } else if sig == SIGBUS {
+        sigaction(SIGBUS, &_pmOldBusAction, nil)
+    } else {
+        signal(sig, SIG_DFL)
+    }
+    raise(sig)
+}
+
 extension ProjectMWrapper {
-    
+
     /// Path to the crash-detection sentinel file.
     ///
-    /// This file is written when a preset loads (before any risky libprojectM call) and
-    /// stays on disk for the entire time that preset is displayed. It is removed only on
-    /// clean teardown — engine deinit or app quit — or overwritten when the next preset
-    /// loads. If the app instead crashes while the preset is on screen (SIGSEGV/SIGBUS
-    /// inside a buggy libprojectM shader, at any frame — see #328), the file persists. On
-    /// the next launch, the offending preset is permanently blacklisted and excluded from
-    /// the rotation.
+    /// Written only by the fatal-signal handler (`_pmCrashSignalHandler`) when libprojectM
+    /// SIGSEGVs/SIGBUSes while a preset is armed — at any point in that preset's lifetime. On
+    /// the next launch, `checkAndHandlePreviousCrash` reads the preset it names and blacklists
+    /// it. Because the file is never written on a clean/killed exit, a normal quit, force quit,
+    /// or dev-script SIGKILL never blacklists a good preset.
     static var crashSentinelPath: String {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NullPlayer", isDirectory: true).path
@@ -969,17 +1013,60 @@ extension ProjectMWrapper {
         }
     }
     
-    /// Writes the crash-detection sentinel file with the given preset path.
-    /// Must be called just before `projectm_opengl_render_frame`.
-    static func writeCrashSentinel(presetPath: String) {
-        let sentinelDir = (crashSentinelPath as NSString).deletingLastPathComponent
-        try? FileManager.default.createDirectory(atPath: sentinelDir,
-                                                  withIntermediateDirectories: true)
-        // Write atomically so the file is either fully written or not present
-        try? presetPath.write(toFile: crashSentinelPath, atomically: true, encoding: .utf8)
+    /// Serializes one-time signal-handler installation.
+    private static let handlerInstallLock = NSLock()
+    private static var handlersInstalled = false
+
+    /// Installs the SIGSEGV/SIGBUS handlers once. Only these two are trapped: they are how
+    /// libprojectM's bad-memory faults surface. SIGABRT/SIGILL are deliberately left alone so
+    /// Swift runtime traps (precondition/fatalError) are never misread as preset crashes.
+    static func installCrashHandlersIfNeeded() {
+        handlerInstallLock.lock()
+        defer { handlerInstallLock.unlock() }
+        guard !handlersInstalled else { return }
+
+        // The handler's open() is not allowed to create directories, so ensure the sentinel's
+        // parent exists now and cache the path as a C string it can use without allocating.
+        let dir = (crashSentinelPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        _pmSentinelPathC = strdup(crashSentinelPath)
+        _pmPresetPathC = UnsafeMutablePointer<CChar>.allocate(capacity: _pmPresetPathCap)
+
+        var sa = sigaction()
+        sigemptyset(&sa.sa_mask)
+        sa.sa_flags = 0
+        sa.__sigaction_u.__sa_handler = _pmCrashSignalHandler
+        sigaction(SIGSEGV, &sa, &_pmOldSegvAction)
+        sigaction(SIGBUS, &sa, &_pmOldBusAction)
+
+        handlersInstalled = true
     }
-    
-    /// Removes the crash-detection sentinel file after a successful render.
+
+    /// Arms crash detection for `presetPath`. Records the path in the handler-readable buffer
+    /// and keeps it armed for the preset's entire display lifetime. No file is touched here —
+    /// the sentinel is written only if the handler actually fires.
+    static func armCrashSentinel(presetPath: String) {
+        installCrashHandlersIfNeeded()
+        guard let dst = _pmPresetPathC else { return }
+        // Disarm across the buffer update so the handler can't observe a torn path.
+        _pmSentinelArmed = 0
+        let n = presetPath.withCString { src -> Int in
+            let len = min(strlen(src), _pmPresetPathCap - 1)
+            memcpy(dst, src, len)
+            return len
+        }
+        _pmPresetPathLen = n
+        _pmSentinelArmed = 1
+    }
+
+    /// Disarms crash detection — no preset is on screen, so a fault must not be attributed to
+    /// one. Called on clean teardown (engine deinit / app quit).
+    static func disarmCrashSentinel() {
+        _pmSentinelArmed = 0
+    }
+
+    /// Removes the crash-detection sentinel file. Normally a no-op (the file only ever exists
+    /// after a genuine crash); kept as a defensive clear and for the user-facing reset.
     static func clearCrashSentinel() {
         try? FileManager.default.removeItem(atPath: crashSentinelPath)
     }
@@ -995,12 +1082,11 @@ extension ProjectMWrapper {
     /// If a sentinel file exists, the preset it names crashed libprojectM. That preset
     /// is added to the persistent blacklist and the sentinel is removed.
     ///
-    /// This runs at most once per process launch. The sentinel now stays on disk for the
-    /// entire time a preset is displayed (see #328), so on any call after the first the
-    /// sentinel belongs to the *current* session's live preset — treating that as a crash
-    /// would falsely blacklist a healthy preset (e.g. during an in-app "Reload Presets"
-    /// rescan). The first call happens during initial preset loading, before this session
-    /// writes any sentinel, so it still catches a genuine previous-run crash.
+    /// This runs at most once per process launch, during initial preset loading — before this
+    /// session could ever write a sentinel (the file is only written by the crash handler, and
+    /// if this session had crashed it would not be running). So any sentinel found here belongs
+    /// to a genuine *previous*-run crash. The once guard also keeps an in-app "Reload Presets"
+    /// rescan from re-reading it.
     static func checkAndHandlePreviousCrash() {
         previousCrashCheckLock.lock()
         if didCheckPreviousCrash {
@@ -1009,6 +1095,16 @@ extension ProjectMWrapper {
         }
         didCheckPreviousCrash = true
         previousCrashCheckLock.unlock()
+
+        // One-time recovery: earlier builds eagerly wrote the sentinel on preset load and
+        // relied on a clean-teardown clear, so any non-render termination (force quit, a dev
+        // build script's SIGKILL, an unrelated crash) left the sentinel behind and blacklisted
+        // whatever preset happened to be on screen. Over many launches this silently
+        // blacklisted good presets — for some users, all of them. Wipe that untrustworthy
+        // accumulated list once. The signal-driven sentinel below no longer produces those
+        // false positives, and a genuine crash from the run just before this launch is still
+        // re-added from the sentinel.
+        clearErroneousBlacklistOnce()
 
         guard let crashedPath = try? String(contentsOfFile: crashSentinelPath, encoding: .utf8),
               !crashedPath.isEmpty else { return }
@@ -1030,5 +1126,21 @@ extension ProjectMWrapper {
         UserDefaults.standard.removeObject(forKey: crashedPresetsKey)
         clearCrashSentinel()
         NSLog("ProjectMWrapper: Cleared preset crash blacklist")
+    }
+
+    /// UserDefaults flag marking that the one-time erroneous-blacklist reset has run.
+    private static let erroneousBlacklistResetKey = "projectMBlacklistErroneousResetDone"
+
+    /// Wipes the accumulated crash blacklist exactly once, to recover installs where the old
+    /// full-lifetime sentinel had erroneously blacklisted healthy presets. No-op after the
+    /// first run.
+    private static func clearErroneousBlacklistOnce() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: erroneousBlacklistResetKey) else { return }
+        defaults.set(true, forKey: erroneousBlacklistResetKey)
+        if defaults.object(forKey: crashedPresetsKey) != nil {
+            defaults.removeObject(forKey: crashedPresetsKey)
+            NSLog("ProjectMWrapper: Reset erroneously accumulated preset blacklist (one-time recovery)")
+        }
     }
 }

@@ -49,6 +49,8 @@ Place `.milk` files there and use "Reload Presets" from the context menu.
 - Cycle Interval (5s/10s/20s/30s/60s/2min)
 - Presets submenu, Audio Sensitivity, Beat Sensitivity, Fullscreen
 
+**Menu bar:** **Visuals → Visualizations → Restore Disabled ProjectM Presets** re-enables any presets that were auto-disabled after a suspected crash (see Crash Detection & Blacklist below). The item shows the disabled count and is disabled when there are none.
+
 ## Modes
 
 | Mode | Behavior |
@@ -92,6 +94,22 @@ Persisted: `projectMBeatSensitivity` (UserDefaults)
 - **Beat Detection**: built-in projectM beat sensitivity
 - **Drag suspend**: ProjectM rendering is suspended for the duration of any window drag (`.windowDragDidBegin` / `.windowDragDidEnd` from `WindowManager`). This prevents WindowServer stalls on Apple Silicon caused by simultaneous OpenGL compositing and window repositioning. If adding window-movement code that runs outside a drag, do NOT rely on ProjectM being suspended — the suspend is drag-scoped only.
 
+## Crash Detection & Blacklist
+
+libprojectM can SIGSEGV/SIGBUS on a buggy preset (bad shader compile, the null-texture deref in `FinalComposite::LoadVariables`). To keep one bad preset from crashing the app on every launch, `ProjectMWrapper` disables ("blacklists") a preset that crashes and skips it when building the preset list.
+
+**How it works (`ProjectMWrapper.swift`, `// MARK: - Crash Detection`):**
+- The **crash sentinel** file (`~/Library/Application Support/NullPlayer/projectm_crash_sentinel.txt`) is written **only from a fatal-signal handler** (`_pmCrashSignalHandler`), never eagerly. On first preset load, `installCrashHandlersIfNeeded()` installs process-wide **SIGSEGV/SIGBUS** handlers (only those two — SIGABRT/SIGILL are left alone so Swift runtime traps aren't misread as preset crashes).
+- `armCrashSentinel(presetPath:)` copies the current preset path into a signal-handler-readable C buffer and stays armed for the preset's **entire** display lifetime. If libprojectM faults at any point — load, first frame, or minutes into steady state (the #328 null-texture deref referencing a freed texture) — the handler writes the armed path to the sentinel, restores the prior disposition, and re-raises so the crash still surfaces normally.
+- On the next launch, `checkAndHandlePreviousCrash()` (once per process) reads any sentinel file → the named preset crashed → it's added to the persistent blacklist (`projectMCrashedPresets` in UserDefaults) and excluded by `addPresetPath`.
+- `disarmCrashSentinel()` (called from `deinit` / `applicationWillTerminate`) clears the armed flag so a fault during/after teardown isn't blamed on the last preset.
+
+**Why signal-driven, not time-based:** the sentinel is written *only* when a fatal signal actually fires. A clean quit, a force quit, or a dev build script's **SIGKILL** raises no catchable signal, so no sentinel is written and no healthy preset is blacklisted. An earlier fix eagerly wrote the sentinel on load and relied on a clean-teardown clear; any non-render termination left it behind and blacklisted the innocent on-screen preset (over many launches this disabled healthy presets — for some users, all of them). A settle-window variant would have fixed the false positives but missed exactly the late steady-state texture crashes the blacklist exists for; the signal handler catches those at any point in the preset's life. **Async-signal-safety:** the handler only reads file-scope globals and calls `open`/`write`/`close`/`sigaction`/`raise`; all state it touches is initialized in normal context before handlers are installed.
+
+**Recovery:**
+- **User-facing:** **Visuals → Visualizations → Restore Disabled ProjectM Presets** → `MenuActions.resetProjectMPresetBlacklist` → `ProjectMWrapper.clearCrashedPresetsBlacklist()` + reload.
+- **Automatic one-time reset:** `clearErroneousBlacklistOnce()` (gated by `projectMBlacklistErroneousResetDone`) wipes the untrustworthy accumulated list once, to recover installs blacklisted by the earlier eager-sentinel behavior.
+
 ## Key Files
 
 - `Windows/ProjectM/ProjectMWindowController.swift` — window controller (classic)
@@ -107,6 +125,8 @@ Persisted: `projectMBeatSensitivity` (UserDefaults)
 **Black screen**: ProjectM requires OpenGL 4.1; check Console.app for projectM init errors; try reloading presets.
 
 **No presets loading**: verify preset files exist in bundle or custom folder; check folder permissions.
+
+**Fewer presets than expected / presets missing**: a preset that crashed on load was auto-disabled (see Crash Detection & Blacklist). Restore them via **Visuals → Visualizations → Restore Disabled ProjectM Presets**. If they were disabled by mistake rather than a real crash, they'll stay restored; a genuinely crashing preset disables itself again on next load.
 
 **Choppy animation**: close other GPU-intensive apps; try a different preset.
 

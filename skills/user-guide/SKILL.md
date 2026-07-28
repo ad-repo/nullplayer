@@ -325,7 +325,9 @@ the ProjectM/Geiss/Tripex/Met visualization host.
 30 effects transforming album artwork based on audio
 
 ### ProjectM/MilkDrop
-100+ bundled presets, OpenGL rendering, fullscreen support
+100+ bundled presets, OpenGL rendering, fullscreen support.
+
+If a preset actually crashes the app while it's on screen — at any point, whether during load or long after — it is automatically disabled so it can't crash the app again on the next launch. Normal quits, force quits, and app kills never disable a preset; only a genuine crash does. To bring disabled presets back, use **Visuals → Visualizations → Restore Disabled ProjectM Presets** — the item shows how many are currently disabled, and is greyed out when there are none.
 
 ### Geiss
 Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — selected from the same right-click **Visualization Engine** submenu. Right-click for runtime controls: effect navigation, Geiss Sensitivity, Gamma, Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock, Auto-Switch interval, visMode (Wave/Spectrum), and Randomize Palette. All settings persist across launches.

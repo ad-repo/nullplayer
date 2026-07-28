@@ -185,10 +185,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         MediaLibraryStore.shared.checkpoint()
         MediaLibraryStore.shared.close()
 
-        // Clear the ProjectM crash sentinel on a clean quit. The sentinel stays armed for
-        // the whole time a preset is displayed (see #328), so without this a normal quit
-        // while a visualization preset is on screen would blacklist that good preset on the
-        // next launch. Process exit does not run ProjectMWrapper.deinit, so clear it here.
+        // Disarm ProjectM crash detection on a clean quit so a fault during/after teardown is
+        // not blamed on the last preset. The sentinel file is only written by the crash-signal
+        // handler (never on a clean or killed exit), so there is normally nothing on disk;
+        // clearCrashSentinel is defensive. Process exit does not run ProjectMWrapper.deinit.
+        ProjectMWrapper.disarmCrashSentinel()
         ProjectMWrapper.clearCrashSentinel()
     }
     
