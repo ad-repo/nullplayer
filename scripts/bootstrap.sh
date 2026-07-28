@@ -225,16 +225,25 @@ main() {
     # not tracked in git, so a checkout that already bootstrapped an older release
     # would otherwise keep building the stale dylib -- with the crash fix absent --
     # even though the committed headers and notices claim the new version.
-    projectm_installed_version() {
-        otool -l "${REPO_ROOT}/${PROJECTM_TARGET}" 2>/dev/null \
-            | awk '/LC_ID_DYLIB/{f=1} f&&/current version/{print $NF; exit}'
-    }
     PROJECTM_EXPECTED_VERSION="$(printf '%s' "$PROJECTM_FILE" | sed -E 's/^libprojectM-([0-9][0-9.]*)-macos.*/\1/')"
-    if [[ "$FORCE" == true ]] || [[ ! -e "${REPO_ROOT}/${PROJECTM_TARGET}" ]] \
-        || [[ "$(projectm_installed_version)" != "$PROJECTM_EXPECTED_VERSION" ]]; then
-        if [[ "$FORCE" != true && -e "${REPO_ROOT}/${PROJECTM_TARGET}" \
-            && "$(projectm_installed_version)" != "$PROJECTM_EXPECTED_VERSION" ]]; then
-            log_warning "Installed libprojectM '$(projectm_installed_version)' != pinned '$PROJECTM_EXPECTED_VERSION' -- re-downloading"
+    # Stale when the dylib is missing/unreadable or ANY architecture slice's own
+    # LC_ID_DYLIB current version differs from the pinned archive version -- a
+    # universal binary has one such record per slice, so check them all.
+    projectm_stale() {
+        local t="${REPO_ROOT}/${PROJECTM_TARGET}"
+        [[ -e "$t" ]] || return 0
+        local archs; archs=$(lipo -archs "$t" 2>/dev/null) || return 0
+        [[ -z "$archs" ]] && return 0
+        local a v
+        for a in $archs; do
+            v=$(otool -arch "$a" -l "$t" 2>/dev/null | awk '/LC_ID_DYLIB/{f=1} f&&/current version/{print $NF; exit}')
+            [[ "$v" == "$PROJECTM_EXPECTED_VERSION" ]] || return 0
+        done
+        return 1
+    }
+    if [[ "$FORCE" == true ]] || projectm_stale; then
+        if [[ "$FORCE" != true && -e "${REPO_ROOT}/${PROJECTM_TARGET}" ]]; then
+            log_warning "Installed libprojectM does not match pinned '$PROJECTM_EXPECTED_VERSION' -- re-downloading"
         fi
         if ! install_framework "libprojectM" "$PROJECTM_FILE" "$PROJECTM_SHA256" "$PROJECTM_TARGET"; then
             failed=1

@@ -100,12 +100,15 @@ assemble_app() {
             fi
             rm -rf "$tmp"
             codesign --force --sign - "$dylib" 2>/dev/null || true
-            # Verify every slice now reports the target minimum OS; a leftover
-            # higher value means the re-stamp silently didn't take.
-            local bad
-            bad=$(otool -l "$dylib" 2>/dev/null | awk -v t="$target" '/LC_BUILD_VERSION/{f=1} f&&/minos/{if($2!=t) print $2; f=0}')
-            if [[ -n "$bad" ]]; then
-                log_error "restamp: $(basename "$dylib") still at minos $bad (expected $target)"; return 1
+            # Verify: require exactly one LC_BUILD_VERSION at the target minimum
+            # per architecture. Counting matches (rather than only flagging
+            # mismatches) also catches a slice that ended up with NO minos record
+            # at all -- which would otherwise silently pass.
+            local nslices; nslices=$(echo $archs | wc -w | tr -d ' ')
+            local nok; nok=$(otool -l "$dylib" 2>/dev/null | awk -v t="$target" '/LC_BUILD_VERSION/{f=1} f&&/minos/{if($2==t) n++; f=0} END{print n+0}')
+            if [[ "$nok" -ne "$nslices" ]]; then
+                log_error "restamp: $(basename "$dylib") verification failed -- $nok/$nslices slice(s) at minos $target"
+                return 1
             fi
         }
 
