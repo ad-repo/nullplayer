@@ -16,6 +16,7 @@
 - **Video playback now uses the LGPL VLCKit engine** — the video player and cast-source decoding moved from KSPlayer/FFmpegKit (GPL-3.0) to the vendored VLCKit/libVLC (LGPL-2.1+). Play/pause, seek, skip, volume, and audio/subtitle track selection carry over, including a subtitle **Off** and subtitle-delay control.
 - **Accurate third-party attribution for the Cava and Flow visualizers** — NullPlayer's Cava spectrum analyzer and Flow network meter are clean-room Swift reimplementations of the [cava](https://github.com/karlstav/cava) (C) and [flow](https://github.com/programmersd21/flow) (Go terminal app) projects — not ports of their source code. Their bundled third-party notices now credit them as algorithm/design references (no upstream code is included) rather than reproducing licenses as though their source shipped in the app.
 - **Modern/Metal main window: quick Cava toggle** — the first button in the modern/metal main-window button row now opens the Cava spectrum window (labeled **CV**) instead of toggling Compact Mode. Compact Mode remains available from the main-window right-click menu.
+- **ART tab rating uses emoji stars** — in Modern and Metal skins, the star rating shown at the top of the Library Browser's ART view now renders as ⭐/☆ emoji, matching the visualization menus. Star sizing and click-to-rate behavior are unchanged.
 
 ### Bug Fixes
 
