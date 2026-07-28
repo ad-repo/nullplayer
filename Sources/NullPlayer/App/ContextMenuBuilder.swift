@@ -783,6 +783,15 @@ class ContextMenuBuilder {
         resetItem.target = MenuActions.shared
         visMenu.addItem(resetItem)
 
+        let blacklistedCount = ProjectMWrapper.crashedPresetPaths.count
+        let restoreTitle = blacklistedCount > 0
+            ? "Restore Disabled ProjectM Presets (\(blacklistedCount))…"
+            : "Restore Disabled ProjectM Presets"
+        let restoreItem = NSMenuItem(title: restoreTitle, action: #selector(MenuActions.resetProjectMPresetBlacklist), keyEquivalent: "")
+        restoreItem.target = MenuActions.shared
+        restoreItem.isEnabled = blacklistedCount > 0
+        visMenu.addItem(restoreItem)
+
         return visMenu
     }
 
@@ -4911,6 +4920,38 @@ class MenuActions: NSObject {
 
     @objc func resetVisualizationWindowPreferences() {
         VisualizationPreferences.reset(.visualizationWindow)
+    }
+
+    @objc func resetProjectMPresetBlacklist() {
+        let blacklistedCount = ProjectMWrapper.crashedPresetPaths.count
+
+        if blacklistedCount == 0 {
+            let alert = NSAlert()
+            alert.messageText = "No Presets Blacklisted"
+            alert.informativeText = "No ProjectM presets are currently disabled, so there is nothing to restore."
+            alert.alertStyle = .informational
+            alert.runModal()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Restore Disabled ProjectM Presets?"
+        alert.informativeText = "\(blacklistedCount) preset\(blacklistedCount == 1 ? " has" : "s have") been disabled after a suspected crash. Restore \(blacklistedCount == 1 ? "it" : "them all") to the rotation? If a restored preset genuinely crashes on load, it will be disabled again."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Restore")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        ProjectMWrapper.clearCrashedPresetsBlacklist()
+        WindowManager.shared.reloadVisualizationPresets()
+
+        let done = NSAlert()
+        done.messageText = "Presets Restored"
+        done.informativeText = "\(blacklistedCount) preset\(blacklistedCount == 1 ? " was" : "s were") restored. Presets have been reloaded."
+        done.alertStyle = .informational
+        done.runModal()
+
+        NSLog("MenuActions: Restored %d blacklisted ProjectM presets", blacklistedCount)
     }
 
     @objc func resetAllVisualizationPreferences() {
