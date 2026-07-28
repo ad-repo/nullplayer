@@ -1,0 +1,19 @@
+Flow — network throughput meter (clean-room reimplementation)
+
+NullPlayer's "Flow" network throughput window
+(Sources/NullPlayer/Utilities/NetworkThroughputMonitor.swift and
+Sources/NullPlayer/Windows/NetworkMonitor/) is a clean-room, native Swift/AppKit
+reimplementation inspired by the design of flow
+(https://github.com/programmersd21/flow). It is NOT a port or translation of
+flow's source code: flow is a Go terminal application (Bubble Tea, braille-grid
+rendering), whereas NullPlayer's implementation is an independent AppKit windowed
+meter that draws with NSBezierPath/CoreGraphics. No flow code is included in
+NullPlayer. The projects share design and feature concepts only — a real-time
+download/upload throughput meter with spring-smoothed animated waveforms, daily
+totals, session peaks, and four responsive display sizes (hero / compact / mini /
+tiny). Copyright does not extend to ideas, visual designs, feature sets, or such
+naming, so flow's license does not attach to this independent implementation.
+
+flow itself is distributed under the MIT License, Copyright (c) 2026 flow
+contributors. This notice is provided as a courtesy acknowledgement of the design
+reference; it does not constitute redistribution of flow's source code.

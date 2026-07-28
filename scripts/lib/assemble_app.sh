@@ -61,6 +61,57 @@ assemble_app() {
 
         # Recursively bundle all Homebrew dylib dependencies
         # libaubio depends on libsndfile which depends on libogg, libvorbis, libFLAC, etc.
+        # Lower a bundled Mach-O's minimum-OS to macOS 14 (the app's deployment
+        # target). Homebrew dylibs are built for the builder's current SDK (e.g.
+        # macOS 26), which makes dyld refuse to load them -- and therefore the
+        # whole app, since they are on libaubio's launch-time load chain -- on any
+        # older system. Re-stamp each slice's LC_BUILD_VERSION down to 14.0; these
+        # are leaf codec/DSP libs that use no newer APIs, so this is safe. The
+        # final codesign pass in build_dmg/build_mas re-signs afterward.
+        #
+        # Any failure is fatal: a silently-skipped re-stamp would ship a macOS-26
+        # dylib and recreate the launch failure this is meant to prevent. Each
+        # step's status is checked, and the result is verified before returning.
+        restamp_min_os() {
+            local dylib="$1" target="14.0" a
+            local archs; archs=$(lipo -archs "$dylib" 2>/dev/null) || return 0
+            [[ -z "$archs" ]] && return 0
+            chmod u+w "$dylib" 2>/dev/null || true
+            local tmp; tmp=$(mktemp -d)
+            local single=0; [[ $(echo $archs | wc -w) -eq 1 ]] && single=1
+            for a in $archs; do
+                if [[ $single -eq 1 ]]; then
+                    cp "$dylib" "$tmp/$a"
+                elif ! lipo "$dylib" -thin "$a" -output "$tmp/$a"; then
+                    log_error "restamp: lipo -thin $a failed for $(basename "$dylib")"; rm -rf "$tmp"; return 1
+                fi
+                if ! xcrun vtool -arch "$a" -set-build-version macos "$target" "$target" -replace -output "$tmp/$a.r" "$tmp/$a"; then
+                    log_error "restamp: vtool failed for $(basename "$dylib") ($a)"; rm -rf "$tmp"; return 1
+                fi
+                mv "$tmp/$a.r" "$tmp/$a"
+            done
+            if [[ $single -eq 1 ]]; then
+                cp "$tmp/$archs" "$dylib"
+            else
+                local slices=""; for a in $archs; do slices="$slices $tmp/$a"; done
+                if ! lipo -create $slices -output "$dylib"; then
+                    log_error "restamp: lipo -create failed for $(basename "$dylib")"; rm -rf "$tmp"; return 1
+                fi
+            fi
+            rm -rf "$tmp"
+            codesign --force --sign - "$dylib" 2>/dev/null || true
+            # Verify: require exactly one LC_BUILD_VERSION at the target minimum
+            # per architecture. Counting matches (rather than only flagging
+            # mismatches) also catches a slice that ended up with NO minos record
+            # at all -- which would otherwise silently pass.
+            local nslices; nslices=$(echo $archs | wc -w | tr -d ' ')
+            local nok; nok=$(otool -l "$dylib" 2>/dev/null | awk -v t="$target" '/LC_BUILD_VERSION/{f=1} f&&/minos/{if($2==t) n++; f=0} END{print n+0}')
+            if [[ "$nok" -ne "$nslices" ]]; then
+                log_error "restamp: $(basename "$dylib") verification failed -- $nok/$nslices slice(s) at minos $target"
+                return 1
+            fi
+        }
+
         bundle_homebrew_deps() {
             local binary="$1"
             local deps
@@ -72,6 +123,7 @@ assemble_app() {
                     if [[ -f "$dep" ]]; then
                         cp "$dep" "$FRAMEWORKS_DIR/"
                         chmod 755 "$FRAMEWORKS_DIR/$dep_name"
+                        restamp_min_os "$FRAMEWORKS_DIR/$dep_name"
                         log_info "  Bundled transitive dep: $dep_name"
                         # Recurse into this dependency's own deps
                         bundle_homebrew_deps "$FRAMEWORKS_DIR/$dep_name"
@@ -82,6 +134,10 @@ assemble_app() {
             done
         }
 
+        # The vendored libaubio.5.dylib is already stamped at minos 14, but
+        # re-stamp defensively so a future drop-in copy can't silently reintroduce
+        # a too-new minimum OS.
+        restamp_min_os "$FRAMEWORKS_DIR/libaubio.5.dylib"
         log_info "Bundling libaubio transitive dependencies..."
         bundle_homebrew_deps "$FRAMEWORKS_DIR/libaubio.5.dylib"
     else

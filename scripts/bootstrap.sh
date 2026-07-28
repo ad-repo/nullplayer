@@ -16,12 +16,12 @@ VLCKIT_FILE="VLCKit-macos.tar.gz"
 VLCKIT_SHA256="b36a06d9169fba85101dae8264be24ab3d92c0f2976001524d60f79e8fdece93"
 VLCKIT_TARGET="Frameworks/VLCKit.framework"
 
-PROJECTM_FILE="libprojectM-4.1.6-macos.tar.gz"
-PROJECTM_SHA256="c85addde0f7afb6132c619a6f081ef14fc806e1afbf3767ec04c9470e9c9a7b1"
+PROJECTM_FILE="libprojectM-4.1.7-macos.tar.gz"
+PROJECTM_SHA256="273b81b89ef869ba3bbd88f08077c621f2b2270cd60f5a19b6bd3e2722a0d60c"
 PROJECTM_TARGET="Frameworks/libprojectM-4.dylib"
 
 AUBIO_FILE="libaubio-macos.tar.gz"
-AUBIO_SHA256="0fbcdfcea459e6f8278bfef134e4eddafad4a7764389bc6147428e59b25933d0"
+AUBIO_SHA256="1f0ac265a1ee674b9d721ae598c8aca15fe98e78bd680ce3d462504cd5d9c78b"
 AUBIO_TARGET="Frameworks/libaubio.5.dylib"
 
 # Colors for output
@@ -220,14 +220,44 @@ main() {
         log_success "VLCKit already installed"
     fi
     
-    # libprojectM
-    if [[ "$FORCE" == true ]] || [[ ! -e "${REPO_ROOT}/${PROJECTM_TARGET}" ]]; then
+    # libprojectM -- re-download when missing, forced, or the on-disk dylib's
+    # version does not match the pinned archive. Unlike libaubio, this dylib is
+    # not tracked in git, so a checkout that already bootstrapped an older release
+    # would otherwise keep building the stale dylib -- with the crash fix absent --
+    # even though the committed headers and notices claim the new version.
+    PROJECTM_EXPECTED_VERSION="$(printf '%s' "$PROJECTM_FILE" | sed -E 's/^libprojectM-([0-9][0-9.]*)-macos.*/\1/')"
+    # Stale when the dylib is missing/unreadable or ANY architecture slice's own
+    # LC_ID_DYLIB current version differs from the pinned archive version -- a
+    # universal binary has one such record per slice, so check them all.
+    projectm_stale() {
+        local t="${REPO_ROOT}/${PROJECTM_TARGET}"
+        [[ -e "$t" ]] || return 0
+        local archs; archs=$(lipo -archs "$t" 2>/dev/null) || return 0
+        [[ -z "$archs" ]] && return 0
+        # The pinned archive is a universal (arm64 + x86_64) dylib. A thin local
+        # copy -- even at the right version -- is the wrong artifact for a
+        # universal/cross-arch build, so treat a missing slice as stale too.
+        local want
+        for want in arm64 x86_64; do
+            [[ " $archs " == *" $want "* ]] || return 0
+        done
+        local a v
+        for a in $archs; do
+            v=$(otool -arch "$a" -l "$t" 2>/dev/null | awk '/LC_ID_DYLIB/{f=1} f&&/current version/{print $NF; exit}')
+            [[ "$v" == "$PROJECTM_EXPECTED_VERSION" ]] || return 0
+        done
+        return 1
+    }
+    if [[ "$FORCE" == true ]] || projectm_stale; then
+        if [[ "$FORCE" != true && -e "${REPO_ROOT}/${PROJECTM_TARGET}" ]]; then
+            log_warning "Installed libprojectM does not match pinned '$PROJECTM_EXPECTED_VERSION' -- re-downloading"
+        fi
         if ! install_framework "libprojectM" "$PROJECTM_FILE" "$PROJECTM_SHA256" "$PROJECTM_TARGET"; then
             failed=1
         fi
         echo ""
     else
-        log_success "libprojectM already installed"
+        log_success "libprojectM already installed (${PROJECTM_EXPECTED_VERSION})"
     fi
     
     # libaubio
