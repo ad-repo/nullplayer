@@ -1,0 +1,17 @@
+Cava — spectrum analyzer algorithm (clean-room reimplementation)
+
+NullPlayer's "Cava" visualization (Sources/NullPlayerCore/Audio/CavaCore.swift)
+is a clean-room, pure-Swift/vDSP reimplementation based on the documented
+algorithm and observed behavior of cava (https://github.com/karlstav/cava) by
+Karl Stavestrand. It is NOT a port or translation of cava's source code — no
+cava code is included in NullPlayer. The two projects share only functional
+ideas (a dual bass/treble FFT split, logarithmic frequency banding, integral
+noise-reduction smoothing, gravity/falloff, and auto-sensitivity), and a small
+number of numeric parameters (e.g. the auto-sensitivity constants) were
+referenced from cava's algorithm. Copyright does not extend to algorithms,
+mathematical methods, or individual functional constants, so cava's license does
+not attach to this independent implementation.
+
+cava itself is distributed under the MIT License, Copyright (c) 2015 Karl
+Stavestrand. This notice is provided as a courtesy acknowledgement of the
+algorithm reference; it does not constitute redistribution of cava's source code.
