@@ -7,8 +7,10 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     
     private var browserView: PlexBrowserView!
     
-    /// Minimum window size (wider to fit 6 tabs)
-    private static let minSize = NSSize(width: 480, height: 300)
+    /// Minimum window size. Width floors at the center-stack width so the window can be sized to
+    /// align cleanly when docked top/bottom in a center stack (Compact Mode keeps a tab-label
+    /// content floor via `minimumCompactContentWidth`).
+    private static let minSize = NSSize(width: SkinElements.SpectrumWindow.minSize.width, height: 300)
     
     /// Default window size - height matches 4 stacked main windows (main + EQ + playlist + spectrum)
     private static var defaultSize: NSSize {
