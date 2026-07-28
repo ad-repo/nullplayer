@@ -220,14 +220,28 @@ main() {
         log_success "VLCKit already installed"
     fi
     
-    # libprojectM
-    if [[ "$FORCE" == true ]] || [[ ! -e "${REPO_ROOT}/${PROJECTM_TARGET}" ]]; then
+    # libprojectM -- re-download when missing, forced, or the on-disk dylib's
+    # version does not match the pinned archive. Unlike libaubio, this dylib is
+    # not tracked in git, so a checkout that already bootstrapped an older release
+    # would otherwise keep building the stale dylib -- with the crash fix absent --
+    # even though the committed headers and notices claim the new version.
+    projectm_installed_version() {
+        otool -l "${REPO_ROOT}/${PROJECTM_TARGET}" 2>/dev/null \
+            | awk '/LC_ID_DYLIB/{f=1} f&&/current version/{print $NF; exit}'
+    }
+    PROJECTM_EXPECTED_VERSION="$(printf '%s' "$PROJECTM_FILE" | sed -E 's/^libprojectM-([0-9][0-9.]*)-macos.*/\1/')"
+    if [[ "$FORCE" == true ]] || [[ ! -e "${REPO_ROOT}/${PROJECTM_TARGET}" ]] \
+        || [[ "$(projectm_installed_version)" != "$PROJECTM_EXPECTED_VERSION" ]]; then
+        if [[ "$FORCE" != true && -e "${REPO_ROOT}/${PROJECTM_TARGET}" \
+            && "$(projectm_installed_version)" != "$PROJECTM_EXPECTED_VERSION" ]]; then
+            log_warning "Installed libprojectM '$(projectm_installed_version)' != pinned '$PROJECTM_EXPECTED_VERSION' -- re-downloading"
+        fi
         if ! install_framework "libprojectM" "$PROJECTM_FILE" "$PROJECTM_SHA256" "$PROJECTM_TARGET"; then
             failed=1
         fi
         echo ""
     else
-        log_success "libprojectM already installed"
+        log_success "libprojectM already installed (${PROJECTM_EXPECTED_VERSION})"
     fi
     
     # libaubio

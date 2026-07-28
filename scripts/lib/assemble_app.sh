@@ -68,24 +68,45 @@ assemble_app() {
         # older system. Re-stamp each slice's LC_BUILD_VERSION down to 14.0; these
         # are leaf codec/DSP libs that use no newer APIs, so this is safe. The
         # final codesign pass in build_dmg/build_mas re-signs afterward.
+        #
+        # Any failure is fatal: a silently-skipped re-stamp would ship a macOS-26
+        # dylib and recreate the launch failure this is meant to prevent. Each
+        # step's status is checked, and the result is verified before returning.
         restamp_min_os() {
-            local dylib="$1" target="14.0"
-            local archs; archs=$(lipo -archs "$dylib" 2>/dev/null); [[ -z "$archs" ]] && return 0
+            local dylib="$1" target="14.0" a
+            local archs; archs=$(lipo -archs "$dylib" 2>/dev/null) || return 0
+            [[ -z "$archs" ]] && return 0
             chmod u+w "$dylib" 2>/dev/null || true
             local tmp; tmp=$(mktemp -d)
-            if [[ $(echo $archs | wc -w) -eq 1 ]]; then
-                xcrun vtool -arch $archs -set-build-version macos "$target" "$target" -replace -output "$tmp/o" "$dylib" 2>/dev/null && cp "$tmp/o" "$dylib"
+            local single=0; [[ $(echo $archs | wc -w) -eq 1 ]] && single=1
+            for a in $archs; do
+                if [[ $single -eq 1 ]]; then
+                    cp "$dylib" "$tmp/$a"
+                elif ! lipo "$dylib" -thin "$a" -output "$tmp/$a"; then
+                    log_error "restamp: lipo -thin $a failed for $(basename "$dylib")"; rm -rf "$tmp"; return 1
+                fi
+                if ! xcrun vtool -arch "$a" -set-build-version macos "$target" "$target" -replace -output "$tmp/$a.r" "$tmp/$a"; then
+                    log_error "restamp: vtool failed for $(basename "$dylib") ($a)"; rm -rf "$tmp"; return 1
+                fi
+                mv "$tmp/$a.r" "$tmp/$a"
+            done
+            if [[ $single -eq 1 ]]; then
+                cp "$tmp/$archs" "$dylib"
             else
-                local slices="" a
-                for a in $archs; do
-                    lipo "$dylib" -thin "$a" -output "$tmp/$a"
-                    xcrun vtool -arch "$a" -set-build-version macos "$target" "$target" -replace -output "$tmp/$a.r" "$tmp/$a" 2>/dev/null && mv "$tmp/$a.r" "$tmp/$a"
-                    slices="$slices $tmp/$a"
-                done
-                lipo -create $slices -output "$dylib"
+                local slices=""; for a in $archs; do slices="$slices $tmp/$a"; done
+                if ! lipo -create $slices -output "$dylib"; then
+                    log_error "restamp: lipo -create failed for $(basename "$dylib")"; rm -rf "$tmp"; return 1
+                fi
             fi
-            codesign --force --sign - "$dylib" 2>/dev/null || true
             rm -rf "$tmp"
+            codesign --force --sign - "$dylib" 2>/dev/null || true
+            # Verify every slice now reports the target minimum OS; a leftover
+            # higher value means the re-stamp silently didn't take.
+            local bad
+            bad=$(otool -l "$dylib" 2>/dev/null | awk -v t="$target" '/LC_BUILD_VERSION/{f=1} f&&/minos/{if($2!=t) print $2; f=0}')
+            if [[ -n "$bad" ]]; then
+                log_error "restamp: $(basename "$dylib") still at minos $bad (expected $target)"; return 1
+            fi
         }
 
         bundle_homebrew_deps() {
