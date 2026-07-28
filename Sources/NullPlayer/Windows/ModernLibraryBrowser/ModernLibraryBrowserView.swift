@@ -1634,16 +1634,13 @@ class ModernLibraryBrowserView: NSView {
             let rating = currentTrackRating ?? 0
             let filledCount = rating / 2
             
-            let filledColor = isMetalRenderStyle
-                ? metalRatingColor
-                : NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
             let emptyColor = dimColor.withAlphaComponent(0.3)
-            
+
             for i in 0..<totalStars {
                 let x = starsX + CGFloat(i) * (starSize + starSpacing)
                 let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
                 let isFilled = i < filledCount
-                drawPixelStar(in: starRect, color: isFilled ? filledColor : emptyColor)
+                drawEmojiStar(in: starRect, filled: isFilled, emptyColor: emptyColor)
             }
             
             // Store hit rect for click detection
@@ -2037,39 +2034,21 @@ class ModernLibraryBrowserView: NSView {
         context.restoreGState()
     }
 
-    /// Draw a low-res pixel-art star for server bar rating display
-    /// Pattern is top-down but macOS Y goes up, so we draw rows from maxY downward
-    private func drawPixelStar(in rect: NSRect, color: NSColor) {
-        let pattern: [[Int]] = [
-            [0, 0, 0, 0, 1, 0, 0, 0, 0],
-            [0, 0, 0, 1, 1, 1, 0, 0, 0],
-            [0, 0, 0, 1, 1, 1, 0, 0, 0],
-            [1, 1, 1, 1, 1, 1, 1, 1, 1],
-            [0, 1, 1, 1, 1, 1, 1, 1, 0],
-            [0, 0, 1, 1, 1, 1, 1, 0, 0],
-            [0, 0, 1, 1, 0, 1, 1, 0, 0],
-            [0, 1, 1, 0, 0, 0, 1, 1, 0],
-            [1, 1, 0, 0, 0, 0, 0, 1, 1],
-        ]
-        
-        let patternSize = 9
-        let pixelW = rect.width / CGFloat(patternSize)
-        let pixelH = rect.height / CGFloat(patternSize)
-        
-        color.setFill()
-
-        for row in 0..<patternSize {
-            for col in 0..<patternSize {
-                if pattern[row][col] == 1 {
-                    let x = rect.minX + CGFloat(col) * pixelW
-                    // Flip Y: row 0 (top of star) draws at maxY, row 8 at minY
-                    let y = rect.maxY - CGFloat(row + 1) * pixelH
-                    NSBezierPath.fill(NSRect(x: x, y: y, width: ceil(pixelW), height: ceil(pixelH)))
-                }
-            }
+    /// Draw an emoji-style rating star (matching the visualization menus) centered in `rect`.
+    /// Filled uses the color ⭐ emoji; empty uses the ☆ outline glyph tinted with `emptyColor`.
+    private func drawEmojiStar(in rect: NSRect, filled: Bool, emptyColor: NSColor) {
+        let glyph = filled ? "⭐" : "☆"
+        let font = NSFont.systemFont(ofSize: rect.height)
+        var attrs: [NSAttributedString.Key: Any] = [.font: font]
+        if !filled {
+            attrs[.foregroundColor] = emptyColor
         }
+        let str = NSAttributedString(string: glyph, attributes: attrs)
+        let size = str.size()
+        let point = NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2)
+        str.draw(at: point)
     }
-    
+
     // MARK: - Search Bar Drawing
     
     private func drawSearchBar(in context: CGContext, searchBarY: CGFloat, skin: ModernSkin) {
