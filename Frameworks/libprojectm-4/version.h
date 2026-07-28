@@ -2,10 +2,10 @@
 
 #define PROJECTM_VERSION_MAJOR 4
 #define PROJECTM_VERSION_MINOR 1
-#define PROJECTM_VERSION_PATCH 6
+#define PROJECTM_VERSION_PATCH 7
 
 /* Full version number as a string literal */
-#define PROJECTM_VERSION_STRING "4.1.6"
+#define PROJECTM_VERSION_STRING "4.1.7"
 
 /* VCS version number, e.g. Git commit hash */
-#define PROJECTM_VERSION_VCS "3158ee615eaafd93a8912b5f6dd84a9c47b2e00a"
+#define PROJECTM_VERSION_VCS "e0b0a967f0ffd7d332106c366668ed271718472b"

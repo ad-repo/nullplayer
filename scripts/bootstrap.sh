@@ -16,12 +16,12 @@ VLCKIT_FILE="VLCKit-macos.tar.gz"
 VLCKIT_SHA256="b36a06d9169fba85101dae8264be24ab3d92c0f2976001524d60f79e8fdece93"
 VLCKIT_TARGET="Frameworks/VLCKit.framework"
 
-PROJECTM_FILE="libprojectM-4.1.6-macos.tar.gz"
-PROJECTM_SHA256="c85addde0f7afb6132c619a6f081ef14fc806e1afbf3767ec04c9470e9c9a7b1"
+PROJECTM_FILE="libprojectM-4.1.7-macos.tar.gz"
+PROJECTM_SHA256="273b81b89ef869ba3bbd88f08077c621f2b2270cd60f5a19b6bd3e2722a0d60c"
 PROJECTM_TARGET="Frameworks/libprojectM-4.dylib"
 
 AUBIO_FILE="libaubio-macos.tar.gz"
-AUBIO_SHA256="0fbcdfcea459e6f8278bfef134e4eddafad4a7764389bc6147428e59b25933d0"
+AUBIO_SHA256="1f0ac265a1ee674b9d721ae598c8aca15fe98e78bd680ce3d462504cd5d9c78b"
 AUBIO_TARGET="Frameworks/libaubio.5.dylib"
 
 # Colors for output

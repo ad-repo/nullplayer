@@ -22,7 +22,7 @@ flyingfox	FlyingFox	MIT	Copyright (c) 2022 Simon Whitty	https://github.com/swhit
 #
 # === Bundled binary frameworks / dylibs (Contents/Frameworks) ===
 vlckit	VLCKit (libVLC)	LGPL-2.1-or-later	Copyright (c) VideoLAN and the VLCKit authors	https://code.videolan.org/videolan/VLCKit	libVLC 3.0.12.1	ThirdPartyLicenses/licenses/LGPL-2.1.txt	VLCKit.framework
-libprojectm	libprojectM	LGPL-2.1-or-later	Copyright (c) 2003-2024 the projectM Team	https://github.com/projectM-visualizer/projectm	4.1.6	ThirdPartyLicenses/licenses/LGPL-2.1.txt	libprojectM*.dylib
+libprojectm	libprojectM	LGPL-2.1-or-later	Copyright (c) 2003-2024 the projectM Team	https://github.com/projectM-visualizer/projectm	4.1.7	ThirdPartyLicenses/licenses/LGPL-2.1.txt	libprojectM*.dylib
 aubio	aubio	GPL-3.0-or-later	Copyright (c) 2003-2014 Paul Brossier	https://github.com/aubio/aubio	0.4.9	ThirdPartyLicenses/licenses/GPL-3.0.txt	libaubio*.dylib
 libsndfile	libsndfile	LGPL-2.1-or-later	Copyright (c) 1999-2016 Erik de Castro Lopo	https://github.com/libsndfile/libsndfile	1.2.2	ThirdPartyLicenses/licenses/LGPL-2.1.txt	libsndfile*.dylib
 flac	FLAC	BSD-3-Clause	Copyright (c) 2000-2009 Josh Coalson; (c) 2011-2025 Xiph.Org Foundation	https://xiph.org/flac/	1.5.0	ThirdPartyLicenses/FLAC_LICENSE.txt	libFLAC*.dylib
