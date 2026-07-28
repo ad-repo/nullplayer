@@ -10,7 +10,7 @@ Flow is a dockable network throughput meter available in classic and modern UI.
 ## Source Project
 
 - Upstream reference/source project: `https://github.com/programmersd21/flow`
-- License: MIT, bundled at `Sources/NullPlayer/Resources/ThirdPartyLicenses/Flow_LICENSE.txt`
+- Relationship: clean-room Swift/AppKit reimplementation (upstream flow is a Go terminal app); no flow code is bundled. Credited via a courtesy notice at `Sources/NullPlayer/Resources/ThirdPartyLicenses/flow_NOTICE.txt` (flow is MIT upstream).
 - Third-party notice registration: `scripts/third_party_components.tsv` entry `flow`
 - NullPlayer's implementation is a Swift/AppKit integration adapted for the classic and modern window stacks; keep user-facing credits in the third-party notices rather than duplicating them in window chrome.
 

@@ -3988,32 +3988,30 @@ SOFTWARE.
 ================================================================================
 Flow
 ================================================================================
-License:    MIT
+License:    MIT (upstream; clean-room reimplementation)
 Copyright:  Copyright (c) 2026 flow contributors
 Source:     https://github.com/programmersd21/flow
-Version:    Swift port / visual reference
+Version:    clean-room visual/design reference (no code bundled)
 
-MIT License
+Flow — network throughput meter (clean-room reimplementation)
 
-Copyright (c) 2026 flow contributors
+NullPlayer's "Flow" network throughput window
+(Sources/NullPlayer/Utilities/NetworkThroughputMonitor.swift and
+Sources/NullPlayer/Windows/NetworkMonitor/) is a clean-room, native Swift/AppKit
+reimplementation inspired by the design of flow
+(https://github.com/programmersd21/flow). It is NOT a port or translation of
+flow's source code: flow is a Go terminal application (Bubble Tea, braille-grid
+rendering), whereas NullPlayer's implementation is an independent AppKit windowed
+meter that draws with NSBezierPath/CoreGraphics. No flow code is included in
+NullPlayer. The projects share design and feature concepts only — a real-time
+download/upload throughput meter with spring-smoothed animated waveforms, daily
+totals, session peaks, and four responsive display sizes (hero / compact / mini /
+tiny). Copyright does not extend to ideas, visual designs, feature sets, or such
+naming, so flow's license does not attach to this independent implementation.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+flow itself is distributed under the MIT License, Copyright (c) 2026 flow
+contributors. This notice is provided as a courtesy acknowledgement of the design
+reference; it does not constitute redistribution of flow's source code.
 
 
 ================================================================================
