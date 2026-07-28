@@ -25,6 +25,7 @@
 - **ProjectM upgraded to 4.1.7, fixing preset crashes at the source** — the bundled libprojectM was updated from 4.1.6 to 4.1.7, which fixes a null-texture dereference (`Renderer::Texture::Empty()`) that crashed the app when rendering presets containing a commented-out `sampler` declaration in a shader (upstream #958), along with other preset crash and rendering fixes. Presets that previously had to be caught-and-disabled — like the bundled *suksma - dotes hostile undertake - offx - flacc* — now render normally. (The crash-detection safety net above remains for any future bad preset.)
 
   **If your visualizations have gone missing or thinned out over time, restore them:** open **Visuals > Visualizations > Restore Disabled ProjectM Presets**. The number next to it is how many presets are currently disabled — the earlier blacklisting bug may have quietly turned off many (or all) of your presets, and now that these crashes are fixed it's safe to bring them all back. Choosing it re-enables every disabled preset immediately.
+- **Fixed the app refusing to launch on macOS 14–25** — the bundled audio libraries (`libaubio` and its `libsndfile`/`FLAC`/`vorbis`/`ogg`/`opus`/`mpg123`/`lame` dependencies) were built requiring macOS 26, so on any earlier system the whole app would fail to start. They are now built/packaged targeting macOS 14, matching the rest of the app.
 
 ## 0.28.2
 
