@@ -234,6 +234,13 @@ main() {
         [[ -e "$t" ]] || return 0
         local archs; archs=$(lipo -archs "$t" 2>/dev/null) || return 0
         [[ -z "$archs" ]] && return 0
+        # The pinned archive is a universal (arm64 + x86_64) dylib. A thin local
+        # copy -- even at the right version -- is the wrong artifact for a
+        # universal/cross-arch build, so treat a missing slice as stale too.
+        local want
+        for want in arm64 x86_64; do
+            [[ " $archs " == *" $want "* ]] || return 0
+        done
         local a v
         for a in $archs; do
             v=$(otool -arch "$a" -l "$t" 2>/dev/null | awk '/LC_ID_DYLIB/{f=1} f&&/current version/{print $NF; exit}')
