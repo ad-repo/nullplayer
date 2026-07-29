@@ -226,7 +226,20 @@ The 60 Hz `Timer` is only a scheduler. Both `CavaCore.analyze` and `CavaCore.ren
 The 60 Hz timer redraws only if the ordered bar signature changed. Closing, ordering out, miniaturizing, or fully occluding the window stops the render model and unregisters its full-stereo consumer; showing/deminiaturizing it starts them again. A visible settled display keeps the timer but skips redundant repaints.
 
 ### Do NOT inherit the spectrum window's transparency
-`ModernCavaView` draws its background via `renderer.drawWindowBackground(..., backgroundOpacity:)`. Passing `renderer.skin.spectrumWindowBackgroundOpacity` (= the skin's `window.opacity`) made Cava translucent on metal/modern skins that set a low window opacity — not wanted by default. Use `effectiveBackgroundOpacity` (1.0 unless `CavaSettings.transparentBackground` is on). Also fill the content background in `drawCavaContent` when opaque, because the timer fast-path (animation-rect-only redraw) skips `drawWindowBackground` and would otherwise leave the content transparent between frames. `transparentBackground` is a durable `CavaSettings`/UserDefaults pref, default false, modern-only. It persists for a same-skin relaunch but `resetAppearanceForSkinChange()` clears it on explicit skin and UI-family changes so it cannot leak from Modern into Metal.
+`ModernCavaView` draws its background via `renderer.drawWindowBackground(..., backgroundOpacity:)`. Passing `renderer.skin.spectrumWindowBackgroundOpacity` (= the skin's `window.opacity`) made Cava translucent on metal/modern skins that set a low window opacity — not wanted by default. Use `effectiveBackgroundOpacity` (1.0 unless `CavaSettings.transparentBackground` is on).
+
+Always paint the complete animation clip in `drawCavaContent`; timer-driven redraws bypass
+`drawWindowBackground`. Fill with the skin background when opaque. When transparent, copy-fill with
+black at one 8-bit alpha quantum (`1 / 255`), using the same technique as `WaveformDrawing` clear
+mode while ensuring the value survives backing-store quantization. Never leave the region at zero
+alpha: WindowServer removes a fully clear borderless-window region from its mouse mask before AppKit
+calls `NSView.hitTest`, so gaps between bars click the desktop even when
+`ModernCavaView.hitTest` returns the view. Preserve the imperceptible nonzero-alpha surface to keep
+the whole face draggable and right-clickable.
+
+`transparentBackground` is a durable `CavaSettings`/UserDefaults pref, default false, modern-only. It
+persists for a same-skin relaunch but `resetAppearanceForSkinChange()` clears it on explicit skin and
+UI-family changes so it cannot leak from Modern into Metal.
 
 ### Colors follow the skin until the user overrides
 Cava's *default* gradient tracks the active skin; a user pick (via the Color menu) overrides it until

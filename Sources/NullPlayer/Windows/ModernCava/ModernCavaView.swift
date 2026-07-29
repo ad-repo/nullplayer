@@ -1,6 +1,10 @@
 import AppKit
 
 final class ModernCavaView: NSView {
+    /// Smallest reliably nonzero alpha in an 8-bit window backing surface.
+    /// It is visually imperceptible but keeps clear content in the WindowServer mouse mask.
+    static let transparentInteractionAlpha: CGFloat = 1.0 / 255.0
+
     weak var controller: ModernCavaWindowController?
 
     private let presenter = CavaPresenter()
@@ -177,9 +181,26 @@ final class ModernCavaView: NSView {
     private func drawCavaContent(in contentRect: NSRect, clippedTo clipRect: NSRect) {
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: clipRect).setClip()
-        // Repaint the content background here too so timer-driven (animation-rect only) redraws
-        // don't leave the area transparent. Skipped when Transparent Background is on.
-        if !CavaSettings.transparentBackground {
+        if CavaSettings.transparentBackground {
+            // Borderless windows derive their WindowServer mouse mask from composited alpha.
+            // Fully clear gaps between bars bypass AppKit hit-testing and click the desktop.
+            // Match WaveformDrawing's clear-mode technique: visually transparent, but nonzero
+            // alpha keeps the entire Cava face interactive during content-only repaints.
+            if let context = NSGraphicsContext.current?.cgContext {
+                context.saveGState()
+                context.setBlendMode(.copy)
+                context.setFillColor(
+                    NSColor(
+                        calibratedWhite: 0,
+                        alpha: Self.transparentInteractionAlpha
+                    ).cgColor
+                )
+                context.fill(clipRect)
+                context.restoreGState()
+            }
+        } else {
+            // Repaint the opaque content background here too so timer-driven
+            // (animation-rect only) redraws do not clear it between frames.
             renderer.skin.backgroundColor.setFill()
             clipRect.fill()
         }

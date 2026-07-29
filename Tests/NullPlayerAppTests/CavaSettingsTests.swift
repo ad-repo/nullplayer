@@ -135,12 +135,40 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertFalse(CavaSettings.transparentBackground)
     }
 
-    func testModernCavaViewCapturesClicksWhileBackgroundIsTransparent() {
+    func testModernCavaTransparentContentRetainsWindowServerInputMask() throws {
         CavaSettings.transparentBackground = true
         let view = ModernCavaView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        let bitmap = try XCTUnwrap(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: 320,
+                pixelsHigh: 120,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bitmapFormat: [],
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )
+        )
+        let graphics = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
+        let animationDirtyRect = NSRect(x: 150, y: 30, width: 20, height: 20)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        view.draw(animationDirtyRect)
+        NSGraphicsContext.restoreGraphicsState()
+        let transparentGap = try XCTUnwrap(bitmap.colorAt(x: 160, y: 40))
 
         XCTAssertTrue(view.hitTest(NSPoint(x: 160, y: 40)) === view)
         XCTAssertTrue(view.acceptsFirstMouse(for: nil))
+        XCTAssertEqual(
+            transparentGap.alphaComponent,
+            ModernCavaView.transparentInteractionAlpha,
+            accuracy: 1.0 / 255.0
+        )
+        XCTAssertLessThan(transparentGap.alphaComponent, 0.01)
     }
 
     func testClassicStackRepairIncludesCavaAfterFlow() throws {
