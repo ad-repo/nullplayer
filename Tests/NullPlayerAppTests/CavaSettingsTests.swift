@@ -85,7 +85,7 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(CavaSettings.barCount, 48)
     }
 
-    func testSkinChangeClearsCustomColorFlagsForBothScopesWithoutDeletingColors() throws {
+    func testSkinChangeResetsSkinOwnedAppearanceWithoutDeletingColors() throws {
         let fireIndex = try XCTUnwrap(CavaSettings.colorSchemes.firstIndex { $0.name == "Fire" })
         let iceIndex = try XCTUnwrap(CavaSettings.colorSchemes.firstIndex { $0.name == "Ice" })
         let fire = CavaSettings.colorSchemes[fireIndex]
@@ -97,16 +97,18 @@ final class CavaSettingsTests: XCTestCase {
         CavaSettings.setLowGradientColor(ice.low, for: .mainWindow)
         CavaSettings.setHighGradientColor(ice.high, for: .mainWindow)
         CavaSettings.setHasCustomColors(true, for: .mainWindow)
+        CavaSettings.transparentBackground = true
 
-        CavaSettings.resetCustomColorsForSkinChange()
+        CavaSettings.resetAppearanceForSkinChange()
 
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .cavaWindow))
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertFalse(CavaSettings.transparentBackground)
         XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .cavaWindow), fireIndex)
         XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .mainWindow), iceIndex)
     }
 
-    func testClassicSkinRestorePreservesCustomColorsWhileExplicitLoadClearsThem() throws {
+    func testClassicSkinRestorePreservesCavaAppearanceWhileExplicitLoadResetsIt() throws {
         let skinURL = try XCTUnwrap(
             BundleHelper.url(
                 forResource: "NullPlayer-Silver",
@@ -120,14 +122,25 @@ final class CavaSettingsTests: XCTestCase {
 
         CavaSettings.setHasCustomColors(true, for: .cavaWindow)
         CavaSettings.setHasCustomColors(true, for: .mainWindow)
+        CavaSettings.transparentBackground = true
 
         XCTAssertTrue(WindowManager.shared.restoreClassicSkin(from: skinURL, userDefaults: testDefaults))
         XCTAssertTrue(CavaSettings.hasCustomColors(for: .cavaWindow))
         XCTAssertTrue(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertTrue(CavaSettings.transparentBackground)
 
         XCTAssertTrue(WindowManager.shared.loadSkin(from: skinURL, userDefaults: testDefaults))
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .cavaWindow))
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertFalse(CavaSettings.transparentBackground)
+    }
+
+    func testModernCavaViewCapturesClicksWhileBackgroundIsTransparent() {
+        CavaSettings.transparentBackground = true
+        let view = ModernCavaView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+
+        XCTAssertTrue(view.hitTest(NSPoint(x: 160, y: 40)) === view)
+        XCTAssertTrue(view.acceptsFirstMouse(for: nil))
     }
 
     func testClassicStackRepairIncludesCavaAfterFlow() throws {

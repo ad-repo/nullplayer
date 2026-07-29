@@ -312,7 +312,7 @@ class ModernSkinEngine {
         guard let skin = currentSkin else { return }
 
         if !preservePersistedProfiles {
-            CavaSettings.resetCustomColorsForSkinChange()
+            CavaSettings.resetAppearanceForSkinChange()
         }
 
         // Stamp the render style onto the skin instance so renderers and windows derive

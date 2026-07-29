@@ -2925,20 +2925,20 @@ class WindowManager {
     
     @discardableResult
     func loadSkin(from url: URL, userDefaults: UserDefaults = .standard) -> Bool {
-        loadClassicSkin(from: url, userDefaults: userDefaults, resetCavaCustomColors: true)
+        loadClassicSkin(from: url, userDefaults: userDefaults, resetCavaAppearance: true)
     }
 
     /// Restore a persisted classic skin without treating launch as an explicit skin change.
     @discardableResult
     func restoreClassicSkin(from url: URL, userDefaults: UserDefaults = .standard) -> Bool {
-        loadClassicSkin(from: url, userDefaults: userDefaults, resetCavaCustomColors: false)
+        loadClassicSkin(from: url, userDefaults: userDefaults, resetCavaAppearance: false)
     }
 
     @discardableResult
     private func loadClassicSkin(
         from url: URL,
         userDefaults: UserDefaults,
-        resetCavaCustomColors: Bool
+        resetCavaAppearance: Bool
     ) -> Bool {
         do {
             let skin = try SkinLoader.shared.load(from: url)
@@ -2946,8 +2946,8 @@ class WindowManager {
             currentSkinPath = url.path
             // Persist last used classic skin for easy reload when switching UI modes
             userDefaults.set(url.path, forKey: "lastClassicSkinPath")
-            if resetCavaCustomColors {
-                CavaSettings.resetCustomColorsForSkinChange()
+            if resetCavaAppearance {
+                CavaSettings.resetAppearanceForSkinChange()
             }
             applyClassicVisualizationDefaults(notify: true)
             notifySkinChanged()
@@ -3019,7 +3019,7 @@ class WindowManager {
                 currentSkin = try SkinLoader.shared.load(from: bundledURL)
                 currentSkinPath = nil
                 UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
-                CavaSettings.resetCustomColorsForSkinChange()
+                CavaSettings.resetAppearanceForSkinChange()
                 applyClassicVisualizationDefaults(notify: true)
                 notifySkinChanged()
                 return
@@ -3031,7 +3031,7 @@ class WindowManager {
         currentSkin = SkinLoader.shared.loadDefault()
         currentSkinPath = nil
         UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
-        CavaSettings.resetCustomColorsForSkinChange()
+        CavaSettings.resetAppearanceForSkinChange()
         applyClassicVisualizationDefaults(notify: true)
         notifySkinChanged()
     }
@@ -5858,11 +5858,11 @@ class WindowManager {
             // defaults ("Purple Neon") so the shared, window-scoped profile keys don't
             // retain the outgoing modern skin's profile (e.g. "Lavender Pink Tips").
             writeClassicVisualizationDefaultKeys(for: .all)
-            // Cava's "custom colors" flag is shared across UIs; entering modern clears it
-            // via configureSkinDependencies, but the classic branch doesn't reload a skin,
-            // so clear it here too — otherwise a modern-picked Cava gradient survives into
-            // classic instead of reverting to the classic default (Winamp green).
-            CavaSettings.resetCustomColorsForSkinChange()
+            // Cava's skin-owned appearance is shared across UIs; entering modern/metal resets
+            // it via configureSkinDependencies, but the classic branch doesn't reload a skin,
+            // so reset it here too. Otherwise a modern-picked gradient or transparent Cava
+            // background survives into an unrelated UI family.
+            CavaSettings.resetAppearanceForSkinChange()
         }
 
         // The vis_classic bridges are cached on WindowManager and survive UI-family

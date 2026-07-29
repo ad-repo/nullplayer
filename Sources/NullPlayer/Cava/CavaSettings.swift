@@ -321,10 +321,15 @@ enum CavaSettings {
         defaults.set(customized, forKey: key(.colorsCustomized, for: scope))
     }
 
-    /// Forget user-picked gradients after an explicit skin change so the new skin's palette wins.
-    static func resetCustomColorsForSkinChange() {
+    /// Reset appearance choices owned by the outgoing skin after an explicit skin change.
+    ///
+    /// Tuning and mode remain durable user preferences, but colors and standalone-window
+    /// transparency must not leak into an unrelated skin or UI family. Launch restoration
+    /// deliberately skips this reset so same-skin relaunches preserve the user's choices.
+    static func resetAppearanceForSkinChange() {
         setHasCustomColors(false, for: .cavaWindow)
         setHasCustomColors(false, for: .mainWindow)
+        transparentBackground = false
     }
 
     static var hasCustomColors: Bool {
