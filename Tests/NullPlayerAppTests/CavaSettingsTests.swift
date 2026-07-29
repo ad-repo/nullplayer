@@ -108,6 +108,58 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .mainWindow), iceIndex)
     }
 
+    func testSkinChangeAppliesIncomingCavaTransparencyDefault() {
+        CavaSettings.transparentBackground = false
+
+        CavaSettings.resetAppearanceForSkinChange(transparentBackground: true)
+        XCTAssertTrue(CavaSettings.transparentBackground)
+        XCTAssertFalse(CavaSettings.isTransparencyCustomized)
+
+        CavaSettings.resetAppearanceForSkinChange(transparentBackground: false)
+        XCTAssertFalse(CavaSettings.transparentBackground)
+        XCTAssertFalse(CavaSettings.isTransparencyCustomized)
+    }
+
+    func testLaunchRepairsUncustomizedTransparencyWithoutReplacingUserChoice() {
+        CavaSettings.resetAppearanceForSkinChange(transparentBackground: false)
+
+        CavaSettings.applyTransparencyDefaultIfUncustomized(true)
+        XCTAssertTrue(CavaSettings.transparentBackground)
+
+        CavaSettings.setTransparentBackground(false, customized: true)
+        CavaSettings.applyTransparencyDefaultIfUncustomized(true)
+        XCTAssertFalse(CavaSettings.transparentBackground)
+        XCTAssertTrue(CavaSettings.isTransparencyCustomized)
+    }
+
+    func testCavaTransparencyDefaultFollowsSkinWindowOpacity() throws {
+        let glassConfigURL = try XCTUnwrap(
+            BundleHelper.url(
+                forResource: "skin",
+                withExtension: "json",
+                subdirectory: "Resources/Skins/SmoothGlass"
+            )
+        )
+        let opaqueConfigURL = try XCTUnwrap(
+            BundleHelper.url(
+                forResource: "skin",
+                withExtension: "json",
+                subdirectory: "Resources/Skins/NeonWave"
+            )
+        )
+        let glassSkin = try ModernSkinLoader.shared.load(
+            from: glassConfigURL.deletingLastPathComponent()
+        )
+        let opaqueSkin = try ModernSkinLoader.shared.load(
+            from: opaqueConfigURL.deletingLastPathComponent()
+        )
+        let metalSkin = ModernSkinLoader.shared.createBuiltInMetalSkin(named: "Brushed Steel")
+
+        XCTAssertTrue(glassSkin.cavaTransparentBackgroundDefault)
+        XCTAssertFalse(opaqueSkin.cavaTransparentBackgroundDefault)
+        XCTAssertFalse(metalSkin.cavaTransparentBackgroundDefault)
+    }
+
     func testClassicSkinRestorePreservesCavaAppearanceWhileExplicitLoadResetsIt() throws {
         let skinURL = try XCTUnwrap(
             BundleHelper.url(

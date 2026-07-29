@@ -82,6 +82,10 @@ final class ModernCavaView: NSView {
 
     /// Reset cleared the standalone Cava keys: re-read tuning and re-derive skin colors.
     func refreshAfterReset() {
+        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
+        CavaSettings.applyTransparencyDefaultIfUncustomized(
+            skin.cavaTransparentBackgroundDefault
+        )
         presenter.settingsDidChange()
         skinDidChange()
     }

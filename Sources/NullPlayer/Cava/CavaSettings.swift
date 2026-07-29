@@ -30,6 +30,7 @@ enum CavaSettings {
         case highGradientColor
         case colorsCustomized
         case transparentBackground
+        case transparencyCustomized
         case noiseReduction
         case bassTilt
     }
@@ -46,6 +47,7 @@ enum CavaSettings {
             case .highGradientColor: return "cavaHighGradientColor"
             case .colorsCustomized: return "cavaColorsCustomized"
             case .transparentBackground: return "cavaTransparentBackground"
+            case .transparencyCustomized: return "cavaTransparencyCustomized"
             case .noiseReduction: return "cavaNoiseReduction"
             case .bassTilt: return "cavaBassTilt"
             }
@@ -57,7 +59,8 @@ enum CavaSettings {
     /// Durable keys owned by a scope. Used by the centralized visualization reset path.
     static func preferenceKeys(for scope: Scope) -> [String] {
         SettingKey.allCases.compactMap { setting in
-            if scope == .mainWindow && setting == .transparentBackground {
+            if scope == .mainWindow
+                && (setting == .transparentBackground || setting == .transparencyCustomized) {
                 return nil
             }
             return key(setting, for: scope)
@@ -302,11 +305,29 @@ enum CavaSettings {
 
     // MARK: - Transparent Background
 
-    /// Whether the (modern) Cava window draws a translucent background. **Off by default** — Cava
-    /// is opaque and does not inherit the spectrum window's transparency. Modern only.
+    /// Whether the modern Cava window honors the active skin's window opacity.
+    ///
+    /// The raw preference falls back to false until a modern skin is loaded. Explicit skin changes
+    /// replace it with the incoming skin's default; same-skin launches preserve the user's choice.
     static var transparentBackground: Bool {
         get { defaults.bool(forKey: key(.transparentBackground, for: .cavaWindow)) }
         set { defaults.set(newValue, forKey: key(.transparentBackground, for: .cavaWindow)) }
+    }
+
+    /// Whether the stored transparency value came from the user rather than the active skin.
+    static var isTransparencyCustomized: Bool {
+        defaults.bool(forKey: key(.transparencyCustomized, for: .cavaWindow))
+    }
+
+    static func setTransparentBackground(_ enabled: Bool, customized: Bool) {
+        transparentBackground = enabled
+        defaults.set(customized, forKey: key(.transparencyCustomized, for: .cavaWindow))
+    }
+
+    /// Repair/seed an uncustomized preference from the active skin without replacing a user choice.
+    static func applyTransparencyDefaultIfUncustomized(_ enabled: Bool) {
+        guard !isTransparencyCustomized else { return }
+        transparentBackground = enabled
     }
 
     // MARK: - Skin-derived default colors
@@ -326,10 +347,10 @@ enum CavaSettings {
     /// Tuning and mode remain durable user preferences, but colors and standalone-window
     /// transparency must not leak into an unrelated skin or UI family. Launch restoration
     /// deliberately skips this reset so same-skin relaunches preserve the user's choices.
-    static func resetAppearanceForSkinChange() {
+    static func resetAppearanceForSkinChange(transparentBackground defaultTransparency: Bool = false) {
         setHasCustomColors(false, for: .cavaWindow)
         setHasCustomColors(false, for: .mainWindow)
-        transparentBackground = false
+        setTransparentBackground(defaultTransparency, customized: false)
     }
 
     static var hasCustomColors: Bool {

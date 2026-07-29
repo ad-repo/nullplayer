@@ -65,7 +65,10 @@ final class CavaPresenter: NSObject {
 
     func toggleTransparency() {
         guard scope == .cavaWindow else { return }
-        CavaSettings.transparentBackground.toggle()
+        CavaSettings.setTransparentBackground(
+            !CavaSettings.transparentBackground,
+            customized: true
+        )
         (onNeedsFullDisplay ?? onNeedsDisplay)?()
     }
 
