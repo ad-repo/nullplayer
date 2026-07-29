@@ -1,12 +1,17 @@
+
+
 # NullPlayer
 
 ## A throwback open-source music player for macOS written in Swift, with a first-class headless CLI for automation, multi-source playback, and casting across Sonos, Chromecast, UPnP/DLNA, local media servers, and internet radio.
 
 ## This is a 100% clean room hobby project and is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, or anyone else.
 
-## **If you enjoy NullPlayer, please ⭐ star ⭐ the project on GitHub!**
+## **If you enjoy NullPlayer, please ⭐ STAR ⭐ the project on GitHub!**
 
-![MixCollage_player](https://github.com/user-attachments/assets/5d29303e-2910-4f1d-b5ac-b65b7f17a34f)
+## Demo
+
+[![nullPlayer Demo](https://img.youtube.com/vi/hsnVpIh1TnA/hqdefault.jpg)](https://youtu.be/hsnVpIh1TnA)
+
 ![MixCollage-12-Mar-2026-03-38-PM-191](https://github.com/user-attachments/assets/b26003a8-bb5d-45ca-9504-2a3e13079fe9)
 <img width="733" height="184" alt="Screenshot 2026-04-05 at 8 52 33 PM" src="https://github.com/user-attachments/assets/3f602a8d-b9bb-43d1-af75-89e4fcb06d08" />
 <img width="1389" height="660" alt="Screenshot 2026-04-05 at 8 54 54 PM" src="https://github.com/user-attachments/assets/4f2dc824-e90e-4f28-b151-02dc05727cdf" />
