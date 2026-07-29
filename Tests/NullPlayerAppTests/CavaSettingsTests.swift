@@ -135,14 +135,50 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertFalse(CavaSettings.transparentBackground)
     }
 
-    func testModernCavaTransparentContentRetainsWindowServerInputMask() throws {
+    func testMetalCavaTransparentContentRetainsWindowServerInputMask() throws {
+        let skin = ModernSkinLoader.shared.createBuiltInMetalSkin(named: "Brushed Steel")
+        skin.renderStyle = .metal
+        let transparentGap = try renderedTransparentCavaBackingColor(for: skin)
+
+        XCTAssertEqual(
+            transparentGap.alphaComponent,
+            ModernCavaView.transparentInteractionAlpha,
+            accuracy: 1.0 / 255.0
+        )
+        XCTAssertLessThan(transparentGap.alphaComponent, 0.01)
+
         CavaSettings.transparentBackground = true
         let view = ModernCavaView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        XCTAssertTrue(view.hitTest(NSPoint(x: 160, y: 40)) === view)
+        XCTAssertTrue(view.acceptsFirstMouse(for: nil))
+    }
+
+    func testGlassCavaTransparentContentPreservesConfiguredWindowOpacity() throws {
+        let configURL = try XCTUnwrap(
+            BundleHelper.url(
+                forResource: "skin",
+                withExtension: "json",
+                subdirectory: "Resources/Skins/SmoothGlass"
+            )
+        )
+        let skin = try ModernSkinLoader.shared.load(from: configURL.deletingLastPathComponent())
+        skin.renderStyle = .standard
+        let transparentGap = try renderedTransparentCavaBackingColor(for: skin)
+
+        XCTAssertEqual(
+            transparentGap.alphaComponent,
+            skin.spectrumWindowBackgroundOpacity,
+            accuracy: 1.0 / 255.0
+        )
+        XCTAssertGreaterThan(transparentGap.alphaComponent, 0.5)
+    }
+
+    private func renderedTransparentCavaBackingColor(for skin: ModernSkin) throws -> NSColor {
         let bitmap = try XCTUnwrap(
             NSBitmapImageRep(
                 bitmapDataPlanes: nil,
-                pixelsWide: 320,
-                pixelsHigh: 120,
+                pixelsWide: 20,
+                pixelsHigh: 20,
                 bitsPerSample: 8,
                 samplesPerPixel: 4,
                 hasAlpha: true,
@@ -154,21 +190,13 @@ final class CavaSettingsTests: XCTestCase {
             )
         )
         let graphics = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
-        let animationDirtyRect = NSRect(x: 150, y: 30, width: 20, height: 20)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = graphics
-        view.draw(animationDirtyRect)
-        NSGraphicsContext.restoreGraphicsState()
-        let transparentGap = try XCTUnwrap(bitmap.colorAt(x: 160, y: 40))
-
-        XCTAssertTrue(view.hitTest(NSPoint(x: 160, y: 40)) === view)
-        XCTAssertTrue(view.acceptsFirstMouse(for: nil))
-        XCTAssertEqual(
-            transparentGap.alphaComponent,
-            ModernCavaView.transparentInteractionAlpha,
-            accuracy: 1.0 / 255.0
+        ModernCavaView.drawTransparentContentBacking(
+            in: NSRect(x: 0, y: 0, width: 20, height: 20),
+            clippedTo: NSRect(x: 0, y: 0, width: 20, height: 20),
+            renderer: ModernSkinRenderer(skin: skin, scaleFactor: 1),
+            context: graphics.cgContext
         )
-        XCTAssertLessThan(transparentGap.alphaComponent, 0.01)
+        return try XCTUnwrap(bitmap.colorAt(x: 10, y: 10))
     }
 
     func testClassicStackRepairIncludesCavaAfterFlow() throws {

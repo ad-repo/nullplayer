@@ -229,13 +229,20 @@ The 60 Hz timer redraws only if the ordered bar signature changed. Closing, orde
 `ModernCavaView` draws its background via `renderer.drawWindowBackground(..., backgroundOpacity:)`. Passing `renderer.skin.spectrumWindowBackgroundOpacity` (= the skin's `window.opacity`) made Cava translucent on metal/modern skins that set a low window opacity — not wanted by default. Use `effectiveBackgroundOpacity` (1.0 unless `CavaSettings.transparentBackground` is on).
 
 Always paint the complete animation clip in `drawCavaContent`; timer-driven redraws bypass
-`drawWindowBackground`. Fill with the skin background when opaque. When transparent, copy-fill with
-black at one 8-bit alpha quantum (`1 / 255`), using the same technique as `WaveformDrawing` clear
-mode while ensuring the value survives backing-store quantization. Never leave the region at zero
-alpha: WindowServer removes a fully clear borderless-window region from its mouse mask before AppKit
-calls `NSView.hitTest`, so gaps between bars click the desktop even when
-`ModernCavaView.hitTest` returns the view. Preserve the imperceptible nonzero-alpha surface to keep
-the whole face draggable and right-clickable.
+`drawWindowBackground`. Fill with the skin background when opaque. In transparent mode, branch on
+the skin instance's stamped `renderStyle`:
+
+- For `.standard` skins, including SmoothGlass/SeaGlass/BloodGlass, redraw the real window
+  background at `spectrumWindowBackgroundOpacity`. Do not replace the configured translucent Glass
+  fill with the clear input surface.
+- For `.metal`, copy-fill the intentionally clear content well with black at one 8-bit alpha quantum
+  (`1 / 255`), using the same technique as `WaveformDrawing` clear mode while ensuring the value
+  survives backing-store quantization.
+
+Never leave the Metal region at zero alpha: WindowServer removes a fully clear borderless-window
+region from its mouse mask before AppKit calls `NSView.hitTest`, so gaps between bars click the
+desktop even when `ModernCavaView.hitTest` returns the view. Preserve the imperceptible nonzero-alpha
+surface to keep the whole face draggable and right-clickable.
 
 `transparentBackground` is a durable `CavaSettings`/UserDefaults pref, default false, modern-only. It
 persists for a same-skin relaunch but `resetAppearanceForSkinChange()` clears it on explicit skin and

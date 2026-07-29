@@ -182,21 +182,15 @@ final class ModernCavaView: NSView {
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: clipRect).setClip()
         if CavaSettings.transparentBackground {
-            // Borderless windows derive their WindowServer mouse mask from composited alpha.
-            // Fully clear gaps between bars bypass AppKit hit-testing and click the desktop.
-            // Match WaveformDrawing's clear-mode technique: visually transparent, but nonzero
-            // alpha keeps the entire Cava face interactive during content-only repaints.
             if let context = NSGraphicsContext.current?.cgContext {
-                context.saveGState()
-                context.setBlendMode(.copy)
-                context.setFillColor(
-                    NSColor(
-                        calibratedWhite: 0,
-                        alpha: Self.transparentInteractionAlpha
-                    ).cgColor
+                Self.drawTransparentContentBacking(
+                    in: bounds,
+                    clippedTo: clipRect,
+                    renderer: renderer,
+                    adjacentEdges: adjacentEdges,
+                    sharpCorners: sharpCorners,
+                    context: context
                 )
-                context.fill(clipRect)
-                context.restoreGState()
             }
         } else {
             // Repaint the opaque content background here too so timer-driven
@@ -212,6 +206,42 @@ final class ModernCavaView: NSView {
             mode: presenter.mode
         )
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// Restore the intended transparent-mode backing during content-only animation repaints.
+    ///
+    /// Standard skins (including Glass) retain their configured translucent window background.
+    /// Metal Cava intentionally clears its content well; keep one alpha quantum there so the
+    /// WindowServer does not remove gaps between bars from the borderless window's mouse mask.
+    static func drawTransparentContentBacking(
+        in bounds: NSRect,
+        clippedTo clipRect: NSRect,
+        renderer: ModernSkinRenderer,
+        adjacentEdges: AdjacentEdges = [],
+        sharpCorners: CACornerMask = [],
+        context: CGContext
+    ) {
+        context.saveGState()
+        context.clip(to: clipRect)
+        if renderer.skin.renderStyle == .metal {
+            context.setBlendMode(.copy)
+            context.setFillColor(
+                NSColor(
+                    calibratedWhite: 0,
+                    alpha: transparentInteractionAlpha
+                ).cgColor
+            )
+            context.fill(clipRect)
+        } else {
+            renderer.drawWindowBackground(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity
+            )
+        }
+        context.restoreGState()
     }
 
     @objc private func windowLayoutDidChange() {
