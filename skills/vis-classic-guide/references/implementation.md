@@ -300,8 +300,11 @@ means the *profile is shared state*, and the correct default depends on which UI
 - Classic UI: default analyzer profile is `WindowManager.classicVisClassicProfileName`
   (`"Purple Neon"`), written by `WindowManager.writeClassicVisualizationDefaultKeys(for:)`.
   Classic skins do **not** go through `ModernSkinEngine`.
-- Modern/metal UI: default comes from `ModernSkinEngine.currentSkin.config.visualization`
-  (a metal finish resolves to its per-finish `"Metal <finish>"` profile).
+- Modern/metal UI: the embedded main-window visualizer defaults to Cava through
+  `ModernSkinEngine.currentSkin.config.visualization.mainWindowMode`. The dedicated Spectrum
+  window remains `vis_classic`; its default profile comes from the active skin (a metal finish
+  resolves to its per-finish `"Metal <finish>"` profile). Modern/metal skins also retain their
+  main-window vis_classic profile mapping for users who select that mode manually.
 
 Three rules follow, and all had leak bugs before 0.29.2:
 
@@ -316,7 +319,8 @@ the outgoing family's shared profile keys:
 - Entering classic: `writeClassicVisualizationDefaultKeys(for: .all)`.
 
 Preserving instead (the old `loadPreferredSkin(for:)` default of `true`) carried classic's
-`"Purple Neon"` into a modern skin and vice-versa.
+`vis_classic` mode and `"Purple Neon"` profile into a modern skin instead of applying Cava and
+the incoming skin's retained vis_classic profile defaults.
 
 ### 8.2 The `VisClassicBridge`s are cached — re-sync them explicitly
 

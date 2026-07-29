@@ -10,7 +10,7 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
 ```json
 {
   "visualization": {
-    "mainWindowMode": "vis_classic",
+    "mainWindowMode": "Cava",
     "spectrumWindowMode": "vis_classic",
     "visClassic": {
       "mainWindowProfile": "Purple Neon",
@@ -109,7 +109,12 @@ When a classic skin is loaded, NullPlayer now forces these defaults:
 
 Runtime notifications and vis_classic commands are posted so open windows update immediately.
 
-## Bundled modern skin profile mapping (palette matched)
+## Bundled modern skin defaults
+
+All bundled modern skins use `"mainWindowMode": "Cava"`. Cava derives its default embedded
+gradient from the skin palette. The dedicated Spectrum window continues to default to
+`vis_classic`, and the following palette-matched profiles also apply when a user manually selects
+`vis_classic` in the main window:
 
 - `ArcticMinimal` -> `City Night`
 - `BananaParty` -> `Blue Flames`

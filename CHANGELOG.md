@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.3
+
+### Improvements
+
+- **Modern and Metal skins now default the main-window visualizer to Cava** — every bundled modern skin and built-in Metal finish starts with its palette-matched Cava analyzer. Classic UI continues to default to `vis_classic`; modern/Metal `vis_classic` profile mappings remain available when selected manually, and the dedicated Spectrum window remains unchanged.
+
 ## 0.29.2
 
 ### Bug Fixes

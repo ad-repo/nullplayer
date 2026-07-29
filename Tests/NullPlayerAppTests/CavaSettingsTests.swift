@@ -160,6 +160,74 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertFalse(metalSkin.cavaTransparentBackgroundDefault)
     }
 
+    func testBundledModernSkinsDefaultEmbeddedVisualizerToCava() throws {
+        let bundledSkinNames = [
+            "ArcticMinimal",
+            "BananaParty",
+            "BloodGlass",
+            "Bubblegum Retro",
+            "EmeraldForge",
+            "ForgedTitanium",
+            "HyperPopPrism",
+            "IndustrialSignal",
+            "NeonWave",
+            "Sakura Minimal",
+            "SeaGlass",
+            "Skulls",
+            "SmoothGlass",
+        ]
+
+        for name in bundledSkinNames {
+            let configURL = try XCTUnwrap(
+                BundleHelper.url(
+                    forResource: "skin",
+                    withExtension: "json",
+                    subdirectory: "Resources/Skins/\(name)"
+                ),
+                "Missing bundled skin config for \(name)"
+            )
+            let skin = try ModernSkinLoader.shared.load(from: configURL.deletingLastPathComponent())
+            XCTAssertEqual(
+                skin.config.visualization?.mainWindowMode,
+                MainWindowVisMode.cava.rawValue,
+                "\(name) should default its embedded visualizer to Cava"
+            )
+        }
+    }
+
+    func testBuiltInMetalSkinsDefaultEmbeddedVisualizerToCava() {
+        for name in ModernSkinLoader.builtInMetalSkinNames {
+            let skin = ModernSkinLoader.shared.createBuiltInMetalSkin(named: name)
+            XCTAssertEqual(
+                skin.config.visualization?.mainWindowMode,
+                MainWindowVisMode.cava.rawValue,
+                "\(name) should default its embedded visualizer to Cava"
+            )
+            XCTAssertEqual(
+                skin.config.visualization?.spectrumWindowMode,
+                SpectrumQualityMode.visClassicExact.rawValue,
+                "\(name) should retain vis_classic for the dedicated Spectrum window"
+            )
+        }
+    }
+
+    func testClassicVisualizationDefaultRemainsVisClassic() throws {
+        let suiteName = "CavaSettingsTests.classicVisualizationDefault.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        WindowManager.shared.writeClassicVisualizationDefaultKeys(for: .all, defaults: defaults)
+
+        XCTAssertEqual(
+            defaults.string(forKey: "mainWindowVisMode"),
+            MainWindowVisMode.visClassicExact.rawValue
+        )
+        XCTAssertEqual(
+            defaults.string(forKey: "spectrumQualityMode"),
+            SpectrumQualityMode.visClassicExact.rawValue
+        )
+    }
+
     func testClassicSkinRestorePreservesCavaAppearanceWhileExplicitLoadResetsIt() throws {
         let skinURL = try XCTUnwrap(
             BundleHelper.url(

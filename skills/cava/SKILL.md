@@ -13,6 +13,11 @@ Open **Windows > Cava** in the menu bar or right-click any main window to toggle
 Cava window. Cava is also available inside the 76×16 main-window visualization area via
 **Visuals > Main Window > Mode > Cava**.
 
+Cava is the shipped default for the embedded main-window visualization in every bundled modern
+skin and every built-in Metal finish. Classic UI continues to default the embedded visualization
+to `vis_classic`. A user's persisted mode still wins on a normal same-skin launch; selecting or
+resetting a modern/Metal skin reapplies that skin's Cava default.
+
 ## What It Shows
 
 Cava renders real-time audio spectrum as vertical bars:
