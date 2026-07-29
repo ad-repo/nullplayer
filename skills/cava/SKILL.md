@@ -1,3 +1,8 @@
+---
+name: cava
+description: Implementation and maintenance guide for NullPlayer's standalone and embedded Cava spectrum analyzers, including DSP, rendering, scoped settings, skin-following colors, resets, UI-family switches, and window lifecycle.
+---
+
 # Cava Spectrum Analyzer
 
 Cava is a responsive, bar-based audio spectrum analyzer window built on a clean-room Swift reimplementation of the cava algorithm (https://github.com/karlstav/cava, MIT-licensed).
@@ -109,6 +114,40 @@ remain wrappers for `.cavaWindow` and continue using the existing keys. Scope-aw
 Main-window tuning and color choices are reset with the centralized Main Window visualization reset
 and never modify the standalone window. Bar-count, smoothing, and bass menu presets are canonical
 `CavaSettings` collections shared by both menu builders.
+
+## Visualization Reset and UI-Family Switches
+
+### Standalone Cava and Reset All
+
+Cava colors fall back to the active skin's gradient, pushed by `ModernCavaView` or `CavaView`.
+The embedded main-window Cava keys (`.mainWindow`) live in
+`VisualizationPreferences.mainWindowKeys`. The standalone window keys
+(`CavaSettings.preferenceKeys(for: .cavaWindow)`) live in `cavaWindowKeys`, which is included
+only in the `.all` reset scope.
+
+`VisualizationPreferences.reset(.all)` therefore resets both Cava scopes. Its notification
+phase calls `WindowManager.refreshCavaWindowAfterReset()` and then the open controller's
+`refreshAfterReset()`. The view re-reads tuning with `presenter.settingsDidChange()` and
+re-derives the active skin's default gradient through `skinDidChange()`. The standalone
+window is intentionally not included in `.mainWindow` or `.spectrumWindow` resets.
+
+### Custom Colors Across UI Families
+
+`CavaSettings.hasCustomColors` is persisted independently for `.cavaWindow` and `.mainWindow`.
+When a scope is customized, `effectiveLowColor` and `effectiveHighColor` ignore that scope's
+in-memory skin default. An explicit UI-family switch is a skin change and clears custom-color
+flags for both scopes:
+
+- Entering modern or metal clears them in
+  `ModernSkinEngine.configureSkinDependencies(preservePersistedProfiles:)` when persisted
+  visualization preferences are not being preserved.
+- Entering classic clears them in `WindowManager.prepareUIRuntime(for:)` via
+  `CavaSettings.resetCustomColorsForSkinChange()`, because the classic branch does not reload
+  a skin through `ModernSkinEngine`.
+
+Without the classic-entry reset, a modern-picked gradient survives into classic instead of
+returning to the classic Winamp-green default. Any new UI-family-entry path must clear the
+custom-color flags with the same semantics. A normal same-skin app launch preserves them.
 
 ## Key Files
 
