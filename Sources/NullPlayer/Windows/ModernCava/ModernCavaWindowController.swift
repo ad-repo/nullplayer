@@ -65,6 +65,10 @@ final class ModernCavaWindowController: NSWindowController, CavaWindowProviding 
         cavaView.skinDidChange()
     }
 
+    func refreshAfterReset() {
+        cavaView.refreshAfterReset()
+    }
+
     func tearDown() {
         stopRenderingForHide()
         lifecycleObservers.forEach(NotificationCenter.default.removeObserver)

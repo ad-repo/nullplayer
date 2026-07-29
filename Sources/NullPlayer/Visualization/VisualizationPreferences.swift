@@ -40,9 +40,15 @@ enum VisualizationPreferences {
         case .browserArtwork:
             return browserArtworkKeys
         case .all:
-            return Array(Set(mainWindowKeys + spectrumWindowKeys + visualizationWindowKeys + browserArtworkKeys))
+            return Array(Set(mainWindowKeys + spectrumWindowKeys + visualizationWindowKeys + browserArtworkKeys + cavaWindowKeys))
         }
     }
+
+    /// Standalone Cava window keys. Only reset as part of `.all` ("Reset All Visualization
+    /// Preferences"); the embedded main-window Cava keys live in `mainWindowKeys`. Cava
+    /// colors fall back to the active skin's gradient (pushed per-UI by the Cava view), so
+    /// clearing these restores mode-correct defaults.
+    private static let cavaWindowKeys = CavaSettings.preferenceKeys(for: .cavaWindow)
 
     private static let legacyVisClassicKeys = [
         "visClassicLastProfileName",
@@ -254,6 +260,11 @@ enum VisualizationPreferences {
         }
         if scope == .visualizationWindow || scope == .all {
             WindowManager.shared.resetVisualizationWindowPreferences()
+        }
+        if scope == .all {
+            // The standalone Cava window keys are only cleared as part of `.all`; force the
+            // open window (if any) to re-read tuning and re-derive its skin-default gradient.
+            WindowManager.shared.refreshCavaWindowAfterReset()
         }
     }
 

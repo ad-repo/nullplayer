@@ -341,12 +341,25 @@ never assume the reload notification was delivered.
 the wrong (modern default skin's) profile. `.mainWindow` / `.spectrumWindow` / `.all` scopes
 are all honored.
 
-### 8.4 Follow-up: standalone Cava window is not in the reset scope
+### 8.4 Standalone Cava window and the `.all` reset
 
 Cava colors fall back to the active skin's gradient (pushed per-UI by `ModernCavaView` /
-`CavaView`, so they are inherently UI-mode-correct). "Reset All Visualization Preferences"
-(`reset(.all)`) resets the **embedded** main-window Cava (its `.mainWindow` keys are in
-`mainWindowKeys`) but **not** the standalone Cava window — `CavaSettings.preferenceKeys(for:
-.cavaWindow)` are in no `VisualizationPreferenceResetScope`. If a future change should make
-the global reset also clear the standalone Cava window, add those keys to `.all` (and trigger
-a redraw); the skin-default fallback already makes the restored colors mode-correct.
+`CavaView`, so they are inherently UI-mode-correct). The **embedded** main-window Cava keys
+(`.mainWindow`) live in `mainWindowKeys`; the **standalone** Cava window keys
+(`CavaSettings.preferenceKeys(for: .cavaWindow)`) live in `cavaWindowKeys`, which is included
+**only** in `.all`. "Reset All Visualization Preferences" (`reset(.all)`) therefore resets
+both, and `postResetNotifications(.all)` calls
+`WindowManager.refreshCavaWindowAfterReset()` → the open Cava window's
+`refreshAfterReset()` (re-reads tuning via `presenter.settingsDidChange()` and re-derives
+skin colors via `skinDidChange()`). A per-window Cava reset is *not* wired into
+`.mainWindow` / `.spectrumWindow` — the standalone window is `.all`-only by design.
+
+### 8.5 Cava "custom colors" flag is shared across UIs
+
+`CavaSettings.hasCustomColors(.cavaWindow)` (and `.mainWindow`) is a single shared flag; when
+set, `effectiveLowColor/HighColor` ignore the skin default. Entering modern/metal clears it
+via `ModernSkinEngine.configureSkinDependencies` (on `!preservePersistedProfiles`), but the
+classic branch of `prepareUIRuntime` does **not** reload a skin, so it must call
+`CavaSettings.resetCustomColorsForSkinChange()` explicitly — otherwise a modern-picked Cava
+gradient survives into classic instead of reverting to the classic default (Winamp green).
+Any new UI-family-entry path must clear this flag the same way.

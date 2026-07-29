@@ -74,6 +74,12 @@ final class CavaView: NSView {
         needsDisplay = true
     }
 
+    /// Reset cleared the standalone Cava keys: re-read tuning and re-derive skin colors.
+    func refreshAfterReset() {
+        presenter.settingsDidChange()
+        skinDidChange()
+    }
+
     /// Classic Cava follows the classic palette: green (like the Winamp spectrum). Only affects the
     /// default — a user-picked color scheme overrides it (see CavaSettings.hasCustomColors).
     private func applySkinDefaultColors() {

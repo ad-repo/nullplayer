@@ -2863,6 +2863,12 @@ class WindowManager {
         UserDefaults.standard.set(VisualizationType.projectM.rawValue, forKey: "visualizationEngineType")
         projectMWindowController?.resetVisualizationWindowPreferences()
     }
+
+    /// Force the open standalone Cava window (if any) to re-read tuning and re-derive its
+    /// skin-default colors after "Reset All Visualization Preferences" cleared its keys.
+    func refreshCavaWindowAfterReset() {
+        cavaWindowController?.refreshAfterReset()
+    }
     
     /// Get information about loaded presets (bundled count, custom count, custom path)
     var visualizationPresetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
@@ -5852,6 +5858,11 @@ class WindowManager {
             // defaults ("Purple Neon") so the shared, window-scoped profile keys don't
             // retain the outgoing modern skin's profile (e.g. "Lavender Pink Tips").
             writeClassicVisualizationDefaultKeys(for: .all)
+            // Cava's "custom colors" flag is shared across UIs; entering modern clears it
+            // via configureSkinDependencies, but the classic branch doesn't reload a skin,
+            // so clear it here too — otherwise a modern-picked Cava gradient survives into
+            // classic instead of reverting to the classic default (Winamp green).
+            CavaSettings.resetCustomColorsForSkinChange()
         }
 
         // The vis_classic bridges are cached on WindowManager and survive UI-family

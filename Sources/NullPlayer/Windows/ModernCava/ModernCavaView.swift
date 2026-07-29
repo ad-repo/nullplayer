@@ -76,6 +76,12 @@ final class ModernCavaView: NSView {
         needsDisplay = true
     }
 
+    /// Reset cleared the standalone Cava keys: re-read tuning and re-derive skin colors.
+    func refreshAfterReset() {
+        presenter.settingsDidChange()
+        skinDidChange()
+    }
+
     /// Modern Cava follows the active skin's palette: short bars use the skin's primary accent,
     /// tall bars its highlight accent. Only sets the default — a user color pick overrides it.
     private func applySkinDefaultColors(_ skin: ModernSkin) {
