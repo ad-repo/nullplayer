@@ -1,6 +1,10 @@
 import AppKit
 
 final class ModernCavaView: NSView {
+    /// Smallest reliably nonzero alpha in an 8-bit window backing surface.
+    /// It is visually imperceptible but keeps clear content in the WindowServer mouse mask.
+    static let transparentInteractionAlpha: CGFloat = 1.0 / 255.0
+
     weak var controller: ModernCavaWindowController?
 
     private let presenter = CavaPresenter()
@@ -74,6 +78,16 @@ final class ModernCavaView: NSView {
         updateCornerMask()
         applySkinDefaultColors(skin)
         needsDisplay = true
+    }
+
+    /// Reset cleared the standalone Cava keys: re-read tuning and re-derive skin colors.
+    func refreshAfterReset() {
+        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
+        CavaSettings.applyTransparencyDefaultIfUncustomized(
+            skin.cavaTransparentBackgroundDefault
+        )
+        presenter.settingsDidChange()
+        skinDidChange()
     }
 
     /// Modern Cava follows the active skin's palette: short bars use the skin's primary accent,
@@ -171,9 +185,20 @@ final class ModernCavaView: NSView {
     private func drawCavaContent(in contentRect: NSRect, clippedTo clipRect: NSRect) {
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: clipRect).setClip()
-        // Repaint the content background here too so timer-driven (animation-rect only) redraws
-        // don't leave the area transparent. Skipped when Transparent Background is on.
-        if !CavaSettings.transparentBackground {
+        if CavaSettings.transparentBackground {
+            if let context = NSGraphicsContext.current?.cgContext {
+                Self.drawTransparentContentBacking(
+                    in: bounds,
+                    clippedTo: clipRect,
+                    renderer: renderer,
+                    adjacentEdges: adjacentEdges,
+                    sharpCorners: sharpCorners,
+                    context: context
+                )
+            }
+        } else {
+            // Repaint the opaque content background here too so timer-driven
+            // (animation-rect only) redraws do not clear it between frames.
             renderer.skin.backgroundColor.setFill()
             clipRect.fill()
         }
@@ -185,6 +210,42 @@ final class ModernCavaView: NSView {
             mode: presenter.mode
         )
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// Restore the intended transparent-mode backing during content-only animation repaints.
+    ///
+    /// Standard skins (including Glass) retain their configured translucent window background.
+    /// Metal Cava intentionally clears its content well; keep one alpha quantum there so the
+    /// WindowServer does not remove gaps between bars from the borderless window's mouse mask.
+    static func drawTransparentContentBacking(
+        in bounds: NSRect,
+        clippedTo clipRect: NSRect,
+        renderer: ModernSkinRenderer,
+        adjacentEdges: AdjacentEdges = [],
+        sharpCorners: CACornerMask = [],
+        context: CGContext
+    ) {
+        context.saveGState()
+        context.clip(to: clipRect)
+        if renderer.skin.renderStyle == .metal {
+            context.setBlendMode(.copy)
+            context.setFillColor(
+                NSColor(
+                    calibratedWhite: 0,
+                    alpha: transparentInteractionAlpha
+                ).cgColor
+            )
+            context.fill(clipRect)
+        } else {
+            renderer.drawWindowBackground(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity
+            )
+        }
+        context.restoreGState()
     }
 
     @objc private func windowLayoutDidChange() {

@@ -1,3 +1,8 @@
+---
+name: cava
+description: Implementation and maintenance guide for NullPlayer's standalone and embedded Cava spectrum analyzers, including DSP, rendering, scoped settings, skin-following colors, resets, UI-family switches, and window lifecycle.
+---
+
 # Cava Spectrum Analyzer
 
 Cava is a responsive, bar-based audio spectrum analyzer window built on a clean-room Swift reimplementation of the cava algorithm (https://github.com/karlstav/cava, MIT-licensed).
@@ -71,7 +76,7 @@ the standalone window.
 
 - **Mono** / **Stereo:** Toggle between single-row and mirrored layouts (double-click the window does the same)
 - **Color:** Submenu with **Match Skin** at the top, then named gradient presets (each with a low→high swatch and a checkmark on the active one). Presets include standard combos (Blue → Magenta, Fire, Ice, Vaporwave, Aurora, Ocean, Neon, …) and a metallic set (Gold, Silver, Copper, Bronze, Gunmetal). Selecting a preset sets `lowGradientColor`/`highGradientColor`, sets `hasCustomColors = true`, and persists until the next explicit skin change. **Match Skin** clears `hasCustomColors` immediately so the gradient follows the active skin again (see below).
-- **Transparent Background** (modern only): Off by default — Cava is opaque. Toggling it on drops the window background to the skin's `window.opacity` (the metal/translucent look). Not shown in classic (classic Cava is always opaque black).
+- **Transparent Background** (modern only): Defaults to the active skin: on when `window.opacity < 1`, off when the skin is opaque. Toggling it on drops the window background to the skin's `window.opacity`; toggling it off makes Cava opaque. Not shown in classic (classic Cava is always opaque black). An explicit skin or UI-family change applies the incoming skin's default; a same-skin relaunch preserves the user's choice.
 - **Bars:** Bar-count presets (16 / 24 / 32 / 48 / 64).
 - **Smoothing:** Temporal smoothing / latency (`noiseReduction`): Snappy (0.50) · Balanced (0.65, default) · Smooth (0.80) · Very Smooth (0.90). Lower = more real-time but livelier; higher = smoother but laggier.
 - **Bass:** Bass↔treble tilt (`bandExponent`): Less (0.15) · Balanced (0.30, default) · More (0.50) · Max (0.70).
@@ -97,7 +102,8 @@ Durable UserDefaults-backed preferences:
 | `cavaLowGradientColor` | NSColor (archived) | Bright blue (0, 0.3, 1) | Low-intensity (short-bar) color; used only when `cavaColorsCustomized` |
 | `cavaHighGradientColor` | NSColor (archived) | Magenta (1, 0, 1) | High-intensity (tall-bar) color; used only when `cavaColorsCustomized` |
 | `cavaColorsCustomized` | Bool | false | If false, colors follow the skin (Match Skin) |
-| `cavaTransparentBackground` | Bool | false | Modern-only translucent background |
+| `cavaTransparentBackground` | Bool | Incoming skin (`window.opacity < 1`); raw fallback false | Modern-only translucent background |
+| `cavaTransparencyCustomized` | Bool | false | Distinguishes an explicit user choice from the skin-derived transparency default |
 | `cavaNoiseReduction` | Double | 0.65 | Smoothing / latency (0…0.95) |
 | `cavaBassTilt` | Double | 0.30 | Bass↔treble tilt (`bandExponent`, 0…1) |
 
@@ -109,6 +115,47 @@ remain wrappers for `.cavaWindow` and continue using the existing keys. Scope-aw
 Main-window tuning and color choices are reset with the centralized Main Window visualization reset
 and never modify the standalone window. Bar-count, smoothing, and bass menu presets are canonical
 `CavaSettings` collections shared by both menu builders.
+
+## Visualization Reset and UI-Family Switches
+
+### Standalone Cava and Reset All
+
+Cava colors fall back to the active skin's gradient, pushed by `ModernCavaView` or `CavaView`.
+The embedded main-window Cava keys (`.mainWindow`) live in
+`VisualizationPreferences.mainWindowKeys`. The standalone window keys
+(`CavaSettings.preferenceKeys(for: .cavaWindow)`) live in `cavaWindowKeys`, which is included
+only in the `.all` reset scope.
+
+`VisualizationPreferences.reset(.all)` therefore resets both Cava scopes. Its notification
+phase calls `WindowManager.refreshCavaWindowAfterReset()` and then the open controller's
+`refreshAfterReset()`. The view re-reads tuning with `presenter.settingsDidChange()` and
+re-derives the active skin's default gradient through `skinDidChange()`. The standalone
+window is intentionally not included in `.mainWindow` or `.spectrumWindow` resets.
+
+### Skin-Owned Appearance Across UI Families
+
+`CavaSettings.hasCustomColors` is persisted independently for `.cavaWindow` and `.mainWindow`.
+When a scope is customized, `effectiveLowColor` and `effectiveHighColor` ignore that scope's
+in-memory skin default. `CavaSettings.transparentBackground` applies only to the standalone
+modern/metal window. An explicit UI-family switch is a skin change and calls
+`CavaSettings.resetAppearanceForSkinChange(transparentBackground:)`, which clears both custom-color
+flags and applies the incoming skin's Cava transparency default. Modern skins derive that default
+from `window.opacity < 1`; classic passes false:
+
+- Entering modern or metal clears them in
+  `ModernSkinEngine.configureSkinDependencies(preservePersistedProfiles:)` when persisted
+  visualization preferences are not being preserved.
+- Entering classic clears them in `WindowManager.prepareUIRuntime(for:)` via
+  `CavaSettings.resetAppearanceForSkinChange()`, because the classic branch does not reload
+  a skin through `ModernSkinEngine`.
+
+Without this reset, a modern-picked gradient or transparency override survives into an unrelated
+skin or UI family. Do not hard-code false for every incoming skin: that makes Glass skins opaque.
+Any new UI-family-entry path must apply the target skin's default with the same semantics. A normal
+same-skin app launch preserves the user's override. Track that distinction with
+`cavaTransparencyCustomized`: menu toggles set it; skin changes clear it; launch and Reset All
+reapply the current skin default only while it is false. This also repairs stale uncustomized values
+written by older reset logic without discarding a real user choice.
 
 ## Key Files
 
@@ -185,7 +232,35 @@ The 60 Hz `Timer` is only a scheduler. Both `CavaCore.analyze` and `CavaCore.ren
 The 60 Hz timer redraws only if the ordered bar signature changed. Closing, ordering out, miniaturizing, or fully occluding the window stops the render model and unregisters its full-stereo consumer; showing/deminiaturizing it starts them again. A visible settled display keeps the timer but skips redundant repaints.
 
 ### Do NOT inherit the spectrum window's transparency
-`ModernCavaView` draws its background via `renderer.drawWindowBackground(..., backgroundOpacity:)`. Passing `renderer.skin.spectrumWindowBackgroundOpacity` (= the skin's `window.opacity`) made Cava translucent on metal/modern skins that set a low window opacity — not wanted by default. Use `effectiveBackgroundOpacity` (1.0 unless `CavaSettings.transparentBackground` is on). Also fill the content background in `drawCavaContent` when opaque, because the timer fast-path (animation-rect-only redraw) skips `drawWindowBackground` and would otherwise leave the content transparent between frames. `transparentBackground` is a durable `CavaSettings`/UserDefaults pref, default false, modern-only.
+`ModernCavaView` draws its background via `renderer.drawWindowBackground(..., backgroundOpacity:)`.
+Use `effectiveBackgroundOpacity`: `1.0` when `CavaSettings.transparentBackground` is off, otherwise
+the skin's `spectrumWindowBackgroundOpacity` (= `window.opacity`). On an explicit skin change,
+`ModernSkinEngine` resets the setting to `skin.cavaTransparentBackgroundDefault`, so translucent
+skins retain their designed look without inheriting an unrelated skin's user override.
+
+Always paint the complete animation clip in `drawCavaContent`; timer-driven redraws bypass
+`drawWindowBackground`. Fill with the skin background when opaque. In transparent mode, branch on
+the skin instance's stamped `renderStyle`:
+
+- For `.standard` skins, including SmoothGlass/SeaGlass/BloodGlass, redraw the real window
+  background at `spectrumWindowBackgroundOpacity`. Do not replace the configured translucent Glass
+  fill with the clear input surface.
+- For `.metal`, copy-fill the intentionally clear content well with black at one 8-bit alpha quantum
+  (`1 / 255`), using the same technique as `WaveformDrawing` clear mode while ensuring the value
+  survives backing-store quantization.
+
+Never leave the Metal region at zero alpha: WindowServer removes a fully clear borderless-window
+region from its mouse mask before AppKit calls `NSView.hitTest`, so gaps between bars click the
+desktop even when `ModernCavaView.hitTest` returns the view. Preserve the imperceptible nonzero-alpha
+surface to keep the whole face draggable and right-clickable.
+
+`transparentBackground` is a durable `CavaSettings`/UserDefaults pref, modern-only. It persists for
+a same-skin relaunch, while `resetAppearanceForSkinChange(transparentBackground:)` replaces it with
+the incoming skin's default on explicit skin and UI-family changes. Do not seed it from
+spectrum-window/vis_classic transparency: derive it from the target skin's own `window.opacity`.
+Call `setTransparentBackground(_:customized: true)` for user menu actions. On launch or Reset All,
+call `applyTransparencyDefaultIfUncustomized(_:)` so skin defaults repair stale values without
+overwriting an explicit user override.
 
 ### Colors follow the skin until the user overrides
 Cava's *default* gradient tracks the active skin; a user pick (via the Color menu) overrides it until

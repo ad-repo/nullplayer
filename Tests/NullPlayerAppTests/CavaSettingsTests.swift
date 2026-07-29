@@ -85,7 +85,7 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(CavaSettings.barCount, 48)
     }
 
-    func testSkinChangeClearsCustomColorFlagsForBothScopesWithoutDeletingColors() throws {
+    func testSkinChangeResetsSkinOwnedAppearanceWithoutDeletingColors() throws {
         let fireIndex = try XCTUnwrap(CavaSettings.colorSchemes.firstIndex { $0.name == "Fire" })
         let iceIndex = try XCTUnwrap(CavaSettings.colorSchemes.firstIndex { $0.name == "Ice" })
         let fire = CavaSettings.colorSchemes[fireIndex]
@@ -97,16 +97,70 @@ final class CavaSettingsTests: XCTestCase {
         CavaSettings.setLowGradientColor(ice.low, for: .mainWindow)
         CavaSettings.setHighGradientColor(ice.high, for: .mainWindow)
         CavaSettings.setHasCustomColors(true, for: .mainWindow)
+        CavaSettings.transparentBackground = true
 
-        CavaSettings.resetCustomColorsForSkinChange()
+        CavaSettings.resetAppearanceForSkinChange()
 
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .cavaWindow))
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertFalse(CavaSettings.transparentBackground)
         XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .cavaWindow), fireIndex)
         XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .mainWindow), iceIndex)
     }
 
-    func testClassicSkinRestorePreservesCustomColorsWhileExplicitLoadClearsThem() throws {
+    func testSkinChangeAppliesIncomingCavaTransparencyDefault() {
+        CavaSettings.transparentBackground = false
+
+        CavaSettings.resetAppearanceForSkinChange(transparentBackground: true)
+        XCTAssertTrue(CavaSettings.transparentBackground)
+        XCTAssertFalse(CavaSettings.isTransparencyCustomized)
+
+        CavaSettings.resetAppearanceForSkinChange(transparentBackground: false)
+        XCTAssertFalse(CavaSettings.transparentBackground)
+        XCTAssertFalse(CavaSettings.isTransparencyCustomized)
+    }
+
+    func testLaunchRepairsUncustomizedTransparencyWithoutReplacingUserChoice() {
+        CavaSettings.resetAppearanceForSkinChange(transparentBackground: false)
+
+        CavaSettings.applyTransparencyDefaultIfUncustomized(true)
+        XCTAssertTrue(CavaSettings.transparentBackground)
+
+        CavaSettings.setTransparentBackground(false, customized: true)
+        CavaSettings.applyTransparencyDefaultIfUncustomized(true)
+        XCTAssertFalse(CavaSettings.transparentBackground)
+        XCTAssertTrue(CavaSettings.isTransparencyCustomized)
+    }
+
+    func testCavaTransparencyDefaultFollowsSkinWindowOpacity() throws {
+        let glassConfigURL = try XCTUnwrap(
+            BundleHelper.url(
+                forResource: "skin",
+                withExtension: "json",
+                subdirectory: "Resources/Skins/SmoothGlass"
+            )
+        )
+        let opaqueConfigURL = try XCTUnwrap(
+            BundleHelper.url(
+                forResource: "skin",
+                withExtension: "json",
+                subdirectory: "Resources/Skins/NeonWave"
+            )
+        )
+        let glassSkin = try ModernSkinLoader.shared.load(
+            from: glassConfigURL.deletingLastPathComponent()
+        )
+        let opaqueSkin = try ModernSkinLoader.shared.load(
+            from: opaqueConfigURL.deletingLastPathComponent()
+        )
+        let metalSkin = ModernSkinLoader.shared.createBuiltInMetalSkin(named: "Brushed Steel")
+
+        XCTAssertTrue(glassSkin.cavaTransparentBackgroundDefault)
+        XCTAssertFalse(opaqueSkin.cavaTransparentBackgroundDefault)
+        XCTAssertFalse(metalSkin.cavaTransparentBackgroundDefault)
+    }
+
+    func testClassicSkinRestorePreservesCavaAppearanceWhileExplicitLoadResetsIt() throws {
         let skinURL = try XCTUnwrap(
             BundleHelper.url(
                 forResource: "NullPlayer-Silver",
@@ -120,14 +174,81 @@ final class CavaSettingsTests: XCTestCase {
 
         CavaSettings.setHasCustomColors(true, for: .cavaWindow)
         CavaSettings.setHasCustomColors(true, for: .mainWindow)
+        CavaSettings.transparentBackground = true
 
         XCTAssertTrue(WindowManager.shared.restoreClassicSkin(from: skinURL, userDefaults: testDefaults))
         XCTAssertTrue(CavaSettings.hasCustomColors(for: .cavaWindow))
         XCTAssertTrue(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertTrue(CavaSettings.transparentBackground)
 
         XCTAssertTrue(WindowManager.shared.loadSkin(from: skinURL, userDefaults: testDefaults))
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .cavaWindow))
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertFalse(CavaSettings.transparentBackground)
+    }
+
+    func testMetalCavaTransparentContentRetainsWindowServerInputMask() throws {
+        let skin = ModernSkinLoader.shared.createBuiltInMetalSkin(named: "Brushed Steel")
+        skin.renderStyle = .metal
+        let transparentGap = try renderedTransparentCavaBackingColor(for: skin)
+
+        XCTAssertEqual(
+            transparentGap.alphaComponent,
+            ModernCavaView.transparentInteractionAlpha,
+            accuracy: 1.0 / 255.0
+        )
+        XCTAssertLessThan(transparentGap.alphaComponent, 0.01)
+
+        CavaSettings.transparentBackground = true
+        let view = ModernCavaView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        XCTAssertTrue(view.hitTest(NSPoint(x: 160, y: 40)) === view)
+        XCTAssertTrue(view.acceptsFirstMouse(for: nil))
+    }
+
+    func testGlassCavaTransparentContentPreservesConfiguredWindowOpacity() throws {
+        let configURL = try XCTUnwrap(
+            BundleHelper.url(
+                forResource: "skin",
+                withExtension: "json",
+                subdirectory: "Resources/Skins/SmoothGlass"
+            )
+        )
+        let skin = try ModernSkinLoader.shared.load(from: configURL.deletingLastPathComponent())
+        skin.renderStyle = .standard
+        let transparentGap = try renderedTransparentCavaBackingColor(for: skin)
+
+        XCTAssertEqual(
+            transparentGap.alphaComponent,
+            skin.spectrumWindowBackgroundOpacity,
+            accuracy: 1.0 / 255.0
+        )
+        XCTAssertGreaterThan(transparentGap.alphaComponent, 0.5)
+    }
+
+    private func renderedTransparentCavaBackingColor(for skin: ModernSkin) throws -> NSColor {
+        let bitmap = try XCTUnwrap(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: 20,
+                pixelsHigh: 20,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bitmapFormat: [],
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )
+        )
+        let graphics = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
+        ModernCavaView.drawTransparentContentBacking(
+            in: NSRect(x: 0, y: 0, width: 20, height: 20),
+            clippedTo: NSRect(x: 0, y: 0, width: 20, height: 20),
+            renderer: ModernSkinRenderer(skin: skin, scaleFactor: 1),
+            context: graphics.cgContext
+        )
+        return try XCTUnwrap(bitmap.colorAt(x: 10, y: 10))
     }
 
     func testClassicStackRepairIncludesCavaAfterFlow() throws {

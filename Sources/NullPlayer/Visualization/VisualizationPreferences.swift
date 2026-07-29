@@ -40,9 +40,15 @@ enum VisualizationPreferences {
         case .browserArtwork:
             return browserArtworkKeys
         case .all:
-            return Array(Set(mainWindowKeys + spectrumWindowKeys + visualizationWindowKeys + browserArtworkKeys))
+            return Array(Set(mainWindowKeys + spectrumWindowKeys + visualizationWindowKeys + browserArtworkKeys + cavaWindowKeys))
         }
     }
+
+    /// Standalone Cava window keys. Only reset as part of `.all` ("Reset All Visualization
+    /// Preferences"); the embedded main-window Cava keys live in `mainWindowKeys`. Cava
+    /// colors fall back to the active skin's gradient (pushed per-UI by the Cava view), so
+    /// clearing these restores mode-correct defaults.
+    private static let cavaWindowKeys = CavaSettings.preferenceKeys(for: .cavaWindow)
 
     private static let legacyVisClassicKeys = [
         "visClassicLastProfileName",
@@ -138,6 +144,18 @@ enum VisualizationPreferences {
         defaults: UserDefaults
     ) {
         guard scope == .mainWindow || scope == .spectrumWindow || scope == .all else { return }
+
+        // The active visualization defaults depend on which UI is running. In the classic
+        // UI, classic skins do not go through ModernSkinEngine — their analyzer default is
+        // "Purple Neon" (owned by WindowManager). Reading ModernSkinEngine.currentSkin here
+        // would wrongly apply the modern *default* skin's profile (e.g. NeonWave's
+        // "Lavender Pink Tips") on a classic reset. Modern and metal UIs both resolve
+        // correctly from ModernSkinEngine.currentSkin (it tracks the active modern/metal
+        // finish), so only classic needs to divert.
+        if !WindowManager.shared.isRunningModernUI {
+            WindowManager.shared.writeClassicVisualizationDefaultKeys(for: scope, defaults: defaults)
+            return
+        }
 
         let skin = ModernSkinEngine.shared.currentSkin
         let config = skin?.config.visualization
@@ -242,6 +260,11 @@ enum VisualizationPreferences {
         }
         if scope == .visualizationWindow || scope == .all {
             WindowManager.shared.resetVisualizationWindowPreferences()
+        }
+        if scope == .all {
+            // The standalone Cava window keys are only cleared as part of `.all`; force the
+            // open window (if any) to re-read tuning and re-derive its skin-default gradient.
+            WindowManager.shared.refreshCavaWindowAfterReset()
         }
     }
 

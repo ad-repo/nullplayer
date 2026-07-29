@@ -55,11 +55,20 @@ class ModernSkinEngine {
     }
 
     /// Load the preferred skin for a family (from UserDefaults) or the default.
-    func loadPreferredSkin(for family: ModernSkinFamily) {
+    ///
+    /// `preservePersistedProfiles` controls whether the loaded skin re-applies its own
+    /// visualization defaults. At app launch / session restore it is `true` so the user's
+    /// last-session visualization choices survive. On a live UI-family switch it must be
+    /// `false`: the vis_classic profile keys are window-scoped and *shared* across the
+    /// classic/modern/metal UIs (see vis-classic-guide), so preserving them would carry the
+    /// outgoing family's profile (e.g. classic's "Purple Neon") into the incoming skin
+    /// instead of applying that skin's own default. A family switch is a skin change and
+    /// must resolve to the incoming skin's defaults.
+    func loadPreferredSkin(for family: ModernSkinFamily, preservePersistedProfiles: Bool = true) {
         if let name = UserDefaults.standard.string(forKey: family.skinNameKey) {
-            if loadSkin(named: name, family: family, preservePersistedProfiles: true) { return }
+            if loadSkin(named: name, family: family, preservePersistedProfiles: preservePersistedProfiles) { return }
         }
-        loadDefaultSkin(for: family, preservePersistedProfiles: true)
+        loadDefaultSkin(for: family, preservePersistedProfiles: preservePersistedProfiles)
     }
     
     /// Full reset of the active modern/metal skin: clear every persisted
@@ -302,14 +311,20 @@ class ModernSkinEngine {
     private func configureSkinDependencies(preservePersistedProfiles: Bool = false) {
         guard let skin = currentSkin else { return }
 
-        if !preservePersistedProfiles {
-            CavaSettings.resetCustomColorsForSkinChange()
-        }
-
         // Stamp the render style onto the skin instance so renderers and windows derive
         // "is this metal?" from the skin they're drawing, not the global currentRenderStyle
         // (which could lag a skin swap and leak the modern darkened top-chrome band into metal).
         skin.renderStyle = currentFamily.renderStyle
+
+        if !preservePersistedProfiles {
+            CavaSettings.resetAppearanceForSkinChange(
+                transparentBackground: skin.cavaTransparentBackgroundDefault
+            )
+        } else {
+            CavaSettings.applyTransparencyDefaultIfUncustomized(
+                skin.cavaTransparentBackgroundDefault
+            )
+        }
 
         // Apply base scale factor from skin config (sizeMultiplier is preserved independently)
         ModernSkinElements.baseScaleFactor = skin.config.window.scale ?? 1.25
@@ -342,7 +357,7 @@ class ModernSkinEngine {
                                              windowSpectrumTransparentBackground: Bool? = nil,
                                              preservePersistedProfiles: Bool = false,
                                              forceProfileDefaults: Bool = false) {
-        guard config != nil || windowSpectrumTransparentBackground != nil else { return }
+        guard config != nil || windowSpectrumTransparentBackground != nil || !preservePersistedProfiles else { return }
 
         let defaults = UserDefaults.standard
         var mainVisChanged = false
@@ -351,20 +366,18 @@ class ModernSkinEngine {
         var visClassicSpectrumProfileToLoad: String?
         var visClassicMainFitToWidth: Bool?
         var visClassicSpectrumFitToWidth: Bool?
-        var visClassicMainTransparentBackground: Bool?
-        // Seed from window-level setting; visualization.visClassic overrides if also set
-        var visClassicSpectrumTransparentBackground: Bool? = windowSpectrumTransparentBackground
-        if let transparent = windowSpectrumTransparentBackground,
-           Self.shouldApplyDefault(
-               forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey,
-               preservePersistedPreferences: preservePersistedProfiles,
-               defaults: defaults
-           ) {
-            defaults.set(transparent, forKey: "visClassicTransparentBg.spectrumWindow")
-            spectrumSettingsChanged = true
-        }
-        var visClassicMainOpacity: Double?
-        var visClassicSpectrumOpacity: Double?
+        let appliedAppearance = Self.applyVisClassicAppearanceDefaults(
+            from: config?.visClassic,
+            windowSpectrumTransparentBackground: windowSpectrumTransparentBackground,
+            preservePersistedPreferences: preservePersistedProfiles,
+            defaults: defaults
+        )
+        let visClassicMainTransparentBackground = appliedAppearance.mainTransparentBackground
+        let visClassicSpectrumTransparentBackground = appliedAppearance.spectrumTransparentBackground
+        let visClassicMainOpacity = appliedAppearance.mainOpacity
+        let visClassicSpectrumOpacity = appliedAppearance.spectrumOpacity
+        mainVisChanged = appliedAppearance.mainChanged
+        spectrumSettingsChanged = appliedAppearance.spectrumChanged
 
         if let modeRaw = config?.mainWindowMode {
             if let mode = MainWindowVisMode(rawValue: modeRaw) {
@@ -463,48 +476,6 @@ class ModernSkinEngine {
                ) {
                 defaults.set(fit, forKey: "visClassicFitToWidth.spectrumWindow")
                 visClassicSpectrumFitToWidth = fit
-                spectrumSettingsChanged = true
-            }
-            if let transparent = visClassic.mainWindowTransparentBackground,
-               Self.shouldApplyDefault(
-                   forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey,
-                   preservePersistedPreferences: preservePersistedProfiles,
-                   defaults: defaults
-               ) {
-                defaults.set(transparent, forKey: "visClassicTransparentBg.mainWindow")
-                visClassicMainTransparentBackground = transparent
-                mainVisChanged = true
-            }
-            if let transparent = visClassic.spectrumWindowTransparentBackground,
-               Self.shouldApplyDefault(
-                   forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey,
-                   preservePersistedPreferences: preservePersistedProfiles,
-                   defaults: defaults
-               ) {
-                defaults.set(transparent, forKey: "visClassicTransparentBg.spectrumWindow")
-                visClassicSpectrumTransparentBackground = transparent
-                spectrumSettingsChanged = true
-            }
-            if let opacity = visClassic.mainWindowOpacity,
-               Self.shouldApplyDefault(
-                   forKey: VisClassicBridge.PreferenceScope.mainWindow.opacityKey,
-                   preservePersistedPreferences: preservePersistedProfiles,
-                   defaults: defaults
-               ) {
-                let clamped = max(0.0, min(1.0, Double(opacity)))
-                defaults.set(clamped, forKey: VisClassicBridge.PreferenceScope.mainWindow.opacityKey)
-                visClassicMainOpacity = clamped
-                mainVisChanged = true
-            }
-            if let opacity = visClassic.spectrumWindowOpacity,
-               Self.shouldApplyDefault(
-                   forKey: VisClassicBridge.PreferenceScope.spectrumWindow.opacityKey,
-                   preservePersistedPreferences: preservePersistedProfiles,
-                   defaults: defaults
-               ) {
-                let clamped = max(0.0, min(1.0, Double(opacity)))
-                defaults.set(clamped, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.opacityKey)
-                visClassicSpectrumOpacity = clamped
                 spectrumSettingsChanged = true
             }
         }
@@ -708,6 +679,93 @@ class ModernSkinEngine {
                 userInfo: ["command": "opacity", "value": opacity, "target": "spectrumWindow"]
             )
         }
+    }
+
+    struct AppliedVisClassicAppearanceDefaults: Equatable {
+        let mainTransparentBackground: Bool?
+        let spectrumTransparentBackground: Bool?
+        let mainOpacity: Double?
+        let spectrumOpacity: Double?
+        let mainChanged: Bool
+        let spectrumChanged: Bool
+    }
+
+    /// Apply the complete vis_classic appearance owned by a skin.
+    ///
+    /// On launch, omitted fields remain nil so persisted user choices survive. During an
+    /// explicit skin or UI-family change, omitted fields resolve to the canonical opaque
+    /// appearance instead of inheriting transparency/opacity from the outgoing skin.
+    static func applyVisClassicAppearanceDefaults(
+        from config: VisClassicVisualizationConfig?,
+        windowSpectrumTransparentBackground: Bool?,
+        preservePersistedPreferences: Bool,
+        defaults: UserDefaults
+    ) -> AppliedVisClassicAppearanceDefaults {
+        let mainTransparent = config?.mainWindowTransparentBackground
+            ?? (preservePersistedPreferences ? nil : false)
+        let spectrumTransparent = config?.spectrumWindowTransparentBackground
+            ?? windowSpectrumTransparentBackground
+            ?? (preservePersistedPreferences ? nil : false)
+        let mainOpacity = config?.mainWindowOpacity.map(Double.init)
+            ?? (preservePersistedPreferences ? nil : 1.0)
+        let spectrumOpacity = config?.spectrumWindowOpacity.map(Double.init)
+            ?? (preservePersistedPreferences ? nil : 1.0)
+
+        var appliedMainTransparent: Bool?
+        var appliedSpectrumTransparent: Bool?
+        var appliedMainOpacity: Double?
+        var appliedSpectrumOpacity: Double?
+
+        if let mainTransparent,
+           shouldApplyDefault(
+               forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey,
+               preservePersistedPreferences: preservePersistedPreferences,
+               defaults: defaults
+           ) {
+            defaults.set(mainTransparent, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
+            appliedMainTransparent = mainTransparent
+        }
+
+        if let spectrumTransparent,
+           shouldApplyDefault(
+               forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey,
+               preservePersistedPreferences: preservePersistedPreferences,
+               defaults: defaults
+           ) {
+            defaults.set(spectrumTransparent, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
+            appliedSpectrumTransparent = spectrumTransparent
+        }
+
+        if let mainOpacity,
+           shouldApplyDefault(
+               forKey: VisClassicBridge.PreferenceScope.mainWindow.opacityKey,
+               preservePersistedPreferences: preservePersistedPreferences,
+               defaults: defaults
+           ) {
+            let clamped = max(0.0, min(1.0, mainOpacity))
+            defaults.set(clamped, forKey: VisClassicBridge.PreferenceScope.mainWindow.opacityKey)
+            appliedMainOpacity = clamped
+        }
+
+        if let spectrumOpacity,
+           shouldApplyDefault(
+               forKey: VisClassicBridge.PreferenceScope.spectrumWindow.opacityKey,
+               preservePersistedPreferences: preservePersistedPreferences,
+               defaults: defaults
+           ) {
+            let clamped = max(0.0, min(1.0, spectrumOpacity))
+            defaults.set(clamped, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.opacityKey)
+            appliedSpectrumOpacity = clamped
+        }
+
+        return AppliedVisClassicAppearanceDefaults(
+            mainTransparentBackground: appliedMainTransparent,
+            spectrumTransparentBackground: appliedSpectrumTransparent,
+            mainOpacity: appliedMainOpacity,
+            spectrumOpacity: appliedSpectrumOpacity,
+            mainChanged: appliedMainTransparent != nil || appliedMainOpacity != nil,
+            spectrumChanged: appliedSpectrumTransparent != nil || appliedSpectrumOpacity != nil
+        )
     }
 
     /// On app launch, a skin's visualization config acts as a first-use default rather than

@@ -240,6 +240,14 @@ class ModernSkin {
         clampedOpacity(config.window.opacity)
     }
 
+    /// Cava's skin default: honor `window.opacity` when the skin is designed to be translucent.
+    ///
+    /// This is independent from the vis_classic spectrum transparency setting. Users can override
+    /// it from Cava's menu until the next explicit skin change.
+    var cavaTransparentBackgroundDefault: Bool {
+        spectrumWindowBackgroundOpacity < 1
+    }
+
     /// Background opacity for the waveform window.
     /// Falls back to `window.opacity` when `window.waveformWindowOpacity` is omitted.
     var waveformWindowBackgroundOpacity: CGFloat {
