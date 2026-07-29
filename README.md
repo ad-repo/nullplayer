@@ -469,6 +469,13 @@ See [AGENTS.md](AGENTS.md) for documentation links and key source files.
 
 **Note:** This project will never support Spotify, Youtube, Apple or Amazon. Please do not submit PRs for this type of integration.
 
+## Privacy
+
+NullPlayer does not collect or transmit personal data to the developer. Playback
+and usage history is stored only in the app's local SQLite database. See the
+[Privacy Policy](PRIVACY.md) for details about local storage and user-directed
+network features.
+
 ## Skins
 
 NullPlayer has three looks — Classic, Modern, and Metal — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
