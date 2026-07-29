@@ -5869,21 +5869,17 @@ class WindowManager {
         // switches, so the incoming family's defaults (written just above) must be pushed
         // into the live bridges explicitly. The one-shot .visClassicProfileCommand reload
         // is dropped when a window isn't visible mid-rebuild (and the dedicated spectrum
-        // window has no self-resync), so reload both scoped bridges directly here —
+        // window has no self-resync), so fully rehydrate both scoped bridges directly here —
         // visibility-independent — before the target controllers are created.
-        resyncCachedVisClassicBridgesToScopedProfiles()
+        resyncCachedVisClassicBridgesToScopedSettings()
     }
 
-    /// Reload the cached, window-scoped vis_classic bridges from their persisted scoped
-    /// profile names. Used on a UI-family switch so a bridge reused across the switch does
-    /// not keep the previous family's profile when the live reload notification is dropped.
-    private func resyncCachedVisClassicBridgesToScopedProfiles() {
-        if let name = VisClassicBridge.lastProfileName(for: .mainWindow) {
-            _ = mainWindowVisClassicBridge?.loadProfile(named: name)
-        }
-        if let name = VisClassicBridge.lastProfileName(for: .spectrumWindow) {
-            _ = sharedVisClassicBridge?.loadProfile(named: name)
-        }
+    /// Fully rehydrate cached, window-scoped vis_classic bridges from persisted state.
+    /// Profile, fit-to-width, and the C++ transparent-background option are independent;
+    /// reloading only the profile leaves transparent rendering stale across UI switches.
+    private func resyncCachedVisClassicBridgesToScopedSettings() {
+        mainWindowVisClassicBridge?.reloadPersistedSettings()
+        sharedVisClassicBridge?.reloadPersistedSettings()
     }
 
     /// Miniaturize all visible, managed player windows.

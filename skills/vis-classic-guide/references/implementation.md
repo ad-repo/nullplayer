@@ -328,10 +328,20 @@ switch, the one-shot `.visClassicProfileCommand` reload is **dropped** by
 the case mid-rebuild. The modern **main** window self-resyncs
 (`ModernMainWindowView` reloads `lastProfileName(.mainWindow)` on setup), but the dedicated
 **Spectrum** window does not. So `prepareUIRuntime` calls
-`resyncCachedVisClassicBridgesToScopedProfiles()` to reload **both** cached bridges from
-their scoped `lastProfileName` directly (visibility-independent). When adding any new
-vis_classic surface, either give it a self-resync on show, or rely on this central resync —
-never assume the reload notification was delivered.
+`resyncCachedVisClassicBridgesToScopedSettings()` to call
+`VisClassicBridge.reloadPersistedSettings()` on **both** cached bridges
+(visibility-independent). The bridge method rehydrates profile, fit-to-width, and the C++
+transparent-background option; loading a profile alone is insufficient because
+`transparentbg` is independent core state. When adding any new vis_classic surface, either
+give it a self-resync on show, or rely on this central resync — never assume the reload
+notification was delivered.
+
+Skin configs are intentionally sparse. On a live skin/UI-family change
+(`preservePersistedProfiles: false`), omitted vis_classic appearance fields resolve to
+canonical opaque defaults (`transparentBackground = false`, `opacity = 1.0`) so a
+glass/metal skin cannot leak transparency into an opaque skin such as NeonWave. On launch
+(`preservePersistedProfiles: true`), omitted fields remain untouched so the user's saved
+choices survive.
 
 ### 8.3 Reset must resolve defaults from the active UI
 

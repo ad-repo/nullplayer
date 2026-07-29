@@ -50,31 +50,38 @@ final class VisClassicBridge {
 
     private var core: OpaquePointer?
     private let preferenceScope: PreferenceScope
+    private let defaults: UserDefaults
     private(set) var currentProfileName: String?
     private(set) var currentProfileURL: URL?
     private static let legacyLastProfileNameKey = "visClassicLastProfileName"
     private static let legacyFitToWidthKey = "visClassicFitToWidth"
 
-    init?(width: Int, height: Int, scope: PreferenceScope = .spectrumWindow) {
+    init?(
+        width: Int,
+        height: Int,
+        scope: PreferenceScope = .spectrumWindow,
+        defaults: UserDefaults = .standard
+    ) {
         guard let handle = vc_create(Int32(width), Int32(height)) else {
             return nil
         }
         core = handle
         preferenceScope = scope
+        self.defaults = defaults
 
         ensureProfilesBootstrapped()
         let profiles = availableProfiles()
-        if let lastName = Self.lastProfileName(for: scope),
+        if let lastName = Self.lastProfileName(for: scope, defaults: defaults),
            let lastProfile = profiles.first(where: { $0.name == lastName }) {
             _ = loadProfile(url: lastProfile.url)
         } else if let defaultProfile = profiles.first {
             _ = loadProfile(url: defaultProfile.url)
         }
 
-        let fitDefault = Self.fitToWidthDefault(for: scope)
+        let fitDefault = Self.fitToWidthDefault(for: scope, defaults: defaults)
         _ = setFitToWidth(fitDefault)
 
-        let transparentDefault = Self.transparentBgDefault(for: scope)
+        let transparentDefault = Self.transparentBgDefault(for: scope, defaults: defaults)
         _ = setTransparentBackground(transparentDefault)
     }
 
@@ -196,8 +203,8 @@ final class VisClassicBridge {
         if ok {
             currentProfileURL = url
             currentProfileName = url.deletingPathExtension().lastPathComponent
-            UserDefaults.standard.set(currentProfileName, forKey: preferenceScope.lastProfileNameKey)
-            let fitDefault = Self.fitToWidthDefault(for: preferenceScope)
+            defaults.set(currentProfileName, forKey: preferenceScope.lastProfileNameKey)
+            let fitDefault = Self.fitToWidthDefault(for: preferenceScope, defaults: defaults)
             _ = setFitToWidth(fitDefault)
         }
         return ok
@@ -209,7 +216,7 @@ final class VisClassicBridge {
         let value: Int32 = enabled ? 1 : 0
         let ok = coreLock.withLock { vc_set_option(core, "FitToWidth", value) == 1 }
         if ok {
-            UserDefaults.standard.set(enabled, forKey: preferenceScope.fitToWidthKey)
+            defaults.set(enabled, forKey: preferenceScope.fitToWidthKey)
         }
         return ok
     }
@@ -227,7 +234,7 @@ final class VisClassicBridge {
         let value: Int32 = enabled ? 1 : 0
         let ok = coreLock.withLock { vc_set_option(core, "transparentbg", value) == 1 }
         if ok {
-            UserDefaults.standard.set(enabled, forKey: preferenceScope.transparentBgKey)
+            defaults.set(enabled, forKey: preferenceScope.transparentBgKey)
         }
         return ok
     }
@@ -237,6 +244,19 @@ final class VisClassicBridge {
         var value: Int32 = 0
         let got = coreLock.withLock { vc_get_option(core, "transparentbg", &value) == 1 }
         return got ? value != 0 : false
+    }
+
+    /// Rehydrate every persisted, window-scoped renderer setting.
+    ///
+    /// WindowManager caches bridges across UI-family rebuilds, so changing UserDefaults alone
+    /// is insufficient: profile loading updates the profile and fit-to-width option, but the
+    /// C++ transparent-background option is independent and otherwise remains stale.
+    func reloadPersistedSettings() {
+        if let name = Self.lastProfileName(for: preferenceScope, defaults: defaults) {
+            _ = loadProfile(named: name)
+        }
+        _ = setFitToWidth(Self.fitToWidthDefault(for: preferenceScope, defaults: defaults))
+        _ = setTransparentBackground(Self.transparentBgDefault(for: preferenceScope, defaults: defaults))
     }
 
     @discardableResult
@@ -258,7 +278,7 @@ final class VisClassicBridge {
         if ok {
             currentProfileURL = url
             currentProfileName = url.deletingPathExtension().lastPathComponent
-            UserDefaults.standard.set(currentProfileName, forKey: preferenceScope.lastProfileNameKey)
+            defaults.set(currentProfileName, forKey: preferenceScope.lastProfileNameKey)
         }
         return ok
     }
@@ -314,14 +334,18 @@ final class VisClassicBridge {
         return byName.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    static func lastProfileName(for scope: PreferenceScope = .spectrumWindow) -> String? {
-        let defaults = UserDefaults.standard
+    static func lastProfileName(
+        for scope: PreferenceScope = .spectrumWindow,
+        defaults: UserDefaults = .standard
+    ) -> String? {
         return defaults.string(forKey: scope.lastProfileNameKey)
             ?? defaults.string(forKey: legacyLastProfileNameKey)
     }
 
-    static func fitToWidthDefault(for scope: PreferenceScope = .spectrumWindow) -> Bool {
-        let defaults = UserDefaults.standard
+    static func fitToWidthDefault(
+        for scope: PreferenceScope = .spectrumWindow,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
         if let scoped = defaults.object(forKey: scope.fitToWidthKey) as? Bool {
             return scoped
         }
@@ -331,8 +355,10 @@ final class VisClassicBridge {
         return true
     }
 
-    static func transparentBgDefault(for scope: PreferenceScope = .spectrumWindow) -> Bool {
-        let defaults = UserDefaults.standard
+    static func transparentBgDefault(
+        for scope: PreferenceScope = .spectrumWindow,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
         if let scoped = defaults.object(forKey: scope.transparentBgKey) as? Bool {
             return scoped
         }
@@ -345,8 +371,10 @@ final class VisClassicBridge {
         return false
     }
 
-    static func opacityDefault(for scope: PreferenceScope = .spectrumWindow) -> Double? {
-        let defaults = UserDefaults.standard
+    static func opacityDefault(
+        for scope: PreferenceScope = .spectrumWindow,
+        defaults: UserDefaults = .standard
+    ) -> Double? {
         guard let value = defaults.object(forKey: scope.opacityKey) as? NSNumber else {
             return nil
         }
