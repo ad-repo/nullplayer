@@ -165,7 +165,7 @@
         }
     },
     "visualization": {
-        "mainWindowMode": "vis_classic",
+        "mainWindowMode": "Cava",
         "spectrumWindowMode": "vis_classic",
         "visClassic": {
             "mainWindowProfile": "Blue Flames",

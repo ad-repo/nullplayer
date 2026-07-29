@@ -313,7 +313,14 @@ class ModernSkinLoader {
             ),
             glow: GlowConfig(enabled: true, radius: 6, intensity: 0.7, threshold: 0.5, color: nil, elementBlur: nil),
             window: WindowConfig(borderWidth: 1.5, borderColor: "#00ffcc", cornerRadius: 6, scale: nil, opacity: 0.94, textOpacity: nil, mainSpectrumOpacity: nil, spectrumTransparentBackground: nil, waveformWindowOpacity: nil, seamlessDocking: 1.0, areaOpacity: nil),
-            visualization: nil,
+            visualization: VisualizationConfig(
+                mainWindowMode: MainWindowVisMode.cava.rawValue,
+                spectrumWindowMode: nil,
+                visClassic: nil,
+                fire: nil,
+                lightning: nil,
+                matrix: nil
+            ),
             waveform: nil,
             marquee: nil,
             titleText: nil,
@@ -431,14 +438,11 @@ class ModernSkinLoader {
             ),
             glow: GlowConfig(enabled: false, radius: 0, intensity: 0, threshold: 0.8, color: nil, elementBlur: nil),
             window: WindowConfig(borderWidth: 2.0, borderColor: "#2f363a", cornerRadius: 5, scale: nil, opacity: 1.0, textOpacity: nil, mainSpectrumOpacity: 0.72, spectrumTransparentBackground: true, waveformWindowOpacity: 0.82, seamlessDocking: 1.0, areaOpacity: nil),
-            // Transparency is part of the metal skin: BOTH the main-window analyzer and the
-            // dedicated Spectrum window default to the exact-port vis_classic core running a
-            // per-finish LCD profile ("Metal <finish>") whose bar gradient matches this finish's
-            // MetalMaterial ramp, drawn transparent over the metal chrome. The transparent flags
-            // and profiles are applied on every load (and on Reset) so a stale persisted `false`
-            // or non-metal profile can't leave either analyzer an opaque black box.
+            // Cava is the default embedded visualizer and derives its gradient from this finish's
+            // palette. Keep per-finish vis_classic settings for the dedicated Spectrum window and
+            // for users who manually select vis_classic in the main window.
             visualization: VisualizationConfig(
-                mainWindowMode: MainWindowVisMode.visClassicExact.rawValue,
+                mainWindowMode: MainWindowVisMode.cava.rawValue,
                 spectrumWindowMode: SpectrumQualityMode.visClassicExact.rawValue,
                 visClassic: VisClassicVisualizationConfig(
                     mainWindowProfile: "Metal \(resolvedName)",
