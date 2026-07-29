@@ -139,6 +139,18 @@ enum VisualizationPreferences {
     ) {
         guard scope == .mainWindow || scope == .spectrumWindow || scope == .all else { return }
 
+        // The active visualization defaults depend on which UI is running. In the classic
+        // UI, classic skins do not go through ModernSkinEngine — their analyzer default is
+        // "Purple Neon" (owned by WindowManager). Reading ModernSkinEngine.currentSkin here
+        // would wrongly apply the modern *default* skin's profile (e.g. NeonWave's
+        // "Lavender Pink Tips") on a classic reset. Modern and metal UIs both resolve
+        // correctly from ModernSkinEngine.currentSkin (it tracks the active modern/metal
+        // finish), so only classic needs to divert.
+        if !WindowManager.shared.isRunningModernUI {
+            WindowManager.shared.writeClassicVisualizationDefaultKeys(for: scope, defaults: defaults)
+            return
+        }
+
         let skin = ModernSkinEngine.shared.currentSkin
         let config = skin?.config.visualization
         let windowSpectrumTransparentBackground = skin?.config.window.spectrumTransparentBackground

@@ -289,3 +289,64 @@ If making `vis_classic` the default and assigning skin-specific profiles:
    - first available profile
 
 Avoid collapsing scope into one global profile key; main and spectrum windows intentionally persist independently.
+
+## 8. Shared Keys Across UIs — Family Switch and Reset Semantics
+
+The window-scoped keys (`visClassicLastProfileName.mainWindow` / `.spectrumWindow`, fit,
+transparent, opacity) are scoped by **window**, not by UI family. The classic, modern, and
+metal UIs all read and write the **same** keys. This is intentional (§3.2, §7.1) — but it
+means the *profile is shared state*, and the correct default depends on which UI is active:
+
+- Classic UI: default analyzer profile is `WindowManager.classicVisClassicProfileName`
+  (`"Purple Neon"`), written by `WindowManager.writeClassicVisualizationDefaultKeys(for:)`.
+  Classic skins do **not** go through `ModernSkinEngine`.
+- Modern/metal UI: default comes from `ModernSkinEngine.currentSkin.config.visualization`
+  (a metal finish resolves to its per-finish `"Metal <finish>"` profile).
+
+Two rules follow, and both had leak bugs before 0.29.2:
+
+### 8.1 A UI-family switch is a skin change → apply the incoming skin's defaults
+
+`WindowManager.prepareUIRuntime(for:)` runs on every live UI switch. It must **not** preserve
+the outgoing family's shared profile keys:
+
+- Entering modern/metal: `ModernSkinEngine.loadPreferredSkin(for:, preservePersistedProfiles: false)`.
+  (Launch / session-restore keeps the default `true` so a user's last-session choices survive;
+  a *live* family switch passes `false`.)
+- Entering classic: `writeClassicVisualizationDefaultKeys(for: .all)`.
+
+Preserving instead (the old `loadPreferredSkin(for:)` default of `true`) carried classic's
+`"Purple Neon"` into a modern skin and vice-versa.
+
+### 8.2 The `VisClassicBridge`s are cached — re-sync them explicitly
+
+`WindowManager` caches `mainWindowVisClassicBridge` and `sharedVisClassicBridge`; they
+survive UI switches and load a profile from `UserDefaults` **only at creation**. After a
+switch, the one-shot `.visClassicProfileCommand` reload is **dropped** by
+`SpectrumAnalyzerView.handleVisClassicProfileCommand` when the target window isn't visible
+(guard: `qualityMode == .visClassicExact && window?.isVisible == true`) — which is exactly
+the case mid-rebuild. The modern **main** window self-resyncs
+(`ModernMainWindowView` reloads `lastProfileName(.mainWindow)` on setup), but the dedicated
+**Spectrum** window does not. So `prepareUIRuntime` calls
+`resyncCachedVisClassicBridgesToScopedProfiles()` to reload **both** cached bridges from
+their scoped `lastProfileName` directly (visibility-independent). When adding any new
+vis_classic surface, either give it a self-resync on show, or rely on this central resync —
+never assume the reload notification was delivered.
+
+### 8.3 Reset must resolve defaults from the active UI
+
+`VisualizationPreferences.applyCurrentSkinDefaults` branches on
+`WindowManager.shared.isRunningModernUI`. In classic UI it must call
+`writeClassicVisualizationDefaultKeys`; reading `ModernSkinEngine.currentSkin` there applies
+the wrong (modern default skin's) profile. `.mainWindow` / `.spectrumWindow` / `.all` scopes
+are all honored.
+
+### 8.4 Follow-up: standalone Cava window is not in the reset scope
+
+Cava colors fall back to the active skin's gradient (pushed per-UI by `ModernCavaView` /
+`CavaView`, so they are inherently UI-mode-correct). "Reset All Visualization Preferences"
+(`reset(.all)`) resets the **embedded** main-window Cava (its `.mainWindow` keys are in
+`mainWindowKeys`) but **not** the standalone Cava window — `CavaSettings.preferenceKeys(for:
+.cavaWindow)` are in no `VisualizationPreferenceResetScope`. If a future change should make
+the global reset also clear the standalone Cava window, add those keys to `.all` (and trigger
+a redraw); the skin-default fallback already makes the restored colors mode-correct.

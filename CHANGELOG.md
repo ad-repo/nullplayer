@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.29.2
+
+### Bug Fixes
+
+- **Switching between classic and modern/metal skins no longer carries the previous skin's analyzer colors across** — the `vis_classic` analyzer profile is stored per window (main vs Spectrum) and shared across the classic, modern, and metal UIs. Switching UI families used to *preserve* the outgoing skin's profile instead of applying the incoming skin's own default, so classic's "Purple Neon" could bleed into a modern skin, and a modern skin's profile ("Lavender Pink Tips") could persist back into classic — in the main window and the dedicated Spectrum window. A UI switch is now treated as a skin change: each family applies its own analyzer defaults, and the shared analyzer engines are re-synced directly so no window keeps the previous skin's look (even when a window isn't visible at the moment of the switch).
+- **"Reset All Visualization Preferences" now restores the correct default in the classic UI** — while classic was active, the reset resolved defaults from the modern skin engine and applied the modern *default* skin's profile (e.g. NeonWave's "Lavender Pink Tips") instead of classic's "Purple Neon". Reset now resolves defaults from the active UI: classic restores its own analyzer default, while modern and metal restore the active finish's.
+
 ## 0.29.1
 
 ### Bug Fixes

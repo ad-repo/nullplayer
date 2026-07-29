@@ -3051,6 +3051,42 @@ class WindowManager {
         return bridge
     }
 
+    /// The default vis_classic profile for the classic UI. Classic skins do not go
+    /// through `ModernSkinEngine`, so this is the single source of truth for their
+    /// analyzer default (used both on classic skin load and on a visualization reset
+    /// performed while the classic UI is active).
+    static let classicVisClassicProfileName = "Purple Neon"
+
+    /// Writes the classic-UI vis_classic defaults (mode + "Purple Neon" profile +
+    /// fit-to-width) for the given reset scope, WITHOUT posting refresh notifications.
+    /// `VisualizationPreferences.reset` calls this when the classic UI is active so a
+    /// reset restores classic's own defaults instead of the modern skin engine's
+    /// current skin (which would wrongly apply e.g. NeonWave's "Lavender Pink Tips").
+    /// The caller is responsible for posting the appropriate refresh notifications.
+    func writeClassicVisualizationDefaultKeys(
+        for scope: VisualizationPreferenceResetScope,
+        defaults: UserDefaults = .standard
+    ) {
+        let visClassicMode = MainWindowVisMode.visClassicExact.rawValue
+        let classicProfile = Self.classicVisClassicProfileName
+
+        if scope == .mainWindow || scope == .all {
+            defaults.set(visClassicMode, forKey: "mainWindowVisMode")
+            defaults.set(visClassicMode, forKey: "modernMainWindowVisMode")
+            defaults.set(classicProfile, forKey: "visClassicLastProfileName.mainWindow")
+            defaults.set(true, forKey: "visClassicFitToWidth.mainWindow")
+        }
+        if scope == .spectrumWindow || scope == .all {
+            defaults.set(SpectrumQualityMode.visClassicExact.rawValue, forKey: "spectrumQualityMode")
+            defaults.set(classicProfile, forKey: "visClassicLastProfileName.spectrumWindow")
+            defaults.set(true, forKey: "visClassicFitToWidth.spectrumWindow")
+        }
+
+        // Legacy fallback keys are still read by VisClassicBridge.
+        defaults.set(classicProfile, forKey: "visClassicLastProfileName")
+        defaults.set(true, forKey: "visClassicFitToWidth")
+    }
+
     private func applyClassicVisualizationDefaults(notify: Bool) {
         // Classic and modern skins are independent. WindowManager still loads the
         // remembered classic skin at startup so it is ready if the user switches UI
@@ -3058,22 +3094,8 @@ class WindowManager {
         // profile preferences while the modern UI is active.
         guard !isRunningModernUI else { return }
 
-        let defaults = UserDefaults.standard
-        let visClassicMode = MainWindowVisMode.visClassicExact.rawValue
-        let classicProfile = "Purple Neon"
-
-        defaults.set(visClassicMode, forKey: "mainWindowVisMode")
-        defaults.set(visClassicMode, forKey: "modernMainWindowVisMode")
-        defaults.set(SpectrumQualityMode.visClassicExact.rawValue, forKey: "spectrumQualityMode")
-
-        defaults.set(classicProfile, forKey: "visClassicLastProfileName.mainWindow")
-        defaults.set(classicProfile, forKey: "visClassicLastProfileName.spectrumWindow")
-        defaults.set(true, forKey: "visClassicFitToWidth.mainWindow")
-        defaults.set(true, forKey: "visClassicFitToWidth.spectrumWindow")
-
-        // Legacy fallback keys are still read by VisClassicBridge.
-        defaults.set(classicProfile, forKey: "visClassicLastProfileName")
-        defaults.set(true, forKey: "visClassicFitToWidth")
+        let classicProfile = Self.classicVisClassicProfileName
+        writeClassicVisualizationDefaultKeys(for: .all, defaults: .standard)
 
         guard notify else { return }
 
@@ -5817,10 +5839,39 @@ class WindowManager {
             // at the wrong scale. reloadUI collapses uiScaleLevel to 1x before switching, so
             // this is normally 1.0 here; UI Size is re-applied via applyDoubleSize afterward.
             ModernSkinElements.sizeMultiplier = uiScaleLevel.scaleFactor
-            ModernSkinEngine.shared.loadPreferredSkin(for: family)
+            // A live UI-family switch is a skin change: apply the incoming skin's own
+            // visualization defaults instead of preserving the outgoing family's shared,
+            // window-scoped vis_classic profile keys (which would leak e.g. classic's
+            // "Purple Neon" into a modern skin). Launch/session-restore paths keep the
+            // default preserve=true.
+            ModernSkinEngine.shared.loadPreferredSkin(for: family, preservePersistedProfiles: false)
         } else {
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
+            // Entering classic is also a skin change: re-apply classic's own vis_classic
+            // defaults ("Purple Neon") so the shared, window-scoped profile keys don't
+            // retain the outgoing modern skin's profile (e.g. "Lavender Pink Tips").
+            writeClassicVisualizationDefaultKeys(for: .all)
+        }
+
+        // The vis_classic bridges are cached on WindowManager and survive UI-family
+        // switches, so the incoming family's defaults (written just above) must be pushed
+        // into the live bridges explicitly. The one-shot .visClassicProfileCommand reload
+        // is dropped when a window isn't visible mid-rebuild (and the dedicated spectrum
+        // window has no self-resync), so reload both scoped bridges directly here —
+        // visibility-independent — before the target controllers are created.
+        resyncCachedVisClassicBridgesToScopedProfiles()
+    }
+
+    /// Reload the cached, window-scoped vis_classic bridges from their persisted scoped
+    /// profile names. Used on a UI-family switch so a bridge reused across the switch does
+    /// not keep the previous family's profile when the live reload notification is dropped.
+    private func resyncCachedVisClassicBridgesToScopedProfiles() {
+        if let name = VisClassicBridge.lastProfileName(for: .mainWindow) {
+            _ = mainWindowVisClassicBridge?.loadProfile(named: name)
+        }
+        if let name = VisClassicBridge.lastProfileName(for: .spectrumWindow) {
+            _ = sharedVisClassicBridge?.loadProfile(named: name)
         }
     }
 

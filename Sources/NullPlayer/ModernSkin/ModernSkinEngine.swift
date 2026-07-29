@@ -55,11 +55,20 @@ class ModernSkinEngine {
     }
 
     /// Load the preferred skin for a family (from UserDefaults) or the default.
-    func loadPreferredSkin(for family: ModernSkinFamily) {
+    ///
+    /// `preservePersistedProfiles` controls whether the loaded skin re-applies its own
+    /// visualization defaults. At app launch / session restore it is `true` so the user's
+    /// last-session visualization choices survive. On a live UI-family switch it must be
+    /// `false`: the vis_classic profile keys are window-scoped and *shared* across the
+    /// classic/modern/metal UIs (see vis-classic-guide), so preserving them would carry the
+    /// outgoing family's profile (e.g. classic's "Purple Neon") into the incoming skin
+    /// instead of applying that skin's own default. A family switch is a skin change and
+    /// must resolve to the incoming skin's defaults.
+    func loadPreferredSkin(for family: ModernSkinFamily, preservePersistedProfiles: Bool = true) {
         if let name = UserDefaults.standard.string(forKey: family.skinNameKey) {
-            if loadSkin(named: name, family: family, preservePersistedProfiles: true) { return }
+            if loadSkin(named: name, family: family, preservePersistedProfiles: preservePersistedProfiles) { return }
         }
-        loadDefaultSkin(for: family, preservePersistedProfiles: true)
+        loadDefaultSkin(for: family, preservePersistedProfiles: preservePersistedProfiles)
     }
     
     /// Full reset of the active modern/metal skin: clear every persisted
