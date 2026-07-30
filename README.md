@@ -1,6 +1,6 @@
-
-
 # NullPlayer
+
+<img width="1920" height="180" alt="top-bar-neon" src="https://github.com/user-attachments/assets/578a9307-2aef-4a17-9e5f-b35cf0c6c311" />
 
 ## A throwback open-source music player for macOS written in Swift, with a first-class headless CLI for automation, multi-source playback, and casting across Sonos, Chromecast, UPnP/DLNA, local media servers, and internet radio.
 
