@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.4
+
+### Bug Fixes
+
+- **Audio Analyzer Spectrogram no longer freezes the app** — scrolling the waterfall now shifts each history row with one bounded memory move instead of triggering a full copy-on-write buffer copy for every pixel. The analyzer stays responsive in debug and release builds, including while streaming audio with the Cava window open.
+
 ## 0.29.3
 
 ### Improvements
