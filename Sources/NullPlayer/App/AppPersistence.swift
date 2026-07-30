@@ -4,7 +4,9 @@ import Foundation
 ///
 /// The full edition keeps the existing preference keys and user-selectable UI mode.
 /// A downstream edition can define `EDITION_CUSTOM` and supply the corresponding
-/// `EditionPolicy` values without spreading edition checks through the app.
+/// `EditionPolicy` values without spreading edition checks through the app. A forced
+/// mode and preference namespace are one isolation policy: a forced edition must supply
+/// both so an unknown downstream mode can never consume an unscoped full-edition snapshot.
 enum AppPersistence {
     /// One mandatory UI mode for a forced-mode edition; `nil` for the full edition.
     static var forcedUIMode: PlayerUIMode? {

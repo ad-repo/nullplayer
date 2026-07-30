@@ -80,6 +80,19 @@ final class AppPersistenceTests: XCTestCase {
         XCTAssertTrue(PlayerUIMode.allowsAssignment(.classic, forcedMode: nil))
     }
 
+    func testEQLayoutFollowsResolvedModeInsteadOfSharedMirror() {
+        withDefaults { defaults in
+            defaults.set(PlayerUIMode.classic.rawValue, forKey: PlayerUIMode.userDefaultsKey)
+            defaults.set(false, forKey: "modernUIEnabled")
+
+            let resolved = PlayerUIMode.stored(in: defaults, forcedMode: .modern)
+
+            XCTAssertTrue(resolved.usesModernEQLayout)
+            XCTAssertFalse(PlayerUIMode.classic.usesModernEQLayout)
+            XCTAssertTrue(PlayerUIMode.metal.usesModernEQLayout)
+        }
+    }
+
     private func withDefaults(_ body: (UserDefaults) -> Void) {
         let suiteName = "AppPersistenceTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {

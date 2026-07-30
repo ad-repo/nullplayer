@@ -713,10 +713,17 @@ de-risks the live switch. Requires a debug build: `./scripts/kill_build_run.sh -
 `AppPersistence` is the single edition-neutral seam for UI-mode and session-geometry
 persistence. The full edition returns `forcedUIMode == nil` and leaves every key unchanged.
 A build compiled with `EDITION_CUSTOM` supplies `EditionPolicy.forcedUIMode` and
-`EditionPolicy.preferenceNamespace`.
+`EditionPolicy.preferenceNamespace`. Treat these as one required isolation package:
+forcing a downstream mode without namespacing its session state can let the full edition
+decode that unknown mode through the legacy Classic/Modern fallback and accept incompatible
+geometry as an exact match.
 
 - `PlayerUIMode.stored(in:)` returns the forced mode before consulting any defaults domain,
   including the `-uiMode` launch argument. `persist(in:)` writes nothing in a forced edition.
+- EQ layout initialization also resolves through `PlayerUIMode.stored()` rather than reading
+  the shared `modernUIEnabled` mirror. Use the distinct `usesModernEQLayout` policy when adding
+  a downstream mode: it may intentionally differ from `usesModernControllers` (for example,
+  custom controllers with the 21-band modern EQ).
 - `WindowManager.uiMode` is seeded once and held in memory, so launch-argument defaults cannot
   pin or revert later live switches. Both the setter and `reloadUI(to:)` reject a target that
   differs from the forced mode; the reload guard is required because rejecting only the setter
@@ -727,6 +734,10 @@ A build compiled with `EDITION_CUSTOM` supplies `EditionPolicy.forcedUIMode` and
 - The full edition uses identity keys and retains its legacy-frame behavior. A scoped edition
   never resolves or clears the unscoped frame/session keys, so it starts with fresh
   edition-specific UI geometry instead of migrating an ambiguous snapshot.
+- `WindowManager.saveWindowPositions()` is a compatibility-only legacy writer in NullPlayer;
+  current launch restoration uses `AppStateManager`, and `restoreWindowPositions()` has no
+  NullPlayer caller. The namespaced legacy channel remains for downstream consumers and
+  migration compatibility.
 
 ## Compact Mode
 

@@ -5825,7 +5825,7 @@ class WindowManager {
         uiMode = targetMode
 
         prepareUIRuntime(for: targetMode)
-        audioEngine.applyEQLayout(forModernUI: targetMode.usesModernControllers)
+        audioEngine.applyEQLayout(forModernUI: targetMode.usesModernEQLayout)
         (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
 
         recreateModeDependentLayout(snapshot, revealMainWindow: !reenterCompactWindow)
@@ -5970,7 +5970,13 @@ class WindowManager {
     }
     
     // MARK: - State Persistence
-    
+
+    /// Compatibility-only legacy frame channel.
+    ///
+    /// NullPlayer saves these keys on quit but no longer restores them during launch;
+    /// `AppStateManager` owns current window restoration. Keep the namespaced writer and
+    /// reader for downstream consumers and legacy migration rather than treating these
+    /// keys as the primary geometry store.
     func saveWindowPositions() {
         let defaults = UserDefaults.standard
         compactWindowController?.persistFloatingFrameForStateSaving()

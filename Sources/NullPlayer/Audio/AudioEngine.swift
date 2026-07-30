@@ -718,8 +718,9 @@ class AudioEngine {
     // MARK: - Initialization
     
     init() {
-        let modernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
-        activeEQConfiguration = EQConfiguration.forModernUI(modernUIEnabled)
+        activeEQConfiguration = EQConfiguration.forModernUI(
+            PlayerUIMode.stored().usesModernEQLayout
+        )
         // Always build the node with the full physical band count so it can host
         // either layout without being rebuilt when the UI mode switches at runtime.
         eqNode = AVAudioUnitEQ(numberOfBands: EQBandProgram.physicalBandCount)

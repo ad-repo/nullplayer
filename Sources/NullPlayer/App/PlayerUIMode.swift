@@ -23,6 +23,14 @@ enum PlayerUIMode: String, CaseIterable {
         }
     }
 
+    /// Whether this mode uses the 21-band EQ layout.
+    ///
+    /// This matches the controller family in NullPlayer, but remains a distinct policy
+    /// because downstream modes may use custom controllers while retaining the modern EQ.
+    var usesModernEQLayout: Bool {
+        usesModernControllers
+    }
+
     var modernSkinFamily: ModernSkinFamily? {
         switch self {
         case .classic: return nil

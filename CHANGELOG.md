@@ -8,7 +8,7 @@
 
 ### Improvements
 
-- **Downstream editions can isolate UI state without changing shared preferences (#404, #405)** — forced-mode builds can now declare their required UI and a preference namespace through one edition policy seam. They ignore conflicting saved or command-line UI modes, cannot switch into an unsupported controller family, and keep Remember State and legacy window geometry separate while still sharing accounts, servers, and media data intentionally.
+- **Downstream editions can isolate UI state without changing shared preferences (#404, #405)** — forced-mode builds can now declare their required UI and a preference namespace through one edition policy seam. They ignore conflicting saved or command-line UI modes, initialize the correct EQ layout without consulting the shared legacy mode mirror, cannot switch into an unsupported controller family, and keep Remember State and legacy window geometry separate while still sharing accounts, servers, and media data intentionally.
 
 ### Bug Fixes
 
