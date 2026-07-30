@@ -78,11 +78,40 @@ struct PlayTimeSummaryRow: Identifiable, Sendable {
     let durationListened: Double
 }
 
-struct DailyActivityRow: Identifiable, Sendable {
+struct DailyActivityRow: Identifiable, Sendable, Equatable {
     let id: String       // "yyyy-MM-dd"
     let date: Date       // start of the calendar day
     let plays: Int
     let minutes: Double
+}
+
+struct ContributionHeatmapDateWindow: Equatable, Sendable {
+    let start: Date
+    let end: Date
+    let today: Date
+
+    static func containing(
+        _ referenceDate: Date = Date(),
+        calendar: Calendar = .current
+    ) -> ContributionHeatmapDateWindow {
+        let today = calendar.startOfDay(for: referenceDate)
+        let daysSinceSunday = calendar.component(.weekday, from: today) - 1
+        let currentWeekSunday = calendar.date(
+            byAdding: .day,
+            value: -daysSinceSunday,
+            to: today
+        ) ?? today
+        let startSunday = calendar.date(
+            byAdding: .weekOfYear,
+            value: -52,
+            to: currentWeekSunday
+        ) ?? currentWeekSunday
+        return ContributionHeatmapDateWindow(
+            start: startSunday,
+            end: referenceDate,
+            today: today
+        )
+    }
 }
 
 // MARK: - Store
@@ -310,11 +339,13 @@ final class PlayHistoryStore: Sendable {
     }
 
     /// Daily play activity over the trailing year, for the GitHub-style contribution heatmap.
-    /// Always covers the last 365 days (regardless of the visible time-range filter) while still
-    /// honoring the active source / content-type / excludeSkipped filters. Grouped by calendar day.
+    /// Always covers the heatmap's Sunday-aligned 53-week grid (regardless of the visible
+    /// time-range filter) while still honoring the active source / content-type / excludeSkipped
+    /// filters. Grouped by calendar day.
     func fetchDailyActivity(filter: StatsFilterState) throws -> [DailyActivityRow] {
         var yearFilter = filter
-        yearFilter.timeRange = .last365Days
+        let dateWindow = ContributionHeatmapDateWindow.containing()
+        yearFilter.timeRange = .custom(dateWindow.start, dateWindow.end)
         let (whereStr, params) = whereClause(for: yearFilter)
         // Start of day in local time, returned as unix epoch — same expression fetchTimeSeries uses.
         let bucketExpr = "strftime('%s', strftime('%Y-%m-%d', played_at, 'unixepoch', 'localtime'), 'utc')"

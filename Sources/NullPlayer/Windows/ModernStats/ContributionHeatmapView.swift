@@ -7,6 +7,7 @@ import SwiftUI
 /// shade tracks the minutes listened that calendar day.
 struct ContributionHeatmapView: View {
     @ObservedObject var agent: PlayHistoryAgent
+    @State private var model: HeatmapModel
 
     // MARK: GitHub palette (fixed, skin-independent)
     private enum Palette {
@@ -26,10 +27,17 @@ struct ContributionHeatmapView: View {
     private let weekdayLabelWidth: CGFloat = 28
     private var colWidth: CGFloat { cellSize + gap }
 
+    init(agent: PlayHistoryAgent) {
+        self.agent = agent
+        _model = State(initialValue: Self.buildModel(from: agent.dailyActivity))
+    }
+
     var body: some View {
-        let model = buildModel()
         card(model)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: agent.dailyActivity) { _, dailyActivity in
+                model = Self.buildModel(from: dailyActivity)
+            }
     }
 
     // MARK: - Card
@@ -37,12 +45,12 @@ struct ContributionHeatmapView: View {
     @ViewBuilder
     private func card(_ model: HeatmapModel) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(headingText(minutes: model.totalMinutes))
+            Text(ContributionHeatmapFormatting.headingText(minutes: model.totalMinutes))
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(Palette.text)
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
-            if agent.dailyActivity.isEmpty {
+            if !model.hasActivity {
                 Text("No listening activity yet.")
                     .font(.system(size: 12))
                     .foregroundColor(Palette.label)
@@ -113,7 +121,7 @@ struct ContributionHeatmapView: View {
         return RoundedRectangle(cornerRadius: 2)
             .fill(color(for: level))
             .frame(width: cellSize, height: cellSize)
-            .help(tooltip(for: day))
+            .help(day.tooltip)
     }
 
     private func legend() -> some View {
@@ -157,26 +165,13 @@ struct ContributionHeatmapView: View {
         return min(4, max(1, Int(ceil(ratio * 4))))
     }
 
-    private func headingText(minutes: Double) -> String {
-        if minutes < 60 {
-            return "\(Int(minutes.rounded())) minutes of listening in the last year"
-        }
-        return "\(Int(minutes / 60)) hours of listening in the last year"
-    }
-
-    private func tooltip(for day: DayCell) -> String {
-        guard let date = day.date else { return "" }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return "\(Int(day.minutes.rounded())) min · \(formatter.string(from: date))"
-    }
-
     // MARK: - Grid model
 
     private struct DayCell: Identifiable {
         let id: Int
         let date: Date?    // nil = padding slot outside the [start, today] window
         let minutes: Double
+        let tooltip: String
     }
 
     private struct HeatmapModel {
@@ -184,24 +179,25 @@ struct ContributionHeatmapView: View {
         let monthLabels: [(col: Int, text: String)]
         let totalMinutes: Double
         let maxMinutes: Double
+        let hasActivity: Bool
     }
 
-    private func buildModel() -> HeatmapModel {
-        let calendar = Calendar.current
-
+    private static func buildModel(
+        from dailyActivity: [DailyActivityRow],
+        referenceDate: Date = Date(),
+        calendar: Calendar = .current
+    ) -> HeatmapModel {
         var minutesByDay: [Date: Double] = [:]
-        for row in agent.dailyActivity {
+        for row in dailyActivity {
             let day = calendar.startOfDay(for: row.date)
             minutesByDay[day, default: 0] += row.minutes
         }
 
-        let today = calendar.startOfDay(for: Date())
-        // Snap to the Sunday of the current week (GitHub uses Sunday-top rows), then back 52 weeks.
-        let weekday = calendar.component(.weekday, from: today) // 1 = Sunday
-        guard let currentWeekSunday = calendar.date(byAdding: .day, value: -(weekday - 1), to: today),
-              let startSunday = calendar.date(byAdding: .weekOfYear, value: -52, to: currentWeekSunday) else {
-            return HeatmapModel(weeks: [], monthLabels: [], totalMinutes: 0, maxMinutes: 0)
-        }
+        let dateWindow = ContributionHeatmapDateWindow.containing(
+            referenceDate,
+            calendar: calendar
+        )
+        let today = dateWindow.today
 
         let monthFormatter = DateFormatter()
         monthFormatter.locale = Locale(identifier: "en_US")
@@ -214,18 +210,28 @@ struct ContributionHeatmapView: View {
         var lastMonth = -1
         var totalMinutes = 0.0
         var maxMinutes = 0.0
-        var cursor = startSunday
+        var cursor = dateWindow.start
 
         while cursor <= today {
             var column: [DayCell] = []
             for _ in 0..<7 {
                 if cursor > today {
-                    column.append(DayCell(id: index, date: nil, minutes: 0))
+                    column.append(DayCell(id: index, date: nil, minutes: 0, tooltip: ""))
                 } else {
                     let minutes = minutesByDay[cursor] ?? 0
                     totalMinutes += minutes
                     maxMinutes = max(maxMinutes, minutes)
-                    column.append(DayCell(id: index, date: cursor, minutes: minutes))
+                    column.append(
+                        DayCell(
+                            id: index,
+                            date: cursor,
+                            minutes: minutes,
+                            tooltip: ContributionHeatmapFormatting.tooltip(
+                                minutes: minutes,
+                                date: cursor
+                            )
+                        )
+                    )
                 }
                 index += 1
                 cursor = calendar.date(byAdding: .day, value: 1, to: cursor) ?? cursor.addingTimeInterval(86400)
@@ -246,6 +252,31 @@ struct ContributionHeatmapView: View {
             col += 1
         }
 
-        return HeatmapModel(weeks: weeks, monthLabels: monthLabels, totalMinutes: totalMinutes, maxMinutes: maxMinutes)
+        return HeatmapModel(
+            weeks: weeks,
+            monthLabels: monthLabels,
+            totalMinutes: totalMinutes,
+            maxMinutes: maxMinutes,
+            hasActivity: !dailyActivity.isEmpty
+        )
+    }
+}
+
+enum ContributionHeatmapFormatting {
+    private static let tooltipDateFormat = Date.FormatStyle(date: .abbreviated, time: .omitted)
+
+    static func headingText(minutes: Double) -> String {
+        if minutes < 60 {
+            let roundedMinutes = max(0, Int(minutes.rounded()))
+            let unit = roundedMinutes == 1 ? "minute" : "minutes"
+            return "\(roundedMinutes) \(unit) of listening in the last year"
+        }
+        let roundedHours = max(0, Int((minutes / 60).rounded()))
+        let unit = roundedHours == 1 ? "hour" : "hours"
+        return "\(roundedHours) \(unit) of listening in the last year"
+    }
+
+    static func tooltip(minutes: Double, date: Date) -> String {
+        "\(Int(minutes.rounded())) min · \(date.formatted(tooltipDateFormat))"
     }
 }
