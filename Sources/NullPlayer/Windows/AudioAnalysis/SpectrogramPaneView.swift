@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import SwiftUI
 import MetalKit
 
@@ -137,16 +138,26 @@ class SpectrogramMetalView: NSView {
         // the right with the new spectrum data. A larger step scrolls faster.
         let step = max(1, min(scrollStep, historyWidth))
         let bandCount = min(spectrum.count, historyHeight)
-        for i in 0..<historyHeight {
-            let rowStart = i * historyWidth
-            for x in step..<historyWidth {
-                historyBuffer[rowStart + (x - step)] = historyBuffer[rowStart + x]
-            }
-            // `spectrum` bands are already normalized 0–1 magnitudes (see
-            // AudioEngine.audioSpectrumDataUpdated) — use them directly for colormapping.
-            let value = i < bandCount ? max(0, min(1, spectrum[i])) : 0
-            for x in (historyWidth - step)..<historyWidth {
-                historyBuffer[rowStart + x] = value
+        let movedColumnCount = historyWidth - step
+        historyBuffer.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+
+            for i in 0..<historyHeight {
+                let rowStart = i * historyWidth
+                if movedColumnCount > 0 {
+                    memmove(
+                        baseAddress + rowStart,
+                        baseAddress + rowStart + step,
+                        movedColumnCount * MemoryLayout<Float>.stride
+                    )
+                }
+
+                // `spectrum` bands are already normalized 0–1 magnitudes (see
+                // AudioEngine.audioSpectrumDataUpdated) — use them directly for colormapping.
+                let value: Float = i < bandCount ? max(0, min(1, spectrum[i])) : 0
+                for x in movedColumnCount..<historyWidth {
+                    baseAddress[rowStart + x] = value
+                }
             }
         }
 
