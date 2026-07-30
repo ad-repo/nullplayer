@@ -266,10 +266,21 @@ class WindowManager {
     
     /// Main player window controller (classic or modern, accessed via protocol)
     private(set) var mainWindowController: MainWindowProviding?
-    
+
+    private var storedUIMode = PlayerUIMode.stored()
+
     var uiMode: PlayerUIMode {
-        get { PlayerUIMode.stored() }
-        set { newValue.persist() }
+        get { storedUIMode }
+        set {
+            guard PlayerUIMode.allowsAssignment(newValue) else {
+                NSLog("WindowManager: Ignoring %@ UI assignment because this edition is forced to %@",
+                      newValue.displayName,
+                      AppPersistence.forcedUIMode?.displayName ?? "its configured mode")
+                return
+            }
+            storedUIMode = newValue
+            newValue.persist()
+        }
     }
 
     /// Whether the modern-family UI is enabled. Kept as a compatibility mirror for
@@ -5615,6 +5626,13 @@ class WindowManager {
     /// `completion` — it runs after `performReloadUI`, on the main thread, in both the
     /// synchronous and deferred paths. It also fires when no switch is needed.
     func reloadUI(to targetMode: PlayerUIMode, completion: (() -> Void)? = nil) {
+        guard PlayerUIMode.allowsAssignment(targetMode) else {
+            NSLog("WindowManager: Ignoring switch to %@ UI because this edition is forced to %@",
+                  targetMode.displayName,
+                  AppPersistence.forcedUIMode?.displayName ?? "its configured mode")
+            completion?()
+            return
+        }
         guard targetMode != uiMode else {
             completion?()
             return
