@@ -105,6 +105,8 @@ struct StatsOverviewView: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(spacing: 16) {
+                ContributionHeatmapView(agent: agent)
+
                 PlayTimeSummarySection(agent: agent, skinTextColor: skinTextColor)
 
                 TopDimensionChartView(

@@ -78,6 +78,13 @@ struct PlayTimeSummaryRow: Identifiable, Sendable {
     let durationListened: Double
 }
 
+struct DailyActivityRow: Identifiable, Sendable {
+    let id: String       // "yyyy-MM-dd"
+    let date: Date       // start of the calendar day
+    let plays: Int
+    let minutes: Double
+}
+
 // MARK: - Store
 
 final class PlayHistoryStore: Sendable {
@@ -299,6 +306,40 @@ final class PlayHistoryStore: Sendable {
                 playCount: count,
                 totalMinutes: mins
             )
+        }
+    }
+
+    /// Daily play activity over the trailing year, for the GitHub-style contribution heatmap.
+    /// Always covers the last 365 days (regardless of the visible time-range filter) while still
+    /// honoring the active source / content-type / excludeSkipped filters. Grouped by calendar day.
+    func fetchDailyActivity(filter: StatsFilterState) throws -> [DailyActivityRow] {
+        var yearFilter = filter
+        yearFilter.timeRange = .last365Days
+        let (whereStr, params) = whereClause(for: yearFilter)
+        // Start of day in local time, returned as unix epoch — same expression fetchTimeSeries uses.
+        let bucketExpr = "strftime('%s', strftime('%Y-%m-%d', played_at, 'unixepoch', 'localtime'), 'utc')"
+        let sql = """
+            SELECT \(bucketExpr),
+                   COUNT(*),
+                   COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
+            \(whereStr)
+            GROUP BY 1
+            ORDER BY 1 ASC
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
+        let stmt = try db.prepare(sql, params)
+        let labelFormatter = DateFormatter()
+        labelFormatter.locale = Locale(identifier: "en_US_POSIX")
+        labelFormatter.dateFormat = "yyyy-MM-dd"
+        return stmt.compactMap { row in
+            guard let tsStr = row[0] as? String,
+                  let ts = Double(tsStr) else { return nil }
+            let date = Date(timeIntervalSince1970: ts)
+            let bucket = labelFormatter.string(from: date)
+            let count = Int(row[1] as? Int64 ?? 0)
+            let mins = row[2] as? Double ?? 0
+            return DailyActivityRow(id: bucket, date: date, plays: count, minutes: mins)
         }
     }
 

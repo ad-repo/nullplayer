@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- **GitHub-style listening activity heatmap in the Library Data tab** — the **Data > Overview** tab now opens with a contribution-graph–style grid of the trailing year: one cell per day, shaded by minutes listened (relative to your busiest day), with month labels across the top, Mon/Wed/Fri row labels, a total-hours heading, and a Less→More legend. Hovering a cell shows the exact minutes and date. It always covers the last ~year regardless of the Overview time-range filter and appears in both the Library Data tab and the standalone Stats window.
+
 ## 0.29.4
 
 ### Bug Fixes

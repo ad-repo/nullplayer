@@ -1,0 +1,251 @@
+import SwiftUI
+
+/// A GitHub-style contribution heatmap of daily listening activity over the trailing year.
+///
+/// Rendered as a self-contained light "card" with the exact GitHub contribution palette so it looks
+/// identical in every skin (it deliberately does NOT adopt the surrounding skin colors). Each cell's
+/// shade tracks the minutes listened that calendar day.
+struct ContributionHeatmapView: View {
+    @ObservedObject var agent: PlayHistoryAgent
+
+    // MARK: GitHub palette (fixed, skin-independent)
+    private enum Palette {
+        static let l0     = Color(red: 235/255, green: 237/255, blue: 240/255) // #ebedf0
+        static let l1     = Color(red: 155/255, green: 233/255, blue: 168/255) // #9be9a8
+        static let l2     = Color(red:  64/255, green: 196/255, blue:  99/255) // #40c463
+        static let l3     = Color(red:  48/255, green: 161/255, blue:  78/255) // #30a14e
+        static let l4     = Color(red:  33/255, green: 110/255, blue:  57/255) // #216e39
+        static let card   = Color.white                                        // #ffffff
+        static let border = Color(red: 208/255, green: 215/255, blue: 222/255) // #d0d7de
+        static let text   = Color(red:  31/255, green:  35/255, blue:  40/255) // #1f2328
+        static let label  = Color(red:  89/255, green:  99/255, blue: 110/255) // #59636e
+    }
+
+    private let cellSize: CGFloat = 11
+    private let gap: CGFloat = 3
+    private let weekdayLabelWidth: CGFloat = 28
+    private var colWidth: CGFloat { cellSize + gap }
+
+    var body: some View {
+        let model = buildModel()
+        card(model)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Card
+
+    @ViewBuilder
+    private func card(_ model: HeatmapModel) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(headingText(minutes: model.totalMinutes))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Palette.text)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+            if agent.dailyActivity.isEmpty {
+                Text("No listening activity yet.")
+                    .font(.system(size: 12))
+                    .foregroundColor(Palette.label)
+                    .padding(12)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            monthRow(model)
+                            HStack(alignment: .top, spacing: gap) {
+                                weekdayColumn()
+                                HStack(alignment: .top, spacing: gap) {
+                                    ForEach(Array(model.weeks.enumerated()), id: \.offset) { index, week in
+                                        VStack(spacing: gap) {
+                                            ForEach(week) { day in
+                                                cellView(day, max: model.maxMinutes)
+                                            }
+                                        }
+                                        .id(index)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(12)
+                    }
+                    .onAppear {
+                        guard !model.weeks.isEmpty else { return }
+                        proxy.scrollTo(model.weeks.count - 1, anchor: .trailing)
+                    }
+                }
+                legend()
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.card))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
+    }
+
+    private func monthRow(_ model: HeatmapModel) -> some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: weekdayLabelWidth + gap, height: 12)
+            ZStack(alignment: .topLeading) {
+                ForEach(model.monthLabels, id: \.col) { label in
+                    Text(label.text)
+                        .font(.system(size: 10))
+                        .foregroundColor(Palette.label)
+                        .offset(x: CGFloat(label.col) * colWidth)
+                }
+            }
+            .frame(width: CGFloat(max(model.weeks.count, 1)) * colWidth, height: 12, alignment: .topLeading)
+        }
+    }
+
+    private func weekdayColumn() -> some View {
+        VStack(spacing: gap) {
+            ForEach(0..<7, id: \.self) { row in
+                Text(weekdayLabel(row))
+                    .font(.system(size: 9))
+                    .foregroundColor(Palette.label)
+                    .frame(width: weekdayLabelWidth, height: cellSize, alignment: .leading)
+            }
+        }
+    }
+
+    private func cellView(_ day: DayCell, max maxMinutes: Double) -> some View {
+        let level = day.date == nil ? 0 : intensityLevel(day.minutes, max: maxMinutes)
+        return RoundedRectangle(cornerRadius: 2)
+            .fill(color(for: level))
+            .frame(width: cellSize, height: cellSize)
+            .help(tooltip(for: day))
+    }
+
+    private func legend() -> some View {
+        HStack(spacing: 4) {
+            Spacer()
+            Text("Less").font(.system(size: 10)).foregroundColor(Palette.label)
+            ForEach(0..<5, id: \.self) { level in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(color(for: level))
+                    .frame(width: cellSize, height: cellSize)
+            }
+            Text("More").font(.system(size: 10)).foregroundColor(Palette.label)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func weekdayLabel(_ row: Int) -> String {
+        switch row {
+        case 1: return "Mon"
+        case 3: return "Wed"
+        case 5: return "Fri"
+        default: return ""
+        }
+    }
+
+    private func color(for level: Int) -> Color {
+        switch level {
+        case 1:  return Palette.l1
+        case 2:  return Palette.l2
+        case 3:  return Palette.l3
+        case 4:  return Palette.l4
+        default: return Palette.l0
+        }
+    }
+
+    private func intensityLevel(_ minutes: Double, max maxMinutes: Double) -> Int {
+        guard minutes > 0 else { return 0 }
+        guard maxMinutes > 0 else { return 1 }
+        let ratio = minutes / maxMinutes
+        return min(4, max(1, Int(ceil(ratio * 4))))
+    }
+
+    private func headingText(minutes: Double) -> String {
+        if minutes < 60 {
+            return "\(Int(minutes.rounded())) minutes of listening in the last year"
+        }
+        return "\(Int(minutes / 60)) hours of listening in the last year"
+    }
+
+    private func tooltip(for day: DayCell) -> String {
+        guard let date = day.date else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return "\(Int(day.minutes.rounded())) min · \(formatter.string(from: date))"
+    }
+
+    // MARK: - Grid model
+
+    private struct DayCell: Identifiable {
+        let id: Int
+        let date: Date?    // nil = padding slot outside the [start, today] window
+        let minutes: Double
+    }
+
+    private struct HeatmapModel {
+        let weeks: [[DayCell]]                     // week columns, each 7 cells (Sun…Sat)
+        let monthLabels: [(col: Int, text: String)]
+        let totalMinutes: Double
+        let maxMinutes: Double
+    }
+
+    private func buildModel() -> HeatmapModel {
+        let calendar = Calendar.current
+
+        var minutesByDay: [Date: Double] = [:]
+        for row in agent.dailyActivity {
+            let day = calendar.startOfDay(for: row.date)
+            minutesByDay[day, default: 0] += row.minutes
+        }
+
+        let today = calendar.startOfDay(for: Date())
+        // Snap to the Sunday of the current week (GitHub uses Sunday-top rows), then back 52 weeks.
+        let weekday = calendar.component(.weekday, from: today) // 1 = Sunday
+        guard let currentWeekSunday = calendar.date(byAdding: .day, value: -(weekday - 1), to: today),
+              let startSunday = calendar.date(byAdding: .weekOfYear, value: -52, to: currentWeekSunday) else {
+            return HeatmapModel(weeks: [], monthLabels: [], totalMinutes: 0, maxMinutes: 0)
+        }
+
+        let monthFormatter = DateFormatter()
+        monthFormatter.locale = Locale(identifier: "en_US")
+        monthFormatter.dateFormat = "MMM"
+
+        var weeks: [[DayCell]] = []
+        var monthLabels: [(col: Int, text: String)] = []
+        var index = 0
+        var col = 0
+        var lastMonth = -1
+        var totalMinutes = 0.0
+        var maxMinutes = 0.0
+        var cursor = startSunday
+
+        while cursor <= today {
+            var column: [DayCell] = []
+            for _ in 0..<7 {
+                if cursor > today {
+                    column.append(DayCell(id: index, date: nil, minutes: 0))
+                } else {
+                    let minutes = minutesByDay[cursor] ?? 0
+                    totalMinutes += minutes
+                    maxMinutes = max(maxMinutes, minutes)
+                    column.append(DayCell(id: index, date: cursor, minutes: minutes))
+                }
+                index += 1
+                cursor = calendar.date(byAdding: .day, value: 1, to: cursor) ?? cursor.addingTimeInterval(86400)
+            }
+            if let firstDate = column.first(where: { $0.date != nil })?.date {
+                let month = calendar.component(.month, from: firstDate)
+                if month != lastMonth {
+                    // Drop a preceding label that would sit too close (e.g. a 1-column leading
+                    // partial month) so labels never overlap, matching GitHub's spacing.
+                    if let last = monthLabels.last, col - last.col < 3 {
+                        monthLabels.removeLast()
+                    }
+                    monthLabels.append((col: col, text: monthFormatter.string(from: firstDate)))
+                    lastMonth = month
+                }
+            }
+            weeks.append(column)
+            col += 1
+        }
+
+        return HeatmapModel(weeks: weeks, monthLabels: monthLabels, totalMinutes: totalMinutes, maxMinutes: maxMinutes)
+    }
+}
