@@ -50,8 +50,13 @@ class AppStateManager {
     // MARK: - UserDefaults Keys
     
     private enum Keys {
-        static let rememberStateEnabled = "rememberStateEnabled"
-        static let savedAppState = "savedAppState"
+        static var rememberStateEnabled: String {
+            AppPersistence.key("rememberStateEnabled")
+        }
+
+        static var savedAppState: String {
+            AppPersistence.key("savedAppState")
+        }
     }
 
     // MARK: - State Structure

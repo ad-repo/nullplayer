@@ -4209,17 +4209,17 @@ class WindowManager {
         }
         
         // Clear any saved positions (windows will be positioned relative to main on open)
-        defaults.removeObject(forKey: "MainWindowFrame")
-        defaults.removeObject(forKey: "EqualizerWindowFrame")
-        defaults.removeObject(forKey: "PlaylistWindowFrame")
-        defaults.removeObject(forKey: "PlexBrowserWindowFrame")
-        defaults.removeObject(forKey: "ProjectMWindowFrame")
-        defaults.removeObject(forKey: "VideoPlayerWindowFrame")
-        defaults.removeObject(forKey: "ArtVisualizerWindowFrame")
-        defaults.removeObject(forKey: "SpectrumWindowFrame")
-        defaults.removeObject(forKey: "WaveformWindowFrame")
-        defaults.removeObject(forKey: "PeppyMeterWindowFrame")
-        defaults.removeObject(forKey: "NetworkMonitorWindowFrame")
+        defaults.removeObject(forKey: AppPersistence.key("MainWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("EqualizerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PlaylistWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PlexBrowserWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("ProjectMWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("VideoPlayerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("ArtVisualizerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("SpectrumWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("WaveformWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PeppyMeterWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("NetworkMonitorWindowFrame"))
         
         // Disable snapping during programmatic frame changes to prevent interference
         isSnappingWindow = true
@@ -5976,62 +5976,62 @@ class WindowManager {
         compactWindowController?.persistFloatingFrameForStateSaving()
         
         if let frame = mainWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "MainWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("MainWindowFrame"))
         }
         if let frame = playlistWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "PlaylistWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("PlaylistWindowFrame"))
         }
         if let frame = equalizerWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "EqualizerWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("EqualizerWindowFrame"))
         }
         if let frame = plexBrowserWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "PlexBrowserWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("PlexBrowserWindowFrame"))
         }
         if let frame = videoPlayerWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "VideoPlayerWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("VideoPlayerWindowFrame"))
         }
         if let frame = projectMWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "ProjectMWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("ProjectMWindowFrame"))
         }
         if let frame = spectrumWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "SpectrumWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("SpectrumWindowFrame"))
         }
     }
     
     func restoreWindowPositions() {
         let defaults = UserDefaults.standard
         
-        if let frameString = defaults.string(forKey: "MainWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("MainWindowFrame")),
            let window = mainWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "PlaylistWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("PlaylistWindowFrame")),
            let window = playlistWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "EqualizerWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("EqualizerWindowFrame")),
            let window = equalizerWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "PlexBrowserWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("PlexBrowserWindowFrame")),
            let window = plexBrowserWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "VideoPlayerWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("VideoPlayerWindowFrame")),
            let window = videoPlayerWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "ProjectMWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("ProjectMWindowFrame")),
            let window = projectMWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "SpectrumWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("SpectrumWindowFrame")),
            let window = spectrumWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
