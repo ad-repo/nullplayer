@@ -8,7 +8,6 @@
 
 ## **If you enjoy NullPlayer, please ⭐ STAR ⭐ the project on GitHub!**
 
-## Demo
 
 [![nullPlayer Demo](https://img.youtube.com/vi/hsnVpIh1TnA/hqdefault.jpg)](https://youtu.be/hsnVpIh1TnA)
 
