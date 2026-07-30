@@ -673,7 +673,7 @@ UI label is **UI Size** with mutually-exclusive percentage rows: **50%**, **90%*
 - **Classic UI**: also live (no restart). `MenuActions.setUIScaleLevel(_:)` assigns `WindowManager.uiScaleLevel`; `applyDoubleSize(previousScale:)` resizes every window in place using the exact `newScale / oldScale` transition ratio. Classic views self-scale their skin rendering from their own `bounds`, so resizing is enough -- **but** they're layer-backed with `.onSetNeedsDisplay`, so a bare resize leaves a stale, stretched "ghost" of the old size (visible until the window is recomposited, e.g. by switching Spaces). `applyDoubleSize()` ends by walking every visible window's view tree (`forceRedrawTree`) setting `needsDisplay = true` + `displayIfNeeded()` to force the repaint.
 - **Classic Library content**: the Library window remains freely stretchable, so its fonts must not derive from window bounds. `PlexBrowserView.contentScale` uses `WindowManager.classicScaleMultiplier` to scale bitmap text, system fonts, row height, column-header height, and matching text hit-test measurements. Manual Library resizing therefore adds space without changing text size, while changing **UI Size** scales the text and row metrics.
 - **Fast switching guard**: `WindowManager` tracks the last applied level separately from the requested level. If another UI Size change arrives during a resize pass, it records the pending value and applies only the final requested level after the current pass finishes, using the last actually-applied scale as the ratio base.
-- **Startup restoration**: `uiScaleLevel` is restored in `AppStateManager.restoreSettingsState()` before sub-windows are shown, so saved enlarged geometry is not double-applied during restore. Saved states without `uiScaleLevel` fall back from legacy `isDoubleSize=true` to 150%.
+- **Startup restoration**: `uiScaleLevel` is restored in `AppStateManager.restoreSettingsState()` before sub-windows are shown, so saved enlarged geometry is not double-applied during restore. Scale and window frames restore only when the saved and running `PlayerUIMode` values match exactly; Modern and Metal share controller families but have incompatible geometry and therefore count as a mismatch. A mismatch starts at 100% and uses default frames while mode-independent audio/EQ/playlist state still restores. Saved states without `uiScaleLevel` fall back from legacy `isDoubleSize=true` to 150% only for an exact-mode restore.
 - **Interaction with mode switching**: `reloadUI(to:)` captures the current `uiScaleLevel`, collapses to 100% in the current mode *before* the switch, then re-applies the captured level in the target mode after windows are recreated but **before** `enterCompactMode()` (so a Compact-Mode capture records the enlarged layout, not a 1x one). The two UI systems have different window geometry -- and modern layout is driven by the global `ModernSkinElements.sizeMultiplier` -- so forcing old-mode enlarged frames onto freshly-created target-mode windows renders them distorted. `prepareUIRuntime` also pins `sizeMultiplier` to the current `uiScaleLevel` when entering a modern family, so modern windows are *created* at the right base scale rather than inheriting a stale value. The collapse runs `applyDoubleSize()`, which force-docks the side windows (Library/ProjectM) to the main-window edge; `reloadUI` captures their frames first (`captureSideWindowFrames`) and `performReloadUI` restores them after re-applying UI Size, so a user's detached Library position survives the switch.
 - When title bars are hidden, all window drags pass `fromTitleBar: true` to allow undocking
 - Classic windows use drawing transform offset (`translateBy`) to shift the skin image up; modern windows use conditional `titleBarHeight`
@@ -707,6 +707,26 @@ view's deferred `deinit` cannot wipe a same-id registration the replacement alre
 **DEBUG-only** `debugRecreateModeDependentWindows()` (Window menu → "Recreate Windows
 (Debug)") runs the same teardown/rebuild in the *same* mode — the leak/lifecycle test that
 de-risks the live switch. Requires a debug build: `./scripts/kill_build_run.sh --debug`.
+
+### Edition persistence policy
+
+`AppPersistence` is the single edition-neutral seam for UI-mode and session-geometry
+persistence. The full edition returns `forcedUIMode == nil` and leaves every key unchanged.
+A build compiled with `EDITION_CUSTOM` supplies `EditionPolicy.forcedUIMode` and
+`EditionPolicy.preferenceNamespace`.
+
+- `PlayerUIMode.stored(in:)` returns the forced mode before consulting any defaults domain,
+  including the `-uiMode` launch argument. `persist(in:)` writes nothing in a forced edition.
+- `WindowManager.uiMode` is seeded once and held in memory, so launch-argument defaults cannot
+  pin or revert later live switches. Both the setter and `reloadUI(to:)` reject a target that
+  differs from the forced mode; the reload guard is required because rejecting only the setter
+  would still let teardown/recreation use the invalid target.
+- `AppPersistence.key(_:)` scopes only `rememberStateEnabled`, `savedAppState`, and the legacy
+  `*WindowFrame` channels. Accounts, server configuration, media data, skins, and other
+  intentionally shared preferences remain unscoped.
+- The full edition uses identity keys and retains its legacy-frame behavior. A scoped edition
+  never resolves or clears the unscoped frame/session keys, so it starts with fresh
+  edition-specific UI geometry instead of migrating an ambiguous snapshot.
 
 ## Compact Mode
 

@@ -353,7 +353,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **Modern/Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
 - **Classic UI**: choose context menu -> **UI Size** or use the classic size control to enlarge
 - Scales all windows to the selected percentage
-- Persists across restarts
+- Persists across same-mode restarts; a saved session from a different UI mode starts at 100% with default window geometry
 - **Modern UI**: changes live instantly
 - **Classic UI**: changes live instantly (no restart)
 

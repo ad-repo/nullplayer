@@ -28,9 +28,9 @@ import NullPlayerCore
 /// saved metadata (title/artist/album/duration), then replaced asynchronously when the
 /// real tracks are fetched from their servers.
 ///
-/// When the UI mode changes between save and restore (e.g. modern -> classic), window
-/// frames are NOT restored (they have incompatible sizes). Audio, playlist, and non-frame
-/// settings are still restored normally.
+/// When the exact UI mode changes between save and restore (including Modern <-> Metal),
+/// window frames and UI Size are NOT restored because they affect incompatible geometry.
+/// Audio, playlist, and other mode-independent settings are still restored normally.
 ///
 /// ## State Policy
 /// `AppState` is the quit-session snapshot: window visibility/layout, playlist contents,
@@ -46,6 +46,20 @@ class AppStateManager {
     // MARK: - Singleton
     
     static let shared = AppStateManager()
+
+    static func restoredUIMode(rawValue: String?, savedInModernMode: Bool) -> PlayerUIMode {
+        if let rawValue, let mode = PlayerUIMode(rawValue: rawValue) {
+            return mode
+        }
+        return savedInModernMode ? .modern : .classic
+    }
+
+    static func shouldRestoreGeometry(
+        savedMode: PlayerUIMode,
+        runningMode: PlayerUIMode
+    ) -> Bool {
+        savedMode == runningMode
+    }
     
     // MARK: - UserDefaults Keys
     
@@ -302,10 +316,10 @@ class AppStateManager {
         }
 
         var restoredUIMode: PlayerUIMode {
-            if let uiMode, let mode = PlayerUIMode(rawValue: uiMode) {
-                return mode
-            }
-            return savedInModernMode ? .modern : .classic
+            AppStateManager.restoredUIMode(
+                rawValue: uiMode,
+                savedInModernMode: savedInModernMode
+            )
         }
         
         init(from decoder: Decoder) throws {
@@ -818,11 +832,14 @@ class AppStateManager {
             UserDefaults.standard.set(deviceUID, forKey: "selectedOutputDeviceUID")
         }
 
-        // Check if the saved state's UI mode matches the current mode.
-        // If mismatched (e.g. saved in modern, now running classic), skip window frame
-        // restoration since the windows have different sizes and constraints.
+        // Check whether the saved state's exact UI mode matches the current mode.
+        // Modern and Metal share controller families but still have incompatible geometry,
+        // so a mismatch skips both window-frame and UI Size restoration.
         let savedMode = state.restoredUIMode
-        let modeMatches = savedMode.usesModernControllers == runningModernMode
+        let modeMatches = Self.shouldRestoreGeometry(
+            savedMode: savedMode,
+            runningMode: runningMode
+        )
         if !modeMatches {
             NSLog("AppStateManager: UI mode changed (saved=%@, current=%@) - skipping window frame restoration",
                   savedMode.displayName,
@@ -852,7 +869,7 @@ class AppStateManager {
             .flatMap(VisualizationType.init(rawValue:)) ?? .projectM
         let projectMFullscreen = state.isProjectMFullscreen
         let savedBrowseMode = state.browserBrowseMode
-        let savedScaleLevel = state.uiScaleLevel
+        let savedScaleLevel = modeMatches ? state.uiScaleLevel : .p100
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             // Restore UI size BEFORE showing sub-windows so applyDoubleSize
