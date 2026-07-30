@@ -266,10 +266,21 @@ class WindowManager {
     
     /// Main player window controller (classic or modern, accessed via protocol)
     private(set) var mainWindowController: MainWindowProviding?
-    
+
+    private var storedUIMode = PlayerUIMode.stored()
+
     var uiMode: PlayerUIMode {
-        get { PlayerUIMode.stored() }
-        set { newValue.persist() }
+        get { storedUIMode }
+        set {
+            guard PlayerUIMode.allowsAssignment(newValue) else {
+                NSLog("WindowManager: Ignoring %@ UI assignment because this edition is forced to %@",
+                      newValue.displayName,
+                      AppPersistence.forcedUIMode?.displayName ?? "its configured mode")
+                return
+            }
+            storedUIMode = newValue
+            newValue.persist()
+        }
     }
 
     /// Whether the modern-family UI is enabled. Kept as a compatibility mirror for
@@ -4198,17 +4209,17 @@ class WindowManager {
         }
         
         // Clear any saved positions (windows will be positioned relative to main on open)
-        defaults.removeObject(forKey: "MainWindowFrame")
-        defaults.removeObject(forKey: "EqualizerWindowFrame")
-        defaults.removeObject(forKey: "PlaylistWindowFrame")
-        defaults.removeObject(forKey: "PlexBrowserWindowFrame")
-        defaults.removeObject(forKey: "ProjectMWindowFrame")
-        defaults.removeObject(forKey: "VideoPlayerWindowFrame")
-        defaults.removeObject(forKey: "ArtVisualizerWindowFrame")
-        defaults.removeObject(forKey: "SpectrumWindowFrame")
-        defaults.removeObject(forKey: "WaveformWindowFrame")
-        defaults.removeObject(forKey: "PeppyMeterWindowFrame")
-        defaults.removeObject(forKey: "NetworkMonitorWindowFrame")
+        defaults.removeObject(forKey: AppPersistence.key("MainWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("EqualizerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PlaylistWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PlexBrowserWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("ProjectMWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("VideoPlayerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("ArtVisualizerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("SpectrumWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("WaveformWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PeppyMeterWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("NetworkMonitorWindowFrame"))
         
         // Disable snapping during programmatic frame changes to prevent interference
         isSnappingWindow = true
@@ -5615,6 +5626,13 @@ class WindowManager {
     /// `completion` — it runs after `performReloadUI`, on the main thread, in both the
     /// synchronous and deferred paths. It also fires when no switch is needed.
     func reloadUI(to targetMode: PlayerUIMode, completion: (() -> Void)? = nil) {
+        guard PlayerUIMode.allowsAssignment(targetMode) else {
+            NSLog("WindowManager: Ignoring switch to %@ UI because this edition is forced to %@",
+                  targetMode.displayName,
+                  AppPersistence.forcedUIMode?.displayName ?? "its configured mode")
+            completion?()
+            return
+        }
         guard targetMode != uiMode else {
             completion?()
             return
@@ -5807,7 +5825,7 @@ class WindowManager {
         uiMode = targetMode
 
         prepareUIRuntime(for: targetMode)
-        audioEngine.applyEQLayout(forModernUI: targetMode.usesModernControllers)
+        audioEngine.applyEQLayout(forModernUI: targetMode.usesModernEQLayout)
         (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
 
         recreateModeDependentLayout(snapshot, revealMainWindow: !reenterCompactWindow)
@@ -5952,68 +5970,74 @@ class WindowManager {
     }
     
     // MARK: - State Persistence
-    
+
+    /// Compatibility-only legacy frame channel.
+    ///
+    /// NullPlayer saves these keys on quit but no longer restores them during launch;
+    /// `AppStateManager` owns current window restoration. Keep the namespaced writer and
+    /// reader for downstream consumers and legacy migration rather than treating these
+    /// keys as the primary geometry store.
     func saveWindowPositions() {
         let defaults = UserDefaults.standard
         compactWindowController?.persistFloatingFrameForStateSaving()
         
         if let frame = mainWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "MainWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("MainWindowFrame"))
         }
         if let frame = playlistWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "PlaylistWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("PlaylistWindowFrame"))
         }
         if let frame = equalizerWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "EqualizerWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("EqualizerWindowFrame"))
         }
         if let frame = plexBrowserWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "PlexBrowserWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("PlexBrowserWindowFrame"))
         }
         if let frame = videoPlayerWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "VideoPlayerWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("VideoPlayerWindowFrame"))
         }
         if let frame = projectMWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "ProjectMWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("ProjectMWindowFrame"))
         }
         if let frame = spectrumWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "SpectrumWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("SpectrumWindowFrame"))
         }
     }
     
     func restoreWindowPositions() {
         let defaults = UserDefaults.standard
         
-        if let frameString = defaults.string(forKey: "MainWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("MainWindowFrame")),
            let window = mainWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "PlaylistWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("PlaylistWindowFrame")),
            let window = playlistWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "EqualizerWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("EqualizerWindowFrame")),
            let window = equalizerWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "PlexBrowserWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("PlexBrowserWindowFrame")),
            let window = plexBrowserWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "VideoPlayerWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("VideoPlayerWindowFrame")),
            let window = videoPlayerWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "ProjectMWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("ProjectMWindowFrame")),
            let window = projectMWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "SpectrumWindowFrame"),
+        if let frameString = defaults.string(forKey: AppPersistence.key("SpectrumWindowFrame")),
            let window = spectrumWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)

@@ -6,6 +6,14 @@
 
 - **GitHub-style listening activity heatmap in the Library Data tab** — the **Data > Overview** tab now opens with a contribution-graph–style grid of the trailing year: one cell per day, shaded by minutes listened (relative to your busiest day), with month labels across the top, Mon/Wed/Fri row labels, a total-hours heading, and a Less→More legend. Hovering a cell shows the exact minutes and date. It always covers the last ~year regardless of the Overview time-range filter and appears in both the Library Data tab and the standalone Stats window.
 
+### Improvements
+
+- **Downstream editions can isolate UI state without changing shared preferences (#404, #405)** — forced-mode builds can now declare their required UI and a preference namespace through one edition policy seam. They ignore conflicting saved or command-line UI modes, initialize the correct EQ layout without consulting the shared legacy mode mirror, cannot switch into an unsupported controller family, and keep Remember State and legacy window geometry separate while still sharing accounts, servers, and media data intentionally.
+
+### Bug Fixes
+
+- **Remember State no longer distorts windows across UI modes (#403)** — UI Size and window frames now restore only when the saved and running modes match exactly, including treating Modern and Metal as distinct. A mismatched launch stays at 100% with valid default main and Library dimensions while audio, EQ, and playlist state continue to restore.
+
 ## 0.29.4
 
 ### Bug Fixes

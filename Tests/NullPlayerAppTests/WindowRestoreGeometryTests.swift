@@ -3,6 +3,42 @@ import XCTest
 @testable import NullPlayer
 
 final class WindowRestoreGeometryTests: XCTestCase {
+    func testGeometryRestoreRequiresExactUIModeMatch() {
+        XCTAssertTrue(
+            AppStateManager.shouldRestoreGeometry(savedMode: .classic, runningMode: .classic)
+        )
+        XCTAssertTrue(
+            AppStateManager.shouldRestoreGeometry(savedMode: .modern, runningMode: .modern)
+        )
+        XCTAssertTrue(
+            AppStateManager.shouldRestoreGeometry(savedMode: .metal, runningMode: .metal)
+        )
+        XCTAssertFalse(
+            AppStateManager.shouldRestoreGeometry(savedMode: .classic, runningMode: .modern)
+        )
+        XCTAssertFalse(
+            AppStateManager.shouldRestoreGeometry(savedMode: .modern, runningMode: .metal)
+        )
+        XCTAssertFalse(
+            AppStateManager.shouldRestoreGeometry(savedMode: .metal, runningMode: .modern)
+        )
+    }
+
+    func testUnknownSavedModeFallsBackToLegacyModernAndDoesNotMatchMetal() {
+        let restoredMode = AppStateManager.restoredUIMode(
+            rawValue: "studio",
+            savedInModernMode: true
+        )
+
+        XCTAssertEqual(restoredMode, .modern)
+        XCTAssertFalse(
+            AppStateManager.shouldRestoreGeometry(
+                savedMode: restoredMode,
+                runningMode: .metal
+            )
+        )
+    }
+
     func testModernRestorePreservesSideDockedEqualizerPosition() {
         let savedEQFrame = NSRect(x: 375, y: 500, width: 275, height: 116)
 

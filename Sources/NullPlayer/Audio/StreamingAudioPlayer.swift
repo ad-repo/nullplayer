@@ -212,7 +212,9 @@ class StreamingAudioPlayer {
     // MARK: - Initialization
     
     init(
-        eqConfiguration: EQConfiguration = .forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled")),
+        eqConfiguration: EQConfiguration = .forModernUI(
+            PlayerUIMode.stored().usesModernEQLayout
+        ),
         pitchNode: AVAudioUnitTimePitch? = nil
     ) {
         self.eqConfiguration = eqConfiguration
