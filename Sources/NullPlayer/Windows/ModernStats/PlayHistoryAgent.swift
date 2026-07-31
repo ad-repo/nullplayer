@@ -54,6 +54,7 @@ private struct StatsRefreshResult {
     var recentEvents: [RecentEventRow]
     var artistTracks: [ArtistTrackRow]
     var genreArtists: [TopDimensionRow]
+    var dailyActivity: [DailyActivityRow]
 }
 
 @MainActor
@@ -72,6 +73,7 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var recentEvents:   [RecentEventRow]  = []
     @Published var artistTracks:   [ArtistTrackRow]  = []
     @Published var genreArtists:   [TopDimensionRow] = []
+    @Published var dailyActivity:  [DailyActivityRow] = []
     @Published var isLoading: Bool = false
     @Published var error: String? = nil
     @Published var isBackfilling = false
@@ -108,6 +110,7 @@ final class PlayHistoryAgent: ObservableObject {
     private var cachedRecentEvents:   [RecentEventRow]?
     private var cachedArtistTracks:   [ArtistTrackRow]?
     private var cachedGenreArtists:   [TopDimensionRow]?
+    private var cachedDailyActivity:  [DailyActivityRow]?
 
     private let store = PlayHistoryStore()
 
@@ -155,6 +158,7 @@ final class PlayHistoryAgent: ObservableObject {
         cachedRecentEvents = nil
         cachedArtistTracks = nil
         cachedGenreArtists = nil
+        cachedDailyActivity = nil
     }
 
     func scheduleRefresh() {
@@ -197,6 +201,8 @@ final class PlayHistoryAgent: ObservableObject {
                 let artistTracks = try store.fetchArtistTracks(filter: currentFilter)
                 try Task.checkCancellation()
                 let genreArtists = try store.fetchGenreArtists(filter: currentFilter)
+                try Task.checkCancellation()
+                let dailyActivity = try store.fetchDailyActivity(filter: currentFilter)
                 return StatsRefreshResult(
                     playTimeSummaries: playTimeSummaries,
                     topArtists: topArtists,
@@ -211,7 +217,8 @@ final class PlayHistoryAgent: ObservableObject {
                     outputDeviceBreakdown: outputDeviceBreakdown,
                     recentEvents: recentEvents,
                     artistTracks: artistTracks,
-                    genreArtists: genreArtists
+                    genreArtists: genreArtists,
+                    dailyActivity: dailyActivity
                 )
             }.value
             try Task.checkCancellation()
@@ -229,6 +236,7 @@ final class PlayHistoryAgent: ObservableObject {
             recentEvents = result.recentEvents
             artistTracks = result.artistTracks
             genreArtists = result.genreArtists
+            dailyActivity = result.dailyActivity
             cachedPlayTimeSummaries = result.playTimeSummaries
             cachedTopArtists = result.topArtists
             cachedTopMovies = result.topMovies
@@ -243,6 +251,7 @@ final class PlayHistoryAgent: ObservableObject {
             cachedRecentEvents = result.recentEvents
             cachedArtistTracks = result.artistTracks
             cachedGenreArtists = result.genreArtists
+            cachedDailyActivity = result.dailyActivity
         } catch is CancellationError {
             // Refresh was superseded by a newer request — discard results silently
         } catch {
