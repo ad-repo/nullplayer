@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.29.5
 
 ### New Features
 
@@ -13,6 +13,7 @@
 ### Bug Fixes
 
 - **Remember State no longer distorts windows across UI modes (#403)** — UI Size and window frames now restore only when the saved and running modes match exactly, including treating Modern and Metal as distinct. A mismatched launch stays at 100% with valid default main and Library dimensions while audio, EQ, and playlist state continue to restore.
+- **Fixed a crash when the audio graph rebuilt after casting ended during an output-device change** — when a Sonos/AirPlay/Chromecast route was torn down and the system output device changed at the same time, rebuilding the local audio graph could raise an Objective-C `NSException` from `AVAudioEngine.disconnectNodeOutput` (route-change reconfig state) that Swift `do/catch` cannot catch, aborting the app. The graph-teardown phase is now guarded exactly like the reconnect phase, so such a route-change exception defers the rebuild and retries instead of crashing.
 
 ## 0.29.4
 
