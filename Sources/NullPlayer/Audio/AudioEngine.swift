@@ -1358,7 +1358,31 @@ class AudioEngine {
 
         return true
     }
-    
+
+    private func disconnectAudioGraphForRebuild() -> Bool {
+        var exceptionError: NSError?
+        let disconnected = NPObjCExceptionCatch({
+            self.engine.disconnectNodeOutput(self.playerNode)
+            self.engine.disconnectNodeOutput(self.crossfadePlayerNode)
+            self.engine.disconnectNodeOutput(self.mixerNode)
+            if self.engine.attachedNodes.contains(self.tuningController.localPitchNode) {
+                self.engine.disconnectNodeOutput(self.tuningController.localPitchNode)
+            }
+            self.engine.disconnectNodeOutput(self.eqNode)
+        }, &exceptionError)
+
+        guard disconnected else {
+            let reason = exceptionError?.localizedFailureReason
+                ?? exceptionError?.localizedDescription
+                ?? "unknown Objective-C exception"
+            NSLog("AudioEngine: AVAudioEngine graph disconnect failed; deferring rebuild: %@", reason)
+            audioGraphRebuildDeferredForCast = true
+            return false
+        }
+
+        return true
+    }
+
     /// Rebuild the audio graph with the new output format
     /// Called after a device change that affects the audio format
     private func rebuildAudioGraph() {
@@ -1403,14 +1427,18 @@ class AudioEngine {
             playerNode.volume = 1.0
         }
 
-        engine.disconnectNodeOutput(playerNode)
-        engine.disconnectNodeOutput(crossfadePlayerNode)
-        engine.disconnectNodeOutput(mixerNode)
-        if engine.attachedNodes.contains(tuningController.localPitchNode) {
-            engine.disconnectNodeOutput(tuningController.localPitchNode)
+        // Disconnect all nodes. AVAudioEngine raises NSException for some
+        // route-change graph states, so Swift do/catch is not enough and the
+        // teardown must be guarded exactly like the reconnect below.
+        guard disconnectAudioGraphForRebuild() else {
+            moveToNonPlayingStateAfterGraphRebuildFailure(
+                position: resumePosition,
+                fallbackState: wasStopped ? .stopped : .paused
+            )
+            scheduleDeferredAudioGraphRebuildRetry()
+            return
         }
-        engine.disconnectNodeOutput(eqNode)
-        
+
         // Reconnect all nodes with new format. AVAudioEngine raises NSException
         // for some route-change graph states, so Swift do/catch is not enough.
         guard reconnectAudioGraph(format: mixerFormat) else {

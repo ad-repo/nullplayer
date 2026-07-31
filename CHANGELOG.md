@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+- **Fixed a crash when the audio graph rebuilt after casting ended during an output-device change** — when a Sonos/AirPlay/Chromecast route was torn down and the system output device changed at the same time, rebuilding the local audio graph could raise an Objective-C `NSException` from `AVAudioEngine.disconnectNodeOutput` (route-change reconfig state) that Swift `do/catch` cannot catch, aborting the app. The graph-teardown phase is now guarded exactly like the reconnect phase, so such a route-change exception defers the rebuild and retries instead of crashing.
 - **Audio Analyzer Spectrogram no longer freezes the app** — scrolling the waterfall now shifts each history row with one bounded memory move instead of triggering a full copy-on-write buffer copy for every pixel. The analyzer stays responsive in debug and release builds, including while streaming audio with the Cava window open.
 
 ## 0.29.3
