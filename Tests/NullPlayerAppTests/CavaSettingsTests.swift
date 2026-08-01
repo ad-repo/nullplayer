@@ -58,6 +58,28 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(CavaSettings.mode, .stereo)
     }
 
+    func testCompactWindowDefaultsToFullWidthMonoWithSmoothTuning() {
+        XCTAssertEqual(CavaSettings.mode(for: .compactWindow), .mono)
+        XCTAssertEqual(
+            CavaSettings.noiseReduction(for: .compactWindow),
+            CavaSettings.defaultCompactNoiseReduction,
+            accuracy: 0.001
+        )
+    }
+
+    func testCompactWindowCanStillUseExplicitStereo() {
+        CavaSettings.setMode(.stereo, for: .compactWindow)
+
+        XCTAssertEqual(CavaSettings.mode(for: .compactWindow), .stereo)
+    }
+
+    func testCompactWindowVisualsMenuIsAvailableInDefaultBuild() {
+        XCTAssertTrue(AppCapabilities.supports(.compactWindowVisualsMenu))
+
+        let menu = ContextMenuBuilder.buildCompactBackdropMenu()
+        XCTAssertEqual(Array(menu.items.prefix(3)).map(\.title), ["Off", "Album Art", "Cava"])
+    }
+
     func testMainWindowTuningIsIndependentFromStandaloneWindow() {
         CavaSettings.barCount = 64
         CavaSettings.noiseReduction = 0.9
@@ -85,7 +107,7 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(CavaSettings.noiseReduction(for: .compactWindow), 0.8, accuracy: 0.001)
         XCTAssertEqual(CavaSettings.barCount(for: .mainWindow), 19)
         XCTAssertEqual(CavaSettings.barCount(for: .cavaWindow), 48)
-        XCTAssertEqual(CavaSettings.mode(for: .compactWindow), .stereo)
+        XCTAssertEqual(CavaSettings.mode(for: .compactWindow), .mono)
         XCTAssertEqual(CavaSettings.barCountPresets(for: .compactWindow), [16, 24, 32, 48, 64])
     }
 

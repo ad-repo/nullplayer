@@ -74,6 +74,7 @@ enum CavaSettings {
     // Factory defaults for the exposed tuning knobs (the "Reset to Defaults" target).
     static let defaultBarCount = 32
     static let defaultNoiseReduction = 0.65   // smoothing / latency; lower = snappier
+    static let defaultCompactNoiseReduction = 0.80
     static let defaultBassTilt = 0.3          // band bin-count exponent; higher = more bass
 
     /// Canonical menu presets shared by the standalone and embedded Cava controls.
@@ -103,12 +104,13 @@ enum CavaSettings {
     // MARK: - Mode (Mono/Stereo)
 
     static func mode(for scope: Scope) -> Mode {
-        // Stereo is unreadable in the 16px-tall embedded visualization area.
+        // The tiny main-window strip is always mono. Compact starts mono but remains configurable.
         guard scope != .mainWindow else { return .mono }
+        let defaultMode: Mode = scope == .compactWindow ? .mono : .stereo
         let preferenceKey = key(.mode, for: scope)
-        guard defaults.object(forKey: preferenceKey) != nil else { return .stereo }
+        guard defaults.object(forKey: preferenceKey) != nil else { return defaultMode }
         let raw = defaults.integer(forKey: preferenceKey)
-        return Mode(rawValue: raw) ?? .stereo
+        return Mode(rawValue: raw) ?? defaultMode
     }
 
     static func setMode(_ mode: Mode, for scope: Scope) {
@@ -141,7 +143,10 @@ enum CavaSettings {
     /// Temporal smoothing (0…0.95). Higher = smoother but laggier; lower = snappier/more real-time.
     static func noiseReduction(for scope: Scope) -> Double {
         let preferenceKey = key(.noiseReduction, for: scope)
-        guard defaults.object(forKey: preferenceKey) != nil else { return defaultNoiseReduction }
+        let defaultValue = scope == .compactWindow
+            ? defaultCompactNoiseReduction
+            : defaultNoiseReduction
+        guard defaults.object(forKey: preferenceKey) != nil else { return defaultValue }
         return min(0.95, max(0.0, defaults.double(forKey: preferenceKey)))
     }
 

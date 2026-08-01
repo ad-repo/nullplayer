@@ -442,7 +442,8 @@ class ContextMenuBuilder {
         menu.addItem(spectrumWindowItem)
 
         menu.addItem(buildVisualizationsMenuItem())
-        if wm.isRunningModernUI {
+        if wm.isRunningModernUI,
+           AppCapabilities.supports(.compactWindowVisualsMenu) {
             let compactWindowItem = NSMenuItem(title: "Compact Window", action: nil, keyEquivalent: "")
             compactWindowItem.submenu = buildCompactBackdropMenu()
             menu.addItem(compactWindowItem)
@@ -457,6 +458,7 @@ class ContextMenuBuilder {
 
     static func buildCompactBackdropMenu(presenter explicitPresenter: CavaPresenter? = nil) -> NSMenu {
         let menu = NSMenu()
+        guard AppCapabilities.supports(.compactWindowVisualsMenu) else { return menu }
         let wm = WindowManager.shared
         let currentMode = wm.compactBackdropMode
 
@@ -5023,6 +5025,7 @@ class MenuActions: NSObject {
     }
 
     @objc func setCompactBackdropMode(_ sender: NSMenuItem) {
+        guard AppCapabilities.supports(.compactWindowVisualsMenu) else { return }
         guard let mode = sender.representedObject as? CompactBackdropMode else { return }
         WindowManager.shared.setCompactBackdropMode(mode)
     }

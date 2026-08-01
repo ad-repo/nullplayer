@@ -1044,7 +1044,8 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func updateBackdropFrame() {
-        backdropView?.frame = frame
+        guard let backdropView, let container = superview else { return }
+        backdropView.frame = container.bounds
     }
 
     func refreshCompactBackdrop() {
@@ -1064,11 +1065,11 @@ class ModernLibraryBrowserView: NSView {
         if let existing = backdropView {
             backdrop = existing
         } else {
-            backdrop = CompactBackdropView(frame: frame)
+            backdrop = CompactBackdropView(frame: container.bounds)
             container.addSubview(backdrop, positioned: .below, relativeTo: self)
             backdropView = backdrop
         }
-        backdrop.frame = frame
+        backdrop.frame = container.bounds
         backdrop.updateArtwork(currentTrackArtwork)
         backdrop.reload()
         updateHistoryHostingBackground()
@@ -5134,7 +5135,8 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func prependCompactBackdropMenu(to menu: NSMenu) {
-        guard compactMode else { return }
+        guard compactMode,
+              AppCapabilities.supports(.compactWindowVisualsMenu) else { return }
         if !menu.items.isEmpty {
             menu.insertItem(.separator(), at: 0)
         }

@@ -13,6 +13,7 @@ enum AppFeature {
     case classicMode
     case modernMode
     case metalMode
+    case compactWindowVisualsMenu
 }
 
 /// Edition-agnostic capability seam.

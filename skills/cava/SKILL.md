@@ -13,6 +13,10 @@ Open **Windows > Cava** in the menu bar or right-click any main window to toggle
 Cava window. Cava is also available inside the 76×16 main-window visualization area via
 **Visuals > Main Window > Mode > Cava**.
 
+Modern and Metal Compact Window surfaces can also use Cava as a full-window backdrop via
+**Visuals > Compact Window > Cava** or the compact surface's context menu. This instance has its
+own settings scope and lifecycle; it does not borrow the standalone or main-window presenter.
+
 Cava is the shipped default for the embedded main-window visualization in every bundled modern
 skin and every built-in Metal finish. Classic UI continues to default the embedded visualization
 to `vis_classic`. A user's persisted mode still wins on a normal same-skin launch; selecting or
@@ -66,7 +70,11 @@ Output: Per-channel bar arrays in 0…1 range. The order matters: **autosens mus
 Both classic and modern views call `CavaDrawing.draw()` with current bar data, low/high colors, and mode.
 The embedded main-window instance uses its own `CavaPresenter(scope: .mainWindow)`, always renders
 mono, and has a scope-distinct audio consumer and processing queue so it can run independently beside
-the standalone window.
+the standalone window. The compact backdrop likewise uses `CavaPresenter(scope: .compactWindow)`.
+It defaults to mono so one spectrum spans the full backdrop and defaults to Smooth (`0.80`) temporal
+smoothing. Stereo remains an explicit menu choice. `CompactBackdropView` always draws into its full
+`bounds`; its frame must be the compact content container's `bounds`, not the browser view's frame,
+so resizing or an offset browser layout cannot confine the visualization to part of the window.
 
 ## Window Layout
 
@@ -87,6 +95,12 @@ the standalone window.
 - **Bass:** Bass↔treble tilt (`bandExponent`): Less (0.15) · Balanced (0.30, default) · More (0.50) · Max (0.70).
 - **Reset to Defaults:** Restores Bars / Smoothing / Bass to factory defaults (`CavaSettings.resetTuning()`); leaves mode, colors, and transparency untouched.
 - **Close:** Hide the window
+
+When Cava is the Compact Window backdrop, the same mode, color, bar-count, smoothing, bass, and reset
+controls appear under **Visuals > Compact Window** and in the compact surface's context menu.
+Transparency and Close are omitted because the backdrop is owned by the compact surface.
+Both entry points are gated by `AppCapabilities.supports(.compactWindowVisualsMenu)`; keep new
+compact-backdrop menu entry points behind the same capability.
 
 The menu is built and handled by `CavaPresenter` itself (an `NSObject` with `@objc` actions targeting `self`); the view only supplies the `onNeedsDisplay` / `onNeedsFullDisplay` / `onClose` closures. Changing Bars / Smoothing / Bass updates `CavaSettings`; `CavaRenderModel.settingsDidChange()` applies the change immediately and rebuilds `CavaCore` when bar count, sample rate, `noiseReduction`, or `bassTilt` differs.
 
@@ -114,12 +128,13 @@ Durable UserDefaults-backed preferences:
 
 Access via `CavaSettings.mode`, `CavaSettings.barCount`, etc. Menu and double-click changes take effect immediately; settings that alter DSP construction recreate CavaCore through `settingsDidChange()`.
 
-`CavaSettings.Scope` separates `.cavaWindow` from `.mainWindow`. The legacy static properties above
-remain wrappers for `.cavaWindow` and continue using the existing keys. Scope-aware accessors use
-`cava.mainWindow.*` keys for the embedded analyzer; its mode accessor always resolves to mono.
-Main-window tuning and color choices are reset with the centralized Main Window visualization reset
-and never modify the standalone window. Bar-count, smoothing, and bass menu presets are canonical
-`CavaSettings` collections shared by both menu builders.
+`CavaSettings.Scope` separates `.cavaWindow`, `.mainWindow`, and `.compactWindow`. The legacy static
+properties above remain wrappers for `.cavaWindow` and continue using the existing keys. Scope-aware
+accessors use `cava.mainWindow.*` for the embedded analyzer and `cava.compactWindow.*` for the compact
+backdrop. Main-window mode always resolves to mono. Compact mode defaults to mono but preserves an
+explicit stereo choice; compact smoothing defaults to `0.80`, while the other scopes default to
+`0.65`. Main-window and compact tuning/color choices never modify the standalone window. Bar-count,
+smoothing, and bass menu presets are canonical `CavaSettings` collections shared by the presenters.
 
 ## Visualization Reset and UI-Family Switches
 
@@ -127,9 +142,11 @@ and never modify the standalone window. Bar-count, smoothing, and bass menu pres
 
 Cava colors fall back to the active skin's gradient, pushed by `ModernCavaView` or `CavaView`.
 The embedded main-window Cava keys (`.mainWindow`) live in
-`VisualizationPreferences.mainWindowKeys`. The standalone window keys
+`VisualizationPreferences.mainWindowKeys`. Compact backdrop keys (`.compactWindow`) live in the
+compact visualization reset set. The standalone window keys
 (`CavaSettings.preferenceKeys(for: .cavaWindow)`) live in `cavaWindowKeys`, which is included
-only in the `.all` reset scope.
+only in the `.all` reset scope. Reset All clears all three scopes and restores the compact scope's
+mono/Smooth first-use defaults.
 
 `VisualizationPreferences.reset(.all)` therefore resets both Cava scopes. Its notification
 phase calls `WindowManager.refreshCavaWindowAfterReset()` and then the open controller's
@@ -179,6 +196,8 @@ written by older reset logic without discarding a real user choice.
 | `App/ContextMenuBuilder.swift` | Menu item: "Cava" in Windows menu + `toggleCava()` action |
 | `Windows/MainWindow/MainWindowView.swift` | Classic inline Cava rendering + lifecycle |
 | `Windows/ModernMainWindow/ModernMainWindowView.swift` | Modern inline Cava rendering + lifecycle |
+| `Windows/ModernLibraryBrowser/CompactBackdropView.swift` | Compact Cava presenter, lifecycle, and full-surface drawing |
+| `Windows/ModernLibraryBrowser/ModernLibraryBrowserView.swift` | Compact backdrop sizing, translucency, menus, and artwork routing |
 | `App/AppStateManager.swift` | State capture/restore: `isCavaVisible`, `cavaWindowFrame` |
 | `NullPlayerCore/Audio/CavaCore.swift` | DSP engine (pure Swift vDSP FFT + smoothing) |
 

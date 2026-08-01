@@ -816,6 +816,36 @@ Implementation rules:
 - Live UI switching should exit Compact Window, rebuild the mode-dependent window layer, then
   re-enter Compact Window so the embedded classic/modern compact surface matches the new mode.
 
+### Compact Window visual backdrops (Modern/Metal)
+
+The modern compact surface supports a durable `compactBackdropMode`: **Off**, **Album Art**, or
+**Cava**. The controls live under **Visuals > Compact Window** and in the compact surface's context
+menus. Classic resolves the mode to Off.
+
+Implementation rules:
+- `ModernLibraryBrowserWindowController` installs a clear container as the window content view.
+  `CompactBackdropView` and `ModernLibraryBrowserView` are siblings, with the backdrop positioned
+  below the browser. Do not make the backdrop a child of the browser; the browser's layer clipping
+  and redraw behavior would clip or erase it.
+- Size the backdrop from the content container's `bounds` on creation and every layout pass. Do not
+  copy the browser's `frame`: an offset or partially sized browser frame can restrict Cava or album
+  art to one side of the compact window. Keep the backdrop autoresizing in width and height.
+- The browser remains above the backdrop and uses translucent background/panel fills while a
+  backdrop is active. Text, controls, borders, and hit testing remain browser-owned and fully
+  interactive. `CompactBackdropView.hitTest` returns `nil`.
+- Album Art follows the playing track, not the selected browser row. Keep current-track artwork and
+  its load task separate from selection-driven browser artwork; cancel both paths during UI teardown.
+- Cava uses `CavaPresenter(scope: .compactWindow)` and draws into the backdrop's complete `bounds`.
+  Its first-use defaults are Mono and Smooth (`noiseReduction = 0.80`); explicit Stereo remains
+  supported. Start its audio consumer only while Cava is selected and the compact window is visible,
+  non-miniaturized, and on-screen; stop it for Off, Album Art, hide, occlusion, and teardown.
+- The compact Cava menu omits standalone-only Transparency and Close actions. Compact tuning and
+  colors use `cava.compactWindow.*` keys and participate in visualization reset independently.
+- Every Compact Window visuals menu entry point must check
+  `AppCapabilities.supports(.compactWindowVisualsMenu)`: the top-level Visuals submenu, compact
+  surface context-menu injection, the shared menu builder, and its selection action. This is a UI
+  visibility seam only; backdrop rendering and persisted mode resolution remain independent.
+
 ## Window Docking
 
 Complex snapping logic in `WindowManager`:
