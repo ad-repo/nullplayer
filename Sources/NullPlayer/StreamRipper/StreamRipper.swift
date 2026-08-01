@@ -1,6 +1,45 @@
 import Foundation
 import AppKit
 
+/// A cross-process exclusive lease on a rip's staging directory, held for the
+/// directory's entire life — download, transcode, and the final copy to the
+/// destination. The lease is an advisory `flock` taken on the directory's own
+/// file descriptor, so there is no lock file for the recovery/move paths to
+/// sweep into the user's folders, and the kernel releases it automatically if
+/// the owning process crashes.
+///
+/// It exists because modification time alone cannot prove a rip is inactive:
+/// copying a finished multi-gigabyte file to a slow NAS only *reads* the staged
+/// file, so its mtime can age past the reaper's threshold while the transfer is
+/// still running. While this lease is held, the launch-time reaper in another
+/// NullPlayer instance cannot delete the tree out from under an active rip.
+final class StagingLease: @unchecked Sendable {
+    private let fd: Int32
+    let directory: URL
+
+    /// Opens `directory` and takes a non-blocking exclusive lock. Returns nil if
+    /// the directory can't be opened or is already leased — for a freshly
+    /// created UUID staging dir the latter never happens, so a nil result here
+    /// simply means the rip proceeds without reaper protection.
+    init?(_ directory: URL) {
+        let handle = open(directory.path, O_RDONLY)
+        guard handle >= 0 else { return nil }
+        guard flock(handle, LOCK_EX | LOCK_NB) == 0 else {
+            close(handle)
+            return nil
+        }
+        self.fd = handle
+        self.directory = directory
+    }
+
+    /// Releases the lease and closes the descriptor. Call once, after the
+    /// staging directory has been removed or its contents recovered.
+    func release() {
+        flock(fd, LOCK_UN)
+        close(fd)
+    }
+}
+
 /// Rips a media URL to a local file using `yt-dlp` (with `ffmpeg` for audio
 /// extraction / container merging). Audio mode extracts audio only; video mode
 /// downloads the full video to a file.
@@ -146,6 +185,9 @@ final class StreamRipper {
         guard let staging = Self.makeLocalStaging(for: outputTemplate) else {
             throw DownloadAudioError.processStartFailed("Could not create a temporary download folder")
         }
+        // Declared first so it runs last: the lease outlives every cleanup and
+        // recovery path, releasing only once the staging dir is gone/emptied.
+        defer { staging.lease?.release() }
         var stagingHandled = false
         defer {
             if !stagingHandled {
@@ -255,6 +297,9 @@ final class StreamRipper {
         guard let staging = Self.makeLocalStaging(for: outputTemplate) else {
             throw DownloadAudioError.processStartFailed("Could not create a temporary download folder")
         }
+        // Declared first so it runs last: the lease outlives every cleanup and
+        // recovery path, releasing only once the staging dir is gone/emptied.
+        defer { staging.lease?.release() }
         var stagingHandled = false
         defer {
             if !stagingHandled {
@@ -353,7 +398,7 @@ final class StreamRipper {
     /// errors, but work fine on a local volume. Returns nil if the staging
     /// directory can't be created.
     nonisolated private static func makeLocalStaging(for outputTemplate: String)
-        -> (stagingDir: URL, stagingTemplate: String, destinationDir: String)? {
+        -> (stagingDir: URL, stagingTemplate: String, destinationDir: String, lease: StagingLease?)? {
         let destinationDir: String
         let filenamePattern: String
         if let idx = outputTemplate.lastIndex(of: "/") {
@@ -368,7 +413,10 @@ final class StreamRipper {
         guard (try? FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)) != nil else {
             return nil
         }
-        return (stagingDir, stagingDir.path + "/" + filenamePattern, destinationDir)
+        // Lease the directory so the reaper (this or another instance) cannot
+        // delete it while the download/transcode/transfer is still running.
+        let lease = StagingLease(stagingDir)
+        return (stagingDir, stagingDir.path + "/" + filenamePattern, destinationDir, lease)
     }
 
     /// Copy a staged download directly to a collision-free final filename.
@@ -504,6 +552,74 @@ final class StreamRipper {
                 remainingStagingURL: stagingDirectory
             )
         }
+    }
+
+    /// Filename prefixes of every temporary staging directory this ripper
+    /// creates under the system temp dir (`makeLocalStaging` for yt-dlp
+    /// downloads, and the radio/URL rip stager). An interrupted rip — app quit,
+    /// crash, or a sleep that kills the download — leaves one of these behind,
+    /// because the completion/recovery code that would delete it never runs.
+    nonisolated static let stagingPrefixes = ["nullplayer-rip-", "nullplayer-ytdl-"]
+
+    /// Delete orphaned rip staging folders left in the system temp directory by
+    /// interrupted rips. Meant to be called once at app launch, off the main
+    /// thread. macOS only purges `/var/folders/.../T` after days of inactivity
+    /// and usually only on reboot, so multi-GB rips can sit there indefinitely.
+    ///
+    /// A folder is deleted only when its `StagingLease` can be acquired — i.e.
+    /// no rip in any process is still using it — and, as a secondary guard,
+    /// nothing inside it has been modified for at least `minInactivity` seconds.
+    /// The lease is held across the modification-time recheck and the delete, so
+    /// there is no window in which a rip could reclaim the folder between the two.
+    nonisolated static func reapOrphanedStaging(minInactivity: TimeInterval = 600) {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory
+        let cutoff = Date().addingTimeInterval(-minInactivity)
+        guard let entries = try? fm.contentsOfDirectory(
+            at: tempDir,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return }
+
+        var reclaimed = 0
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard Self.stagingPrefixes.contains(where: { name.hasPrefix($0) }) else { continue }
+            guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            // Acquire the folder's lease non-blocking. A live rip (in this or
+            // another process) holds it, so failure means the folder is in
+            // active use — leave it alone.
+            guard let lease = StagingLease(entry) else { continue }
+            defer { lease.release() }
+            // Belt-and-braces under the held lease: skip anything modified
+            // recently (covers staging left by an older build with no lease).
+            if let newest = Self.newestModification(in: entry), newest > cutoff { continue }
+            if (try? fm.removeItem(at: entry)) != nil {
+                reclaimed += 1
+            }
+        }
+        if reclaimed > 0 {
+            NSLog("StreamRipper: reaped %d orphaned staging folder(s) from %@", reclaimed, tempDir.path)
+        }
+    }
+
+    /// Newest content-modification date of `directory` itself or any file
+    /// nested inside it. Used to tell an idle (orphaned) staging folder from one
+    /// an active download is still writing into — the folder's own mtime does
+    /// not update while yt-dlp/ffmpeg stream into an already-created `.part`.
+    private nonisolated static func newestModification(in directory: URL) -> Date? {
+        let key: URLResourceKey = .contentModificationDateKey
+        var newest = (try? directory.resourceValues(forKeys: [key]))?.contentModificationDate
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [key]
+        ) else { return newest }
+        for case let url as URL in enumerator {
+            if let mtime = (try? url.resourceValues(forKeys: [key]))?.contentModificationDate,
+               newest == nil || mtime > newest! {
+                newest = mtime
+            }
+        }
+        return newest
     }
 
     /// Error type for downloadAudio
@@ -645,6 +761,10 @@ final class StreamRipper {
             presentFailure(message: "Could not create a temporary download folder: \(error.localizedDescription)")
             return
         }
+        // Lease the staging dir so the reaper cannot delete it mid-rip. Held for
+        // the whole background job and released once its work (including the
+        // destination move/recovery) is done — see the closure's defer below.
+        let stagingLease = StagingLease(stagingFolder)
         let stagingPath = stagingFolder.path
 
         // Embed source metadata (title/artist/album/date, etc.) into the file.
@@ -703,6 +823,9 @@ final class StreamRipper {
         let errPipe = Pipe()
 
         DispatchQueue.global(qos: .userInitiated).async {
+            // Declared first so it runs last: keep the lease until every cleanup
+            // and recovery path below has finished with the staging directory.
+            defer { stagingLease?.release() }
             // Any failure recovers remaining staging files to ~/Downloads. This
             // defer is a final guard for early-return paths.
             var stagingHandled = false
