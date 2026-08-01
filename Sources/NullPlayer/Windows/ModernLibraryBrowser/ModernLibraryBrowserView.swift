@@ -8607,10 +8607,10 @@ class ModernLibraryBrowserView: NSView {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                guard WindowManager.shared.audioEngine.currentTrack?.id == track.id else { return }
+                guard WindowManager.shared.audioEngine.currentTrack?.id == track.id,
+                      self.artworkDisplayGeneration == displayGeneration else { return }
                 self.currentTrackArtwork = image
                 self.artworkTrackId = track.id
-                guard self.artworkDisplayGeneration == displayGeneration else { return }
                 self.currentArtwork = image
                 self.needsDisplay = true
             }
