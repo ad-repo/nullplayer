@@ -68,8 +68,9 @@ final class VisualizationPreferencesTests: XCTestCase {
             postNotifications: false
         )
 
+        let persistedPreferences = defaults.persistentDomain(forName: suiteName) ?? [:]
         for key in VisualizationPreferences.keys(for: .all) {
-            XCTAssertNil(defaults.object(forKey: key), "Expected \(key) to be reset")
+            XCTAssertNil(persistedPreferences[key], "Expected \(key) to be reset")
         }
         XCTAssertEqual(defaults.string(forKey: "customPresetsFolder"), "keep-folder")
         XCTAssertTrue(defaults.bool(forKey: "rememberStateEnabled"))
@@ -79,12 +80,71 @@ final class VisualizationPreferencesTests: XCTestCase {
     func testAllVisualizationResetIncludesBrowserWindowCavaKeys() {
         let keys = VisualizationPreferences.keys(for: .all)
 
+        XCTAssertTrue(keys.contains(BrowserBackdropMode.compactPreferenceKey))
+        XCTAssertTrue(keys.contains(BrowserBackdropMode.libraryPreferenceKey))
         XCTAssertTrue(keys.contains("cava.compactWindow.barCount"))
         XCTAssertTrue(keys.contains("cava.compactWindow.colorsCustomized"))
         XCTAssertFalse(keys.contains("cava.compactWindow.transparentBackground"))
         XCTAssertTrue(keys.contains("cava.libraryWindow.barCount"))
         XCTAssertTrue(keys.contains("cava.libraryWindow.colorsCustomized"))
         XCTAssertFalse(keys.contains("cava.libraryWindow.transparentBackground"))
+    }
+
+    func testLegacyArtworkDisabledMigratesToCavaWithoutArt() {
+        defaults.set(false, forKey: BrowserBackdropMode.legacyArtworkPreferenceKey)
+
+        migrateLegacyArtworkPreference()
+
+        XCTAssertEqual(
+            defaults.integer(forKey: BrowserBackdropMode.compactPreferenceKey),
+            BrowserBackdropMode.cava.rawValue
+        )
+        XCTAssertEqual(
+            defaults.integer(forKey: BrowserBackdropMode.libraryPreferenceKey),
+            BrowserBackdropMode.cava.rawValue
+        )
+    }
+
+    func testLegacyArtworkEnabledMigratesToCavaAndArt() {
+        defaults.set(true, forKey: BrowserBackdropMode.legacyArtworkPreferenceKey)
+
+        migrateLegacyArtworkPreference()
+
+        XCTAssertEqual(
+            defaults.integer(forKey: BrowserBackdropMode.compactPreferenceKey),
+            BrowserBackdropMode.cavaAndArt.rawValue
+        )
+        XCTAssertEqual(
+            defaults.integer(forKey: BrowserBackdropMode.libraryPreferenceKey),
+            BrowserBackdropMode.cavaAndArt.rawValue
+        )
+    }
+
+    func testLegacyArtworkMigrationPreservesWindowSpecificSelections() {
+        defaults.set(false, forKey: BrowserBackdropMode.legacyArtworkPreferenceKey)
+        defaults.set(
+            BrowserBackdropMode.off.rawValue,
+            forKey: BrowserBackdropMode.compactPreferenceKey
+        )
+
+        migrateLegacyArtworkPreference()
+
+        XCTAssertEqual(
+            defaults.integer(forKey: BrowserBackdropMode.compactPreferenceKey),
+            BrowserBackdropMode.off.rawValue
+        )
+        XCTAssertEqual(
+            defaults.integer(forKey: BrowserBackdropMode.libraryPreferenceKey),
+            BrowserBackdropMode.cava.rawValue
+        )
+    }
+
+    func testNoLegacyArtworkChoiceLeavesBackdropModesUnseeded() {
+        migrateLegacyArtworkPreference()
+
+        let persistedPreferences = defaults.persistentDomain(forName: suiteName) ?? [:]
+        XCTAssertNil(persistedPreferences[BrowserBackdropMode.compactPreferenceKey])
+        XCTAssertNil(persistedPreferences[BrowserBackdropMode.libraryPreferenceKey])
     }
 
     func testBrowserBackdropModesSeparateCavaAndLegacyArtwork() {
@@ -112,5 +172,12 @@ final class VisualizationPreferencesTests: XCTestCase {
         for key in VisualizationPreferences.keys(for: scope) {
             defaults.set("value", forKey: key)
         }
+    }
+
+    private func migrateLegacyArtworkPreference() {
+        BrowserBackdropMode.migrateLegacyArtworkPreference(
+            in: defaults,
+            persistentDomainName: suiteName
+        )
     }
 }

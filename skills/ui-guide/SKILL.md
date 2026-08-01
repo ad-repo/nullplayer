@@ -674,7 +674,7 @@ UI label is **UI Size** with mutually-exclusive percentage rows: **50%**, **90%*
 - **Classic Library content**: the Library window remains freely stretchable, so its fonts must not derive from window bounds. `PlexBrowserView.contentScale` uses `WindowManager.classicScaleMultiplier` to scale bitmap text, system fonts, row height, column-header height, and matching text hit-test measurements. Manual Library resizing therefore adds space without changing text size, while changing **UI Size** scales the text and row metrics.
 - **Fast switching guard**: `WindowManager` tracks the last applied level separately from the requested level. If another UI Size change arrives during a resize pass, it records the pending value and applies only the final requested level after the current pass finishes, using the last actually-applied scale as the ratio base.
 - **Startup restoration**: `uiScaleLevel` is restored in `AppStateManager.restoreSettingsState()` before sub-windows are shown, so saved enlarged geometry is not double-applied during restore. Scale and window frames restore only when the saved and running `PlayerUIMode` values match exactly; Modern and Metal share controller families but have incompatible geometry and therefore count as a mismatch. A mismatch starts at 100% and uses default frames while mode-independent audio/EQ/playlist state still restores. Saved states without `uiScaleLevel` fall back from legacy `isDoubleSize=true` to 150% only for an exact-mode restore.
-- **Interaction with mode switching**: `reloadUI(to:)` captures the current `uiScaleLevel`, collapses to 100% in the current mode *before* the switch, then re-applies the captured level in the target mode after windows are recreated but **before** `enterCompactMode()` (so a Compact-Mode capture records the enlarged layout, not a 1x one). The two UI systems have different window geometry -- and modern layout is driven by the global `ModernSkinElements.sizeMultiplier` -- so forcing old-mode enlarged frames onto freshly-created target-mode windows renders them distorted. `prepareUIRuntime` also pins `sizeMultiplier` to the current `uiScaleLevel` when entering a modern family, so modern windows are *created* at the right base scale rather than inheriting a stale value. The collapse runs `applyDoubleSize()`, which force-docks the side windows (Library/ProjectM) to the main-window edge; `reloadUI` captures their frames first (`captureSideWindowFrames`) and `performReloadUI` restores them after re-applying UI Size, so a user's detached Library position survives the switch.
+- **Interaction with mode switching**: `reloadUI(to:)` captures the current `uiScaleLevel`, collapses to 100% in the current mode *before* the switch, then re-applies the captured level in the target mode after windows are recreated but **before** `enterCompactMode()` (so a Compact-Mode capture records the enlarged layout, not a 1x one). The two UI systems have different window geometry -- and modern layout is driven by the global `ModernSkinElements.sizeMultiplier` -- so forcing old-mode enlarged frames onto freshly-created target-mode windows renders them distorted. `prepareUIRuntime` also pins `sizeMultiplier` to the current `uiScaleLevel` when entering a modern family, so modern windows are *created* at the right base scale rather than inheriting a stale value. The collapse runs `applyDoubleSize()`, which temporarily force-docks every visible auxiliary into its canonical layout. `reloadUI` therefore captures every detached auxiliary frame first and restores those exact floating frames after re-applying UI Size. This applies whether the regular main window or Compact Window is active; docked windows are intentionally recomputed against the target family.
 - When title bars are hidden, all window drags pass `fromTitleBar: true` to allow undocking
 - Classic windows use drawing transform offset (`translateBy`) to shift the skin image up; modern windows use conditional `titleBarHeight`
 
@@ -823,7 +823,9 @@ The regular Library and Compact surfaces each support a durable visual mode: **O
 `compactBackdropMode`. Controls live under **Visuals > Library Window** or
 **Visuals > Compact Window** and in the corresponding surface's context menus. Classic resolves
 both modes to Off. Modern and Metal default both windows to **Cava + Art** on first use; persisted
-window-specific selections still win.
+window-specific selections still win. When those keys are absent on upgrade, the legacy
+`showBrowserArtworkBackground` value seeds both: enabled maps to Cava + Art and disabled maps to
+Cava. Reset All Visualization Preferences clears both new mode keys and restores Cava + Art.
 
 Implementation rules:
 - `ModernLibraryBrowserWindowController` installs a clear container as the window content view.
@@ -832,7 +834,9 @@ Implementation rules:
   of the browser; the browser's layer clipping and redraw behavior would clip or erase it.
 - Size the backdrop from the content container's `bounds` on creation and every layout pass. Do not
   copy the browser's `frame`: an offset or partially sized browser frame can restrict Cava to one
-  side of the compact window. Keep the backdrop autoresizing in width and height.
+  side of the compact window. Keep the backdrop autoresizing in width and height. Propagate the
+  browser's `sharpCorners` into the backdrop layer mask whenever docking changes so both siblings
+  square the same joined corners.
 - When a backdrop is first selected from Off, mark the complete container subtree for display and
   layout immediately and again on the next main-run-loop turn. This transition changes the browser
   from an opaque cached surface into a translucent sibling composition; invalidating only the
@@ -843,7 +847,9 @@ Implementation rules:
 - Art and Cava + Art must use the existing legacy browser artwork renderer and its list-area
   geometry. Never add a full-window/aspect-fill artwork sibling: it duplicates the legacy image and
   changes its established size. Art creates no backdrop sibling; Cava + Art draws the one legacy
-  artwork image in the browser above the Cava sibling.
+  artwork image in the browser above the Cava sibling. Current-track and selection artwork loads
+  share one display generation: concurrent work may fill caches, but only the newest request may
+  assign the visible `currentArtwork`.
 - Cava uses `CavaPresenter(scope: .libraryWindow)` in the regular Library and
   `CavaPresenter(scope: .compactWindow)` in Compact. It draws into the backdrop's complete `bounds`.
   Both scopes default to 64 bars. Library's first-use mode is Mono. Compact's first-use mode is

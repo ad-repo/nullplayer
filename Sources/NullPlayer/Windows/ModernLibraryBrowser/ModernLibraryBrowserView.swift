@@ -541,6 +541,7 @@ class ModernLibraryBrowserView: NSView {
             needsDisplay = true
             if isArtOnlyMode { fetchCurrentTrackRating(); loadAllArtworkForCurrentTrack() }
             else {
+                artworkDisplayGeneration &+= 1
                 isVisualizingArt = false
                 artworkCyclingTask?.cancel()
                 artworkCyclingTask = nil
@@ -581,6 +582,7 @@ class ModernLibraryBrowserView: NSView {
     private var currentTrackArtworkLoadTask: Task<Void, Never>?
     private var artworkLoadTask: Task<Void, Never>?
     private var artworkCyclingTask: Task<Void, Never>?
+    private var artworkDisplayGeneration = 0
     private var radioLoadTask: Task<Void, Never>?
     private var radioPlayTask: Task<Void, Never>?
     private var loadGeneration: Int = 0
@@ -985,6 +987,7 @@ class ModernLibraryBrowserView: NSView {
         let cornerRadius = currentSkin().config.window.cornerRadius ?? 0
         layer.cornerRadius = cornerRadius
         layer.masksToBounds = cornerRadius > 0
+        backdropView?.setSharpCorners(sharpCorners)
         guard cornerRadius > 0 else { return }
         let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
                                          .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
@@ -1116,6 +1119,7 @@ class ModernLibraryBrowserView: NSView {
             backdropView = backdrop
         }
         backdrop.frame = container.bounds
+        backdrop.setSharpCorners(sharpCorners)
         backdrop.reload()
         updateHistoryHostingBackground()
 
@@ -7663,6 +7667,7 @@ class ModernLibraryBrowserView: NSView {
         }
         let needsCurrentTrackArtwork = showsLegacyArtwork
         guard needsCurrentTrackArtwork else {
+            artworkDisplayGeneration &+= 1
             if currentArtwork != nil || currentTrackArtwork != nil {
                 currentArtwork = nil
                 currentTrackArtwork = nil
@@ -8570,6 +8575,7 @@ class ModernLibraryBrowserView: NSView {
     private func loadArtwork(for track: Track?) {
         currentTrackArtworkLoadTask?.cancel(); currentTrackArtworkLoadTask = nil
         guard let track = track else {
+            artworkDisplayGeneration &+= 1
             currentArtwork = nil
             currentTrackArtwork = nil
             artworkTrackId = nil
@@ -8579,6 +8585,8 @@ class ModernLibraryBrowserView: NSView {
         guard track.id != artworkTrackId || currentTrackArtwork == nil else {
             return
         }
+        artworkDisplayGeneration &+= 1
+        let displayGeneration = artworkDisplayGeneration
         currentTrackArtworkLoadTask = Task { [weak self] in
             guard let self = self else { return }
             var image: NSImage?
@@ -8599,10 +8607,11 @@ class ModernLibraryBrowserView: NSView {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                guard WindowManager.shared.audioEngine.currentTrack?.id == track.id else { return }
-                self.currentArtwork = image
+                guard WindowManager.shared.audioEngine.currentTrack?.id == track.id,
+                      self.artworkDisplayGeneration == displayGeneration else { return }
                 self.currentTrackArtwork = image
                 self.artworkTrackId = track.id
+                self.currentArtwork = image
                 self.needsDisplay = true
             }
         }
@@ -8741,6 +8750,8 @@ class ModernLibraryBrowserView: NSView {
         currentTrackArtworkLoadTask?.cancel(); currentTrackArtworkLoadTask = nil
         artworkLoadTask?.cancel(); artworkLoadTask = nil
         artworkCyclingTask?.cancel(); artworkCyclingTask = nil
+        artworkDisplayGeneration &+= 1
+        let displayGeneration = artworkDisplayGeneration
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
             exitArtOnlyModeForMissingArtwork()
             return
@@ -8767,6 +8778,7 @@ class ModernLibraryBrowserView: NSView {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard self.isArtOnlyMode,
+                      self.artworkDisplayGeneration == displayGeneration,
                       WindowManager.shared.audioEngine.currentTrack?.id == currentTrack.id else { return }
                 guard !images.isEmpty else {
                     self.exitArtOnlyModeForMissingArtwork()
@@ -8783,6 +8795,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func exitArtOnlyModeForMissingArtwork() {
+        artworkDisplayGeneration &+= 1
         currentTrackArtworkLoadTask?.cancel()
         currentTrackArtworkLoadTask = nil
         artworkLoadTask?.cancel()
@@ -8812,6 +8825,8 @@ class ModernLibraryBrowserView: NSView {
         
         let item = displayItems[index]
         artworkLoadTask?.cancel()
+        artworkDisplayGeneration &+= 1
+        let displayGeneration = artworkDisplayGeneration
         
         artworkLoadTask = Task { [weak self] in
             guard let self = self else { return }
@@ -8908,6 +8923,7 @@ class ModernLibraryBrowserView: NSView {
             guard !Task.isCancelled else { return }
             if let image = image {
                 await MainActor.run {
+                    guard self.artworkDisplayGeneration == displayGeneration else { return }
                     self.currentArtwork = image
                     self.needsDisplay = true
                 }

@@ -2,9 +2,17 @@ import AppKit
 
 /// Independently rendered backdrop beneath a modern Library or Compact browser surface.
 final class CompactBackdropView: NSView {
+    private static let allCorners: CACornerMask = [
+        .layerMinXMinYCorner,
+        .layerMaxXMinYCorner,
+        .layerMinXMaxYCorner,
+        .layerMaxXMaxYCorner,
+    ]
+
     private var presenterStorage: CavaPresenter?
     let scope: CavaSettings.Scope
     private let modeProvider: () -> BrowserBackdropMode
+    private var sharpCorners: CACornerMask = []
 
     var presenter: CavaPresenter {
         if let presenterStorage { return presenterStorage }
@@ -49,8 +57,7 @@ final class CompactBackdropView: NSView {
         isHidden = !mode.showsCava
 
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
-        layer?.cornerRadius = skin.config.window.cornerRadius ?? 0
-        layer?.masksToBounds = (skin.config.window.cornerRadius ?? 0) > 0
+        applyCornerMask(for: skin)
         CavaSettings.setSkinDefaultColors(
             low: skin.primaryColor,
             high: skin.accentColor,
@@ -64,6 +71,23 @@ final class CompactBackdropView: NSView {
             presenterStorage?.stop()
         }
         needsDisplay = true
+    }
+
+    /// Match the browser sibling's joined-edge corner policy so a rounded backdrop never leaves
+    /// a transparent wedge beneath a browser corner that becomes square while docked.
+    func setSharpCorners(_ corners: CACornerMask) {
+        guard sharpCorners != corners else { return }
+        sharpCorners = corners
+        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
+        applyCornerMask(for: skin)
+        needsDisplay = true
+    }
+
+    private func applyCornerMask(for skin: ModernSkin) {
+        let cornerRadius = skin.config.window.cornerRadius ?? 0
+        layer?.cornerRadius = cornerRadius
+        layer?.masksToBounds = cornerRadius > 0
+        layer?.maskedCorners = Self.allCorners.subtracting(sharpCorners)
     }
 
     func stop() {

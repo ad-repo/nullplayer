@@ -135,6 +135,27 @@ enum BrowserBackdropMode: Int, CaseIterable {
 
     static let allCases: [BrowserBackdropMode] = [.off, .cava, .art, .cavaAndArt]
     static let defaultMode: BrowserBackdropMode = .cavaAndArt
+    static let compactPreferenceKey = "compactBackdropMode"
+    static let libraryPreferenceKey = "libraryBackdropMode"
+    static let legacyArtworkPreferenceKey = "showBrowserArtworkBackground"
+    static let preferenceKeys = [compactPreferenceKey, libraryPreferenceKey]
+
+    /// Preserve the legacy modern-browser artwork choice while adopting Cava as the new default.
+    /// Existing window-specific selections always win, and an installation with no legacy choice
+    /// continues to resolve through the registered Cava + Art default.
+    static func migrateLegacyArtworkPreference(
+        in defaults: UserDefaults,
+        persistentDomainName: String
+    ) {
+        let persistedPreferences = defaults.persistentDomain(forName: persistentDomainName) ?? [:]
+        guard persistedPreferences[legacyArtworkPreferenceKey] != nil else { return }
+        let migratedMode: BrowserBackdropMode = defaults.bool(forKey: legacyArtworkPreferenceKey)
+            ? .cavaAndArt
+            : .cava
+        for preferenceKey in preferenceKeys where persistedPreferences[preferenceKey] == nil {
+            defaults.set(migratedMode.rawValue, forKey: preferenceKey)
+        }
+    }
 
     var showsCava: Bool {
         self == .cava || self == .cavaAndArt
@@ -160,9 +181,8 @@ private struct WindowSnapshot {
     /// Normal frame for position memory (Library only). Stores the full window frame.
     /// nil for windows with no special frame handling.
     var normalFrame: NSRect?
-    /// Whether a side window (Library/ProjectM) was detached from the main-window edge (not docked)
-    /// at capture time. Used to re-detach it after a UI Size re-apply force-docks it. Always false
-    /// for non-side windows.
+    /// Whether a window whose floating position must survive a UI-family switch was detached at
+    /// capture time. Used to re-detach it after a UI Size re-apply force-docks it.
     var wasDetached: Bool = false
 }
 
@@ -364,7 +384,7 @@ class WindowManager {
     var compactBackdropMode: BrowserBackdropMode {
         guard isRunningModernUI else { return .off }
         return BrowserBackdropMode(
-            rawValue: UserDefaults.standard.integer(forKey: "compactBackdropMode")
+            rawValue: UserDefaults.standard.integer(forKey: BrowserBackdropMode.compactPreferenceKey)
         ) ?? .defaultMode
     }
 
@@ -375,14 +395,14 @@ class WindowManager {
 
     func setCompactBackdropMode(_ mode: BrowserBackdropMode) {
         guard isRunningModernUI else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "compactBackdropMode")
+        UserDefaults.standard.set(mode.rawValue, forKey: BrowserBackdropMode.compactPreferenceKey)
         compactWindowController?.refreshCompactBackdrop()
     }
 
     var libraryBackdropMode: BrowserBackdropMode {
         guard isRunningModernUI else { return .off }
         return BrowserBackdropMode(
-            rawValue: UserDefaults.standard.integer(forKey: "libraryBackdropMode")
+            rawValue: UserDefaults.standard.integer(forKey: BrowserBackdropMode.libraryPreferenceKey)
         ) ?? .defaultMode
     }
 
@@ -393,7 +413,7 @@ class WindowManager {
 
     func setLibraryBackdropMode(_ mode: BrowserBackdropMode) {
         guard isRunningModernUI else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "libraryBackdropMode")
+        UserDefaults.standard.set(mode.rawValue, forKey: BrowserBackdropMode.libraryPreferenceKey)
         plexBrowserWindowController?.refreshLibraryBackdrop()
     }
 
@@ -695,6 +715,12 @@ class WindowManager {
     
     private init() {
         // Register and load preferences
+        if let persistentDomainName = Bundle.main.bundleIdentifier {
+            BrowserBackdropMode.migrateLegacyArtworkPreference(
+                in: .standard,
+                persistentDomainName: persistentDomainName
+            )
+        }
         registerPreferenceDefaults()
         loadPreferences()
 
@@ -734,8 +760,8 @@ class WindowManager {
             "waveformHideTooltip": false,
             "compactModeEnabled": false,
             "compactWindowEnabled": false,
-            "compactBackdropMode": BrowserBackdropMode.defaultMode.rawValue,
-            "libraryBackdropMode": BrowserBackdropMode.defaultMode.rawValue
+            BrowserBackdropMode.compactPreferenceKey: BrowserBackdropMode.defaultMode.rawValue,
+            BrowserBackdropMode.libraryPreferenceKey: BrowserBackdropMode.defaultMode.rawValue
         ])
     }
     
@@ -1387,7 +1413,7 @@ class WindowManager {
 
     private func captureRegularWindowSnapshot() -> CompactWindowSnapshot {
         func snap(_ controller: ModeDependentWindow?, normalFrame: NSRect? = nil,
-                  sideWindow: Bool = false) -> WindowSnapshot? {
+                  trackDetachedState: Bool = false) -> WindowSnapshot? {
             guard let window = controller?.window else { return nil }
             return WindowSnapshot(
                 wasVisible: window.isVisible,
@@ -1395,7 +1421,7 @@ class WindowManager {
                 normalFrame: normalFrame,
                 // Record detached-ness while the window is live (it's determinable here; after
                 // Compact Mode hides it, docking can no longer be measured).
-                wasDetached: sideWindow && window.isVisible && !isWindowDocked(window)
+                wasDetached: trackDetachedState && window.isVisible && isDetachedFromMainWindow(window)
             )
         }
 
@@ -1406,18 +1432,19 @@ class WindowManager {
 
         return CompactWindowSnapshot(
             main: snap(mainWindowController),
-            equalizer: snap(equalizerWindowController),
-            playlist: snap(playlistWindowController),
-            spectrum: snap(spectrumWindowController),
-            audioAnalysis: snap(audioAnalysisWindowController),
-            peppyMeter: snap(peppyMeterWindowController),
-            networkMonitor: snap(networkMonitorWindowController),
-            cava: snap(cavaWindowController),
-            waveform: snap(waveformWindowController),
-            projectM: snap(projectMWindowController, sideWindow: true),
+            equalizer: snap(equalizerWindowController, trackDetachedState: true),
+            playlist: snap(playlistWindowController, trackDetachedState: true),
+            spectrum: snap(spectrumWindowController, trackDetachedState: true),
+            audioAnalysis: snap(audioAnalysisWindowController, trackDetachedState: true),
+            peppyMeter: snap(peppyMeterWindowController, trackDetachedState: true),
+            networkMonitor: snap(networkMonitorWindowController, trackDetachedState: true),
+            cava: snap(cavaWindowController, trackDetachedState: true),
+            waveform: snap(waveformWindowController, trackDetachedState: true),
+            projectM: snap(projectMWindowController, trackDetachedState: true),
             // Library stores its position frame for restoration after Compact-mode rebuild.
             library: snap(plexBrowserWindowController,
-                          normalFrame: plexBrowserWindowController?.frameForPositionMemory, sideWindow: true),
+                          normalFrame: plexBrowserWindowController?.frameForPositionMemory,
+                          trackDetachedState: true),
             debug: snapWindow(debugWindowController?.window)
         )
     }
@@ -1863,14 +1890,9 @@ class WindowManager {
            activeDevice.supportsVideo {
             return activeDevice
         }
-        // Auto-route only to the exact device the user explicitly selected. The general
-        // preferredVideoCastDevice getter intentionally falls back to the first available
-        // video device when the preference is missing/offline for cast-button convenience;
-        // that fallback must not silently redirect normal video playback.
-        guard let preferredID = castManager.preferredVideoCastDeviceID else { return nil }
-        return castManager.discoveredDevices.first {
-            $0.id == preferredID && $0.supportsVideo
-        }
+        // A persisted preference is only a default for an explicit cast action. It must not
+        // silently redirect ordinary video playback after relaunch or after a previous cast.
+        return nil
     }
 
     private func routeToVideoCastIfNeeded(title: String, artworkTrack: Track?, operation: @escaping (CastDevice) async throws -> Void) -> Bool {
@@ -5723,21 +5745,15 @@ class WindowManager {
         // mode drive its own tested 1x-to-target scaling. The 1x windows are torn down immediately, so
         // no flash is visible.
         //
-        // Collapsing runs applyDoubleSize(), which force-docks the side windows (Library/ProjectM)
-        // to the main-window edge — capture their detached frames first so a user's detached position
-        // survives the switch (restored after UI Size is re-applied). In Compact Mode the regular
-        // windows are hidden, so captureSideWindowFrames() would see nothing; derive the detached
-        // frames from `regularWindowSnapshot` (which recorded each side window's detached state at
-        // Compact entry) instead.
+        // Capture every auxiliary outside the visible main window's docking cluster before any
+        // transition work. A non-100% UI Size collapse force-docks them into its canonical layout;
+        // Compact Window also leaves the regular main hidden, so rebuild-time docking must not use
+        // that inactive window as an anchor. Compact Mode hides every regular window, so derive its
+        // frames from `regularWindowSnapshot`, which recorded detached state at entry.
         let restoreScaleLevel = uiScaleLevel
-        let preservedSideFrames: SideWindowFrames
-        if restoreScaleLevel != .p100 {
-            preservedSideFrames = compactModeEnabled
-                ? sideWindowFrames(from: regularWindowSnapshot)
-                : captureSideWindowFrames()
-        } else {
-            preservedSideFrames = SideWindowFrames()
-        }
+        let preservedDetachedFrames = compactModeEnabled
+            ? detachedWindowFrames(from: regularWindowSnapshot)
+            : captureDetachedWindowFrames()
         if restoreScaleLevel != .p100 { uiScaleLevel = .p100 }
 
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
@@ -5758,7 +5774,8 @@ class WindowManager {
                 guard let self else { return }
                 self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true,
                                      reenterCompactWindow: false,
-                                     restoreScaleLevel: restoreScaleLevel, preservedSideFrames: preservedSideFrames)
+                                     restoreScaleLevel: restoreScaleLevel,
+                                     preservedDetachedFrames: preservedDetachedFrames)
                 self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
                 completion?()
             }
@@ -5766,58 +5783,130 @@ class WindowManager {
             performReloadUI(to: targetMode, snapshot: captureModeDependentLayout(), reenterCompact: false,
                             reenterCompactWindow: restoreCompactWindow,
                             compactWindowTreatMainAsVisible: compactWindowMainWasVisible,
-                            restoreScaleLevel: restoreScaleLevel, preservedSideFrames: preservedSideFrames)
+                            restoreScaleLevel: restoreScaleLevel,
+                            preservedDetachedFrames: preservedDetachedFrames)
             completion?()
         }
     }
 
-    /// Frames of the side windows that `applyDoubleSize()` force-docks to the main-window edge.
-    /// Captured before a UI Size collapse so a user's detached Library/ProjectM position can be
-    /// restored after a mode switch.
-    private struct SideWindowFrames {
+    /// Frames of windows that `applyDoubleSize()` moves into its canonical docked layout. Captured
+    /// before a UI Size collapse so detached positions can be restored after a UI-family switch.
+    private struct DetachedWindowFrames {
+        var equalizer: NSRect?
+        var playlist: NSRect?
+        var spectrum: NSRect?
+        var waveform: NSRect?
+        var audioAnalysis: NSRect?
+        var peppyMeter: NSRect?
+        var networkMonitor: NSRect?
+        var cava: NSRect?
         var library: NSRect?
         var projectM: NSRect?
     }
 
-    /// Capture only *detached* side windows. A docked side window is re-docked to the
-    /// target-mode main edge by `applyDoubleSize()` during the UI Size re-apply; restoring its
-    /// old-mode frame on top of that would fight the target mode's docking and misalign it (the
-    /// old frame was measured against the old main width). A detached window has no docking to
-    /// recompute, so its exact floating position must be carried across the switch.
-    private func captureSideWindowFrames() -> SideWindowFrames {
+    /// Preserve only visible windows outside the active main-window layout. Windows docked to a
+    /// visible main should be recomputed for the target family, while hidden windows have no
+    /// on-screen position to carry forward.
+    static func detachedFrameForSkinSwitch(
+        _ frame: NSRect,
+        isVisible: Bool,
+        isDetached: Bool
+    ) -> NSRect? {
+        guard isVisible, isDetached else { return nil }
+        return frame
+    }
+
+    static func isDetachedForSkinSwitch(
+        isMainWindowVisible: Bool,
+        isConnectedToMainWindow: Bool
+    ) -> Bool {
+        !isMainWindowVisible || !isConnectedToMainWindow
+    }
+
+    /// Capture only detached windows. A docked window is intentionally laid out against the
+    /// target-mode stack by `applyDoubleSize()`; restoring its old-mode frame would fight that
+    /// layout. A detached window has no docking geometry to recompute, so carry its exact frame.
+    private func captureDetachedWindowFrames() -> DetachedWindowFrames {
         func detachedFrame(_ window: NSWindow?) -> NSRect? {
-            guard let window, window.isVisible, !isWindowDocked(window) else { return nil }
-            return window.frame
+            guard let window else { return nil }
+            return Self.detachedFrameForSkinSwitch(
+                window.frame,
+                isVisible: window.isVisible,
+                isDetached: isDetachedFromMainWindow(window)
+            )
         }
-        return SideWindowFrames(
+        return DetachedWindowFrames(
+            equalizer: detachedFrame(equalizerWindowController?.window),
+            playlist: detachedFrame(playlistWindowController?.window),
+            spectrum: detachedFrame(spectrumWindowController?.window),
+            waveform: detachedFrame(waveformWindowController?.window),
+            audioAnalysis: detachedFrame(audioAnalysisWindowController?.window),
+            peppyMeter: detachedFrame(peppyMeterWindowController?.window),
+            networkMonitor: detachedFrame(networkMonitorWindowController?.window),
+            cava: detachedFrame(cavaWindowController?.window),
             library: detachedFrame(plexBrowserWindowController?.window),
             projectM: detachedFrame(projectMWindowController?.window)
         )
     }
 
-    /// Detached side-window frames drawn from a Compact-Mode capture. The live windows are hidden in
-    /// Compact Mode, so `captureSideWindowFrames()` would see nothing; instead read each side
-    /// window's Compact-entry frame, carrying only those that were detached then (docked ones are
-    /// left to `applyDoubleSize()`'s target-mode docking). Frames were captured at the UI Size
-    /// scale, matching the scale `restoreSideWindowFrames` re-applies them at.
-    private func sideWindowFrames(from snapshot: CompactWindowSnapshot?) -> SideWindowFrames {
-        guard let snapshot else { return SideWindowFrames() }
+    /// Detached means outside the main window's transitive docking cluster. A floating group of
+    /// auxiliary windows must remain floating together. When Compact Window is active the regular
+    /// main window is hidden, so every visible auxiliary is detached from that inactive layout.
+    private func isDetachedFromMainWindow(_ window: NSWindow) -> Bool {
+        guard let mainWindow = mainWindowController?.window else { return true }
+        guard window !== mainWindow else { return false }
+        let isConnected = findDockedWindows(to: mainWindow).contains(where: { $0 === window })
+        return Self.isDetachedForSkinSwitch(
+            isMainWindowVisible: mainWindow.isVisible,
+            isConnectedToMainWindow: isConnected
+        )
+    }
+
+    /// Detached frames drawn from a Compact-Mode capture. The live windows are hidden in Compact
+    /// Mode, so read each Compact-entry frame and carry only those that were detached then. Frames
+    /// were captured at the active UI Size, matching the scale at which they are restored.
+    private func detachedWindowFrames(from snapshot: CompactWindowSnapshot?) -> DetachedWindowFrames {
+        guard let snapshot else { return DetachedWindowFrames() }
         func detachedFrame(_ w: WindowSnapshot?) -> NSRect? {
-            guard let w, w.wasVisible, w.wasDetached else { return nil }
-            return w.frame
+            guard let w else { return nil }
+            return Self.detachedFrameForSkinSwitch(
+                w.frame,
+                isVisible: w.wasVisible,
+                isDetached: w.wasDetached
+            )
         }
-        return SideWindowFrames(
+        return DetachedWindowFrames(
+            equalizer: detachedFrame(snapshot.equalizer),
+            playlist: detachedFrame(snapshot.playlist),
+            spectrum: detachedFrame(snapshot.spectrum),
+            waveform: detachedFrame(snapshot.waveform),
+            audioAnalysis: detachedFrame(snapshot.audioAnalysis),
+            peppyMeter: detachedFrame(snapshot.peppyMeter),
+            networkMonitor: detachedFrame(snapshot.networkMonitor),
+            cava: detachedFrame(snapshot.cava),
             library: detachedFrame(snapshot.library),
             projectM: detachedFrame(snapshot.projectM)
         )
     }
 
-    private func restoreSideWindowFrames(_ frames: SideWindowFrames) {
-        if let frame = frames.library, let window = plexBrowserWindowController?.window, window.isVisible {
-            window.setFrame(frame, display: true)
-        }
-        if let frame = frames.projectM, let window = projectMWindowController?.window, window.isVisible {
-            window.setFrame(frame, display: true)
+    private func restoreDetachedWindowFrames(_ frames: DetachedWindowFrames) {
+        let restorations: [(NSRect?, NSWindow?)] = [
+            (frames.equalizer, equalizerWindowController?.window),
+            (frames.playlist, playlistWindowController?.window),
+            (frames.spectrum, spectrumWindowController?.window),
+            (frames.waveform, waveformWindowController?.window),
+            (frames.audioAnalysis, audioAnalysisWindowController?.window),
+            (frames.peppyMeter, peppyMeterWindowController?.window),
+            (frames.networkMonitor, networkMonitorWindowController?.window),
+            (frames.cava, cavaWindowController?.window),
+            (frames.library, plexBrowserWindowController?.window),
+            (frames.projectM, projectMWindowController?.window),
+        ]
+        withProgrammaticWindowFrameChange {
+            for (frame, window) in restorations {
+                guard let frame, let window, window.isVisible else { continue }
+                window.setFrame(frame, display: true)
+            }
         }
     }
 
@@ -5886,7 +5975,8 @@ class WindowManager {
     private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool,
                                  reenterCompactWindow: Bool = false,
                                  compactWindowTreatMainAsVisible: Bool = false,
-                                 restoreScaleLevel: UIScaleLevel, preservedSideFrames: SideWindowFrames) {
+                                 restoreScaleLevel: UIScaleLevel,
+                                 preservedDetachedFrames: DetachedWindowFrames) {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
@@ -5902,12 +5992,12 @@ class WindowManager {
 
         // Re-apply UI size (collapsed to 1x in reloadUI before the switch) now that the target-mode
         // windows exist. This must happen *before* enterCompactMode() so the compact capture records
-        // the enlarged regular layout, not a 1x one. applyDoubleSize (via the scale setter)
-        // also re-docks the side windows, so restore any preserved detached frames afterward.
+        // the enlarged regular layout, not a 1x one. Then restore every auxiliary that was outside
+        // the active main-window cluster; this also covers Compact Window, where main is hidden.
         if restoreScaleLevel != .p100 {
             uiScaleLevel = restoreScaleLevel
-            restoreSideWindowFrames(preservedSideFrames)
         }
+        restoreDetachedWindowFrames(preservedDetachedFrames)
 
         // Restore Compact Mode last so it captures the freshly rebuilt window set, not stale state.
         if reenterCompact { enterCompactMode() }

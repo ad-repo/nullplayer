@@ -186,6 +186,20 @@ xcrun xccov view --report ~/Library/Developer/Xcode/DerivedData/nullplayer-*/Log
 
 See `skills/local-library/SKILL.md` — Testing section.
 
+## Video and Casting Regression Checklist
+
+For video playback changes, run `swift test --filter CastingTests` and verify all of the following:
+
+- A persisted `preferredVideoCastDeviceID` with no active video session still opens the local player window.
+- An already-active video cast routes the next video to that session's device.
+- Local files, HTTP streams, Plex, Jellyfin, Emby, and mixed playlists follow the same routing rule.
+- Explicit cast-menu selection still starts casting and updates the global cast controls.
+- Stopping a cast remains possible when no local video player window exists.
+- Restarting the app with a remembered cast device does not silently resume casting.
+
+The routing assertion belongs in `Tests/NullPlayerAppTests/CastingTests.swift`; manual QA should
+exercise at least one local file and one streaming/server-backed video on a clean 0.29 build.
+
 ## Writing Good Tests
 
 ### Test Structure

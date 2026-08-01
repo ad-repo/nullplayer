@@ -201,6 +201,12 @@ Video playback routes to casting only when casting is already active:
 - If `case .video = CastManager.shared.currentCast`, the next video is cast to the active session's device.
 - If no video cast is active, videos load into the local player even when `preferredVideoCastDeviceID` is set.
 
+`preferredVideoCastDeviceID` is durable UI preference state, not playback ownership. It may select the
+initial device in an explicit cast menu action, but it must never be used by ordinary video entry
+points to auto-cast after relaunch or after a previous cast. This invariant applies equally to local
+files, HTTP streams, Plex, Jellyfin, Emby, and mixed playlists. Keeping the local player window as
+the default is also what preserves video metadata and an accessible stop-casting control.
+
 ### Mixed-Type Playlists (`castNewTrack`)
 
 `castNewTrack(track:)` dispatches by `track.mediaType`:
@@ -320,6 +326,7 @@ swift scripts/test_chromecast.swift
 | Video player stays open after switching to audio cast | Not calling `closeForCastTransition()` | Call `WindowManager.closeVideoPlayerForCastTransition()` after audio cast succeeds |
 | Timer drifts during buffering | Not pausing interpolation on BUFFERING | Set `playbackStartDate = nil` on BUFFERING; resume on PLAYING |
 | Controls stop working | CLOSE message received | Check `castSessionDidClose()` delegate callback |
+| Video opens on Chromecast with no player window | Persisted `preferredVideoCastDeviceID` was treated as an automatic route | Route only when `currentCast == .video` with an active session; keep the preference for explicit cast-menu defaults |
 
 ## References
 

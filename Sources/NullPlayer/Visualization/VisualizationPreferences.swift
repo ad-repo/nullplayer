@@ -42,7 +42,7 @@ enum VisualizationPreferences {
         case .all:
             return Array(Set(mainWindowKeys + spectrumWindowKeys + visualizationWindowKeys
                 + browserArtworkKeys + cavaWindowKeys + compactWindowCavaKeys
-                + libraryWindowCavaKeys))
+                + libraryWindowCavaKeys + BrowserBackdropMode.preferenceKeys))
         }
     }
 

@@ -19,7 +19,9 @@ surface's context menu. Each backdrop has its own settings scope and lifecycle; 
 standalone or main-window presenter.
 The window menus expose **Cava**, **Art**, and **Cava + Art** separately. Art always uses the legacy
 browser list-area renderer and geometry; there is no second full-window artwork renderer. Both
-windows default to **Cava + Art** on first use while preserving an existing saved selection.
+windows default to **Cava + Art** on first use while preserving an existing saved selection. On
+upgrade, the legacy `showBrowserArtworkBackground` choice seeds only absent window-specific keys:
+enabled becomes Cava + Art and disabled becomes Cava, so adopting Cava does not re-enable artwork.
 
 Cava is the shipped default for the embedded main-window visualization in every bundled modern
 skin and every built-in Metal finish. Classic UI continues to default the embedded visualization
@@ -83,12 +85,18 @@ Backdrop Mono is center-out mirrored so the combined spectrum occupies the full 
 `CompactBackdropView` always draws into its full `bounds`; its frame must be the window content
 container's `bounds`, not the browser view's frame,
 so resizing or an offset browser layout cannot confine the visualization to part of the window.
+Its layer mask must also receive the browser's current `sharpCorners`: when the Library docks, the
+backdrop and browser siblings must square the same joined corners or a rounded transparent wedge
+appears beneath the translucent browser.
 On the first Off → Cava transition, invalidate and lay out the complete backdrop/browser sibling
 subtree immediately and again on the next main-run-loop turn. The browser was previously rendered
 opaque, and an ordinary view-only invalidation can leave a horizontal region of cached opaque
 content covering either Mono or Stereo until the window is reconstructed.
 Art-only does not create `CompactBackdropView`. Cava + Art keeps Cava in that full-window sibling
 while the browser draws exactly one legacy-sized artwork image in its established list-area path.
+Playing-track and selection-driven artwork loads may run concurrently, but share a display
+generation. They may populate their own caches after a newer request begins; only the newest
+generation may assign `currentArtwork`.
 
 ## Window Layout
 
@@ -120,7 +128,7 @@ The menu is built and handled by `CavaPresenter` itself (an `NSObject` with `@ob
 
 ## Persistence (AppStateManager)
 
-- **Window visibility/frame:** Visibility is restored in either UI mode. The exact saved frame is restored only when the saved and running UI modes match; otherwise Cava opens at the target mode's default stack position.
+- **Window visibility/frame:** Visibility is restored in either UI mode. The exact saved frame is restored only when the saved and running UI modes match; otherwise Cava opens at the target mode's default stack position. During a live cross-family skin switch, a detached Cava window keeps its exact floating frame through the temporary UI Size collapse, including when Compact Window is the active main surface; docked Cava geometry is recomputed with the target stack.
 - **Durable preferences:** `CavaSettings` (UserDefaults) — mode selection, bar count, gradient colors — persist independently of Remember State
 - **Restoration:** On launch, if Cava was visible, `showCava(at:)` repositions it at the saved frame (or default stack position if no frame saved)
 
@@ -163,7 +171,8 @@ The embedded main-window Cava keys (`.mainWindow`) live in
 (`.compactWindow`) backdrop keys live in their visualization reset sets. The standalone window keys
 (`CavaSettings.preferenceKeys(for: .cavaWindow)`) live in `cavaWindowKeys`, which is included only
 in the `.all` reset scope. Reset All clears all four scopes and restores Library's Mono/64-bar
-default and Compact's Stereo/Smooth/64-bar first-use defaults.
+default and Compact's Stereo/Smooth/64-bar first-use defaults. It also clears
+`libraryBackdropMode` and `compactBackdropMode`, restoring both visual selections to Cava + Art.
 
 `VisualizationPreferences.reset(.all)` therefore resets every Cava scope. Its notification
 phase calls `WindowManager.refreshCavaWindowAfterReset()` and then the open controller's

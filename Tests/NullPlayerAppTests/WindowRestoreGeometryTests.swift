@@ -3,6 +3,58 @@ import XCTest
 @testable import NullPlayer
 
 final class WindowRestoreGeometryTests: XCTestCase {
+    func testSkinSwitchPreservesVisibleDetachedWindowFrame() {
+        let floatingFrame = NSRect(x: 1420, y: 630, width: 420, height: 180)
+
+        let preserved = WindowManager.detachedFrameForSkinSwitch(
+            floatingFrame,
+            isVisible: true,
+            isDetached: true
+        )
+
+        XCTAssertEqual(preserved, floatingFrame)
+    }
+
+    func testSkinSwitchLetsDockedOrHiddenWindowsUseTargetLayout() {
+        let frame = NSRect(x: 100, y: 300, width: 275, height: 116)
+
+        XCTAssertNil(
+            WindowManager.detachedFrameForSkinSwitch(
+                frame,
+                isVisible: true,
+                isDetached: false
+            )
+        )
+        XCTAssertNil(
+            WindowManager.detachedFrameForSkinSwitch(
+                frame,
+                isVisible: false,
+                isDetached: true
+            )
+        )
+    }
+
+    func testSkinSwitchTreatsEveryAuxiliaryAsDetachedWhileCompactWindowHidesMain() {
+        XCTAssertTrue(
+            WindowManager.isDetachedForSkinSwitch(
+                isMainWindowVisible: false,
+                isConnectedToMainWindow: false
+            )
+        )
+        XCTAssertTrue(
+            WindowManager.isDetachedForSkinSwitch(
+                isMainWindowVisible: true,
+                isConnectedToMainWindow: false
+            )
+        )
+        XCTAssertFalse(
+            WindowManager.isDetachedForSkinSwitch(
+                isMainWindowVisible: true,
+                isConnectedToMainWindow: true
+            )
+        )
+    }
+
     func testGeometryRestoreRequiresExactUIModeMatch() {
         XCTAssertTrue(
             AppStateManager.shouldRestoreGeometry(savedMode: .classic, runningMode: .classic)
