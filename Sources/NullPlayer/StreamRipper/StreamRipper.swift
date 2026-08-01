@@ -506,6 +506,66 @@ final class StreamRipper {
         }
     }
 
+    /// Filename prefixes of every temporary staging directory this ripper
+    /// creates under the system temp dir (`makeLocalStaging` for yt-dlp
+    /// downloads, and the radio/URL rip stager). An interrupted rip — app quit,
+    /// crash, or a sleep that kills the download — leaves one of these behind,
+    /// because the completion/recovery code that would delete it never runs.
+    nonisolated static let stagingPrefixes = ["nullplayer-rip-", "nullplayer-ytdl-"]
+
+    /// Delete orphaned rip staging folders left in the system temp directory by
+    /// interrupted rips. Meant to be called once at app launch, off the main
+    /// thread. macOS only purges `/var/folders/.../T` after days of inactivity
+    /// and usually only on reboot, so multi-GB rips can sit there indefinitely.
+    ///
+    /// A folder is deleted only when nothing inside it has been modified for at
+    /// least `minInactivity` seconds, so an active rip running in a second
+    /// NullPlayer instance is never destroyed mid-download.
+    nonisolated static func reapOrphanedStaging(minInactivity: TimeInterval = 600) {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory
+        let cutoff = Date().addingTimeInterval(-minInactivity)
+        guard let entries = try? fm.contentsOfDirectory(
+            at: tempDir,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return }
+
+        var reclaimed = 0
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard Self.stagingPrefixes.contains(where: { name.hasPrefix($0) }) else { continue }
+            guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            // Skip folders touched recently — likely an active rip elsewhere.
+            if let newest = Self.newestModification(in: entry), newest > cutoff { continue }
+            if (try? fm.removeItem(at: entry)) != nil {
+                reclaimed += 1
+            }
+        }
+        if reclaimed > 0 {
+            NSLog("StreamRipper: reaped %d orphaned staging folder(s) from %@", reclaimed, tempDir.path)
+        }
+    }
+
+    /// Newest content-modification date of `directory` itself or any file
+    /// nested inside it. Used to tell an idle (orphaned) staging folder from one
+    /// an active download is still writing into — the folder's own mtime does
+    /// not update while yt-dlp/ffmpeg stream into an already-created `.part`.
+    private nonisolated static func newestModification(in directory: URL) -> Date? {
+        let key: URLResourceKey = .contentModificationDateKey
+        var newest = (try? directory.resourceValues(forKeys: [key]))?.contentModificationDate
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [key]
+        ) else { return newest }
+        for case let url as URL in enumerator {
+            if let mtime = (try? url.resourceValues(forKeys: [key]))?.contentModificationDate,
+               newest == nil || mtime > newest! {
+                newest = mtime
+            }
+        }
+        return newest
+    }
+
     /// Error type for downloadAudio
     enum DownloadAudioError: LocalizedError {
         case toolNotFound(String)
