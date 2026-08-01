@@ -85,10 +85,16 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertTrue(AppCapabilities.supports(.compactWindowVisualsMenu))
 
         let menu = ContextMenuBuilder.buildCompactBackdropMenu()
-        XCTAssertEqual(Array(menu.items.prefix(3)).map(\.title), ["Off", "Album Art", "Cava"])
+        XCTAssertEqual(
+            Array(menu.items.prefix(4)).map(\.title),
+            ["Off", "Cava", "Art", "Cava + Art"]
+        )
 
         let libraryMenu = ContextMenuBuilder.buildLibraryBackdropMenu()
-        XCTAssertEqual(Array(libraryMenu.items.prefix(3)).map(\.title), ["Off", "Album Art", "Cava"])
+        XCTAssertEqual(
+            Array(libraryMenu.items.prefix(4)).map(\.title),
+            ["Off", "Cava", "Art", "Cava + Art"]
+        )
     }
 
     func testMainWindowTuningIsIndependentFromStandaloneWindow() {

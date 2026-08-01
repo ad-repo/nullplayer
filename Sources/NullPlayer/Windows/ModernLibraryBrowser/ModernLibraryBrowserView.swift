@@ -859,7 +859,7 @@ class ModernLibraryBrowserView: NSView {
         startServerNameScroll()
         
         // Load artwork for current track
-        if WindowManager.shared.showBrowserArtworkBackground {
+        if showsLegacyArtwork {
             loadArtwork(for: WindowManager.shared.audioEngine.currentTrack)
         }
         
@@ -951,7 +951,11 @@ class ModernLibraryBrowserView: NSView {
     private let backdropScrimAlpha: CGFloat = 0.72
 
     private var backdropActive: Bool {
-        WindowManager.shared.isRunningModernUI && effectiveBackdropMode != .off
+        WindowManager.shared.isRunningModernUI && effectiveBackdropMode.showsCava
+    }
+
+    private var showsLegacyArtwork: Bool {
+        WindowManager.shared.isRunningModernUI && effectiveBackdropMode.showsArt
     }
 
     private var effectiveBackdropMode: BrowserBackdropMode {
@@ -1082,12 +1086,17 @@ class ModernLibraryBrowserView: NSView {
         let container = superview
         guard !isPreparingForUITeardown,
               WindowManager.shared.isRunningModernUI,
-              effectiveBackdropMode != .off,
+              effectiveBackdropMode.showsCava,
               let container else {
             backdropView?.stop()
             backdropView?.removeFromSuperview()
             backdropView = nil
             updateHistoryHostingBackground()
+            if showsLegacyArtwork,
+               let track = WindowManager.shared.audioEngine.currentTrack,
+               artworkTrackId != track.id || currentTrackArtwork == nil {
+                loadArtwork(for: track)
+            }
             redrawBackdropComposition(in: container)
             return
         }
@@ -1107,11 +1116,10 @@ class ModernLibraryBrowserView: NSView {
             backdropView = backdrop
         }
         backdrop.frame = container.bounds
-        backdrop.updateArtwork(currentTrackArtwork)
         backdrop.reload()
         updateHistoryHostingBackground()
 
-        if effectiveBackdropMode == .albumArt,
+        if showsLegacyArtwork,
            let track = WindowManager.shared.audioEngine.currentTrack,
            artworkTrackId != track.id || currentTrackArtwork == nil {
             loadArtwork(for: track)
@@ -2392,7 +2400,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func drawArtworkBackground(in context: CGContext, listRect: NSRect, artwork: NSImage?) {
-        guard WindowManager.shared.showBrowserArtworkBackground,
+        guard showsLegacyArtwork,
               let artworkImage = artwork,
               let cgImage = artworkImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
 
@@ -7653,14 +7661,12 @@ class ModernLibraryBrowserView: NSView {
             loadAllArtworkForCurrentTrack()
             return
         }
-        let needsCurrentTrackArtwork = WindowManager.shared.showBrowserArtworkBackground
-            || (backdropActive && effectiveBackdropMode == .albumArt)
+        let needsCurrentTrackArtwork = showsLegacyArtwork
         guard needsCurrentTrackArtwork else {
             if currentArtwork != nil || currentTrackArtwork != nil {
                 currentArtwork = nil
                 currentTrackArtwork = nil
                 artworkTrackId = nil
-                backdropView?.updateArtwork(nil)
                 needsDisplay = true
             }
             return
@@ -8567,12 +8573,10 @@ class ModernLibraryBrowserView: NSView {
             currentArtwork = nil
             currentTrackArtwork = nil
             artworkTrackId = nil
-            backdropView?.updateArtwork(nil)
             needsDisplay = true
             return
         }
         guard track.id != artworkTrackId || currentTrackArtwork == nil else {
-            backdropView?.updateArtwork(currentTrackArtwork)
             return
         }
         currentTrackArtworkLoadTask = Task { [weak self] in
@@ -8599,7 +8603,6 @@ class ModernLibraryBrowserView: NSView {
                 self.currentArtwork = image
                 self.currentTrackArtwork = image
                 self.artworkTrackId = track.id
-                self.backdropView?.updateArtwork(image)
                 self.needsDisplay = true
             }
         }
@@ -8774,7 +8777,6 @@ class ModernLibraryBrowserView: NSView {
                 self.currentArtwork = images.first
                 self.currentTrackArtwork = images.first
                 self.artworkTrackId = currentTrack.id
-                self.backdropView?.updateArtwork(images.first)
                 self.needsDisplay = true
             }
         }
@@ -8792,7 +8794,6 @@ class ModernLibraryBrowserView: NSView {
         currentArtwork = nil
         currentTrackArtwork = nil
         artworkTrackId = nil
-        backdropView?.updateArtwork(nil)
         isArtOnlyMode = false
         needsDisplay = true
     }
@@ -8802,12 +8803,11 @@ class ModernLibraryBrowserView: NSView {
         artworkIndex = (artworkIndex + 1) % artworkImages.count
         currentArtwork = artworkImages[artworkIndex]
         currentTrackArtwork = currentArtwork
-        backdropView?.updateArtwork(currentArtwork)
         needsDisplay = true
     }
     
     private func loadArtworkForSelection() {
-        guard WindowManager.shared.showBrowserArtworkBackground else { return }
+        guard showsLegacyArtwork else { return }
         guard let index = selectedIndices.first, index < displayItems.count else { return }
         
         let item = displayItems[index]

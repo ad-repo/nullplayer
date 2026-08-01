@@ -504,7 +504,7 @@ class ContextMenuBuilder {
             menu.addItem(item)
         }
 
-        if currentMode == .cava {
+        if currentMode.showsCava {
             menu.addItem(.separator())
             let cavaMenu = presenter.buildMenu(showTransparency: false, includeClose: false)
             while cavaMenu.numberOfItems > 0, let item = cavaMenu.item(at: 0) {
@@ -1220,11 +1220,14 @@ class ContextMenuBuilder {
         
         optionsMenu.addItem(NSMenuItem.separator())
         
-        // Visual Options
-        let artworkBgItem = NSMenuItem(title: "Browser Album Art Background", action: #selector(MenuActions.toggleBrowserArtworkBackground), keyEquivalent: "")
-        artworkBgItem.target = MenuActions.shared
-        artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
-        optionsMenu.addItem(artworkBgItem)
+        // Modern/Metal expose window-specific Art and Cava + Art choices in Visuals.
+        // Keep the legacy global toggle only for the classic browser.
+        if !wm.isRunningModernUI {
+            let artworkBgItem = NSMenuItem(title: "Browser Album Art Background", action: #selector(MenuActions.toggleBrowserArtworkBackground), keyEquivalent: "")
+            artworkBgItem.target = MenuActions.shared
+            artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
+            optionsMenu.addItem(artworkBgItem)
+        }
 
         return optionsMenu
     }

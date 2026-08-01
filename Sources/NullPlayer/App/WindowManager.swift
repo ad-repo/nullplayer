@@ -128,15 +128,27 @@ private enum CompactModeState {
 }
 
 enum BrowserBackdropMode: Int, CaseIterable {
-    case off
-    case albumArt
-    case cava
+    case off = 0
+    case art = 1
+    case cava = 2
+    case cavaAndArt = 3
+
+    static let allCases: [BrowserBackdropMode] = [.off, .cava, .art, .cavaAndArt]
+
+    var showsCava: Bool {
+        self == .cava || self == .cavaAndArt
+    }
+
+    var showsArt: Bool {
+        self == .art || self == .cavaAndArt
+    }
 
     var title: String {
         switch self {
         case .off: return "Off"
-        case .albumArt: return "Album Art"
+        case .art: return "Art"
         case .cava: return "Cava"
+        case .cavaAndArt: return "Cava + Art"
         }
     }
 }

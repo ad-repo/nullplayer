@@ -87,23 +87,19 @@ final class VisualizationPreferencesTests: XCTestCase {
         XCTAssertFalse(keys.contains("cava.libraryWindow.transparentBackground"))
     }
 
-    func testCompactBackdropUsesAspectFillGeometry() {
-        let square = NSRect(x: 0, y: 0, width: 100, height: 100)
+    func testBrowserBackdropModesSeparateCavaAndLegacyArtwork() {
+        XCTAssertFalse(BrowserBackdropMode.off.showsCava)
+        XCTAssertFalse(BrowserBackdropMode.off.showsArt)
+        XCTAssertTrue(BrowserBackdropMode.cava.showsCava)
+        XCTAssertFalse(BrowserBackdropMode.cava.showsArt)
+        XCTAssertFalse(BrowserBackdropMode.art.showsCava)
+        XCTAssertTrue(BrowserBackdropMode.art.showsArt)
+        XCTAssertTrue(BrowserBackdropMode.cavaAndArt.showsCava)
+        XCTAssertTrue(BrowserBackdropMode.cavaAndArt.showsArt)
 
-        XCTAssertEqual(
-            CompactBackdropView.aspectFillRect(
-                imageSize: NSSize(width: 200, height: 100),
-                targetRect: square
-            ),
-            NSRect(x: -50, y: 0, width: 200, height: 100)
-        )
-        XCTAssertEqual(
-            CompactBackdropView.aspectFillRect(
-                imageSize: NSSize(width: 100, height: 200),
-                targetRect: square
-            ),
-            NSRect(x: 0, y: -50, width: 100, height: 200)
-        )
+        // Preserve the raw values already shipped on this branch: Album Art was 1 and Cava was 2.
+        XCTAssertEqual(BrowserBackdropMode.art.rawValue, 1)
+        XCTAssertEqual(BrowserBackdropMode.cava.rawValue, 2)
     }
 
     func testProjectMDisplayNamePreservesLegacyPreferenceValue() {

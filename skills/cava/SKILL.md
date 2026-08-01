@@ -17,6 +17,8 @@ Modern and Metal Library and Compact Window surfaces can also use Cava as a full
 via **Visuals > Library Window > Cava**, **Visuals > Compact Window > Cava**, or the corresponding
 surface's context menu. Each backdrop has its own settings scope and lifecycle; neither borrows the
 standalone or main-window presenter.
+The window menus expose **Cava**, **Art**, and **Cava + Art** separately. Art always uses the legacy
+browser list-area renderer and geometry; there is no second full-window artwork renderer.
 
 Cava is the shipped default for the embedded main-window visualization in every bundled modern
 skin and every built-in Metal finish. Classic UI continues to default the embedded visualization
@@ -83,6 +85,8 @@ On the first Off → Cava transition, invalidate and lay out the complete backdr
 subtree immediately and again on the next main-run-loop turn. The browser was previously rendered
 opaque, and an ordinary view-only invalidation can leave a horizontal region of cached opaque
 content covering either Mono or Stereo until the window is reconstructed.
+Art-only does not create `CompactBackdropView`. Cava + Art keeps Cava in that full-window sibling
+while the browser draws exactly one legacy-sized artwork image in its established list-area path.
 
 ## Window Layout
 
