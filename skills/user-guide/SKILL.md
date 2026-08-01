@@ -219,6 +219,8 @@ Import discovery is now unified across classic + modern entry points (main windo
 
 ### Chromecast
 - Audio and video casting
+- Video opens locally by default, including when a Chromecast was used previously; choosing a device from the cast menu is required to start a new video cast.
+- When video casting is active, the global Output/Cast menu remains available for stopping the session even if no local video window is open.
 - Position synchronization
 - Buffering state handling
 

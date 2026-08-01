@@ -1,10 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.29.6
+
+### New Features
+
+- **Library and Compact windows add visual backdrops (#410)** — Modern and Metal users can independently choose **Off**, **Cava**, **Art**, or **Cava + Art** for each browser surface from the Visuals menu or its context menu. Cava renders beneath the translucent browser with separate Library and Compact settings and lifecycle; artwork keeps its established list-area layout. Both surfaces default to Cava + Art with 64 bars, using Mono in Library and Stereo with Smooth tuning in Compact, while saved choices remain authoritative.
 
 ### Bug Fixes
 
+- **Waveform generation no longer crashes on malformed or unsupported audio (#409)** — AVFoundation waveform decoding now catches Objective-C exceptions and reports a recoverable failure, while interrupted waveform prerenders, skin extractions, and rips are reclaimed safely on launch without deleting active work.
+- **Video playback no longer silently starts on a remembered Chromecast** — a saved video-cast device is now used only as the default for an explicit cast action. Local files, streaming URLs, and server-backed video open in the local player unless a video cast session is already active, restoring the player window, video metadata, and local stop/playback controls.
 - **Interrupted rips no longer leave multi-gigabyte temp folders behind** — a rip (YouTube/URL download or radio stream capture) stages into a temporary folder and only cleans it up when the rip finishes. Quitting, crashing, or sleeping mid-rip orphaned that folder in the system temp directory, where macOS rarely purges it, so failed rips could silently pile up gigabytes of hidden files. NullPlayer now sweeps orphaned rip staging folders on launch, deleting only those no active rip has touched in the last several minutes so a rip running in another instance is never disturbed.
+- **Changing skin families preserves detached auxiliary-window positions** — switching between Classic, Modern, and Metal no longer moves floating windows into a stack. With the regular main window open, only windows docked to its connected layout are repositioned for the incoming skin; with Compact Window active, every visible auxiliary stays at its exact screen position.
 
 ## 0.29.5
 

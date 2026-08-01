@@ -84,13 +84,13 @@ final class CastingTests: XCTestCase {
         XCTAssertNil(WindowManager.shared.debugTargetVideoCastDeviceForTesting)
     }
 
-    func testVideoRoutingUsesExactOnlinePreference() {
+    func testVideoRoutingDoesNotAutoRouteToPersistedPreference() {
         let preferredDevice = CastDevice(id: "preferred-device", name: "Living Room TV", type: .chromecast, address: "192.168.1.13", port: 8009)
         let otherDevice = CastDevice(id: "other-device", name: "Bedroom TV", type: .chromecast, address: "192.168.1.14", port: 8009)
         CastManager.shared.debugDiscoveredDevices = [otherDevice, preferredDevice]
         CastManager.shared.setPreferredVideoCastDevice(preferredDevice.id)
 
-        XCTAssertEqual(WindowManager.shared.debugTargetVideoCastDeviceForTesting?.id, preferredDevice.id)
+        XCTAssertNil(WindowManager.shared.debugTargetVideoCastDeviceForTesting)
     }
 
     func testVideoRoutingReusesDeviceFromActiveVideoCast() {

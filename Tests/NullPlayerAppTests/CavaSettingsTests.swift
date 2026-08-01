@@ -168,6 +168,22 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(entries.map(\.rect.height), [75, 25, 25, 75])
     }
 
+    func testBackdropCornerMaskExcludesDockingSharpCorners() {
+        let view = CompactBackdropView(
+            frame: NSRect(x: 0, y: 0, width: 200, height: 100),
+            scope: .libraryWindow,
+            modeProvider: { .off }
+        )
+        let sharpCorners: CACornerMask = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+
+        view.setSharpCorners(sharpCorners)
+
+        XCTAssertFalse(view.layer?.maskedCorners.contains(.layerMinXMinYCorner) ?? true)
+        XCTAssertFalse(view.layer?.maskedCorners.contains(.layerMinXMaxYCorner) ?? true)
+        XCTAssertTrue(view.layer?.maskedCorners.contains(.layerMaxXMinYCorner) ?? false)
+        XCTAssertTrue(view.layer?.maskedCorners.contains(.layerMaxXMaxYCorner) ?? false)
+    }
+
     func testCompactWindowPreferenceKeysExcludeStandaloneTransparency() {
         let keys = CavaSettings.preferenceKeys(for: .compactWindow)
 
