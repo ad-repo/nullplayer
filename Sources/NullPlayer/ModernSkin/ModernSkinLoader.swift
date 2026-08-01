@@ -10,6 +10,7 @@ class ModernSkinLoader {
     static let shared = ModernSkinLoader()
 
     static let bundleExtension = "nsz"
+    static let temporaryDirectoryPrefix = "ModernSkin_"
     
     private init() {}
 
@@ -54,7 +55,7 @@ class ModernSkinLoader {
     /// Load a skin from a `.nsz` ZIP bundle
     func loadFromBundle(at url: URL) throws -> ModernSkin {
         let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ModernSkin_\(UUID().uuidString)")
+            .appendingPathComponent("\(Self.temporaryDirectoryPrefix)\(UUID().uuidString)")
         
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         

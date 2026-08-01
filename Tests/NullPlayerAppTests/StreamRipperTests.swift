@@ -151,4 +151,45 @@ final class StreamRipperTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: destination), Data("new cue".utf8))
         XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
     }
+
+    func testReapOrphanedTempItemsRemovesOnlyOldMatchingFilesAndDirectories() throws {
+        let oldDate = Date().addingTimeInterval(-1_200)
+        let oldNames = [
+            "nullplayer-rip-\(UUID().uuidString)",
+            "nullplayer-ytdl-\(UUID().uuidString)",
+            "ModernSkin_\(UUID().uuidString)",
+            "ClassicSkin_\(UUID().uuidString)",
+        ]
+        let oldDirectories = oldNames.map {
+            tempDirectory.appendingPathComponent($0, isDirectory: true)
+        }
+        for directory in oldDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: directory.path)
+        }
+
+        let oldWaveform = tempDirectory.appendingPathComponent(
+            "waveform-prerender-\(UUID().uuidString).flac"
+        )
+        try Data("old waveform".utf8).write(to: oldWaveform)
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: oldWaveform.path)
+
+        let recentWaveform = tempDirectory.appendingPathComponent(
+            "waveform-prerender-\(UUID().uuidString).mp3"
+        )
+        try Data("recent waveform".utf8).write(to: recentWaveform)
+
+        let unrelated = tempDirectory.appendingPathComponent("unrelated-\(UUID().uuidString).flac")
+        try Data("unrelated".utf8).write(to: unrelated)
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: unrelated.path)
+
+        StreamRipper.reapOrphanedTempItems(in: tempDirectory, minInactivity: 600)
+
+        for directory in oldDirectories {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldWaveform.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: recentWaveform.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+    }
 }

@@ -29,11 +29,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // One-time video-engine configuration hook
         VideoPlayerWindowController.configureVideoEngine()
 
-        // Reclaim disk from rip staging folders orphaned by an interrupted rip
-        // (app quit/crash/sleep mid-download). Runs off-main so it never delays
-        // launch; skips folders an active rip is still writing into.
+        // Reclaim disk from temp artifacts orphaned by interrupted rip,
+        // waveform-prerender, or skin-extraction operations. Runs off-main so
+        // it never delays launch; skips items that may still be active.
         DispatchQueue.global(qos: .utility).async {
-            StreamRipper.reapOrphanedStaging()
+            StreamRipper.reapOrphanedTempItems()
         }
 
         // Initialize Plex manager early to start preloading library data

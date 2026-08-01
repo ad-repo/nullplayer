@@ -1,9 +1,11 @@
 import AVFoundation
 import CryptoKit
 import Foundation
+import ObjCExceptionCatcher
 
 actor WaveformCacheService {
     static let shared = WaveformCacheService()
+    static let prerenderTempPrefix = "waveform-prerender-"
 
     private struct CacheRecord: Codable {
         let sourcePath: String
@@ -207,16 +209,18 @@ actor WaveformCacheService {
 
         let audioFile: AVAudioFile
         do {
-            audioFile = try AVAudioFile(forReading: descriptor.sourceURL)
+            audioFile = try Self.catchingObjCException {
+                try AVAudioFile(forReading: descriptor.sourceURL)
+            }
         } catch {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Failed to open audio file: \((error as NSError).localizedDescription)",
                 NSUnderlyingErrorKey: error
             ])
         }
-        let totalFrames = max(audioFile.length, 1)
-        let fileDuration = descriptor.durationHint ?? (Double(totalFrames) / audioFile.processingFormat.sampleRate)
-        let processingFormat = audioFile.processingFormat
+        let totalFrames = try Self.catchingObjCException { max(audioFile.length, 1) }
+        let processingFormat = try Self.catchingObjCException { audioFile.processingFormat }
+        let fileDuration = descriptor.durationHint ?? (Double(totalFrames) / processingFormat.sampleRate)
         let channelCount = Int(processingFormat.channelCount)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: processingFormat, frameCapacity: 16_384) else {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
@@ -228,11 +232,14 @@ actor WaveformCacheService {
 
         while true {
             try Task.checkCancellation()
-            if audioFile.framePosition >= audioFile.length {
+            let position = try Self.catchingObjCException { audioFile.framePosition }
+            if position >= totalFrames {
                 break
             }
             do {
-                try audioFile.read(into: buffer)
+                try Self.catchingObjCException {
+                    try audioFile.read(into: buffer)
+                }
             } catch {
                 throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
                     NSLocalizedDescriptionKey: "Failed to read audio samples: \((error as NSError).localizedDescription)",
@@ -278,7 +285,7 @@ actor WaveformCacheService {
             return try await generateServiceSnapshotViaAssetReader(with: descriptor)
         } catch {
             NSLog(
-                "WaveformCacheService: Remote asset-reader prerender failed for %@: %@",
+                "WaveformCacheService: Direct prerender unavailable for %@; falling back to download: %@",
                 descriptor.sourcePath,
                 error.localizedDescription
             )
@@ -391,6 +398,7 @@ actor WaveformCacheService {
         try Task.checkCancellation()
 
         let (tempDownloadURL, response) = try await URLSession.shared.download(from: descriptor.sourceURL)
+        defer { try? FileManager.default.removeItem(at: tempDownloadURL) }
         if let httpResponse = response as? HTTPURLResponse,
            !(200...299).contains(httpResponse.statusCode) {
             throw NSError(domain: "WaveformCacheService", code: httpResponse.statusCode, userInfo: [
@@ -402,7 +410,7 @@ actor WaveformCacheService {
         // the temp download path, which has no extension and would resolve to ".bin"
         let sourceExt = descriptor.sourceURL.pathExtension
         let localURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("waveform-prerender-\(UUID().uuidString)")
+            .appendingPathComponent("\(Self.prerenderTempPrefix)\(UUID().uuidString)")
             .appendingPathExtension(sourceExt.isEmpty ? "bin" : sourceExt)
 
         try? FileManager.default.removeItem(at: localURL)
@@ -431,6 +439,37 @@ actor WaveformCacheService {
             allowsSeeking: true,
             isStreaming: true
         )
+    }
+
+    /// Runs `body`, converting any Objective-C `NSException` — which Swift
+    /// `do/catch` cannot intercept — into a throwable Swift error.
+    private static func catchingObjCException<T>(_ body: @escaping () throws -> T) throws -> T {
+        var result: Result<T, Error>?
+        var objcError: NSError?
+        let succeeded = NPObjCExceptionCatch({
+            do {
+                result = .success(try body())
+            } catch {
+                result = .failure(error)
+            }
+        }, &objcError)
+
+        guard succeeded else {
+            throw objcError ?? NSError(domain: "WaveformCacheService", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "AVFoundation raised an exception during waveform decode"
+            ])
+        }
+
+        switch result {
+        case .success(let value):
+            return value
+        case .failure(let error):
+            throw error
+        case .none:
+            throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Waveform decode produced no result"
+            ])
+        }
     }
 
     private func loadAssetValues(for asset: AVAsset, keys: [String]) async throws {
