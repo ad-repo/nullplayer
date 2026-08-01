@@ -5,6 +5,8 @@ import NullPlayerCore
 
 /// Builds the shared right-click context menu for all skin windows
 class ContextMenuBuilder {
+    /// Keeps menu targets alive when the compact window has not been created yet.
+    private static let compactBackdropFallbackPresenter = CavaPresenter(scope: .compactWindow)
     
     // MARK: - Main Menu Builder
     
@@ -429,6 +431,7 @@ class ContextMenuBuilder {
     /// Builds the top-level "Visuals" menu content for the macOS menu bar.
     static func buildMenuBarVisualsMenu() -> NSMenu {
         let menu = NSMenu()
+        let wm = WindowManager.shared
 
         let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
         mainWindowItem.submenu = buildMainVisualizationSubmenu()
@@ -439,10 +442,48 @@ class ContextMenuBuilder {
         menu.addItem(spectrumWindowItem)
 
         menu.addItem(buildVisualizationsMenuItem())
+        if wm.isRunningModernUI {
+            let compactWindowItem = NSMenuItem(title: "Compact Window", action: nil, keyEquivalent: "")
+            compactWindowItem.submenu = buildCompactBackdropMenu()
+            menu.addItem(compactWindowItem)
+        }
         menu.addItem(NSMenuItem.separator())
         let resetAll = NSMenuItem(title: "Reset All Visualization Preferences...", action: #selector(MenuActions.resetAllVisualizationPreferences), keyEquivalent: "")
         resetAll.target = MenuActions.shared
         menu.addItem(resetAll)
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    static func buildCompactBackdropMenu(presenter explicitPresenter: CavaPresenter? = nil) -> NSMenu {
+        let menu = NSMenu()
+        let wm = WindowManager.shared
+        let currentMode = wm.compactBackdropMode
+
+        for mode in CompactBackdropMode.allCases {
+            let item = NSMenuItem(
+                title: mode.title,
+                action: #selector(MenuActions.setCompactBackdropMode(_:)),
+                keyEquivalent: ""
+            )
+            item.target = MenuActions.shared
+            item.representedObject = mode
+            item.state = currentMode == mode ? .on : .off
+            menu.addItem(item)
+        }
+
+        if currentMode == .cava {
+            menu.addItem(.separator())
+            let presenter = explicitPresenter
+                ?? wm.compactBackdropPresenter
+                ?? compactBackdropFallbackPresenter
+            let cavaMenu = presenter.buildMenu(showTransparency: false, includeClose: false)
+            while cavaMenu.numberOfItems > 0, let item = cavaMenu.item(at: 0) {
+                cavaMenu.removeItem(at: 0)
+                menu.addItem(item)
+            }
+        }
+
         menu.autoenablesItems = false
         return menu
     }
@@ -4979,6 +5020,11 @@ class MenuActions: NSObject {
 
     @objc func toggleCompactWindow() {
         WindowManager.shared.toggleCompactWindow()
+    }
+
+    @objc func setCompactBackdropMode(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? CompactBackdropMode else { return }
+        WindowManager.shared.setCompactBackdropMode(mode)
     }
 
     @objc func setUIScaleLevel(_ sender: NSMenuItem) {

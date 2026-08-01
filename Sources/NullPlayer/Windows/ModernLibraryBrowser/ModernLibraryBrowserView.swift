@@ -194,11 +194,17 @@ class ModernLibraryBrowserView: NSView {
     var compactMode: Bool = false {
         didSet {
             guard compactMode != oldValue else { return }
+            refreshCompactBackdrop()
             needsLayout = true
             needsDisplay = true
         }
     }
     private var compactPlayerBar: CompactPlayerBarView?
+    private var backdropView: CompactBackdropView?
+
+    var compactBackdropPresenter: CavaPresenter? {
+        backdropView?.presenter
+    }
 
     /// Height of the embedded compact player bar (0 when not in compact mode).
     private var compactPlayerBarHeight: CGFloat {
@@ -569,12 +575,16 @@ class ModernLibraryBrowserView: NSView {
     
     // Artwork
     private var currentArtwork: NSImage?
+    /// Artwork for the playing track, kept separate from selection-driven browser artwork.
+    private var currentTrackArtwork: NSImage?
     private var artworkTrackId: UUID?
+    private var currentTrackArtworkLoadTask: Task<Void, Never>?
     private var artworkLoadTask: Task<Void, Never>?
     private var artworkCyclingTask: Task<Void, Never>?
     private var radioLoadTask: Task<Void, Never>?
     private var radioPlayTask: Task<Void, Never>?
     private var loadGeneration: Int = 0
+    private var isPreparingForUITeardown = false
     private static let artworkCache = NSCache<NSString, NSImage>()
     private var artworkImages: [NSImage] = []
     private var artworkIndex: Int = 0
@@ -868,6 +878,7 @@ class ModernLibraryBrowserView: NSView {
         stopLoadingAnimation(force: true)
         stopServerNameScroll()
         stopVisualizerTimer()
+        backdropView?.stop()
     }
 
     /// Synchronously cancel every in-flight task, work item, and timer this view owns so it can
@@ -876,6 +887,7 @@ class ModernLibraryBrowserView: NSView {
     /// or a self-retaining repeating timer. `deinit` is deferred by AppKit's autorelease pool, so
     /// `WindowManager.teardownModeDependentWindows()` calls this *before* closing the window.
     func prepareForUITeardown() {
+        isPreparingForUITeardown = true
         // Async tasks — the detached @MainActor expand/load tasks don't inherit cancellation and
         // strongly capture self, so an in-flight one would survive teardown without this.
         for task in [localFolderBuildTask,
@@ -884,7 +896,7 @@ class ModernLibraryBrowserView: NSView {
                      jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
                      youtubeExpandTask, youtubeDownloadTask,
                      embyLoadTask, embyExpandTask,
-                     ratingSubmitTask, artworkLoadTask, artworkCyclingTask,
+                     ratingSubmitTask, currentTrackArtworkLoadTask, artworkLoadTask, artworkCyclingTask,
                      radioLoadTask, radioPlayTask] {
             task?.cancel()
         }
@@ -894,7 +906,8 @@ class ModernLibraryBrowserView: NSView {
         jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
         youtubeExpandTask = nil; youtubeDownloadTask = nil
         embyLoadTask = nil; embyExpandTask = nil
-        ratingSubmitTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
+        ratingSubmitTask = nil
+        currentTrackArtworkLoadTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
         radioLoadTask = nil; radioPlayTask = nil
 
         // Work items + timers (timers with a target/captured self can also pin the view alive).
@@ -904,13 +917,18 @@ class ModernLibraryBrowserView: NSView {
         stopLoadingAnimation(force: true)
         stopServerNameScroll()
         stopVisualizerTimer()
+        backdropView?.stop()
+        backdropView?.removeFromSuperview()
+        backdropView = nil
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
         updateCornerMask()
         updateEmbeddedSubviewFrames()
+        refreshCompactBackdrop()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -928,6 +946,26 @@ class ModernLibraryBrowserView: NSView {
     
     private func currentSkin() -> ModernSkin {
         return ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
+    }
+
+    private let backdropScrimAlpha: CGFloat = 0.72
+
+    private var backdropActive: Bool {
+        compactMode
+            && WindowManager.shared.isRunningModernUI
+            && WindowManager.shared.compactBackdropMode != .off
+    }
+
+    private func contentFill(_ base: NSColor) -> NSColor {
+        guard backdropActive else { return base }
+        return base.withAlphaComponent(base.alphaComponent * backdropScrimAlpha)
+    }
+
+    private func updateHistoryHostingBackground() {
+        guard let historyHostingView else { return }
+        let background = contentFill(currentSkin().backgroundColor)
+        historyHostingView.layer?.backgroundColor = background.cgColor
+        historyHostingView.layer?.isOpaque = !backdropActive && background.alphaComponent >= 1
     }
 
     private func updateCornerMask() {
@@ -958,8 +996,9 @@ class ModernLibraryBrowserView: NSView {
                                         headerTitle: "Library Data")
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.wantsLayer = true
-        hostingView.layer?.backgroundColor = skin.backgroundColor.withAlphaComponent(1.0).cgColor
-        hostingView.layer?.isOpaque = true
+        let background = contentFill(skin.backgroundColor)
+        hostingView.layer?.backgroundColor = background.cgColor
+        hostingView.layer?.isOpaque = !backdropActive && background.alphaComponent >= 1
         hostingView.appearance = skinAppearance(for: skin)
         hostingView.setAccessibilityIdentifier("modernLibraryBrowser.data")
         hostingView.setAccessibilityLabel("Library Data")
@@ -1001,6 +1040,45 @@ class ModernLibraryBrowserView: NSView {
             ratingOverlay.frame = bounds
         }
         updateCompactPlayerBarFrame()
+        updateBackdropFrame()
+    }
+
+    private func updateBackdropFrame() {
+        backdropView?.frame = frame
+    }
+
+    func refreshCompactBackdrop() {
+        guard !isPreparingForUITeardown,
+              compactMode, WindowManager.shared.isRunningModernUI,
+              WindowManager.shared.compactBackdropMode != .off,
+              let container = superview else {
+            backdropView?.stop()
+            backdropView?.removeFromSuperview()
+            backdropView = nil
+            updateHistoryHostingBackground()
+            needsDisplay = true
+            return
+        }
+
+        let backdrop: CompactBackdropView
+        if let existing = backdropView {
+            backdrop = existing
+        } else {
+            backdrop = CompactBackdropView(frame: frame)
+            container.addSubview(backdrop, positioned: .below, relativeTo: self)
+            backdropView = backdrop
+        }
+        backdrop.frame = frame
+        backdrop.updateArtwork(currentTrackArtwork)
+        backdrop.reload()
+        updateHistoryHostingBackground()
+
+        if WindowManager.shared.compactBackdropMode == .albumArt,
+           let track = WindowManager.shared.audioEngine.currentTrack,
+           artworkTrackId != track.id || currentTrackArtwork == nil {
+            loadArtwork(for: track)
+        }
+        needsDisplay = true
     }
 
     /// Create/position/remove the embedded compact player bar to match the current mode.
@@ -1092,6 +1170,9 @@ class ModernLibraryBrowserView: NSView {
         
         let skin = currentSkin()
         let mainOpacity = skin.resolvedOpacity(for: .mainWindow)
+        let backgroundOpacity = backdropActive
+            ? mainOpacity.background * backdropScrimAlpha
+            : mainOpacity.background
 
         // Fast path: scroll timer marks only server bar dirty — skip full window redraw.
         // Always fill the full background first (copy blend mode) so the layer is never
@@ -1107,7 +1188,7 @@ class ModernLibraryBrowserView: NSView {
                 context: context,
                 adjacentEdges: adjacentEdges,
                 sharpCorners: sharpCorners,
-                backgroundOpacity: mainOpacity.background,
+                backgroundOpacity: backgroundOpacity,
                 drawMetalAccentStrip: false
             )
             context.saveGState()
@@ -1124,7 +1205,7 @@ class ModernLibraryBrowserView: NSView {
             context: context,
             adjacentEdges: adjacentEdges,
             sharpCorners: sharpCorners,
-            backgroundOpacity: mainOpacity.background,
+            backgroundOpacity: backgroundOpacity,
             drawMetalAccentStrip: false
         )
         renderer.drawWindowBorder(
@@ -1402,7 +1483,7 @@ class ModernLibraryBrowserView: NSView {
                                 width: bounds.width - Layout.borderWidth * 2, height: Layout.tabBarHeight)
         
         // Background
-        (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
+        contentFill(isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(tabBarRect)
 
         let chromeScale = topChromeScale(for: skin)
@@ -1529,7 +1610,7 @@ class ModernLibraryBrowserView: NSView {
                             width: bounds.width - Layout.borderWidth * 2,
                             height: Layout.serverBarHeight)
         
-        (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
+        contentFill(isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(barRect)
 
         let dimColor = skin.textDimColor
@@ -2065,7 +2146,7 @@ class ModernLibraryBrowserView: NSView {
                 ? skin.accentColor.withAlphaComponent(0.15)
                 : skin.surfaceColor.withAlphaComponent(0.3)
         }
-        bgColor.setFill()
+        contentFill(bgColor).setFill()
         let path = NSBezierPath(roundedRect: searchRect, xRadius: 3, yRadius: 3)
         path.fill()
         
@@ -2142,7 +2223,7 @@ class ModernLibraryBrowserView: NSView {
             let gapRect = NSRect(x: headerRect.maxX, y: headerY,
                                  width: bounds.width - Layout.borderWidth - headerRect.maxX,
                                  height: columnHeaderHeight)
-            (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
+            contentFill(isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
             context.fill(gapRect)
             contentListY = listAreaY
         }
@@ -2288,7 +2369,7 @@ class ModernLibraryBrowserView: NSView {
         context.saveGState()
         context.clip(to: rect)
         
-        (isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
+        contentFill(isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(rect)
 
         let headerFont = skin.scaledSystemFont(size: 7.2, weight: .medium)
@@ -2527,9 +2608,9 @@ class ModernLibraryBrowserView: NSView {
     
     private func drawArtOnlyArea(in context: CGContext, contentRect: NSRect, skin: ModernSkin, artwork: NSImage?) {
         if isVisualizingArt {
-            (isMetalRenderStyle ? NSColor(calibratedRed: 0.34, green: 0.38, blue: 0.40, alpha: 1.0) : NSColor.black).setFill()
+            contentFill(isMetalRenderStyle ? NSColor(calibratedRed: 0.34, green: 0.38, blue: 0.40, alpha: 1.0) : NSColor.black).setFill()
         } else {
-            (isMetalRenderStyle ? metalControlFill : skin.surfaceColor).setFill()
+            contentFill(isMetalRenderStyle ? metalControlFill : skin.surfaceColor).setFill()
         }
         context.fill(contentRect)
         
@@ -2566,7 +2647,7 @@ class ModernLibraryBrowserView: NSView {
     private func drawAlphabetIndex(in context: CGContext, rect: NSRect, skin: ModernSkin) {
         // Metal: let the brushed-metal panel show through so the index reads as part of
         // the single continuous surface rather than a darker inset strip.
-        (isMetalRenderStyle ? NSColor.clear : skin.surfaceColor.withAlphaComponent(0.3)).setFill()
+        contentFill(isMetalRenderStyle ? NSColor.clear : skin.surfaceColor.withAlphaComponent(0.3)).setFill()
         context.fill(rect)
         
         let letterCount = CGFloat(alphabetLetters.count)
@@ -3948,7 +4029,14 @@ class ModernLibraryBrowserView: NSView {
             let menu = NSMenu()
             let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
             manageFoldersItem.target = self; menu.addItem(manageFoldersItem)
+            prependCompactBackdropMenu(to: menu)
             NSMenu.popUpContextMenu(menu, with: event, for: self); return
+        }
+        if compactMode {
+            let menu = NSMenu()
+            prependCompactBackdropMenu(to: menu)
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            return
         }
         super.rightMouseDown(with: event)
     }
@@ -4988,6 +5076,7 @@ class ModernLibraryBrowserView: NSView {
         menu.addItem(NSMenuItem.separator())
         let offItem = NSMenuItem(title: "Turn Off", action: #selector(turnOffVisualization), keyEquivalent: "")
         offItem.target = self; menu.addItem(offItem)
+        prependCompactBackdropMenu(to: menu)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
@@ -5021,19 +5110,37 @@ class ModernLibraryBrowserView: NSView {
         menu.addItem(NSMenuItem.separator())
         let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
         exitItem.target = self; menu.addItem(exitItem)
+        prependCompactBackdropMenu(to: menu)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
     private func showColumnConfigMenu(at event: NSEvent) {
-        if hasInternetRadioColumns { return }
+        if hasInternetRadioColumns {
+            guard compactMode else { return }
+            let menu = NSMenu()
+            prependCompactBackdropMenu(to: menu)
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            return
+        }
         let menu = NSMenu()
         menu.autoenablesItems = false
 
         for group in columnGroupsForCurrentMenu() {
             addColumnVisibilityGroup(group, to: menu)
         }
-        
+
+        prependCompactBackdropMenu(to: menu)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private func prependCompactBackdropMenu(to menu: NSMenu) {
+        guard compactMode else { return }
+        if !menu.items.isEmpty {
+            menu.insertItem(.separator(), at: 0)
+        }
+        let item = NSMenuItem(title: "Compact Background", action: nil, keyEquivalent: "")
+        item.submenu = ContextMenuBuilder.buildCompactBackdropMenu(presenter: compactBackdropPresenter)
+        menu.insertItem(item, at: 0)
     }
 
     private func columnGroupsForCurrentMenu() -> [LibraryColumnVisibilityGroup] {
@@ -5598,6 +5705,7 @@ class ModernLibraryBrowserView: NSView {
             queueItem.target = self; queueItem.representedObject = track; menu.addItem(queueItem)
         case .header: return
         }
+        prependCompactBackdropMenu(to: menu)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
@@ -7236,7 +7344,8 @@ class ModernLibraryBrowserView: NSView {
                                                         skinTextColor: Color(skin.textColor),
                                                         headerTitle: "Library Data")
         historyHostingView?.appearance = skinAppearance(for: skin)
-        historyHostingView?.layer?.backgroundColor = skin.backgroundColor.withAlphaComponent(1.0).cgColor
+        updateHistoryHostingBackground()
+        backdropView?.reload()
         invalidateServerBarFontCache()
         updateCornerMask()
         updateEmbeddedSubviewFrames()
@@ -7492,8 +7601,17 @@ class ModernLibraryBrowserView: NSView {
             loadAllArtworkForCurrentTrack()
             return
         }
-        guard WindowManager.shared.showBrowserArtworkBackground else {
-            if currentArtwork != nil { currentArtwork = nil; artworkTrackId = nil; needsDisplay = true }; return
+        let needsCurrentTrackArtwork = WindowManager.shared.showBrowserArtworkBackground
+            || (backdropActive && WindowManager.shared.compactBackdropMode == .albumArt)
+        guard needsCurrentTrackArtwork else {
+            if currentArtwork != nil || currentTrackArtwork != nil {
+                currentArtwork = nil
+                currentTrackArtwork = nil
+                artworkTrackId = nil
+                backdropView?.updateArtwork(nil)
+                needsDisplay = true
+            }
+            return
         }
         loadArtwork(for: track)
     }
@@ -7516,6 +7634,7 @@ class ModernLibraryBrowserView: NSView {
         guard notification.object as? NSWindow == window else { return }
         stopServerNameScroll()
         if isVisualizingArt { visualizerWasActiveBeforeHide = true; stopVisualizerTimer() }
+        backdropView?.reload()
     }
     
     @objc private func windowDidDeminiaturize(_ notification: Notification) {
@@ -7523,6 +7642,7 @@ class ModernLibraryBrowserView: NSView {
         startServerNameScroll()
         if visualizerWasActiveBeforeHide && isVisualizingArt { startVisualizerTimer() }
         visualizerWasActiveBeforeHide = false
+        backdropView?.reload()
     }
     
     @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
@@ -7534,6 +7654,7 @@ class ModernLibraryBrowserView: NSView {
             stopServerNameScroll()
             if visualizerTimer != nil { visualizerWasActiveBeforeHide = isVisualizingArt; stopVisualizerTimer() }
         }
+        backdropView?.reload()
     }
     
     // MARK: - Source Changed
@@ -8389,10 +8510,20 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Artwork Loading
     
     private func loadArtwork(for track: Track?) {
-        artworkLoadTask?.cancel(); artworkLoadTask = nil
-        guard let track = track else { currentArtwork = nil; artworkTrackId = nil; needsDisplay = true; return }
-        guard track.id != artworkTrackId else { return }
-        artworkLoadTask = Task { [weak self] in
+        currentTrackArtworkLoadTask?.cancel(); currentTrackArtworkLoadTask = nil
+        guard let track = track else {
+            currentArtwork = nil
+            currentTrackArtwork = nil
+            artworkTrackId = nil
+            backdropView?.updateArtwork(nil)
+            needsDisplay = true
+            return
+        }
+        guard track.id != artworkTrackId || currentTrackArtwork == nil else {
+            backdropView?.updateArtwork(currentTrackArtwork)
+            return
+        }
+        currentTrackArtworkLoadTask = Task { [weak self] in
             guard let self = self else { return }
             var image: NSImage?
             if let plexRatingKey = track.plexRatingKey {
@@ -8414,7 +8545,9 @@ class ModernLibraryBrowserView: NSView {
             await MainActor.run {
                 guard WindowManager.shared.audioEngine.currentTrack?.id == track.id else { return }
                 self.currentArtwork = image
+                self.currentTrackArtwork = image
                 self.artworkTrackId = track.id
+                self.backdropView?.updateArtwork(image)
                 self.needsDisplay = true
             }
         }
@@ -8550,6 +8683,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func loadAllArtworkForCurrentTrack() {
+        currentTrackArtworkLoadTask?.cancel(); currentTrackArtworkLoadTask = nil
         artworkLoadTask?.cancel(); artworkLoadTask = nil
         artworkCyclingTask?.cancel(); artworkCyclingTask = nil
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
@@ -8586,13 +8720,17 @@ class ModernLibraryBrowserView: NSView {
 
                 self.artworkImages = images; self.artworkIndex = 0
                 self.currentArtwork = images.first
+                self.currentTrackArtwork = images.first
                 self.artworkTrackId = currentTrack.id
+                self.backdropView?.updateArtwork(images.first)
                 self.needsDisplay = true
             }
         }
     }
 
     private func exitArtOnlyModeForMissingArtwork() {
+        currentTrackArtworkLoadTask?.cancel()
+        currentTrackArtworkLoadTask = nil
         artworkLoadTask?.cancel()
         artworkLoadTask = nil
         artworkCyclingTask?.cancel()
@@ -8600,7 +8738,9 @@ class ModernLibraryBrowserView: NSView {
         artworkImages = []
         artworkIndex = 0
         currentArtwork = nil
+        currentTrackArtwork = nil
         artworkTrackId = nil
+        backdropView?.updateArtwork(nil)
         isArtOnlyMode = false
         needsDisplay = true
     }
@@ -8608,7 +8748,10 @@ class ModernLibraryBrowserView: NSView {
     private func cycleToNextArtwork() {
         guard artworkImages.count > 1 else { return }
         artworkIndex = (artworkIndex + 1) % artworkImages.count
-        currentArtwork = artworkImages[artworkIndex]; needsDisplay = true
+        currentArtwork = artworkImages[artworkIndex]
+        currentTrackArtwork = currentArtwork
+        backdropView?.updateArtwork(currentArtwork)
+        needsDisplay = true
     }
     
     private func loadArtworkForSelection() {

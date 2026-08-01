@@ -76,6 +76,33 @@ final class VisualizationPreferencesTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "BrowserVisibleTrackColumns"), "keep")
     }
 
+    func testAllVisualizationResetIncludesCompactWindowCavaKeys() {
+        let keys = VisualizationPreferences.keys(for: .all)
+
+        XCTAssertTrue(keys.contains("cava.compactWindow.barCount"))
+        XCTAssertTrue(keys.contains("cava.compactWindow.colorsCustomized"))
+        XCTAssertFalse(keys.contains("cava.compactWindow.transparentBackground"))
+    }
+
+    func testCompactBackdropUsesAspectFillGeometry() {
+        let square = NSRect(x: 0, y: 0, width: 100, height: 100)
+
+        XCTAssertEqual(
+            CompactBackdropView.aspectFillRect(
+                imageSize: NSSize(width: 200, height: 100),
+                targetRect: square
+            ),
+            NSRect(x: -50, y: 0, width: 200, height: 100)
+        )
+        XCTAssertEqual(
+            CompactBackdropView.aspectFillRect(
+                imageSize: NSSize(width: 100, height: 200),
+                targetRect: square
+            ),
+            NSRect(x: 0, y: -50, width: 100, height: 200)
+        )
+    }
+
     func testProjectMDisplayNamePreservesLegacyPreferenceValue() {
         XCTAssertEqual(VisualizationType.projectM.rawValue, "ProjectM (ProjectM)")
         XCTAssertEqual(VisualizationType.projectM.displayName, "ProjectM")

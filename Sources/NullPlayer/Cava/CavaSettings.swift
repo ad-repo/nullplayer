@@ -9,11 +9,13 @@ enum CavaSettings {
     enum Scope: CaseIterable {
         case cavaWindow
         case mainWindow
+        case compactWindow
 
         var identifier: String {
             switch self {
             case .cavaWindow: return "window"
             case .mainWindow: return "mainWindow"
+            case .compactWindow: return "compactWindow"
             }
         }
     }
@@ -53,13 +55,15 @@ enum CavaSettings {
             }
         case .mainWindow:
             return "cava.mainWindow.\(setting.rawValue)"
+        case .compactWindow:
+            return "cava.compactWindow.\(setting.rawValue)"
         }
     }
 
     /// Durable keys owned by a scope. Used by the centralized visualization reset path.
     static func preferenceKeys(for scope: Scope) -> [String] {
         SettingKey.allCases.compactMap { setting in
-            if scope == .mainWindow
+            if scope != .cavaWindow
                 && (setting == .transparentBackground || setting == .transparencyCustomized) {
                 return nil
             }
@@ -75,7 +79,7 @@ enum CavaSettings {
     /// Canonical menu presets shared by the standalone and embedded Cava controls.
     static func barCountPresets(for scope: Scope) -> [Int] {
         switch scope {
-        case .cavaWindow:
+        case .cavaWindow, .compactWindow:
             return [16, 24, 32, 48, 64]
         case .mainWindow:
             return [12, 19, 24, 32]
@@ -350,6 +354,7 @@ enum CavaSettings {
     static func resetAppearanceForSkinChange(transparentBackground defaultTransparency: Bool = false) {
         setHasCustomColors(false, for: .cavaWindow)
         setHasCustomColors(false, for: .mainWindow)
+        setHasCustomColors(false, for: .compactWindow)
         setTransparentBackground(defaultTransparency, customized: false)
     }
 

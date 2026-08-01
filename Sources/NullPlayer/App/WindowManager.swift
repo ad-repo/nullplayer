@@ -127,6 +127,20 @@ private enum CompactModeState {
     case exiting
 }
 
+enum CompactBackdropMode: Int, CaseIterable {
+    case off
+    case albumArt
+    case cava
+
+    var title: String {
+        switch self {
+        case .off: return "Off"
+        case .albumArt: return "Album Art"
+        case .cava: return "Cava"
+        }
+    }
+}
+
 private struct WindowSnapshot {
     var wasVisible: Bool
     var frame: NSRect
@@ -332,6 +346,25 @@ class WindowManager {
     private var compactStatusItem: NSStatusItem?
 
     private var compactWindowController: CompactModeWindowController?
+
+    /// Backdrop used by the modern/metal compact surface. Classic always resolves to Off.
+    var compactBackdropMode: CompactBackdropMode {
+        guard isRunningModernUI else { return .off }
+        return CompactBackdropMode(
+            rawValue: UserDefaults.standard.integer(forKey: "compactBackdropMode")
+        ) ?? .off
+    }
+
+    var compactBackdropPresenter: CavaPresenter? {
+        guard isRunningModernUI else { return nil }
+        return compactWindowController?.compactBackdropPresenter
+    }
+
+    func setCompactBackdropMode(_ mode: CompactBackdropMode) {
+        guard isRunningModernUI else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: "compactBackdropMode")
+        compactWindowController?.refreshCompactBackdrop()
+    }
 
     /// Marks mode-dependent player windows so stale instances can be distinguished from
     /// legitimate standalone dialogs when sweeping NSApp.windows.
@@ -669,7 +702,8 @@ class WindowManager {
             "waveformShowCuePoints": false,
             "waveformHideTooltip": false,
             "compactModeEnabled": false,
-            "compactWindowEnabled": false
+            "compactWindowEnabled": false,
+            "compactBackdropMode": CompactBackdropMode.off.rawValue
         ])
     }
     
@@ -2879,6 +2913,7 @@ class WindowManager {
     /// skin-default colors after "Reset All Visualization Preferences" cleared its keys.
     func refreshCavaWindowAfterReset() {
         cavaWindowController?.refreshAfterReset()
+        compactWindowController?.refreshCompactBackdrop()
     }
     
     /// Get information about loaded presets (bundled count, custom count, custom path)

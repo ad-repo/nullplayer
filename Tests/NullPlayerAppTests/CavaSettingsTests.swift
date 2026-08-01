@@ -75,6 +75,29 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(CavaSettings.bassTilt, 0.7, accuracy: 0.001)
     }
 
+    func testCompactWindowTuningHasAnIndependentNamespace() {
+        CavaSettings.setBarCount(19, for: .mainWindow)
+        CavaSettings.setBarCount(48, for: .cavaWindow)
+        CavaSettings.setBarCount(64, for: .compactWindow)
+        CavaSettings.setNoiseReduction(0.8, for: .compactWindow)
+
+        XCTAssertEqual(CavaSettings.barCount(for: .compactWindow), 64)
+        XCTAssertEqual(CavaSettings.noiseReduction(for: .compactWindow), 0.8, accuracy: 0.001)
+        XCTAssertEqual(CavaSettings.barCount(for: .mainWindow), 19)
+        XCTAssertEqual(CavaSettings.barCount(for: .cavaWindow), 48)
+        XCTAssertEqual(CavaSettings.mode(for: .compactWindow), .stereo)
+        XCTAssertEqual(CavaSettings.barCountPresets(for: .compactWindow), [16, 24, 32, 48, 64])
+    }
+
+    func testCompactWindowPreferenceKeysExcludeStandaloneTransparency() {
+        let keys = CavaSettings.preferenceKeys(for: .compactWindow)
+
+        XCTAssertTrue(keys.contains("cava.compactWindow.barCount"))
+        XCTAssertTrue(keys.contains("cava.compactWindow.colorsCustomized"))
+        XCTAssertFalse(keys.contains("cava.compactWindow.transparentBackground"))
+        XCTAssertFalse(keys.contains("cava.compactWindow.transparencyCustomized"))
+    }
+
     func testMainWindowResetTuningLeavesStandaloneWindowUntouched() {
         CavaSettings.barCount = 48
         CavaSettings.setBarCount(12, for: .mainWindow)
@@ -97,12 +120,14 @@ final class CavaSettingsTests: XCTestCase {
         CavaSettings.setLowGradientColor(ice.low, for: .mainWindow)
         CavaSettings.setHighGradientColor(ice.high, for: .mainWindow)
         CavaSettings.setHasCustomColors(true, for: .mainWindow)
+        CavaSettings.setHasCustomColors(true, for: .compactWindow)
         CavaSettings.transparentBackground = true
 
         CavaSettings.resetAppearanceForSkinChange()
 
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .cavaWindow))
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertFalse(CavaSettings.hasCustomColors(for: .compactWindow))
         XCTAssertFalse(CavaSettings.transparentBackground)
         XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .cavaWindow), fireIndex)
         XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .mainWindow), iceIndex)
