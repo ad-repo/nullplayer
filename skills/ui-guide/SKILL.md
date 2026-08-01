@@ -822,7 +822,8 @@ The regular Library and Compact surfaces each support a durable visual mode: **O
 **Art**, or **Cava + Art**. They persist independently as `libraryBackdropMode` and
 `compactBackdropMode`. Controls live under **Visuals > Library Window** or
 **Visuals > Compact Window** and in the corresponding surface's context menus. Classic resolves
-both modes to Off.
+both modes to Off. Modern and Metal default both windows to **Cava + Art** on first use; persisted
+window-specific selections still win.
 
 Implementation rules:
 - `ModernLibraryBrowserWindowController` installs a clear container as the window content view.
@@ -845,11 +846,12 @@ Implementation rules:
   artwork image in the browser above the Cava sibling.
 - Cava uses `CavaPresenter(scope: .libraryWindow)` in the regular Library and
   `CavaPresenter(scope: .compactWindow)` in Compact. It draws into the backdrop's complete `bounds`.
-  Library's first-use mode is Mono. Compact's first-use mode is Stereo and its smoothing is Smooth
-  (`noiseReduction = 0.80`). In backdrop Mono, mirror the combined spectrum center-out across both
-  horizontal halves; a one-way frequency sweep can look like half the surface is unused. Start the
-  audio consumer only while Cava is selected and the owning window is visible, non-miniaturized,
-  and on-screen; stop it for Off, Art, hide, occlusion, and teardown.
+  Both scopes default to 64 bars. Library's first-use mode is Mono. Compact's first-use mode is
+  Stereo and its smoothing is Smooth (`noiseReduction = 0.80`). In backdrop Mono, mirror the
+  combined spectrum center-out across both horizontal halves; a one-way frequency sweep can look
+  like half the surface is unused. Start the audio consumer only while Cava is selected and the
+  owning window is visible, non-miniaturized, and on-screen; stop it for Off, Art, hide, occlusion,
+  and teardown.
 - Backdrop Cava menus omit standalone-only Transparency and Close actions. Library and Compact
   tuning/colors use `cava.libraryWindow.*` and `cava.compactWindow.*` keys and participate in
   visualization reset independently.

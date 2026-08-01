@@ -77,6 +77,7 @@ enum CavaSettings {
 
     // Factory defaults for the exposed tuning knobs (the "Reset to Defaults" target).
     static let defaultBarCount = 32
+    static let defaultBrowserBarCount = 64
     static let defaultNoiseReduction = 0.65   // smoothing / latency; lower = snappier
     static let defaultCompactNoiseReduction = 0.80
     static let defaultBassTilt = 0.3          // band bin-count exponent; higher = more bass
@@ -130,7 +131,13 @@ enum CavaSettings {
 
     static func barCount(for scope: Scope) -> Int {
         let count = defaults.integer(forKey: key(.barCount, for: scope))
-        return count > 0 ? count : defaultBarCount
+        guard count <= 0 else { return count }
+        switch scope {
+        case .libraryWindow, .compactWindow:
+            return defaultBrowserBarCount
+        case .cavaWindow, .mainWindow:
+            return defaultBarCount
+        }
     }
 
     static func setBarCount(_ count: Int, for scope: Scope) {

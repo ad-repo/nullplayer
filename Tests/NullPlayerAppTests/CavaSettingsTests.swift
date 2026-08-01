@@ -60,6 +60,7 @@ final class CavaSettingsTests: XCTestCase {
 
     func testCompactWindowDefaultsToStereoWithSmoothTuning() {
         XCTAssertEqual(CavaSettings.mode(for: .compactWindow), .stereo)
+        XCTAssertEqual(CavaSettings.barCount(for: .compactWindow), CavaSettings.defaultBrowserBarCount)
         XCTAssertEqual(
             CavaSettings.noiseReduction(for: .compactWindow),
             CavaSettings.defaultCompactNoiseReduction,
@@ -75,6 +76,7 @@ final class CavaSettingsTests: XCTestCase {
 
     func testLibraryWindowDefaultsToMonoButPreservesExplicitStereo() {
         XCTAssertEqual(CavaSettings.mode(for: .libraryWindow), .mono)
+        XCTAssertEqual(CavaSettings.barCount(for: .libraryWindow), CavaSettings.defaultBrowserBarCount)
 
         CavaSettings.setMode(.stereo, for: .libraryWindow)
 
@@ -134,12 +136,23 @@ final class CavaSettingsTests: XCTestCase {
 
         XCTAssertEqual(CavaSettings.barCount(for: .libraryWindow), 48)
         XCTAssertEqual(CavaSettings.noiseReduction(for: .libraryWindow), 0.9, accuracy: 0.001)
-        XCTAssertEqual(CavaSettings.barCount(for: .compactWindow), CavaSettings.defaultBarCount)
+        XCTAssertEqual(CavaSettings.barCount(for: .compactWindow), CavaSettings.defaultBrowserBarCount)
         XCTAssertEqual(
             CavaSettings.noiseReduction(for: .compactWindow),
             CavaSettings.defaultCompactNoiseReduction,
             accuracy: 0.001
         )
+    }
+
+    func testBrowserWindowTuningResetRestoresSixtyFourBars() {
+        CavaSettings.setBarCount(16, for: .libraryWindow)
+        CavaSettings.setBarCount(24, for: .compactWindow)
+
+        CavaSettings.resetTuning(scope: .libraryWindow)
+        CavaSettings.resetTuning(scope: .compactWindow)
+
+        XCTAssertEqual(CavaSettings.barCount(for: .libraryWindow), 64)
+        XCTAssertEqual(CavaSettings.barCount(for: .compactWindow), 64)
     }
 
     func testMirroredMonoBackdropCoversBothHorizontalEdges() {

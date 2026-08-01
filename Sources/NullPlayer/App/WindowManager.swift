@@ -134,6 +134,7 @@ enum BrowserBackdropMode: Int, CaseIterable {
     case cavaAndArt = 3
 
     static let allCases: [BrowserBackdropMode] = [.off, .cava, .art, .cavaAndArt]
+    static let defaultMode: BrowserBackdropMode = .cavaAndArt
 
     var showsCava: Bool {
         self == .cava || self == .cavaAndArt
@@ -364,7 +365,7 @@ class WindowManager {
         guard isRunningModernUI else { return .off }
         return BrowserBackdropMode(
             rawValue: UserDefaults.standard.integer(forKey: "compactBackdropMode")
-        ) ?? .off
+        ) ?? .defaultMode
     }
 
     var compactBackdropPresenter: CavaPresenter? {
@@ -382,7 +383,7 @@ class WindowManager {
         guard isRunningModernUI else { return .off }
         return BrowserBackdropMode(
             rawValue: UserDefaults.standard.integer(forKey: "libraryBackdropMode")
-        ) ?? .off
+        ) ?? .defaultMode
     }
 
     var libraryBackdropPresenter: CavaPresenter? {
@@ -733,8 +734,8 @@ class WindowManager {
             "waveformHideTooltip": false,
             "compactModeEnabled": false,
             "compactWindowEnabled": false,
-            "compactBackdropMode": BrowserBackdropMode.off.rawValue,
-            "libraryBackdropMode": BrowserBackdropMode.off.rawValue
+            "compactBackdropMode": BrowserBackdropMode.defaultMode.rawValue,
+            "libraryBackdropMode": BrowserBackdropMode.defaultMode.rawValue
         ])
     }
     

@@ -88,6 +88,7 @@ final class VisualizationPreferencesTests: XCTestCase {
     }
 
     func testBrowserBackdropModesSeparateCavaAndLegacyArtwork() {
+        XCTAssertEqual(BrowserBackdropMode.defaultMode, .cavaAndArt)
         XCTAssertFalse(BrowserBackdropMode.off.showsCava)
         XCTAssertFalse(BrowserBackdropMode.off.showsArt)
         XCTAssertTrue(BrowserBackdropMode.cava.showsCava)

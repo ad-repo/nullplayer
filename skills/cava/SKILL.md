@@ -18,7 +18,8 @@ via **Visuals > Library Window > Cava**, **Visuals > Compact Window > Cava**, or
 surface's context menu. Each backdrop has its own settings scope and lifecycle; neither borrows the
 standalone or main-window presenter.
 The window menus expose **Cava**, **Art**, and **Cava + Art** separately. Art always uses the legacy
-browser list-area renderer and geometry; there is no second full-window artwork renderer.
+browser list-area renderer and geometry; there is no second full-window artwork renderer. Both
+windows default to **Cava + Art** on first use while preserving an existing saved selection.
 
 Cava is the shipped default for the embedded main-window visualization in every bundled modern
 skin and every built-in Metal finish. Classic UI continues to default the embedded visualization
@@ -77,9 +78,10 @@ The embedded main-window instance uses its own `CavaPresenter(scope: .mainWindow
 mono, and has a scope-distinct audio consumer and processing queue so it can run independently beside
 the standalone window. The Library and Compact backdrops use `CavaPresenter(scope: .libraryWindow)`
 and `CavaPresenter(scope: .compactWindow)` respectively. Library defaults to Mono and Compact
-defaults to Stereo with Smooth (`0.80`) temporal smoothing. Backdrop Mono is center-out mirrored so
-the combined spectrum occupies the full width. `CompactBackdropView` always draws into its full
-`bounds`; its frame must be the window content container's `bounds`, not the browser view's frame,
+defaults to Stereo with Smooth (`0.80`) temporal smoothing. Both browser scopes default to 64 bars.
+Backdrop Mono is center-out mirrored so the combined spectrum occupies the full width.
+`CompactBackdropView` always draws into its full `bounds`; its frame must be the window content
+container's `bounds`, not the browser view's frame,
 so resizing or an offset browser layout cannot confine the visualization to part of the window.
 On the first Off → Cava transition, invalidate and lay out the complete backdrop/browser sibling
 subtree immediately and again on the next main-run-loop turn. The browser was previously rendered
@@ -146,9 +148,10 @@ keys. Scope-aware accessors use `cava.mainWindow.*` for the embedded analyzer,
 `cava.libraryWindow.*` for the regular Library backdrop, and `cava.compactWindow.*` for the Compact
 backdrop. Main-window mode always resolves to Mono. Library mode defaults to Mono, while Compact
 mode defaults to Stereo; both preserve an explicit mode choice. Compact smoothing defaults to
-`0.80`, while the other scopes default to `0.65`. Each scope's tuning and color choices are
-independent. Bar-count, smoothing, and bass menu presets are canonical `CavaSettings` collections
-shared by the presenters.
+`0.80`, while the other scopes default to `0.65`. Library and Compact bar count defaults to `64`;
+standalone and main-window Cava remain at `32`. Each scope's tuning and color choices are independent.
+Bar-count, smoothing, and bass menu presets are canonical `CavaSettings` collections shared by the
+presenters.
 
 ## Visualization Reset and UI-Family Switches
 
@@ -159,8 +162,8 @@ The embedded main-window Cava keys (`.mainWindow`) live in
 `VisualizationPreferences.mainWindowKeys`. Library (`.libraryWindow`) and Compact
 (`.compactWindow`) backdrop keys live in their visualization reset sets. The standalone window keys
 (`CavaSettings.preferenceKeys(for: .cavaWindow)`) live in `cavaWindowKeys`, which is included only
-in the `.all` reset scope. Reset All clears all four scopes and restores Library's Mono default and
-Compact's Stereo/Smooth first-use defaults.
+in the `.all` reset scope. Reset All clears all four scopes and restores Library's Mono/64-bar
+default and Compact's Stereo/Smooth/64-bar first-use defaults.
 
 `VisualizationPreferences.reset(.all)` therefore resets every Cava scope. Its notification
 phase calls `WindowManager.refreshCavaWindowAfterReset()` and then the open controller's
