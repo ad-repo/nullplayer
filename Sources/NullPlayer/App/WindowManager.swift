@@ -127,7 +127,7 @@ private enum CompactModeState {
     case exiting
 }
 
-enum CompactBackdropMode: Int, CaseIterable {
+enum BrowserBackdropMode: Int, CaseIterable {
     case off
     case albumArt
     case cava
@@ -348,9 +348,9 @@ class WindowManager {
     private var compactWindowController: CompactModeWindowController?
 
     /// Backdrop used by the modern/metal compact surface. Classic always resolves to Off.
-    var compactBackdropMode: CompactBackdropMode {
+    var compactBackdropMode: BrowserBackdropMode {
         guard isRunningModernUI else { return .off }
-        return CompactBackdropMode(
+        return BrowserBackdropMode(
             rawValue: UserDefaults.standard.integer(forKey: "compactBackdropMode")
         ) ?? .off
     }
@@ -360,10 +360,28 @@ class WindowManager {
         return compactWindowController?.compactBackdropPresenter
     }
 
-    func setCompactBackdropMode(_ mode: CompactBackdropMode) {
+    func setCompactBackdropMode(_ mode: BrowserBackdropMode) {
         guard isRunningModernUI else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "compactBackdropMode")
         compactWindowController?.refreshCompactBackdrop()
+    }
+
+    var libraryBackdropMode: BrowserBackdropMode {
+        guard isRunningModernUI else { return .off }
+        return BrowserBackdropMode(
+            rawValue: UserDefaults.standard.integer(forKey: "libraryBackdropMode")
+        ) ?? .off
+    }
+
+    var libraryBackdropPresenter: CavaPresenter? {
+        guard isRunningModernUI else { return nil }
+        return plexBrowserWindowController?.libraryBackdropPresenter
+    }
+
+    func setLibraryBackdropMode(_ mode: BrowserBackdropMode) {
+        guard isRunningModernUI else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: "libraryBackdropMode")
+        plexBrowserWindowController?.refreshLibraryBackdrop()
     }
 
     /// Marks mode-dependent player windows so stale instances can be distinguished from
@@ -703,7 +721,8 @@ class WindowManager {
             "waveformHideTooltip": false,
             "compactModeEnabled": false,
             "compactWindowEnabled": false,
-            "compactBackdropMode": CompactBackdropMode.off.rawValue
+            "compactBackdropMode": BrowserBackdropMode.off.rawValue,
+            "libraryBackdropMode": BrowserBackdropMode.off.rawValue
         ])
     }
     
@@ -1042,6 +1061,7 @@ class WindowManager {
                 }
             }
         }
+        plexBrowserWindowController?.refreshLibraryBackdrop()
         postLayoutChangeNotification()
     }
 
@@ -1134,6 +1154,7 @@ class WindowManager {
         if let controller = plexBrowserWindowController, controller.window?.isVisible == true {
             rememberPlexBrowserFrame()
             controller.window?.orderOut(nil)
+            controller.refreshLibraryBackdrop()
         } else {
             showPlexBrowser()
         }
@@ -2914,6 +2935,7 @@ class WindowManager {
     func refreshCavaWindowAfterReset() {
         cavaWindowController?.refreshAfterReset()
         compactWindowController?.refreshCompactBackdrop()
+        plexBrowserWindowController?.refreshLibraryBackdrop()
     }
     
     /// Get information about loaded presets (bundled count, custom count, custom path)

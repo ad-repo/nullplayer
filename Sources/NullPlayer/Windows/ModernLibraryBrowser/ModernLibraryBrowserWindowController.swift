@@ -152,11 +152,21 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     }
 
     var compactBackdropPresenter: CavaPresenter? {
-        browserView.compactBackdropPresenter
+        browserView.backdropPresenter
     }
 
     func refreshCompactBackdrop() {
-        browserView.refreshCompactBackdrop()
+        browserView.refreshBackdrop()
+    }
+
+    var libraryBackdropPresenter: CavaPresenter? {
+        guard !isCompactMode else { return nil }
+        return browserView.backdropPresenter
+    }
+
+    func refreshLibraryBackdrop() {
+        guard !isCompactMode else { return }
+        browserView.refreshBackdrop()
     }
 }
 
@@ -184,6 +194,7 @@ extension ModernLibraryBrowserWindowController: NSWindowDelegate {
     }
     
     func windowWillClose(_ notification: Notification) {
+        browserView.stopBackdrop()
         WindowManager.shared.rememberPlexBrowserFrameBeforeClose()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }

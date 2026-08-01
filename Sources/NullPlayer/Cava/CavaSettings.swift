@@ -10,12 +10,14 @@ enum CavaSettings {
         case cavaWindow
         case mainWindow
         case compactWindow
+        case libraryWindow
 
         var identifier: String {
             switch self {
             case .cavaWindow: return "window"
             case .mainWindow: return "mainWindow"
             case .compactWindow: return "compactWindow"
+            case .libraryWindow: return "libraryWindow"
             }
         }
     }
@@ -57,6 +59,8 @@ enum CavaSettings {
             return "cava.mainWindow.\(setting.rawValue)"
         case .compactWindow:
             return "cava.compactWindow.\(setting.rawValue)"
+        case .libraryWindow:
+            return "cava.libraryWindow.\(setting.rawValue)"
         }
     }
 
@@ -80,7 +84,7 @@ enum CavaSettings {
     /// Canonical menu presets shared by the standalone and embedded Cava controls.
     static func barCountPresets(for scope: Scope) -> [Int] {
         switch scope {
-        case .cavaWindow, .compactWindow:
+        case .cavaWindow, .compactWindow, .libraryWindow:
             return [16, 24, 32, 48, 64]
         case .mainWindow:
             return [12, 19, 24, 32]
@@ -104,9 +108,9 @@ enum CavaSettings {
     // MARK: - Mode (Mono/Stereo)
 
     static func mode(for scope: Scope) -> Mode {
-        // The tiny main-window strip is always mono. Compact starts mono but remains configurable.
+        // The tiny main-window strip is always mono. Other scopes remain configurable.
         guard scope != .mainWindow else { return .mono }
-        let defaultMode: Mode = scope == .compactWindow ? .mono : .stereo
+        let defaultMode: Mode = scope == .libraryWindow ? .mono : .stereo
         let preferenceKey = key(.mode, for: scope)
         guard defaults.object(forKey: preferenceKey) != nil else { return defaultMode }
         let raw = defaults.integer(forKey: preferenceKey)
@@ -360,6 +364,7 @@ enum CavaSettings {
         setHasCustomColors(false, for: .cavaWindow)
         setHasCustomColors(false, for: .mainWindow)
         setHasCustomColors(false, for: .compactWindow)
+        setHasCustomColors(false, for: .libraryWindow)
         setTransparentBackground(defaultTransparency, customized: false)
     }
 

@@ -1,13 +1,15 @@
 import AppKit
 
-/// Independently rendered backdrop beneath the modern compact browser surface.
+/// Independently rendered backdrop beneath a modern Library or Compact browser surface.
 final class CompactBackdropView: NSView {
     private var artwork: NSImage?
     private var presenterStorage: CavaPresenter?
+    let scope: CavaSettings.Scope
+    private let modeProvider: () -> BrowserBackdropMode
 
     var presenter: CavaPresenter {
         if let presenterStorage { return presenterStorage }
-        let presenter = CavaPresenter(scope: .compactWindow)
+        let presenter = CavaPresenter(scope: scope)
         presenter.onNeedsDisplay = { [weak self] in
             self?.needsDisplay = true
         }
@@ -15,7 +17,13 @@ final class CompactBackdropView: NSView {
         return presenter
     }
 
-    override init(frame frameRect: NSRect) {
+    init(
+        frame frameRect: NSRect,
+        scope: CavaSettings.Scope,
+        modeProvider: @escaping () -> BrowserBackdropMode
+    ) {
+        self.scope = scope
+        self.modeProvider = modeProvider
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -23,6 +31,8 @@ final class CompactBackdropView: NSView {
     }
 
     required init?(coder: NSCoder) {
+        scope = .compactWindow
+        modeProvider = { WindowManager.shared.compactBackdropMode }
         super.init(coder: coder)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -37,13 +47,13 @@ final class CompactBackdropView: NSView {
 
     func updateArtwork(_ artwork: NSImage?) {
         self.artwork = artwork
-        if WindowManager.shared.compactBackdropMode == .albumArt {
+        if modeProvider() == .albumArt {
             needsDisplay = true
         }
     }
 
     func reload() {
-        let mode = WindowManager.shared.compactBackdropMode
+        let mode = modeProvider()
         isHidden = mode == .off
 
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
@@ -52,7 +62,7 @@ final class CompactBackdropView: NSView {
         CavaSettings.setSkinDefaultColors(
             low: skin.primaryColor,
             high: skin.accentColor,
-            scope: .compactWindow
+            scope: scope
         )
 
         if mode == .cava, shouldAnimate {
@@ -82,7 +92,7 @@ final class CompactBackdropView: NSView {
         skin.backgroundColor.setFill()
         bounds.fill()
 
-        switch WindowManager.shared.compactBackdropMode {
+        switch modeProvider() {
         case .off:
             return
         case .albumArt:
@@ -104,7 +114,8 @@ final class CompactBackdropView: NSView {
                 barArrays: presenter.barArrays,
                 lowColor: presenter.lowGradientColor,
                 highColor: presenter.highGradientColor,
-                mode: presenter.mode
+                mode: presenter.mode,
+                monoLayout: .mirrored
             )
         }
     }

@@ -41,7 +41,8 @@ enum VisualizationPreferences {
             return browserArtworkKeys
         case .all:
             return Array(Set(mainWindowKeys + spectrumWindowKeys + visualizationWindowKeys
-                + browserArtworkKeys + cavaWindowKeys + compactWindowCavaKeys))
+                + browserArtworkKeys + cavaWindowKeys + compactWindowCavaKeys
+                + libraryWindowCavaKeys))
         }
     }
 
@@ -51,6 +52,7 @@ enum VisualizationPreferences {
     /// clearing these restores mode-correct defaults.
     private static let cavaWindowKeys = CavaSettings.preferenceKeys(for: .cavaWindow)
     private static let compactWindowCavaKeys = CavaSettings.preferenceKeys(for: .compactWindow)
+    private static let libraryWindowCavaKeys = CavaSettings.preferenceKeys(for: .libraryWindow)
 
     private static let legacyVisClassicKeys = [
         "visClassicLastProfileName",

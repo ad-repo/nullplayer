@@ -76,12 +76,15 @@ final class VisualizationPreferencesTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "BrowserVisibleTrackColumns"), "keep")
     }
 
-    func testAllVisualizationResetIncludesCompactWindowCavaKeys() {
+    func testAllVisualizationResetIncludesBrowserWindowCavaKeys() {
         let keys = VisualizationPreferences.keys(for: .all)
 
         XCTAssertTrue(keys.contains("cava.compactWindow.barCount"))
         XCTAssertTrue(keys.contains("cava.compactWindow.colorsCustomized"))
         XCTAssertFalse(keys.contains("cava.compactWindow.transparentBackground"))
+        XCTAssertTrue(keys.contains("cava.libraryWindow.barCount"))
+        XCTAssertTrue(keys.contains("cava.libraryWindow.colorsCustomized"))
+        XCTAssertFalse(keys.contains("cava.libraryWindow.transparentBackground"))
     }
 
     func testCompactBackdropUsesAspectFillGeometry() {

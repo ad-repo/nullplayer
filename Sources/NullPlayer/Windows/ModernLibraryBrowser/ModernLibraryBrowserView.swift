@@ -194,7 +194,7 @@ class ModernLibraryBrowserView: NSView {
     var compactMode: Bool = false {
         didSet {
             guard compactMode != oldValue else { return }
-            refreshCompactBackdrop()
+            refreshBackdrop()
             needsLayout = true
             needsDisplay = true
         }
@@ -202,7 +202,7 @@ class ModernLibraryBrowserView: NSView {
     private var compactPlayerBar: CompactPlayerBarView?
     private var backdropView: CompactBackdropView?
 
-    var compactBackdropPresenter: CavaPresenter? {
+    var backdropPresenter: CavaPresenter? {
         backdropView?.presenter
     }
 
@@ -928,7 +928,7 @@ class ModernLibraryBrowserView: NSView {
         layer?.backgroundColor = NSColor.clear.cgColor
         updateCornerMask()
         updateEmbeddedSubviewFrames()
-        refreshCompactBackdrop()
+        refreshBackdrop()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -951,9 +951,17 @@ class ModernLibraryBrowserView: NSView {
     private let backdropScrimAlpha: CGFloat = 0.72
 
     private var backdropActive: Bool {
+        WindowManager.shared.isRunningModernUI && effectiveBackdropMode != .off
+    }
+
+    private var effectiveBackdropMode: BrowserBackdropMode {
         compactMode
-            && WindowManager.shared.isRunningModernUI
-            && WindowManager.shared.compactBackdropMode != .off
+            ? WindowManager.shared.compactBackdropMode
+            : WindowManager.shared.libraryBackdropMode
+    }
+
+    private var backdropScope: CavaSettings.Scope {
+        compactMode ? .compactWindow : .libraryWindow
     }
 
     private func contentFill(_ base: NSColor) -> NSColor {
@@ -1048,10 +1056,10 @@ class ModernLibraryBrowserView: NSView {
         backdropView.frame = container.bounds
     }
 
-    func refreshCompactBackdrop() {
+    func refreshBackdrop() {
         guard !isPreparingForUITeardown,
-              compactMode, WindowManager.shared.isRunningModernUI,
-              WindowManager.shared.compactBackdropMode != .off,
+              WindowManager.shared.isRunningModernUI,
+              effectiveBackdropMode != .off,
               let container = superview else {
             backdropView?.stop()
             backdropView?.removeFromSuperview()
@@ -1062,10 +1070,16 @@ class ModernLibraryBrowserView: NSView {
         }
 
         let backdrop: CompactBackdropView
-        if let existing = backdropView {
+        if let existing = backdropView, existing.scope == backdropScope {
             backdrop = existing
         } else {
-            backdrop = CompactBackdropView(frame: container.bounds)
+            backdropView?.stop()
+            backdropView?.removeFromSuperview()
+            backdrop = CompactBackdropView(
+                frame: container.bounds,
+                scope: backdropScope,
+                modeProvider: { [weak self] in self?.effectiveBackdropMode ?? .off }
+            )
             container.addSubview(backdrop, positioned: .below, relativeTo: self)
             backdropView = backdrop
         }
@@ -1074,12 +1088,16 @@ class ModernLibraryBrowserView: NSView {
         backdrop.reload()
         updateHistoryHostingBackground()
 
-        if WindowManager.shared.compactBackdropMode == .albumArt,
+        if effectiveBackdropMode == .albumArt,
            let track = WindowManager.shared.audioEngine.currentTrack,
            artworkTrackId != track.id || currentTrackArtwork == nil {
             loadArtwork(for: track)
         }
         needsDisplay = true
+    }
+
+    func stopBackdrop() {
+        backdropView?.stop()
     }
 
     /// Create/position/remove the embedded compact player bar to match the current mode.
@@ -4030,12 +4048,12 @@ class ModernLibraryBrowserView: NSView {
             let menu = NSMenu()
             let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
             manageFoldersItem.target = self; menu.addItem(manageFoldersItem)
-            prependCompactBackdropMenu(to: menu)
+            prependBackdropMenu(to: menu)
             NSMenu.popUpContextMenu(menu, with: event, for: self); return
         }
-        if compactMode {
+        if backdropMenuIsAvailable {
             let menu = NSMenu()
-            prependCompactBackdropMenu(to: menu)
+            prependBackdropMenu(to: menu)
             NSMenu.popUpContextMenu(menu, with: event, for: self)
             return
         }
@@ -5077,7 +5095,7 @@ class ModernLibraryBrowserView: NSView {
         menu.addItem(NSMenuItem.separator())
         let offItem = NSMenuItem(title: "Turn Off", action: #selector(turnOffVisualization), keyEquivalent: "")
         offItem.target = self; menu.addItem(offItem)
-        prependCompactBackdropMenu(to: menu)
+        prependBackdropMenu(to: menu)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
@@ -5111,15 +5129,15 @@ class ModernLibraryBrowserView: NSView {
         menu.addItem(NSMenuItem.separator())
         let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
         exitItem.target = self; menu.addItem(exitItem)
-        prependCompactBackdropMenu(to: menu)
+        prependBackdropMenu(to: menu)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
     private func showColumnConfigMenu(at event: NSEvent) {
         if hasInternetRadioColumns {
-            guard compactMode else { return }
+            guard backdropMenuIsAvailable else { return }
             let menu = NSMenu()
-            prependCompactBackdropMenu(to: menu)
+            prependBackdropMenu(to: menu)
             NSMenu.popUpContextMenu(menu, with: event, for: self)
             return
         }
@@ -5130,18 +5148,27 @@ class ModernLibraryBrowserView: NSView {
             addColumnVisibilityGroup(group, to: menu)
         }
 
-        prependCompactBackdropMenu(to: menu)
+        prependBackdropMenu(to: menu)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
-    private func prependCompactBackdropMenu(to menu: NSMenu) {
-        guard compactMode,
-              AppCapabilities.supports(.compactWindowVisualsMenu) else { return }
+    private var backdropMenuIsAvailable: Bool {
+        !compactMode || AppCapabilities.supports(.compactWindowVisualsMenu)
+    }
+
+    private func prependBackdropMenu(to menu: NSMenu) {
+        guard backdropMenuIsAvailable else { return }
         if !menu.items.isEmpty {
             menu.insertItem(.separator(), at: 0)
         }
-        let item = NSMenuItem(title: "Compact Background", action: nil, keyEquivalent: "")
-        item.submenu = ContextMenuBuilder.buildCompactBackdropMenu(presenter: compactBackdropPresenter)
+        let item = NSMenuItem(
+            title: compactMode ? "Compact Background" : "Library Background",
+            action: nil,
+            keyEquivalent: ""
+        )
+        item.submenu = compactMode
+            ? ContextMenuBuilder.buildCompactBackdropMenu(presenter: backdropPresenter)
+            : ContextMenuBuilder.buildLibraryBackdropMenu(presenter: backdropPresenter)
         menu.insertItem(item, at: 0)
     }
 
@@ -5707,7 +5734,7 @@ class ModernLibraryBrowserView: NSView {
             queueItem.target = self; queueItem.representedObject = track; menu.addItem(queueItem)
         case .header: return
         }
-        prependCompactBackdropMenu(to: menu)
+        prependBackdropMenu(to: menu)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
@@ -7604,7 +7631,7 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         let needsCurrentTrackArtwork = WindowManager.shared.showBrowserArtworkBackground
-            || (backdropActive && WindowManager.shared.compactBackdropMode == .albumArt)
+            || (backdropActive && effectiveBackdropMode == .albumArt)
         guard needsCurrentTrackArtwork else {
             if currentArtwork != nil || currentTrackArtwork != nil {
                 currentArtwork = nil

@@ -5,8 +5,9 @@ import NullPlayerCore
 
 /// Builds the shared right-click context menu for all skin windows
 class ContextMenuBuilder {
-    /// Keeps menu targets alive when the compact window has not been created yet.
+    /// Keeps menu targets alive when their browser window has not been created yet.
     private static let compactBackdropFallbackPresenter = CavaPresenter(scope: .compactWindow)
+    private static let libraryBackdropFallbackPresenter = CavaPresenter(scope: .libraryWindow)
     
     // MARK: - Main Menu Builder
     
@@ -442,6 +443,11 @@ class ContextMenuBuilder {
         menu.addItem(spectrumWindowItem)
 
         menu.addItem(buildVisualizationsMenuItem())
+        if wm.isRunningModernUI {
+            let libraryWindowItem = NSMenuItem(title: "Library Window", action: nil, keyEquivalent: "")
+            libraryWindowItem.submenu = buildLibraryBackdropMenu()
+            menu.addItem(libraryWindowItem)
+        }
         if wm.isRunningModernUI,
            AppCapabilities.supports(.compactWindowVisualsMenu) {
             let compactWindowItem = NSMenuItem(title: "Compact Window", action: nil, keyEquivalent: "")
@@ -457,15 +463,39 @@ class ContextMenuBuilder {
     }
 
     static func buildCompactBackdropMenu(presenter explicitPresenter: CavaPresenter? = nil) -> NSMenu {
-        let menu = NSMenu()
-        guard AppCapabilities.supports(.compactWindowVisualsMenu) else { return menu }
+        guard AppCapabilities.supports(.compactWindowVisualsMenu) else { return NSMenu() }
         let wm = WindowManager.shared
-        let currentMode = wm.compactBackdropMode
+        return buildBrowserBackdropMenu(
+            currentMode: wm.compactBackdropMode,
+            presenter: explicitPresenter
+                ?? wm.compactBackdropPresenter
+                ?? compactBackdropFallbackPresenter,
+            action: #selector(MenuActions.setCompactBackdropMode(_:))
+        )
+    }
 
-        for mode in CompactBackdropMode.allCases {
+    static func buildLibraryBackdropMenu(presenter explicitPresenter: CavaPresenter? = nil) -> NSMenu {
+        let wm = WindowManager.shared
+        return buildBrowserBackdropMenu(
+            currentMode: wm.libraryBackdropMode,
+            presenter: explicitPresenter
+                ?? wm.libraryBackdropPresenter
+                ?? libraryBackdropFallbackPresenter,
+            action: #selector(MenuActions.setLibraryBackdropMode(_:))
+        )
+    }
+
+    private static func buildBrowserBackdropMenu(
+        currentMode: BrowserBackdropMode,
+        presenter: CavaPresenter,
+        action: Selector
+    ) -> NSMenu {
+        let menu = NSMenu()
+
+        for mode in BrowserBackdropMode.allCases {
             let item = NSMenuItem(
                 title: mode.title,
-                action: #selector(MenuActions.setCompactBackdropMode(_:)),
+                action: action,
                 keyEquivalent: ""
             )
             item.target = MenuActions.shared
@@ -476,9 +506,6 @@ class ContextMenuBuilder {
 
         if currentMode == .cava {
             menu.addItem(.separator())
-            let presenter = explicitPresenter
-                ?? wm.compactBackdropPresenter
-                ?? compactBackdropFallbackPresenter
             let cavaMenu = presenter.buildMenu(showTransparency: false, includeClose: false)
             while cavaMenu.numberOfItems > 0, let item = cavaMenu.item(at: 0) {
                 cavaMenu.removeItem(at: 0)
@@ -5026,8 +5053,13 @@ class MenuActions: NSObject {
 
     @objc func setCompactBackdropMode(_ sender: NSMenuItem) {
         guard AppCapabilities.supports(.compactWindowVisualsMenu) else { return }
-        guard let mode = sender.representedObject as? CompactBackdropMode else { return }
+        guard let mode = sender.representedObject as? BrowserBackdropMode else { return }
         WindowManager.shared.setCompactBackdropMode(mode)
+    }
+
+    @objc func setLibraryBackdropMode(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? BrowserBackdropMode else { return }
+        WindowManager.shared.setLibraryBackdropMode(mode)
     }
 
     @objc func setUIScaleLevel(_ sender: NSMenuItem) {
