@@ -79,6 +79,10 @@ defaults to Stereo with Smooth (`0.80`) temporal smoothing. Backdrop Mono is cen
 the combined spectrum occupies the full width. `CompactBackdropView` always draws into its full
 `bounds`; its frame must be the window content container's `bounds`, not the browser view's frame,
 so resizing or an offset browser layout cannot confine the visualization to part of the window.
+On the first Off → Cava transition, invalidate and lay out the complete backdrop/browser sibling
+subtree immediately and again on the next main-run-loop turn. The browser was previously rendered
+opaque, and an ordinary view-only invalidation can leave a horizontal region of cached opaque
+content covering either Mono or Stereo until the window is reconstructed.
 
 ## Window Layout
 

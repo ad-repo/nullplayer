@@ -832,6 +832,10 @@ Implementation rules:
 - Size the backdrop from the content container's `bounds` on creation and every layout pass. Do not
   copy the browser's `frame`: an offset or partially sized browser frame can restrict Cava or album
   art to one side of the compact window. Keep the backdrop autoresizing in width and height.
+- When a backdrop is first selected from Off, mark the complete container subtree for display and
+  layout immediately and again on the next main-run-loop turn. This transition changes the browser
+  from an opaque cached surface into a translucent sibling composition; invalidating only the
+  browser can leave a horizontal cached region covering the backdrop until relaunch.
 - The browser remains above the backdrop and uses translucent background/panel fills while a
   backdrop is active. Text, controls, borders, and hit testing remain browser-owned and fully
   interactive. `CompactBackdropView.hitTest` returns `nil`.

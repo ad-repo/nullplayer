@@ -1056,16 +1056,39 @@ class ModernLibraryBrowserView: NSView {
         backdropView.frame = container.bounds
     }
 
+    /// Switching from an opaque browser to a translucent backdrop composition can leave portions
+    /// of AppKit's layer cache untouched on the first selection. Repaint the complete sibling
+    /// hierarchy now and once more after menu tracking/layout has returned to the main run loop.
+    private func redrawBackdropComposition(in container: NSView?) {
+        guard let container else {
+            needsDisplay = true
+            return
+        }
+
+        container.markSubtreeForDisplayAndLayout()
+        container.layoutSubtreeIfNeeded()
+        container.window?.displayIfNeeded()
+
+        DispatchQueue.main.async { [weak self, weak container] in
+            guard let self, let container, self.superview === container else { return }
+            self.updateBackdropFrame()
+            container.markSubtreeForDisplayAndLayout()
+            container.layoutSubtreeIfNeeded()
+            container.window?.displayIfNeeded()
+        }
+    }
+
     func refreshBackdrop() {
+        let container = superview
         guard !isPreparingForUITeardown,
               WindowManager.shared.isRunningModernUI,
               effectiveBackdropMode != .off,
-              let container = superview else {
+              let container else {
             backdropView?.stop()
             backdropView?.removeFromSuperview()
             backdropView = nil
             updateHistoryHostingBackground()
-            needsDisplay = true
+            redrawBackdropComposition(in: container)
             return
         }
 
@@ -1093,7 +1116,7 @@ class ModernLibraryBrowserView: NSView {
            artworkTrackId != track.id || currentTrackArtwork == nil {
             loadArtwork(for: track)
         }
-        needsDisplay = true
+        redrawBackdropComposition(in: container)
     }
 
     func stopBackdrop() {
