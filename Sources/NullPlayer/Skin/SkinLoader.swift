@@ -7,6 +7,7 @@ class SkinLoader {
     // MARK: - Singleton
     
     static let shared = SkinLoader()
+    static let temporaryDirectoryPrefix = "ClassicSkin_"
     
     private init() {}
     
@@ -16,7 +17,7 @@ class SkinLoader {
     func load(from url: URL) throws -> Skin {
         // Create temporary directory for extraction
         let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("\(Self.temporaryDirectoryPrefix)\(UUID().uuidString)")
         
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         

@@ -554,40 +554,44 @@ final class StreamRipper {
         }
     }
 
-    /// Filename prefixes of every temporary staging directory this ripper
-    /// creates under the system temp dir (`makeLocalStaging` for yt-dlp
-    /// downloads, and the radio/URL rip stager). An interrupted rip — app quit,
-    /// crash, or a sleep that kills the download — leaves one of these behind,
-    /// because the completion/recovery code that would delete it never runs.
-    nonisolated static let stagingPrefixes = ["nullplayer-rip-", "nullplayer-ytdl-"]
+    /// Filename prefixes for disk-significant temporary artifacts created by
+    /// interrupted rip, waveform-prerender, and skin-extraction operations.
+    nonisolated static let tempItemPrefixes = [
+        "nullplayer-rip-",
+        "nullplayer-ytdl-",
+        WaveformCacheService.prerenderTempPrefix,
+        ModernSkinLoader.temporaryDirectoryPrefix,
+        SkinLoader.temporaryDirectoryPrefix,
+    ]
 
-    /// Delete orphaned rip staging folders left in the system temp directory by
-    /// interrupted rips. Meant to be called once at app launch, off the main
-    /// thread. macOS only purges `/var/folders/.../T` after days of inactivity
-    /// and usually only on reboot, so multi-GB rips can sit there indefinitely.
+    /// Delete orphaned temporary artifacts left by interrupted operations.
+    /// Meant to be called once at app launch, off the main thread. macOS only
+    /// purges `/var/folders/.../T` after days of inactivity and usually only on
+    /// reboot, so large downloads can sit there indefinitely.
     ///
-    /// A folder is deleted only when its `StagingLease` can be acquired — i.e.
-    /// no rip in any process is still using it — and, as a secondary guard,
-    /// nothing inside it has been modified for at least `minInactivity` seconds.
-    /// The lease is held across the modification-time recheck and the delete, so
-    /// there is no window in which a rip could reclaim the folder between the two.
-    nonisolated static func reapOrphanedStaging(minInactivity: TimeInterval = 600) {
+    /// An item is deleted only when an exclusive lease can be acquired and it
+    /// has not been modified for at least `minInactivity` seconds. Rip staging
+    /// directories hold the same lease throughout active work; the inactivity
+    /// guard protects waveform files and skin directories, whose producers are
+    /// short-lived and do not hold a lease.
+    nonisolated static func reapOrphanedTempItems(
+        in tempDirectory: URL = FileManager.default.temporaryDirectory,
+        minInactivity: TimeInterval = 600
+    ) {
         let fm = FileManager.default
-        let tempDir = fm.temporaryDirectory
         let cutoff = Date().addingTimeInterval(-minInactivity)
         guard let entries = try? fm.contentsOfDirectory(
-            at: tempDir,
-            includingPropertiesForKeys: [.isDirectoryKey]
+            at: tempDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey]
         ) else { return }
 
         var reclaimed = 0
         for entry in entries {
             let name = entry.lastPathComponent
-            guard Self.stagingPrefixes.contains(where: { name.hasPrefix($0) }) else { continue }
-            guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
-            // Acquire the folder's lease non-blocking. A live rip (in this or
-            // another process) holds it, so failure means the folder is in
-            // active use — leave it alone.
+            guard Self.tempItemPrefixes.contains(where: { name.hasPrefix($0) }) else { continue }
+            // Acquire the item's lease non-blocking. A live rip (in this or
+            // another process) holds its directory lease, so failure means the
+            // item may be active — leave it alone.
             guard let lease = StagingLease(entry) else { continue }
             defer { lease.release() }
             // Belt-and-braces under the held lease: skip anything modified
@@ -598,19 +602,18 @@ final class StreamRipper {
             }
         }
         if reclaimed > 0 {
-            NSLog("StreamRipper: reaped %d orphaned staging folder(s) from %@", reclaimed, tempDir.path)
+            NSLog("StreamRipper: reaped %d orphaned temporary item(s) from %@", reclaimed, tempDirectory.path)
         }
     }
 
-    /// Newest content-modification date of `directory` itself or any file
-    /// nested inside it. Used to tell an idle (orphaned) staging folder from one
-    /// an active download is still writing into — the folder's own mtime does
-    /// not update while yt-dlp/ffmpeg stream into an already-created `.part`.
-    private nonisolated static func newestModification(in directory: URL) -> Date? {
+    /// Newest content-modification date of `item` itself or any nested file.
+    /// Used to distinguish an idle artifact from one still being written; a
+    /// directory's own mtime does not change when an existing child is updated.
+    private nonisolated static func newestModification(in item: URL) -> Date? {
         let key: URLResourceKey = .contentModificationDateKey
-        var newest = (try? directory.resourceValues(forKeys: [key]))?.contentModificationDate
+        var newest = (try? item.resourceValues(forKeys: [key]))?.contentModificationDate
         guard let enumerator = FileManager.default.enumerator(
-            at: directory,
+            at: item,
             includingPropertiesForKeys: [key]
         ) else { return newest }
         for case let url as URL in enumerator {
