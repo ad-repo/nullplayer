@@ -119,7 +119,7 @@ final class CavaPresenter: NSObject {
     // MARK: Menu building
 
     /// Build the right-click menu. `showTransparency` gates the modern-only transparency toggle.
-    func buildMenu(showTransparency: Bool) -> NSMenu {
+    func buildMenu(showTransparency: Bool, includeClose: Bool = true) -> NSMenu {
         let menu = NSMenu()
 
         addCheckItem(to: menu, title: "Mono", action: #selector(modeAction(_:)),
@@ -151,11 +151,13 @@ final class CavaPresenter: NSObject {
         resetItem.target = self
         menu.addItem(resetItem)
 
-        menu.addItem(.separator())
+        if includeClose {
+            menu.addItem(.separator())
 
-        let closeItem = NSMenuItem(title: "Close", action: #selector(closeAction(_:)), keyEquivalent: "")
-        closeItem.target = self
-        menu.addItem(closeItem)
+            let closeItem = NSMenuItem(title: "Close", action: #selector(closeAction(_:)), keyEquivalent: "")
+            closeItem.target = self
+            menu.addItem(closeItem)
+        }
 
         return menu
     }

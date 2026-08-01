@@ -8,8 +8,15 @@ private protocol CompactModeBrowserSurface: AnyObject {
     func updateCompactBarTime(current: TimeInterval, duration: TimeInterval)
     func updateCompactBarTrack(_ track: Track?)
     func updateCompactBarPlaybackState()
+    var compactBackdropPresenter: CavaPresenter? { get }
+    func refreshCompactBackdrop()
     func skinDidChange()
     func prepareForUITeardown()
+}
+
+private extension CompactModeBrowserSurface {
+    var compactBackdropPresenter: CavaPresenter? { nil }
+    func refreshCompactBackdrop() {}
 }
 
 extension PlexBrowserWindowController: CompactModeBrowserSurface {}
@@ -156,6 +163,14 @@ final class CompactModeWindowController: NSWindowController {
         window?.displayIfNeeded()
     }
 
+    var compactBackdropPresenter: CavaPresenter? {
+        browserController.compactBackdropPresenter
+    }
+
+    func refreshCompactBackdrop() {
+        browserController.refreshCompactBackdrop()
+    }
+
     /// Order the compact window front on the *current* Space while still invisible (alpha 0),
     /// without revealing or repositioning it. Called at Compact-Mode entry **before** the regular
     /// windows are hidden and the app drops to `.accessory`, so NullPlayer always has a window on
@@ -192,6 +207,7 @@ final class CompactModeWindowController: NSWindowController {
             window.makeKey()
             window.hasShadow = true
             window.alphaValue = 1
+            browserController.refreshCompactBackdrop()
             return
         }
 
@@ -265,6 +281,7 @@ final class CompactModeWindowController: NSWindowController {
         window.hasShadow = true
         window.orderFront(nil)
         window.makeKey()
+        browserController.refreshCompactBackdrop()
     }
 
     /// Start observing the status-item window's move and resize notifications to detect
@@ -328,6 +345,7 @@ final class CompactModeWindowController: NSWindowController {
         window.hasShadow = true
         window.alphaValue = 1
         window.makeKey()
+        browserController.refreshCompactBackdrop()
     }
 
     /// Start observing display-configuration changes (added/removed screens, resolution changes).
@@ -424,6 +442,7 @@ final class CompactModeWindowController: NSWindowController {
         anchorButton = nil
         window?.alphaValue = 0
         window?.orderOut(nil)
+        browserController.refreshCompactBackdrop()
     }
 
     private func persistFloatingFrameIfNeeded() {

@@ -30,4 +30,13 @@ protocol LibraryBrowserWindowProviding: ModeDependentWindow {
     /// Used by AppStateManager to save/restore the active tab
     var browseModeRawValue: Int { get set }
 
+    /// Modern/Metal Library backdrop integration. Classic uses the no-op defaults below.
+    var libraryBackdropPresenter: CavaPresenter? { get }
+    func refreshLibraryBackdrop()
+
+}
+
+extension LibraryBrowserWindowProviding {
+    var libraryBackdropPresenter: CavaPresenter? { nil }
+    func refreshLibraryBackdrop() {}
 }

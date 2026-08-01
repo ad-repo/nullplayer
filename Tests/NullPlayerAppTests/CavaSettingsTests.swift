@@ -58,6 +58,47 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(CavaSettings.mode, .stereo)
     }
 
+    func testCompactWindowDefaultsToStereoWithSmoothTuning() {
+        XCTAssertEqual(CavaSettings.mode(for: .compactWindow), .stereo)
+        XCTAssertEqual(CavaSettings.barCount(for: .compactWindow), CavaSettings.defaultBrowserBarCount)
+        XCTAssertEqual(
+            CavaSettings.noiseReduction(for: .compactWindow),
+            CavaSettings.defaultCompactNoiseReduction,
+            accuracy: 0.001
+        )
+    }
+
+    func testCompactWindowCanStillUseExplicitMono() {
+        CavaSettings.setMode(.mono, for: .compactWindow)
+
+        XCTAssertEqual(CavaSettings.mode(for: .compactWindow), .mono)
+    }
+
+    func testLibraryWindowDefaultsToMonoButPreservesExplicitStereo() {
+        XCTAssertEqual(CavaSettings.mode(for: .libraryWindow), .mono)
+        XCTAssertEqual(CavaSettings.barCount(for: .libraryWindow), CavaSettings.defaultBrowserBarCount)
+
+        CavaSettings.setMode(.stereo, for: .libraryWindow)
+
+        XCTAssertEqual(CavaSettings.mode(for: .libraryWindow), .stereo)
+    }
+
+    func testCompactWindowVisualsMenuIsAvailableInDefaultBuild() {
+        XCTAssertTrue(AppCapabilities.supports(.compactWindowVisualsMenu))
+
+        let menu = ContextMenuBuilder.buildCompactBackdropMenu()
+        XCTAssertEqual(
+            Array(menu.items.prefix(4)).map(\.title),
+            ["Off", "Cava", "Art", "Cava + Art"]
+        )
+
+        let libraryMenu = ContextMenuBuilder.buildLibraryBackdropMenu()
+        XCTAssertEqual(
+            Array(libraryMenu.items.prefix(4)).map(\.title),
+            ["Off", "Cava", "Art", "Cava + Art"]
+        )
+    }
+
     func testMainWindowTuningIsIndependentFromStandaloneWindow() {
         CavaSettings.barCount = 64
         CavaSettings.noiseReduction = 0.9
@@ -73,6 +114,76 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(CavaSettings.barCount, 64)
         XCTAssertEqual(CavaSettings.noiseReduction, 0.9, accuracy: 0.001)
         XCTAssertEqual(CavaSettings.bassTilt, 0.7, accuracy: 0.001)
+    }
+
+    func testCompactWindowTuningHasAnIndependentNamespace() {
+        CavaSettings.setBarCount(19, for: .mainWindow)
+        CavaSettings.setBarCount(48, for: .cavaWindow)
+        CavaSettings.setBarCount(64, for: .compactWindow)
+        CavaSettings.setNoiseReduction(0.8, for: .compactWindow)
+
+        XCTAssertEqual(CavaSettings.barCount(for: .compactWindow), 64)
+        XCTAssertEqual(CavaSettings.noiseReduction(for: .compactWindow), 0.8, accuracy: 0.001)
+        XCTAssertEqual(CavaSettings.barCount(for: .mainWindow), 19)
+        XCTAssertEqual(CavaSettings.barCount(for: .cavaWindow), 48)
+        XCTAssertEqual(CavaSettings.mode(for: .compactWindow), .stereo)
+        XCTAssertEqual(CavaSettings.barCountPresets(for: .compactWindow), [16, 24, 32, 48, 64])
+    }
+
+    func testLibraryWindowTuningHasAnIndependentNamespace() {
+        CavaSettings.setBarCount(48, for: .libraryWindow)
+        CavaSettings.setNoiseReduction(0.9, for: .libraryWindow)
+
+        XCTAssertEqual(CavaSettings.barCount(for: .libraryWindow), 48)
+        XCTAssertEqual(CavaSettings.noiseReduction(for: .libraryWindow), 0.9, accuracy: 0.001)
+        XCTAssertEqual(CavaSettings.barCount(for: .compactWindow), CavaSettings.defaultBrowserBarCount)
+        XCTAssertEqual(
+            CavaSettings.noiseReduction(for: .compactWindow),
+            CavaSettings.defaultCompactNoiseReduction,
+            accuracy: 0.001
+        )
+    }
+
+    func testBrowserWindowTuningResetRestoresSixtyFourBars() {
+        CavaSettings.setBarCount(16, for: .libraryWindow)
+        CavaSettings.setBarCount(24, for: .compactWindow)
+
+        CavaSettings.resetTuning(scope: .libraryWindow)
+        CavaSettings.resetTuning(scope: .compactWindow)
+
+        XCTAssertEqual(CavaSettings.barCount(for: .libraryWindow), 64)
+        XCTAssertEqual(CavaSettings.barCount(for: .compactWindow), 64)
+    }
+
+    func testMirroredMonoBackdropCoversBothHorizontalEdges() {
+        let entries = CavaDrawing.monoBarRects(
+            in: CGRect(x: 0, y: 0, width: 200, height: 100),
+            bars: [0.25, 0.75],
+            layout: .mirrored
+        ).sorted { $0.rect.minX < $1.rect.minX }
+
+        XCTAssertEqual(entries.count, 4)
+        XCTAssertEqual(entries.first?.rect.minX, 0)
+        XCTAssertEqual(entries.last?.rect.maxX, 200)
+        XCTAssertEqual(entries.map(\.rect.height), [75, 25, 25, 75])
+    }
+
+    func testCompactWindowPreferenceKeysExcludeStandaloneTransparency() {
+        let keys = CavaSettings.preferenceKeys(for: .compactWindow)
+
+        XCTAssertTrue(keys.contains("cava.compactWindow.barCount"))
+        XCTAssertTrue(keys.contains("cava.compactWindow.colorsCustomized"))
+        XCTAssertFalse(keys.contains("cava.compactWindow.transparentBackground"))
+        XCTAssertFalse(keys.contains("cava.compactWindow.transparencyCustomized"))
+    }
+
+    func testLibraryWindowPreferenceKeysExcludeStandaloneTransparency() {
+        let keys = CavaSettings.preferenceKeys(for: .libraryWindow)
+
+        XCTAssertTrue(keys.contains("cava.libraryWindow.barCount"))
+        XCTAssertTrue(keys.contains("cava.libraryWindow.colorsCustomized"))
+        XCTAssertFalse(keys.contains("cava.libraryWindow.transparentBackground"))
+        XCTAssertFalse(keys.contains("cava.libraryWindow.transparencyCustomized"))
     }
 
     func testMainWindowResetTuningLeavesStandaloneWindowUntouched() {
@@ -97,12 +208,16 @@ final class CavaSettingsTests: XCTestCase {
         CavaSettings.setLowGradientColor(ice.low, for: .mainWindow)
         CavaSettings.setHighGradientColor(ice.high, for: .mainWindow)
         CavaSettings.setHasCustomColors(true, for: .mainWindow)
+        CavaSettings.setHasCustomColors(true, for: .compactWindow)
+        CavaSettings.setHasCustomColors(true, for: .libraryWindow)
         CavaSettings.transparentBackground = true
 
         CavaSettings.resetAppearanceForSkinChange()
 
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .cavaWindow))
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
+        XCTAssertFalse(CavaSettings.hasCustomColors(for: .compactWindow))
+        XCTAssertFalse(CavaSettings.hasCustomColors(for: .libraryWindow))
         XCTAssertFalse(CavaSettings.transparentBackground)
         XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .cavaWindow), fireIndex)
         XCTAssertEqual(CavaSettings.currentColorSchemeIndex(for: .mainWindow), iceIndex)

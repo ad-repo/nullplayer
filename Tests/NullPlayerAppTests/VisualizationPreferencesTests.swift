@@ -76,6 +76,33 @@ final class VisualizationPreferencesTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "BrowserVisibleTrackColumns"), "keep")
     }
 
+    func testAllVisualizationResetIncludesBrowserWindowCavaKeys() {
+        let keys = VisualizationPreferences.keys(for: .all)
+
+        XCTAssertTrue(keys.contains("cava.compactWindow.barCount"))
+        XCTAssertTrue(keys.contains("cava.compactWindow.colorsCustomized"))
+        XCTAssertFalse(keys.contains("cava.compactWindow.transparentBackground"))
+        XCTAssertTrue(keys.contains("cava.libraryWindow.barCount"))
+        XCTAssertTrue(keys.contains("cava.libraryWindow.colorsCustomized"))
+        XCTAssertFalse(keys.contains("cava.libraryWindow.transparentBackground"))
+    }
+
+    func testBrowserBackdropModesSeparateCavaAndLegacyArtwork() {
+        XCTAssertEqual(BrowserBackdropMode.defaultMode, .cavaAndArt)
+        XCTAssertFalse(BrowserBackdropMode.off.showsCava)
+        XCTAssertFalse(BrowserBackdropMode.off.showsArt)
+        XCTAssertTrue(BrowserBackdropMode.cava.showsCava)
+        XCTAssertFalse(BrowserBackdropMode.cava.showsArt)
+        XCTAssertFalse(BrowserBackdropMode.art.showsCava)
+        XCTAssertTrue(BrowserBackdropMode.art.showsArt)
+        XCTAssertTrue(BrowserBackdropMode.cavaAndArt.showsCava)
+        XCTAssertTrue(BrowserBackdropMode.cavaAndArt.showsArt)
+
+        // Preserve the raw values already shipped on this branch: Album Art was 1 and Cava was 2.
+        XCTAssertEqual(BrowserBackdropMode.art.rawValue, 1)
+        XCTAssertEqual(BrowserBackdropMode.cava.rawValue, 2)
+    }
+
     func testProjectMDisplayNamePreservesLegacyPreferenceValue() {
         XCTAssertEqual(VisualizationType.projectM.rawValue, "ProjectM (ProjectM)")
         XCTAssertEqual(VisualizationType.projectM.displayName, "ProjectM")

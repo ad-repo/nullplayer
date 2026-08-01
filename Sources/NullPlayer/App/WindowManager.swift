@@ -127,6 +127,33 @@ private enum CompactModeState {
     case exiting
 }
 
+enum BrowserBackdropMode: Int, CaseIterable {
+    case off = 0
+    case art = 1
+    case cava = 2
+    case cavaAndArt = 3
+
+    static let allCases: [BrowserBackdropMode] = [.off, .cava, .art, .cavaAndArt]
+    static let defaultMode: BrowserBackdropMode = .cavaAndArt
+
+    var showsCava: Bool {
+        self == .cava || self == .cavaAndArt
+    }
+
+    var showsArt: Bool {
+        self == .art || self == .cavaAndArt
+    }
+
+    var title: String {
+        switch self {
+        case .off: return "Off"
+        case .art: return "Art"
+        case .cava: return "Cava"
+        case .cavaAndArt: return "Cava + Art"
+        }
+    }
+}
+
 private struct WindowSnapshot {
     var wasVisible: Bool
     var frame: NSRect
@@ -332,6 +359,43 @@ class WindowManager {
     private var compactStatusItem: NSStatusItem?
 
     private var compactWindowController: CompactModeWindowController?
+
+    /// Backdrop used by the modern/metal compact surface. Classic always resolves to Off.
+    var compactBackdropMode: BrowserBackdropMode {
+        guard isRunningModernUI else { return .off }
+        return BrowserBackdropMode(
+            rawValue: UserDefaults.standard.integer(forKey: "compactBackdropMode")
+        ) ?? .defaultMode
+    }
+
+    var compactBackdropPresenter: CavaPresenter? {
+        guard isRunningModernUI else { return nil }
+        return compactWindowController?.compactBackdropPresenter
+    }
+
+    func setCompactBackdropMode(_ mode: BrowserBackdropMode) {
+        guard isRunningModernUI else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: "compactBackdropMode")
+        compactWindowController?.refreshCompactBackdrop()
+    }
+
+    var libraryBackdropMode: BrowserBackdropMode {
+        guard isRunningModernUI else { return .off }
+        return BrowserBackdropMode(
+            rawValue: UserDefaults.standard.integer(forKey: "libraryBackdropMode")
+        ) ?? .defaultMode
+    }
+
+    var libraryBackdropPresenter: CavaPresenter? {
+        guard isRunningModernUI else { return nil }
+        return plexBrowserWindowController?.libraryBackdropPresenter
+    }
+
+    func setLibraryBackdropMode(_ mode: BrowserBackdropMode) {
+        guard isRunningModernUI else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: "libraryBackdropMode")
+        plexBrowserWindowController?.refreshLibraryBackdrop()
+    }
 
     /// Marks mode-dependent player windows so stale instances can be distinguished from
     /// legitimate standalone dialogs when sweeping NSApp.windows.
@@ -669,7 +733,9 @@ class WindowManager {
             "waveformShowCuePoints": false,
             "waveformHideTooltip": false,
             "compactModeEnabled": false,
-            "compactWindowEnabled": false
+            "compactWindowEnabled": false,
+            "compactBackdropMode": BrowserBackdropMode.defaultMode.rawValue,
+            "libraryBackdropMode": BrowserBackdropMode.defaultMode.rawValue
         ])
     }
     
@@ -1008,6 +1074,7 @@ class WindowManager {
                 }
             }
         }
+        plexBrowserWindowController?.refreshLibraryBackdrop()
         postLayoutChangeNotification()
     }
 
@@ -1100,6 +1167,7 @@ class WindowManager {
         if let controller = plexBrowserWindowController, controller.window?.isVisible == true {
             rememberPlexBrowserFrame()
             controller.window?.orderOut(nil)
+            controller.refreshLibraryBackdrop()
         } else {
             showPlexBrowser()
         }
@@ -2879,6 +2947,8 @@ class WindowManager {
     /// skin-default colors after "Reset All Visualization Preferences" cleared its keys.
     func refreshCavaWindowAfterReset() {
         cavaWindowController?.refreshAfterReset()
+        compactWindowController?.refreshCompactBackdrop()
+        plexBrowserWindowController?.refreshLibraryBackdrop()
     }
     
     /// Get information about loaded presets (bundled count, custom count, custom path)

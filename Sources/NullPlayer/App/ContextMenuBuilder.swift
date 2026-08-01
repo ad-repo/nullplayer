@@ -5,6 +5,9 @@ import NullPlayerCore
 
 /// Builds the shared right-click context menu for all skin windows
 class ContextMenuBuilder {
+    /// Keeps menu targets alive when their browser window has not been created yet.
+    private static let compactBackdropFallbackPresenter = CavaPresenter(scope: .compactWindow)
+    private static let libraryBackdropFallbackPresenter = CavaPresenter(scope: .libraryWindow)
     
     // MARK: - Main Menu Builder
     
@@ -429,6 +432,7 @@ class ContextMenuBuilder {
     /// Builds the top-level "Visuals" menu content for the macOS menu bar.
     static func buildMenuBarVisualsMenu() -> NSMenu {
         let menu = NSMenu()
+        let wm = WindowManager.shared
 
         let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
         mainWindowItem.submenu = buildMainVisualizationSubmenu()
@@ -439,10 +443,76 @@ class ContextMenuBuilder {
         menu.addItem(spectrumWindowItem)
 
         menu.addItem(buildVisualizationsMenuItem())
+        if wm.isRunningModernUI {
+            let libraryWindowItem = NSMenuItem(title: "Library Window", action: nil, keyEquivalent: "")
+            libraryWindowItem.submenu = buildLibraryBackdropMenu()
+            menu.addItem(libraryWindowItem)
+        }
+        if wm.isRunningModernUI,
+           AppCapabilities.supports(.compactWindowVisualsMenu) {
+            let compactWindowItem = NSMenuItem(title: "Compact Window", action: nil, keyEquivalent: "")
+            compactWindowItem.submenu = buildCompactBackdropMenu()
+            menu.addItem(compactWindowItem)
+        }
         menu.addItem(NSMenuItem.separator())
         let resetAll = NSMenuItem(title: "Reset All Visualization Preferences...", action: #selector(MenuActions.resetAllVisualizationPreferences), keyEquivalent: "")
         resetAll.target = MenuActions.shared
         menu.addItem(resetAll)
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    static func buildCompactBackdropMenu(presenter explicitPresenter: CavaPresenter? = nil) -> NSMenu {
+        guard AppCapabilities.supports(.compactWindowVisualsMenu) else { return NSMenu() }
+        let wm = WindowManager.shared
+        return buildBrowserBackdropMenu(
+            currentMode: wm.compactBackdropMode,
+            presenter: explicitPresenter
+                ?? wm.compactBackdropPresenter
+                ?? compactBackdropFallbackPresenter,
+            action: #selector(MenuActions.setCompactBackdropMode(_:))
+        )
+    }
+
+    static func buildLibraryBackdropMenu(presenter explicitPresenter: CavaPresenter? = nil) -> NSMenu {
+        let wm = WindowManager.shared
+        return buildBrowserBackdropMenu(
+            currentMode: wm.libraryBackdropMode,
+            presenter: explicitPresenter
+                ?? wm.libraryBackdropPresenter
+                ?? libraryBackdropFallbackPresenter,
+            action: #selector(MenuActions.setLibraryBackdropMode(_:))
+        )
+    }
+
+    private static func buildBrowserBackdropMenu(
+        currentMode: BrowserBackdropMode,
+        presenter: CavaPresenter,
+        action: Selector
+    ) -> NSMenu {
+        let menu = NSMenu()
+
+        for mode in BrowserBackdropMode.allCases {
+            let item = NSMenuItem(
+                title: mode.title,
+                action: action,
+                keyEquivalent: ""
+            )
+            item.target = MenuActions.shared
+            item.representedObject = mode
+            item.state = currentMode == mode ? .on : .off
+            menu.addItem(item)
+        }
+
+        if currentMode.showsCava {
+            menu.addItem(.separator())
+            let cavaMenu = presenter.buildMenu(showTransparency: false, includeClose: false)
+            while cavaMenu.numberOfItems > 0, let item = cavaMenu.item(at: 0) {
+                cavaMenu.removeItem(at: 0)
+                menu.addItem(item)
+            }
+        }
+
         menu.autoenablesItems = false
         return menu
     }
@@ -1150,11 +1220,14 @@ class ContextMenuBuilder {
         
         optionsMenu.addItem(NSMenuItem.separator())
         
-        // Visual Options
-        let artworkBgItem = NSMenuItem(title: "Browser Album Art Background", action: #selector(MenuActions.toggleBrowserArtworkBackground), keyEquivalent: "")
-        artworkBgItem.target = MenuActions.shared
-        artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
-        optionsMenu.addItem(artworkBgItem)
+        // Modern/Metal expose window-specific Art and Cava + Art choices in Visuals.
+        // Keep the legacy global toggle only for the classic browser.
+        if !wm.isRunningModernUI {
+            let artworkBgItem = NSMenuItem(title: "Browser Album Art Background", action: #selector(MenuActions.toggleBrowserArtworkBackground), keyEquivalent: "")
+            artworkBgItem.target = MenuActions.shared
+            artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
+            optionsMenu.addItem(artworkBgItem)
+        }
 
         return optionsMenu
     }
@@ -4979,6 +5052,17 @@ class MenuActions: NSObject {
 
     @objc func toggleCompactWindow() {
         WindowManager.shared.toggleCompactWindow()
+    }
+
+    @objc func setCompactBackdropMode(_ sender: NSMenuItem) {
+        guard AppCapabilities.supports(.compactWindowVisualsMenu) else { return }
+        guard let mode = sender.representedObject as? BrowserBackdropMode else { return }
+        WindowManager.shared.setCompactBackdropMode(mode)
+    }
+
+    @objc func setLibraryBackdropMode(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? BrowserBackdropMode else { return }
+        WindowManager.shared.setLibraryBackdropMode(mode)
     }
 
     @objc func setUIScaleLevel(_ sender: NSMenuItem) {

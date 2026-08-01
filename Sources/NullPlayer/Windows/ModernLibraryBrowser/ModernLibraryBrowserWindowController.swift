@@ -72,7 +72,14 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
         browserView = ModernLibraryBrowserView(frame: NSRect(origin: .zero, size: ModernSkinElements.libraryDefaultSize))
         browserView.controller = self
         browserView.autoresizingMask = [.width, .height]
-        window?.contentView = browserView
+
+        // The backdrop and browser are siblings so Cava can repaint independently beneath the
+        // browser's translucent custom drawing.
+        let container = NSView(frame: browserView.frame)
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.clear.cgColor
+        container.addSubview(browserView)
+        window?.contentView = container
     }
     
     // MARK: - Public Methods
@@ -143,6 +150,24 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     func updateCompactBarPlaybackState() {
         browserView.compactBarUpdatePlaybackState()
     }
+
+    var compactBackdropPresenter: CavaPresenter? {
+        browserView.backdropPresenter
+    }
+
+    func refreshCompactBackdrop() {
+        browserView.refreshBackdrop()
+    }
+
+    var libraryBackdropPresenter: CavaPresenter? {
+        guard !isCompactMode else { return nil }
+        return browserView.backdropPresenter
+    }
+
+    func refreshLibraryBackdrop() {
+        guard !isCompactMode else { return }
+        browserView.refreshBackdrop()
+    }
 }
 
 // MARK: - NSWindowDelegate
@@ -169,6 +194,7 @@ extension ModernLibraryBrowserWindowController: NSWindowDelegate {
     }
     
     func windowWillClose(_ notification: Notification) {
+        browserView.stopBackdrop()
         WindowManager.shared.rememberPlexBrowserFrameBeforeClose()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }

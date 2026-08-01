@@ -3,6 +3,11 @@ import AppKit
 /// Mode-neutral Cava spectrum analyzer CoreGraphics rendering.
 /// Draws gradient bars (mono as single row, stereo as mirrored L vs R).
 enum CavaDrawing {
+    enum MonoLayout {
+        case frequencySweep
+        case mirrored
+    }
+
     /// Draw cava bars in a given rect.
     ///
     /// - Parameters:
@@ -16,13 +21,20 @@ enum CavaDrawing {
         barArrays: [[Float]],
         lowColor: NSColor,
         highColor: NSColor,
-        mode: CavaSettings.Mode
+        mode: CavaSettings.Mode,
+        monoLayout: MonoLayout = .frequencySweep
     ) {
         guard !rect.isEmpty, !barArrays.isEmpty else { return }
 
         switch mode {
         case .mono:
-            drawMonoMode(in: rect, bars: barArrays[0], lowColor: lowColor, highColor: highColor)
+            drawMonoMode(
+                in: rect,
+                bars: barArrays[0],
+                lowColor: lowColor,
+                highColor: highColor,
+                layout: monoLayout
+            )
         case .stereo:
             drawStereoMode(in: rect, barArrays: barArrays, lowColor: lowColor, highColor: highColor)
         }
@@ -32,25 +44,66 @@ enum CavaDrawing {
         in rect: CGRect,
         bars: [Float],
         lowColor: NSColor,
-        highColor: NSColor
+        highColor: NSColor,
+        layout: MonoLayout
     ) {
         guard !bars.isEmpty else { return }
 
-        let barCount = bars.count
-        let barWidth = rect.width / CGFloat(barCount)
+        for (barRect, value) in monoBarRects(in: rect, bars: bars, layout: layout) {
+            drawGradientBar(in: barRect, intensity: CGFloat(value), lowColor: lowColor, highColor: highColor)
+        }
+    }
+
+    /// Backdrop mono uses a center-out mirrored spectrum so one channel cannot occupy only one
+    /// side of a wide surface. Standalone and inline Cava retain the left-to-right sweep.
+    static func monoBarRects(
+        in rect: CGRect,
+        bars: [Float],
+        layout: MonoLayout
+    ) -> [(rect: CGRect, value: Float)] {
+        guard !rect.isEmpty, !bars.isEmpty else { return [] }
         let barHeight = rect.height
 
-        for (i, value) in bars.enumerated() {
-            let height = barHeight * CGFloat(value)
-            // Views are non-flipped (origin bottom-left), so bars grow up from the bottom edge.
-            let barRect = CGRect(
-                x: rect.minX + CGFloat(i) * barWidth,
-                y: rect.minY,
-                width: barWidth,
-                height: height
-            )
-
-            drawGradientBar(in: barRect, intensity: CGFloat(value), lowColor: lowColor, highColor: highColor)
+        switch layout {
+        case .frequencySweep:
+            let barWidth = rect.width / CGFloat(bars.count)
+            return bars.enumerated().map { index, value in
+                (
+                    CGRect(
+                        x: rect.minX + CGFloat(index) * barWidth,
+                        y: rect.minY,
+                        width: barWidth,
+                        height: barHeight * CGFloat(value)
+                    ),
+                    value
+                )
+            }
+        case .mirrored:
+            let barWidth = (rect.width / 2) / CGFloat(bars.count)
+            return bars.enumerated().flatMap { index, value in
+                let height = barHeight * CGFloat(value)
+                let offset = CGFloat(index) * barWidth
+                return [
+                    (
+                        CGRect(
+                            x: rect.midX - offset - barWidth,
+                            y: rect.minY,
+                            width: barWidth,
+                            height: height
+                        ),
+                        value
+                    ),
+                    (
+                        CGRect(
+                            x: rect.midX + offset,
+                            y: rect.minY,
+                            width: barWidth,
+                            height: height
+                        ),
+                        value
+                    ),
+                ]
+            }
         }
     }
 
