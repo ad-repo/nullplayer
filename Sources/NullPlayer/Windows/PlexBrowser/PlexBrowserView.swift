@@ -9032,12 +9032,27 @@ class PlexBrowserView: NSView {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        var videoTypes: [UTType] = [.movie, .video]
+        for ext in AudioFileValidator.supportedVideoExtensions {
+            if let type = UTType(filenameExtension: ext) { videoTypes.append(type) }
+        }
+        panel.allowedContentTypes = videoTypes
         panel.message = "Select video files to add to your library"
         if panel.runModal() == .OK {
             MediaLibrary.shared.addVideoFiles(urls: panel.urls)
-            loadLocalData()
+            revealLocalVideoCategory()
         }
+    }
+
+    private func revealLocalVideoCategory() {
+        if case .local = currentSource {} else { currentSource = .local }
+        if browseMode != .movies {
+            browseMode = .movies
+            selectedIndices.removeAll()
+            scrollOffset = 0
+        }
+        loadDataForCurrentMode()
+        needsDisplay = true
     }
 
     @objc private func selectLocalSource() {
@@ -9605,7 +9620,7 @@ class PlexBrowserView: NSView {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
             return []
         }
-        return LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false, includePlaylists: true) ? .copy : []
+        return LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: true, includePlaylists: true) ? .copy : []
     }
     
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -9613,7 +9628,8 @@ class PlexBrowserView: NSView {
             return false
         }
         
-        var fileURLs: [URL] = []
+        var audioURLs: [URL] = []
+        var videoURLs: [URL] = []
         var playlistURLs: [URL] = []
         var processedDirectories = false
         
@@ -9628,7 +9644,9 @@ class PlexBrowserView: NSView {
                 playlistURLs.append(url)
             } else if LocalFileDiscovery.isSupportedAudioFile(url) {
                 // Audio file
-                fileURLs.append(url)
+                audioURLs.append(url)
+            } else if LocalFileDiscovery.isSupportedVideoFile(url) {
+                videoURLs.append(url)
             }
         }
         
@@ -9665,16 +9683,21 @@ class PlexBrowserView: NSView {
         }
         
         // Handle audio files
-        if !fileURLs.isEmpty {
-            MediaLibrary.shared.addTracks(urls: fileURLs)
+        if !audioURLs.isEmpty {
+            MediaLibrary.shared.addTracks(urls: audioURLs)
             
             // Switch to local source to show added content
             if case .plex = currentSource {
                 currentSource = .local
             }
         }
+
+        if !videoURLs.isEmpty {
+            MediaLibrary.shared.addVideoFiles(urls: videoURLs)
+            revealLocalVideoCategory()
+        }
         
-        return !fileURLs.isEmpty || !playlistURLs.isEmpty || processedDirectories
+        return !audioURLs.isEmpty || !videoURLs.isEmpty || !playlistURLs.isEmpty || processedDirectories
     }
     
     // MARK: - Right-Click Context Menu (for list items)

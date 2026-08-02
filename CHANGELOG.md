@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.29.7
+
+### Bug Fixes
+
+- **Adding and dragging local video files now works everywhere** — Dropping a video onto the main player window (Modern or Classic skin) now starts it in the video player; dropping a video onto the Library window adds it to Movies and switches to that tab; and **Add Video Files…** jumps to the Movies tab so the import is actually visible, with a file picker that no longer greys out `.mkv`/`.avi`/`.webm`/`.ts`. Local video is now recognized by file extension as well as by probing the container, so formats AVFoundation cannot parse (`.mkv`, `.avi`, `.webm`) are no longer misrouted to the audio engine and silently dropped.
+- **Casting large local media no longer crashes the app** — the built-in media server served files by reading the entire file into memory, so casting a multi-gigabyte movie (a Chromecast requests the whole file up front) exhausted memory and the process was killed the instant playback started. Local files are now streamed to cast devices in bounded 256 KB chunks for both full and range (seek) requests, so memory stays flat regardless of file size.
+
 ## 0.29.6
 
 ### New Features

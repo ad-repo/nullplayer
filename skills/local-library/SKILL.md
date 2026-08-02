@@ -159,6 +159,32 @@ Both `ModernLibraryBrowserView` and `PlexBrowserView` debounce `MediaLibraryDidC
 - Deduplication by normalized path; one-pass `isRegularFile`, `fileSize`, `contentModificationDate` resource-key reads.
 - `includePlaylists: Bool = false` (on both `discoverMedia` and `discoverMediaStreaming`) — when true, `.m3u`/`.pls`/`.m3u8` files are collected into `LocalFileDiscoveryResult.playlistFiles`. Only the library scan (`importMedia`) passes `true`. Playlists are a **third** classification: the early `guard isAudio || isVideo || isPlaylist` includes them, but they do **not** flow through the audio batch flush (`onAudioBatch`) and are **not** in the `allURLs` computed property (callers treat `allURLs` as importable audio/video — a `.m3u` must never be imported as a track).
 
+## Video Drop / Add Routing (per-surface, easy to miss)
+
+Video files must be handled explicitly at every drop/add surface — each has its **own** handler and
+they are not shared. When adding a new one (or debugging "dragging a video does nothing"), check all of:
+
+- `ModernMainWindowView` **and** `MainWindowView` — the Modern and Classic skins have *separate*
+  `performDragOperation`s. Both must pass `includeVideo: true` to `hasSupportedDropContent` and
+  `discoverMediaURLsAsync`; the discovered video `Track` then routes to the video player via the
+  `mediaType == .video` branch in `AudioEngine.loadTrack`/`playTrack`.
+- `ModernLibraryBrowserView.performDragOperation` **and** `PlexBrowserView.performDragOperation` —
+  Modern and Classic have separate Library drop handlers. Both route audio to
+  `MediaLibrary.addTracks(...)` and video to `MediaLibrary.addVideoFiles(...)`; both
+  `draggingEntered` implementations must allow video (`includeVideo: true`).
+- `addVideoFiles()` (the `+ADD` menu) exists in both Library browser implementations — after
+  `MediaLibrary.addVideoFiles`, call
+  `revealLocalVideoCategory()` to switch to local → Movies and reload, or the import succeeds but stays
+  hidden on whatever tab is showing. The `NSOpenPanel` allowed types are built from
+  `AudioFileValidator.supportedVideoExtensions` so `.mkv`/`.avi`/`.webm`/`.ts` aren't greyed out.
+
+**`Track` media-type detection uses an extension fallback.** `Track(url:)` first checks
+`asset.tracks(withMediaType: .video)`, but AVFoundation cannot parse `.mkv`/`.avi`/`.webm`/`.flv`/`.ts`
+(the reason playback uses VLCKit), so that probe returns empty for them. It then falls back to
+`AudioFileValidator.isVideoFile(url:)` (extension), so those containers still classify as `.video`
+instead of being misrouted to the audio engine. Audio extensions are never in the video set, so real
+audio can't be misclassified.
+
 ## NAS Responsiveness
 
 All local `AVAudioFile(forReading:)` calls are async on `deferredIOQueue` (background serial queue in `AudioEngine`).
