@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.8
+
+### Bug Fixes
+
+- **Video playback no longer freezes on startup, and starts at the right volume** — writing the audio volume after the media was assigned but before the player started could enter libVLC's configuration lock while its event thread held the opposing lock, permanently hanging the main thread. The volume is now applied once the audio pipeline exists (as soon as the player begins buffering, before the first sample renders), so playback starts reliably and at the user's volume instead of briefly blasting at full volume. Dragging the volume slider during playback now writes only the volume, without re-running audio-track selection or unmuting on every tick.
+
 ## 0.29.7
 
 ### Bug Fixes
