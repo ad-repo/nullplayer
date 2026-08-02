@@ -108,8 +108,17 @@ class VideoPlayerView: NSView {
     /// Volume level (0.0 - 1.0)
     var volume: Float = 1.0 {
         didSet {
-            // VLCKit expresses volume as 0–100 (up to 200 for boost).
-            mediaPlayer?.audio?.volume = Int32(max(0, min(1, volume)) * 100)
+            // Before the playback pipeline is active, VLCKit can route a volume
+            // write through its global configuration lock while its event thread
+            // holds the matching read lock — a lock inversion that hangs the main
+            // thread. Defer the write until the player reports it is playing; the
+            // deferred value is picked up by the state callbacks (see
+            // `applyAudioOutput()`). Once playing, only the volume is written —
+            // not the track-selection / unmute work — so dragging the slider
+            // stays cheap and free of side effects.
+            if isActivelyPlaying {
+                applyVolume()
+            }
         }
     }
     
@@ -758,7 +767,6 @@ class VideoPlayerView: NSView {
         player.drawable = playerHostView
         player.delegate = self
         player.media = media
-        player.audio?.volume = Int32(max(0, min(1, volume)) * 100)
         mediaPlayer = player
         player.play()
 
@@ -792,8 +800,19 @@ class VideoPlayerView: NSView {
         }
         if let audio = player.audio {
             audio.isMuted = false
-            audio.volume = Int32(max(0, min(1, volume)) * 100)
         }
+        applyVolume()
+    }
+
+    /// Write the current `volume` to VLCKit's audio output and nothing else.
+    /// Split from `applyAudioOutput()` so user-driven volume changes don't also
+    /// re-run audio-track selection and unmuting on every slider tick. No-op
+    /// until the audio output exists (`audio` is nil until the pipeline is up),
+    /// which is also why the initial volume is applied from the state callbacks
+    /// rather than before `play()`.
+    private func applyVolume() {
+        guard let audio = mediaPlayer?.audio else { return }
+        audio.volume = Int32(max(0, min(1, volume)) * 100)
     }
 
     /// Handle the player actually running. VLCKit reports either `.playing` or
@@ -1150,6 +1169,11 @@ extension VideoPlayerView: VLCMediaPlayerDelegate {
                 NSLog("VideoPlayerView: Opening")
                 self.showLoading(true)
             case .buffering:
+                // Apply audio output as soon as the pipeline exists so the
+                // user's volume is in place before the first sample renders —
+                // otherwise VLCKit's default (100) plays briefly at startup.
+                // No-op while `audio` is still nil.
+                self.applyAudioOutput()
                 // VLCKit reports `.buffering` during smooth playback in this
                 // build (not only while pre-buffering), so gate on whether
                 // libVLC is actually playing rather than on the state alone.
