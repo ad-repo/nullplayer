@@ -300,6 +300,11 @@ the range handler and the full-file handler must stream.
   `FileHandle`, 256 KB chunks) wrapped in `HTTPBodySequence(from:count:)`. This mirrors the
   `URLSessionByteStream` used for the Subsonic/Jellyfin proxy path. Memory stays flat regardless of
   file size, and `Content-Length`/`Content-Range` still describe the exact byte count so seeking works.
+- Open and initial seek must succeed before returning `200`/`206`; otherwise return `500`. Do not
+  suppress those errors with `try?`, because a response that advertises `Content-Length` and then
+  yields no bytes leaves the cast client waiting for a body that will never arrive. Subsequent read
+  errors propagate through the body sequence so the connection fails instead of ending as a false
+  successful short response.
 
 ## Key Implementation Gotcha: Data Slice Indexing
 

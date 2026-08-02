@@ -188,38 +188,39 @@ class LocalMediaServer {
     private struct FileByteStream: AsyncBufferedSequence, @unchecked Sendable {
         typealias Element = UInt8
 
-        let fileURL: URL
-        let startOffset: UInt64
+        let fileHandle: FileHandle
         let length: Int64
         static let chunkSize = 256 * 1024
 
+        init(fileURL: URL, startOffset: UInt64, length: Int64) throws {
+            let fileHandle = try FileHandle(forReadingFrom: fileURL)
+            do {
+                try fileHandle.seek(toOffset: startOffset)
+            } catch {
+                try? fileHandle.close()
+                throw error
+            }
+            self.fileHandle = fileHandle
+            self.length = length
+        }
+
         func makeAsyncIterator() -> Iterator {
-            Iterator(fileURL: fileURL, startOffset: startOffset, length: length)
+            Iterator(fileHandle: fileHandle, length: length)
         }
 
         struct Iterator: AsyncBufferedIteratorProtocol {
-            private let fileHandle: FileHandle?
-            private let startOffset: UInt64
+            private let fileHandle: FileHandle
             private var remaining: Int64
-            private var didSeek = false
             private var leftover: [UInt8] = []
             private var leftoverIndex = 0
 
-            init(fileURL: URL, startOffset: UInt64, length: Int64) {
-                self.fileHandle = try? FileHandle(forReadingFrom: fileURL)
-                self.startOffset = startOffset
+            init(fileHandle: FileHandle, length: Int64) {
+                self.fileHandle = fileHandle
                 self.remaining = length
             }
 
-            private mutating func seekIfNeeded() {
-                guard !didSeek else { return }
-                didSeek = true
-                try? fileHandle?.seek(toOffset: startOffset)
-            }
-
             mutating func nextBuffer(suggested count: Int) async throws -> [UInt8]? {
-                guard let fileHandle, remaining > 0 else { return nil }
-                seekIfNeeded()
+                guard remaining > 0 else { return nil }
                 let cap = Swift.max(1, Swift.min(count, FileByteStream.chunkSize))
                 let toRead = Int(Swift.min(Int64(cap), remaining))
                 guard let data = try fileHandle.read(upToCount: toRead), !data.isEmpty else {
@@ -896,7 +897,13 @@ class LocalMediaServer {
         // OOM-killed with no crash log.
         NSLog("LocalMediaServer: Serving full file %@ (%lld bytes)", url.lastPathComponent, fileSize)
 
-        let stream = FileByteStream(fileURL: url, startOffset: 0, length: fileSize)
+        let stream: FileByteStream
+        do {
+            stream = try FileByteStream(fileURL: url, startOffset: 0, length: fileSize)
+        } catch {
+            NSLog("LocalMediaServer: Failed to open file stream for %@: %@", url.path, error.localizedDescription)
+            return HTTPResponse(statusCode: .internalServerError)
+        }
         return HTTPResponse(
             statusCode: .ok,
             headers: [
@@ -904,7 +911,11 @@ class LocalMediaServer {
                 HTTPHeader("Content-Length"): String(fileSize),
                 HTTPHeader("Accept-Ranges"): "bytes"
             ],
-            body: HTTPBodySequence(from: stream, count: Int(fileSize))
+            body: HTTPBodySequence(
+                from: stream,
+                count: Int(fileSize),
+                suggestedBufferSize: FileByteStream.chunkSize
+            )
         )
     }
     
@@ -944,7 +955,14 @@ class LocalMediaServer {
         // Stream the requested range in bounded chunks rather than reading it all at
         // once — a client opening with `Range: bytes=0-` asks for the whole file, so
         // readData(ofLength:) would allocate the entire movie in memory and OOM-kill us.
-        let stream = FileByteStream(fileURL: fileURL, startOffset: UInt64(start), length: length)
+        let stream: FileByteStream
+        do {
+            stream = try FileByteStream(fileURL: fileURL, startOffset: UInt64(start), length: length)
+        } catch {
+            NSLog("LocalMediaServer: Failed to open or seek file stream for %@: %@",
+                  fileURL.path, error.localizedDescription)
+            return HTTPResponse(statusCode: .internalServerError)
+        }
         return HTTPResponse(
             statusCode: .partialContent,
             headers: [
@@ -953,7 +971,11 @@ class LocalMediaServer {
                 HTTPHeader("Content-Range"): "bytes \(start)-\(clampedEnd)/\(fileSize)",
                 HTTPHeader("Accept-Ranges"): "bytes"
             ],
-            body: HTTPBodySequence(from: stream, count: Int(length))
+            body: HTTPBodySequence(
+                from: stream,
+                count: Int(length),
+                suggestedBufferSize: FileByteStream.chunkSize
+            )
         )
     }
     

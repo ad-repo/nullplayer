@@ -168,10 +168,12 @@ they are not shared. When adding a new one (or debugging "dragging a video does 
   `performDragOperation`s. Both must pass `includeVideo: true` to `hasSupportedDropContent` and
   `discoverMediaURLsAsync`; the discovered video `Track` then routes to the video player via the
   `mediaType == .video` branch in `AudioEngine.loadTrack`/`playTrack`.
-- `ModernLibraryBrowserView.performDragOperation` — routes audio to `MediaLibrary.addTracks(...)` and
-  video to `MediaLibrary.addVideoFiles(...)`; `draggingEntered` must also allow video
-  (`includeVideo: true`).
-- `addVideoFiles()` (the `+ADD` menu) — after `MediaLibrary.addVideoFiles`, call
+- `ModernLibraryBrowserView.performDragOperation` **and** `PlexBrowserView.performDragOperation` —
+  Modern and Classic have separate Library drop handlers. Both route audio to
+  `MediaLibrary.addTracks(...)` and video to `MediaLibrary.addVideoFiles(...)`; both
+  `draggingEntered` implementations must allow video (`includeVideo: true`).
+- `addVideoFiles()` (the `+ADD` menu) exists in both Library browser implementations — after
+  `MediaLibrary.addVideoFiles`, call
   `revealLocalVideoCategory()` to switch to local → Movies and reload, or the import succeeds but stays
   hidden on whatever tab is showing. The `NSOpenPanel` allowed types are built from
   `AudioFileValidator.supportedVideoExtensions` so `.mkv`/`.avi`/`.webm`/`.ts` aren't greyed out.

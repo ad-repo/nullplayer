@@ -5915,7 +5915,7 @@ class ModernLibraryBrowserView: NSView {
     /// on whatever tab they were on (e.g. Artists), so nothing appears to happen.
     private func revealLocalVideoCategory() {
         if case .local = currentSource {} else { currentSource = .local }
-        if !browseMode.isVideoMode {
+        if browseMode != .movies {
             browseMode = .movies
             selectedIndices.removeAll()
             scrollOffset = 0
