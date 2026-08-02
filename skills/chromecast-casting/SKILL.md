@@ -285,6 +285,22 @@ To close the Default Media Receiver app (dismiss from TV screen), send STOP to `
 {"type":"SET_VOLUME","volume":{"muted":true},"requestId":N}
 ```
 
+## Serving Local Files (`LocalMediaServer`) — Stream, Never Buffer
+
+`LocalMediaServer` serves registered local files over HTTP for cast devices. **Never load a whole
+file into memory to serve it.** A cast device (Chromecast especially) opens playback with
+`Range: bytes=0-`, i.e. it asks for the entire file, and it also issues plain full-file `GET`s. Both
+the range handler and the full-file handler must stream.
+
+- Serving with `Data(contentsOf:)` (full file) or `FileHandle.readData(ofLength: Int(length))` (a
+  `bytes=0-` range spans the whole file) allocates the entire media in RAM. For a multi-GB movie the
+  OS OOM-kills the process with **no crash log** — it looks like the app silently vanishes the instant
+  the cast starts. Small files fit in RAM, so the bug only shows on large media.
+- Both handlers stream via `FileByteStream` (a `AsyncBufferedSequence` of `UInt8` backed by a
+  `FileHandle`, 256 KB chunks) wrapped in `HTTPBodySequence(from:count:)`. This mirrors the
+  `URLSessionByteStream` used for the Subsonic/Jellyfin proxy path. Memory stays flat regardless of
+  file size, and `Content-Length`/`Content-Range` still describe the exact byte count so seeking works.
+
 ## Key Implementation Gotcha: Data Slice Indexing
 
 Swift `Data` slices maintain original indices. When processing a receive buffer:
