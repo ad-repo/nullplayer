@@ -230,9 +230,12 @@ struct Track: Identifiable, Equatable {
         self.embyServerId = nil
         self.artworkThumb = nil   // Local files use embedded artwork
         
-        // Detect media type by checking for video tracks in the asset
+        // Detect media type by checking for video tracks in the asset, falling back to the
+        // file extension. AVFoundation can't parse containers like .mkv/.avi/.webm (the reason
+        // the app uses VLCKit for playback), so asset.tracks(withMediaType:) returns empty for
+        // them — without the extension fallback those files get misrouted to the audio engine.
         let videoTracks = asset.tracks(withMediaType: .video)
-        self.mediaType = videoTracks.isEmpty ? .audio : .video
+        self.mediaType = (!videoTracks.isEmpty || AudioFileValidator.isVideoFile(url: url)) ? .video : .audio
         self.genre = extractedGenre
         self.playHistoryContentTypeOverride = nil
         self.contentType = nil  // Local files use URL extension detection

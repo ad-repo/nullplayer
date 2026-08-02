@@ -4425,12 +4425,13 @@ class ModernLibraryBrowserView: NSView {
     
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else { return [] }
-        return LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false, includePlaylists: true) ? .copy : []
+        return LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: true, includePlaylists: true) ? .copy : []
     }
-    
+
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else { return false }
-        var fileURLs: [URL] = []
+        var audioURLs: [URL] = []
+        var videoURLs: [URL] = []
         var processedDirectories = false
         for url in items {
             if LocalFileDiscovery.isDirectory(url) {
@@ -4438,14 +4439,20 @@ class ModernLibraryBrowserView: NSView {
                 MediaLibrary.shared.scanFolder(url)
                 processedDirectories = true
             } else if LocalFileDiscovery.isSupportedAudioFile(url) {
-                fileURLs.append(url)
+                audioURLs.append(url)
+            } else if LocalFileDiscovery.isSupportedVideoFile(url) {
+                videoURLs.append(url)
             }
         }
-        if !fileURLs.isEmpty {
-            MediaLibrary.shared.addTracks(urls: fileURLs)
+        if !audioURLs.isEmpty {
+            MediaLibrary.shared.addTracks(urls: audioURLs)
             if case .plex = currentSource { currentSource = .local }
         }
-        return !fileURLs.isEmpty || processedDirectories
+        if !videoURLs.isEmpty {
+            MediaLibrary.shared.addVideoFiles(urls: videoURLs)
+            revealLocalVideoCategory()
+        }
+        return !audioURLs.isEmpty || !videoURLs.isEmpty || processedDirectories
     }
     
     // MARK: - Server Bar Click Handling
@@ -5889,12 +5896,32 @@ class ModernLibraryBrowserView: NSView {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        // Build the allowed types from every container we actually support so
+        // formats like .mkv/.avi/.webm aren't greyed out in the panel.
+        var videoTypes: [UTType] = [.movie, .video]
+        for ext in AudioFileValidator.supportedVideoExtensions {
+            if let type = UTType(filenameExtension: ext) { videoTypes.append(type) }
+        }
+        panel.allowedContentTypes = videoTypes
         panel.message = "Select video files to add to your library"
         if panel.runModal() == .OK {
             MediaLibrary.shared.addVideoFiles(urls: panel.urls)
-            loadLocalData()
+            revealLocalVideoCategory()
         }
+    }
+
+    /// Switch the browser to the local Movies category and reload so freshly-added
+    /// videos are actually visible. Without this the add succeeds but the user stays
+    /// on whatever tab they were on (e.g. Artists), so nothing appears to happen.
+    private func revealLocalVideoCategory() {
+        if case .local = currentSource {} else { currentSource = .local }
+        if !browseMode.isVideoMode {
+            browseMode = .movies
+            selectedIndices.removeAll()
+            scrollOffset = 0
+        }
+        loadDataForCurrentMode()
+        needsDisplay = true
     }
     @objc private func addWatchFolder() {
         let panel = NSOpenPanel()

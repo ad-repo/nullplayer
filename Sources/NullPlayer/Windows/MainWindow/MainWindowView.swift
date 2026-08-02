@@ -2004,7 +2004,7 @@ class MainWindowView: NSView {
 
         // Check if any items are .cue files or supported audio/video
         let hasCue = items.contains { $0.pathExtension.lowercased() == "cue" }
-        let hasOtherContent = LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false)
+        let hasOtherContent = LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: true)
 
         guard hasCue || hasOtherContent else {
             return false
@@ -2045,7 +2045,7 @@ class MainWindowView: NSView {
         // For non-cue items, use normal discovery (directories, playlists, etc.)
         let nonCueItems = items.filter { $0.pathExtension.lowercased() != "cue" }
         if !nonCueItems.isEmpty {
-            LocalFileDiscovery.discoverMediaURLsAsync(from: nonCueItems, includeVideo: false) { mediaURLs in
+            LocalFileDiscovery.discoverMediaURLsAsync(from: nonCueItems, includeVideo: true) { mediaURLs in
                 // Filter out items already added via cue expansion
                 let cueURLs = tracksToAdd.map { $0.url }
                 let newMediaURLs = mediaURLs.filter { !cueURLs.contains($0) }
