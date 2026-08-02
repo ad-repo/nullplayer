@@ -108,8 +108,13 @@ class VideoPlayerView: NSView {
     /// Volume level (0.0 - 1.0)
     var volume: Float = 1.0 {
         didSet {
-            // VLCKit expresses volume as 0–100 (up to 200 for boost).
-            mediaPlayer?.audio?.volume = Int32(max(0, min(1, volume)) * 100)
+            // Before playback starts, VLCKit can route a volume write through
+            // its global configuration lock while its event thread holds the
+            // matching read lock. Defer the write until the player has reported
+            // that its playback pipeline is active.
+            if isActivelyPlaying {
+                applyAudioOutput()
+            }
         }
     }
     
@@ -758,7 +763,6 @@ class VideoPlayerView: NSView {
         player.drawable = playerHostView
         player.delegate = self
         player.media = media
-        player.audio?.volume = Int32(max(0, min(1, volume)) * 100)
         mediaPlayer = player
         player.play()
 
