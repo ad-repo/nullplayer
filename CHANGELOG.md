@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- **Removed the Met Museum Art visualization** — the rotating public-domain artwork engine has been retired and no longer appears in the visualization engine picker. Any saved preference for it falls back to the default engine.
+
 ## 0.29.8
 
 ### Bug Fixes

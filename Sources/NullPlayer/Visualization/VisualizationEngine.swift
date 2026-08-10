@@ -99,9 +99,6 @@ enum VisualizationType: String, CaseIterable, Codable {
     /// Tripex engine (ben-marsh/tripex, ported to OpenGL on macOS)
     case tripex = "Tripex"
 
-    /// Met Museum Art visualization (rotating public domain artwork)
-    case metMuseum = "Met Museum Art"
-
     /// Human-readable display name
     var displayName: String {
         switch self {
