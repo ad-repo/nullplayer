@@ -1202,20 +1202,35 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         let queue: ModernPlaylistView
+        let didCreateQueue: Bool
         if let existing = compactPlaylistView {
             queue = existing
+            didCreateQueue = false
         } else {
             queue = ModernPlaylistView(frame: .zero)
             queue.isEmbedded = true
             // Render above the library chrome and the Cava/art backdrop.
             addSubview(queue)
             compactPlaylistView = queue
+            didCreateQueue = true
         }
         let border = Layout.borderWidth
         queue.frame = NSRect(x: border, y: contentRegionBottomY,
                              width: bounds.width - border * 2,
                              height: max(0, topChromeBottomY - contentRegionBottomY))
         queue.isHidden = (compactContentMode != .queue)
+        if didCreateQueue {
+            // `reloadData()` needs the final frame so it can scroll the current track into view.
+            queue.reloadData()
+            if compactContentMode == .queue {
+                window?.makeFirstResponder(queue)
+            }
+        }
+    }
+
+    /// Refresh the private playlist presentation after the shared audio-engine queue mutates.
+    func reloadCompactPlaylist() {
+        compactPlaylistView?.reloadData()
     }
 
     /// Seed the bar with the engine's current state so it isn't blank until the next update tick.
@@ -1289,13 +1304,14 @@ class ModernLibraryBrowserView: NSView {
         let backgroundOpacity = backdropActive
             ? mainOpacity.background * backdropScrimAlpha
             : mainOpacity.background
+        let isShowingCompactPlaylist = compactMode && compactContentMode == .queue
 
         // Fast path: scroll timer marks only server bar dirty — skip full window redraw.
         // Always fill the full background first (copy blend mode) so the layer is never
         // left partially transparent from accumulated alpha on repeated scroll-tick draws.
         let serverBarY = topChromeBottomY - Layout.serverBarHeight
         let sbRect = NSRect(x: 0, y: serverBarY, width: bounds.width, height: Layout.serverBarHeight)
-        if sbRect.contains(dirtyRect) {
+        if !isShowingCompactPlaylist, sbRect.contains(dirtyRect) {
             // Build the renderer from the current skin (not the cached instance) so the
             // background can't lag a skin swap and render the wrong surface under the bands.
             let renderer = ModernSkinRenderer(skin: skin)
@@ -1361,7 +1377,7 @@ class ModernLibraryBrowserView: NSView {
         // region, so skip drawing the library chrome (server bar / tabs / search / list /
         // alphabet) behind it — the shared Cava/art backdrop then shows through the queue,
         // matching how it shows behind the library list.
-        let showLibraryContent = !(compactMode && compactContentMode == .queue)
+        let showLibraryContent = !isShowingCompactPlaylist
 
         if showLibraryContent {
             // Server bar (below title bar in screen coords)

@@ -46,7 +46,9 @@ class PlaylistView: NSView {
     /// How far (in view points) the host must extend this view's frame up behind the compact
     /// player bar so the drawn title bar is hidden. Equals the title-bar height at this view's
     /// current scale.
-    var embeddedTopInset: CGFloat { Layout.titleBarHeight * scaleFactor }
+    var embeddedTopInset: CGFloat {
+        isEmbedded ? Layout.titleBarHeight * scaleFactor : 0
+    }
 
     /// Window dragging state
     private var isDraggingWindow = false

@@ -82,7 +82,7 @@ final class ClassicCompactFooterView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let skin = currentSkin()
         let renderer = SkinRenderer(skin: skin)
-        let colors = skin.playlistColors ?? .default
+        let colors = skin.playlistColors
         let scale = nativeScale
 
         // Flip to top-left origin, then scale into native units (matches the player bar).

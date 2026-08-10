@@ -201,6 +201,8 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
             container.footer = footer
             window.contentView = container
             container.layoutChildren()
+            // Initialize selection and scroll only after layout establishes the final list area.
+            playlist.reloadData()
 
             compactContainer = container
             compactBar = bar
@@ -265,6 +267,10 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
 
     func updateCompactBarPlaybackState() {
         compactBar?.updatePlaybackState()
+    }
+
+    func reloadCompactPlaylist() {
+        compactPlaylist?.reloadData()
     }
     
     func reloadData() {
