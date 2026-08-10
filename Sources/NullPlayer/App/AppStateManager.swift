@@ -996,6 +996,11 @@ class AppStateManager {
                         artist: savedTrack.artist,
                         album: savedTrack.album,
                         duration: savedTrack.duration,
+                        // SavedTrack doesn't persist mediaType and this initializer defaults it
+                        // to .audio, so re-derive it from the file extension (cheap, no file I/O)
+                        // — otherwise restored local videos come back as audio and misroute to
+                        // the audio engine (AVAudioFile fails to decode the video container).
+                        mediaType: AudioFileValidator.isVideoFile(url: url) ? .video : .audio,
                         contentType: savedTrack.contentType,
                         isYouTubeOrigin: savedTrack.isYouTubeOrigin ?? false
                     ))

@@ -6,6 +6,10 @@
 
 - **Compact window can now show the playlist** — a Library | Playlist toggle at the bottom of the Compact window switches its content between the library browser and the current playlist, so you can view and edit what's playing without opening the full Playlist window. Double-click a track to play it; selection, scrolling, and live now-playing highlight all work in place. The choice is remembered across launches and is available in all three skin families (Modern, Metal, Classic). In Modern/Metal the playlist is translucent so the Cava/art backdrop shows through it just like the library list.
 
+### Bug Fixes
+
+- **Restored local videos play again instead of erroring** — a video file left in the playlist from a previous session was rebuilt on launch as an audio track (the saved state doesn't record media type), so playing it routed to the audio engine and failed to decode the video container. Restored local files now re-derive their media type from the file extension, so videos correctly open in the video player.
+
 ### Changes
 
 - **Removed the Met Museum Art visualization** — the rotating public-domain artwork engine has been retired and no longer appears in the visualization engine picker. Any saved preference for it falls back to the default engine.
