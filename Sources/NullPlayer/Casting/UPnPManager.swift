@@ -1,12 +1,23 @@
 import Foundation
 import Network
 
+/// Discovery/control logging is off by default (it's very chatty during SSDP
+/// discovery). Set the `NULLPLAYER_UPNP_LOG` env var to any value to re-enable it.
+private let upnpLoggingEnabled = ProcessInfo.processInfo.environment["NULLPLAYER_UPNP_LOG"] != nil
+
+/// Gated, `NSLog`-compatible logger; preserves printf-style format semantics.
+/// A free function (like `NSLog`) so call sites inside closures don't need `self`.
+private func upnpLog(_ format: String, _ args: CVarArg...) {
+    guard upnpLoggingEnabled else { return }
+    withVaList(args) { NSLogv(format, $0) }
+}
+
 /// UPnP/DLNA manager for discovering and controlling Sonos speakers and DLNA TVs
 /// Uses SSDP for discovery and SOAP for AVTransport control
 class UPnPManager {
-    
+
     // MARK: - Singleton
-    
+
     static let shared = UPnPManager()
     
     // MARK: - Properties
@@ -128,7 +139,7 @@ class UPnPManager {
                     let isBonded = bondedZoneUDNs.contains(zone.udn)
                     
                     if isBonded {
-                        NSLog("UPnPManager: Filtering out bonded zone '%@' from grouping UI", zone.roomName)
+                        upnpLog("UPnPManager: Filtering out bonded zone '%@' from grouping UI", zone.roomName)
                     }
                     
                     return !isSubOrBridge && !isBonded
@@ -285,7 +296,7 @@ class UPnPManager {
                 } else {
                     // Prefer main units (soundbars with HTSatChanMapSet) - they control the whole surround
                     if mainUnitZoneUDNs.contains(zone.udn) {
-                        NSLog("UPnPManager: Preferring main unit %@ for room '%@'", zone.udn, zone.roomName)
+                        upnpLog("UPnPManager: Preferring main unit %@ for room '%@'", zone.udn, zone.roomName)
                         roomsByName[zone.roomName] = zone
                     }
                     // Otherwise prefer group coordinators
@@ -353,11 +364,11 @@ class UPnPManager {
         startNetworkMonitoringIfNeeded()
 
         guard !isDiscovering else {
-            NSLog("UPnPManager: Already discovering, skipping start")
+            upnpLog("UPnPManager: Already discovering, skipping start")
             return
         }
         
-        NSLog("UPnPManager: Starting discovery (SSDP + mDNS)...")
+        upnpLog("UPnPManager: Starting discovery (SSDP + mDNS)...")
         isDiscovering = true
         
         // Start SSDP discovery for DLNA devices and Sonos
@@ -387,7 +398,7 @@ class UPnPManager {
                 self?.sendMSearchRequests()
             }
         } else {
-            NSLog("UPnPManager: SSDP socket setup failed, relying on mDNS only")
+            upnpLog("UPnPManager: SSDP socket setup failed, relying on mDNS only")
         }
         
         // Start mDNS discovery for Sonos (more reliable fallback)
@@ -464,14 +475,14 @@ class UPnPManager {
             // The first NWPathMonitor callback establishes a baseline; later callbacks
             // decide whether cached device URLs need to be invalidated.
             if path.status == .unsatisfied {
-                NSLog("UPnPManager: Network unavailable - discovery may fail")
+                upnpLog("UPnPManager: Network unavailable - discovery may fail")
             }
             return
         }
 
         if path.status == .unsatisfied {
             lastPathWasSatisfied = false
-            NSLog("UPnPManager: Network unavailable - discovery may fail")
+            upnpLog("UPnPManager: Network unavailable - discovery may fail")
             return
         }
 
@@ -499,7 +510,7 @@ class UPnPManager {
         let now = DispatchTime.now().uptimeNanoseconds
         if let lastHandled = lastNetworkChangeHandledAt,
            now - lastHandled < networkChangeDebounceNanoseconds {
-            NSLog("UPnPManager: Ignoring network change within debounce window (%@)", reason)
+            upnpLog("UPnPManager: Ignoring network change within debounce window (%@)", reason)
             return
         }
 
@@ -524,7 +535,7 @@ class UPnPManager {
         reason: String,
         disconnectActiveSonosSession: Bool
     ) {
-        NSLog("UPnPManager: Network changed (%@) - IP changed from %@ to %@",
+        upnpLog("UPnPManager: Network changed (%@) - IP changed from %@ to %@",
               reason,
               previousIP ?? "nil",
               newIP ?? "nil")
@@ -552,15 +563,15 @@ class UPnPManager {
     /// This can be called externally to trigger additional discovery
     func sendDiscoveryBoost() {
         guard isDiscovering else {
-            NSLog("UPnPManager: Cannot send discovery boost - not discovering")
+            upnpLog("UPnPManager: Cannot send discovery boost - not discovering")
             return
         }
         
         if ssdpSocket >= 0 {
-            NSLog("UPnPManager: Sending discovery boost M-SEARCH")
+            upnpLog("UPnPManager: Sending discovery boost M-SEARCH")
             sendMSearchRequests()
         } else {
-            NSLog("UPnPManager: SSDP socket invalid, mDNS discovery still active")
+            upnpLog("UPnPManager: SSDP socket invalid, mDNS discovery still active")
         }
     }
     
@@ -569,7 +580,7 @@ class UPnPManager {
     /// Start mDNS/Bonjour discovery for Sonos devices
     /// This is a fallback/supplement to SSDP discovery
     private func startSonosMDNSDiscovery() {
-        NSLog("UPnPManager: Starting Sonos mDNS discovery (_sonos._tcp)...")
+        upnpLog("UPnPManager: Starting Sonos mDNS discovery (_sonos._tcp)...")
         
         // Browse for Sonos devices via mDNS
         let descriptor = NWBrowser.Descriptor.bonjour(type: "_sonos._tcp", domain: "local.")
@@ -585,7 +596,7 @@ class UPnPManager {
                 case .added(let result):
                     self.handleSonosMDNSResult(result)
                 case .removed(let result):
-                    NSLog("UPnPManager: Sonos mDNS device removed: %@", String(describing: result.endpoint))
+                    upnpLog("UPnPManager: Sonos mDNS device removed: %@", String(describing: result.endpoint))
                 default:
                     break
                 }
@@ -595,11 +606,11 @@ class UPnPManager {
         sonosBrowser?.stateUpdateHandler = { state in
             switch state {
             case .ready:
-                NSLog("UPnPManager: Sonos mDNS browser ready")
+                upnpLog("UPnPManager: Sonos mDNS browser ready")
             case .failed(let error):
-                NSLog("UPnPManager: Sonos mDNS browser failed: %@", error.localizedDescription)
+                upnpLog("UPnPManager: Sonos mDNS browser failed: %@", error.localizedDescription)
             case .cancelled:
-                NSLog("UPnPManager: Sonos mDNS browser cancelled")
+                upnpLog("UPnPManager: Sonos mDNS browser cancelled")
             default:
                 break
             }
@@ -612,7 +623,7 @@ class UPnPManager {
     private func handleSonosMDNSResult(_ result: NWBrowser.Result) {
         guard case let .service(name, _, _, _) = result.endpoint else { return }
         
-        NSLog("UPnPManager: Sonos mDNS found: %@", name)
+        upnpLog("UPnPManager: Sonos mDNS found: %@", name)
         
         // Resolve the service to get IP address
         let parameters = NWParameters.tcp
@@ -661,7 +672,7 @@ class UPnPManager {
                 address = "\(ipv4)"
             case .ipv6(let ipv6):
                 // Skip IPv6 for now, Sonos works fine with IPv4
-                NSLog("UPnPManager: Skipping IPv6 address for Sonos: %@", "\(ipv6)")
+                upnpLog("UPnPManager: Skipping IPv6 address for Sonos: %@", "\(ipv6)")
                 return
             case .name(let hostname, _):
                 address = hostname
@@ -677,7 +688,7 @@ class UPnPManager {
         // Sonos always uses port 1400 for UPnP
         let descriptionURL = "http://\(deviceAddress):1400/xml/device_description.xml"
         
-        NSLog("UPnPManager: Sonos mDNS resolved: %@ -> %@", name, descriptionURL)
+        upnpLog("UPnPManager: Sonos mDNS resolved: %@ -> %@", name, descriptionURL)
         
         // Check if we've already fetched this description (via SSDP or mDNS)
         let shouldFetch = stateQueue.sync { () -> Bool in
@@ -687,7 +698,7 @@ class UPnPManager {
         }
         
         guard shouldFetch else {
-            NSLog("UPnPManager: Already fetched description for %@", deviceAddress)
+            upnpLog("UPnPManager: Already fetched description for %@", deviceAddress)
             return
         }
         
@@ -697,7 +708,7 @@ class UPnPManager {
     
     /// Stop discovering devices
     func stopDiscovery() {
-        NSLog("UPnPManager: Stopping discovery")
+        upnpLog("UPnPManager: Stopping discovery")
         isDiscovering = false
         networkMonitorQueue.sync {
             networkMonitoringEnabled = false
@@ -718,7 +729,7 @@ class UPnPManager {
             source.setCancelHandler {
                 if fd >= 0 {
                     close(fd)
-                    NSLog("UPnPManager: SSDP socket closed")
+                    upnpLog("UPnPManager: SSDP socket closed")
                 }
             }
             source.cancel()
@@ -727,14 +738,14 @@ class UPnPManager {
         } else if ssdpSocket >= 0 {
             close(ssdpSocket)
             ssdpSocket = -1
-            NSLog("UPnPManager: SSDP socket closed")
+            upnpLog("UPnPManager: SSDP socket closed")
         }
         
         // Stop mDNS discovery
         if sonosBrowser != nil {
             sonosBrowser?.cancel()
             sonosBrowser = nil
-            NSLog("UPnPManager: Sonos mDNS browser stopped")
+            upnpLog("UPnPManager: Sonos mDNS browser stopped")
         }
     }
     
@@ -742,7 +753,7 @@ class UPnPManager {
     private func setupSocket() {
         // Ensure any previous socket is cleaned up
         if ssdpSocket >= 0 {
-            NSLog("UPnPManager: Warning - previous socket still exists, closing it")
+            upnpLog("UPnPManager: Warning - previous socket still exists, closing it")
             close(ssdpSocket)
             ssdpSocket = -1
         }
@@ -750,11 +761,11 @@ class UPnPManager {
         // Create UDP socket
         ssdpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
         guard ssdpSocket >= 0 else {
-            NSLog("UPnPManager: Failed to create socket: %d", errno)
+            upnpLog("UPnPManager: Failed to create socket: %d", errno)
             return
         }
         
-        NSLog("UPnPManager: Created socket fd=%d", ssdpSocket)
+        upnpLog("UPnPManager: Created socket fd=%d", ssdpSocket)
         
         // Allow address reuse
         var reuseAddr: Int32 = 1
@@ -774,7 +785,7 @@ class UPnPManager {
         }
         
         if bindResult < 0 {
-            NSLog("UPnPManager: Failed to bind socket: %d", errno)
+            upnpLog("UPnPManager: Failed to bind socket: %d", errno)
             close(ssdpSocket)
             ssdpSocket = -1
             return
@@ -791,7 +802,7 @@ class UPnPManager {
         }
         readSource?.resume()
         
-        NSLog("UPnPManager: SSDP socket ready (fd=%d)", ssdpSocket)
+        upnpLog("UPnPManager: SSDP socket ready (fd=%d)", ssdpSocket)
     }
     
     /// Send M-SEARCH requests for UPnP devices
@@ -831,9 +842,9 @@ class UPnPManager {
         }
         
         if sent < 0 {
-            NSLog("UPnPManager: M-SEARCH send failed: %d", errno)
+            upnpLog("UPnPManager: M-SEARCH send failed: %d", errno)
         } else {
-            NSLog("UPnPManager: Sent M-SEARCH for %@ (%d bytes)", searchTarget, sent)
+            upnpLog("UPnPManager: Sent M-SEARCH for %@ (%d bytes)", searchTarget, sent)
         }
     }
     
@@ -857,7 +868,7 @@ class UPnPManager {
             inet_ntop(AF_INET, &srcAddr.sin_addr, &ipStr, socklen_t(INET_ADDRSTRLEN))
             let sourceIP = String(cString: ipStr)
             
-            NSLog("UPnPManager: Received SSDP response from %@ (%d bytes)", sourceIP, bytesRead)
+            upnpLog("UPnPManager: Received SSDP response from %@ (%d bytes)", sourceIP, bytesRead)
             handleSSDPResponse(response)
         }
     }
@@ -878,7 +889,7 @@ class UPnPManager {
         
         guard shouldFetch else { return }
         
-        NSLog("UPnPManager: Found device at %@", locationURL)
+        upnpLog("UPnPManager: Found device at %@", locationURL)
         
         // Fetch device description using completion handler
         fetchDeviceDescription(from: locationURL)
@@ -923,7 +934,7 @@ class UPnPManager {
             if let error = error {
                 // Don't log cancellation errors (expected during refresh)
                 if (error as NSError).code != NSURLErrorCancelled {
-                    NSLog("UPnPManager: Failed to fetch description: %@", error.localizedDescription)
+                    upnpLog("UPnPManager: Failed to fetch description: %@", error.localizedDescription)
                 }
                 return
             }
@@ -961,7 +972,7 @@ class UPnPManager {
         
         // Skip excluded manufacturers (NAS, routers, etc.)
         if excludedManufacturers.contains(where: { manufacturerLower.contains($0) }) {
-            NSLog("UPnPManager: Skipping non-castable device: %@ (%@)", friendlyName, manufacturer)
+            upnpLog("UPnPManager: Skipping non-castable device: %@ (%@)", friendlyName, manufacturer)
             return
         }
         
@@ -995,20 +1006,20 @@ class UPnPManager {
                 
                 let isFirstZone = self.sonosZones.count == 1
                 
-                NSLog("UPnPManager: Found Sonos zone: %@ at %@ (isFirst: %d, fetched: %d)", displayName, host, isFirstZone ? 1 : 0, self.sonosGroupsFetched ? 1 : 0)
+                upnpLog("UPnPManager: Found Sonos zone: %@ at %@ (isFirst: %d, fetched: %d)", displayName, host, isFirstZone ? 1 : 0, self.sonosGroupsFetched ? 1 : 0)
                 
                 // Schedule group topology fetch only once after first zone discovered
                 // Wait 6 seconds to allow more zones to be discovered
                 if isFirstZone && !self.sonosGroupsFetched {
                     self.sonosGroupsFetched = true  // Set flag immediately to prevent duplicates
-                    NSLog("UPnPManager: Scheduling group topology fetch in 3 seconds...")
+                    upnpLog("UPnPManager: Scheduling group topology fetch in 3 seconds...")
                     
                     // Cancel any existing work item
                     UPnPManager.shared.sonosTopologyWorkItem?.cancel()
                     
                     // Create new cancellable work item
                     let workItem = DispatchWorkItem {
-                        NSLog("UPnPManager: Group topology fetch timer fired")
+                        upnpLog("UPnPManager: Group topology fetch timer fired")
                         UPnPManager.shared.fetchSonosGroupTopology()
                     }
                     UPnPManager.shared.sonosTopologyWorkItem = workItem
@@ -1020,7 +1031,7 @@ class UPnPManager {
         
         // Non-Sonos devices: require AVTransport
         guard let controlURL = controlURL else {
-            NSLog("UPnPManager: Skipping device without AVTransport: %@ (%@)", friendlyName, manufacturer)
+            upnpLog("UPnPManager: Skipping device without AVTransport: %@ (%@)", friendlyName, manufacturer)
             return
         }
         
@@ -1040,7 +1051,7 @@ class UPnPManager {
                 displayName = friendlyName
             } else {
                 // Skip unknown devices that aren't clearly TVs or speakers
-                NSLog("UPnPManager: Skipping unknown device type: %@ (%@)", friendlyName, manufacturer)
+                upnpLog("UPnPManager: Skipping unknown device type: %@ (%@)", friendlyName, manufacturer)
                 return
             }
         }
@@ -1069,7 +1080,7 @@ class UPnPManager {
             self._devices.append(device)
             
             DispatchQueue.main.async {
-                NSLog("UPnPManager: Added %@ device: %@ (%@)", deviceType.displayName, device.name, manufacturer)
+                upnpLog("UPnPManager: Added %@ device: %@ (%@)", deviceType.displayName, device.name, manufacturer)
                 NotificationCenter.default.post(name: CastManager.devicesDidChangeNotification, object: nil)
             }
         }
@@ -1082,11 +1093,11 @@ class UPnPManager {
         // Get any Sonos zone to query
         let zones = stateQueue.sync { Array(sonosZones.values) }
         guard let zone = zones.first else {
-            NSLog("UPnPManager: No Sonos zones found for group topology")
+            upnpLog("UPnPManager: No Sonos zones found for group topology")
             return
         }
         
-        NSLog("UPnPManager: Fetching Sonos group topology from %@", zone.address)
+        upnpLog("UPnPManager: Fetching Sonos group topology from %@", zone.address)
 
         guard let request = sonosGroupStateRequest(for: zone) else { return }
 
@@ -1094,7 +1105,7 @@ class UPnPManager {
             guard let self = self else { return }
             
             if let error = error {
-                NSLog("UPnPManager: Failed to fetch Sonos groups: %@", error.localizedDescription)
+                upnpLog("UPnPManager: Failed to fetch Sonos groups: %@", error.localizedDescription)
                 // Fall back to showing individual zones
                 self.createSonosDevicesFromZones(groups: nil)
                 return
@@ -1149,41 +1160,41 @@ class UPnPManager {
 
         let zones = stateQueue.sync { sonosZones.values.sorted { $0.udn < $1.udn } }
         guard !zones.isEmpty else {
-            NSLog("UPnPManager: refreshSonosGroupTopologyAwait - no Sonos zones to query")
+            upnpLog("UPnPManager: refreshSonosGroupTopologyAwait - no Sonos zones to query")
             return false
         }
 
         for zone in zones {
             guard let request = sonosGroupStateRequest(for: zone) else { continue }
-            NSLog("UPnPManager: refreshSonosGroupTopologyAwait - fetching group topology from %@", zone.address)
+            upnpLog("UPnPManager: refreshSonosGroupTopologyAwait - fetching group topology from %@", zone.address)
 
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard let httpResponse = response as? HTTPURLResponse,
                       (200..<300).contains(httpResponse.statusCode) else {
                     let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-                    NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned HTTP %d", zone.address, status)
+                    upnpLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned HTTP %d", zone.address, status)
                     continue
                 }
                 guard let responseString = String(data: data, encoding: .utf8) else {
-                    NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned invalid text", zone.address)
+                    upnpLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned invalid text", zone.address)
                     continue
                 }
 
                 let groups = parseSonosGroupState(responseString)
                 guard !groups.isEmpty else {
-                    NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned no valid groups", zone.address)
+                    upnpLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ returned no valid groups", zone.address)
                     continue
                 }
 
                 rebuildSonosDevicesAndWait(groups: groups)
                 return true
             } catch {
-                NSLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ failed: %@", zone.address, error.localizedDescription)
+                upnpLog("UPnPManager: refreshSonosGroupTopologyAwait - %@ failed: %@", zone.address, error.localizedDescription)
             }
         }
 
-        NSLog("UPnPManager: refreshSonosGroupTopologyAwait - all Sonos zones failed; preserving cached topology")
+        upnpLog("UPnPManager: refreshSonosGroupTopologyAwait - all Sonos zones failed; preserving cached topology")
         return false
     }
 
@@ -1203,7 +1214,7 @@ class UPnPManager {
         // Extract ZoneGroupState content (it's HTML-encoded inside the SOAP response)
         guard let stateMatch = xml.range(of: "<ZoneGroupState>", options: .caseInsensitive),
               let stateEndMatch = xml.range(of: "</ZoneGroupState>", options: .caseInsensitive) else {
-            NSLog("UPnPManager: Could not find ZoneGroupState in response")
+            upnpLog("UPnPManager: Could not find ZoneGroupState in response")
             return groups
         }
         
@@ -1236,7 +1247,7 @@ class UPnPManager {
                     // Check for Invisible="1" (stereo pair secondary or surround satellite)
                     if tagXML.contains("Invisible=\"1\"") {
                         newBondedZones.insert(udn)
-                        NSLog("UPnPManager: Zone %@ is bonded (Invisible=1) - excluding from grouping", uuid)
+                        upnpLog("UPnPManager: Zone %@ is bonded (Invisible=1) - excluding from grouping", uuid)
                     }
                     
                     // Check for HTSatChanMapSet (surround system - main unit or satellite)
@@ -1255,11 +1266,11 @@ class UPnPManager {
                                     if channels.contains("LF") || channels.contains("RF") {
                                         // This is the main unit (soundbar)
                                         newMainUnits.insert(udn)
-                                        NSLog("UPnPManager: Zone %@ is surround main unit (%@)", uuid, channels)
+                                        upnpLog("UPnPManager: Zone %@ is surround main unit (%@)", uuid, channels)
                                     } else {
                                         // This is a satellite (sub, rear speakers)
                                         newSatellites.insert(udn)
-                                        NSLog("UPnPManager: Zone %@ is surround satellite (%@)", uuid, channels)
+                                        upnpLog("UPnPManager: Zone %@ is surround satellite (%@)", uuid, channels)
                                     }
                                     break
                                 }
@@ -1318,7 +1329,7 @@ class UPnPManager {
             )
             groups.append(group)
             
-            NSLog("UPnPManager: Found Sonos group - coordinator: %@, members: %d", fullCoordinatorUDN, memberUDNs.count)
+            upnpLog("UPnPManager: Found Sonos group - coordinator: %@, members: %d", fullCoordinatorUDN, memberUDNs.count)
         }
         
         return groups
@@ -1337,11 +1348,11 @@ class UPnPManager {
             // Remove any existing Sonos devices
             self._devices.removeAll(where: { $0.type == .sonos })
             
-            NSLog("UPnPManager: Creating Sonos devices from %d groups, %d zones available", groups?.count ?? 0, self.sonosZones.count)
+            upnpLog("UPnPManager: Creating Sonos devices from %d groups, %d zones available", groups?.count ?? 0, self.sonosZones.count)
             
             // Debug: print all zone UDNs
             for (udn, zone) in self.sonosZones {
-                NSLog("UPnPManager: Zone UDN: %@ -> %@", udn, zone.roomName)
+                upnpLog("UPnPManager: Zone UDN: %@ -> %@", udn, zone.roomName)
             }
             
             var addedFromGroups = false
@@ -1349,11 +1360,11 @@ class UPnPManager {
             if let groups = groups, !groups.isEmpty {
                 // Create devices based on groups
                 for group in groups {
-                    NSLog("UPnPManager: Looking for coordinator: %@", group.coordinatorUDN)
+                    upnpLog("UPnPManager: Looking for coordinator: %@", group.coordinatorUDN)
                     
                     // Find the coordinator zone
                     guard let coordinatorZone = self.sonosZones[group.coordinatorUDN] else {
-                        NSLog("UPnPManager: Coordinator %@ not found in zones", group.coordinatorUDN)
+                        upnpLog("UPnPManager: Coordinator %@ not found in zones", group.coordinatorUDN)
                         continue
                     }
                     
@@ -1379,13 +1390,13 @@ class UPnPManager {
                     
                     self._devices.append(device)
                     addedFromGroups = true
-                    NSLog("UPnPManager: Added Sonos group: %@", displayName)
+                    upnpLog("UPnPManager: Added Sonos group: %@", displayName)
                 }
             }
             
             // Fall back to individual zones if no group devices were added
             if !addedFromGroups {
-                NSLog("UPnPManager: No groups added, falling back to individual zones")
+                upnpLog("UPnPManager: No groups added, falling back to individual zones")
                 for zone in self.sonosZones.values {
                     guard zone.avTransportURL != nil else { continue }
                     
@@ -1404,7 +1415,7 @@ class UPnPManager {
                     // Avoid duplicates by room name
                     if !self._devices.contains(where: { $0.name == device.name && $0.type == .sonos }) {
                         self._devices.append(device)
-                        NSLog("UPnPManager: Added Sonos zone: %@", zone.roomName)
+                        upnpLog("UPnPManager: Added Sonos zone: %@", zone.roomName)
                     }
                 }
             }
@@ -1451,7 +1462,7 @@ class UPnPManager {
     /// Remove all discovered devices.
     /// If `postNotification` is true, the completion runs on main after the devices-changed notification is posted.
     func clearDevices(postNotification: Bool = false, completion: (() -> Void)? = nil) {
-        NSLog("UPnPManager: clearDevices called")
+        upnpLog("UPnPManager: clearDevices called")
         
         // Cancel any pending Sonos topology fetch (on main queue where it was scheduled)
         sonosTopologyWorkItem?.cancel()
@@ -1479,7 +1490,7 @@ class UPnPManager {
             self.mainUnitZoneUDNs.removeAll()
             self.sonosGroupsFetched = false
             
-            NSLog("UPnPManager: Cleared %d devices, %d zones, cancelled %d tasks", deviceCount, zoneCount, taskCount)
+            upnpLog("UPnPManager: Cleared %d devices, %d zones, cancelled %d tasks", deviceCount, zoneCount, taskCount)
 
             if postNotification {
                 CastManager.postNotificationOnMain(name: CastManager.devicesDidChangeNotification)
@@ -1494,7 +1505,7 @@ class UPnPManager {
     /// Reset discovery state without clearing visible devices
     /// Used during refresh to allow re-discovery while keeping existing devices visible
     func resetDiscoveryState() {
-        NSLog("UPnPManager: Resetting discovery state (keeping devices and zone info)")
+        upnpLog("UPnPManager: Resetting discovery state (keeping devices and zone info)")
         
         // Cancel any pending Sonos topology fetch
         sonosTopologyWorkItem?.cancel()
@@ -1518,7 +1529,7 @@ class UPnPManager {
             // Only reset the "fetched" flag so topology gets re-fetched.
             self.sonosGroupsFetched = false
             
-            NSLog("UPnPManager: Reset discovery state, kept %d devices and %d zones visible", 
+            upnpLog("UPnPManager: Reset discovery state, kept %d devices and %d zones visible", 
                   self._devices.count, self.sonosZones.count)
         }
     }
@@ -1535,7 +1546,7 @@ class UPnPManager {
             throw CastError.connectionFailed("No AVTransport control URL")
         }
         
-        NSLog("UPnPManager: Connecting to %@", device.name)
+        upnpLog("UPnPManager: Connecting to %@", device.name)
         
         activeSession = CastSession(device: device)
         activeSession?.state = .connected
@@ -1547,7 +1558,7 @@ class UPnPManager {
     func disconnect() async {
         guard let session = activeSession else { return }
         
-        NSLog("UPnPManager: Disconnecting from %@", session.device.name)
+        upnpLog("UPnPManager: Disconnecting from %@", session.device.name)
         
         // Stop playback first and wait for completion
         try? await stop()
@@ -1559,7 +1570,7 @@ class UPnPManager {
     /// Synchronous disconnect for app termination (skips stop command to avoid blocking)
     func disconnectSync() {
         guard activeSession != nil else { return }
-        NSLog("UPnPManager: Disconnecting (sync for termination)")
+        upnpLog("UPnPManager: Disconnecting (sync for termination)")
         activeSession = nil
         CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
@@ -1568,7 +1579,7 @@ class UPnPManager {
     /// Used during coordinator transfer where the old device is already standalone.
     func disconnectSession() {
         guard activeSession != nil else { return }
-        NSLog("UPnPManager: Clearing session (no stop command)")
+        upnpLog("UPnPManager: Clearing session (no stop command)")
         activeSession = nil
         CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
@@ -1580,24 +1591,24 @@ class UPnPManager {
             throw CastError.sessionNotActive
         }
         
-        NSLog("UPnPManager: Casting %@ to %@", url.redacted, session.device.name)
+        upnpLog("UPnPManager: Casting %@ to %@", url.redacted, session.device.name)
         
         // Generate DIDL-Lite metadata
         let didlMetadata = metadata.toDIDLLite(streamURL: url)
-        NSLog("UPnPManager: DIDL metadata length: %d chars", didlMetadata.count)
+        upnpLog("UPnPManager: DIDL metadata length: %d chars", didlMetadata.count)
         
         // Send SetAVTransportURI
         // Use CDATA for the DIDL metadata to avoid double-escaping issues
-        NSLog("UPnPManager: Sending SetAVTransportURI to %@", controlURL.absoluteString)
+        upnpLog("UPnPManager: Sending SetAVTransportURI to %@", controlURL.absoluteString)
         let setURIResponse = try await sendSetAVTransportURI(
             controlURL: controlURL,
             uri: url.absoluteString,
             metadata: didlMetadata
         )
-        NSLog("UPnPManager: SetAVTransportURI succeeded, response length: %d", setURIResponse.count)
+        upnpLog("UPnPManager: SetAVTransportURI succeeded, response length: %d", setURIResponse.count)
         
         // Send Play
-        NSLog("UPnPManager: Sending Play command")
+        upnpLog("UPnPManager: Sending Play command")
         let playResponse = try await sendSOAPAction(
             controlURL: controlURL,
             action: "Play",
@@ -1606,7 +1617,7 @@ class UPnPManager {
                 ("Speed", "1")
             ]
         )
-        NSLog("UPnPManager: Play succeeded, response length: %d", playResponse.count)
+        upnpLog("UPnPManager: Play succeeded, response length: %d", playResponse.count)
         
         session.state = .casting
         session.currentURL = url
@@ -1627,7 +1638,7 @@ class UPnPManager {
             return
         }
         
-        NSLog("UPnPManager: Stopping playback on %@", session.device.name)
+        upnpLog("UPnPManager: Stopping playback on %@", session.device.name)
         
         try await sendSOAPAction(
             controlURL: controlURL,
@@ -1652,11 +1663,11 @@ class UPnPManager {
         
         // For Sonos (audio), use fire-and-forget to avoid blocking UI
         if session.device.type == .sonos {
-            NSLog("UPnPManager: Pausing playback on %@ (fire-and-forget)", session.device.name)
+            upnpLog("UPnPManager: Pausing playback on %@ (fire-and-forget)", session.device.name)
             sendPlaybackControlFireAndForget(controlURL: controlURL, action: "Pause", arguments: [("InstanceID", "0")])
         } else {
             // For TVs/DLNA, use blocking SOAP to preserve error handling and retries
-            NSLog("UPnPManager: Pausing playback on %@", session.device.name)
+            upnpLog("UPnPManager: Pausing playback on %@", session.device.name)
             try await sendSOAPAction(
                 controlURL: controlURL,
                 action: "Pause",
@@ -1674,11 +1685,11 @@ class UPnPManager {
         
         // For Sonos (audio), use fire-and-forget to avoid blocking UI
         if session.device.type == .sonos {
-            NSLog("UPnPManager: Resuming playback on %@ (fire-and-forget)", session.device.name)
+            upnpLog("UPnPManager: Resuming playback on %@ (fire-and-forget)", session.device.name)
             sendPlaybackControlFireAndForget(controlURL: controlURL, action: "Play", arguments: [("InstanceID", "0"), ("Speed", "1")])
         } else {
             // For TVs/DLNA, use blocking SOAP to preserve error handling and retries
-            NSLog("UPnPManager: Resuming playback on %@", session.device.name)
+            upnpLog("UPnPManager: Resuming playback on %@", session.device.name)
             try await sendSOAPAction(
                 controlURL: controlURL,
                 action: "Play",
@@ -1699,14 +1710,14 @@ class UPnPManager {
         Task {
             do {
                 try await sendSOAPActionNoRetry(controlURL: controlURL, action: action, arguments: arguments)
-                NSLog("UPnPManager: %@ command completed successfully", action)
+                upnpLog("UPnPManager: %@ command completed successfully", action)
                 consecutiveFireAndForgetFailures = 0  // Reset on success
             } catch {
                 consecutiveFireAndForgetFailures += 1
-                NSLog("UPnPManager: %@ command failed (%d consecutive): %@", action, consecutiveFireAndForgetFailures, error.localizedDescription)
+                upnpLog("UPnPManager: %@ command failed (%d consecutive): %@", action, consecutiveFireAndForgetFailures, error.localizedDescription)
                 
                 if consecutiveFireAndForgetFailures >= maxConsecutiveFailures {
-                    NSLog("UPnPManager: %d consecutive command failures - Sonos may be unreachable", consecutiveFireAndForgetFailures)
+                    upnpLog("UPnPManager: %d consecutive command failures - Sonos may be unreachable", consecutiveFireAndForgetFailures)
                     await MainActor.run {
                         NotificationCenter.default.post(
                             name: CastManager.errorNotification,
@@ -1733,10 +1744,10 @@ class UPnPManager {
                         ("Target", seekTarget)
                     ]
                 )
-                NSLog("UPnPManager: Seek to %@ completed (REL_TIME)", seekTarget)
+                upnpLog("UPnPManager: Seek to %@ completed (REL_TIME)", seekTarget)
                 return
             } catch {
-                NSLog("UPnPManager: REL_TIME seek failed: %@, trying ABS_TIME", error.localizedDescription)
+                upnpLog("UPnPManager: REL_TIME seek failed: %@, trying ABS_TIME", error.localizedDescription)
             }
             
             // Fallback to ABS_TIME
@@ -1750,9 +1761,9 @@ class UPnPManager {
                         ("Target", seekTarget)
                     ]
                 )
-                NSLog("UPnPManager: Seek to %@ completed (ABS_TIME)", seekTarget)
+                upnpLog("UPnPManager: Seek to %@ completed (ABS_TIME)", seekTarget)
             } catch {
-                NSLog("UPnPManager: Seek to %@ failed: %@", seekTarget, error.localizedDescription)
+                upnpLog("UPnPManager: Seek to %@ failed: %@", seekTarget, error.localizedDescription)
             }
         }
     }
@@ -1768,21 +1779,21 @@ class UPnPManager {
         
         // For Sonos (audio), use fire-and-forget to avoid blocking UI
         if session.device.type == .sonos {
-            NSLog("UPnPManager: Seeking to %@ on %@ (fire-and-forget)", seekTarget, session.device.name)
+            upnpLog("UPnPManager: Seeking to %@ on %@ (fire-and-forget)", seekTarget, session.device.name)
             sendSeekFireAndForget(controlURL: controlURL, seekTarget: seekTarget)
             return
         }
         
         // For TVs/DLNA, use blocking seek with transport state wait
-        NSLog("UPnPManager: Seeking to %@ on %@", seekTarget, session.device.name)
+        upnpLog("UPnPManager: Seeking to %@ on %@", seekTarget, session.device.name)
         
         // Wait for transport to be ready (some TVs need time to buffer before seeking)
         for waitAttempt in 1...5 {
             if let state = try? await getTransportState(), state == "PLAYING" {
-                NSLog("UPnPManager: Transport ready (PLAYING), attempting seek")
+                upnpLog("UPnPManager: Transport ready (PLAYING), attempting seek")
                 break
             } else if waitAttempt < 5 {
-                NSLog("UPnPManager: Transport not ready, waiting... (attempt %d/5)", waitAttempt)
+                upnpLog("UPnPManager: Transport not ready, waiting... (attempt %d/5)", waitAttempt)
                 try await Task.sleep(nanoseconds: 500_000_000) // 0.5s
             }
         }
@@ -1798,10 +1809,10 @@ class UPnPManager {
                     ("Target", seekTarget)
                 ]
             )
-            NSLog("UPnPManager: Seek with REL_TIME succeeded")
+            upnpLog("UPnPManager: Seek with REL_TIME succeeded")
             return
         } catch {
-            NSLog("UPnPManager: REL_TIME seek failed: %@", error.localizedDescription)
+            upnpLog("UPnPManager: REL_TIME seek failed: %@", error.localizedDescription)
         }
         
         // Fallback to ABS_TIME (some Samsung TVs require this)
@@ -1815,14 +1826,14 @@ class UPnPManager {
                     ("Target", seekTarget)
                 ]
             )
-            NSLog("UPnPManager: Seek with ABS_TIME succeeded")
+            upnpLog("UPnPManager: Seek with ABS_TIME succeeded")
             return
         } catch {
-            NSLog("UPnPManager: ABS_TIME seek also failed: %@", error.localizedDescription)
+            upnpLog("UPnPManager: ABS_TIME seek also failed: %@", error.localizedDescription)
         }
         
         // Both seek methods failed - device may not support seeking
-        NSLog("UPnPManager: All seek methods failed for this device")
+        upnpLog("UPnPManager: All seek methods failed for this device")
         throw CastError.playbackFailed("Seek not supported by this device")
     }
     
@@ -1830,15 +1841,15 @@ class UPnPManager {
     /// Returns (transportState, position, duration) or nil if not connected
     func pollSonosPlaybackState() async -> (state: String, position: TimeInterval, duration: TimeInterval)? {
         guard let session = activeSession else {
-            NSLog("UPnPManager: pollSonosPlaybackState — no active session")
+            upnpLog("UPnPManager: pollSonosPlaybackState — no active session")
             return nil
         }
         guard let transportState = try? await getTransportState() else {
-            NSLog("UPnPManager: pollSonosPlaybackState — getTransportState failed for %@", session.device.name)
+            upnpLog("UPnPManager: pollSonosPlaybackState — getTransportState failed for %@", session.device.name)
             return nil
         }
         guard let posInfo = try? await getPositionInfo() else {
-            NSLog("UPnPManager: pollSonosPlaybackState — getPositionInfo failed, returning transport state only")
+            upnpLog("UPnPManager: pollSonosPlaybackState — getPositionInfo failed, returning transport state only")
             return (state: transportState, position: 0, duration: 0)
         }
         return (state: transportState, position: posInfo.position, duration: posInfo.duration)
@@ -1884,7 +1895,7 @@ class UPnPManager {
         </s:Envelope>
         """
         
-        NSLog("UPnPManager: SetAVTransportURI - URI length: %d, metadata length: %d", escapedURI.count, escapedMetadata.count)
+        upnpLog("UPnPManager: SetAVTransportURI - URI length: %d, metadata length: %d", escapedURI.count, escapedMetadata.count)
         
         var request = URLRequest(url: controlURL)
         request.httpMethod = "POST"
@@ -1910,7 +1921,7 @@ class UPnPManager {
             
             // Fix 11: Detect connection security (401/403)
             if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                NSLog("UPnPManager: SetAVTransportURI auth error %d - Sonos Connection Security may be enabled", httpResponse.statusCode)
+                upnpLog("UPnPManager: SetAVTransportURI auth error %d - Sonos Connection Security may be enabled", httpResponse.statusCode)
                 await MainActor.run {
                     NotificationCenter.default.post(
                         name: CastManager.errorNotification,
@@ -1920,7 +1931,7 @@ class UPnPManager {
                 }
             }
             
-            NSLog("UPnPManager: SetAVTransportURI SOAP error %d: %@", httpResponse.statusCode, errorBody)
+            upnpLog("UPnPManager: SetAVTransportURI SOAP error %d: %@", httpResponse.statusCode, errorBody)
             throw CastError.soapError(statusCode: httpResponse.statusCode, detail: "SOAP error \(httpResponse.statusCode)")
         }
         
@@ -1998,7 +2009,7 @@ class UPnPManager {
 
         let clampedVolume = max(0, min(100, volume))
 
-        NSLog("UPnPManager: Setting volume to %d on %@", clampedVolume, session.device.name)
+        upnpLog("UPnPManager: Setting volume to %d on %@", clampedVolume, session.device.name)
 
         if session.device.type == .sonos {
             // Use GroupRenderingControl for Sonos — works for both single speakers and groups
@@ -2065,7 +2076,7 @@ class UPnPManager {
             throw CastError.sessionNotActive
         }
 
-        NSLog("UPnPManager: Setting mute to %@ on %@", muted ? "ON" : "OFF", session.device.name)
+        upnpLog("UPnPManager: Setting mute to %@ on %@", muted ? "ON" : "OFF", session.device.name)
 
         if session.device.type == .sonos {
             let controlURL = getGroupRenderingControlURL(for: session.device)
@@ -2123,7 +2134,7 @@ class UPnPManager {
         // Get zone info for the joining zone
         let zoneInfo = stateQueue.sync { sonosZones[zoneUDN] }
         guard let zone = zoneInfo else {
-            NSLog("UPnPManager: Zone not found: %@", zoneUDN)
+            upnpLog("UPnPManager: Zone not found: %@", zoneUDN)
             throw CastError.playbackFailed("Zone not found: \(zoneUDN)")
         }
         
@@ -2144,9 +2155,9 @@ class UPnPManager {
         let coordinatorRincon = coordinatorUDN.replacingOccurrences(of: "uuid:", with: "")
         let rinconURI = "x-rincon:\(coordinatorRincon)"
         
-        NSLog("UPnPManager: Joining zone '%@' (%@) to coordinator '%@'", zone.roomName, zone.address, coordinatorRincon)
-        NSLog("UPnPManager: Using control URL: %@", controlURL.absoluteString)
-        NSLog("UPnPManager: Using x-rincon URI: %@", rinconURI)
+        upnpLog("UPnPManager: Joining zone '%@' (%@) to coordinator '%@'", zone.roomName, zone.address, coordinatorRincon)
+        upnpLog("UPnPManager: Using control URL: %@", controlURL.absoluteString)
+        upnpLog("UPnPManager: Using x-rincon URI: %@", rinconURI)
         
         // Send SetAVTransportURI with x-rincon: URI to join the group
         try await sendSOAPAction(
@@ -2159,7 +2170,7 @@ class UPnPManager {
             ]
         )
         
-        NSLog("UPnPManager: Zone '%@' joined group", zone.roomName)
+        upnpLog("UPnPManager: Zone '%@' joined group", zone.roomName)
         
         // Refresh group topology after a short delay to let Sonos update
         try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
@@ -2173,7 +2184,7 @@ class UPnPManager {
         // Get zone info
         let zoneInfo = stateQueue.sync { sonosZones[zoneUDN] }
         guard let zone = zoneInfo else {
-            NSLog("UPnPManager: Zone not found: %@", zoneUDN)
+            upnpLog("UPnPManager: Zone not found: %@", zoneUDN)
             throw CastError.playbackFailed("Zone not found: \(zoneUDN)")
         }
         
@@ -2190,8 +2201,8 @@ class UPnPManager {
             controlURL = url
         }
         
-        NSLog("UPnPManager: Making zone '%@' (%@) standalone", zone.roomName, zone.address)
-        NSLog("UPnPManager: Using control URL: %@", controlURL.absoluteString)
+        upnpLog("UPnPManager: Making zone '%@' (%@) standalone", zone.roomName, zone.address)
+        upnpLog("UPnPManager: Using control URL: %@", controlURL.absoluteString)
         
         // Send BecomeCoordinatorOfStandaloneGroup to leave the group
         try await sendSOAPAction(
@@ -2202,7 +2213,7 @@ class UPnPManager {
             ]
         )
         
-        NSLog("UPnPManager: Zone '%@' is now standalone", zone.roomName)
+        upnpLog("UPnPManager: Zone '%@' is now standalone", zone.roomName)
         
         // Refresh group topology after a short delay
         try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
@@ -2262,7 +2273,7 @@ class UPnPManager {
             if attempt > 0 {
                 // Exponential backoff: 0.5s, 1s, 2s
                 let delay = retryBaseDelay * UInt64(1 << (attempt - 1))
-                NSLog("UPnPManager: Retrying RenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
+                upnpLog("UPnPManager: Retrying RenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
                 try? await Task.sleep(nanoseconds: delay)
             }
             
@@ -2285,18 +2296,18 @@ class UPnPManager {
                     
                     // Check if this is a transient error worth retrying
                     if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
-                        NSLog("UPnPManager: RenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
+                        upnpLog("UPnPManager: RenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
                         lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                         continue
                     }
                     
-                    NSLog("UPnPManager: RenderingControl SOAP error %d: %@", httpResponse.statusCode, errorBody)
+                    upnpLog("UPnPManager: RenderingControl SOAP error %d: %@", httpResponse.statusCode, errorBody)
                     throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                 }
                 
                 // Success
                 if attempt > 0 {
-                    NSLog("UPnPManager: RenderingControl %@ succeeded on retry attempt %d", action, attempt + 1)
+                    upnpLog("UPnPManager: RenderingControl %@ succeeded on retry attempt %d", action, attempt + 1)
                 }
                 return String(data: data, encoding: .utf8) ?? ""
                 
@@ -2311,7 +2322,7 @@ class UPnPManager {
             } catch {
                 // Network errors might be transient too
                 if attempt < maxRetries {
-                    NSLog("UPnPManager: RenderingControl %@ network error, will retry: %@", action, error.localizedDescription)
+                    upnpLog("UPnPManager: RenderingControl %@ network error, will retry: %@", action, error.localizedDescription)
                     lastError = CastError.networkError(error)
                     continue
                 }
@@ -2350,7 +2361,7 @@ class UPnPManager {
         for attempt in 0...maxRetries {
             if attempt > 0 {
                 let delay = retryBaseDelay * UInt64(1 << (attempt - 1))
-                NSLog("UPnPManager: Retrying GroupRenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
+                upnpLog("UPnPManager: Retrying GroupRenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
                 try? await Task.sleep(nanoseconds: delay)
             }
 
@@ -2372,17 +2383,17 @@ class UPnPManager {
                     let errorBody = String(data: data, encoding: .utf8) ?? ""
 
                     if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
-                        NSLog("UPnPManager: GroupRenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
+                        upnpLog("UPnPManager: GroupRenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
                         lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                         continue
                     }
 
-                    NSLog("UPnPManager: GroupRenderingControl SOAP error %d: %@", httpResponse.statusCode, errorBody)
+                    upnpLog("UPnPManager: GroupRenderingControl SOAP error %d: %@", httpResponse.statusCode, errorBody)
                     throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                 }
 
                 if attempt > 0 {
-                    NSLog("UPnPManager: GroupRenderingControl %@ succeeded on retry attempt %d", action, attempt + 1)
+                    upnpLog("UPnPManager: GroupRenderingControl %@ succeeded on retry attempt %d", action, attempt + 1)
                 }
                 return String(data: data, encoding: .utf8) ?? ""
 
@@ -2394,7 +2405,7 @@ class UPnPManager {
                 throw error
             } catch {
                 if attempt < maxRetries {
-                    NSLog("UPnPManager: GroupRenderingControl %@ network error, will retry: %@", action, error.localizedDescription)
+                    upnpLog("UPnPManager: GroupRenderingControl %@ network error, will retry: %@", action, error.localizedDescription)
                     lastError = CastError.networkError(error)
                     continue
                 }
@@ -2433,7 +2444,7 @@ class UPnPManager {
             if attempt > 0 {
                 // Exponential backoff: 0.5s, 1s, 2s
                 let delay = retryBaseDelay * UInt64(1 << (attempt - 1))
-                NSLog("UPnPManager: Retrying AVTransport %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
+                upnpLog("UPnPManager: Retrying AVTransport %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
                 try? await Task.sleep(nanoseconds: delay)
             }
             
@@ -2456,7 +2467,7 @@ class UPnPManager {
                     
                     // Fix 11: Detect connection security (401/403)
                     if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                        NSLog("UPnPManager: Auth error %d - Sonos Connection Security may be enabled", httpResponse.statusCode)
+                        upnpLog("UPnPManager: Auth error %d - Sonos Connection Security may be enabled", httpResponse.statusCode)
                         await MainActor.run {
                             NotificationCenter.default.post(
                                 name: CastManager.errorNotification,
@@ -2481,12 +2492,12 @@ class UPnPManager {
                         // Fix 6: Handle UPnP Error 701 (Transition Not Available)
                         // Wait for transport to be ready instead of blind retry
                         if errorCode == "701" && attempt < maxRetries {
-                            NSLog("UPnPManager: Error 701 (Transition Not Available) - waiting for transport ready state")
+                            upnpLog("UPnPManager: Error 701 (Transition Not Available) - waiting for transport ready state")
                             for waitAttempt in 1...5 {
                                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s between checks
                                 if let state = try? await getTransportState(),
                                    state == "STOPPED" || state == "PLAYING" || state == "PAUSED_PLAYBACK" {
-                                    NSLog("UPnPManager: Transport now ready (%@) after %d waits, retrying", state, waitAttempt)
+                                    upnpLog("UPnPManager: Transport now ready (%@) after %d waits, retrying", state, waitAttempt)
                                     lastError = CastError.playbackFailed(errorDetail)
                                     break // Will continue the retry loop
                                 }
@@ -2497,20 +2508,20 @@ class UPnPManager {
                     
                     // Check if this is a transient error worth retrying
                     if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
-                        NSLog("UPnPManager: AVTransport %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
+                        upnpLog("UPnPManager: AVTransport %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
                         lastError = CastError.playbackFailed(errorDetail)
                         continue
                     }
                     
                     // Always log SOAP errors with full detail for debugging
-                    NSLog("UPnPManager: SOAP ERROR for %@ - Status: %d, Detail: %@", action, httpResponse.statusCode, errorDetail)
-                    NSLog("UPnPManager: SOAP ERROR body: %@", errorBody)
+                    upnpLog("UPnPManager: SOAP ERROR for %@ - Status: %d, Detail: %@", action, httpResponse.statusCode, errorDetail)
+                    upnpLog("UPnPManager: SOAP ERROR body: %@", errorBody)
                     throw CastError.soapError(statusCode: httpResponse.statusCode, detail: errorDetail)
                 }
                 
                 // Success
                 if attempt > 0 {
-                    NSLog("UPnPManager: AVTransport %@ succeeded on retry attempt %d", action, attempt + 1)
+                    upnpLog("UPnPManager: AVTransport %@ succeeded on retry attempt %d", action, attempt + 1)
                 }
                 return String(data: data, encoding: .utf8) ?? ""
                 
@@ -2525,7 +2536,7 @@ class UPnPManager {
             } catch {
                 // Network errors might be transient too
                 if attempt < maxRetries {
-                    NSLog("UPnPManager: AVTransport %@ network error, will retry: %@", action, error.localizedDescription)
+                    upnpLog("UPnPManager: AVTransport %@ network error, will retry: %@", action, error.localizedDescription)
                     lastError = CastError.networkError(error)
                     continue
                 }
