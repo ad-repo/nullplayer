@@ -36,6 +36,20 @@ class PlaylistView: NSView {
     /// Button being pressed (for visual feedback)
     private var pressedButton: SkinRenderer.PlaylistButtonType?
 
+    /// When true this playlist is embedded inside the classic compact library window rather
+    /// than being its own standalone window. It draws normally (title bar at the top), and the
+    /// host tucks that title bar up behind the compact player bar by extending the view's frame
+    /// (see `embeddedTopInset`) — the same gap-free mechanism the browser uses. Window
+    /// drag/close is disabled so body clicks route to track selection.
+    var isEmbedded = false
+
+    /// How far (in view points) the host must extend this view's frame up behind the compact
+    /// player bar so the drawn title bar is hidden. Equals the title-bar height at this view's
+    /// current scale.
+    var embeddedTopInset: CGFloat {
+        isEmbedded ? Layout.titleBarHeight * scaleFactor : 0
+    }
+
     /// Window dragging state
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
@@ -1002,6 +1016,7 @@ class PlaylistView: NSView {
 
     /// Check if point hits title bar (for dragging)
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
+        if isEmbedded { return false }  // embedded: not draggable, no title bar
         if WindowManager.shared.hideTitleBars {
             // Use view-space drag zone: skinPoint.y near the top = small y value
             // With the offset applied, skin y = titleBarHeight corresponds to the top of the visible window
@@ -1014,7 +1029,7 @@ class PlaylistView: NSView {
 
     /// Check if point hits close button (enlarged hit area extends to right edge and top)
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
+        if isEmbedded || WindowManager.shared.hideTitleBars { return false }  // embedded/docked-hidden: no close button
         let effectiveSize = effectiveWindowSize
         let closeRect = NSRect(x: effectiveSize.width - 20, y: 0, width: 20, height: 14)
         return closeRect.contains(skinPoint)

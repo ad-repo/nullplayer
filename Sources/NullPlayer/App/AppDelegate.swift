@@ -567,7 +567,7 @@ extension AppDelegate: AudioEngineDelegate {
     }
     
     func audioEngineDidChangePlaylist() {
-        windowManager.playlistWindowController?.reloadPlaylist()
+        windowManager.reloadPlaylistViews()
     }
     
     func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {

@@ -8,6 +8,7 @@ private protocol CompactModeBrowserSurface: AnyObject {
     func updateCompactBarTime(current: TimeInterval, duration: TimeInterval)
     func updateCompactBarTrack(_ track: Track?)
     func updateCompactBarPlaybackState()
+    func reloadCompactPlaylist()
     var compactBackdropPresenter: CavaPresenter? { get }
     func refreshCompactBackdrop()
     func skinDidChange()
@@ -151,6 +152,10 @@ final class CompactModeWindowController: NSWindowController {
         browserController.updateCompactBarTrack(engine.currentTrack)
         browserController.updateCompactBarTime(current: engine.currentTime, duration: engine.duration)
         browserController.updateCompactBarPlaybackState()
+    }
+
+    func reloadPlaylist() {
+        browserController.reloadCompactPlaylist()
     }
 
     func skinDidChange() {

@@ -217,6 +217,13 @@ class ModernLibraryBrowserView: NSView {
     private var topChromeBottomY: CGFloat {
         bounds.height - Layout.titleBarHeight - compactPlayerBarHeight
     }
+
+    /// Y coordinate of the bottom of the scrollable content region. Content measures up from
+    /// here, so reserving the compact footer band shifts the list / alphabet / server bar up
+    /// without any other layout math changing (mirrors `topChromeBottomY` for the bottom).
+    private var contentRegionBottomY: CGFloat {
+        Layout.statusBarHeight + compactFooterHeight
+    }
     
     // Browse state
     private var currentSource: ModernBrowserSource = .local {
@@ -371,6 +378,31 @@ class ModernLibraryBrowserView: NSView {
     // Offline volume state (populated by loadLocalData)
     private var offlineWatchFolders: [WatchFolderSummary] = []
     private var offlineVolumePrefixes: Set<String> = []
+
+    /// Content shown below the compact player bar: the library browser or the play queue.
+    /// Only consulted when `compactMode == true`; the full library window is unaffected.
+    enum CompactContentMode: Int { case library = 0, queue = 1 }
+
+    private var compactContentMode: CompactContentMode {
+        get { CompactContentMode(rawValue: UserDefaults.standard.integer(forKey: "compactContentMode")) ?? .library }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "compactContentMode")
+            updateCompactPlaylistFrame()   // show/hide + size the embedded queue
+            // Hand keyboard focus to whichever view is now visible.
+            window?.makeFirstResponder(newValue == .queue ? (compactPlaylistView ?? self) : self)
+            needsLayout = true
+            needsDisplay = true
+        }
+    }
+
+    /// Height of the Library|Playlist toggle footer at the bottom of the compact window
+    /// (0 outside compact mode).
+    private var compactFooterHeight: CGFloat {
+        compactMode ? 24 * ModernSkinElements.sizeMultiplier : 0
+    }
+
+    /// Embedded compact-sized play queue, shown in place of the library chrome in queue mode.
+    private var compactPlaylistView: ModernPlaylistView?
 
     // Local Plists slot toggle state (switch between Plists and Folders)
     private var localPlistsSlotShowsFolders: Bool {
@@ -1032,7 +1064,10 @@ class ModernLibraryBrowserView: NSView {
         if browseMode.isHistoryMode {
             ensureHistoryHostingView()
         }
-        let isVisible = browseMode.isHistoryMode && !isArtOnlyMode
+        // The embedded queue covers the content region in Playlist mode, so the SwiftUI
+        // history subview must stay hidden there regardless of browseMode.
+        let inQueueMode = compactMode && compactContentMode == .queue
+        let isVisible = browseMode.isHistoryMode && !isArtOnlyMode && !inQueueMode
         historyHostingView?.isHidden = !isVisible
         updateEmbeddedSubviewFrames()
     }
@@ -1040,12 +1075,12 @@ class ModernLibraryBrowserView: NSView {
     private func embeddedHistoryContentRect() -> NSRect {
         var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        let statusBarHeight = Layout.statusBarHeight
+        let contentBottomY = contentRegionBottomY
         return NSRect(
             x: Layout.borderWidth,
-            y: statusBarHeight,
+            y: contentBottomY,
             width: bounds.width - Layout.borderWidth * 2,
-            height: max(0, contentTopY - statusBarHeight)
+            height: max(0, contentTopY - contentBottomY)
         )
     }
 
@@ -1055,6 +1090,7 @@ class ModernLibraryBrowserView: NSView {
             ratingOverlay.frame = bounds
         }
         updateCompactPlayerBarFrame()
+        updateCompactPlaylistFrame()
         updateBackdropFrame()
     }
 
@@ -1156,6 +1192,47 @@ class ModernLibraryBrowserView: NSView {
                            height: compactPlayerBarHeight)
     }
 
+    /// Create/position/remove the embedded compact play queue to match the current mode.
+    /// It fills the content region below the toggle strip and covers the library chrome
+    /// (server bar / tabs / alphabet index) when shown, so queue mode hides library chrome.
+    private func updateCompactPlaylistFrame() {
+        guard compactMode else {
+            compactPlaylistView?.removeFromSuperview()
+            compactPlaylistView = nil
+            return
+        }
+        let queue: ModernPlaylistView
+        let didCreateQueue: Bool
+        if let existing = compactPlaylistView {
+            queue = existing
+            didCreateQueue = false
+        } else {
+            queue = ModernPlaylistView(frame: .zero)
+            queue.isEmbedded = true
+            // Render above the library chrome and the Cava/art backdrop.
+            addSubview(queue)
+            compactPlaylistView = queue
+            didCreateQueue = true
+        }
+        let border = Layout.borderWidth
+        queue.frame = NSRect(x: border, y: contentRegionBottomY,
+                             width: bounds.width - border * 2,
+                             height: max(0, topChromeBottomY - contentRegionBottomY))
+        queue.isHidden = (compactContentMode != .queue)
+        if didCreateQueue {
+            // `reloadData()` needs the final frame so it can scroll the current track into view.
+            queue.reloadData()
+            if compactContentMode == .queue {
+                window?.makeFirstResponder(queue)
+            }
+        }
+    }
+
+    /// Refresh the private playlist presentation after the shared audio-engine queue mutates.
+    func reloadCompactPlaylist() {
+        compactPlaylistView?.reloadData()
+    }
+
     /// Seed the bar with the engine's current state so it isn't blank until the next update tick.
     private func seedCompactPlayerBar(_ bar: CompactPlayerBarView) {
         let engine = WindowManager.shared.audioEngine
@@ -1227,13 +1304,14 @@ class ModernLibraryBrowserView: NSView {
         let backgroundOpacity = backdropActive
             ? mainOpacity.background * backdropScrimAlpha
             : mainOpacity.background
+        let isShowingCompactPlaylist = compactMode && compactContentMode == .queue
 
         // Fast path: scroll timer marks only server bar dirty — skip full window redraw.
         // Always fill the full background first (copy blend mode) so the layer is never
         // left partially transparent from accumulated alpha on repeated scroll-tick draws.
         let serverBarY = topChromeBottomY - Layout.serverBarHeight
         let sbRect = NSRect(x: 0, y: serverBarY, width: bounds.width, height: Layout.serverBarHeight)
-        if sbRect.contains(dirtyRect) {
+        if !isShowingCompactPlaylist, sbRect.contains(dirtyRect) {
             // Build the renderer from the current skin (not the cached instance) so the
             // background can't lag a skin swap and render the wrong surface under the bands.
             let renderer = ModernSkinRenderer(skin: skin)
@@ -1293,60 +1371,74 @@ class ModernLibraryBrowserView: NSView {
             renderer.drawWindowControlButton("library_btn_close", state: closeState, in: closeBtnRect, context: context)
         }
         
-        // Server bar (below title bar in screen coords)
-        drawServerBar(in: context, serverBarY: serverBarY, skin: skin)
-        
-        // Tab bar (below server bar)
-        let tabBarY = serverBarY - Layout.tabBarHeight
-        drawTabBar(in: context, tabBarY: tabBarY, skin: skin)
-        
-        // Search bar (below tab bar, only in search mode)
-        var contentTopY = tabBarY
-        if browseMode == .search {
-            contentTopY -= Layout.searchBarHeight
-            drawSearchBar(in: context, searchBarY: contentTopY, skin: skin)
-        }
-        
-        // Status bar at bottom
-        let statusBarHeight = Layout.statusBarHeight
-
-        // Offline volume banner (local source only, above list content)
-        let showOfflineBanner = isLocalSource && !offlineWatchFolders.isEmpty
-        let bannerHeight = showOfflineBanner ? Layout.offlineBannerHeight : 0
-
-        // List area (between content top and status bar bottom)
-        let listAreaY = statusBarHeight + bannerHeight
-        let listAreaHeight = contentTopY - statusBarHeight - bannerHeight
-        let listRect = NSRect(x: Layout.borderWidth, y: listAreaY,
-                              width: bounds.width - Layout.borderWidth * 2, height: listAreaHeight)
-
         updateHistoryHostingVisibility()
 
-        if showOfflineBanner {
-            let bannerRect = NSRect(x: Layout.borderWidth, y: statusBarHeight,
-                                   width: bounds.width - Layout.borderWidth * 2, height: bannerHeight)
-            drawOfflineBanner(in: context, rect: bannerRect, skin: skin)
+        // In the compact window's Playlist mode the embedded queue subview fills the content
+        // region, so skip drawing the library chrome (server bar / tabs / search / list /
+        // alphabet) behind it — the shared Cava/art backdrop then shows through the queue,
+        // matching how it shows behind the library list.
+        let showLibraryContent = !isShowingCompactPlaylist
+
+        if showLibraryContent {
+            // Server bar (below title bar in screen coords)
+            drawServerBar(in: context, serverBarY: serverBarY, skin: skin)
+
+            // Tab bar (below server bar)
+            let tabBarY = serverBarY - Layout.tabBarHeight
+            drawTabBar(in: context, tabBarY: tabBarY, skin: skin)
+
+            // Search bar (below tab bar, only in search mode)
+            var contentTopY = tabBarY
+            if browseMode == .search {
+                contentTopY -= Layout.searchBarHeight
+                drawSearchBar(in: context, searchBarY: contentTopY, skin: skin)
+            }
+
+            // Content bottom: status-bar margin plus the compact footer band.
+            let contentBottomY = contentRegionBottomY
+
+            // Offline volume banner (local source only, above list content)
+            let showOfflineBanner = isLocalSource && !offlineWatchFolders.isEmpty
+            let bannerHeight = showOfflineBanner ? Layout.offlineBannerHeight : 0
+
+            // List area (between content top and content bottom)
+            let listAreaY = contentBottomY + bannerHeight
+            let listAreaHeight = contentTopY - contentBottomY - bannerHeight
+            let listRect = NSRect(x: Layout.borderWidth, y: listAreaY,
+                                  width: bounds.width - Layout.borderWidth * 2, height: listAreaHeight)
+
+            if showOfflineBanner {
+                let bannerRect = NSRect(x: Layout.borderWidth, y: contentBottomY,
+                                       width: bounds.width - Layout.borderWidth * 2, height: bannerHeight)
+                drawOfflineBanner(in: context, rect: bannerRect, skin: skin)
+            }
+
+            if browseMode.isHistoryMode {
+                drawArtworkBackground(in: context, listRect: listRect, artwork: capturedArtwork)
+                // SwiftUI-hosted history content is rendered via an embedded subview.
+            } else if isArtOnlyMode {
+                // Art-only mode takes precedence over loading/error states (matches PlexBrowserView)
+                // so that visualization continues uninterrupted during data refreshes
+                drawArtOnlyArea(in: context, contentRect: listRect, skin: skin, artwork: capturedArtwork)
+            } else if currentSource.isPlex && !PlexManager.shared.isLinked {
+                drawNotLinkedState(in: context, listRect: listRect, skin: skin)
+            } else if isLoading {
+                drawLoadingState(in: context, listRect: listRect, skin: skin)
+            } else if let error = errorMessage {
+                drawErrorState(in: context, message: error, listRect: listRect, skin: skin)
+            } else {
+                drawListArea(in: context, listAreaY: listAreaY, listAreaHeight: listAreaHeight, skin: skin, artwork: capturedArtwork)
+            }
+
+            // Status bar text
+            drawStatusBarText(in: context, skin: skin)
         }
 
-        if browseMode.isHistoryMode {
-            drawArtworkBackground(in: context, listRect: listRect, artwork: capturedArtwork)
-            // SwiftUI-hosted history content is rendered via an embedded subview.
-        } else if isArtOnlyMode {
-            // Art-only mode takes precedence over loading/error states (matches PlexBrowserView)
-            // so that visualization continues uninterrupted during data refreshes
-            drawArtOnlyArea(in: context, contentRect: listRect, skin: skin, artwork: capturedArtwork)
-        } else if currentSource.isPlex && !PlexManager.shared.isLinked {
-            drawNotLinkedState(in: context, listRect: listRect, skin: skin)
-        } else if isLoading {
-            drawLoadingState(in: context, listRect: listRect, skin: skin)
-        } else if let error = errorMessage {
-            drawErrorState(in: context, message: error, listRect: listRect, skin: skin)
-        } else {
-            drawListArea(in: context, listAreaY: listAreaY, listAreaHeight: listAreaHeight, skin: skin, artwork: capturedArtwork)
+        // Library | Playlist toggle footer at the bottom (compact window only).
+        if compactMode {
+            drawCompactFooter(in: context, skin: skin)
         }
-        
-        // Status bar text
-        drawStatusBarText(in: context, skin: skin)
+
         context.restoreGState()
 
         if isHighlighted {
@@ -1591,6 +1683,47 @@ class ModernLibraryBrowserView: NSView {
     }
     
     /// Draw a modern boxed toggle button
+    /// Full band of the Library|Playlist toggle footer at the bottom (compact window only),
+    /// sitting just above the thin status-bar margin.
+    private var compactFooterRect: NSRect {
+        NSRect(x: Layout.borderWidth, y: Layout.statusBarHeight,
+               width: bounds.width - Layout.borderWidth * 2,
+               height: compactFooterHeight)
+    }
+
+    /// The two full-width halves of the footer band — (.library, .queue) — used for both
+    /// hit-testing and (after insetting to the tab-box size) drawing, mirroring the tab bar.
+    private func compactToggleSegmentRects() -> (library: NSRect, queue: NSRect) {
+        let strip = compactFooterRect
+        let halfWidth = (strip.width / 2).rounded()
+        let library = NSRect(x: strip.minX, y: strip.minY, width: halfWidth, height: strip.height)
+        let queue = NSRect(x: strip.minX + halfWidth, y: strip.minY,
+                           width: strip.width - halfWidth, height: strip.height)
+        return (library, queue)
+    }
+
+    private func drawCompactFooter(in context: CGContext, skin: ModernSkin) {
+        guard compactFooterHeight > 0 else { return }
+
+        // Fill the band to match the tab-bar row so the footer reads as part of the chrome.
+        contentFill(isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
+        context.fill(compactFooterRect)
+
+        let chromeScale = topChromeScale(for: skin)
+        let font = skin.libraryFont(size: (compactMode ? 11 : 12) * chromeScale)
+        let m = ModernSkinElements.sizeMultiplier
+        // Same box insets the tab bar uses (drawTabBar), so the toggle boxes match the tabs.
+        let insetX = 2 * m * chromeScale
+        let insetY = 2 * m
+        let segments = compactToggleSegmentRects()
+        drawToggleTab(label: "Library", isActive: compactContentMode == .library,
+                      rect: segments.library.insetBy(dx: insetX, dy: insetY),
+                      font: font, skin: skin, context: context)
+        drawToggleTab(label: "Playlist", isActive: compactContentMode == .queue,
+                      rect: segments.queue.insetBy(dx: insetX, dy: insetY),
+                      font: font, skin: skin, context: context)
+    }
+
     private func drawToggleTab(label: String, isActive: Bool, rect: NSRect,
                                font: NSFont, skin: ModernSkin, context: CGContext) {
         let scale = ModernSkinElements.scaleFactor
@@ -3655,7 +3788,7 @@ class ModernLibraryBrowserView: NSView {
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         if hasColumns { contentTopY -= columnHeaderHeight }
         
-        let contentBottomY = Layout.statusBarHeight
+        let contentBottomY = contentRegionBottomY
         let contentHeight = contentTopY - contentBottomY
         
         let alphabetWidth = Layout.alphabetWidth
@@ -3685,7 +3818,7 @@ class ModernLibraryBrowserView: NSView {
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         if hasColumns { contentTopY -= columnHeaderHeight }
 
-        let contentBottomY = Layout.statusBarHeight
+        let contentBottomY = contentRegionBottomY
         let alphabetWidth = Layout.alphabetWidth
         let listRect = NSRect(
             x: Layout.borderWidth,
@@ -3731,8 +3864,8 @@ class ModernLibraryBrowserView: NSView {
         let showOfflineBanner = isLocalSource && !offlineWatchFolders.isEmpty
         let bannerHeight = showOfflineBanner ? Layout.offlineBannerHeight : 0
 
-        let listAreaY = Layout.statusBarHeight + bannerHeight
-        let listAreaHeight = contentTopY - Layout.statusBarHeight - bannerHeight
+        let listAreaY = contentRegionBottomY + bannerHeight
+        let listAreaHeight = contentTopY - contentRegionBottomY - bannerHeight
 
         let hasColumns = headerColumnsForCurrentContent() != nil
         let alphabetHeight = listAreaHeight - (hasColumns ? columnHeaderHeight : 0)
@@ -3747,7 +3880,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func hitTestContentArea(at point: NSPoint) -> Bool {
         let contentTopY = topChromeBottomY - Layout.serverBarHeight
-        let contentBottomY = Layout.statusBarHeight
+        let contentBottomY = contentRegionBottomY
         let contentRect = NSRect(x: Layout.borderWidth, y: contentBottomY,
                                  width: bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth,
                                  height: contentTopY - contentBottomY)
@@ -3896,7 +4029,22 @@ class ModernLibraryBrowserView: NSView {
         if !WindowManager.shared.hideTitleBars {
             if hitTestCloseButton(at: point) { pressedButton = .close; needsDisplay = true; return }
         }
-        
+
+        // Library | Playlist toggle footer (compact window only). The footer band sits below
+        // the content region, outside the embedded queue subview's frame, so its clicks
+        // always reach the parent regardless of z-order.
+        if compactMode, compactFooterHeight > 0 {
+            let segments = compactToggleSegmentRects()
+            if segments.library.contains(point) {
+                if compactContentMode != .library { compactContentMode = .library }
+                return
+            }
+            if segments.queue.contains(point) {
+                if compactContentMode != .queue { compactContentMode = .queue }
+                return
+            }
+        }
+
         // Server bar (check before content area so ART/VIS/source buttons work)
         if hitTestServerBar(at: point) {
             if case .plex = currentSource, !PlexManager.shared.isLinked {
@@ -4102,14 +4250,14 @@ class ModernLibraryBrowserView: NSView {
         }
         var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        let listHeight = contentTopY - Layout.statusBarHeight
+        let listHeight = contentTopY - contentRegionBottomY
         let totalHeight = CGFloat(displayItems.count) * itemHeight
         let verticalDelta = verticalScrollDelta(from: event)
 
         if totalHeight > listHeight && verticalDelta != 0 {
             scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - verticalDelta))
 
-            let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
+            let listRect = NSRect(x: 0, y: contentRegionBottomY, width: bounds.width, height: listHeight)
             setNeedsDisplay(listRect)
         }
 
@@ -4122,7 +4270,7 @@ class ModernLibraryBrowserView: NSView {
             let maxOffset = max(0, totalWidth - availableWidth)
             if maxOffset > 0 {
                 horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - horizontalDelta))
-                let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
+                let listRect = NSRect(x: 0, y: contentRegionBottomY, width: bounds.width, height: listHeight)
                 setNeedsDisplay(listRect)
             }
         }
@@ -4347,7 +4495,7 @@ class ModernLibraryBrowserView: NSView {
     private func ensureVisible(index: Int) {
         var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        let listHeight = contentTopY - Layout.statusBarHeight
+        let listHeight = contentTopY - contentRegionBottomY
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
 
@@ -4650,7 +4798,7 @@ class ModernLibraryBrowserView: NSView {
             if effectiveSortLetter(for: item) == letter {
                 var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
                 if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-                let listHeight = contentTopY - Layout.statusBarHeight
+                let listHeight = contentTopY - contentRegionBottomY
                 let hasColumns = displayItems.contains { columnsForItem($0) != nil }
                 let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
                 let maxScroll = max(0, CGFloat(displayItems.count) * itemHeight - effectiveHeight)

@@ -151,6 +151,10 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
         browserView.compactBarUpdatePlaybackState()
     }
 
+    func reloadCompactPlaylist() {
+        browserView.reloadCompactPlaylist()
+    }
+
     var compactBackdropPresenter: CavaPresenter? {
         browserView.backdropPresenter
     }

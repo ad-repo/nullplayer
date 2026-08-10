@@ -23,7 +23,17 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     /// embedded `ClassicCompactPlayerBarView` pinned across the top.
     private(set) var isCompactMode = false
     private var compactBar: ClassicCompactPlayerBarView?
-    private var compactContainer: NSView?
+    private var compactContainer: ClassicCompactContainerView?
+    private var compactFooter: ClassicCompactFooterView?
+    private var compactPlaylist: PlaylistView?
+
+    /// Persisted content choice for the compact window's Library|Playlist toggle. Shares the
+    /// `compactContentMode` key with the modern library window so the choice is consistent
+    /// across UI families (0 = library, 1 = playlist).
+    private var compactShowsPlaylist: Bool {
+        get { UserDefaults.standard.integer(forKey: "compactContentMode") == 1 }
+        set { UserDefaults.standard.set(newValue ? 1 : 0, forKey: "compactContentMode") }
+    }
 
     // MARK: - Initialization
     
@@ -131,6 +141,8 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     func skinDidChange() {
         browserView.skinDidChange()
         compactBar?.skinDidChange()
+        compactFooter?.skinDidChange()
+        compactPlaylist?.needsDisplay = true
     }
 
     /// Mode-dependent teardown: forward to the view so it cancels its in-flight tasks/timers
@@ -159,31 +171,82 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
             let container = ClassicCompactContainerView(frame: NSRect(origin: .zero, size: size))
             container.autoresizingMask = [.width, .height]
             container.barHeight = ClassicCompactPlayerBarView.preferredHeight()
+            container.footerHeight = ClassicCompactFooterView.preferredHeight()
             container.titleBarHeight = SkinElements.PlexBrowser.Layout.titleBarHeight
 
             browserView.autoresizingMask = []
             let bar = ClassicCompactPlayerBarView(frame: .zero)
             bar.autoresizingMask = []
 
+            // Embedded play queue, shown in place of the browser in Playlist mode.
+            let playlist = PlaylistView(frame: .zero)
+            playlist.isEmbedded = true
+            playlist.autoresizingMask = []
+            container.playlistTitleInset = playlist.embeddedTopInset
+
+            // Library | Playlist toggle footer across the bottom.
+            let footer = ClassicCompactFooterView(frame: .zero)
+            footer.autoresizingMask = []
+            footer.onSelect = { [weak self] showPlaylist in
+                self?.setCompactShowsPlaylist(showPlaylist)
+            }
+
             container.addSubview(browserView)
+            container.addSubview(playlist)
             container.addSubview(bar)
+            container.addSubview(footer)
             container.browser = browserView
+            container.playlist = playlist
             container.playerBar = bar
+            container.footer = footer
             window.contentView = container
             container.layoutChildren()
+            // Initialize selection and scroll only after layout establishes the final list area.
+            playlist.reloadData()
+
             compactContainer = container
             compactBar = bar
+            compactFooter = footer
+            compactPlaylist = playlist
             seedCompactBar(bar)
+            applyCompactContentMode()
         } else {
             let size = (window.contentView?.frame.size) ?? browserView.frame.size
             compactBar?.removeFromSuperview()
+            compactFooter?.removeFromSuperview()
+            compactPlaylist?.removeFromSuperview()
             compactBar = nil
+            compactFooter = nil
+            compactPlaylist = nil
             compactContainer = nil
+            browserView.isHidden = false
             browserView.frame = NSRect(origin: .zero, size: size)
             browserView.autoresizingMask = [.width, .height]
             window.contentView = browserView
         }
         browserView.needsDisplay = true
+    }
+
+    /// Flip the compact window between the library browser and the embedded play queue,
+    /// persisting the choice, then apply the new visibility.
+    private func setCompactShowsPlaylist(_ showPlaylist: Bool) {
+        guard compactShowsPlaylist != showPlaylist else { return }
+        compactShowsPlaylist = showPlaylist
+        applyCompactContentMode()
+    }
+
+    /// Show the browser XOR the embedded playlist to match the persisted mode, and hand
+    /// keyboard focus to whichever view is now visible.
+    private func applyCompactContentMode() {
+        let showPlaylist = compactShowsPlaylist
+        compactFooter?.showingPlaylist = showPlaylist
+        browserView.isHidden = showPlaylist
+        compactPlaylist?.isHidden = !showPlaylist
+        compactPlaylist?.needsDisplay = true
+        browserView.needsDisplay = true
+        if let target: NSView = showPlaylist ? compactPlaylist : browserView {
+            window?.makeFirstResponder(target)
+        }
     }
 
     /// Seed the bar with the engine's current state so it isn't blank until the next tick.
@@ -204,6 +267,10 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
 
     func updateCompactBarPlaybackState() {
         compactBar?.updatePlaybackState()
+    }
+
+    func reloadCompactPlaylist() {
+        compactPlaylist?.reloadData()
     }
     
     func reloadData() {

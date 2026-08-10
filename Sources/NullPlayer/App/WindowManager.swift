@@ -1755,6 +1755,14 @@ class WindowManager {
         compactWindowController?.updatePlaybackState()
     }
 
+    /// Keep every playlist presentation synchronized with the shared audio-engine queue.
+    /// Compact Mode owns a private browser controller, so it cannot be reached through the
+    /// standalone `playlistWindowController` channel used before the embedded queue existed.
+    func reloadPlaylistViews() {
+        playlistWindowController?.reloadPlaylist()
+        compactWindowController?.reloadPlaylist()
+    }
+
     // MARK: - Library History
 
     func showLibraryHistory() {
@@ -5627,7 +5635,7 @@ class WindowManager {
         mainWindowController?.updateTime(current: audioEngine.currentTime, duration: audioEngine.duration)
         updateWaveformTrack(track)
         updateWaveformTime(current: audioEngine.currentTime, duration: audioEngine.duration)
-        playlistWindowController?.reloadPlaylist()
+        reloadPlaylistViews()
 
         // If a video session is active, the video player survived teardown — restore its
         // title/state on the new main window instead of the audio track display.
