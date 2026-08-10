@@ -33,6 +33,13 @@ class ModernPlaylistView: NSView {
     /// Button being pressed (for visual feedback)
     private var pressedButton: String?
     
+    /// When true this playlist is embedded inside another window's content region
+    /// (the compact library window's Queue mode) rather than being its own standalone
+    /// window. Forces the standalone title bar/close button hidden AND disables all
+    /// window-drag/undock/close behavior, so body clicks route to track selection and
+    /// the host window is dragged by its own title bar.
+    var isEmbedded = false
+
     /// Window dragging state
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
@@ -64,7 +71,7 @@ class ModernPlaylistView: NSView {
     // MARK: - Layout Constants
     
     private var titleBarHeight: CGFloat {
-        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window)
+        let hide = isEmbedded || WindowManager.shared.effectiveHideTitleBars(for: self.window)
         return hide ? borderWidth : ModernSkinElements.playlistTitleBarHeight
     }
     private var bottomBarHeight: CGFloat { ModernSkinElements.playlistBottomBarHeight }
@@ -360,14 +367,18 @@ class ModernPlaylistView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        // Draw window background
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        // Draw window background. When embedded in the compact window we stay transparent so
+        // the host library view's translucent background — and the shared Cava/art backdrop
+        // behind it — show through the queue exactly as they do behind the library list.
+        if !isEmbedded {
+            renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
 
-        // Draw window border with glow (seamless docking suppresses adjacent edges)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
+            // Draw window border with glow (seamless docking suppresses adjacent edges).
+            renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
+        }
 
-        // Draw title bar (unless hidden by docking)
-        if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+        // Draw title bar (unless hidden by docking, or embedded in the compact window)
+        if !isEmbedded && !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER PLAYLIST", prefix: "playlist_", context: context)
             
             // Draw close button
@@ -410,9 +421,12 @@ class ModernPlaylistView: NSView {
         
         context.saveGState()
         context.clip(to: listRect)
-        
-        // Draw album art background behind tracks
-        drawArtworkBackground(in: listRect, context: context)
+
+        // Draw album art background behind tracks. Skipped when embedded so the compact
+        // window's shared backdrop shows through instead of a second art layer.
+        if !isEmbedded {
+            drawArtworkBackground(in: listRect, context: context)
+        }
         
         let engine = WindowManager.shared.audioEngine
         let tracks = engine.playlist
@@ -829,6 +843,7 @@ class ModernPlaylistView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        if isEmbedded { return false }  // embedded: not draggable, no title bar
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             return point.y >= bounds.height - 6  // invisible drag zone
         }
@@ -838,6 +853,7 @@ class ModernPlaylistView: NSView {
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        if isEmbedded { return false }  // embedded: no close button
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
         let scale = ModernSkinElements.scaleFactor
         let closeRect = NSRect(x: bounds.width - 16 * scale, y: bounds.height - titleBarHeight + 2 * scale,
@@ -902,7 +918,7 @@ class ModernPlaylistView: NSView {
 
         // Track list
         if let trackIndex = hitTestTrackList(at: point) {
-            if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+            if !isEmbedded && WindowManager.shared.effectiveHideTitleBars(for: self.window) {
                 // Defer the click so the user can drag to undock; commit on mouseUp if no drag
                 pendingTrackClick = (trackIndex, event)
                 hasDraggedWindow = false
@@ -912,11 +928,14 @@ class ModernPlaylistView: NSView {
                     WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
                 }
             } else {
+                // Embedded queue: keep keyboard focus on this view so arrow-key nav
+                // moves selection here rather than the hidden host library list.
+                if isEmbedded { window?.makeFirstResponder(self) }
                 handleTrackClick(index: trackIndex, event: event)
             }
             return
         }
-        
+
         // Title bar → window drag
         if hitTestTitleBar(at: point) {
             isDraggingWindow = true
@@ -927,8 +946,9 @@ class ModernPlaylistView: NSView {
             return
         }
 
-        // When title bar is hidden (docked + HT on), allow dragging from anywhere
-        if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+        // When title bar is hidden (docked + HT on), allow dragging from anywhere.
+        // Embedded queue never drags its host window from the body.
+        if !isEmbedded && WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
             if let window = window {
