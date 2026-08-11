@@ -86,4 +86,61 @@ final class SonosStopClassifierTests: XCTestCase {
 
         XCTAssertFalse(state.suppressesNaturalFinish)
     }
+
+    func testPrematureStopAfterReproducedNearEndSeekIsFinish() {
+        XCTAssertTrue(CastManager.sonosStopFollowsNearEndSeek(
+            position: 372.6,
+            expectedDuration: 389.8,
+            seekTarget: 368.2,
+            elapsedSinceSeek: 4.4,
+            nearEndWindow: 30,
+            stopGraceInterval: 12))
+    }
+
+    func testStopAfterSeekOutsideNearEndWindowIsNotFinish() {
+        XCTAssertFalse(CastManager.sonosStopFollowsNearEndSeek(
+            position: 360,
+            expectedDuration: 400,
+            seekTarget: 355,
+            elapsedSinceSeek: 4,
+            nearEndWindow: 30,
+            stopGraceInterval: 12))
+    }
+
+    func testStopLongAfterNearEndSeekIsNotFinish() {
+        XCTAssertFalse(CastManager.sonosStopFollowsNearEndSeek(
+            position: 390,
+            expectedDuration: 400,
+            seekTarget: 385,
+            elapsedSinceSeek: 13,
+            nearEndWindow: 30,
+            stopGraceInterval: 12))
+    }
+
+    func testStopBeforeSeekTargetIsObservedIsNotFinish() {
+        XCTAssertFalse(CastManager.sonosStopFollowsNearEndSeek(
+            position: 350,
+            expectedDuration: 400,
+            seekTarget: 385,
+            elapsedSinceSeek: 4,
+            nearEndWindow: 30,
+            stopGraceInterval: 12))
+    }
+
+    func testShortTrackNearEndSeekRequiresHalfwayPoint() {
+        XCTAssertFalse(CastManager.sonosStopFollowsNearEndSeek(
+            position: 3,
+            expectedDuration: 20,
+            seekTarget: 2,
+            elapsedSinceSeek: 2,
+            nearEndWindow: 30,
+            stopGraceInterval: 12))
+        XCTAssertTrue(CastManager.sonosStopFollowsNearEndSeek(
+            position: 16,
+            expectedDuration: 20,
+            seekTarget: 15,
+            elapsedSinceSeek: 2,
+            nearEndWindow: 30,
+            stopGraceInterval: 12))
+    }
 }

@@ -51,6 +51,35 @@ final class CastingTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.string(forKey: preferredDeviceDefaultsKey), "video-device-1")
     }
 
+    func testPlayingCastSessionReanchorsClockAfterSeek() {
+        let device = CastDevice(id: "sonos-seek", name: "Kitchen", type: .sonos,
+                                address: "192.168.1.20", port: 1400)
+        let session = CastSession(device: device)
+        let seekDate = Date(timeIntervalSince1970: 1_700_000_000)
+        session.position = 30
+        session.isPlaying = true
+        session.playbackStartDate = seekDate.addingTimeInterval(-10)
+
+        session.updateTrackingAfterSeek(to: 368.2, at: seekDate)
+
+        XCTAssertEqual(session.position, 368.2)
+        XCTAssertEqual(session.playbackStartDate, seekDate)
+    }
+
+    func testPausedCastSessionKeepsClockPausedAfterSeek() {
+        let device = CastDevice(id: "sonos-paused-seek", name: "Kitchen", type: .sonos,
+                                address: "192.168.1.20", port: 1400)
+        let session = CastSession(device: device)
+        session.position = 30
+        session.isPlaying = false
+        session.playbackStartDate = nil
+
+        session.updateTrackingAfterSeek(to: 368.2)
+
+        XCTAssertEqual(session.position, 368.2)
+        XCTAssertNil(session.playbackStartDate)
+    }
+
     func testSettingPreferenceToNonVideoDeviceIsIgnored() {
         let videoDevice = CastDevice(id: "video-device", name: "Living Room Chromecast", type: .chromecast, address: "192.168.1.10", port: 8009)
         let nonVideoDevice = CastDevice(id: "sonos-device", name: "Kitchen Sonos", type: .sonos, address: "192.168.1.20", port: 1400)

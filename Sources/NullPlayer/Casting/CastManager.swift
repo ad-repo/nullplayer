@@ -340,6 +340,12 @@ class CastManager {
     /// Tolerance (seconds) below the track duration within which a Sonos STOPPED counts as a
     /// natural end-of-track finish rather than an external stop (GH #415).
     private let sonosNaturalFinishTolerance: TimeInterval = 6.0
+    /// Plex-backed FLAC can make Sonos reach physical EOF several seconds before the duration it
+    /// continues to report after a near-end seek. Remember that seek briefly so the resulting
+    /// STOPPED is treated as EOF rather than an external pause.
+    @MainActor private var sonosRecentSeek: (session: CastSession, target: TimeInterval, requestedAt: Date)?
+    private let sonosNearEndSeekWindow: TimeInterval = 30.0
+    private let sonosPostSeekStopGraceInterval: TimeInterval = 12.0
     /// Durable app-initiated Stop intent. Unlike a timeout, this survives repeated STOPPED polls and
     /// a stale PLAYING poll that raced the multi-second Stop SOAP request.
     @MainActor private var sonosLocalStopState = SonosLocalStopState()
@@ -366,6 +372,23 @@ class CastManager {
         guard !locallyStopped, expectedDuration > 0 else { return false }
         return position >= expectedDuration - tolerance
             && position >= expectedDuration * 0.5
+    }
+
+    /// Some Sonos renderers reach physical EOF early after seeking near the end of a Plex FLAC.
+    /// Keep this exception tightly correlated to the recent seek instead of widening the ordinary
+    /// natural-finish tolerance, which would turn genuine external stops into playlist advances.
+    static func sonosStopFollowsNearEndSeek(position: TimeInterval,
+                                            expectedDuration: TimeInterval,
+                                            seekTarget: TimeInterval,
+                                            elapsedSinceSeek: TimeInterval,
+                                            nearEndWindow: TimeInterval,
+                                            stopGraceInterval: TimeInterval) -> Bool {
+        guard expectedDuration > 0,
+              nearEndWindow > 0,
+              elapsedSinceSeek >= 0,
+              elapsedSinceSeek <= stopGraceInterval else { return false }
+        let nearEndThreshold = max(expectedDuration - nearEndWindow, expectedDuration * 0.5)
+        return seekTarget >= nearEndThreshold && position >= seekTarget - 1.0
     }
 
     /// Consecutive Sonos poll failures — used to detect dead sessions (e.g., after speaker reboot)
@@ -846,6 +869,7 @@ class CastManager {
                     await MainActor.run {
                         sonosHasSeenActivePlayback = false
                         sonosTrackStartDate = Date()
+                        sonosRecentSeek = nil
                         sonosLocalStopState.clear()
                         consecutiveSonosPollFailures = 0
                     }
@@ -881,6 +905,7 @@ class CastManager {
                     await MainActor.run {
                         sonosHasSeenActivePlayback = false
                         sonosTrackStartDate = Date()
+                        sonosRecentSeek = nil
                         sonosLocalStopState.clear()
                         consecutiveSonosPollFailures = 0
                     }
@@ -1431,6 +1456,7 @@ class CastManager {
                     await MainActor.run {
                         self.sonosHasSeenActivePlayback = false
                         self.sonosTrackStartDate = Date()
+                        self.sonosRecentSeek = nil
                         self.sonosLocalStopState.clear()   // fresh cast: no pending intended stop
                     }
                 }
@@ -1937,6 +1963,7 @@ class CastManager {
             chromecastHasSeenActivePlayback = false
             sonosHasSeenActivePlayback = false
             sonosTrackStartDate = nil
+            sonosRecentSeek = nil
             sonosLocalStopState.clear()
             sonosVolumeCoalescer.reset()   // true teardown — clear coalescer dedupe/pending
         }
@@ -2110,7 +2137,10 @@ class CastManager {
         } else if upnpManager.activeSession != nil {
             // Record intent BEFORE the multi-second Stop SOAP so the STOPPED poll it triggers is
             // classified as an intended stop, not a natural end-of-track finish (GH #415).
-            await MainActor.run { self.sonosLocalStopState.requestStop() }
+            await MainActor.run {
+                self.sonosRecentSeek = nil
+                self.sonosLocalStopState.requestStop()
+            }
             try await upnpManager.stop()
         } else {
             throw CastError.sessionNotActive
@@ -2199,6 +2229,8 @@ class CastManager {
     
     /// Seek to a position on the cast device
     func seek(to time: TimeInterval) async throws {
+        let seekSession = activeSession
+
         if chromecastManager.activeSession != nil {
             chromecastManager.seek(to: time)
         } else if upnpManager.activeSession != nil {
@@ -2207,13 +2239,16 @@ class CastManager {
             throw CastError.sessionNotActive
         }
         
-        // Update video cast tracking
+        // Re-anchor audio and video cast tracking immediately. Sonos seeks are fire-and-forget;
+        // without this update, a near-EOF seek can finish before the next poll and STOPPED is then
+        // classified using the stale pre-seek position as an external stop instead of a track end.
         await MainActor.run {
-            if case .video = self.currentCast {
-                self.activeSession?.position = time
-                if self.activeSession?.isPlaying == true {
-                    self.activeSession?.playbackStartDate = Date()
-                }
+            guard let session = self.activeSession, session === seekSession else { return }
+            session.updateTrackingAfterSeek(to: time)
+            if session.device.type == .sonos {
+                self.sonosRecentSeek = session.isPlaying
+                    ? (session: session, target: time, requestedAt: Date())
+                    : nil
             }
         }
     }
@@ -2385,8 +2420,23 @@ class CastManager {
                     // so read the interpolated engine clock, not result.position.
                     let lastKnownPosition = engine.currentTime
                     let expectedDuration = track?.duration ?? session?.duration ?? 0
+                    let stoppedAfterNearEndSeek: Bool
+                    if let recentSeek = self.sonosRecentSeek,
+                       let session,
+                       recentSeek.session === session {
+                        stoppedAfterNearEndSeek = Self.sonosStopFollowsNearEndSeek(
+                            position: lastKnownPosition,
+                            expectedDuration: expectedDuration,
+                            seekTarget: recentSeek.target,
+                            elapsedSinceSeek: Date().timeIntervalSince(recentSeek.requestedAt),
+                            nearEndWindow: self.sonosNearEndSeekWindow,
+                            stopGraceInterval: self.sonosPostSeekStopGraceInterval)
+                    } else {
+                        stoppedAfterNearEndSeek = false
+                    }
 
                     if locallyStopped {
+                        self.sonosRecentSeek = nil
                         self.sonosLocalStopState.observeStopped()
                         self.activeSession?.position = 0
                         self.activeSession?.playbackStartDate = nil
@@ -2400,18 +2450,20 @@ class CastManager {
                         return
                     }
 
-                    let endedNaturally = Self.sonosStopIsNaturalFinish(
+                    let endedNaturally = stoppedAfterNearEndSeek || Self.sonosStopIsNaturalFinish(
                         position: lastKnownPosition,
                         expectedDuration: expectedDuration,
                         tolerance: self.sonosNaturalFinishTolerance,
                         locallyStopped: locallyStopped)
 
+                    self.sonosRecentSeek = nil
                     self.activeSession?.playbackStartDate = nil
                     self.activeSession?.isPlaying = false
 
                     if endedNaturally {
-                        NSLog("CastManager: Sonos reported %@ at %.1f/%.1f — treating as track finish (track='%@')",
-                              result.state, lastKnownPosition, expectedDuration, track?.title ?? "nil")
+                        NSLog("CastManager: Sonos reported %@ at %.1f/%.1f — treating as track finish (track='%@' postSeek=%d)",
+                              result.state, lastKnownPosition, expectedDuration, track?.title ?? "nil",
+                              stoppedAfterNearEndSeek ? 1 : 0)
                         engine.castPlaybackDidEndNaturally()
                         return
                     }
