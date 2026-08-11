@@ -1377,14 +1377,24 @@ class WindowManager {
             if restoreRegularWindows {
                 self.restoreRegularWindowSnapshot()
                 self.updateDockedChildWindows()
-                self.reassertRegularActivation()
+                self.restoreDockIconImage()
 
-                // The `.accessory → .regular` transition settles over a runloop turn or two on
-                // modern macOS: right after the activation above the menu bar can still show the
-                // stale (empty) menu — the menu options stay missing until the user manually
-                // minimizes and restores a window — and the Dock tile can show the generic
-                // executable icon. Re-assert activation, the rebuilt menu, and the icon once the
-                // transition has fully landed so none of them depends on winning that race.
+                // Bounce the activation policy to force the system menu bar to rebuild for the new
+                // `.regular` policy. The `.accessory → .regular` switch alone does not repopulate the
+                // menu bar while NullPlayer is *already* the active app — and it is, throughout the
+                // whole round trip: exiting from the status-item menu keeps it active, and on the
+                // launch-straight-into-Compact-Mode path it launches active and `enterCompactMode`
+                // re-activates it under `.accessory`. In that state `NSApp.activate` (and even
+                // `NSApp.deactivate`) are no-ops, so the menu bar keeps showing the *previously*
+                // active regular app's menus until the user minimizes/restores a window. Toggling to
+                // `.accessory` and immediately back to `.regular` is the one reliable trigger that
+                // makes AppKit re-own the menu bar. Verified across launch and live-toggle exits.
+                NSApp.setActivationPolicy(.accessory)
+                NSApp.setActivationPolicy(.regular)
+
+                // The transition settles over a runloop turn or two: re-assert the rebuilt menu,
+                // activation, key window, and Dock icon once it (and the bounce above) have landed
+                // so none of them depends on winning that race.
                 DispatchQueue.main.async {
                     guard self.compactModeState == .regular else { return }
                     (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
@@ -1398,11 +1408,11 @@ class WindowManager {
     }
 
     /// Reclaim foreground activation after leaving Compact Mode's `.accessory` policy: activate the
-    /// app, make the restored main window key, and re-apply the Dock icon. Establishing a key window
-    /// is what gives the app menu-bar ownership and first responder — without it the rebuilt menu can
-    /// stay missing until the user manually minimizes/restores a window. Re-applying the icon here
-    /// (after macOS has built the `.regular` Dock tile) keeps the NullPlayer logo from being replaced
-    /// by the generic executable icon.
+    /// app, make the restored main window key, and re-apply the Dock icon. The activation-policy
+    /// bounce in `exitCompactMode` is what re-owns the menu bar; this restores first responder / key
+    /// window and the Dock tile alongside it. Re-applying the icon here (after macOS has built the
+    /// `.regular` Dock tile) keeps the NullPlayer logo from being replaced by the generic executable
+    /// icon.
     private func reassertRegularActivation() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = mainWindowController?.window, window.isVisible, !isInNativeFullScreen(window) {
@@ -1689,6 +1699,13 @@ class WindowManager {
         let exit = NSMenuItem(title: "Exit Compact Mode", action: #selector(exitCompactModeMenuAction), keyEquivalent: "")
         exit.target = self
         menu.addItem(exit)
+        menu.addItem(.separator())
+        // Compact Mode runs `.accessory` — no app menu bar and no Dock icon — so this is the only
+        // in-app way to quit while compact. Without it users are forced to Activity Monitor, which
+        // does not run the normal terminate → `saveState`, losing that session's settings (e.g. the
+        // selected skin) on the next launch.
+        let quit = NSMenuItem(title: "Quit nullPlayer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+        menu.addItem(quit)
         // Temporarily attach the menu so the button presents it, then detach so plain
         // left-clicks keep toggling the window.
         item.menu = menu

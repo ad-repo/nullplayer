@@ -9,6 +9,8 @@
 ### Bug Fixes
 
 - **Restored local videos play again instead of erroring** — a video file left in the playlist from a previous session was rebuilt on launch as an audio track (the saved state doesn't record media type), so playing it routed to the audio engine and failed to decode the video container. Restored local files now re-derive their media type from the file extension, so videos correctly open in the video player.
+- **Exiting Compact Mode restores the menu bar** — leaving Compact Mode (including when the app launches straight into it and you exit for the first time) could leave the system menu bar owned by whatever app was frontmost before, with none of NullPlayer's menus. Because NullPlayer stays the active app across the whole transition, macOS never rebuilt the menu bar for it. NullPlayer now forces that rebuild on exit, so the full menu bar (and the correct Dock icon) return every time.
+- **Quitting from Compact Mode no longer loses your settings** — Compact Mode has no menu bar or Dock icon, and the status-item menu had no Quit, so the only way to quit was force-quitting from Activity Monitor — which skipped the normal save-on-quit and discarded that session's changes (for example, the skin reverted on the next launch). The compact status-item menu now has a **Quit nullPlayer** item that quits cleanly and saves state.
 
 ### Changes
 
