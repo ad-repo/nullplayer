@@ -108,6 +108,39 @@ final class SonosVolumeCoalescerTests: XCTestCase {
         XCTAssertEqual(sent, [50, 50])
     }
 
+    func testResetInvalidatesInFlightCompletionForSameDeviceKey() async {
+        var sent: [Int] = []
+        var started: CheckedContinuation<Void, Never>?
+        var gate: CheckedContinuation<Void, Never>?
+        var blocked = false
+
+        let coalescer = SonosVolumeCoalescer(
+            send: { value in
+                sent.append(value)
+                if !blocked {
+                    blocked = true
+                    started?.resume(); started = nil
+                    await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in gate = c }
+                }
+                return true
+            },
+            currentKey: { "device-A" }
+        )
+
+        let task = Task { await coalescer.submit(10) }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in started = c }
+
+        // Teardown resets state while the old session's request is still in flight. A new session
+        // to the same UDN submits the same value before that old request completes.
+        coalescer.reset()
+        await coalescer.submit(10)
+        gate?.resume()
+        await task.value
+
+        // The stale completion must not repopulate lastSent and suppress the new session's send.
+        XCTAssertEqual(sent, [10, 10])
+    }
+
     func testNoSendWhenNoSession() async {
         var sent: [Int] = []
         let coalescer = SonosVolumeCoalescer(

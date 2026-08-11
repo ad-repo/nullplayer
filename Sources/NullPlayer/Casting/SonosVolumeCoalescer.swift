@@ -19,15 +19,16 @@ final class SonosVolumeCoalescer {
     private var inFlight = false
     /// Last value confirmed sent, keyed by device UDN, used to dedupe redundant sends.
     private var lastSent: (key: String, percent: Int)?
+    /// Incremented on reset so an older in-flight completion cannot restore cleared dedupe state.
+    private var generation: UInt = 0
 
     /// Performs the actual send; returns true when the SOAP call succeeded.
-    private let send: (Int) async -> Bool
+    private let send: @MainActor (Int) async -> Bool
     /// Identifies the active target (device UDN); nil when there is no session.
-    private let currentKey: () -> String?
+    private let currentKey: @MainActor () -> String?
 
-    /// `nonisolated` so it can be constructed from `CastManager`'s (non-MainActor) lazy property
-    /// initializer; it only stores the injected closures and leaves state at its defaults.
-    nonisolated init(send: @escaping (Int) async -> Bool, currentKey: @escaping () -> String?) {
+    init(send: @escaping @MainActor (Int) async -> Bool,
+         currentKey: @escaping @MainActor () -> String?) {
         self.send = send
         self.currentKey = currentKey
     }
@@ -42,16 +43,20 @@ final class SonosVolumeCoalescer {
             pending = nil
             guard let key = currentKey() else { break }                       // no session → stop
             if lastSent?.key == key, lastSent?.percent == next { continue }    // equal-value dedupe
-            if await send(next), currentKey() == key {                         // still same target after await?
+            let sendGeneration = generation
+            if await send(next),
+               generation == sendGeneration,
+               currentKey() == key {                                           // still same session generation + target?
                 lastSent = (key, next)
             }
-            // A failed send (or a target change mid-flight) leaves `lastSent` untouched, so the
-            // next session's dedupe can't be poisoned by a stale completion.
+            // A failed send, target change, or reset while in flight leaves `lastSent` untouched,
+            // so the next session's dedupe can't be poisoned by a stale completion.
         }
     }
 
     /// Clear all coalescer state. Call only on true teardown (device disconnect), not per-track.
     func reset() {
+        generation &+= 1
         pending = nil
         lastSent = nil
     }

@@ -340,13 +340,12 @@ class CastManager {
     /// Tolerance (seconds) below the track duration within which a Sonos STOPPED counts as a
     /// natural end-of-track finish rather than an external stop (GH #415).
     private let sonosNaturalFinishTolerance: TimeInterval = 6.0
-    /// How long an intended local Stop suppresses natural-finish classification — covers the
-    /// multi-second Stop SOAP plus one 5s poll so the resulting STOPPED is treated as intended.
-    private let sonosLocalStopGrace: TimeInterval = 15.0
-    /// Timestamp of the most recent app-initiated Sonos stop; consulted in the STOPPED poll branch.
-    @MainActor var sonosLocalStopRequestedAt: Date?
+    /// Durable app-initiated Stop intent. Unlike a timeout, this survives repeated STOPPED polls and
+    /// a stale PLAYING poll that raced the multi-second Stop SOAP request.
+    @MainActor private var sonosLocalStopState = SonosLocalStopState()
 
     /// Coalesces Sonos/UPnP volume commands so a fast slider drag lands monotonically (GH #414).
+    @MainActor
     private lazy var sonosVolumeCoalescer = SonosVolumeCoalescer(
         send: { [weak self] percent in
             (try? await self?.upnpManager.setVolume(percent, retries: 0)) != nil
@@ -847,6 +846,7 @@ class CastManager {
                     await MainActor.run {
                         sonosHasSeenActivePlayback = false
                         sonosTrackStartDate = Date()
+                        sonosLocalStopState.clear()
                         consecutiveSonosPollFailures = 0
                     }
                 }
@@ -881,6 +881,7 @@ class CastManager {
                     await MainActor.run {
                         sonosHasSeenActivePlayback = false
                         sonosTrackStartDate = Date()
+                        sonosLocalStopState.clear()
                         consecutiveSonosPollFailures = 0
                     }
                     try await upnpManager.cast(url: url, metadata: metadata)
@@ -1430,7 +1431,7 @@ class CastManager {
                     await MainActor.run {
                         self.sonosHasSeenActivePlayback = false
                         self.sonosTrackStartDate = Date()
-                        self.sonosLocalStopRequestedAt = nil   // fresh cast: no pending intended stop
+                        self.sonosLocalStopState.clear()   // fresh cast: no pending intended stop
                     }
                 }
                 try await upnpManager.cast(url: finalCastURL, metadata: metadata)
@@ -1936,7 +1937,7 @@ class CastManager {
             chromecastHasSeenActivePlayback = false
             sonosHasSeenActivePlayback = false
             sonosTrackStartDate = nil
-            sonosLocalStopRequestedAt = nil
+            sonosLocalStopState.clear()
             sonosVolumeCoalescer.reset()   // true teardown — clear coalescer dedupe/pending
         }
 
@@ -2109,7 +2110,7 @@ class CastManager {
         } else if upnpManager.activeSession != nil {
             // Record intent BEFORE the multi-second Stop SOAP so the STOPPED poll it triggers is
             // classified as an intended stop, not a natural end-of-track finish (GH #415).
-            await MainActor.run { self.sonosLocalStopRequestedAt = Date() }
+            await MainActor.run { self.sonosLocalStopState.requestStop() }
             try await upnpManager.stop()
         } else {
             throw CastError.sessionNotActive
@@ -2124,7 +2125,12 @@ class CastManager {
                 self.isVideoCastPlaying = false
             } else {
                 // Reset time to 0 but keep cast session active
-                self.resolvedAudioEngine.resetCastTime()
+                self.activeSession?.position = 0
+                self.activeSession?.playbackStartDate = nil
+                self.activeSession?.isPlaying = false
+                if self.resolvedAudioEngine.state != .stopped {
+                    self.resolvedAudioEngine.resetCastTime()
+                }
             }
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
         }
@@ -2158,6 +2164,11 @@ class CastManager {
     
     /// Resume playback on the cast device
     func resume() async throws {
+        let resumingAfterLocalSonosStop = await MainActor.run {
+            self.activeSession?.device.type == .sonos
+                && self.sonosLocalStopState.suppressesNaturalFinish
+        }
+
         if chromecastManager.activeSession != nil {
             chromecastManager.resume()
         } else if upnpManager.activeSession != nil {
@@ -2168,6 +2179,14 @@ class CastManager {
         
         // Update local time tracking
         await MainActor.run {
+            if self.activeSession?.device.type == .sonos {
+                self.sonosLocalStopState.clear()
+                if resumingAfterLocalSonosStop {
+                    // A failed Stop SOAP may have left a stale near-end position. Do not let a
+                    // post-resume STOPPED poll misclassify that old position as another finish.
+                    self.activeSession?.position = 0
+                }
+            }
             if case .video = self.currentCast {
                 self.activeSession?.playbackStartDate = Date()
                 self.activeSession?.isPlaying = true
@@ -2332,7 +2351,9 @@ class CastManager {
                 switch result.state {
                 case "PLAYING":
                     self.sonosHasSeenActivePlayback = true
-                    self.sonosLocalStopRequestedAt = nil   // active playback clears any stale stop intent
+                    // A PLAYING poll that races the Stop SOAP leaves the state at `.requested`.
+                    // Only PLAYING observed after STOPPED represents a genuine external restart.
+                    self.sonosLocalStopState.observePlaying()
                     // Sync position from Sonos and reset playbackStartDate so currentTime interpolates
                     self.activeSession?.position = result.position
                     self.activeSession?.playbackStartDate = Date()
@@ -2350,7 +2371,9 @@ class CastManager {
                         NSLog("CastManager: Sonos reported PAUSED (external pause detected)")
                     }
                 case "STOPPED", "NO_MEDIA_PRESENT":
-                    if !self.sonosHasSeenActivePlayback,
+                    let locallyStopped = self.sonosLocalStopState.suppressesNaturalFinish
+                    if !locallyStopped,
+                       !self.sonosHasSeenActivePlayback,
                        result.position <= 0.5,
                        startupElapsed < self.sonosStartupStopGraceInterval {
                         NSLog("CastManager: Sonos reported %@ at startup t=%.1f after %.1fs — waiting for playback",
@@ -2362,8 +2385,21 @@ class CastManager {
                     // so read the interpolated engine clock, not result.position.
                     let lastKnownPosition = engine.currentTime
                     let expectedDuration = track?.duration ?? session?.duration ?? 0
-                    let locallyStopped = self.sonosLocalStopRequestedAt
-                        .map { Date().timeIntervalSince($0) < self.sonosLocalStopGrace } ?? false
+
+                    if locallyStopped {
+                        self.sonosLocalStopState.observeStopped()
+                        self.activeSession?.position = 0
+                        self.activeSession?.playbackStartDate = nil
+                        self.activeSession?.isPlaying = false
+                        if engine.state != .stopped {
+                            engine.resetCastTime()
+                        }
+                        NSLog("CastManager: Sonos reported %@ after an app-initiated Stop — keeping playback stopped",
+                              result.state)
+                        CastManager.postNotificationOnMain(name: Self.playbackStateDidChangeNotification)
+                        return
+                    }
+
                     let endedNaturally = Self.sonosStopIsNaturalFinish(
                         position: lastKnownPosition,
                         expectedDuration: expectedDuration,

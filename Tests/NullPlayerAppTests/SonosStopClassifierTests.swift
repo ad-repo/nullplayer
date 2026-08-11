@@ -48,4 +48,42 @@ final class SonosStopClassifierTests: XCTestCase {
         XCTAssertTrue(CastManager.sonosStopIsNaturalFinish(
             position: 240.0, expectedDuration: 240.0, tolerance: tolerance, locallyStopped: false))
     }
+
+    func testLocalStopSurvivesPlayingPollThatRacedStopRequest() {
+        var state = SonosLocalStopState()
+        state.requestStop()
+
+        state.observePlaying()
+
+        XCTAssertTrue(state.suppressesNaturalFinish)
+    }
+
+    func testLocalStopSurvivesRepeatedStoppedPolls() {
+        var state = SonosLocalStopState()
+        state.requestStop()
+
+        for _ in 0..<10 {
+            state.observeStopped()
+            XCTAssertTrue(state.suppressesNaturalFinish)
+        }
+    }
+
+    func testPlayingAfterObservedStopClearsIntent() {
+        var state = SonosLocalStopState()
+        state.requestStop()
+        state.observeStopped()
+
+        state.observePlaying()
+
+        XCTAssertFalse(state.suppressesNaturalFinish)
+    }
+
+    func testExplicitPlaybackResetClearsIntent() {
+        var state = SonosLocalStopState()
+        state.requestStop()
+
+        state.clear()
+
+        XCTAssertFalse(state.suppressesNaturalFinish)
+    }
 }
