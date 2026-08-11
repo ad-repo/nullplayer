@@ -337,6 +337,38 @@ class CastManager {
     private var sonosTrackStartDate: Date?
     private let sonosStartupStopGraceInterval: TimeInterval = 25.0
 
+    /// Tolerance (seconds) below the track duration within which a Sonos STOPPED counts as a
+    /// natural end-of-track finish rather than an external stop (GH #415).
+    private let sonosNaturalFinishTolerance: TimeInterval = 6.0
+    /// How long an intended local Stop suppresses natural-finish classification — covers the
+    /// multi-second Stop SOAP plus one 5s poll so the resulting STOPPED is treated as intended.
+    private let sonosLocalStopGrace: TimeInterval = 15.0
+    /// Timestamp of the most recent app-initiated Sonos stop; consulted in the STOPPED poll branch.
+    @MainActor var sonosLocalStopRequestedAt: Date?
+
+    /// Coalesces Sonos/UPnP volume commands so a fast slider drag lands monotonically (GH #414).
+    private lazy var sonosVolumeCoalescer = SonosVolumeCoalescer(
+        send: { [weak self] percent in
+            (try? await self?.upnpManager.setVolume(percent, retries: 0)) != nil
+        },
+        currentKey: { [weak self] in self?.upnpManager.activeSession?.device.id }
+    )
+
+    /// Classify a Sonos STOPPED transport report as a natural end-of-track finish (advance) vs an
+    /// external/intended stop (pause). Pure and side-effect-free so it can be unit-tested (GH #415).
+    ///
+    /// - `locallyStopped`: an app-initiated Stop is in its grace window — never a natural finish.
+    /// - The `expectedDuration * 0.5` floor stops a very short track (duration ≤ ~2×tolerance) from
+    ///   classifying an early STOPPED as a finish; on normal-length tracks the floor never binds.
+    static func sonosStopIsNaturalFinish(position: TimeInterval,
+                                         expectedDuration: TimeInterval,
+                                         tolerance: TimeInterval,
+                                         locallyStopped: Bool) -> Bool {
+        guard !locallyStopped, expectedDuration > 0 else { return false }
+        return position >= expectedDuration - tolerance
+            && position >= expectedDuration * 0.5
+    }
+
     /// Consecutive Sonos poll failures — used to detect dead sessions (e.g., after speaker reboot)
     @MainActor private var consecutiveSonosPollFailures = 0
     private let maxConsecutiveSonosPollFailures = 3   // 3 × 5s poll interval ≈ 15s before teardown
@@ -1398,6 +1430,7 @@ class CastManager {
                     await MainActor.run {
                         self.sonosHasSeenActivePlayback = false
                         self.sonosTrackStartDate = Date()
+                        self.sonosLocalStopRequestedAt = nil   // fresh cast: no pending intended stop
                     }
                 }
                 try await upnpManager.cast(url: finalCastURL, metadata: metadata)
@@ -1903,6 +1936,8 @@ class CastManager {
             chromecastHasSeenActivePlayback = false
             sonosHasSeenActivePlayback = false
             sonosTrackStartDate = nil
+            sonosLocalStopRequestedAt = nil
+            sonosVolumeCoalescer.reset()   // true teardown — clear coalescer dedupe/pending
         }
 
         // Stop Sonos polling and topology refresh
@@ -2072,6 +2107,9 @@ class CastManager {
         if chromecastManager.activeSession != nil {
             chromecastManager.stop()
         } else if upnpManager.activeSession != nil {
+            // Record intent BEFORE the multi-second Stop SOAP so the STOPPED poll it triggers is
+            // classified as an intended stop, not a natural end-of-track finish (GH #415).
+            await MainActor.run { self.sonosLocalStopRequestedAt = Date() }
             try await upnpManager.stop()
         } else {
             throw CastError.sessionNotActive
@@ -2164,13 +2202,15 @@ class CastManager {
     // MARK: - Volume Control
     
     /// Set volume on the cast device (0.0 - 1.0)
+    @MainActor
     func setVolume(_ volume: Float) async throws {
-        let volumePercent = Int(volume * 100)
-        
         if chromecastManager.activeSession != nil {
+            // Chromecast uses an ordered socket, so out-of-order landing isn't a concern.
             chromecastManager.setVolume(volume)
         } else if upnpManager.activeSession != nil {
-            try await upnpManager.setVolume(volumePercent)
+            // Route UPnP/Sonos through the coalescer so a fast slider drag lands monotonically (GH #414).
+            let volumePercent = max(0, min(100, Int((volume * 100).rounded())))
+            await sonosVolumeCoalescer.submit(volumePercent)
         } else {
             throw CastError.sessionNotActive
         }
@@ -2193,7 +2233,8 @@ class CastManager {
         if chromecastManager.activeSession != nil {
             chromecastManager.setMuted(muted)
         } else if upnpManager.activeSession != nil {
-            try await upnpManager.setMute(muted)
+            // No retries: a rapid re-toggle should supersede, not queue behind a stale retry.
+            try await upnpManager.setMute(muted, retries: 0)
         } else {
             throw CastError.sessionNotActive
         }
@@ -2291,6 +2332,7 @@ class CastManager {
                 switch result.state {
                 case "PLAYING":
                     self.sonosHasSeenActivePlayback = true
+                    self.sonosLocalStopRequestedAt = nil   // active playback clears any stale stop intent
                     // Sync position from Sonos and reset playbackStartDate so currentTime interpolates
                     self.activeSession?.position = result.position
                     self.activeSession?.playbackStartDate = Date()
@@ -2315,17 +2357,40 @@ class CastManager {
                               result.state, result.position, startupElapsed)
                         return
                     }
+                    // Classify BEFORE clearing playbackStartDate — once it's nil, `engine.currentTime`
+                    // falls back to the stale session.position. Sonos reports position 0 at STOPPED,
+                    // so read the interpolated engine clock, not result.position.
+                    let lastKnownPosition = engine.currentTime
+                    let expectedDuration = track?.duration ?? session?.duration ?? 0
+                    let locallyStopped = self.sonosLocalStopRequestedAt
+                        .map { Date().timeIntervalSince($0) < self.sonosLocalStopGrace } ?? false
+                    let endedNaturally = Self.sonosStopIsNaturalFinish(
+                        position: lastKnownPosition,
+                        expectedDuration: expectedDuration,
+                        tolerance: self.sonosNaturalFinishTolerance,
+                        locallyStopped: locallyStopped)
+
                     self.activeSession?.playbackStartDate = nil
                     self.activeSession?.isPlaying = false
-                    NSLog("CastManager: Sonos reported %@ - playback ended externally (track='%@' subsonic=%@ sonosT=%.1f engineT=%.1f sessionT=%.1f url=%@ seen=%d)",
+
+                    if endedNaturally {
+                        NSLog("CastManager: Sonos reported %@ at %.1f/%.1f — treating as track finish (track='%@')",
+                              result.state, lastKnownPosition, expectedDuration, track?.title ?? "nil")
+                        engine.castPlaybackDidEndNaturally()
+                        return
+                    }
+
+                    NSLog("CastManager: Sonos reported %@ - playback ended externally (track='%@' subsonic=%@ sonosT=%.1f engineT=%.1f expDur=%.1f sessionT=%.1f url=%@ seen=%d local=%d)",
                           result.state,
                           track?.title ?? "nil",
                           track?.subsonicId ?? "nil",
                           result.position,
-                          engine.currentTime,
+                          lastKnownPosition,
+                          expectedDuration,
                           session?.position ?? -1,
                           session?.currentURL?.redacted ?? "nil",
-                          self.sonosHasSeenActivePlayback ? 1 : 0)
+                          self.sonosHasSeenActivePlayback ? 1 : 0,
+                          locallyStopped ? 1 : 0)
                     // Don't auto-disconnect, just update state so UI reflects reality
                     engine.pauseCastPlayback()
                     CastManager.postNotificationOnMain(name: Self.playbackStateDidChangeNotification)

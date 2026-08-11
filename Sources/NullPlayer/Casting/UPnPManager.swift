@@ -2001,8 +2001,10 @@ class UPnPManager {
     
     // MARK: - Volume Control
     
-    /// Set volume on the connected device (0-100)
-    func setVolume(_ volume: Int) async throws {
+    /// Set volume on the connected device (0-100).
+    /// `retries` overrides the default SOAP retry count (pass 0 for coalesced volume commands
+    /// that a newer value will supersede — a stale retry must never land after the latest value).
+    func setVolume(_ volume: Int, retries: Int? = nil) async throws {
         guard let session = activeSession else {
             throw CastError.sessionNotActive
         }
@@ -2020,7 +2022,8 @@ class UPnPManager {
                 arguments: [
                     ("InstanceID", "0"),
                     ("DesiredVolume", "\(clampedVolume)")
-                ]
+                ],
+                retries: retries
             )
         } else {
             let controlURL = getRenderingControlURL(for: session.device)
@@ -2031,7 +2034,8 @@ class UPnPManager {
                     ("InstanceID", "0"),
                     ("Channel", "Master"),
                     ("DesiredVolume", "\(clampedVolume)")
-                ]
+                ],
+                retries: retries
             )
         }
     }
@@ -2070,8 +2074,9 @@ class UPnPManager {
         return 0
     }
     
-    /// Set mute state
-    func setMute(_ muted: Bool) async throws {
+    /// Set mute state.
+    /// `retries` overrides the default SOAP retry count (pass 0 for a mute toggle a newer value may supersede).
+    func setMute(_ muted: Bool, retries: Int? = nil) async throws {
         guard let session = activeSession else {
             throw CastError.sessionNotActive
         }
@@ -2086,7 +2091,8 @@ class UPnPManager {
                 arguments: [
                     ("InstanceID", "0"),
                     ("DesiredMute", muted ? "1" : "0")
-                ]
+                ],
+                retries: retries
             )
         } else {
             let controlURL = getRenderingControlURL(for: session.device)
@@ -2097,7 +2103,8 @@ class UPnPManager {
                     ("InstanceID", "0"),
                     ("Channel", "Master"),
                     ("DesiredMute", muted ? "1" : "0")
-                ]
+                ],
+                retries: retries
             )
         }
     }
@@ -2245,10 +2252,12 @@ class UPnPManager {
         return [500, 502, 503, 504].contains(statusCode)
     }
     
-    /// Send a RenderingControl SOAP action with retry logic for transient errors
+    /// Send a RenderingControl SOAP action with retry logic for transient errors.
+    /// `retries` overrides the default retry count (pass 0 to disable retries for superseded commands).
     @discardableResult
-    private func sendRenderingControlAction(controlURL: URL, action: String, arguments: [(String, String)]) async throws -> String {
+    private func sendRenderingControlAction(controlURL: URL, action: String, arguments: [(String, String)], retries: Int? = nil) async throws -> String {
         let serviceType = "urn:schemas-upnp-org:service:RenderingControl:1"
+        let effectiveMaxRetries = retries ?? maxRetries
         
         // Build SOAP body
         var argsXML = ""
@@ -2269,11 +2278,11 @@ class UPnPManager {
         
         var lastError: Error?
         
-        for attempt in 0...maxRetries {
+        for attempt in 0...effectiveMaxRetries {
             if attempt > 0 {
                 // Exponential backoff: 0.5s, 1s, 2s
                 let delay = retryBaseDelay * UInt64(1 << (attempt - 1))
-                upnpLog("UPnPManager: Retrying RenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
+                upnpLog("UPnPManager: Retrying RenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, effectiveMaxRetries + 1, Double(delay) / 1_000_000_000)
                 try? await Task.sleep(nanoseconds: delay)
             }
             
@@ -2295,7 +2304,7 @@ class UPnPManager {
                     let errorBody = String(data: data, encoding: .utf8) ?? ""
                     
                     // Check if this is a transient error worth retrying
-                    if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
+                    if isTransientError(httpResponse.statusCode) && attempt < effectiveMaxRetries {
                         upnpLog("UPnPManager: RenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
                         lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                         continue
@@ -2321,7 +2330,7 @@ class UPnPManager {
                 throw error
             } catch {
                 // Network errors might be transient too
-                if attempt < maxRetries {
+                if attempt < effectiveMaxRetries {
                     upnpLog("UPnPManager: RenderingControl %@ network error, will retry: %@", action, error.localizedDescription)
                     lastError = CastError.networkError(error)
                     continue
@@ -2333,11 +2342,13 @@ class UPnPManager {
         throw lastError ?? CastError.playbackFailed("Unknown error after retries")
     }
 
-    /// Send a GroupRenderingControl SOAP action with retry logic for transient errors
-    /// Used for Sonos group-wide volume/mute control
+    /// Send a GroupRenderingControl SOAP action with retry logic for transient errors.
+    /// Used for Sonos group-wide volume/mute control. `retries` overrides the default retry
+    /// count (pass 0 to disable retries for superseded commands).
     @discardableResult
-    private func sendGroupRenderingControlAction(controlURL: URL, action: String, arguments: [(String, String)]) async throws -> String {
+    private func sendGroupRenderingControlAction(controlURL: URL, action: String, arguments: [(String, String)], retries: Int? = nil) async throws -> String {
         let serviceType = "urn:schemas-upnp-org:service:GroupRenderingControl:1"
+        let effectiveMaxRetries = retries ?? maxRetries
 
         // Build SOAP body
         var argsXML = ""
@@ -2358,10 +2369,10 @@ class UPnPManager {
 
         var lastError: Error?
 
-        for attempt in 0...maxRetries {
+        for attempt in 0...effectiveMaxRetries {
             if attempt > 0 {
                 let delay = retryBaseDelay * UInt64(1 << (attempt - 1))
-                upnpLog("UPnPManager: Retrying GroupRenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
+                upnpLog("UPnPManager: Retrying GroupRenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, effectiveMaxRetries + 1, Double(delay) / 1_000_000_000)
                 try? await Task.sleep(nanoseconds: delay)
             }
 
@@ -2382,7 +2393,7 @@ class UPnPManager {
                 if httpResponse.statusCode >= 400 {
                     let errorBody = String(data: data, encoding: .utf8) ?? ""
 
-                    if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
+                    if isTransientError(httpResponse.statusCode) && attempt < effectiveMaxRetries {
                         upnpLog("UPnPManager: GroupRenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
                         lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                         continue
@@ -2404,7 +2415,7 @@ class UPnPManager {
                 }
                 throw error
             } catch {
-                if attempt < maxRetries {
+                if attempt < effectiveMaxRetries {
                     upnpLog("UPnPManager: GroupRenderingControl %@ network error, will retry: %@", action, error.localizedDescription)
                     lastError = CastError.networkError(error)
                     continue

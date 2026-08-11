@@ -8,6 +8,8 @@
 
 ### Bug Fixes
 
+- **Sonos volume no longer jumps around during a fast slider drag** — each volume change fired its own SOAP command, and on a rapid drag those requests could reach the speaker out of order, leaving it stuck on a stale value. Volume commands are now coalesced into a single in-flight request with latest-value-wins, so the speaker tracks the slider monotonically and settles exactly where you release it (GH #414).
+- **Sonos playlists now advance to the next track** — when a track finished on Sonos the app saw the speaker report STOPPED and paused, halting the playlist after one song. A track that stops at or near its end is now recognized as a natural finish and auto-advances, while an external pause from the Sonos app, an explicit Stop near the end of a track, and genuinely short tracks all still behave correctly (GH #415).
 - **Restored local videos play again instead of erroring** — a video file left in the playlist from a previous session was rebuilt on launch as an audio track (the saved state doesn't record media type), so playing it routed to the audio engine and failed to decode the video container. Restored local files now re-derive their media type from the file extension, so videos correctly open in the video player.
 
 ### Changes
