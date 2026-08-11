@@ -1400,6 +1400,17 @@ class WindowManager {
                     (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
                     self.reassertRegularActivation()
                 }
+                // The policy bounce makes macOS rebuild the Dock tile *asynchronously*, and that
+                // rebuild can land after the re-assert above and stamp the tile with the generic
+                // executable icon. Re-apply the app icon a couple of turns later so it wins that
+                // race. (Only observable on the un-bundled dev binary, which has no bundle icon to
+                // fall back to; a shipped `.app` rebuilds from its `CFBundleIconFile`.)
+                for delay in [0.3, 0.8] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        guard self?.compactModeState == .regular else { return }
+                        self?.restoreDockIconImage()
+                    }
+                }
             }
             self.compactModeState = .regular
             self.postLayoutChangeNotification()
