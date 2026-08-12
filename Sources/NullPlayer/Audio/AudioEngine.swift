@@ -2935,6 +2935,13 @@ class AudioEngine {
         PlexPlaybackReporter.shared.trackDidPause(at: castStartPosition)
         state = .paused
     }
+
+    /// Sonos reported the transport stopped at/near the end of the current track — advance to the
+    /// next track instead of pausing (GH #415). Delegates to the shared cast-advance path, which
+    /// already guards against re-entrancy via `isAdvancingCastTrack`.
+    func castPlaybackDidEndNaturally() {
+        castTrackDidFinish()
+    }
     
     /// Reset cast time to 0 but keep cast session active
     /// Used when user presses stop - allows playing another track without re-selecting device

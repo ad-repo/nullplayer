@@ -102,6 +102,15 @@ class CastSession {
     init(device: CastDevice) {
         self.device = device
     }
+
+    /// Re-anchor the optimistic local clock after sending a seek to the receiver.
+    /// Polling will replace this estimate with the receiver's authoritative position.
+    func updateTrackingAfterSeek(to time: TimeInterval, at date: Date = Date()) {
+        position = time
+        if isPlaying {
+            playbackStartDate = date
+        }
+    }
 }
 
 // MARK: - Cast Metadata

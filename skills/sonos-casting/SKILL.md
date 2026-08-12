@@ -219,6 +219,8 @@ NullPlayer polls Sonos every 5 seconds during casting:
 
 **Position sync:** Each PLAYING poll updates `activeSession.position` and sets `activeSession.playbackStartDate = Date()`. On PAUSED_PLAYBACK, `playbackStartDate` is set to `nil` so the timer freezes. `CastManager.currentTime` interpolates `session.position + elapsed(since: playbackStartDate)` — the same pattern used for Chromecast.
 
+**Seek clock sync:** Sonos `Seek` is fire-and-forget, so an audio seek must optimistically re-anchor `activeSession.position` to the requested target and reset `playbackStartDate` when the session is playing. Do this for audio as well as video. Otherwise Sonos can reach EOF before the next 5-second poll while NullPlayer still evaluates completion from the pre-seek position.
+
 **Poll failure tracking and teardown:** `pollSonosState()` counts consecutive `pollSonosPlaybackState()` failures (each returns `nil`). When the counter reaches 3 consecutive failures (~15s of poll timeouts), the cast session is torn down via `_stopCastingCore()`, returning audio playback to local. The counter is reset to 0 on every successful poll or when a new cast starts. Early post-stop race failures (detected by checking `isAudioCastRoutingActive`) are ignored so they don't trigger false teardowns.
 
 ### Resilience and Recovery
@@ -254,6 +256,13 @@ NullPlayer polls Sonos every 5 seconds during casting:
 **Mid-cast unreachability teardown (speaker reboot/power loss):**
 - While a cast is active, `pollSonosState()` continuously queries `GetTransportInfo` and `GetPositionInfo` every 5 seconds. If the poll fails 3 consecutive times (indicating the speaker is unreachable, e.g., due to a reboot or power loss), the session is automatically torn down via `_stopCastingCore()`, cleanly returning audio playback to local and clearing the UI. The counter is reset to 0 on every successful poll or when a new cast begins. Early post-stop poll failures (detected by `isAudioCastRoutingActive` check) are ignored to avoid false positives during normal teardown races.
 - This is distinct from the stale-coordinator auto-recovery above: stale-coordinator recovery fires **during** `cast()` before playback starts; mid-cast unreachability detection fires **during** active polling if the speaker becomes unreachable while casting.
+
+**Premature STOPPED after a near-end Plex FLAC seek:**
+- Reproduced deterministically on a Living Room Sonos Arc (S19, S2 firmware 96.0-79160, home-theater/bonded renderer) while a Dining Room renderer handled repeated tests correctly.
+- NullPlayer sent a valid `REL_TIME` seek to a direct Plex FLAC URL. The Arc acknowledged the SOAP request in about 15 ms and reported `PLAYING` at the requested position, then changed to `STOPPED` at position 0 after only 3–4 seconds while still advertising 12–18 seconds of remaining duration. This points to receiver-specific FLAC time-to-byte/range seeking behavior, not a rejected SOAP command.
+- The ordinary natural-finish classifier intentionally has a tight 6-second tolerance so an external stop near the end does not advance. The Arc's premature EOF falls outside that tolerance and would therefore be misclassified as an external stop, leaving playback paused.
+- `CastManager` briefly records a Sonos seek made within the final 30 seconds (and no earlier than halfway through a short track). If the same session was playing, its local clock reached the target, and Sonos reports `STOPPED` within 12 seconds, classify that report as EOF and use the normal cast-track advance path. Clear the recent-seek state on a new cast/track, teardown, local Stop, and after the first STOPPED classification. Rooms that play through normally remain on the ordinary completion path.
+- Regression status: this is **not introduced by the #419 changes**. Fire-and-forget Sonos seeking existed from the initial January 2026 casting implementation, and STOPPED polling paused playback from the February 2026 resilience work. #419 added the 6-second natural-finish classifier for #415; the Arc/Plex case is a pre-existing renderer edge case that exceeded that classifier's intended tolerance.
 
 ### Group Management
 
@@ -447,6 +456,13 @@ If you see "Sonos rejected the command":
 - Root cause: `activeSession.position` and `activeSession.playbackStartDate` not set at cast start.
 - At Sonos cast start, `activeSession.position = startPosition` and `activeSession.playbackStartDate = Date()` must both be set immediately (Sonos has no status updates to set them later).
 - Each PLAYING poll must update both fields. Check `CastManager: Sonos poll — state=PLAYING` logs.
+- **Intermittent "stuck at zero" at cast start (instrumented via `[CLOCKDBG]` logs):** a `PLAYING` poll can carry `position=0` because `pollSonosPlaybackState()` swallows a failed `getPositionInfo()` (e.g. SOAP contention while the volume slider is moving at cast start) and fabricates `(position: 0, duration: 0)`. The `"PLAYING"` poll handler then blindly applies `activeSession.position = 0` and re-anchors `playbackStartDate = Date()`, so `AudioEngine.currentTime`'s interpolation (`session.position + (now - playbackStartDate)`) reads ~0 and freezes until a later successful poll. To capture it, grep logs for the `[CLOCKDBG]` tag and look for the sequence: `UPnPManager: [CLOCKDBG] getPositionInfo FAILED` → `CastManager: [CLOCKDBG] PLAYING poll carries position=0 duration=0`, correlated with nearby `[CLOCKDBG] volume submit/send` lines. This is diagnostics only — the poll still overwrites the clock; the fix (skip the position sync when the poll's `getPositionInfo` failed) is a follow-up.
+
+### Near-End Plex Seek Stops Instead of Advancing
+- Confirm that the `Seek` SOAP request was acknowledged and Sonos briefly reported `PLAYING` at or after the target. A later `STOPPED` at position 0 can be receiver-generated premature EOF even when Sonos still reports a longer track duration.
+- Compare rooms separately. The same Plex FLAC and server can behave correctly on one Sonos renderer and fail deterministically on a soundbar/home-theater coordinator.
+- Log the target, track metadata duration, Sonos-reported duration, room UDN/model, time from seek to STOPPED, and the last interpolated session position. Do not diagnose this only from the final Sonos position because Sonos resets it to 0 when stopped.
+- Preserve the narrow correlation guards described under **Premature STOPPED after a near-end Plex FLAC seek**; globally widening the normal EOF tolerance would make genuine external stops near the end advance unexpectedly.
 
 ### Player Stop Keeps Session Alive
 - This is expected for Sonos when using the player Stop button: `handleStopForActiveDevice()` calls `softStopForActiveDevice()`, which stops Sonos playback but leaves the session active.
