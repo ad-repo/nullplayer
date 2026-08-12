@@ -1848,8 +1848,17 @@ class UPnPManager {
             upnpLog("UPnPManager: pollSonosPlaybackState — getTransportState failed for %@", session.device.name)
             return nil
         }
-        guard let posInfo = try? await getPositionInfo() else {
-            upnpLog("UPnPManager: pollSonosPlaybackState — getPositionInfo failed, returning transport state only")
+        let posInfo: (position: TimeInterval, duration: TimeInterval)?
+        do {
+            posInfo = try await getPositionInfo()
+        } catch {
+            NSLog("UPnPManager: [CLOCKDBG] getPositionInfo FAILED during poll — forcing position=0 duration=0; state=%@ err=%@",
+                  transportState, error.localizedDescription)
+            return (state: transportState, position: 0, duration: 0)
+        }
+        guard let posInfo else {
+            NSLog("UPnPManager: [CLOCKDBG] getPositionInfo returned nil during poll — forcing position=0 duration=0; state=%@",
+                  transportState)
             return (state: transportState, position: 0, duration: 0)
         }
         return (state: transportState, position: posInfo.position, duration: posInfo.duration)

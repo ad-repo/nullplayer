@@ -2369,13 +2369,14 @@ class CastManager {
                 let track = engine.currentTrack
                 let session = self.activeSession
                 let startupElapsed = self.sonosTrackStartDate.map { Date().timeIntervalSince($0) } ?? .infinity
+                let engineNow = engine.currentTime
                 NSLog("CastManager: Sonos poll — state=%@ t=%.1f dur=%.1f sessionT=%.1f sessionDur=%.1f engineT=%.1f engineState=%@ seen=%d startup=%.1f url=%@ track='%@' subsonic=%@",
                       result.state,
                       result.position,
                       result.duration,
                       session?.position ?? -1,
                       session?.duration ?? -1,
-                      engine.currentTime,
+                      engineNow,
                       String(describing: engine.state),
                       self.sonosHasSeenActivePlayback ? 1 : 0,
                       startupElapsed.isFinite ? startupElapsed : -1,
@@ -2389,6 +2390,17 @@ class CastManager {
                     // A PLAYING poll that races the Stop SOAP leaves the state at `.requested`.
                     // Only PLAYING observed after STOPPED represents a genuine external restart.
                     self.sonosLocalStopState.observePlaying()
+                    // Observe (do not change) the incoming sync for the stuck-clock signature.
+                    if result.position == 0 && result.duration == 0 {
+                        NSLog("CastManager: [CLOCKDBG] PLAYING poll carries position=0 duration=0 (likely failed getPositionInfo) — overwriting engineT=%.1f sessionT=%.1f; clock will reset",
+                              engineNow, session?.position ?? -1)
+                    } else if engineNow > result.position + 2.0 {
+                        NSLog("CastManager: [CLOCKDBG] PLAYING poll REWINDS clock: engineT=%.1f -> result.position=%.1f (delta=%.1f)",
+                              engineNow, result.position, engineNow - result.position)
+                    }
+                    if result.duration > 0, (session?.duration ?? 0) == 0 {
+                        NSLog("CastManager: [CLOCKDBG] Sonos reports duration=%.1f but session.duration=0 (Plex nil-duration?)", result.duration)
+                    }
                     // Sync position from Sonos and reset playbackStartDate so currentTime interpolates
                     self.activeSession?.position = result.position
                     self.activeSession?.playbackStartDate = Date()

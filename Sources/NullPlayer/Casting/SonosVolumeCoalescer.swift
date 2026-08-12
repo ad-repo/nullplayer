@@ -35,6 +35,7 @@ final class SonosVolumeCoalescer {
 
     /// Submit the latest desired volume percent (0–100). Coalesces with any in-flight send.
     func submit(_ percent: Int) async {
+        NSLog("CastManager: [CLOCKDBG] volume submit=%d inFlight=%d", percent, inFlight ? 1 : 0)
         pending = percent
         if inFlight { return }              // a drain loop is already running; it will pick up `pending`
         inFlight = true
@@ -44,7 +45,10 @@ final class SonosVolumeCoalescer {
             guard let key = currentKey() else { break }                       // no session → stop
             if lastSent?.key == key, lastSent?.percent == next { continue }    // equal-value dedupe
             let sendGeneration = generation
-            if await send(next),
+            let t0 = Date()
+            let ok = await send(next)
+            NSLog("CastManager: [CLOCKDBG] volume send=%d ok=%d %.0fms", next, ok ? 1 : 0, Date().timeIntervalSince(t0) * 1000)
+            if ok,
                generation == sendGeneration,
                currentKey() == key {                                           // still same session generation + target?
                 lastSent = (key, next)
