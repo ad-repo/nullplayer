@@ -25,6 +25,9 @@ final class MediaLibraryStore {
     private let watchFoldersTable = Table("library_watch_folders")
     private let albumRatingsTable = Table("library_album_ratings")
     private let artistRatingsTable = Table("library_artist_ratings")
+    private let podcastSubscriptionsTable = Table("podcast_subscriptions")
+    private let podcastEpisodesTable = Table("podcast_episodes")
+    private let podcastEpisodeStatesTable = Table("podcast_episode_states")
 
     // MARK: - Shared columns
 
@@ -79,6 +82,38 @@ final class MediaLibraryStore {
     private let colAlbumID  = Expression<String>("album_id")
     private let colArtistID = Expression<String>("artist_id")
     private let colRatingVal = Expression<Int>("rating")
+
+    // MARK: - Podcast columns
+
+    private let podcastFeedID = Expression<String>("feed_id")
+    private let podcastIndexID = Expression<Int64?>("index_id")
+    private let podcastAuthor = Expression<String?>("author")
+    private let podcastSummary = Expression<String?>("summary")
+    private let podcastFeedURL = Expression<String>("feed_url")
+    private let podcastWebsiteURL = Expression<String?>("website_url")
+    private let podcastImageURL = Expression<String?>("image_url")
+    private let podcastCategoriesJSON = Expression<String>("categories_json")
+    private let podcastLanguage = Expression<String?>("language")
+    private let podcastEpisodeCount = Expression<Int?>("episode_count")
+    private let podcastExplicit = Expression<Bool>("explicit")
+    private let podcastSubscribedAt = Expression<Double>("subscribed_at")
+    private let podcastAutoDownloadNewest = Expression<Bool>("auto_download_newest")
+
+    private let podcastEpisodeID = Expression<String>("episode_id")
+    private let podcastFeedIndexID = Expression<Int64?>("feed_index_id")
+    private let podcastFeedTitle = Expression<String>("feed_title")
+    private let podcastFeedAuthor = Expression<String?>("feed_author")
+    private let podcastPublishedAt = Expression<Double?>("published_at")
+    private let podcastEnclosureURL = Expression<String>("enclosure_url")
+    private let podcastEnclosureType = Expression<String?>("enclosure_type")
+    private let podcastEnclosureLength = Expression<Int64?>("enclosure_length")
+
+    private let podcastPosition = Expression<Double>("position")
+    private let podcastStateDuration = Expression<Double?>("duration")
+    private let podcastIsPlayed = Expression<Bool>("is_played")
+    private let podcastIsFavorite = Expression<Bool>("is_favorite")
+    private let podcastDownloadedPath = Expression<String?>("downloaded_path")
+    private let podcastLastPlayedAt = Expression<Double?>("last_played_at")
 
     // MARK: - Init
 
@@ -212,6 +247,11 @@ final class MediaLibraryStore {
             try connection.run("PRAGMA user_version = 8")
             currentVersion = 8
         }
+        if currentVersion == 8 {
+            try migrateToV9(connection)
+            try connection.run("PRAGMA user_version = 9")
+            currentVersion = 9
+        }
     }
 
     private func migrateTrackMetadataSchemaToV4(_ connection: Connection) throws {
@@ -302,6 +342,67 @@ final class MediaLibraryStore {
                 scan_mod_date REAL
             );
             CREATE INDEX IF NOT EXISTS idx_playlists_title ON library_playlists (title);
+            """)
+    }
+
+    private func migrateToV9(_ connection: Connection) throws {
+        try createPodcastTablesIfNeeded(connection)
+    }
+
+    private func createPodcastTablesIfNeeded(_ connection: Connection) throws {
+        try connection.execute("""
+            CREATE TABLE IF NOT EXISTS podcast_subscriptions (
+                feed_id              TEXT PRIMARY KEY,
+                index_id             INTEGER,
+                title                TEXT NOT NULL,
+                author               TEXT,
+                summary              TEXT,
+                feed_url             TEXT NOT NULL UNIQUE,
+                website_url          TEXT,
+                image_url            TEXT,
+                categories_json      TEXT NOT NULL DEFAULT '[]',
+                language             TEXT,
+                episode_count        INTEGER,
+                explicit             INTEGER NOT NULL DEFAULT 0,
+                subscribed_at        REAL NOT NULL,
+                auto_download_newest INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS podcast_episodes (
+                episode_id       TEXT PRIMARY KEY,
+                index_id         INTEGER,
+                feed_id          TEXT NOT NULL,
+                feed_index_id    INTEGER,
+                feed_title       TEXT NOT NULL,
+                feed_author      TEXT,
+                title            TEXT NOT NULL,
+                summary          TEXT,
+                published_at     REAL,
+                duration         REAL,
+                enclosure_url    TEXT NOT NULL,
+                enclosure_type   TEXT,
+                enclosure_length INTEGER,
+                image_url        TEXT,
+                website_url      TEXT,
+                explicit         INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS podcast_episode_states (
+                episode_id      TEXT PRIMARY KEY,
+                position        REAL NOT NULL DEFAULT 0,
+                duration        REAL,
+                is_played       INTEGER NOT NULL DEFAULT 0,
+                is_favorite     INTEGER NOT NULL DEFAULT 0,
+                downloaded_path TEXT,
+                last_played_at  REAL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_podcast_episodes_feed_published
+                ON podcast_episodes(feed_id, published_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_podcast_states_favorite
+                ON podcast_episode_states(is_favorite);
+            CREATE INDEX IF NOT EXISTS idx_podcast_states_downloaded
+                ON podcast_episode_states(downloaded_path);
             """)
     }
 
@@ -433,6 +534,10 @@ final class MediaLibraryStore {
             """)
         try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_name ON track_artists(artist_name)")
         try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_url ON track_artists(track_url)")
+
+        // Podcast library (schema v9). This must be created on the fresh-database path as well
+        // as in migrateToV9, because createTablesIfNeeded only runs for user_version 0.
+        try createPodcastTablesIfNeeded(connection)
     }
 
     // MARK: - JSON Migration
@@ -624,6 +729,213 @@ final class MediaLibraryStore {
             NSLog("MediaLibraryStore: artistRatings failed: %@", error.localizedDescription)
             return [:]
         }
+    }
+
+    // MARK: - Podcast Library
+
+    func loadPodcastLibrary() -> PodcastLibrarySnapshot {
+        guard let db else {
+            return PodcastLibrarySnapshot(subscriptions: [], episodeStates: [:], knownEpisodes: [:])
+        }
+
+        do {
+            var subscriptions: [PodcastSubscription] = []
+            for row in try db.prepare(podcastSubscriptionsTable) {
+                guard let feedURL = URL(string: row[podcastFeedURL]) else { continue }
+                let categories = (try? JSONDecoder().decode(
+                    [String].self,
+                    from: Data(row[podcastCategoriesJSON].utf8)
+                )) ?? []
+                let feed = PodcastFeed(
+                    indexId: row[podcastIndexID],
+                    title: row[colTitle],
+                    author: row[podcastAuthor],
+                    summary: row[podcastSummary],
+                    feedURL: feedURL,
+                    websiteURL: row[podcastWebsiteURL].flatMap(URL.init(string:)),
+                    imageURL: row[podcastImageURL].flatMap(URL.init(string:)),
+                    categories: categories,
+                    language: row[podcastLanguage],
+                    episodeCount: row[podcastEpisodeCount],
+                    explicit: row[podcastExplicit]
+                )
+                subscriptions.append(PodcastSubscription(
+                    feed: feed,
+                    subscribedAt: Date(timeIntervalSince1970: row[podcastSubscribedAt]),
+                    autoDownloadNewest: row[podcastAutoDownloadNewest]
+                ))
+            }
+
+            var knownEpisodes: [String: PodcastEpisode] = [:]
+            let placeholderFeedURL = URL(string: "https://podcast.invalid/feed")!
+            for row in try db.prepare(podcastEpisodesTable) {
+                guard let enclosureURL = URL(string: row[podcastEnclosureURL]) else { continue }
+                let feed = PodcastFeed(
+                    indexId: row[podcastFeedIndexID],
+                    title: row[podcastFeedTitle],
+                    author: row[podcastFeedAuthor],
+                    feedURL: placeholderFeedURL,
+                    imageURL: row[podcastImageURL].flatMap(URL.init(string:))
+                )
+                let episodeID = row[podcastEpisodeID]
+                let episode = PodcastEpisode(
+                    persistedID: episodeID,
+                    persistedFeedID: row[podcastFeedID],
+                    indexId: row[podcastIndexID],
+                    feed: feed,
+                    title: row[colTitle],
+                    summary: row[podcastSummary],
+                    publishedAt: row[podcastPublishedAt].map(Date.init(timeIntervalSince1970:)),
+                    duration: row[podcastStateDuration],
+                    enclosureURL: enclosureURL,
+                    enclosureType: row[podcastEnclosureType],
+                    enclosureLength: row[podcastEnclosureLength],
+                    imageURL: row[podcastImageURL].flatMap(URL.init(string:)),
+                    websiteURL: row[podcastWebsiteURL].flatMap(URL.init(string:)),
+                    explicit: row[podcastExplicit]
+                )
+                knownEpisodes[episodeID] = episode
+            }
+
+            var episodeStates: [String: PodcastEpisodeState] = [:]
+            for row in try db.prepare(podcastEpisodeStatesTable) {
+                episodeStates[row[podcastEpisodeID]] = PodcastEpisodeState(
+                    position: row[podcastPosition],
+                    duration: row[podcastStateDuration],
+                    isPlayed: row[podcastIsPlayed],
+                    isFavorite: row[podcastIsFavorite],
+                    downloadedPath: row[podcastDownloadedPath],
+                    lastPlayedAt: row[podcastLastPlayedAt].map(Date.init(timeIntervalSince1970:))
+                )
+            }
+
+            return PodcastLibrarySnapshot(
+                subscriptions: subscriptions.sorted {
+                    $0.feed.title.localizedStandardCompare($1.feed.title) == .orderedAscending
+                },
+                episodeStates: episodeStates,
+                knownEpisodes: knownEpisodes
+            )
+        } catch {
+            NSLog("MediaLibraryStore: loadPodcastLibrary failed: %@", error.localizedDescription)
+            return PodcastLibrarySnapshot(subscriptions: [], episodeStates: [:], knownEpisodes: [:])
+        }
+    }
+
+    @discardableResult
+    func savePodcastLibrary(_ snapshot: PodcastLibrarySnapshot) -> Bool {
+        guard let db else { return false }
+        do {
+            try db.transaction {
+                try db.run(self.podcastSubscriptionsTable.delete())
+                for subscription in snapshot.subscriptions {
+                    try self.upsertPodcastSubscription(subscription, connection: db)
+                }
+                for episode in snapshot.knownEpisodes.values {
+                    try self.upsertPodcastEpisode(episode, connection: db)
+                }
+                for (episodeID, state) in snapshot.episodeStates {
+                    try self.upsertPodcastEpisodeState(episodeID: episodeID, state: state, connection: db)
+                }
+            }
+            return true
+        } catch {
+            NSLog("MediaLibraryStore: savePodcastLibrary failed: %@", error.localizedDescription)
+            return false
+        }
+    }
+
+    /// Updates only playback-owned fields so progress writes cannot clear a favorite or download.
+    /// Callers run this on the podcast persistence queue, never the main thread.
+    func updatePodcastPlaybackProgress(episodeID: String, current: TimeInterval,
+                                       duration: TimeInterval, playedAt: Date) {
+        guard let db else { return }
+        do {
+            let clampedPosition = max(0, current)
+            let validDuration = duration > 0 ? duration : nil
+            let completed = duration > 0 &&
+                (current >= max(30, duration - 20) || current / duration >= 0.95)
+
+            try db.run(podcastEpisodeStatesTable.insert(or: .ignore,
+                podcastEpisodeID <- episodeID,
+                podcastPosition <- clampedPosition,
+                podcastStateDuration <- validDuration,
+                podcastIsPlayed <- completed,
+                podcastIsFavorite <- false,
+                podcastDownloadedPath <- nil,
+                podcastLastPlayedAt <- playedAt.timeIntervalSince1970
+            ))
+
+            let row = try db.pluck(podcastEpisodeStatesTable.filter(podcastEpisodeID == episodeID))
+            let wasPlayed = row?[podcastIsPlayed] ?? false
+            var setters: [Setter] = [
+                podcastPosition <- clampedPosition,
+                podcastIsPlayed <- (wasPlayed || completed),
+                podcastLastPlayedAt <- playedAt.timeIntervalSince1970
+            ]
+            if let validDuration {
+                setters.append(podcastStateDuration <- validDuration)
+            }
+            try db.run(podcastEpisodeStatesTable.filter(podcastEpisodeID == episodeID).update(setters))
+        } catch {
+            NSLog("MediaLibraryStore: updatePodcastPlaybackProgress failed: %@", error.localizedDescription)
+        }
+    }
+
+    private func upsertPodcastSubscription(_ subscription: PodcastSubscription, connection: Connection) throws {
+        let feed = subscription.feed
+        let categoriesData = try JSONEncoder().encode(feed.categories)
+        let categories = String(data: categoriesData, encoding: .utf8) ?? "[]"
+        try connection.run(podcastSubscriptionsTable.insert(or: .replace,
+            podcastFeedID <- feed.id,
+            podcastIndexID <- feed.indexId,
+            colTitle <- feed.title,
+            podcastAuthor <- feed.author,
+            podcastSummary <- feed.summary,
+            podcastFeedURL <- feed.feedURL.absoluteString,
+            podcastWebsiteURL <- feed.websiteURL?.absoluteString,
+            podcastImageURL <- feed.imageURL?.absoluteString,
+            podcastCategoriesJSON <- categories,
+            podcastLanguage <- feed.language,
+            podcastEpisodeCount <- feed.episodeCount,
+            podcastExplicit <- feed.explicit,
+            podcastSubscribedAt <- subscription.subscribedAt.timeIntervalSince1970,
+            podcastAutoDownloadNewest <- subscription.autoDownloadNewest
+        ))
+    }
+
+    private func upsertPodcastEpisode(_ episode: PodcastEpisode, connection: Connection) throws {
+        try connection.run(podcastEpisodesTable.insert(or: .replace,
+            podcastEpisodeID <- episode.id,
+            podcastIndexID <- episode.indexId,
+            podcastFeedID <- episode.feedID,
+            podcastFeedIndexID <- episode.feedIndexId,
+            podcastFeedTitle <- episode.feedTitle,
+            podcastFeedAuthor <- episode.feedAuthor,
+            colTitle <- episode.title,
+            podcastSummary <- episode.summary,
+            podcastPublishedAt <- episode.publishedAt?.timeIntervalSince1970,
+            podcastStateDuration <- episode.duration,
+            podcastEnclosureURL <- episode.enclosureURL.absoluteString,
+            podcastEnclosureType <- episode.enclosureType,
+            podcastEnclosureLength <- episode.enclosureLength,
+            podcastImageURL <- episode.imageURL?.absoluteString,
+            podcastWebsiteURL <- episode.websiteURL?.absoluteString,
+            podcastExplicit <- episode.explicit
+        ))
+    }
+
+    private func upsertPodcastEpisodeState(episodeID: String, state: PodcastEpisodeState,
+                                           connection: Connection) throws {
+        try connection.run(podcastEpisodeStatesTable.insert(or: .replace,
+            podcastEpisodeID <- episodeID,
+            podcastPosition <- state.position,
+            podcastStateDuration <- state.duration,
+            podcastIsPlayed <- state.isPlayed,
+            podcastIsFavorite <- state.isFavorite,
+            podcastDownloadedPath <- state.downloadedPath,
+            podcastLastPlayedAt <- state.lastPlayedAt?.timeIntervalSince1970
+        ))
     }
 
     func allSignatures() -> [String: FileScanSignature] {

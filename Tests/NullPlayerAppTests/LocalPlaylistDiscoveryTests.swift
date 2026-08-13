@@ -261,16 +261,16 @@ final class LocalPlaylistDiscoveryTests: XCTestCase {
 
     // MARK: - Migration Tests
 
-    /// Test that a fresh database (created at v0) gets the library_playlists table and ends at v8.
+    /// Test that a fresh database (created at v0) gets the library_playlists table and reaches the current schema.
     func testFreshDatabaseCreatesPlaylistsTable() throws {
         let dbURL = tempDirectoryURL.appendingPathComponent("fresh-db.sqlite")
 
         store.open(at: dbURL)
         let db = try XCTUnwrap(store.testDB)
 
-        // Should be at version 8 after setupSchema
+        // Should be at the current version after setupSchema
         let version = try db.scalar("PRAGMA user_version") as? Int64
-        XCTAssertEqual(version, 8)
+        XCTAssertEqual(version, 9)
 
         // library_playlists table should exist
         XCTAssertTrue(try tableExists("library_playlists", in: db))
@@ -304,7 +304,7 @@ final class LocalPlaylistDiscoveryTests: XCTestCase {
 
         // Verify version is now 8
         let version = try db.scalar("PRAGMA user_version") as? Int64
-        XCTAssertEqual(version, 8)
+        XCTAssertEqual(version, 9)
 
         // Verify library_playlists table exists
         XCTAssertTrue(try tableExists("library_playlists", in: db))

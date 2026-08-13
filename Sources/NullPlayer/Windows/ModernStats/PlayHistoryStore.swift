@@ -9,6 +9,8 @@ enum PlayHistoryContentType: String, CaseIterable {
     case tv
     case radio
     case video
+    case podcast
+    case videoPodcast = "video-podcast"
 
     var displayName: String {
         switch self {
@@ -17,6 +19,8 @@ enum PlayHistoryContentType: String, CaseIterable {
         case .tv:    return "TV Shows"
         case .radio: return "Radio"
         case .video: return "Video"
+        case .podcast: return "Podcasts"
+        case .videoPodcast: return "Video Podcasts"
         }
     }
 

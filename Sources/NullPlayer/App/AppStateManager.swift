@@ -100,6 +100,10 @@ class AppStateManager {
         var radioURL: String?
         var radioStationName: String?
 
+        // Generic remote media such as podcast enclosures. Kept separate from radio so
+        // finite-duration episodes preserve seekability, video routing, and metadata.
+        var remoteURL: String?
+
         // True when this local file originated from a YouTube download, so play-history
         // analytics keep attributing it to the YouTube source across restarts (otherwise
         // restored YouTube downloads are indistinguishable from generic local files).
@@ -114,6 +118,10 @@ class AppStateManager {
         // MIME content type hint for casting (e.g. "audio/flac")
         // Preserves content type across restarts so Sonos casting doesn't default to audio/mpeg
         var contentType: String?
+        var artworkThumb: String?
+        var mediaType: MediaType?
+        var playHistoryContentTypeOverride: String?
+        var podcastEpisodeID: String?
         
         /// Create from a Track
         static func from(_ track: Track) -> SavedTrack {
@@ -124,7 +132,12 @@ class AppStateManager {
                     title: track.title,
                     artist: track.artist,
                     album: track.album,
-                    duration: track.duration
+                    duration: track.duration,
+                    contentType: track.contentType,
+                    artworkThumb: track.artworkThumb,
+                    mediaType: track.mediaType,
+                    playHistoryContentTypeOverride: track.playHistoryContentTypeOverride,
+                    podcastEpisodeID: track.podcastEpisodeID
                 )
             } else if let plexKey = track.plexRatingKey {
                 return SavedTrack(
@@ -164,6 +177,19 @@ class AppStateManager {
                     album: track.album,
                     duration: track.duration,
                     contentType: track.contentType
+                )
+            } else if !track.url.isFileURL, track.playHistoryContentTypeOverride != nil {
+                return SavedTrack(
+                    remoteURL: track.url.absoluteString,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    duration: track.duration,
+                    contentType: track.contentType,
+                    artworkThumb: track.artworkThumb,
+                    mediaType: track.mediaType,
+                    playHistoryContentTypeOverride: track.playHistoryContentTypeOverride,
+                    podcastEpisodeID: track.podcastEpisodeID
                 )
             } else if !track.url.isFileURL {
                 // Non-file URL without streaming service IDs = radio/internet stream
@@ -206,6 +232,9 @@ class AppStateManager {
 
         /// Whether this is a radio/internet stream track
         var isRadio: Bool { radioURL != nil }
+
+        /// Whether this is a finite generic remote item such as a podcast episode.
+        var isRemote: Bool { remoteURL != nil }
     }
     
     /// Complete application state that can be saved/restored
@@ -973,7 +1002,21 @@ class AppStateManager {
         var skippedIndices: Set<Int> = []
         
         for (index, savedTrack) in state.playlistTracks.enumerated() {
-            if savedTrack.isRadio, let urlString = savedTrack.radioURL, let url = URL(string: urlString) {
+            if savedTrack.isRemote, let urlString = savedTrack.remoteURL, let url = URL(string: urlString) {
+                let track = Track(
+                    url: url,
+                    title: savedTrack.title,
+                    artist: savedTrack.artist,
+                    album: savedTrack.album,
+                    duration: savedTrack.duration,
+                    artworkThumb: savedTrack.artworkThumb,
+                    mediaType: savedTrack.mediaType ?? .audio,
+                    playHistoryContentTypeOverride: savedTrack.playHistoryContentTypeOverride,
+                    podcastEpisodeID: savedTrack.podcastEpisodeID,
+                    contentType: savedTrack.contentType
+                )
+                allTracks.append(track)
+            } else if savedTrack.isRadio, let urlString = savedTrack.radioURL, let url = URL(string: urlString) {
                 // Radio track - create from saved URL and metadata
                 let track = Track(
                     url: url,
@@ -1000,7 +1043,10 @@ class AppStateManager {
                         // to .audio, so re-derive it from the file extension (cheap, no file I/O)
                         // — otherwise restored local videos come back as audio and misroute to
                         // the audio engine (AVAudioFile fails to decode the video container).
-                        mediaType: AudioFileValidator.isVideoFile(url: url) ? .video : .audio,
+                        artworkThumb: savedTrack.artworkThumb,
+                        mediaType: savedTrack.mediaType ?? (AudioFileValidator.isVideoFile(url: url) ? .video : .audio),
+                        playHistoryContentTypeOverride: savedTrack.playHistoryContentTypeOverride,
+                        podcastEpisodeID: savedTrack.podcastEpisodeID,
                         contentType: savedTrack.contentType,
                         isYouTubeOrigin: savedTrack.isYouTubeOrigin ?? false
                     ))

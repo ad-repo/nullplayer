@@ -3361,7 +3361,9 @@ class AudioEngine {
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .local, .radio, .youtube:
-                LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+                if finishedTrack.podcastEpisodeID == nil {
+                    LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+                }
             }
         }
 
@@ -4821,7 +4823,9 @@ class AudioEngine {
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .local, .radio, .youtube:
-                LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+                if finishedTrack.podcastEpisodeID == nil {
+                    LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+                }
             }
         }
 
@@ -5414,7 +5418,9 @@ class AudioEngine {
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .local, .radio, .youtube:
-                LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+                if outgoingTrack.podcastEpisodeID == nil {
+                    LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+                }
             }
         }
 
@@ -5539,7 +5545,9 @@ class AudioEngine {
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .local, .radio, .youtube:
-                LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+                if outgoingTrack.podcastEpisodeID == nil {
+                    LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+                }
             }
         }
 

@@ -2113,12 +2113,10 @@ class WindowManager {
         }
 
         if routeToVideoCastIfNeeded(title: track.displayTitle, artworkTrack: track, operation: { device in
-            try await CastManager.shared.castVideoURL(
-                track.url,
-                title: track.displayTitle,
+            try await CastManager.shared.castVideoTrack(
+                track,
                 to: device,
-                duration: track.duration,
-                contentType: track.contentType
+                duration: track.duration
             )
         }) {
             return

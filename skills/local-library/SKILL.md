@@ -32,6 +32,7 @@ Reference for local media library: scanning, persistence, NAS responsiveness, an
 - v5 → v6: migration adds `content_type` column to `play_events` (TEXT, nullable); backfills `'radio'` for source=radio rows, `'music'` for everything else.
 - v6 → v7: migration adds `output_device` column to `play_events` (TEXT, nullable). Records the active CoreAudio output device name, or the cast target name (Chromecast/Sonos/DLNA device) when a cast session is active. NULL for legacy rows. Supplied via `CastManager.currentPlaybackDeviceName` at call sites in `AudioEngine` and `VideoPlayerWindowController`.
 - v7 → v8: migration adds `library_playlists` table (see Tables below) for on-disk `.m3u`/`.pls`/`.m3u8` files surfaced in the **Plists** tab. **Both paths required:** `migrateToV8` issues `CREATE TABLE IF NOT EXISTS` for existing DBs, and `createTablesIfNeeded` creates it on fresh installs — `createTablesIfNeeded` only runs at `user_version == 0`, so a fresh-path-only addition would leave every existing library without the table. The fresh path falls through the sequential `if currentVersion == N` blocks; each block now sets `currentVersion = N` so V8 is reached from both fresh (v0→…→8) and upgrade (v6/v7→8) paths.
+- v8 → v9: migration adds `podcast_subscriptions`, `podcast_episodes`, and `podcast_episode_states`. It deliberately does not rebuild `play_events`; podcasts use source `local` with a podcast-specific `content_type`. The legacy podcast JSON is imported once on the podcast persistence queue after the DB is available.
 
 ### Tables
 
@@ -79,6 +80,14 @@ Index: `idx_episodes_show (show_title, season_number)`.
 `id` (TEXT PK, UUID string), `url` (TEXT UNIQUE, the `.m3u`/`.pls`/`.m3u8` file path — the stable natural key), `title` (filename without extension), `file_size` (INT), `date_added` (REAL), `scan_file_size` (INT?), `scan_mod_date` (REAL?).
 Index: `idx_playlists_title (title)`.
 Stores only the playlist **file location** — track contents are NOT persisted; they are parsed lazily on expand in the browser. CRUD: `upsertPlaylists`, `allPlaylists`, `deletePlaylistsByPath`, `deleteAllPlaylists` (mirrors the track methods). `upsertPlaylistInternal` reuses an existing row's `id` when the `url` already exists (looks it up via `connection.pluck` — **not** `scalar`, which force-unwraps nil and crashes on no-match), so the PK and in-memory/expand state stay stable across rescans. All in-memory and UI state keys on the file **path**, never on `id`.
+
+#### Podcast tables (added v9)
+
+- `podcast_subscriptions`: feed metadata, subscription date, and auto-download preference.
+- `podcast_episodes`: cached episode/enclosure metadata, keyed by stable episode ID.
+- `podcast_episode_states`: resume position, played/favorite flags, downloaded path, and last-played time.
+
+Podcast cover images and enclosure media are not stored as database blobs. Downloaded enclosures remain in Application Support, and Podcast Index credentials remain in Keychain.
 
 #### `library_album_ratings` / `library_artist_ratings`
 `album_id`/`artist_id` (PK), `rating`.

@@ -28,6 +28,7 @@ class KeychainHelper {
         static let plexClientIdentifier = "plex_client_identifier"
         static let plexAccountData = "plex_account_data"
         static let subsonicServers = "subsonic_servers"
+        static let podcastIndexCredentials = "podcast_index_credentials"
     }
     
     // MARK: - Plex Auth Token
@@ -138,6 +139,22 @@ class KeychainHelper {
     /// Delete all Subsonic server credentials
     func clearSubsonicCredentials() {
         delete(forKey: Keys.subsonicServers)
+    }
+
+    // MARK: - Podcast Index Credentials
+
+    func setPodcastIndexCredentials(_ credentials: PodcastIndexCredentials) -> Bool {
+        guard let data = try? JSONEncoder().encode(credentials) else { return false }
+        return setData(data, forKey: Keys.podcastIndexCredentials)
+    }
+
+    func getPodcastIndexCredentials() -> PodcastIndexCredentials? {
+        guard let data = getData(forKey: Keys.podcastIndexCredentials) else { return nil }
+        return try? JSONDecoder().decode(PodcastIndexCredentials.self, from: data)
+    }
+
+    func clearPodcastIndexCredentials() {
+        delete(forKey: Keys.podcastIndexCredentials)
     }
     
     // MARK: - Jellyfin Server Credentials

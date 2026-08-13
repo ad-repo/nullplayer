@@ -1944,6 +1944,7 @@ class ContextMenuBuilder {
         librariesMenu.addItem(buildJellyfinMenuItem())
         librariesMenu.addItem(buildEmbyMenuItem())
         librariesMenu.addItem(buildYouTubeMenuItem())
+        librariesMenu.addItem(buildPodcastsMenuItem())
         return librariesMenu
     }
 
@@ -2636,6 +2637,35 @@ class ContextMenuBuilder {
         return youtubeItem
     }
 
+    // MARK: - Podcasts Submenu
+
+    private static func buildPodcastsMenuItem() -> NSMenuItem {
+        let podcastsItem = NSMenuItem(title: "Podcasts", action: nil, keyEquivalent: "")
+        let podcastsMenu = NSMenu()
+        podcastsMenu.autoenablesItems = false
+
+        let browserItem = NSMenuItem(
+            title: "Show in Library Browser",
+            action: #selector(MenuActions.showPodcastsInBrowser),
+            keyEquivalent: ""
+        )
+        browserItem.target = MenuActions.shared
+        podcastsMenu.addItem(browserItem)
+
+        podcastsMenu.addItem(NSMenuItem.separator())
+
+        let settingsItem = NSMenuItem(
+            title: "Podcast Index Settings",
+            action: #selector(MenuActions.showPodcastIndexSettings),
+            keyEquivalent: ""
+        )
+        settingsItem.target = MenuActions.shared
+        podcastsMenu.addItem(settingsItem)
+
+        podcastsItem.submenu = podcastsMenu
+        return podcastsItem
+    }
+
     // MARK: - Output Devices Submenu (Unified)
     
     /// Public access to the output devices menu (used by modern skin CAST button)
@@ -3293,6 +3323,18 @@ class MenuActions: NSObject {
     
     @objc func togglePlexBrowser() {
         WindowManager.shared.togglePlexBrowser()
+    }
+
+    @objc func showPodcastsInBrowser() {
+        WindowManager.shared.showPlexBrowser()
+        NotificationCenter.default.post(name: Notification.Name("SetBrowserSource"), object: BrowserSource.podcasts)
+    }
+
+    @objc func showPodcastIndexSettings() {
+        showPodcastsInBrowser()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: PodcastStore.showSettingsNotification, object: nil)
+        }
     }
     
     @objc func toggleProjectM() {

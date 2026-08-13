@@ -81,6 +81,10 @@ struct Track: Identifiable, Equatable {
     /// Optional override when a generic video track actually represents a more
     /// specific analytics type such as a movie or TV episode.
     let playHistoryContentTypeOverride: String?
+
+    /// Stable podcast episode identity used for background progress persistence.
+    /// Avoids searching the podcast catalog from the high-frequency playback callback.
+    let podcastEpisodeID: String?
     
     /// MIME content type hint for casting (e.g. "audio/flac"). When nil, detected from URL extension.
     let contentType: String?
@@ -238,6 +242,7 @@ struct Track: Identifiable, Equatable {
         self.mediaType = (!videoTracks.isEmpty || AudioFileValidator.isVideoFile(url: url)) ? .video : .audio
         self.genre = extractedGenre
         self.playHistoryContentTypeOverride = nil
+        self.podcastEpisodeID = nil
         self.contentType = nil  // Local files use URL extension detection
         self.cueStartOffset = nil
         self.cueEndOffset = nil
@@ -269,6 +274,7 @@ struct Track: Identifiable, Equatable {
         self.mediaType = AudioFileValidator.isVideoFile(url: url) ? .video : .audio
         self.genre = nil
         self.playHistoryContentTypeOverride = nil
+        self.podcastEpisodeID = nil
         self.contentType = nil
         self.cueStartOffset = nil
         self.cueEndOffset = nil
@@ -298,6 +304,7 @@ struct Track: Identifiable, Equatable {
          mediaType: MediaType = .audio,
          genre: String? = nil,
          playHistoryContentTypeOverride: String? = nil,
+         podcastEpisodeID: String? = nil,
          contentType: String? = nil,
          cueStartOffset: TimeInterval? = nil,
          cueEndOffset: TimeInterval? = nil,
@@ -325,6 +332,7 @@ struct Track: Identifiable, Equatable {
         self.mediaType = mediaType
         self.genre = genre
         self.playHistoryContentTypeOverride = playHistoryContentTypeOverride
+        self.podcastEpisodeID = podcastEpisodeID
         self.contentType = contentType
         self.cueStartOffset = cueStartOffset
         self.cueEndOffset = cueEndOffset
@@ -373,6 +381,10 @@ struct Track: Identifiable, Equatable {
     /// for tracks constructed without the flag.
     var isRadioStream: Bool {
         if isRadioOrigin { return true }
+        if playHistoryContentTypeOverride == "podcast" ||
+            playHistoryContentTypeOverride == "video-podcast" {
+            return false
+        }
         return plexRatingKey == nil &&
             subsonicId == nil &&
             jellyfinId == nil &&
@@ -411,6 +423,10 @@ struct Track: Identifiable, Equatable {
         if subsonicId != nil { return .subsonic }
         if jellyfinId != nil { return .jellyfin }
         if embyId != nil { return .emby }
+        if playHistoryContentTypeOverride == "podcast" ||
+            playHistoryContentTypeOverride == "video-podcast" {
+            return .local
+        }
         if isRadioOrigin { return .radio }
         if !url.isFileURL { return .radio }
         // Either the explicit origin flag (set when played from the YouTube list) or the
