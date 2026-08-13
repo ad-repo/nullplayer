@@ -869,9 +869,9 @@ Implementation rules:
 
 ## Cover Flow (Library browser, all skin families)
 
-Cover Flow is a 3D, GPU-composited carousel of album/artist artwork shown *in place of* the library
-list, toggled by a **FLOW** button. It is a visual lens over the browser's current `displayItems`,
-not a separate query. It ships in Modern, Metal, and Classic at once.
+Cover Flow is a 3D, GPU-composited carousel of music, movie, and TV artwork shown *in place of* the
+library list, toggled by a **FLOW** button. It is a visual lens over the browser's current
+`displayItems`, not a separate query. It ships in Modern, Metal, and Classic at once.
 
 **Shared component** — `Windows/ModernLibraryBrowser/CoverFlowView.swift` (used by both browsers):
 - A layer-backed `NSView` with a `containerLayer` whose `sublayerTransform` applies perspective
@@ -883,12 +883,14 @@ not a separate query. It ships in Modern, Metal, and Classic at once.
   loadArtwork() /*async*/, isBack }`. Cover size is keyed to the view **height** (minus a reserved
   bottom label band); a wider window shows **more** covers (`virtualRadius` grows with width, capped
   by `maxRadius`), not bigger ones.
-- Interaction: continuous 1:1 scroll snapped to the nearest cover on release, with a `maxLead` cap so
+- Interaction: continuous 1:1 scroll snapped to the nearest cover on release, using the dominant
+  horizontal/vertical axis so trackpads and ordinary mouse wheels both work, with a `maxLead` cap so
   a momentum fling can't outrun artwork loads; Left/Right arrows; click a side cover to center it,
   click the centered cover to fire `onActivate(index)`. Artwork loads are throttled to covers near
   center, ordered center-out, and each index loads **at most once** (`attemptedIndices`) so a
   nil-artwork cover never re-triggers on every layout pass. The centered item's name/subtitle render
-  in the reserved bottom band via two `CATextLayer`s.
+  in the reserved bottom band via two `CATextLayer`s. `onApproachingEnd` fires once per item count
+  when the center enters the final preload window, allowing a paginated host to append its next page.
 
 **Host wiring** — mirrored in `ModernLibraryBrowserView` (Modern+Metal) and `PlexBrowserView`
 (Classic):
@@ -900,18 +902,29 @@ not a separate query. It ships in Modern, Metal, and Classic at once.
   fills **nothing** over the list area so the window background (translucent over a Cava backdrop,
   opaque otherwise) shows through — do not add a second `contentFill` scrim or Cava disappears.
 - **Tree navigation**: cover flow keeps a focus **stack** (`coverFlowFocusStack`). `isCoverFlowItem`
-  covers artists, albums, folders, and tracks. Activating an **album** plays it; a **track** plays
-  it; any other container (`hasChildren`) drills in — `coverFlowDrillIn` ensures the row is expanded
-  (guarded by `isExpanded`, since `toggleExpand` toggles) and pushes its id; the visible level is the
-  container's direct children (`indentLevel == parentLevel+1`). A synthetic **‹ Back** cover at index
-  0 pops. Re-centering: `coverFlowCenterFirstChild` on drill-in, `coverFlowPendingCenterId` on back —
-  retained across rebuilds because children may load asynchronously.
+  covers artists, albums, folders, tracks, movies, shows, seasons, and episodes across every
+  supported source. Activating an **album**, **track**, **movie**, or **episode** plays it; any other
+  container (`hasChildren`) drills in — `coverFlowDrillIn` ensures the row is expanded (guarded by
+  `isExpanded`, since `toggleExpand` toggles) and pushes its id; the visible level is the container's
+  direct children (`indentLevel == parentLevel+1`). TV navigation therefore follows
+  show → season → episode. A synthetic **‹ Back** cover at index 0 pops. Re-centering:
+  `coverFlowCenterFirstChild` on drill-in, `coverFlowPendingCenterId` on back — retained across
+  rebuilds because children may load asynchronously. Search-result shows preserve this hierarchy;
+  music containers keep their existing search-navigation behavior.
 - **Rebuilds must be coalesced.** `displayItems.didSet` calls `scheduleCoverFlowRebuild()` (one
   `DispatchQueue.main.async` pass), never a synchronous rebuild — `buildArtistItems` and peers mutate
   `displayItems` many times per reload, and a synchronous carousel rebuild per mutation beachballs.
-- Artwork loaders reuse the per-source loaders behind `loadArtworkForSelection`; local track/album
-  resolution (`MediaLibraryStore` lookups) happens **inside** the async loader via `Task.detached`,
-  never synchronously in the item-mapping pass. Teardown removes the cover flow view in
+- Root eligibility must match the items the carousel can actually show. Normal modes use eligible
+  level-0 rows; Search uses eligible level-1 rows beneath its synthetic category headers. Do not
+  enable FLOW merely because an ineligible top-level container (for example a server playlist) has
+  an expanded eligible descendant, or the user gets an empty carousel. Local Artists/Albums remain
+  paginated: wire `onApproachingEnd` to the same next-page append logic used by list scrolling, but
+  only while the Cover Flow focus stack is at its root.
+- Artwork loaders reuse the per-source loaders behind `loadArtworkForSelection`; Plex, Jellyfin,
+  and Emby video items use their native posters, while local video items try embedded artwork from
+  the file (shows and seasons use their first episode). Local track/album resolution
+  (`MediaLibraryStore` lookups) happens **inside** the async loader via `Task.detached`, never
+  synchronously in the item-mapping pass. Teardown removes the cover flow view in
   `prepareForUITeardown`; toggling the mode off clears the focus stack.
 
 ## Window Docking

@@ -356,8 +356,12 @@ class ModernLibraryBrowserView: NSView {
     private var expandedSeasons: Set<String> = []
     
     // Loading state
-    private var isLoading: Bool = false
-    private var errorMessage: String?
+    private var isLoading: Bool = false {
+        didSet { updateCoverFlowVisibility() }
+    }
+    private var errorMessage: String? {
+        didSet { updateCoverFlowVisibility() }
+    }
     
     // Cached data - Plex
     private var cachedArtists: [PlexArtist] = []
@@ -1456,17 +1460,17 @@ class ModernLibraryBrowserView: NSView {
                 // Art-only mode takes precedence over loading/error states (matches PlexBrowserView)
                 // so that visualization continues uninterrupted during data refreshes
                 drawArtOnlyArea(in: context, contentRect: listRect, skin: skin, artwork: capturedArtwork)
-            } else if isCoverFlowMode {
-                // The CoverFlowView overlay renders the carousel. Draw nothing here: the window
-                // background (already filled above — translucent when a Cava backdrop is active,
-                // opaque otherwise) is exactly what should sit behind the covers, so the Cava
-                // backdrop shows through at full strength instead of behind a second scrim.
             } else if currentSource.isPlex && !PlexManager.shared.isLinked {
                 drawNotLinkedState(in: context, listRect: listRect, skin: skin)
             } else if isLoading {
                 drawLoadingState(in: context, listRect: listRect, skin: skin)
             } else if let error = errorMessage {
                 drawErrorState(in: context, message: error, listRect: listRect, skin: skin)
+            } else if isCoverFlowMode {
+                // The CoverFlowView overlay renders the carousel. Draw nothing here: the window
+                // background (already filled above — translucent when a Cava backdrop is active,
+                // opaque otherwise) is exactly what should sit behind the covers, so the Cava
+                // backdrop shows through at full strength instead of behind a second scrim.
             } else {
                 drawListArea(in: context, listAreaY: listAreaY, listAreaHeight: listAreaHeight, skin: skin, artwork: capturedArtwork)
             }
@@ -1927,9 +1931,9 @@ class ModernLibraryBrowserView: NSView {
             visEndX = visX
         }
 
-        // FLOW (cover flow) toggle — shown when the current list has albums or artists and we're not in Art view.
+        // FLOW (cover flow) toggle — shown when the current list has eligible media and we're not in Art view.
         coverFlowButtonRect = .zero
-        if !isArtOnlyMode && hasCoverFlowItems {
+        if !isArtOnlyMode && (isCoverFlowMode || hasCoverFlowItems) {
             let flowText = "FLOW"
             let flowTextWidth = flowText.size(withAttributes: prefixAttrs).width
             let flowBtnWidth = flowTextWidth + 16 * hm
@@ -4352,10 +4356,22 @@ class ModernLibraryBrowserView: NSView {
         let threshold = itemHeight * 10   // start loading 10 rows from bottom
         let loadedHeight = CGFloat(displayItems.count) * itemHeight
         guard scrollOffset + listHeight + threshold >= loadedHeight else { return }
+        appendNextLocalPage()
+    }
+
+    /// Cover Flow owns the list area's scroll events, so it requests pagination directly when its
+    /// centered cover approaches the end of the currently loaded local page.
+    private func loadNextLocalCoverFlowPageIfNeeded() {
+        guard isCoverFlowMode, coverFlowFocusStack.isEmpty, case .local = currentSource else { return }
+        appendNextLocalPage()
+    }
+
+    @discardableResult
+    private func appendNextLocalPage() -> Bool {
         switch browseMode {
         case .artists:
             let nextOffset = localArtistPageOffset + localPageSize
-            guard nextOffset < localArtistTotal else { return }
+            guard nextOffset < localArtistTotal else { return false }
             localArtistPageOffset = nextOffset
             let store = MediaLibraryStore.shared
             let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort)
@@ -4373,9 +4389,10 @@ class ModernLibraryBrowserView: NSView {
                 ))
             }
             needsDisplay = true
+            return true
         case .albums:
             let nextOffset = localAlbumPageOffset + localPageSize
-            guard nextOffset < localAlbumTotal else { return }
+            guard nextOffset < localAlbumTotal else { return false }
             localAlbumPageOffset = nextOffset
             let store = MediaLibraryStore.shared
             let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort)
@@ -4397,8 +4414,9 @@ class ModernLibraryBrowserView: NSView {
                 ))
             }
             needsDisplay = true
+            return true
         case .folders, .plists, .movies, .shows, .search, .radio, .history:
-            break
+            return false
         }
     }
 
@@ -7695,6 +7713,7 @@ class ModernLibraryBrowserView: NSView {
     @objc private func plexStateDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, case .plex = self.currentSource else { return }
+            self.updateCoverFlowVisibility()
             if case .connecting = PlexManager.shared.connectionState {
                 self.isLoading = true; self.errorMessage = nil; self.needsDisplay = true; return
             }
@@ -7705,6 +7724,7 @@ class ModernLibraryBrowserView: NSView {
     @objc private func plexServerDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.updateCoverFlowVisibility()
             if case .connecting = PlexManager.shared.connectionState { self.needsDisplay = true; return }
             if !self.currentSource.isPlex && self.pendingSourceRestore == nil { return }
             
@@ -7999,6 +8019,7 @@ class ModernLibraryBrowserView: NSView {
     private func onSourceChanged() {
         // Changing source always exits Art view.
         isArtOnlyMode = false
+        resetCoverFlowNavigation()
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
             browseMode = .plists
@@ -10090,7 +10111,19 @@ class ModernLibraryBrowserView: NSView {
         }
         if !results.shows.isEmpty {
             displayItems.append(ModernDisplayItem(id: "header-shows", title: "TV Shows (\(results.shows.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for show in results.shows { displayItems.append(ModernDisplayItem(id: show.id, title: show.title, info: "\(show.childCount) seasons", indentLevel: 1, hasChildren: true, type: .show(show))) }
+            for show in results.shows {
+                displayItems.append(ModernDisplayItem(id: show.id, title: show.title, info: "\(show.childCount) seasons", indentLevel: 1, hasChildren: true, type: .show(show)))
+                if expandedShows.contains(show.id), let seasons = showSeasons[show.id] {
+                    for season in seasons {
+                        displayItems.append(ModernDisplayItem(id: season.id, title: season.title, info: "\(season.leafCount) episodes", indentLevel: 2, hasChildren: true, type: .season(season)))
+                        if expandedSeasons.contains(season.id), let episodes = seasonEpisodes[season.id] {
+                            for episode in episodes {
+                                displayItems.append(ModernDisplayItem(id: episode.id, title: "\(episode.episodeIdentifier) - \(episode.title)", info: episode.formattedDuration, indentLevel: 3, hasChildren: false, type: .episode(episode)))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -10156,6 +10189,16 @@ class ModernLibraryBrowserView: NSView {
             for show in results.shows {
                 let info = [show.year.map { String($0) }, "\(show.childCount) seasons"].compactMap { $0 }.joined(separator: " • ")
                 displayItems.append(ModernDisplayItem(id: show.id, title: show.title, info: info, indentLevel: 1, hasChildren: true, type: .jellyfinShow(show)))
+                if expandedJellyfinShows.contains(show.id), let seasons = jellyfinShowSeasons[show.id] {
+                    for season in seasons {
+                        displayItems.append(ModernDisplayItem(id: season.id, title: season.title, info: "\(season.childCount) episodes", indentLevel: 2, hasChildren: true, type: .jellyfinSeason(season)))
+                        if expandedJellyfinSeasons.contains(season.id), let episodes = jellyfinSeasonEpisodes[season.id] {
+                            for episode in episodes {
+                                displayItems.append(ModernDisplayItem(id: episode.id, title: "\(episode.episodeIdentifier) - \(episode.title)", info: episode.formattedDuration, indentLevel: 3, hasChildren: false, type: .jellyfinEpisode(episode)))
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -10196,6 +10239,16 @@ class ModernLibraryBrowserView: NSView {
             for show in results.shows {
                 let info = [show.year.map { String($0) }, "\(show.childCount) seasons"].compactMap { $0 }.joined(separator: " • ")
                 displayItems.append(ModernDisplayItem(id: show.id, title: show.title, info: info, indentLevel: 1, hasChildren: true, type: .embyShow(show)))
+                if expandedEmbyShows.contains(show.id), let seasons = embyShowSeasons[show.id] {
+                    for season in seasons {
+                        displayItems.append(ModernDisplayItem(id: season.id, title: season.title, info: "\(season.childCount) episodes", indentLevel: 2, hasChildren: true, type: .embySeason(season)))
+                        if expandedEmbySeasons.contains(season.id), let episodes = embySeasonEpisodes[season.id] {
+                            for episode in episodes {
+                                displayItems.append(ModernDisplayItem(id: episode.id, title: "\(episode.episodeIdentifier) - \(episode.title)", info: episode.formattedDuration, indentLevel: 3, hasChildren: false, type: .embyEpisode(episode)))
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -11878,15 +11931,23 @@ class ModernLibraryBrowserView: NSView {
     }
     // MARK: - Cover Flow
 
-    /// True when the current list has albums or artists to show in the cover flow carousel.
+    /// Items shown at the root of Cover Flow. Search results live one level below synthetic
+    /// category headers, while normal browse modes use their real top-level rows.
+    private func coverFlowRootItems() -> [ModernDisplayItem] {
+        let rootLevel = browseMode == .search ? 1 : 0
+        return displayItems.filter { $0.indentLevel == rootLevel && $0.type.isCoverFlowItem }
+    }
+
+    /// True when the current list has a non-empty Cover Flow root.
     private var hasCoverFlowItems: Bool {
-        displayItems.contains { $0.type.isCoverFlowItem }
+        !coverFlowRootItems().isEmpty
     }
 
     private func ensureCoverFlowView() {
         guard coverFlowView == nil else { return }
         let view = CoverFlowView()
         view.onActivate = { [weak self] index in self?.playCoverFlowItem(at: index) }
+        view.onApproachingEnd = { [weak self] in self?.loadNextLocalCoverFlowPageIfNeeded() }
         addSubview(view)
         coverFlowView = view
         applyCoverFlowStyle()
@@ -11909,12 +11970,21 @@ class ModernLibraryBrowserView: NSView {
             applyCoverFlowStyle()
             rebuildCoverFlowItems()
         } else {
-            coverFlowFocusStack.removeAll()
-            coverFlowCenterFirstChild = false
-            coverFlowPendingCenterId = nil
+            resetCoverFlowNavigation()
         }
-        coverFlowView?.isHidden = !isCoverFlowMode
+        updateCoverFlowVisibility()
         updateEmbeddedSubviewFrames()
+    }
+
+    private func resetCoverFlowNavigation() {
+        coverFlowFocusStack.removeAll()
+        coverFlowCenterFirstChild = false
+        coverFlowPendingCenterId = nil
+    }
+
+    private func updateCoverFlowVisibility() {
+        let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
+        coverFlowView?.isHidden = !isCoverFlowMode || isLoading || errorMessage != nil || needsPlexLink
     }
 
     /// Coalesce cover flow rebuilds onto the next runloop turn so a burst of `displayItems`
@@ -11933,7 +12003,7 @@ class ModernLibraryBrowserView: NSView {
     /// children of the container we've drilled into.
     private func coverFlowVisibleItems() -> [ModernDisplayItem] {
         guard let parentId = coverFlowFocusStack.last else {
-            return displayItems.filter { $0.indentLevel == 0 && $0.type.isCoverFlowItem }
+            return coverFlowRootItems()
         }
         guard let parentIdx = displayItems.firstIndex(where: { $0.id == parentId }) else { return [] }
         let parentLevel = displayItems[parentIdx].indentLevel
@@ -12011,6 +12081,42 @@ class ModernLibraryBrowserView: NSView {
             return ("jellyfin:\(album.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: album.id, imageTag: album.imageTag) })
         case .embyAlbum(let album):
             return ("emby:\(album.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: album.id, imageTag: album.imageTag) })
+        case .movie(let movie):
+            return ("plex:\(movie.id)", { [weak self] in await self?.loadPlexArtwork(ratingKey: movie.id, thumbPath: movie.thumb) })
+        case .show(let show):
+            return ("plex:\(show.id)", { [weak self] in await self?.loadPlexArtwork(ratingKey: show.id, thumbPath: show.thumb) })
+        case .season(let season):
+            return ("plex:\(season.id)", { [weak self] in await self?.loadPlexArtwork(ratingKey: season.id, thumbPath: season.thumb) })
+        case .episode(let episode):
+            return ("plex:\(episode.id)", { [weak self] in await self?.loadPlexArtwork(ratingKey: episode.id, thumbPath: episode.thumb) })
+        case .localMovie(let movie):
+            return ("local:\(movie.url.path)", { [weak self] in await self?.loadLocalArtwork(url: movie.url) })
+        case .localShow(let show):
+            guard let episode = show.seasons.first(where: { !$0.episodes.isEmpty })?.episodes.first else {
+                return (nil, { nil })
+            }
+            return ("local:\(episode.url.path)", { [weak self] in await self?.loadLocalArtwork(url: episode.url) })
+        case .localSeason(let season, _):
+            guard let episode = season.episodes.first else { return (nil, { nil }) }
+            return ("local:\(episode.url.path)", { [weak self] in await self?.loadLocalArtwork(url: episode.url) })
+        case .localEpisode(let episode):
+            return ("local:\(episode.url.path)", { [weak self] in await self?.loadLocalArtwork(url: episode.url) })
+        case .jellyfinMovie(let movie):
+            return ("jellyfin:\(movie.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: movie.id, imageTag: movie.imageTag) })
+        case .jellyfinShow(let show):
+            return ("jellyfin:\(show.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: show.id, imageTag: show.imageTag) })
+        case .jellyfinSeason(let season):
+            return ("jellyfin:\(season.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: season.id, imageTag: season.imageTag) })
+        case .jellyfinEpisode(let episode):
+            return ("jellyfin:\(episode.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: episode.id, imageTag: episode.imageTag) })
+        case .embyMovie(let movie):
+            return ("emby:\(movie.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: movie.id, imageTag: movie.imageTag) })
+        case .embyShow(let show):
+            return ("emby:\(show.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: show.id, imageTag: show.imageTag) })
+        case .embySeason(let season):
+            return ("emby:\(season.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: season.id, imageTag: season.imageTag) })
+        case .embyEpisode(let episode):
+            return ("emby:\(episode.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: episode.id, imageTag: episode.imageTag) })
         case .artist(let artist):
             guard let thumb = artist.thumb else { return ("plex:\(artist.id)", { nil }) }
             return ("plex:\(artist.id)", { [weak self] in await self?.loadPlexArtwork(ratingKey: artist.id, thumbPath: thumb) })
@@ -12062,8 +12168,8 @@ class ModernLibraryBrowserView: NSView {
 
         if item.type.isAlbumItem {
             handleDoubleClick(on: item)   // albums play the whole album
-        } else if item.hasChildren, browseMode != .search {
-            coverFlowDrillIn(item)        // artists, folders, … enter their children
+        } else if item.hasChildren, browseMode != .search || item.type.isVideoContainer {
+            coverFlowDrillIn(item)        // artists, folders, shows, seasons, … enter their children
         } else {
             handleDoubleClick(on: item)   // tracks and other leaves play
         }
@@ -12617,16 +12723,32 @@ private struct ModernDisplayItem {
             }
         }
 
-        /// Items shown in the cover flow carousel. Containers (artists, folders) drill in; albums
-        /// and tracks are leaves that play.
+        /// Items shown in the cover flow carousel. Containers (artists, folders, shows, seasons)
+        /// drill in; albums, tracks, movies, and episodes are leaves that play.
         var isCoverFlowItem: Bool {
             switch self {
             case .artist, .localArtist, .subsonicArtist, .jellyfinArtist, .embyArtist,
                  .localFolder,
-                 .track, .localTrack, .subsonicTrack, .jellyfinTrack, .embyTrack:
+                 .track, .localTrack, .subsonicTrack, .jellyfinTrack, .embyTrack,
+                 .movie, .show, .season, .episode,
+                 .localMovie, .localShow, .localSeason, .localEpisode,
+                 .jellyfinMovie, .jellyfinShow, .jellyfinSeason, .jellyfinEpisode,
+                 .embyMovie, .embyShow, .embySeason, .embyEpisode:
                 return true
             default:
                 return isAlbumItem
+            }
+        }
+
+        /// Search results keep music containers as navigation links, but video containers retain
+        /// their show → season → episode hierarchy inside Cover Flow.
+        var isVideoContainer: Bool {
+            switch self {
+            case .show, .season, .localShow, .localSeason,
+                 .jellyfinShow, .jellyfinSeason, .embyShow, .embySeason:
+                return true
+            default:
+                return false
             }
         }
     }

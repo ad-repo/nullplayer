@@ -1038,10 +1038,14 @@ class PlexBrowserView: NSView {
     private var artistAlbumsByName: [String: [PlexAlbum]] = [:]
     
     /// Loading state
-    private var isLoading: Bool = false
+    private var isLoading: Bool = false {
+        didSet { updateCoverFlowVisibility() }
+    }
     
     /// Error message
-    private var errorMessage: String?
+    private var errorMessage: String? {
+        didSet { updateCoverFlowVisibility() }
+    }
     
     /// Cached data - Music (Plex)
     private var cachedArtists: [PlexArtist] = []
@@ -2300,6 +2304,7 @@ class PlexBrowserView: NSView {
     private func onSourceChanged() {
         // Changing source always exits Art view.
         isArtOnlyMode = false
+        resetCoverFlowNavigation()
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
             browseMode = .plists
@@ -2510,9 +2515,16 @@ class PlexBrowserView: NSView {
 
     // MARK: - Cover Flow
 
-    /// True when the current list has albums or artists to show in the cover flow carousel.
+    /// Items shown at the root of Cover Flow. Search results live one level below synthetic
+    /// category headers, while normal browse modes use their real top-level rows.
+    private func coverFlowRootItems() -> [PlexDisplayItem] {
+        let rootLevel = browseMode == .search ? 1 : 0
+        return displayItems.filter { $0.indentLevel == rootLevel && $0.type.isCoverFlowItem }
+    }
+
+    /// True when the current list has a non-empty Cover Flow root.
     private var hasCoverFlowItems: Bool {
-        displayItems.contains { $0.type.isCoverFlowItem }
+        !coverFlowRootItems().isEmpty
     }
 
     /// Fill the list area behind the cover flow overlay (classic has no Cava backdrop).
@@ -2531,6 +2543,7 @@ class PlexBrowserView: NSView {
         guard coverFlowView == nil else { return }
         let view = CoverFlowView()
         view.onActivate = { [weak self] index in self?.playCoverFlowItem(at: index) }
+        view.onApproachingEnd = { [weak self] in self?.loadNextLocalCoverFlowPageIfNeeded() }
         addSubview(view)
         coverFlowView = view
         applyCoverFlowStyle()
@@ -2553,12 +2566,21 @@ class PlexBrowserView: NSView {
             applyCoverFlowStyle()
             rebuildCoverFlowItems()
         } else {
-            coverFlowFocusStack.removeAll()
-            coverFlowCenterFirstChild = false
-            coverFlowPendingCenterId = nil
+            resetCoverFlowNavigation()
         }
-        coverFlowView?.isHidden = !isCoverFlowMode
+        updateCoverFlowVisibility()
         updateHistoryHostingFrame()
+    }
+
+    private func resetCoverFlowNavigation() {
+        coverFlowFocusStack.removeAll()
+        coverFlowCenterFirstChild = false
+        coverFlowPendingCenterId = nil
+    }
+
+    private func updateCoverFlowVisibility() {
+        let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
+        coverFlowView?.isHidden = !isCoverFlowMode || isLoading || errorMessage != nil || needsPlexLink
     }
 
     /// Coalesce cover flow rebuilds onto the next runloop turn so a burst of `displayItems`
@@ -2577,7 +2599,7 @@ class PlexBrowserView: NSView {
     /// children of the container we've drilled into.
     private func coverFlowVisibleItems() -> [PlexDisplayItem] {
         guard let parentId = coverFlowFocusStack.last else {
-            return displayItems.filter { $0.indentLevel == 0 && $0.type.isCoverFlowItem }
+            return coverFlowRootItems()
         }
         guard let parentIdx = displayItems.firstIndex(where: { $0.id == parentId }) else { return [] }
         let parentLevel = displayItems[parentIdx].indentLevel
@@ -2657,6 +2679,56 @@ class PlexBrowserView: NSView {
             return ("jellyfin:\(album.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: album.id, imageTag: album.imageTag) })
         case .embyAlbum(let album):
             return ("emby:\(album.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: album.id, imageTag: album.imageTag) })
+        case .movie(let movie):
+            let key = "plex:\(movie.id)"
+            return (key, { [weak self] in
+                guard let self else { return nil }
+                if let thumb = movie.thumb,
+                   let image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: key) {
+                    return image
+                }
+                return await self.loadMovieWebArtwork(title: movie.title, year: movie.year)
+            })
+        case .show(let show):
+            guard let thumb = show.thumb else { return ("plex:\(show.id)", { nil }) }
+            let key = "plex:\(show.id)"
+            return (key, { [weak self] in await self?.loadPlexArtworkByThumb(thumb: thumb, cacheKey: key) })
+        case .season(let season):
+            guard let thumb = season.thumb else { return ("plex:\(season.id)", { nil }) }
+            let key = "plex:\(season.id)"
+            return (key, { [weak self] in await self?.loadPlexArtworkByThumb(thumb: thumb, cacheKey: key) })
+        case .episode(let episode):
+            guard let thumb = episode.thumb else { return ("plex:\(episode.id)", { nil }) }
+            let key = "plex:\(episode.id)"
+            return (key, { [weak self] in await self?.loadPlexArtworkByThumb(thumb: thumb, cacheKey: key) })
+        case .localMovie(let movie):
+            return ("local:\(movie.url.path)", { [weak self] in await self?.loadLocalArtwork(url: movie.url) })
+        case .localShow(let show):
+            guard let episode = show.seasons.first(where: { !$0.episodes.isEmpty })?.episodes.first else {
+                return (nil, { nil })
+            }
+            return ("local:\(episode.url.path)", { [weak self] in await self?.loadLocalArtwork(url: episode.url) })
+        case .localSeason(let season, _):
+            guard let episode = season.episodes.first else { return (nil, { nil }) }
+            return ("local:\(episode.url.path)", { [weak self] in await self?.loadLocalArtwork(url: episode.url) })
+        case .localEpisode(let episode):
+            return ("local:\(episode.url.path)", { [weak self] in await self?.loadLocalArtwork(url: episode.url) })
+        case .jellyfinMovie(let movie):
+            return ("jellyfin:\(movie.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: movie.id, imageTag: movie.imageTag) })
+        case .jellyfinShow(let show):
+            return ("jellyfin:\(show.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: show.id, imageTag: show.imageTag) })
+        case .jellyfinSeason(let season):
+            return ("jellyfin:\(season.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: season.id, imageTag: season.imageTag) })
+        case .jellyfinEpisode(let episode):
+            return ("jellyfin:\(episode.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: episode.id, imageTag: episode.imageTag) })
+        case .embyMovie(let movie):
+            return ("emby:\(movie.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: movie.id, imageTag: movie.imageTag) })
+        case .embyShow(let show):
+            return ("emby:\(show.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: show.id, imageTag: show.imageTag) })
+        case .embySeason(let season):
+            return ("emby:\(season.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: season.id, imageTag: season.imageTag) })
+        case .embyEpisode(let episode):
+            return ("emby:\(episode.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: episode.id, imageTag: episode.imageTag) })
         case .artist(let artist):
             guard let thumb = artist.thumb else { return ("plex:\(artist.id)", { nil }) }
             let key = "plex:\(artist.id)"
@@ -2712,7 +2784,7 @@ class PlexBrowserView: NSView {
 
         if item.type.isAlbumItem {
             handleDoubleClick(on: item)
-        } else if item.hasChildren, browseMode != .search {
+        } else if item.hasChildren, browseMode != .search || item.type.isVideoContainer {
             coverFlowDrillIn(item)
         } else {
             handleDoubleClick(on: item)
@@ -2825,11 +2897,7 @@ class PlexBrowserView: NSView {
                             drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                         }
 
-                        if isCoverFlowMode {
-                            // The CoverFlowView overlay renders the carousel; just fill the list
-                            // area background so the interior isn't left stale behind the covers.
-                            drawCoverFlowBackground(in: context, drawBounds: drawBounds, colors: colors)
-                        } else if browseMode.isHistoryMode {
+                        if browseMode.isHistoryMode {
                             // SwiftUI-hosted history content is rendered via an embedded subview.
                         } else {
                             // Draw list area or connection status
@@ -2841,6 +2909,10 @@ class PlexBrowserView: NSView {
                                 drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                             } else if let error = errorMessage {
                                 drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
+                            } else if isCoverFlowMode {
+                                // The CoverFlowView overlay renders the carousel; just fill the list
+                                // area background so the interior isn't left stale behind the covers.
+                                drawCoverFlowBackground(in: context, drawBounds: drawBounds, colors: colors)
                             } else {
                                 drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
                             }
@@ -3840,8 +3912,8 @@ class PlexBrowserView: NSView {
         let tabsStartX = tabBarRect.minX + tabLeftInset
 
         // FLOW (cover flow) toggle box, reserved on the right just left of Sort, shown when the
-        // current list has albums or artists. Drawn after the tabs so it sits above the reserved gap.
-        let showFlowToggle = hasCoverFlowItems
+        // current list has eligible media. Drawn after the tabs so it sits above the reserved gap.
+        let showFlowToggle = isCoverFlowMode || hasCoverFlowItems
         let flowText = "FLOW"
         let flowWidth = showFlowToggle ? CGFloat(flowText.count) * scaledCharWidth + 12 * chromeScale : 0
         let flowGap = showFlowToggle ? 8 * chromeScale : 0
@@ -6639,6 +6711,7 @@ class PlexBrowserView: NSView {
     @objc private func plexStateDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, case .plex = self.currentSource else { return }
+            self.updateCoverFlowVisibility()
             if case .connecting = PlexManager.shared.connectionState {
                 self.isLoading = true
                 self.errorMessage = nil
@@ -6652,6 +6725,7 @@ class PlexBrowserView: NSView {
     @objc private func plexServerDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.updateCoverFlowVisibility()
             
             if case .connecting = PlexManager.shared.connectionState {
                 NSLog("PlexBrowserView: Server list changed, but still connecting - just updating display")
@@ -9895,10 +9969,22 @@ class PlexBrowserView: NSView {
         let threshold = itemHeight * 10
         let loadedHeight = CGFloat(displayItems.count) * itemHeight
         guard scrollOffset + listHeight + threshold >= loadedHeight else { return }
+        appendNextLocalPage()
+    }
+
+    /// Cover Flow owns the list area's scroll events, so it requests pagination directly when its
+    /// centered cover approaches the end of the currently loaded local page.
+    private func loadNextLocalCoverFlowPageIfNeeded() {
+        guard isCoverFlowMode, coverFlowFocusStack.isEmpty, case .local = currentSource else { return }
+        appendNextLocalPage()
+    }
+
+    @discardableResult
+    private func appendNextLocalPage() -> Bool {
         switch browseMode {
         case .artists:
             let nextOffset = localArtistPageOffset + localPageSize
-            guard nextOffset < localArtistTotal else { return }
+            guard nextOffset < localArtistTotal else { return false }
             localArtistPageOffset = nextOffset
             let store = MediaLibraryStore.shared
             let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort.asModernSort)
@@ -9910,9 +9996,10 @@ class PlexBrowserView: NSView {
                 displayItems.append(PlexDisplayItem(id: "local-artist-\(name)", title: name, info: "\(count) \(count == 1 ? "album" : "albums")", indentLevel: 0, hasChildren: count > 0, type: .localArtist(stubArtist)))
             }
             needsDisplay = true
+            return true
         case .albums:
             let nextOffset = localAlbumPageOffset + localPageSize
-            guard nextOffset < localAlbumTotal else { return }
+            guard nextOffset < localAlbumTotal else { return false }
             localAlbumPageOffset = nextOffset
             let store = MediaLibraryStore.shared
             let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort.asModernSort)
@@ -9923,7 +10010,9 @@ class PlexBrowserView: NSView {
                 displayItems.append(PlexDisplayItem(id: "local-album-\(album.id)", title: displayName, info: "\(summary.trackCount) tracks", indentLevel: 0, hasChildren: summary.trackCount > 0, type: .localAlbum(album)))
             }
             needsDisplay = true
-        default: break
+            return true
+        default:
+            return false
         }
     }
     
@@ -18859,16 +18948,32 @@ private struct PlexDisplayItem {
             }
         }
 
-        /// Items shown in the cover flow carousel. Containers (artists, folders) drill in; albums
-        /// and tracks are leaves that play.
+        /// Items shown in the cover flow carousel. Containers (artists, folders, shows, seasons)
+        /// drill in; albums, tracks, movies, and episodes are leaves that play.
         var isCoverFlowItem: Bool {
             switch self {
             case .artist, .localArtist, .subsonicArtist, .jellyfinArtist, .embyArtist,
                  .localFolder,
-                 .track, .localTrack, .subsonicTrack, .jellyfinTrack, .embyTrack:
+                 .track, .localTrack, .subsonicTrack, .jellyfinTrack, .embyTrack,
+                 .movie, .show, .season, .episode,
+                 .localMovie, .localShow, .localSeason, .localEpisode,
+                 .jellyfinMovie, .jellyfinShow, .jellyfinSeason, .jellyfinEpisode,
+                 .embyMovie, .embyShow, .embySeason, .embyEpisode:
                 return true
             default:
                 return isAlbumItem
+            }
+        }
+
+        /// Search results keep music containers as navigation links, but video containers retain
+        /// their show → season → episode hierarchy inside Cover Flow.
+        var isVideoContainer: Bool {
+            switch self {
+            case .show, .season, .localShow, .localSeason,
+                 .jellyfinShow, .jellyfinSeason, .embyShow, .embySeason:
+                return true
+            default:
+                return false
             }
         }
     }

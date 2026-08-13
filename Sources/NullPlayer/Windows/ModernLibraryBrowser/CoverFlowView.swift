@@ -1,12 +1,12 @@
 import AppKit
 
-/// A source-agnostic album for the cover flow carousel. Both the modern/metal
+/// A source-agnostic media item for the cover flow carousel. Both the modern/metal
 /// (`ModernLibraryBrowserView`) and classic (`PlexBrowserView`) browsers build these from
-/// whatever album list they are currently showing.
+/// whatever eligible library list they are currently showing.
 struct CoverFlowItem {
     let id: String                          // stable identity for diffing/caching
-    let title: String                       // album title
-    let subtitle: String                    // artist
+    let title: String                       // display title
+    let subtitle: String                    // secondary metadata
     let artwork: () -> NSImage?             // synchronous cache hit, if present
     let loadArtwork: () async -> NSImage?   // async per-source loader
     var isBack: Bool = false               // synthetic "‹ Back" cover for drill-out navigation
@@ -30,7 +30,7 @@ struct CoverFlowStyle {
 }
 
 /// A self-contained Core Animation cover-flow carousel: a 3D, horizontally-scrolling wall of
-/// album artwork. Layer-backed so the covers are GPU-composited, leaving CPU headroom for the
+/// media artwork. Layer-backed so the covers are GPU-composited, leaving CPU headroom for the
 /// Cava backdrop that renders behind this view. Hosted as a toggled overlay by each browser.
 final class CoverFlowView: NSView {
 
@@ -38,8 +38,11 @@ final class CoverFlowView: NSView {
 
     /// Fired when the centered cover changes (scroll, arrows, or clicking a side cover).
     var onCenterChanged: ((Int) -> Void)?
-    /// Fired when the already-centered cover is clicked — plays that album.
+    /// Fired when the already-centered cover is clicked — activates that media item.
     var onActivate: ((Int) -> Void)?
+    /// Fired once when navigation reaches the final preload window. Hosts use this to append the
+    /// next page of a paginated library before the user reaches the final loaded cover.
+    var onApproachingEnd: (() -> Void)?
 
     // MARK: Configuration
 
@@ -88,6 +91,8 @@ final class CoverFlowView: NSView {
     /// Indices whose artwork load has been kicked off (or finished, image or nil). Prevents a
     /// cover that resolves to no artwork from re-launching its loader on every layout pass.
     private var attemptedIndices: Set<Int> = []
+    /// Suppresses duplicate pagination requests while the host is rebuilding the same item set.
+    private var lastApproachingEndItemCount: Int?
 
     // MARK: Init
 
@@ -135,7 +140,17 @@ final class CoverFlowView: NSView {
     /// list refresh (source/search change) doesn't jump the user to a different cover.
     func setItems(_ newItems: [CoverFlowItem], preservingCenter: Bool = true) {
         let previousCenteredId = (centerIndex >= 0 && centerIndex < items.count) ? items[centerIndex].id : nil
+        let previousFirstId = items.first?.id
+        let previousLastId = items.last?.id
+        let previousCount = items.count
         items = newItems
+
+        // A replaced/cleared dataset starts a new pagination sequence. An appended page changes the
+        // item count, which is already enough to permit the next request when its end is approached.
+        if newItems.isEmpty || newItems.count <= previousCount &&
+            (newItems.first?.id != previousFirstId || newItems.last?.id != previousLastId) {
+            lastApproachingEndItemCount = nil
+        }
 
         loadedImages.removeAll()
         loadingIndices.removeAll()
@@ -179,10 +194,14 @@ final class CoverFlowView: NSView {
 
     func setCenterIndex(_ index: Int, animated: Bool) {
         let clamped = clampIndex(index)
-        guard clamped != centerIndex else { return }
+        guard clamped != centerIndex else {
+            requestMoreItemsIfNeeded()
+            return
+        }
         centerIndex = clamped
         onCenterChanged?(clamped)
         updateCenterLabel()
+        requestMoreItemsIfNeeded()
         targetOffset = CGFloat(clamped)
         if animated {
             startAnimation()
@@ -195,6 +214,15 @@ final class CoverFlowView: NSView {
     private func clampIndex(_ index: Int) -> Int {
         guard !items.isEmpty else { return 0 }
         return min(max(index, 0), items.count - 1)
+    }
+
+    private func requestMoreItemsIfNeeded() {
+        guard !items.isEmpty else { return }
+        let threshold = min(10, max(1, items.count / 4))
+        guard centerIndex >= items.count - threshold,
+              lastApproachingEndItemCount != items.count else { return }
+        lastApproachingEndItemCount = items.count
+        onApproachingEnd?()
     }
 
     // MARK: Layout
@@ -381,13 +409,17 @@ final class CoverFlowView: NSView {
         // Continuous 1:1 scrubbing, snapped to the nearest cover on release. Capping how far the
         // target can lead the rendered position keeps a momentum fling from shooting to the end and
         // outrunning artwork loads — the carousel stays able to keep up.
-        let sensitivity: CGFloat = 0.012
+        let horizontalDelta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX : event.deltaX
+        let verticalDelta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY
+        let dominantDelta = abs(horizontalDelta) > abs(verticalDelta) ? horizontalDelta : verticalDelta
+        let sensitivity: CGFloat = event.hasPreciseScrollingDeltas ? 0.012 : 1.0
         let maxLead: CGFloat = 3
-        var newTarget = targetOffset - event.scrollingDeltaX * sensitivity
+        var newTarget = targetOffset - dominantDelta * sensitivity
         newTarget = min(max(newTarget, selectedOffset - maxLead), selectedOffset + maxLead)
         targetOffset = min(max(newTarget, 0), CGFloat(items.count - 1))
 
-        if event.phase == .ended || event.momentumPhase == .ended || event.phase == .cancelled {
+        if !event.hasPreciseScrollingDeltas || event.phase == .ended ||
+            event.momentumPhase == .ended || event.phase == .cancelled {
             targetOffset = targetOffset.rounded()
         }
         let newCenter = clampIndex(Int(targetOffset.rounded()))
@@ -396,6 +428,7 @@ final class CoverFlowView: NSView {
             onCenterChanged?(newCenter)
             updateCenterLabel()
         }
+        requestMoreItemsIfNeeded()
         startAnimation()
     }
 
