@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct PodcastBrowserTheme {
     let background: NSColor
@@ -38,7 +37,6 @@ struct PodcastBrowserView: View {
     let theme: PodcastBrowserTheme
 
     @State private var searchText = ""
-    @State private var showingAddFeed = false
     @State private var showingSettings = false
     @State private var hidePlayed = false
 
@@ -52,7 +50,6 @@ struct PodcastBrowserView: View {
         .foregroundStyle(Color(theme.text))
         .tint(Color(theme.accent))
         .preferredColorScheme(theme.isDark ? .dark : .light)
-        .sheet(isPresented: $showingAddFeed) { AddPodcastFeedView(store: store, theme: theme) }
         .sheet(isPresented: $showingSettings) { PodcastIndexSettingsView(store: store, theme: theme) }
         .onAppear { store.start() }
         .onReceive(NotificationCenter.default.publisher(for: PodcastStore.showSettingsNotification)) { _ in
@@ -62,73 +59,23 @@ struct PodcastBrowserView: View {
 
     private var toolbar: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 2) {
-                ForEach(PodcastStore.Section.allCases) { section in
-                    let selected = store.section == section
-                    Button {
-                        store.section = section
-                    } label: {
-                        Text(section.rawValue)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color(selected ? theme.selectionText : theme.text))
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(Color(selected ? theme.selection : theme.elevated), in: RoundedRectangle(cornerRadius: 5))
-                    }
-                    .buttonStyle(.plain)
+            if store.section == .discover, store.selectedFeed == nil {
+                Button {
+                    searchText = ""
+                    store.showSubscriptions()
+                } label: {
+                    Image(systemName: "chevron.left")
                 }
+                .buttonStyle(.borderless)
+                .help("Back to Subscriptions")
             }
-            .padding(2)
-            .background(Color(theme.background), in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color(theme.separator), lineWidth: 0.5))
-            .frame(maxWidth: 390)
-            .onChange(of: store.section) { _, newValue in
-                store.closeFeed()
-                if newValue == .discover, store.discoveryFeeds.isEmpty, store.hasCredentials {
-                    store.loadTrending()
-                }
-            }
-
-            Spacer(minLength: 8)
 
             TextField("Search Podcast Index", text: $searchText)
                 .textFieldStyle(.roundedBorder)
                 .foregroundStyle(Color(theme.text))
-                .frame(minWidth: 160, idealWidth: 240, maxWidth: 320)
+                .frame(maxWidth: .infinity)
                 .onSubmit { store.search(searchText) }
-
-            Button { store.search(searchText) } label: { Image(systemName: "magnifyingglass") }
-                .help("Search Podcast Index")
-            Button { showingAddFeed = true } label: { Image(systemName: "plus") }
-                .help("Add podcast by RSS feed URL")
-
-            Menu {
-                Button("Refresh") { store.refresh() }
-                Button("Refresh All Subscriptions") { store.refreshAllSubscriptions() }
-                Divider()
-                Button("Import OPML", action: importOPML)
-                Button("Export OPML", action: exportOPML)
-                Divider()
-                Button("Podcast Index Settings") { showingSettings = true }
-                Menu("Sleep Timer") {
-                    Button("Off") { store.setSleepTimer(minutes: nil) }
-                    ForEach([15, 30, 45, 60, 90], id: \.self) { minutes in
-                        Button("\(minutes) minutes") { store.setSleepTimer(minutes: minutes) }
-                    }
-                }
-                Menu("Playback Speed") {
-                    ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0], id: \.self) { speed in
-                        Button(String(format: "%g×", speed)) {
-                            WindowManager.shared.audioEngine.setPlaybackSpeed(Float(speed))
-                        }
-                    }
-                }
-            } label: { Image(systemName: "ellipsis.circle") }
-            .menuStyle(.borderlessButton)
-            .frame(width: 26)
         }
-        .buttonStyle(.borderless)
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .background(Color(theme.surface))
@@ -198,12 +145,6 @@ struct PodcastBrowserView: View {
             Text(emptyTitle).font(.title3.weight(.semibold))
             Text(emptyDetail).multilineTextAlignment(.center).foregroundStyle(Color(theme.secondaryText))
                 .frame(maxWidth: 460)
-            if store.section == .subscriptions {
-                Button("Find Podcasts") { store.section = .discover }
-                Button("Add RSS Feed") { showingAddFeed = true }
-            } else if store.section == .discover && !store.hasCredentials {
-                Button("Podcast Index Settings") { showingSettings = true }
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(30)
@@ -212,7 +153,7 @@ struct PodcastBrowserView: View {
     private var emptyTitle: String {
         switch store.section {
         case .subscriptions: return "Your podcast shelf is empty"
-        case .discover: return "Search Podcast Index"
+        case .discover: return "No podcasts found"
         case .favorites: return "No favorite episodes"
         case .downloads: return "No downloaded episodes"
         }
@@ -220,8 +161,8 @@ struct PodcastBrowserView: View {
 
     private var emptyDetail: String {
         switch store.section {
-        case .subscriptions: return "Search the open Podcast Index directory or add any RSS feed URL, then subscribe."
-        case .discover: return store.hasCredentials ? "Search above or refresh to explore trending podcasts." : "Search works without an account. Add a free Podcast Index key to enable trending discovery."
+        case .subscriptions: return "Search the open Podcast Index directory, then subscribe."
+        case .discover: return "Try a different search."
         case .favorites: return "Favorite an episode from its menu and it will be collected here."
         case .downloads: return "Downloaded audio and video episodes will appear here for offline playback."
         }
@@ -237,7 +178,7 @@ struct PodcastBrowserView: View {
                     Text(feed.title).font(.title2.weight(.bold)).lineLimit(2)
                     if let author = feed.author { Text(author).foregroundStyle(Color(theme.secondaryText)) }
                     if let summary = feed.summary {
-                        Text(summary).font(.callout).foregroundStyle(Color(theme.secondaryText)).lineLimit(3)
+                        Text(summary).font(.body).foregroundStyle(Color(theme.secondaryText)).lineLimit(5)
                     }
                     HStack(spacing: 8) {
                         Button(store.isSubscribed(feed) ? "Subscribed" : "Subscribe") { store.toggleSubscription(feed) }
@@ -302,20 +243,6 @@ struct PodcastBrowserView: View {
         }
     }
 
-    private func importOPML() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.xml]
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task { try? await store.importOPML(from: url) }
-    }
-
-    private func exportOPML() {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "NullPlayer Podcasts.opml"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task { try? await store.exportOPML(to: url) }
-    }
 }
 
 private struct PodcastTile: View {
@@ -381,9 +308,9 @@ private struct PodcastEpisodeRow: View {
                     if let date = episode.publishedAt { Text(date, style: .date) }
                     Text(episode.formattedDuration)
                     if episode.explicit { Text("E").fontWeight(.bold) }
-                }.font(.caption).foregroundStyle(Color(theme.secondaryText))
+                }.font(.subheadline).foregroundStyle(Color(theme.secondaryText))
                 if let summary = episode.summary {
-                    Text(summary).font(.caption).foregroundStyle(Color(theme.secondaryText)).lineLimit(2)
+                    Text(summary).font(.callout).foregroundStyle(Color(theme.secondaryText)).lineLimit(3)
                 }
                 if let duration = state.duration ?? episode.duration, duration > 0, state.position > 0, !state.isPlayed {
                     ProgressView(value: min(1, state.position / duration)).tint(Color(theme.accent))

@@ -57,7 +57,7 @@ enum ModernBrowserSource: Equatable, Codable {
             return "EMBY"
         case .radio: return "INTERNET RADIO"
         case .youtube: return "YOUTUBE"
-        case .podcasts: return "PODCAST INDEX"
+        case .podcasts: return "PODCASTS"
         }
     }
 
@@ -418,6 +418,17 @@ class ModernLibraryBrowserView: NSView {
     /// (0 outside compact mode).
     private var compactFooterHeight: CGFloat {
         compactMode ? 24 * ModernSkinElements.sizeMultiplier : 0
+    }
+
+    /// Shared geometry for the embedded queue and the artwork painted beneath it.
+    private var compactPlaylistContentRect: NSRect {
+        let border = Layout.borderWidth
+        return NSRect(
+            x: border,
+            y: contentRegionBottomY,
+            width: bounds.width - border * 2,
+            height: max(0, topChromeBottomY - contentRegionBottomY)
+        )
     }
 
     /// Embedded compact-sized play queue, shown in place of the library chrome in queue mode.
@@ -1282,6 +1293,7 @@ class ModernLibraryBrowserView: NSView {
     /// It fills the content region below the toggle strip and covers the library chrome
     /// (server bar / tabs / alphabet index) when shown, so queue mode hides library chrome.
     private func updateCompactPlaylistFrame() {
+        updateEmbeddedHostingVisibilityForCompactMode()
         guard compactMode else {
             compactPlaylistView?.removeFromSuperview()
             compactPlaylistView = nil
@@ -1300,10 +1312,7 @@ class ModernLibraryBrowserView: NSView {
             compactPlaylistView = queue
             didCreateQueue = true
         }
-        let border = Layout.borderWidth
-        queue.frame = NSRect(x: border, y: contentRegionBottomY,
-                             width: bounds.width - border * 2,
-                             height: max(0, topChromeBottomY - contentRegionBottomY))
+        queue.frame = compactPlaylistContentRect
         queue.isHidden = (compactContentMode != .queue)
         if didCreateQueue {
             // `reloadData()` needs the final frame so it can scroll the current track into view.
@@ -1312,6 +1321,15 @@ class ModernLibraryBrowserView: NSView {
                 window?.makeFirstResponder(queue)
             }
         }
+    }
+
+    /// The embedded queue is translucent so the configured art/Cava backdrop can show through.
+    /// Hide only opaque SwiftUI content overlays while the queue is visible; do not refresh or
+    /// reframe the backdrop composition as part of this visibility update.
+    private func updateEmbeddedHostingVisibilityForCompactMode() {
+        let inQueueMode = compactMode && compactContentMode == .queue
+        historyHostingView?.isHidden = inQueueMode || !browseMode.isHistoryMode || isArtOnlyMode
+        podcastHostingView?.isHidden = inQueueMode || !currentSource.isPodcasts || browseMode != .radio || isArtOnlyMode
     }
 
     /// Refresh the private playlist presentation after the shared audio-engine queue mutates.
@@ -1461,8 +1479,8 @@ class ModernLibraryBrowserView: NSView {
 
         // In the compact window's Playlist mode the embedded queue subview fills the content
         // region, so skip drawing the library chrome (server bar / tabs / search / list /
-        // alphabet) behind it — the shared Cava/art backdrop then shows through the queue,
-        // matching how it shows behind the library list.
+        // alphabet) behind it. Cava is a sibling backdrop, while album art is painted by this
+        // view, so queue mode draws the same art pass explicitly below the transparent queue.
         let showLibraryContent = !isShowingCompactPlaylist
 
         if showLibraryContent {
@@ -1523,6 +1541,12 @@ class ModernLibraryBrowserView: NSView {
 
             // Status bar text
             drawStatusBarText(in: context, skin: skin)
+        } else {
+            drawArtworkBackground(
+                in: context,
+                listRect: compactPlaylistContentRect,
+                artwork: capturedArtwork
+            )
         }
 
         // Library | Playlist toggle footer at the bottom (compact window only).
@@ -1632,7 +1656,7 @@ class ModernLibraryBrowserView: NSView {
         case .youtube:
             leftWidth = leadingInset + prefixWidth + textWidth("YouTube") + 28 * m + textWidth("+ADD")
         case .podcasts:
-            leftWidth = leadingInset + prefixWidth + textWidth("Podcast Index")
+            leftWidth = leadingInset + prefixWidth + textWidth("Podcasts")
         case .plex(let serverId):
             let configured = PlexManager.shared.servers.contains(where: { $0.id == serverId }) ||
                 PlexManager.shared.isLinked
@@ -2344,7 +2368,7 @@ class ModernLibraryBrowserView: NSView {
             }
 
         case .podcasts:
-            let sourceText = "Podcast Index"
+            let sourceText = "Podcasts"
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
@@ -5061,6 +5085,7 @@ class ModernLibraryBrowserView: NSView {
         let youtubeItem = NSMenuItem(title: "YouTube", action: #selector(selectYouTubeSource), keyEquivalent: "")
         youtubeItem.target = self; if case .youtube = currentSource { youtubeItem.state = .on }
         menu.addItem(youtubeItem)
+        menu.addItem(NSMenuItem.separator())
         let podcastItem = NSMenuItem(title: "Podcasts", action: #selector(selectPodcastSource), keyEquivalent: "")
         podcastItem.target = self; if case .podcasts = currentSource { podcastItem.state = .on }
         menu.addItem(podcastItem)

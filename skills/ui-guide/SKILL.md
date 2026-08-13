@@ -851,6 +851,13 @@ Implementation rules:
   artwork image in the browser above the Cava sibling. Current-track and selection artwork loads
   share one display generation: concurrent work may fill caches, but only the newest request may
   assign the visible `currentArtwork`.
+- Compact Playlist mode skips the normal Library chrome/list draw branch, so it must explicitly
+  call the same `drawArtworkBackground` pass using the embedded queue's content rect. Keep that
+  rect shared between queue layout and artwork drawing; duplicating its geometry causes the art to
+  drift or disappear. The embedded queue remains transparent. While it is visible, directly hide
+  opaque SwiftUI hosts such as History and Podcasts so a previously selected source cannot paint
+  its background beneath the queue. Do not rebuild or reframe the backdrop merely to update those
+  host visibility flags.
 - Cava uses `CavaPresenter(scope: .libraryWindow)` in the regular Library and
   `CavaPresenter(scope: .compactWindow)` in Compact. It draws into the backdrop's complete `bounds`.
   Both scopes default to 64 bars. Library's first-use mode is Mono. Compact's first-use mode is

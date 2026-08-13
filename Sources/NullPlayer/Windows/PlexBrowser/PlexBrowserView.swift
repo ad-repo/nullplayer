@@ -44,7 +44,7 @@ enum BrowserSource: Equatable, Codable {
         case .youtube:
             return "YOUTUBE"
         case .podcasts:
-            return "PODCAST INDEX"
+            return "PODCASTS"
         }
     }
 
@@ -1574,7 +1574,7 @@ class PlexBrowserView: NSView {
         case .youtube:
             leftWidth = leadingInset + prefixWidth + textWidth("YouTube") + 28 + textWidth("+ADD")
         case .podcasts:
-            leftWidth = leadingInset + prefixWidth + textWidth("Podcast Index")
+            leftWidth = leadingInset + prefixWidth + textWidth("Podcasts")
         case .plex(let serverId):
             let configuredServer = PlexManager.shared.servers.first(where: { $0.id == serverId })
             isConfigured = configuredServer != nil || PlexManager.shared.isLinked
@@ -4005,7 +4005,7 @@ class PlexBrowserView: NSView {
             let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
             drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
         case .podcasts:
-            let sourceText = "Podcast Index"
+            let sourceText = "Podcasts"
             drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
             let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
@@ -9109,6 +9109,7 @@ class PlexBrowserView: NSView {
             youtubeItem.state = .on
         }
         menu.addItem(youtubeItem)
+        menu.addItem(NSMenuItem.separator())
         let podcastItem = NSMenuItem(title: "Podcasts", action: #selector(selectPodcastSource), keyEquivalent: "")
         podcastItem.target = self
         if case .podcasts = currentSource { podcastItem.state = .on }

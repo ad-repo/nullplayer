@@ -62,19 +62,14 @@ final class PodcastStore: ObservableObject {
             episodeStates = snapshot.episodeStates
             knownEpisodes = snapshot.knownEpisodes
             isLoading = false
-            if hasCredentials, discoveryFeeds.isEmpty {
-                loadTrending()
-            }
         }
     }
 
     func search(_ term: String) {
         searchTask?.cancel()
         let query = term.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else {
-            if hasCredentials { loadTrending() } else { discoveryFeeds = [] }
-            return
-        }
+        guard !query.isEmpty else { return }
+        closeFeed()
         section = .discover
         isLoading = true
         errorMessage = nil
@@ -142,6 +137,12 @@ final class PodcastStore: ObservableObject {
         loadTask?.cancel()
         isLoading = false
         errorMessage = nil
+    }
+
+    func showSubscriptions() {
+        searchTask?.cancel()
+        section = .subscriptions
+        closeFeed()
     }
 
     func subscribe(_ feed: PodcastFeed) {
@@ -333,7 +334,6 @@ final class PodcastStore: ObservableObject {
                                                    apiSecret: secret.trimmingCharacters(in: .whitespacesAndNewlines))
         _ = KeychainHelper.shared.setPodcastIndexCredentials(credentials)
         objectWillChange.send()
-        loadTrending()
     }
 
     func clearCredentials() {
