@@ -293,9 +293,11 @@ final class CoverFlowView: NSView {
         let centerX = bounds.midX
         // Center covers in the region above the reserved label band, nudged up for the reflection.
         let centerY = coverCenterY
+        // Compute the (bounds-derived) radius once; it's stable for the whole pass.
+        let radius = virtualRadius
 
-        let lo = max(0, Int(selectedOffset.rounded()) - virtualRadius)
-        let hi = min(items.count - 1, Int(selectedOffset.rounded()) + virtualRadius)
+        let lo = max(0, Int(selectedOffset.rounded()) - radius)
+        let hi = min(items.count - 1, Int(selectedOffset.rounded()) + radius)
 
         // Remove layers that scrolled out of the virtual window.
         for (index, layer) in coverLayers where index < lo || index > hi {
@@ -326,7 +328,7 @@ final class CoverFlowView: NSView {
 
         // Load artwork center-out so the cover the user lands on fills in first.
         for index in (lo...hi).sorted(by: { abs(CGFloat($0) - selectedOffset) < abs(CGFloat($1) - selectedOffset) }) {
-            ensureArtwork(for: index)
+            ensureArtwork(for: index, radius: radius)
         }
     }
 
@@ -359,10 +361,10 @@ final class CoverFlowView: NSView {
 
     // MARK: Artwork
 
-    private func ensureArtwork(for index: Int) {
+    private func ensureArtwork(for index: Int, radius: Int) {
         guard loadedImages[index] == nil, !attemptedIndices.contains(index) else { return }
         // Only load covers near the center to avoid a burst of network fetches.
-        guard abs(CGFloat(index) - selectedOffset) <= CGFloat(virtualRadius) else { return }
+        guard abs(CGFloat(index) - selectedOffset) <= CGFloat(radius) else { return }
         let item = items[index]
 
         if let cached = item.artwork() {
@@ -488,7 +490,9 @@ final class CoverFlowView: NSView {
     private func coverIndex(at point: NSPoint) -> Int? {
         let cover = coverSize
         let centerX = bounds.midX
-        let centerY = bounds.midY + cover * 0.12
+        // Match layoutCovers exactly so the hit region tracks where the covers are actually drawn
+        // (which sits above the reserved label band), rather than the raw view center.
+        let centerY = coverCenterY
         let indices = coverLayers.keys.sorted { abs(CGFloat($0) - selectedOffset) < abs(CGFloat($1) - selectedOffset) }
         for index in indices {
             let p = CGFloat(index) - selectedOffset

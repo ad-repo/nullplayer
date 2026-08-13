@@ -2525,9 +2525,11 @@ class PlexBrowserView: NSView {
         return displayItems.filter { $0.indentLevel == rootLevel && $0.type.isCoverFlowItem }
     }
 
-    /// True when the current list has a non-empty Cover Flow root.
+    /// True when the current list has a non-empty Cover Flow root. Evaluated in the server-bar draw
+    /// path on every redraw, so it short-circuits instead of allocating a filtered array.
     private var hasCoverFlowItems: Bool {
-        !coverFlowRootItems().isEmpty
+        let rootLevel = browseMode == .search ? 1 : 0
+        return displayItems.contains { $0.indentLevel == rootLevel && $0.type.isCoverFlowItem }
     }
 
     /// Fill the list area behind the cover flow overlay (classic has no Cava backdrop).
@@ -2566,6 +2568,7 @@ class PlexBrowserView: NSView {
 
     private func updateCoverFlowState() {
         if isCoverFlowMode {
+            seedCoverFlowFocusFromSelection()
             ensureCoverFlowView()
             applyCoverFlowStyle()
             rebuildCoverFlowItems()
@@ -2580,6 +2583,46 @@ class PlexBrowserView: NSView {
         coverFlowFocusStack.removeAll()
         coverFlowCenterFirstChild = false
         coverFlowPendingCenterId = nil
+    }
+
+    /// When FLOW is switched on with a container already expanded/selected in the list (e.g. an
+    /// artist showing its albums), open Cover Flow *inside* that container rather than dumping the
+    /// user back at the root. Seeds the focus stack from the current selection's ancestor chain.
+    private func seedCoverFlowFocusFromSelection() {
+        resetCoverFlowNavigation()
+        guard let idx = selectedIndices.min(), displayItems.indices.contains(idx) else { return }
+        let rootLevel = browseMode == .search ? 1 : 0
+        let selected = displayItems[idx]
+        guard selected.indentLevel >= rootLevel, selected.type.isCoverFlowItem else { return }
+
+        let ancestors = coverFlowAncestorIds(ofIndex: idx, rootLevel: rootLevel)
+        // Albums (and other leaves) play rather than drill, so never focus *into* them; an expanded
+        // eligible container opens to show its children.
+        if selected.hasChildren, !selected.type.isAlbumItem, isExpanded(selected) {
+            coverFlowFocusStack = ancestors + [selected.id]
+            coverFlowCenterFirstChild = true
+        } else {
+            // A leaf, a collapsed container, or an album: show its own level, centered on it.
+            coverFlowFocusStack = ancestors
+            coverFlowPendingCenterId = selected.id
+        }
+    }
+
+    /// The chain of eligible container ids from the root down to the item's immediate parent (empty
+    /// when the item sits at the root level). Bails to root if any ancestor isn't Cover Flow-eligible.
+    private func coverFlowAncestorIds(ofIndex idx: Int, rootLevel: Int) -> [String] {
+        var chain: [String] = []
+        var neededLevel = displayItems[idx].indentLevel - 1
+        var i = idx - 1
+        while i >= 0, neededLevel >= rootLevel {
+            if displayItems[i].indentLevel == neededLevel {
+                guard displayItems[i].type.isCoverFlowItem else { return [] }
+                chain.insert(displayItems[i].id, at: 0)
+                neededLevel -= 1
+            }
+            i -= 1
+        }
+        return chain
     }
 
     private func updateCoverFlowVisibility() {
@@ -8724,7 +8767,8 @@ class PlexBrowserView: NSView {
         if hitTestServerBar(at: skinPoint) {
             if coverFlowButtonRect.contains(skinPoint) {
                 isCoverFlowMode.toggle()
-                window?.makeFirstResponder(self)
+                // Hand keyboard focus to the carousel so arrows/enter work without a prior cover click.
+                window?.makeFirstResponder(isCoverFlowMode ? coverFlowView : self)
                 return
             }
             // For local files, radio, or subsonic - always handle the click
