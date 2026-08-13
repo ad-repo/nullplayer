@@ -867,6 +867,53 @@ Implementation rules:
   surface context-menu injection, the shared menu builder, and its selection action. This is a UI
   visibility seam only; backdrop rendering and persisted mode resolution remain independent.
 
+## Cover Flow (Library browser, all skin families)
+
+Cover Flow is a 3D, GPU-composited carousel of album/artist artwork shown *in place of* the library
+list, toggled by a **FLOW** button. It is a visual lens over the browser's current `displayItems`,
+not a separate query. It ships in Modern, Metal, and Classic at once.
+
+**Shared component** — `Windows/ModernLibraryBrowser/CoverFlowView.swift` (used by both browsers):
+- A layer-backed `NSView` with a `containerLayer` whose `sublayerTransform` applies perspective
+  (`m34 ≈ -1/900`). Each cover is a `CoverLayer` (a `CALayer` with the artwork as `contents`, a
+  gradient-masked flipped reflection sublayer, and a solid-color placeholder). **Never** render
+  placeholders with `NSImage.lockFocus` — that bitmap path was a main-thread hang; use the layer's
+  `backgroundColor`. The Back cover uses one cheap `CATextLayer`.
+- Source-agnostic input `CoverFlowItem { id, title, subtitle, artwork() /*sync cache hit*/,
+  loadArtwork() /*async*/, isBack }`. Cover size is keyed to the view **height** (minus a reserved
+  bottom label band); a wider window shows **more** covers (`virtualRadius` grows with width, capped
+  by `maxRadius`), not bigger ones.
+- Interaction: continuous 1:1 scroll snapped to the nearest cover on release, with a `maxLead` cap so
+  a momentum fling can't outrun artwork loads; Left/Right arrows; click a side cover to center it,
+  click the centered cover to fire `onActivate(index)`. Artwork loads are throttled to covers near
+  center, ordered center-out, and each index loads **at most once** (`attemptedIndices`) so a
+  nil-artwork cover never re-triggers on every layout pass. The centered item's name/subtitle render
+  in the reserved bottom band via two `CATextLayer`s.
+
+**Host wiring** — mirrored in `ModernLibraryBrowserView` (Modern+Metal) and `PlexBrowserView`
+(Classic):
+- An `isCoverFlowMode` toggle mirroring `isArtOnlyMode` (mutually exclusive with it). Modern draws a
+  **FLOW** boxed toggle next to **ART** in the source bar; Classic draws it in the tab bar left of
+  **Sort** (the source bar draws ART per-source, so the single-site tab bar is used instead).
+- The overlay is a subview sized to the list content rect (`embeddedHistoryContentRect` /
+  `embeddedContentRect`), added above the list and below the top chrome. In cover flow the draw path
+  fills **nothing** over the list area so the window background (translucent over a Cava backdrop,
+  opaque otherwise) shows through — do not add a second `contentFill` scrim or Cava disappears.
+- **Tree navigation**: cover flow keeps a focus **stack** (`coverFlowFocusStack`). `isCoverFlowItem`
+  covers artists, albums, folders, and tracks. Activating an **album** plays it; a **track** plays
+  it; any other container (`hasChildren`) drills in — `coverFlowDrillIn` ensures the row is expanded
+  (guarded by `isExpanded`, since `toggleExpand` toggles) and pushes its id; the visible level is the
+  container's direct children (`indentLevel == parentLevel+1`). A synthetic **‹ Back** cover at index
+  0 pops. Re-centering: `coverFlowCenterFirstChild` on drill-in, `coverFlowPendingCenterId` on back —
+  retained across rebuilds because children may load asynchronously.
+- **Rebuilds must be coalesced.** `displayItems.didSet` calls `scheduleCoverFlowRebuild()` (one
+  `DispatchQueue.main.async` pass), never a synchronous rebuild — `buildArtistItems` and peers mutate
+  `displayItems` many times per reload, and a synchronous carousel rebuild per mutation beachballs.
+- Artwork loaders reuse the per-source loaders behind `loadArtworkForSelection`; local track/album
+  resolution (`MediaLibraryStore` lookups) happens **inside** the async loader via `Task.detached`,
+  never synchronously in the item-mapping pass. Teardown removes the cover flow view in
+  `prepareForUITeardown`; toggling the mode off clears the focus stack.
+
 ## Window Docking
 
 Complex snapping logic in `WindowManager`:

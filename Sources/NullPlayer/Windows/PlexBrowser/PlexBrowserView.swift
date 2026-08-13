@@ -274,8 +274,9 @@ class PlexBrowserView: NSView {
     private var browseMode: PlexBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
-            // Switching tabs always exits Art view.
+            // Switching tabs always exits Art view and Cover Flow.
             isArtOnlyMode = false
+            isCoverFlowMode = false
             if oldValue == .folders, browseMode != .folders {
                 cancelLocalFolderBuild()
             }
@@ -1016,8 +1017,14 @@ class PlexBrowserView: NSView {
     }
     
     /// Current display items
-    private var displayItems: [PlexDisplayItem] = []
-    
+    private var displayItems: [PlexDisplayItem] = [] {
+        didSet {
+            // Coalesce to one rebuild — the browser mutates displayItems many times per reload.
+            if isCoverFlowMode { scheduleCoverFlowRebuild() }
+        }
+    }
+    private var coverFlowRebuildScheduled = false
+
     /// Expanded artists for hierarchical view (by ID)
     private var expandedArtists: Set<String> = []
     
@@ -1249,6 +1256,8 @@ class PlexBrowserView: NSView {
             updateHistoryHostingVisibility()
             needsDisplay = true
             if isArtOnlyMode {
+                // Cover flow and art view are mutually exclusive list-area modes.
+                isCoverFlowMode = false
                 // Fetch current track rating when entering art mode
                 fetchCurrentTrackRating()
                 // Load all artwork for cycling
@@ -1265,7 +1274,29 @@ class PlexBrowserView: NSView {
         }
     }
     private var artModeLifecycleGeneration = 0
-    
+
+    // Cover flow mode — a 3D carousel over the current album list (see CoverFlowView).
+    private var isCoverFlowMode: Bool = false {
+        didSet {
+            guard isCoverFlowMode != oldValue else { return }
+            if isCoverFlowMode { isArtOnlyMode = false }
+            updateCoverFlowState()
+            needsDisplay = true
+        }
+    }
+    private var coverFlowView: CoverFlowView?
+    private var coverFlowButtonRect: NSRect = .zero
+    /// The current level's display items (excludes the synthetic Back cover), aligned with the
+    /// carousel for activation mapping.
+    private var coverFlowSourceItems: [PlexDisplayItem] = []
+    /// Navigation stack of container ids the carousel has drilled into (top level when empty).
+    private var coverFlowFocusStack: [String] = []
+    /// After a drill-in, center on the first child once children appear.
+    private var coverFlowCenterFirstChild = false
+    /// After a drill-out (Back), re-center on this container id once the level is rebuilt.
+    private var coverFlowPendingCenterId: String?
+    private static let coverFlowBackId = "__coverflow_back__"
+
     /// Visualization mode - applies audio-reactive effects to album art
     private var isVisualizingArt: Bool = false {
         didSet {
@@ -2378,8 +2409,11 @@ class PlexBrowserView: NSView {
         stopLoadingAnimation()
         stopServerNameScroll()
         stopVisualizerTimer()
+        coverFlowView?.removeFromSuperview()
+        coverFlowView = nil
+        coverFlowSourceItems = []
     }
-    
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         startServerNameScroll()
@@ -2453,19 +2487,251 @@ class PlexBrowserView: NSView {
     }
 
     private func updateHistoryHostingFrame() {
-        guard let hostingView = historyHostingView else { return }
+        historyHostingView?.frame = embeddedContentRect()
+        coverFlowView?.frame = embeddedContentRect()
+    }
 
+    /// Content rect (view coordinates) below the tab bar and above the status bar — shared by the
+    /// embedded history subview and the cover flow overlay.
+    private func embeddedContentRect() -> NSRect {
         let scale = scaleFactor
         let hiddenTitleBarOffset = WindowManager.shared.hideTitleBars ? Layout.titleBarHeight : 0
-        let topInset = (Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight - hiddenTitleBarOffset) * scale
+        let searchBarInset = browseMode == .search ? Layout.searchBarHeight : 0
+        let topInset = (Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight + searchBarInset - hiddenTitleBarOffset) * scale
         let bottomInset = Layout.statusBarHeight * scale
         let horizontalInset = (Layout.leftBorder + Layout.rightBorder) * scale
-        hostingView.frame = NSRect(
+        return NSRect(
             x: Layout.leftBorder * scale,
             y: bottomInset,
             width: max(0, bounds.width - horizontalInset),
             height: max(0, bounds.height - topInset - bottomInset)
         )
+    }
+
+    // MARK: - Cover Flow
+
+    /// True when the current list has albums or artists to show in the cover flow carousel.
+    private var hasCoverFlowItems: Bool {
+        displayItems.contains { $0.type.isCoverFlowItem }
+    }
+
+    /// Fill the list area behind the cover flow overlay (classic has no Cava backdrop).
+    private func drawCoverFlowBackground(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors) {
+        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
+        if browseMode == .search { listY += Layout.searchBarHeight }
+        let listHeight = drawBounds.height - listY - Layout.statusBarHeight
+        let listRect = NSRect(x: Layout.leftBorder, y: listY,
+                              width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
+                              height: listHeight)
+        colors.normalBackground.setFill()
+        context.fill(listRect)
+    }
+
+    private func ensureCoverFlowView() {
+        guard coverFlowView == nil else { return }
+        let view = CoverFlowView()
+        view.onActivate = { [weak self] index in self?.playCoverFlowItem(at: index) }
+        addSubview(view)
+        coverFlowView = view
+        applyCoverFlowStyle()
+        rebuildCoverFlowItems()
+    }
+
+    private func applyCoverFlowStyle() {
+        let colors = currentPlaylistColors()
+        coverFlowView?.style = CoverFlowStyle(
+            titleColor: colors.normalText,
+            subtitleColor: colors.normalText.withAlphaComponent(0.6),
+            placeholderFill: colors.normalBackground.blended(withFraction: 0.15, of: .white) ?? colors.normalBackground,
+            placeholderTextColor: colors.normalText.withAlphaComponent(0.6)
+        )
+    }
+
+    private func updateCoverFlowState() {
+        if isCoverFlowMode {
+            ensureCoverFlowView()
+            applyCoverFlowStyle()
+            rebuildCoverFlowItems()
+        } else {
+            coverFlowFocusStack.removeAll()
+            coverFlowCenterFirstChild = false
+            coverFlowPendingCenterId = nil
+        }
+        coverFlowView?.isHidden = !isCoverFlowMode
+        updateHistoryHostingFrame()
+    }
+
+    /// Coalesce cover flow rebuilds onto the next runloop turn so a burst of `displayItems`
+    /// mutations collapses into a single carousel rebuild.
+    private func scheduleCoverFlowRebuild() {
+        guard !coverFlowRebuildScheduled else { return }
+        coverFlowRebuildScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.coverFlowRebuildScheduled = false
+            if self.isCoverFlowMode { self.rebuildCoverFlowItems() }
+        }
+    }
+
+    /// The display items at the current cover flow level: the top-level cover items, or the direct
+    /// children of the container we've drilled into.
+    private func coverFlowVisibleItems() -> [PlexDisplayItem] {
+        guard let parentId = coverFlowFocusStack.last else {
+            return displayItems.filter { $0.indentLevel == 0 && $0.type.isCoverFlowItem }
+        }
+        guard let parentIdx = displayItems.firstIndex(where: { $0.id == parentId }) else { return [] }
+        let parentLevel = displayItems[parentIdx].indentLevel
+        var children: [PlexDisplayItem] = []
+        var i = parentIdx + 1
+        while i < displayItems.count, displayItems[i].indentLevel > parentLevel {
+            if displayItems[i].indentLevel == parentLevel + 1, displayItems[i].type.isCoverFlowItem {
+                children.append(displayItems[i])
+            }
+            i += 1
+        }
+        return children
+    }
+
+    /// Build the carousel for the current level: a synthetic Back cover when drilled in, then the
+    /// level's items. Keeps `coverFlowSourceItems` aligned (Back excluded) for activation mapping.
+    private func rebuildCoverFlowItems() {
+        let visible = coverFlowVisibleItems()
+        coverFlowSourceItems = visible
+        let hasBack = !coverFlowFocusStack.isEmpty
+
+        var items: [CoverFlowItem] = []
+        if hasBack {
+            items.append(CoverFlowItem(id: Self.coverFlowBackId, title: "‹ Back", subtitle: "",
+                                       artwork: { nil }, loadArtwork: { nil }, isBack: true))
+        }
+        items += visible.map { item in
+            let (cacheKey, load) = coverFlowArtwork(for: item)
+            return CoverFlowItem(
+                id: item.id,
+                title: item.title,
+                subtitle: item.info ?? "",
+                artwork: { cacheKey.flatMap { Self.artworkCache.object(forKey: NSString(string: $0)) } },
+                loadArtwork: load
+            )
+        }
+
+        let navigating = coverFlowCenterFirstChild || coverFlowPendingCenterId != nil
+        coverFlowView?.setItems(items, preservingCenter: !navigating)
+
+        if coverFlowCenterFirstChild, !visible.isEmpty {
+            coverFlowCenterFirstChild = false
+            coverFlowView?.setCenterIndex(hasBack ? 1 : 0, animated: false)
+        } else if let cid = coverFlowPendingCenterId,
+                  let idx = visible.firstIndex(where: { $0.id == cid }) {
+            coverFlowPendingCenterId = nil
+            coverFlowView?.setCenterIndex(idx + (hasBack ? 1 : 0), animated: false)
+        }
+    }
+
+    /// Resolve a display item to its artwork cache key and async loader (reusing the per-source
+    /// loaders that back `loadArtworkForSelection`).
+    private func coverFlowArtwork(for item: PlexDisplayItem) -> (cacheKey: String?, load: () async -> NSImage?) {
+        switch item.type {
+        case .album(let album):
+            guard let thumb = album.thumb else { return ("plex:\(album.id)", { nil }) }
+            let key = "plex:\(album.id)"
+            return (key, { [weak self] in await self?.loadPlexArtworkByThumb(thumb: thumb, cacheKey: key) })
+        case .localAlbum(let album):
+            // Resolve the album's first track off the main thread (inside the throttled loader) —
+            // never synchronously here, since this runs for every item on each list rebuild.
+            return (nil, { [weak self] in
+                let track: LibraryTrack?
+                if let first = album.tracks.first {
+                    track = first
+                } else {
+                    track = await Task.detached { MediaLibraryStore.shared.tracksForAlbum(album.id).first }.value
+                }
+                guard let self, let track else { return nil }
+                return await self.loadLocalArtwork(url: track.url)
+            })
+        case .subsonicAlbum(let album):
+            guard let coverArt = album.coverArt else { return (nil, { nil }) }
+            let key = "subsonic:\(album.id)"
+            return (key, { [weak self] in await self?.loadSubsonicArtworkByCoverId(coverArt: coverArt, cacheKey: key) })
+        case .jellyfinAlbum(let album):
+            return ("jellyfin:\(album.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: album.id, imageTag: album.imageTag) })
+        case .embyAlbum(let album):
+            return ("emby:\(album.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: album.id, imageTag: album.imageTag) })
+        case .artist(let artist):
+            guard let thumb = artist.thumb else { return ("plex:\(artist.id)", { nil }) }
+            let key = "plex:\(artist.id)"
+            return (key, { [weak self] in await self?.loadPlexArtworkByThumb(thumb: thumb, cacheKey: key) })
+        case .localArtist(let artist):
+            return (nil, { [weak self] in
+                let track = await Task.detached {
+                    MediaLibraryStore.shared.searchTracks(query: artist.name, limit: 1, offset: 0).first
+                }.value
+                guard let self, let track else { return nil }
+                return await self.loadLocalArtwork(url: track.url)
+            })
+        case .subsonicArtist(let artist):
+            guard let coverArt = artist.coverArt else { return (nil, { nil }) }
+            let key = "subsonic:\(artist.id)"
+            return (key, { [weak self] in await self?.loadSubsonicArtworkByCoverId(coverArt: coverArt, cacheKey: key) })
+        case .jellyfinArtist(let artist):
+            return ("jellyfin:\(artist.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: artist.id, imageTag: artist.imageTag) })
+        case .embyArtist(let artist):
+            return ("emby:\(artist.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: artist.id, imageTag: artist.imageTag) })
+        case .track(let track):
+            guard let thumb = track.thumb else { return ("plex:\(track.id)", { nil }) }
+            let key = "plex:\(track.id)"
+            return (key, { [weak self] in await self?.loadPlexArtworkByThumb(thumb: thumb, cacheKey: key) })
+        case .localTrack(let track):
+            return ("local:\(track.url.path)", { [weak self] in await self?.loadLocalArtwork(url: track.url) })
+        case .subsonicTrack(let song):
+            guard let coverArt = song.coverArt else { return (nil, { nil }) }
+            let key = "subsonic:\(coverArt)"
+            return (key, { [weak self] in await self?.loadSubsonicArtworkByCoverId(coverArt: coverArt, cacheKey: key) })
+        case .jellyfinTrack(let song):
+            let id = song.albumId ?? song.id
+            return ("jellyfin:\(id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: id, imageTag: song.imageTag) })
+        case .embyTrack(let song):
+            let id = song.albumId ?? song.id
+            return ("emby:\(id)", { [weak self] in await self?.loadEmbyArtwork(itemId: id, imageTag: song.imageTag) })
+        default:
+            return (nil, { nil })
+        }
+    }
+
+    /// Activate a centered cover. Back pops a level; albums and tracks play; any other container
+    /// (artist, folder, …) drills into its children.
+    private func playCoverFlowItem(at index: Int) {
+        let hasBack = !coverFlowFocusStack.isEmpty
+        if hasBack && index == 0 {
+            coverFlowNavigateBack()
+            return
+        }
+        let realIndex = index - (hasBack ? 1 : 0)
+        guard realIndex >= 0, realIndex < coverFlowSourceItems.count else { return }
+        let item = coverFlowSourceItems[realIndex]
+
+        if item.type.isAlbumItem {
+            handleDoubleClick(on: item)
+        } else if item.hasChildren, browseMode != .search {
+            coverFlowDrillIn(item)
+        } else {
+            handleDoubleClick(on: item)
+        }
+    }
+
+    private func coverFlowDrillIn(_ item: PlexDisplayItem) {
+        if !isExpanded(item) { toggleExpand(item) }
+        coverFlowFocusStack.append(item.id)
+        coverFlowCenterFirstChild = true
+        coverFlowPendingCenterId = nil
+        rebuildCoverFlowItems()
+    }
+
+    private func coverFlowNavigateBack() {
+        guard let popped = coverFlowFocusStack.popLast() else { return }
+        coverFlowCenterFirstChild = false
+        coverFlowPendingCenterId = popped
+        rebuildCoverFlowItems()
     }
     
     /// Convert a point from view coordinates to skin coordinates (top-left origin)
@@ -2559,7 +2825,11 @@ class PlexBrowserView: NSView {
                             drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                         }
 
-                        if browseMode.isHistoryMode {
+                        if isCoverFlowMode {
+                            // The CoverFlowView overlay renders the carousel; just fill the list
+                            // area background so the interior isn't left stale behind the covers.
+                            drawCoverFlowBackground(in: context, drawBounds: drawBounds, colors: colors)
+                        } else if browseMode.isHistoryMode {
                             // SwiftUI-hosted history content is rendered via an embedded subview.
                         } else {
                             // Draw list area or connection status
@@ -3569,9 +3839,16 @@ class PlexBrowserView: NSView {
         let tabRightInset = (tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost) * chromeScale
         let tabsStartX = tabBarRect.minX + tabLeftInset
 
-        // Draw tabs (leave room for sort indicator)
+        // FLOW (cover flow) toggle box, reserved on the right just left of Sort, shown when the
+        // current list has albums or artists. Drawn after the tabs so it sits above the reserved gap.
+        let showFlowToggle = hasCoverFlowItems
+        let flowText = "FLOW"
+        let flowWidth = showFlowToggle ? CGFloat(flowText.count) * scaledCharWidth + 12 * chromeScale : 0
+        let flowGap = showFlowToggle ? 8 * chromeScale : 0
+
+        // Draw tabs (leave room for sort indicator and the FLOW toggle)
         let modes = PlexBrowseMode.allCases
-        let tabsWidth = tabBarRect.width - sortWidth - tabLeftInset - tabRightInset
+        let tabsWidth = tabBarRect.width - sortWidth - flowWidth - flowGap - tabLeftInset - tabRightInset
 
         // Content-aware widths and resolved (possibly dynamic) labels, shared with hit-testing.
         let labels = currentTabLabels()
@@ -3630,6 +3907,35 @@ class PlexBrowserView: NSView {
         let sortX = shouldRound ? round(rawSortX) : rawSortX
         let sortY = shouldRound ? round(rawSortY) : rawSortY
         drawScaledSkinText(sortText, at: NSPoint(x: sortX, y: sortY), scale: textScale, renderer: renderer, in: context)
+
+        // FLOW (cover flow) toggle box, just left of Sort — boxed like the tabs.
+        coverFlowButtonRect = .zero
+        if showFlowToggle {
+            let flowRect = NSRect(x: sortRect.minX - flowGap - flowWidth, y: tabBarY,
+                                  width: flowWidth, height: Layout.tabBarHeight)
+            coverFlowButtonRect = flowRect
+            let boxRect = flowRect.insetBy(dx: 3 * chromeScale, dy: 3)
+            let boxPath = NSBezierPath(roundedRect: boxRect, xRadius: 3, yRadius: 3)
+            boxPath.lineWidth = 1
+            if isCoverFlowMode {
+                colors.currentText.withAlphaComponent(0.12).setFill()
+                boxPath.fill()
+                colors.currentText.withAlphaComponent(0.8).setStroke()
+            } else {
+                colors.normalText.withAlphaComponent(0.4).setStroke()
+            }
+            boxPath.stroke()
+            if isCoverFlowMode {
+                drawScaledWhiteSkinTextCentered(flowText, in: flowRect, scale: textScale, renderer: renderer, in: context)
+            } else {
+                let titleWidth = CGFloat(flowText.count) * scaledCharWidth
+                let rawTextX = flowRect.midX - titleWidth / 2
+                let rawTextY = flowRect.minY + (flowRect.height - scaledCharHeight) / 2
+                let textX = shouldRound ? round(rawTextX) : rawTextX
+                let textY = shouldRound ? round(rawTextY) : rawTextY
+                drawScaledSkinText(flowText, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
+            }
+        }
     }
     
     private func drawSearchBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
@@ -8309,6 +8615,13 @@ class PlexBrowserView: NSView {
             return
         }
         
+        // Check the FLOW (cover flow) toggle in the tab bar
+        if coverFlowButtonRect.contains(skinPoint) {
+            isCoverFlowMode.toggle()
+            window?.makeFirstResponder(self)
+            return
+        }
+
         // Check sort indicator (in tab bar area, on the right)
         if hitTestSortIndicator(at: skinPoint) {
             showSortMenu(at: event.locationInWindow)
@@ -18543,6 +18856,19 @@ private struct PlexDisplayItem {
             switch self {
             case .album, .localAlbum, .subsonicAlbum, .jellyfinAlbum, .embyAlbum: return true
             default: return false
+            }
+        }
+
+        /// Items shown in the cover flow carousel. Containers (artists, folders) drill in; albums
+        /// and tracks are leaves that play.
+        var isCoverFlowItem: Bool {
+            switch self {
+            case .artist, .localArtist, .subsonicArtist, .jellyfinArtist, .embyArtist,
+                 .localFolder,
+                 .track, .localTrack, .subsonicTrack, .jellyfinTrack, .embyTrack:
+                return true
+            default:
+                return isAlbumItem
             }
         }
     }
