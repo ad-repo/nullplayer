@@ -34,6 +34,11 @@ struct CoverFlowStyle {
 /// Cava backdrop that renders behind this view. Hosted as a toggled overlay by each browser.
 final class CoverFlowView: NSView {
 
+    enum LabelPlacement {
+        case bottomBand
+        case belowCenteredCover
+    }
+
     // MARK: Callbacks
 
     /// Fired when the centered cover changes (scroll, arrows, or clicking a side cover).
@@ -48,6 +53,12 @@ final class CoverFlowView: NSView {
 
     var style: CoverFlowStyle = .fallback {
         didSet { rebuildLayers(); updateCenterLabel() }
+    }
+
+    /// Classic's taller, freely-resizable library window needs the label to follow the artwork;
+    /// otherwise the shared bottom-band position can leave it detached at the window edge.
+    var labelPlacement: LabelPlacement = .bottomBand {
+        didSet { needsLayout = true }
     }
 
     private(set) var items: [CoverFlowItem] = []
@@ -186,8 +197,19 @@ final class CoverFlowView: NSView {
 
     private func layoutCenterLabel() {
         let width = max(0, bounds.width - 32)
-        titleLayer.frame = CGRect(x: 16, y: 22, width: width, height: 20)
-        subtitleLayer.frame = CGRect(x: 16, y: 5, width: width, height: 16)
+        let titleY: CGFloat
+        let subtitleY: CGFloat
+        switch labelPlacement {
+        case .bottomBand:
+            titleY = 22
+            subtitleY = 5
+        case .belowCenteredCover:
+            let coverBottom = coverCenterY - coverSize / 2
+            titleY = max(22, coverBottom - 24)
+            subtitleY = max(5, titleY - 17)
+        }
+        titleLayer.frame = CGRect(x: 16, y: titleY, width: width, height: 20)
+        subtitleLayer.frame = CGRect(x: 16, y: subtitleY, width: width, height: 16)
     }
 
     // MARK: Centering
@@ -244,6 +266,10 @@ final class CoverFlowView: NSView {
         return max(80, min(usableHeight * 0.62, bounds.width * 0.5))
     }
 
+    private var coverCenterY: CGFloat {
+        labelAreaHeight + (bounds.height - labelAreaHeight) / 2 + coverSize * 0.10
+    }
+
     /// Geometry for a cover at fractional distance `p` from the center (p = index - selectedOffset).
     private func geometry(for p: CGFloat) -> (x: CGFloat, z: CGFloat, angle: CGFloat) {
         let cover = coverSize
@@ -266,7 +292,7 @@ final class CoverFlowView: NSView {
         let cover = coverSize
         let centerX = bounds.midX
         // Center covers in the region above the reserved label band, nudged up for the reflection.
-        let centerY = labelAreaHeight + (bounds.height - labelAreaHeight) / 2 + cover * 0.10
+        let centerY = coverCenterY
 
         let lo = max(0, Int(selectedOffset.rounded()) - virtualRadius)
         let hi = min(items.count - 1, Int(selectedOffset.rounded()) + virtualRadius)

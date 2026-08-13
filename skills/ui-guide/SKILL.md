@@ -882,7 +882,9 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
 - Source-agnostic input `CoverFlowItem { id, title, subtitle, artwork() /*sync cache hit*/,
   loadArtwork() /*async*/, isBack }`. Cover size is keyed to the view **height** (minus a reserved
   bottom label band); a wider window shows **more** covers (`virtualRadius` grows with width, capped
-  by `maxRadius`), not bigger ones.
+  by `maxRadius`), not bigger ones. Classic sets `labelPlacement = .belowCenteredCover` so its
+  freely stretchable/taller Library window keeps the centered title/subtitle visually attached to
+  the artwork rather than stranded at the bottom edge; Modern keeps the standard bottom band.
 - Interaction: continuous 1:1 scroll snapped to the nearest cover on release, using the dominant
   horizontal/vertical axis so trackpads and ordinary mouse wheels both work, with a `maxLead` cap so
   a momentum fling can't outrun artwork loads; Left/Right arrows; click a side cover to center it,
@@ -895,8 +897,9 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
 **Host wiring** — mirrored in `ModernLibraryBrowserView` (Modern+Metal) and `PlexBrowserView`
 (Classic):
 - An `isCoverFlowMode` toggle mirroring `isArtOnlyMode` (mutually exclusive with it). Modern draws a
-  **FLOW** boxed toggle next to **ART** in the source bar; Classic draws it in the tab bar left of
-  **Sort** (the source bar draws ART per-source, so the single-site tab bar is used instead).
+  **FLOW** boxed toggle next to **ART** in the source bar. Classic also places **FLOW** in the source
+  bar's ART/F5 accessory cluster, using its bitmap-text active/inactive treatment; it must not
+  consume tab-row width or present as another browse tab.
 - The overlay is a subview sized to the list content rect (`embeddedHistoryContentRect` /
   `embeddedContentRect`), added above the list and below the top chrome. In cover flow the draw path
   fills **nothing** over the list area so the window background (translucent over a Cava backdrop,

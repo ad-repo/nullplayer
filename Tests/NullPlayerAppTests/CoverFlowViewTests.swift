@@ -55,4 +55,22 @@ final class CoverFlowViewTests: XCTestCase {
         view.setCenterIndex(50, animated: false)
         XCTAssertEqual(requestCount, 2)
     }
+
+    func testBelowCoverLabelPlacementMovesTitleAboveBottomBand() throws {
+        let view = CoverFlowView()
+        view.frame = NSRect(x: 0, y: 0, width: 700, height: 500)
+        view.setItems(items(count: 1))
+        view.layout()
+
+        let titleLayer = try XCTUnwrap(
+            view.layer?.sublayers?.compactMap { $0 as? CATextLayer }
+                .first(where: { ($0.string as? String) == "Item 0" })
+        )
+        let bottomBandY = titleLayer.frame.minY
+
+        view.labelPlacement = .belowCenteredCover
+        view.layout()
+
+        XCTAssertGreaterThan(titleLayer.frame.minY, bottomBandY + 20)
+    }
 }

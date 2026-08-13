@@ -1600,6 +1600,9 @@ class PlexBrowserView: NSView {
         var rightWidth: CGFloat = 0
         if isConfigured {
             rightWidth = trailingInset + textWidth("F5")
+            if !isArtOnlyMode, isCoverFlowMode || hasCoverFlowItems {
+                rightWidth += 12 + textWidth("FLOW")
+            }
             switch currentSource {
             case .radio, .youtube:
                 if let countText = serverBarCountText() {
@@ -2542,6 +2545,7 @@ class PlexBrowserView: NSView {
     private func ensureCoverFlowView() {
         guard coverFlowView == nil else { return }
         let view = CoverFlowView()
+        view.labelPlacement = .belowCenteredCover
         view.onActivate = { [weak self] index in self?.playCoverFlowItem(at: index) }
         view.onApproachingEnd = { [weak self] in self?.loadNextLocalCoverFlowPageIfNeeded() }
         addSubview(view)
@@ -3034,6 +3038,33 @@ class PlexBrowserView: NSView {
         let preferredShift = 24 * horizontalScale
         return min(preferredShift, unusedServerWidth)
     }
+
+    /// Draw FLOW with the source-level controls, matching Modern's ART/FLOW/F5 grouping. Returns
+    /// the leading edge that the next accessory (ART, count, or rating) should lay out before.
+    private func drawCoverFlowServerBarButton(
+        before trailingX: CGFloat,
+        barRect: NSRect,
+        textY: CGFloat,
+        textScale: CGFloat,
+        scaledCharWidth: CGFloat,
+        chromeScale: CGFloat,
+        renderer: SkinRenderer,
+        context: CGContext
+    ) -> CGFloat {
+        guard !isArtOnlyMode, isCoverFlowMode || hasCoverFlowItems else { return trailingX }
+        let text = "FLOW"
+        let width = CGFloat(text.count) * scaledCharWidth
+        let x = trailingX - width - 12 * chromeScale
+        coverFlowButtonRect = NSRect(x: x, y: barRect.minY, width: width, height: barRect.height)
+        if isCoverFlowMode {
+            drawScaledWhiteSkinText(text, at: NSPoint(x: x, y: textY), scale: textScale,
+                                    renderer: renderer, in: context)
+        } else {
+            drawScaledSkinText(text, at: NSPoint(x: x, y: textY), scale: textScale,
+                               renderer: renderer, in: context)
+        }
+        return x
+    }
     
     private func drawServerBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         let barY = Layout.titleBarHeight
@@ -3068,6 +3099,7 @@ class PlexBrowserView: NSView {
         artButtonRect = .zero
         visButtonRect = .zero
         rateButtonRect = .zero
+        coverFlowButtonRect = .zero
         sourceButtonRect = .zero
         libraryButtonRect = .zero
         addButtonRect = .zero
@@ -3096,6 +3128,11 @@ class PlexBrowserView: NSView {
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                        width: barRect.maxX - refreshX, height: barRect.height)
+            let accessoryX = drawCoverFlowServerBarButton(
+                before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
+                scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
+                renderer: renderer, context: context
+            )
             
             // In art-only mode, use tighter spacing for right side items
             let artModeSpacing: CGFloat = (isArtOnlyMode ? 12 : 24) * chromeScale
@@ -3104,7 +3141,7 @@ class PlexBrowserView: NSView {
             // ART toggle button (before F5) - only show if artwork available
             let artText = "ART"
             let artWidth = CGFloat(artText.count) * scaledCharWidth
-            var artX = refreshX - artWidth - artModeSpacing
+            var artX = accessoryX - artWidth - artModeSpacing
             
             // VIS button - only show in art-only mode
             let visText = "VIS"
@@ -3130,7 +3167,7 @@ class PlexBrowserView: NSView {
                 }
             } else {
                 // No artwork - shift items over to where ART would be
-                artX = refreshX
+                artX = accessoryX
                 visX = artX  // No VIS button
             }
             
@@ -3272,7 +3309,12 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                            width: barRect.maxX - refreshX, height: barRect.height)
-                
+                let accessoryX = drawCoverFlowServerBarButton(
+                    before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
+                    scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
+                    renderer: renderer, context: context
+                )
+
                 // In art-only mode, use tighter spacing for right side items
                 let artModeSpacing: CGFloat = (isArtOnlyMode ? 12 : 24) * chromeScale
                 let artModeVisSpacing: CGFloat = (isArtOnlyMode ? 8 : 16) * chromeScale
@@ -3280,7 +3322,7 @@ class PlexBrowserView: NSView {
                 // ART toggle button (before F5) - only show if artwork available
                 let artText = "ART"
                 let artWidth = CGFloat(artText.count) * scaledCharWidth
-                var artX = refreshX - artWidth - artModeSpacing
+                var artX = accessoryX - artWidth - artModeSpacing
                 
                 // VIS button - only show in art-only mode
                 let visText = "VIS"
@@ -3306,7 +3348,7 @@ class PlexBrowserView: NSView {
                     }
                 } else {
                     // No artwork - shift items over to where ART would be
-                    artX = refreshX
+                    artX = accessoryX
                     visX = artX  // No VIS button
                 }
                 
@@ -3436,11 +3478,16 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                            width: barRect.maxX - refreshX, height: barRect.height)
+                let accessoryX = drawCoverFlowServerBarButton(
+                    before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
+                    scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
+                    renderer: renderer, context: context
+                )
                 
                 // ART toggle button (before F5) - only show if artwork available
                 let artText = "ART"
                 let artWidth = CGFloat(artText.count) * scaledCharWidth
-                var artX = refreshX - artWidth - 24 * chromeScale
+                var artX = accessoryX - artWidth - 24 * chromeScale
                 
                 // VIS button - only show in art-only mode
                 let visText = "VIS"
@@ -3464,7 +3511,7 @@ class PlexBrowserView: NSView {
                         visX = artX
                     }
                 } else {
-                    artX = refreshX
+                    artX = accessoryX
                     visX = artX
                 }
                 
@@ -3572,10 +3619,15 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                            width: barRect.maxX - refreshX, height: barRect.height)
-                
+                let accessoryX = drawCoverFlowServerBarButton(
+                    before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
+                    scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
+                    renderer: renderer, context: context
+                )
+
                 let artText = "ART"
                 let artWidth = CGFloat(artText.count) * scaledCharWidth
-                var artX = refreshX - artWidth - 24 * chromeScale
+                var artX = accessoryX - artWidth - 24 * chromeScale
                 let visText = "VIS"
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - 16 * chromeScale
@@ -3597,7 +3649,7 @@ class PlexBrowserView: NSView {
                         visX = artX
                     }
                 } else {
-                    artX = refreshX
+                    artX = accessoryX
                     visX = artX
                 }
                 
@@ -3699,10 +3751,15 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                            width: barRect.maxX - refreshX, height: barRect.height)
+                let accessoryX = drawCoverFlowServerBarButton(
+                    before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
+                    scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
+                    renderer: renderer, context: context
+                )
 
                 let artText = "ART"
                 let artWidth = CGFloat(artText.count) * scaledCharWidth
-                var artX = refreshX - artWidth - 24 * chromeScale
+                var artX = accessoryX - artWidth - 24 * chromeScale
                 let visText = "VIS"
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - 16 * chromeScale
@@ -3724,7 +3781,7 @@ class PlexBrowserView: NSView {
                         visX = artX
                     }
                 } else {
-                    artX = refreshX
+                    artX = accessoryX
                     visX = artX
                 }
 
@@ -3791,12 +3848,17 @@ class PlexBrowserView: NSView {
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                        width: barRect.maxX - refreshX, height: barRect.height)
+            let accessoryX = drawCoverFlowServerBarButton(
+                before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
+                scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
+                renderer: renderer, context: context
+            )
             
             // Item count
             let countNumber = "\(displayItems.count)"
             let countLabel = " stations"
             let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-            let countX = refreshX - countWidth - 24 * chromeScale
+            let countX = accessoryX - countWidth - 24 * chromeScale
             drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
             let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
             drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
@@ -3824,15 +3886,31 @@ class PlexBrowserView: NSView {
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                        width: barRect.maxX - refreshX, height: barRect.height)
+            let accessoryX = drawCoverFlowServerBarButton(
+                before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
+                scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
+                renderer: renderer, context: context
+            )
 
             // Item count
             let countNumber = "\(displayItems.count)"
             let countLabel = " items"
             let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-            let countX = refreshX - countWidth - 24 * chromeScale
+            let countX = accessoryX - countWidth - 24 * chromeScale
             drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
             let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
             drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+        }
+
+        // Keep an active FLOW escape hatch visible even when a remote source is unconfigured and
+        // therefore has no normal F5/accessory cluster.
+        if coverFlowButtonRect == .zero, isCoverFlowMode, !isArtOnlyMode {
+            _ = drawCoverFlowServerBarButton(
+                before: barRect.maxX - toolbarRightInset,
+                barRect: barRect, textY: textY, textScale: textScale,
+                scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
+                renderer: renderer, context: context
+            )
         }
     }
 
@@ -3911,16 +3989,9 @@ class PlexBrowserView: NSView {
         let tabRightInset = (tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost) * chromeScale
         let tabsStartX = tabBarRect.minX + tabLeftInset
 
-        // FLOW (cover flow) toggle box, reserved on the right just left of Sort, shown when the
-        // current list has eligible media. Drawn after the tabs so it sits above the reserved gap.
-        let showFlowToggle = isCoverFlowMode || hasCoverFlowItems
-        let flowText = "FLOW"
-        let flowWidth = showFlowToggle ? CGFloat(flowText.count) * scaledCharWidth + 12 * chromeScale : 0
-        let flowGap = showFlowToggle ? 8 * chromeScale : 0
-
-        // Draw tabs (leave room for sort indicator and the FLOW toggle)
+        // Draw tabs, leaving room for the sort indicator.
         let modes = PlexBrowseMode.allCases
-        let tabsWidth = tabBarRect.width - sortWidth - flowWidth - flowGap - tabLeftInset - tabRightInset
+        let tabsWidth = tabBarRect.width - sortWidth - tabLeftInset - tabRightInset
 
         // Content-aware widths and resolved (possibly dynamic) labels, shared with hit-testing.
         let labels = currentTabLabels()
@@ -3980,34 +4051,6 @@ class PlexBrowserView: NSView {
         let sortY = shouldRound ? round(rawSortY) : rawSortY
         drawScaledSkinText(sortText, at: NSPoint(x: sortX, y: sortY), scale: textScale, renderer: renderer, in: context)
 
-        // FLOW (cover flow) toggle box, just left of Sort — boxed like the tabs.
-        coverFlowButtonRect = .zero
-        if showFlowToggle {
-            let flowRect = NSRect(x: sortRect.minX - flowGap - flowWidth, y: tabBarY,
-                                  width: flowWidth, height: Layout.tabBarHeight)
-            coverFlowButtonRect = flowRect
-            let boxRect = flowRect.insetBy(dx: 3 * chromeScale, dy: 3)
-            let boxPath = NSBezierPath(roundedRect: boxRect, xRadius: 3, yRadius: 3)
-            boxPath.lineWidth = 1
-            if isCoverFlowMode {
-                colors.currentText.withAlphaComponent(0.12).setFill()
-                boxPath.fill()
-                colors.currentText.withAlphaComponent(0.8).setStroke()
-            } else {
-                colors.normalText.withAlphaComponent(0.4).setStroke()
-            }
-            boxPath.stroke()
-            if isCoverFlowMode {
-                drawScaledWhiteSkinTextCentered(flowText, in: flowRect, scale: textScale, renderer: renderer, in: context)
-            } else {
-                let titleWidth = CGFloat(flowText.count) * scaledCharWidth
-                let rawTextX = flowRect.midX - titleWidth / 2
-                let rawTextY = flowRect.minY + (flowRect.height - scaledCharHeight) / 2
-                let textX = shouldRound ? round(rawTextX) : rawTextX
-                let textY = shouldRound ? round(rawTextY) : rawTextY
-                drawScaledSkinText(flowText, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
-            }
-        }
     }
     
     private func drawSearchBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
@@ -8679,6 +8722,11 @@ class PlexBrowserView: NSView {
 
         // Check server bar
         if hitTestServerBar(at: skinPoint) {
+            if coverFlowButtonRect.contains(skinPoint) {
+                isCoverFlowMode.toggle()
+                window?.makeFirstResponder(self)
+                return
+            }
             // For local files, radio, or subsonic - always handle the click
             // For Plex - check if linked first
             if case .plex = currentSource, !PlexManager.shared.isLinked {
@@ -8686,13 +8734,6 @@ class PlexBrowserView: NSView {
             } else {
                 handleServerBarClick(at: skinPoint, event: event)
             }
-            return
-        }
-        
-        // Check the FLOW (cover flow) toggle in the tab bar
-        if coverFlowButtonRect.contains(skinPoint) {
-            isCoverFlowMode.toggle()
-            window?.makeFirstResponder(self)
             return
         }
 
