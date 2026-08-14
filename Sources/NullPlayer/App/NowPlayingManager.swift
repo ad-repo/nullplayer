@@ -16,7 +16,13 @@ class NowPlayingManager {
     /// Current artwork being displayed (cached to avoid reloading)
     private var currentArtwork: NSImage?
     private var currentTrackId: UUID?
-    
+
+    /// Track id whose artwork fetch already returned nil. Without this, a track whose
+    /// artwork can't be loaded (e.g. Plex art unreachable) would re-hit the network on
+    /// every Now Playing update because `currentArtwork` stays nil — an unbounded fetch
+    /// loop that churns connections. We only retry once the track actually changes.
+    private var artworkFailedTrackId: UUID?
+
     /// Task for loading artwork asynchronously
     private var artworkLoadTask: Task<Void, Never>?
     
@@ -157,6 +163,7 @@ class NowPlayingManager {
         artworkLoadTask = nil
         currentArtwork = nil
         currentTrackId = nil
+        artworkFailedTrackId = nil
         
         // Clear now playing
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -274,7 +281,13 @@ class NowPlayingManager {
         if track.id == currentTrackId && currentArtwork != nil {
             return
         }
-        
+
+        // Skip if we already tried and failed for this track — otherwise every Now Playing
+        // update re-fetches artwork over the network (currentArtwork stays nil on failure).
+        if track.id == artworkFailedTrackId {
+            return
+        }
+
         // Cancel previous load
         artworkLoadTask?.cancel()
         currentTrackId = track.id
@@ -328,6 +341,9 @@ class NowPlayingManager {
                 // Guard against a track change that occurred while artwork was loading
                 guard self.currentTrackId == expectedTrackId else { return }
                 self.currentArtwork = loadedImage
+                // Remember failures so we don't re-fetch this track's artwork on every
+                // Now Playing update; a real track change resets this via currentTrackId.
+                self.artworkFailedTrackId = (loadedImage == nil) ? expectedTrackId : nil
                 self.applyArtworkToNowPlaying(loadedImage)
             }
         }
