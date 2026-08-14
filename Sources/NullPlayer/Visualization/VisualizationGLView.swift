@@ -502,7 +502,11 @@ class VisualizationGLView: NSOpenGLView {
                 return kCVReturnSuccess
             }
 
-            view.renderFrame()
+            // No autorelease pool drains on the CVDisplayLink thread; wrap each
+            // frame so any autoreleased objects the render path creates are freed.
+            autoreleasepool {
+                view.renderFrame()
+            }
             return kCVReturnSuccess
         }
 
@@ -580,10 +584,14 @@ class VisualizationGLView: NSOpenGLView {
                     return kCVReturnSuccess
                 }
                 
-                view.renderFrame()
+                // No autorelease pool drains on the CVDisplayLink thread; wrap each
+                // frame so any autoreleased objects the render path creates are freed.
+                autoreleasepool {
+                    view.renderFrame()
+                }
                 return kCVReturnSuccess
             }
-            
+
             CVDisplayLinkSetOutputCallback(displayLink, callback, retainedContext.toOpaque())
         }
         
