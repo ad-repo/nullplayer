@@ -277,8 +277,19 @@ class NowPlayingManager {
     // MARK: - Artwork Loading
     
     private func loadArtwork(for track: Track) {
-        // Skip if same track (artwork already loaded)
-        if track.id == currentTrackId && currentArtwork != nil {
+        // A real track change must invalidate both the previous request and its failure
+        // suppression. Do this before any early return so an older request cannot finish
+        // and apply its artwork to the newly displayed track.
+        if track.id != currentTrackId {
+            artworkLoadTask?.cancel()
+            artworkLoadTask = nil
+            currentArtwork = nil
+            currentTrackId = track.id
+            artworkFailedTrackId = nil
+        }
+
+        // Skip if artwork is already loaded or a request is already in flight.
+        if currentArtwork != nil || artworkLoadTask != nil {
             return
         }
 
@@ -288,9 +299,6 @@ class NowPlayingManager {
             return
         }
 
-        // Cancel previous load
-        artworkLoadTask?.cancel()
-        currentTrackId = track.id
         let expectedTrackId = track.id
 
         artworkLoadTask = Task { [weak self] in
@@ -342,8 +350,9 @@ class NowPlayingManager {
                 guard self.currentTrackId == expectedTrackId else { return }
                 self.currentArtwork = loadedImage
                 // Remember failures so we don't re-fetch this track's artwork on every
-                // Now Playing update; a real track change resets this via currentTrackId.
+                // Now Playing update; a real track change resets this before loading.
                 self.artworkFailedTrackId = (loadedImage == nil) ? expectedTrackId : nil
+                self.artworkLoadTask = nil
                 self.applyArtworkToNowPlaying(loadedImage)
             }
         }
