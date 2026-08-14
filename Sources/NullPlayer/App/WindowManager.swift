@@ -1498,6 +1498,15 @@ class WindowManager {
         }
 
         orderOutOrphanedAppWindows()
+
+        // Ordering the library window out does not reliably post an occlusion change, so its
+        // windowDidChangeOcclusionState → reload() path never fires and the Library Cava backdrop
+        // presenter keeps running its 60 Hz analyzer against a hidden window (a second, wasted DSP
+        // queue alongside the visible Compact backdrop). Reconcile the presenter to the window's
+        // now-hidden state explicitly, matching togglePlexBrowser's orderOut + refresh pattern.
+        // (If the library window is in native fullscreen it was skipped above and stays visible, so
+        // the refresh simply keeps its presenter running — the reconciliation is correct either way.)
+        plexBrowserWindowController?.refreshLibraryBackdrop()
     }
 
     /// Break persistent AppKit parent/child relationships before hiding the normal window set.
@@ -1586,6 +1595,10 @@ class WindowManager {
         restore(snapshot.waveform, controller: waveformWindowController)
         restore(snapshot.projectM, controller: projectMWindowController)
         restore(snapshot.library, controller: plexBrowserWindowController)
+        // Restart the Library Cava backdrop we stopped on entry (orderOutRegularWindows). Restoring
+        // visibility re-runs reload() via shouldAnimate; the occlusion notification is a backstop if
+        // occlusionState hasn't updated synchronously after orderFront.
+        plexBrowserWindowController?.refreshLibraryBackdrop()
         // The video player and debug console are never hidden by Compact Mode, so they are not restored here either.
 
         for window in snapshot.additionalWindows where !isInNativeFullScreen(window) {
