@@ -15,6 +15,7 @@ final class PodcastStore: ObservableObject {
 
     static let libraryDidChangeNotification = Notification.Name("PodcastLibraryDidChange")
     static let showSettingsNotification = Notification.Name("ShowPodcastIndexSettings")
+    static let showAddFeedNotification = Notification.Name("ShowAddPodcastFeed")
 
     @Published private(set) var subscriptions: [PodcastSubscription] = []
     @Published private(set) var episodeStates: [String: PodcastEpisodeState] = [:]
@@ -162,10 +163,14 @@ final class PodcastStore: ObservableObject {
             throw PodcastIndexError.invalidURL
         }
         isLoading = true
-        defer { isLoading = false }
-        let feed = try await client.feed(forURL: url)
-        subscribe(feed)
-        select(feed)
+        do {
+            let feed = try await client.feed(forURL: url)
+            subscribe(feed)
+            select(feed)
+        } catch {
+            isLoading = false
+            throw error
+        }
     }
 
     func refresh() {
@@ -201,14 +206,21 @@ final class PodcastStore: ObservableObject {
     func play(_ episode: PodcastEpisode) {
         knownEpisodes[episode.id] = episode
         let track = makeTrack(for: episode)
-        WindowManager.shared.audioEngine.playNow([track])
         var episodeState = state(for: episode)
         episodeState.lastPlayedAt = Date()
         episodeStates[episode.id] = episodeState
         persistEpisode(episode)
 
-        guard !episode.isVideo, episodeState.position > 5,
-              episodeState.position < max(0, (episode.duration ?? .greatestFiniteMagnitude) - 15) else { return }
+        let canResume = !episode.isVideo && episodeState.position > 5 &&
+            episodeState.position < max(0, (episode.duration ?? .greatestFiniteMagnitude) - 15)
+        let audioEngine = WindowManager.shared.audioEngine
+        let waitForStreamingReadiness = canResume && !track.url.isFileURL && !audioEngine.isCastingActive
+        audioEngine.playNow(
+            [track],
+            resumeStreamingAt: waitForStreamingReadiness ? episodeState.position : nil
+        )
+
+        guard canResume, !waitForStreamingReadiness else { return }
         let episodeID = episode.id
         let resumePosition = episodeState.position
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
@@ -244,6 +256,7 @@ final class PodcastStore: ObservableObject {
         if value.isPlayed { value.position = episode.duration ?? value.position }
         else { value.position = 0 }
         value.duration = episode.duration ?? value.duration
+        value.lastPlayedAt = Date()
         episodeStates[episode.id] = value
         persistEpisodeAndNotify(episode)
     }

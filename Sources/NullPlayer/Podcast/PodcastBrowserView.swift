@@ -38,6 +38,7 @@ struct PodcastBrowserView: View {
 
     @State private var searchText = ""
     @State private var showingSettings = false
+    @State private var showingAddFeed = false
     @State private var hidePlayed = false
 
     var body: some View {
@@ -51,9 +52,13 @@ struct PodcastBrowserView: View {
         .tint(Color(theme.accent))
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .sheet(isPresented: $showingSettings) { PodcastIndexSettingsView(store: store, theme: theme) }
+        .sheet(isPresented: $showingAddFeed) { AddPodcastFeedView(store: store, theme: theme) }
         .onAppear { store.start() }
         .onReceive(NotificationCenter.default.publisher(for: PodcastStore.showSettingsNotification)) { _ in
             showingSettings = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: PodcastStore.showAddFeedNotification)) { _ in
+            showingAddFeed = true
         }
     }
 
@@ -145,6 +150,10 @@ struct PodcastBrowserView: View {
             Text(emptyTitle).font(.title3.weight(.semibold))
             Text(emptyDetail).multilineTextAlignment(.center).foregroundStyle(Color(theme.secondaryText))
                 .frame(maxWidth: 460)
+            if store.section == .subscriptions {
+                Button("Add RSS Feed") { showingAddFeed = true }
+                    .buttonStyle(.borderedProminent)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(30)

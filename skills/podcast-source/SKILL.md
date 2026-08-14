@@ -32,8 +32,8 @@ The shared view is hosted only when the Library source is Podcasts and the radio
 - `Sources/NullPlayer/Podcast/PodcastIndexClient.swift`: Podcast Index client and RSS/Atom parser
 - `Sources/NullPlayer/Podcast/PodcastStore.swift`: subscriptions, downloads, favorites, progress, OPML, and Track conversion
 - `Sources/NullPlayer/Podcast/PodcastBrowserView.swift`: shared cover-tile and episode interface
-- `Windows/PlexBrowser/PlexBrowserView.swift`: Classic host
-- `Windows/ModernLibraryBrowser/ModernLibraryBrowserView.swift`: Modern host
+- `Sources/NullPlayer/Windows/PlexBrowser/PlexBrowserView.swift`: Classic host
+- `Sources/NullPlayer/Windows/ModernLibraryBrowser/ModernLibraryBrowserView.swift`: Modern host
 
 ## Playback and Playlist Contract
 

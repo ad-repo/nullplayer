@@ -828,6 +828,8 @@ final class MediaLibraryStore {
         do {
             try db.transaction {
                 try db.run(self.podcastSubscriptionsTable.delete())
+                try db.run(self.podcastEpisodeStatesTable.delete())
+                try db.run(self.podcastEpisodesTable.delete())
                 for subscription in snapshot.subscriptions {
                     try self.upsertPodcastSubscription(subscription, connection: db)
                 }
@@ -893,8 +895,7 @@ final class MediaLibraryStore {
         do {
             let clampedPosition = max(0, current)
             let validDuration = duration > 0 ? duration : nil
-            let completed = duration > 0 &&
-                (current >= max(30, duration - 20) || current / duration >= 0.95)
+            let completed = PodcastEpisodeState.isCompleted(current: current, duration: duration)
 
             try db.run(podcastEpisodeStatesTable.insert(or: .ignore,
                 podcastEpisodeID <- episodeID,

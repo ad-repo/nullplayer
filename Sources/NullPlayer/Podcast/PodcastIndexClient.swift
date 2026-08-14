@@ -50,6 +50,30 @@ final class PodcastIndexClient {
     /// past this is rejected rather than parsed, so a malicious server can't force a huge allocation.
     static let maxResponseBytes = 25 * 1024 * 1024
 
+    /// Receives a response incrementally and abandons the underlying URLSession task as soon as
+    /// it crosses the in-memory ceiling. `data(for:)` cannot provide this guarantee because it
+    /// buffers the complete body before returning.
+    static func boundedData(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await session.bytes(for: request)
+        if response.expectedContentLength > Int64(maxResponseBytes) {
+            throw PodcastIndexError.invalidResponse
+        }
+
+        var data = Data()
+        if response.expectedContentLength > 0 {
+            data.reserveCapacity(min(Int(response.expectedContentLength), maxResponseBytes))
+        }
+        for try await byte in bytes {
+            guard data.count < maxResponseBytes else { throw PodcastIndexError.invalidResponse }
+            data.append(byte)
+        }
+        return (data, response)
+    }
+
+    static func boundedData(from url: URL) async throws -> (Data, URLResponse) {
+        try await boundedData(for: URLRequest(url: url))
+    }
+
     var credentials: PodcastIndexCredentials? {
         KeychainHelper.shared.getPodcastIndexCredentials()
     }
@@ -148,9 +172,8 @@ final class PodcastIndexClient {
     }
 
     private func perform(_ request: URLRequest) async throws -> Data {
-        let (data, response) = try await Self.session.data(for: request)
+        let (data, response) = try await Self.boundedData(for: request)
         guard let http = response as? HTTPURLResponse else { throw PodcastIndexError.invalidResponse }
-        guard data.count <= Self.maxResponseBytes else { throw PodcastIndexError.invalidResponse }
         guard 200..<300 ~= http.statusCode else {
             // Log the server's error body for diagnostics only. Surfacing it in the UI banner would
             // let a malicious feed/proxy inject arbitrary text, so the thrown error omits it.
@@ -286,11 +309,10 @@ final class RSSPodcastParser: NSObject, XMLParserDelegate {
 
     static func load(feed: PodcastFeed) async throws -> [PodcastEpisode] {
         guard feed.feedURL.isPodcastRemoteURL else { throw PodcastIndexError.invalidURL }
-        let (data, response) = try await PodcastIndexClient.session.data(from: feed.feedURL)
+        let (data, response) = try await PodcastIndexClient.boundedData(from: feed.feedURL)
         guard (response as? HTTPURLResponse).map({ 200..<300 ~= $0.statusCode }) ?? true else {
             throw PodcastIndexError.invalidResponse
         }
-        guard data.count <= PodcastIndexClient.maxResponseBytes else { throw PodcastIndexError.invalidResponse }
         return try parse(data: data, feed: feed)
     }
 
@@ -305,8 +327,10 @@ final class RSSPodcastParser: NSObject, XMLParserDelegate {
     static func loadFeed(url: URL) async throws -> PodcastFeed {
         guard url.isPodcastRemoteURL else { throw PodcastIndexError.invalidURL }
         let placeholder = PodcastFeed(title: url.host ?? "Podcast", feedURL: url)
-        let (data, _) = try await PodcastIndexClient.session.data(from: url)
-        guard data.count <= PodcastIndexClient.maxResponseBytes else { throw PodcastIndexError.invalidResponse }
+        let (data, response) = try await PodcastIndexClient.boundedData(from: url)
+        guard (response as? HTTPURLResponse).map({ 200..<300 ~= $0.statusCode }) ?? true else {
+            throw PodcastIndexError.invalidResponse
+        }
         let delegate = RSSPodcastParser(seed: placeholder)
         let parser = XMLParser(data: data)
         parser.delegate = delegate

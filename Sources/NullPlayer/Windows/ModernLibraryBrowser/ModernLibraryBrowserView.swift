@@ -600,6 +600,7 @@ class ModernLibraryBrowserView: NSView {
     private var isArtOnlyMode: Bool = false {
         didSet {
             artModeLifecycleGeneration &+= 1
+            updatePodcastHostingVisibility()
             needsDisplay = true
             if isArtOnlyMode { isCoverFlowMode = false; fetchCurrentTrackRating(); loadAllArtworkForCurrentTrack() }
             else {
@@ -1632,8 +1633,10 @@ class ModernLibraryBrowserView: NSView {
             return "\(count) ITEMS"
         case .radio:
             return "\(displayItems.count) stations"
-        case .subsonic, .jellyfin, .emby, .youtube, .podcasts:
+        case .subsonic, .jellyfin, .emby, .youtube:
             return "\(displayItems.count) items"
+        case .podcasts:
+            return nil
         }
     }
 

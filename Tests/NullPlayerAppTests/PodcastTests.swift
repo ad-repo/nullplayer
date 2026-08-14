@@ -24,6 +24,24 @@ final class PodcastTests: XCTestCase {
         XCTAssertTrue(video.isVideo)
     }
 
+    func testEpisodeIdentityMatchesBetweenPodcastIndexAndRSSFallback() {
+        let fromIndex = PodcastEpisode(
+            indexId: 123,
+            guid: "shared-guid",
+            feed: feed,
+            title: "Episode",
+            enclosureURL: URL(string: "https://cdn.example.com/episode.mp3")!
+        )
+        let fromRSS = PodcastEpisode(
+            guid: "shared-guid",
+            feed: feed,
+            title: "Episode",
+            enclosureURL: URL(string: "https://cdn.example.com/episode.mp3")!
+        )
+
+        XCTAssertEqual(fromIndex.id, fromRSS.id)
+    }
+
     func testPodcastTrackIsNotClassifiedAsInternetRadio() {
         let track = Track(
             url: URL(string: "https://cdn.example.com/episode.mp3")!,
@@ -93,11 +111,12 @@ final class PodcastTests: XCTestCase {
         let episodes = try RSSPodcastParser.parse(data: Data(xml.utf8), feed: feed)
 
         XCTAssertEqual(episodes.count, 2)
-        XCTAssertEqual(episodes[0].title, "Audio Episode")
-        XCTAssertEqual(episodes[0].duration, 3_723)
-        XCTAssertEqual(episodes[0].summary, "Hello & welcome.")
-        XCTAssertFalse(episodes[0].isVideo)
-        XCTAssertTrue(episodes[1].isVideo)
+        let audio = try XCTUnwrap(episodes.first { $0.title == "Audio Episode" })
+        let video = try XCTUnwrap(episodes.first { $0.title == "Video Episode" })
+        XCTAssertEqual(audio.duration, 3_723)
+        XCTAssertEqual(audio.summary, "Hello & welcome.")
+        XCTAssertFalse(audio.isVideo)
+        XCTAssertTrue(video.isVideo)
     }
 
     func testRemoteURLSchemeHelperRejectsNonHTTPSchemes() {
@@ -187,6 +206,14 @@ final class PodcastTests: XCTestCase {
         XCTAssertEqual(progressedState?.duration, 1_800)
         XCTAssertEqual(progressedState?.isFavorite, true)
         XCTAssertEqual(progressedState?.downloadedPath, "/tmp/saved.mp3")
+
+        XCTAssertTrue(store.savePodcastLibrary(PodcastLibrarySnapshot(
+            subscriptions: [], episodeStates: [:], knownEpisodes: [:]
+        )))
+        let cleared = store.loadPodcastLibrary()
+        XCTAssertTrue(cleared.subscriptions.isEmpty)
+        XCTAssertTrue(cleared.knownEpisodes.isEmpty)
+        XCTAssertTrue(cleared.episodeStates.isEmpty)
     }
 
     func testV8MigrationCreatesPodcastTablesWithoutRebuildingPlayEvents() throws {
@@ -209,6 +236,17 @@ final class PodcastTests: XCTestCase {
                     output_device TEXT
                 );
                 """)
+            try db.run(
+                "INSERT INTO play_events (played_at, duration_listened, source, skipped, content_type, output_device) VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    1_700_000_000.0 as Binding,
+                    120.0 as Binding,
+                    "local" as Binding,
+                    0 as Binding,
+                    "music" as Binding,
+                    "Built-in Output" as Binding
+                ]
+            )
             try db.run("PRAGMA user_version = 8")
         }
 
@@ -221,6 +259,8 @@ final class PodcastTests: XCTestCase {
         XCTAssertTrue(try tableExists("podcast_subscriptions", in: db))
         XCTAssertTrue(try tableExists("podcast_episodes", in: db))
         XCTAssertTrue(try tableExists("podcast_episode_states", in: db))
+        XCTAssertEqual(try db.scalar("SELECT content_type FROM play_events WHERE id = 1") as? String, "music")
+        XCTAssertEqual(try db.scalar("SELECT output_device FROM play_events WHERE id = 1") as? String, "Built-in Output")
         XCTAssertThrowsError(try db.run(
             "INSERT INTO play_events (played_at, duration_listened, source, skipped, content_type) VALUES (?, ?, ?, ?, ?)",
             [Date().timeIntervalSince1970 as Binding, 60.0 as Binding, "podcast" as Binding, 0 as Binding, "podcast" as Binding]

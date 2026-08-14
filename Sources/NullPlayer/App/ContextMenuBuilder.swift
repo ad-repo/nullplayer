@@ -2654,6 +2654,14 @@ class ContextMenuBuilder {
 
         podcastsMenu.addItem(NSMenuItem.separator())
 
+        let addFeedItem = NSMenuItem(
+            title: "Add RSS Feed...",
+            action: #selector(MenuActions.showAddPodcastFeed),
+            keyEquivalent: ""
+        )
+        addFeedItem.target = MenuActions.shared
+        podcastsMenu.addItem(addFeedItem)
+
         let settingsItem = NSMenuItem(
             title: "Podcast Index Settings",
             action: #selector(MenuActions.showPodcastIndexSettings),
@@ -3334,6 +3342,13 @@ class MenuActions: NSObject {
         showPodcastsInBrowser()
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: PodcastStore.showSettingsNotification, object: nil)
+        }
+    }
+
+    @objc func showAddPodcastFeed() {
+        showPodcastsInBrowser()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: PodcastStore.showAddFeedNotification, object: nil)
         }
     }
     

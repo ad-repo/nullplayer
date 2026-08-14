@@ -69,16 +69,29 @@ final class PodcastPersistenceCoordinator: @unchecked Sendable {
             self.progressLock.lock()
             let playback = self.latestPlayback
             self.progressLock.unlock()
+            var handledPlayback: [String: Date] = [:]
             for episode in episodes {
                 guard let progress = playback[episode.id] else { continue }
                 var state = mergedStates[episode.id] ?? PodcastEpisodeState()
-                state.position = progress.position
-                state.duration = progress.duration ?? state.duration
-                state.isPlayed = state.isPlayed || progress.isPlayed
-                state.lastPlayedAt = progress.playedAt
-                mergedStates[episode.id] = state
+                if progress.playedAt > (state.lastPlayedAt ?? .distantPast) {
+                    state.position = progress.position
+                    state.duration = progress.duration ?? state.duration
+                    state.isPlayed = state.isPlayed || progress.isPlayed
+                    state.lastPlayedAt = progress.playedAt
+                    mergedStates[episode.id] = state
+                }
+                handledPlayback[episode.id] = progress.playedAt
             }
-            if !MediaLibraryStore.shared.savePodcastEpisodes(episodes, states: mergedStates) {
+            if MediaLibraryStore.shared.savePodcastEpisodes(episodes, states: mergedStates) {
+                // Remove only the values observed above. A playback callback may have published a
+                // newer value while SQLite was being written; that newer value must remain queued.
+                self.progressLock.lock()
+                for (episodeID, playedAt) in handledPlayback
+                    where self.latestPlayback[episodeID]?.playedAt == playedAt {
+                    self.latestPlayback.removeValue(forKey: episodeID)
+                }
+                self.progressLock.unlock()
+            } else {
                 NSLog("PodcastPersistenceCoordinator: failed to persist podcast episodes in SQLite")
             }
         }
@@ -86,8 +99,7 @@ final class PodcastPersistenceCoordinator: @unchecked Sendable {
 
     func recordPlayback(episodeID: String, current: TimeInterval, duration: TimeInterval) {
         let now = Date().timeIntervalSinceReferenceDate
-        let completed = duration > 0 &&
-            (current >= max(30, duration - 20) || current / duration >= 0.95)
+        let completed = PodcastEpisodeState.isCompleted(current: current, duration: duration)
         let playedAt = Date()
 
         progressLock.lock()

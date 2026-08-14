@@ -114,7 +114,7 @@ PK: `(track_url, artist_name, role)`. Indexes: `idx_track_artists_name`, `idx_tr
 | `duration_listened` | REAL | Seconds, NOT NULL, default 0 |
 | `source` | TEXT | `'local'`, `'plex'`, `'subsonic'`, `'jellyfin'`, `'emby'`, or `'radio'` |
 | `skipped` | INTEGER | 0/1, NOT NULL, default 0 |
-| `content_type` | TEXT? | Added v6. Values: `'music'`, `'movie'`, `'tv'`, `'radio'`, `'video'`. NULL treated as `'music'` in queries. Derived from `Track.playHistoryContentType`; video playback records from `VideoPlayerWindowController` set this explicitly via `beginPlaybackAnalyticsSession(contentType:)`. |
+| `content_type` | TEXT? | Added v6. Values: `'music'`, `'movie'`, `'tv'`, `'radio'`, `'video'`, `'podcast'`, `'video-podcast'`. NULL treated as `'music'` in queries. Derived from `Track.playHistoryContentType`; video playback records from `VideoPlayerWindowController` set this explicitly via `beginPlaybackAnalyticsSession(contentType:)`. |
 | `output_device` | TEXT? | Added v7. Name of active audio output device (CoreAudio) or cast target device. NULL for legacy rows. |
 Indexes: `idx_play_events_played_at`, `idx_play_events_track_id`, `idx_play_events_source_time`.
 Queried by `PlayHistoryStore` (in `Windows/ModernStats/`) to power the Data tab in both the modern Library Browser and the classic `PlexBrowserView`.

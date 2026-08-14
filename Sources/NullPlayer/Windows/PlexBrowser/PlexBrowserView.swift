@@ -1270,6 +1270,7 @@ class PlexBrowserView: NSView {
         didSet {
             artModeLifecycleGeneration &+= 1
             updateHistoryHostingVisibility()
+            updatePodcastHostingVisibility()
             needsDisplay = true
             if isArtOnlyMode {
                 // Cover flow and art view are mutually exclusive list-area modes.

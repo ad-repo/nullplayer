@@ -84,7 +84,9 @@ struct PodcastEpisode: Codable, Identifiable, Hashable, Sendable {
         websiteURL: URL? = nil,
         explicit: Bool = false
     ) {
-        let stableValue = indexId.map(String.init) ?? guid?.nilIfBlank ?? enclosureURL.absoluteString
+        // RSS GUIDs are available through both Podcast Index and direct-feed fallback paths.
+        // Prefer them so a temporary API failure does not give the same episode a second identity.
+        let stableValue = guid?.nilIfBlank ?? indexId.map(String.init) ?? enclosureURL.absoluteString
         self.id = persistedID ?? "\(feed.id):\(stableValue)"
         self.indexId = indexId
         self.feedID = persistedFeedID ?? feed.id
@@ -134,6 +136,10 @@ struct PodcastEpisodeState: Codable, Hashable, Sendable {
     var isFavorite = false
     var downloadedPath: String?
     var lastPlayedAt: Date?
+
+    static func isCompleted(current: TimeInterval, duration: TimeInterval) -> Bool {
+        duration > 0 && (current >= max(30, duration - 20) || current / duration >= 0.95)
+    }
 }
 
 struct PodcastLibrarySnapshot: Codable, Sendable {
