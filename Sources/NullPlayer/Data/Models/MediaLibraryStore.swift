@@ -845,6 +845,46 @@ final class MediaLibraryStore {
         }
     }
 
+    /// Rewrites only the (small) subscriptions table. Used for subscribe/unsubscribe/auto-download
+    /// changes so a single toggle no longer re-serializes every known episode and episode state.
+    @discardableResult
+    func savePodcastSubscriptions(_ subscriptions: [PodcastSubscription]) -> Bool {
+        guard let db else { return false }
+        do {
+            try db.transaction {
+                try db.run(self.podcastSubscriptionsTable.delete())
+                for subscription in subscriptions {
+                    try self.upsertPodcastSubscription(subscription, connection: db)
+                }
+            }
+            return true
+        } catch {
+            NSLog("MediaLibraryStore: savePodcastSubscriptions failed: %@", error.localizedDescription)
+            return false
+        }
+    }
+
+    /// Upserts only the supplied episodes (and their states when present) instead of the whole
+    /// library, so playing/favoriting/downloading a single episode touches a bounded set of rows.
+    @discardableResult
+    func savePodcastEpisodes(_ episodes: [PodcastEpisode], states: [String: PodcastEpisodeState]) -> Bool {
+        guard let db else { return false }
+        do {
+            try db.transaction {
+                for episode in episodes {
+                    try self.upsertPodcastEpisode(episode, connection: db)
+                    if let state = states[episode.id] {
+                        try self.upsertPodcastEpisodeState(episodeID: episode.id, state: state, connection: db)
+                    }
+                }
+            }
+            return true
+        } catch {
+            NSLog("MediaLibraryStore: savePodcastEpisodes failed: %@", error.localizedDescription)
+            return false
+        }
+    }
+
     /// Updates only playback-owned fields so progress writes cannot clear a favorite or download.
     /// Callers run this on the podcast persistence queue, never the main thread.
     func updatePodcastPlaybackProgress(episodeID: String, current: TimeInterval,

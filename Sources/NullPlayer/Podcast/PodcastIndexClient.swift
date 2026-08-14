@@ -37,6 +37,19 @@ final class PodcastIndexClient {
     private let publicBase = URL(string: "https://api.podcastindex.org")!
     private let userAgent = "NullPlayer/1.0 (PodcastIndex.org)"
 
+    /// Shared session with request/resource timeouts so a stalled or deliberately slow feed can't
+    /// hang a fetch indefinitely; combined with `maxResponseBytes` this bounds a hostile server.
+    static let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 120
+        return URLSession(configuration: config)
+    }()
+
+    /// Ceiling for in-memory feed/JSON/artwork responses. Real feeds are well under 1 MB; anything
+    /// past this is rejected rather than parsed, so a malicious server can't force a huge allocation.
+    static let maxResponseBytes = 25 * 1024 * 1024
+
     var credentials: PodcastIndexCredentials? {
         KeychainHelper.shared.getPodcastIndexCredentials()
     }
@@ -52,15 +65,6 @@ final class PodcastIndexClient {
             ])
         }
         return try await publicSearch(term: query)
-    }
-
-    func trending(max: Int = 60) async throws -> [PodcastFeed] {
-        guard credentials?.isConfigured == true else {
-            throw PodcastIndexError.credentialsRequired
-        }
-        return try await authenticatedFeeds(path: "podcasts/trending", query: [
-            URLQueryItem(name: "max", value: String(max))
-        ])
     }
 
     func episodes(for feed: PodcastFeed, max: Int = 300) async throws -> [PodcastEpisode] {
@@ -144,11 +148,16 @@ final class PodcastIndexClient {
     }
 
     private func perform(_ request: URLRequest) async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw PodcastIndexError.invalidResponse }
+        guard data.count <= Self.maxResponseBytes else { throw PodcastIndexError.invalidResponse }
         guard 200..<300 ~= http.statusCode else {
-            let detail = String(data: data, encoding: .utf8)?.prefix(300).description
-            throw PodcastIndexError.http(http.statusCode, detail)
+            // Log the server's error body for diagnostics only. Surfacing it in the UI banner would
+            // let a malicious feed/proxy inject arbitrary text, so the thrown error omits it.
+            if let detail = String(data: data, encoding: .utf8)?.prefix(300), !detail.isEmpty {
+                NSLog("PodcastIndexClient: HTTP %d body: %@", http.statusCode, String(detail))
+            }
+            throw PodcastIndexError.http(http.statusCode, nil)
         }
         return data
     }
@@ -175,7 +184,7 @@ private struct FeedDTO: Decodable {
 
     func makeFeed() -> PodcastFeed? {
         guard let rawURL = url ?? originalUrl, let feedURL = URL(string: rawURL),
-              let title, !title.isEmpty else { return nil }
+              feedURL.isPodcastRemoteURL, let title, !title.isEmpty else { return nil }
         return PodcastFeed(
             indexId: id, title: title, author: author ?? ownerName, summary: description,
             feedURL: feedURL, websiteURL: link.flatMap(URL.init(string:)),
@@ -202,7 +211,8 @@ private struct EpisodeDTO: Decodable {
     let explicit: Int?
 
     func makeEpisode(feed: PodcastFeed) -> PodcastEpisode? {
-        guard let title, let enclosureUrl, let url = URL(string: enclosureUrl) else { return nil }
+        guard let title, let enclosureUrl, let url = URL(string: enclosureUrl),
+              url.isPodcastRemoteURL else { return nil }
         return PodcastEpisode(
             indexId: id, guid: guid, feed: feed, title: title, summary: description,
             publishedAt: datePublished.map(Date.init(timeIntervalSince1970:)), duration: duration,
@@ -230,7 +240,8 @@ private struct PublicFeedDTO: Decodable {
     let trackExplicitness: String?
 
     func makeFeed() -> PodcastFeed? {
-        guard let collectionName, let feedUrl, let url = URL(string: feedUrl) else { return nil }
+        guard let collectionName, let feedUrl, let url = URL(string: feedUrl),
+              url.isPodcastRemoteURL else { return nil }
         // The Apple-compatible endpoint exposes an Apple collection id, not necessarily
         // Podcast Index's internal feed id, so keep indexId nil and use RSS for episodes.
         return PodcastFeed(
@@ -274,10 +285,12 @@ final class RSSPodcastParser: NSObject, XMLParserDelegate {
     init(seed: PodcastFeed?) { self.seed = seed }
 
     static func load(feed: PodcastFeed) async throws -> [PodcastEpisode] {
-        let (data, response) = try await URLSession.shared.data(from: feed.feedURL)
+        guard feed.feedURL.isPodcastRemoteURL else { throw PodcastIndexError.invalidURL }
+        let (data, response) = try await PodcastIndexClient.session.data(from: feed.feedURL)
         guard (response as? HTTPURLResponse).map({ 200..<300 ~= $0.statusCode }) ?? true else {
             throw PodcastIndexError.invalidResponse
         }
+        guard data.count <= PodcastIndexClient.maxResponseBytes else { throw PodcastIndexError.invalidResponse }
         return try parse(data: data, feed: feed)
     }
 
@@ -290,8 +303,10 @@ final class RSSPodcastParser: NSObject, XMLParserDelegate {
     }
 
     static func loadFeed(url: URL) async throws -> PodcastFeed {
+        guard url.isPodcastRemoteURL else { throw PodcastIndexError.invalidURL }
         let placeholder = PodcastFeed(title: url.host ?? "Podcast", feedURL: url)
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await PodcastIndexClient.session.data(from: url)
+        guard data.count <= PodcastIndexClient.maxResponseBytes else { throw PodcastIndexError.invalidResponse }
         let delegate = RSSPodcastParser(seed: placeholder)
         let parser = XMLParser(data: data)
         parser.delegate = delegate
@@ -311,15 +326,20 @@ final class RSSPodcastParser: NSObject, XMLParserDelegate {
         if currentElement == "item" || currentElement == "entry" {
             insideItem = true; item = Item()
         } else if currentElement == "enclosure", insideItem {
-            item?.enclosureURL = attributeDict["url"].flatMap(URL.init(string:))
-            item?.enclosureType = attributeDict["type"]
-            item?.enclosureLength = attributeDict["length"].flatMap(Int64.init)
+            // Only accept remote http(s) enclosures — a crafted file:// enclosure must never
+            // reach playback, download, or casting.
+            if let raw = attributeDict["url"], let url = URL(string: raw), url.isPodcastRemoteURL {
+                item?.enclosureURL = url
+                item?.enclosureType = attributeDict["type"]
+                item?.enclosureLength = attributeDict["length"].flatMap(Int64.init)
+            }
         } else if currentElement.hasSuffix("image"), let href = attributeDict["href"], let url = URL(string: href) {
             if insideItem { item?.imageURL = url } else { channelImage = url }
         } else if currentElement == "link", let href = attributeDict["href"], let url = URL(string: href) {
             if insideItem {
                 let rel = attributeDict["rel"]?.lowercased()
                 if rel == "enclosure" {
+                    guard url.isPodcastRemoteURL else { return }
                     item?.enclosureURL = url
                     item?.enclosureType = attributeDict["type"]
                     item?.enclosureLength = attributeDict["length"].flatMap(Int64.init)

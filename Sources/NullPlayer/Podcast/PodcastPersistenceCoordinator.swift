@@ -48,23 +48,38 @@ final class PodcastPersistenceCoordinator: @unchecked Sendable {
         }
     }
 
-    func save(_ snapshot: PodcastLibrarySnapshot) {
+    /// Persists subscription changes only (subscribe/unsubscribe/auto-download).
+    func saveSubscriptions(_ subscriptions: [PodcastSubscription]) {
         queue.async {
             _ = MediaLibrary.shared
-            var mergedSnapshot = snapshot
+            if !MediaLibraryStore.shared.savePodcastSubscriptions(subscriptions) {
+                NSLog("PodcastPersistenceCoordinator: failed to persist podcast subscriptions in SQLite")
+            }
+        }
+    }
+
+    /// Persists the given episodes and their states. Each episode's live playback progress (tracked
+    /// in `latestPlayback`, written directly by `recordPlayback`) is merged in first so a store save
+    /// carrying a stale in-memory position cannot roll back a newer on-disk position.
+    func saveEpisodes(_ episodes: [PodcastEpisode], states: [String: PodcastEpisodeState]) {
+        guard !episodes.isEmpty else { return }
+        queue.async {
+            _ = MediaLibrary.shared
+            var mergedStates = states
             self.progressLock.lock()
             let playback = self.latestPlayback
             self.progressLock.unlock()
-            for (episodeID, progress) in playback {
-                var state = mergedSnapshot.episodeStates[episodeID] ?? PodcastEpisodeState()
+            for episode in episodes {
+                guard let progress = playback[episode.id] else { continue }
+                var state = mergedStates[episode.id] ?? PodcastEpisodeState()
                 state.position = progress.position
                 state.duration = progress.duration ?? state.duration
                 state.isPlayed = state.isPlayed || progress.isPlayed
                 state.lastPlayedAt = progress.playedAt
-                mergedSnapshot.episodeStates[episodeID] = state
+                mergedStates[episode.id] = state
             }
-            if !MediaLibraryStore.shared.savePodcastLibrary(mergedSnapshot) {
-                NSLog("PodcastPersistenceCoordinator: failed to persist podcast library in SQLite")
+            if !MediaLibraryStore.shared.savePodcastEpisodes(episodes, states: mergedStates) {
+                NSLog("PodcastPersistenceCoordinator: failed to persist podcast episodes in SQLite")
             }
         }
     }

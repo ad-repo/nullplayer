@@ -414,7 +414,7 @@ private struct PodcastIndexSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             Text("Podcast Index").font(.title2.bold())
-            Text("A free API key enables trending discovery and richer directory metadata. Search and RSS subscriptions work without one.")
+            Text("A free API key unlocks richer directory metadata and higher search limits. Search and RSS subscriptions work without one.")
                 .foregroundStyle(Color(theme.secondaryText)).fixedSize(horizontal: false, vertical: true)
             Link("Get a free key at api.podcastindex.org", destination: URL(string: "https://api.podcastindex.org/")!)
             TextField("API key", text: $key).textFieldStyle(.roundedBorder)

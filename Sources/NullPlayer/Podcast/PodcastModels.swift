@@ -142,6 +142,19 @@ struct PodcastLibrarySnapshot: Codable, Sendable {
     var knownEpisodes: [String: PodcastEpisode]
 }
 
+extension URL {
+    /// True only for remote `http`/`https` resources. Podcast feed, enclosure, and image URLs
+    /// originate from untrusted RSS/Atom/OPML and directory JSON, so every URL that becomes a
+    /// `URLSession` fetch/download or a file destination must pass through here first — otherwise a
+    /// crafted `file://` (or other scheme) enclosure could read local files or reach unintended sinks.
+    var isPodcastRemoteURL: Bool {
+        switch scheme?.lowercased() {
+        case "http", "https": return true
+        default: return false
+        }
+    }
+}
+
 extension String {
     fileprivate var nilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)

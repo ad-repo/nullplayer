@@ -34,6 +34,9 @@ final class PodcastStore: ObservableObject {
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var sleepTimer: Timer?
     private var didStartPersistence = false
+    /// The last submitted directory query while in `.discover`, so refresh re-runs the user's
+    /// search rather than silently swapping in trending results.
+    private var lastSearchTerm: String?
 
     private init() {}
 
@@ -69,6 +72,7 @@ final class PodcastStore: ObservableObject {
         searchTask?.cancel()
         let query = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
+        lastSearchTerm = query
         closeFeed()
         section = .discover
         isLoading = true
@@ -87,25 +91,6 @@ final class PodcastStore: ObservableObject {
         }
     }
 
-    func loadTrending() {
-        searchTask?.cancel()
-        guard hasCredentials else {
-            discoveryFeeds = []
-            errorMessage = "Search works without credentials. Add a free Podcast Index API key to browse trending podcasts."
-            return
-        }
-        section = .discover
-        isLoading = true
-        errorMessage = nil
-        searchTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                discoveryFeeds = try await client.trending()
-            } catch { errorMessage = error.localizedDescription }
-            isLoading = false
-        }
-    }
-
     func select(_ feed: PodcastFeed) {
         selectedFeed = feed
         selectedEpisodes = []
@@ -120,7 +105,7 @@ final class PodcastStore: ObservableObject {
                 guard !Task.isCancelled, selectedFeed?.id == feed.id else { return }
                 selectedEpisodes = episodes
                 for episode in episodes { knownEpisodes[episode.id] = episode }
-                saveSnapshot()
+                persistEpisodes(episodes)
                 await autoDownloadNewestIfNeeded(feed: feed, episodes: episodes)
             } catch {
                 guard !Task.isCancelled else { return }
@@ -141,6 +126,7 @@ final class PodcastStore: ObservableObject {
 
     func showSubscriptions() {
         searchTask?.cancel()
+        lastSearchTerm = nil
         section = .subscriptions
         closeFeed()
     }
@@ -152,12 +138,12 @@ final class PodcastStore: ObservableObject {
             subscriptions.append(PodcastSubscription(feed: feed, subscribedAt: Date(), autoDownloadNewest: false))
             subscriptions.sort { $0.feed.title.localizedStandardCompare($1.feed.title) == .orderedAscending }
         }
-        persistAndNotify()
+        persistSubscriptionsAndNotify()
     }
 
     func unsubscribe(_ feed: PodcastFeed) {
         subscriptions.removeAll { $0.feed.id == feed.id }
-        persistAndNotify()
+        persistSubscriptionsAndNotify()
     }
 
     func toggleSubscription(_ feed: PodcastFeed) {
@@ -167,7 +153,7 @@ final class PodcastStore: ObservableObject {
     func toggleAutoDownload(_ feed: PodcastFeed) {
         guard let index = subscriptions.firstIndex(where: { $0.feed.id == feed.id }) else { return }
         subscriptions[index].autoDownloadNewest.toggle()
-        persistAndNotify()
+        persistSubscriptionsAndNotify()
     }
 
     func addFeed(urlString: String) async throws {
@@ -184,7 +170,7 @@ final class PodcastStore: ObservableObject {
 
     func refresh() {
         if let selectedFeed { select(selectedFeed) }
-        else if section == .discover { loadTrending() }
+        else if section == .discover, let term = lastSearchTerm { search(term) }
     }
 
     func refreshAllSubscriptions() {
@@ -195,17 +181,19 @@ final class PodcastStore: ObservableObject {
         let feeds = subscriptions.map(\.feed)
         loadTask = Task { [weak self] in
             guard let self else { return }
+            var loaded: [PodcastEpisode] = []
             for feed in feeds {
                 guard !Task.isCancelled else { break }
                 do {
                     let episodes = try await client.episodes(for: feed, max: 100)
                     for episode in episodes { knownEpisodes[episode.id] = episode }
+                    loaded.append(contentsOf: episodes)
                     await autoDownloadNewestIfNeeded(feed: feed, episodes: episodes)
                 } catch {
                     NSLog("PodcastStore: refresh failed for %@: %@", feed.title, error.localizedDescription)
                 }
             }
-            saveSnapshot()
+            persistEpisodes(loaded)
             isLoading = false
         }
     }
@@ -217,7 +205,7 @@ final class PodcastStore: ObservableObject {
         var episodeState = state(for: episode)
         episodeState.lastPlayedAt = Date()
         episodeStates[episode.id] = episodeState
-        saveSnapshot()
+        persistEpisode(episode)
 
         guard !episode.isVideo, episodeState.position > 5,
               episodeState.position < max(0, (episode.duration ?? .greatestFiniteMagnitude) - 15) else { return }
@@ -233,13 +221,13 @@ final class PodcastStore: ObservableObject {
     func playNext(_ episode: PodcastEpisode) {
         knownEpisodes[episode.id] = episode
         WindowManager.shared.audioEngine.insertTracksAfterCurrent([makeTrack(for: episode)], startPlaybackIfEmpty: true)
-        saveSnapshot()
+        persistEpisode(episode)
     }
 
     func addToPlaylist(_ episode: PodcastEpisode) {
         knownEpisodes[episode.id] = episode
         WindowManager.shared.audioEngine.appendTracks([makeTrack(for: episode)])
-        saveSnapshot()
+        persistEpisode(episode)
     }
 
     func addUnplayedToPlaylist(_ episodes: [PodcastEpisode]) {
@@ -247,7 +235,7 @@ final class PodcastStore: ObservableObject {
         guard !unplayed.isEmpty else { return }
         for episode in unplayed { knownEpisodes[episode.id] = episode }
         WindowManager.shared.audioEngine.appendTracks(unplayed.map(makeTrack(for:)))
-        saveSnapshot()
+        persistEpisodes(unplayed)
     }
 
     func togglePlayed(_ episode: PodcastEpisode) {
@@ -257,18 +245,22 @@ final class PodcastStore: ObservableObject {
         else { value.position = 0 }
         value.duration = episode.duration ?? value.duration
         episodeStates[episode.id] = value
-        persistAndNotify()
+        persistEpisodeAndNotify(episode)
     }
 
     func toggleFavorite(_ episode: PodcastEpisode) {
         var value = state(for: episode)
         value.isFavorite.toggle()
         episodeStates[episode.id] = value
-        persistAndNotify()
+        persistEpisodeAndNotify(episode)
     }
 
     func download(_ episode: PodcastEpisode) {
         guard downloadTasks[episode.id] == nil else { return }
+        guard episode.enclosureURL.isPodcastRemoteURL else {
+            errorMessage = "This episode has an unsupported download URL."
+            return
+        }
         knownEpisodes[episode.id] = episode
         let task = Task { [weak self] in
             guard let self else { return }
@@ -295,7 +287,7 @@ final class PodcastStore: ObservableObject {
                 var value = state(for: episode)
                 value.downloadedPath = destination.path
                 episodeStates[episode.id] = value
-                persistAndNotify()
+                persistEpisodeAndNotify(episode)
             } catch {
                 errorMessage = "Download failed: \(error.localizedDescription)"
             }
@@ -308,7 +300,7 @@ final class PodcastStore: ObservableObject {
         guard var value = episodeStates[episode.id], let path = value.downloadedPath else { return }
         value.downloadedPath = nil
         episodeStates[episode.id] = value
-        persistAndNotify()
+        persistEpisodeAndNotify(episode)
         Task.detached(priority: .utility) {
             try? FileManager.default.removeItem(atPath: path)
         }
@@ -320,8 +312,9 @@ final class PodcastStore: ObservableObject {
         guard let minutes, minutes > 0 else { sleepTimerEnd = nil; return }
         let end = Date().addingTimeInterval(TimeInterval(minutes * 60))
         sleepTimerEnd = end
-        sleepTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(minutes * 60), repeats: false) { _ in
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(minutes * 60), repeats: false) { [weak self] _ in
             Task { @MainActor in
+                guard let self else { return }
                 WindowManager.shared.audioEngine.pause()
                 self.sleepTimerEnd = nil
                 self.sleepTimer = nil
@@ -349,6 +342,9 @@ final class PodcastStore: ObservableObject {
             return PodcastOPMLParser(data: data).feedURLs
         }.value
         for outline in outlines {
+            // OPML files are untrusted input; only import remote http(s) feed URLs so an imported
+            // outline can't point the RSS loader at a local file.
+            guard outline.url.isPodcastRemoteURL else { continue }
             do {
                 let feed = try await client.feed(forURL: outline.url)
                 subscribe(feed)
@@ -402,11 +398,34 @@ final class PodcastStore: ObservableObject {
     nonisolated private static func downloadDestination(for episode: PodcastEpisode,
                                                         suggestedFilename: String?) throws -> URL {
         let root = try storageRoot().appendingPathComponent("Downloads", isDirectory: true)
-        let ext = suggestedFilename.flatMap { URL(fileURLWithPath: $0).pathExtension.nilIfBlankForPodcast }
-            ?? episode.enclosureURL.pathExtension.nilIfBlankForPodcast
-            ?? (episode.isVideo ? "mp4" : "mp3")
-        return root.appendingPathComponent(episode.feedID, isDirectory: true)
-            .appendingPathComponent(episode.id.replacingOccurrences(of: ":", with: "_")).appendingPathExtension(ext)
+        // `episode.id`, `feedID`, and the server-supplied filename all derive from untrusted feed
+        // content (e.g. the RSS <guid>). Sanitize every path component so a value like "../../x"
+        // cannot escape the Downloads directory.
+        let ext = sanitizedFileToken(fileExtension(suggestedFilename: suggestedFilename, episode: episode))
+        return root.appendingPathComponent(sanitizedFileToken(episode.feedID), isDirectory: true)
+            .appendingPathComponent(sanitizedFileToken(episode.id))
+            .appendingPathExtension(ext)
+    }
+
+    /// Picks a file extension from the server-supplied filename (last path component only), falling
+    /// back to the enclosure URL's extension and finally a media-type default.
+    nonisolated private static func fileExtension(suggestedFilename: String?, episode: PodcastEpisode) -> String {
+        if let suggestedFilename {
+            let ext = (URL(fileURLWithPath: suggestedFilename).lastPathComponent as NSString).pathExtension
+            if let ext = ext.nilIfBlankForPodcast { return ext }
+        }
+        if let ext = episode.enclosureURL.pathExtension.nilIfBlankForPodcast { return ext }
+        return episode.isVideo ? "mp4" : "mp3"
+    }
+
+    /// Reduces an untrusted string to a single safe path component: only ASCII alphanumerics, `-`,
+    /// and `_` survive (so `/`, `:`, and `.` — and therefore `..` — cannot appear), length-capped
+    /// to stay within filesystem limits. Never empty.
+    nonisolated private static func sanitizedFileToken(_ raw: String) -> String {
+        let allowed = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+        let mapped = String(raw.map { allowed.contains($0) ? $0 : "_" })
+        let trimmed = mapped.isEmpty ? "item" : mapped
+        return String(trimmed.prefix(120))
     }
 
     nonisolated private static func storageRoot() throws -> URL {
@@ -415,15 +434,32 @@ final class PodcastStore: ObservableObject {
         return base.appendingPathComponent("NullPlayer/Podcasts", isDirectory: true)
     }
 
-    private func saveSnapshot() {
-        let snapshot = PodcastLibrarySnapshot(subscriptions: subscriptions,
-                                              episodeStates: episodeStates,
-                                              knownEpisodes: knownEpisodes)
-        PodcastPersistenceCoordinator.shared.save(snapshot)
+    /// Persists a single episode and its current state (targeted write, not a full-library rewrite).
+    private func persistEpisode(_ episode: PodcastEpisode) {
+        persistEpisodes([episode])
     }
 
-    private func persistAndNotify() {
-        saveSnapshot()
+    /// Persists the given episodes and their known states via the coordinator, which merges in any
+    /// newer live playback progress before writing.
+    private func persistEpisodes(_ episodes: [PodcastEpisode]) {
+        guard !episodes.isEmpty else { return }
+        let states = episodes.reduce(into: [String: PodcastEpisodeState]()) { result, episode in
+            if let state = episodeStates[episode.id] { result[episode.id] = state }
+        }
+        PodcastPersistenceCoordinator.shared.saveEpisodes(episodes, states: states)
+    }
+
+    private func persistEpisodeAndNotify(_ episode: PodcastEpisode) {
+        persistEpisode(episode)
+        notifyLibraryChanged()
+    }
+
+    private func persistSubscriptionsAndNotify() {
+        PodcastPersistenceCoordinator.shared.saveSubscriptions(subscriptions)
+        notifyLibraryChanged()
+    }
+
+    private func notifyLibraryChanged() {
         NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: self)
     }
 }

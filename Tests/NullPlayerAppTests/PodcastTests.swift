@@ -100,6 +100,40 @@ final class PodcastTests: XCTestCase {
         XCTAssertTrue(episodes[1].isVideo)
     }
 
+    func testRemoteURLSchemeHelperRejectsNonHTTPSchemes() {
+        XCTAssertTrue(URL(string: "https://cdn.example.com/a.mp3")!.isPodcastRemoteURL)
+        XCTAssertTrue(URL(string: "http://cdn.example.com/a.mp3")!.isPodcastRemoteURL)
+        XCTAssertFalse(URL(string: "file:///etc/passwd")!.isPodcastRemoteURL)
+        XCTAssertFalse(URL(string: "ftp://example.com/a.mp3")!.isPodcastRemoteURL)
+    }
+
+    func testRSSParserDropsEpisodesWithNonRemoteEnclosures() throws {
+        // A hostile feed pointing an enclosure at a local file must never yield a playable episode.
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Example Show</title>
+            <item>
+              <title>Local File Attack</title>
+              <guid>evil-1</guid>
+              <enclosure url="file:///etc/passwd" type="audio/mpeg" length="1"/>
+            </item>
+            <item>
+              <title>Legit Episode</title>
+              <guid>good-1</guid>
+              <enclosure url="https://cdn.example.com/audio.mp3" type="audio/mpeg" length="123"/>
+            </item>
+          </channel>
+        </rss>
+        """
+
+        let episodes = try RSSPodcastParser.parse(data: Data(xml.utf8), feed: feed)
+
+        XCTAssertEqual(episodes.count, 1)
+        XCTAssertEqual(episodes.first?.title, "Legit Episode")
+    }
+
     func testPodcastLibraryRoundTripsThroughSQLite() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("PodcastDatabaseTests-\(UUID().uuidString)", isDirectory: true)

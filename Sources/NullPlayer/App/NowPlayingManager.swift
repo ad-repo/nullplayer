@@ -371,9 +371,10 @@ class NowPlayingManager {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await PodcastIndexClient.session.data(from: url)
             guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode) else {
+                  (200..<300).contains(httpResponse.statusCode),
+                  data.count <= PodcastIndexClient.maxResponseBytes else {
                 return nil
             }
             return NSImage(data: data)
