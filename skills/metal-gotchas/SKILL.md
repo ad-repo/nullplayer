@@ -28,6 +28,24 @@ if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
 cb.commit()
 ```
 
+## Wrap CVDisplayLink render callbacks in `autoreleasepool`
+
+A `CVDisplayLink` callback runs on a dedicated thread with **no run loop**, so nothing pushes/pops the top-level autorelease pool between frames. Any autoreleased object the render path creates — Metal `nextDrawable()`, command buffers, render/blit encoders and their backing textures — is placed in that thread's pool page and **never freed**. Left running, the process leaks unbounded (multiple GB over hours/days with a visualization window open). `leaks` reports almost nothing because the objects are still referenced by the undrained pool.
+
+Always wrap the per-frame render call inside the callback:
+
+```swift
+let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, context in
+    guard let view = /* resolve weak view */ else { return kCVReturnSuccess }
+    autoreleasepool {          // REQUIRED — no pool drains on this thread
+        view.render()
+    }
+    return kCVReturnSuccess
+}
+```
+
+This applies to both `SpectrumAnalyzerView` (Metal) and `VisualizationGLView` (OpenGL). Pure GL calls allocate few autoreleased objects, but the port bridges and any Foundation temporaries still leak without the pool, so wrap both. `MTKView`-driven paths (e.g. `SpectrogramPaneView`) draw on the main thread, whose run loop already drains a pool, so they don't need this.
+
 ## Metal Render-to-Texture UV Y-Flip
 
 When doing multi-pass rendering (pass A writes to an intermediate texture, pass B samples that texture), the intermediate texture is stored with `y=0` at the **top** (Metal render-target convention). But the fullscreen-quad vertex shader maps `in.uv.y=0` to the **bottom** of the screen (NDC `y=-1`). So pass B must flip y when sampling:
