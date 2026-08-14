@@ -30,6 +30,7 @@ enum ModernBrowserSource: Equatable, Codable {
     case emby(serverId: String)
     case radio
     case youtube
+    case podcasts
 
     var displayName: String {
         switch self {
@@ -56,6 +57,7 @@ enum ModernBrowserSource: Equatable, Codable {
             return "EMBY"
         case .radio: return "INTERNET RADIO"
         case .youtube: return "YOUTUBE"
+        case .podcasts: return "PODCASTS"
         }
     }
 
@@ -84,6 +86,7 @@ enum ModernBrowserSource: Equatable, Codable {
             return "Emby"
         case .radio: return "Radio"
         case .youtube: return "YouTube"
+        case .podcasts: return "Podcasts"
         }
     }
 
@@ -93,10 +96,11 @@ enum ModernBrowserSource: Equatable, Codable {
     var isPlex: Bool { if case .plex = self { return true }; return false }
     var isRadio: Bool { if case .radio = self { return true }; return false }
     var isYouTube: Bool { if case .youtube = self { return true }; return false }
+    var isPodcasts: Bool { if case .podcasts = self { return true }; return false }
     /// YouTube reuses the Internet Radio tab's UI to list its channels/videos.
-    var usesRadioTab: Bool { isRadio || isYouTube }
+    var usesRadioTab: Bool { isRadio || isYouTube || isPodcasts }
     var isRemote: Bool {
-        switch self { case .local, .radio, .youtube: return false; case .plex, .subsonic, .jellyfin, .emby: return true }
+        switch self { case .local, .radio, .youtube, .podcasts: return false; case .plex, .subsonic, .jellyfin, .emby: return true }
     }
 
     private static let userDefaultsKey = "BrowserSource"
@@ -246,6 +250,7 @@ class ModernLibraryBrowserView: NSView {
                 historyAgent.scheduleRefresh()
             }
             updateHistoryHostingVisibility()
+            updatePodcastHostingVisibility()
         }
     }
     
@@ -290,6 +295,7 @@ class ModernLibraryBrowserView: NSView {
     private var horizontalScrollOffset: CGFloat = 0
     private let historyAgent = PlayHistoryAgent()
     private var historyHostingView: NSHostingView<StatsContentView>?
+    private var podcastHostingView: NSHostingView<PodcastBrowserView>?
     
     private var itemHeight: CGFloat { 18 * ModernSkinElements.sizeMultiplier }
     private var columnHeaderHeight: CGFloat { 18 * ModernSkinElements.sizeMultiplier }
@@ -412,6 +418,17 @@ class ModernLibraryBrowserView: NSView {
     /// (0 outside compact mode).
     private var compactFooterHeight: CGFloat {
         compactMode ? 24 * ModernSkinElements.sizeMultiplier : 0
+    }
+
+    /// Shared geometry for the embedded queue and the artwork painted beneath it.
+    private var compactPlaylistContentRect: NSRect {
+        let border = Layout.borderWidth
+        return NSRect(
+            x: border,
+            y: contentRegionBottomY,
+            width: bounds.width - border * 2,
+            height: max(0, topChromeBottomY - contentRegionBottomY)
+        )
     }
 
     /// Embedded compact-sized play queue, shown in place of the library chrome in queue mode.
@@ -583,6 +600,7 @@ class ModernLibraryBrowserView: NSView {
     private var isArtOnlyMode: Bool = false {
         didSet {
             artModeLifecycleGeneration &+= 1
+            updatePodcastHostingVisibility()
             needsDisplay = true
             if isArtOnlyMode { isCoverFlowMode = false; fetchCurrentTrackRating(); loadAllArtworkForCurrentTrack() }
             else {
@@ -833,6 +851,8 @@ class ModernLibraryBrowserView: NSView {
                 currentSource = .radio
             case .youtube:
                 currentSource = .youtube
+            case .podcasts:
+                currentSource = .podcasts
             }
         } else {
             if PlexManager.shared.isLinked, let firstServer = PlexManager.shared.servers.first {
@@ -939,6 +959,7 @@ class ModernLibraryBrowserView: NSView {
         setAccessibilityLabel("Library Browser")
         updateCornerMask()
         updateHistoryHostingVisibility()
+        updatePodcastHostingVisibility()
     }
     
     deinit {
@@ -993,6 +1014,8 @@ class ModernLibraryBrowserView: NSView {
         coverFlowView?.removeFromSuperview()
         coverFlowView = nil
         coverFlowSourceItems = []
+        podcastHostingView?.removeFromSuperview()
+        podcastHostingView = nil
     }
 
     override func viewDidMoveToWindow() {
@@ -1111,6 +1134,40 @@ class ModernLibraryBrowserView: NSView {
         updateEmbeddedSubviewFrames()
     }
 
+    private func podcastTheme(for skin: ModernSkin) -> PodcastBrowserTheme {
+        let selection = skin.backgroundColor.blended(withFraction: 0.12, of: skin.primaryColor)
+            ?? skin.surfaceColor
+        return PodcastBrowserTheme(
+            background: contentFill(skin.backgroundColor), surface: contentFill(skin.surfaceColor),
+            elevated: contentFill(skin.surfaceColor.blended(withFraction: 0.18, of: skin.textColor) ?? skin.surfaceColor),
+            accent: skin.accentColor, text: skin.textColor, secondaryText: skin.textDimColor,
+            separator: skin.borderColor, selection: contentFill(selection),
+            selectionText: skin.accentColor, warning: skin.warningColor
+        )
+    }
+
+    private func ensurePodcastHostingView() {
+        guard podcastHostingView == nil else { return }
+        let skin = currentSkin()
+        let theme = podcastTheme(for: skin)
+        let hosting = NSHostingView(rootView: PodcastBrowserView(store: .shared, theme: theme))
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = theme.background.cgColor
+        hosting.appearance = skinAppearance(for: skin)
+        hosting.setAccessibilityIdentifier("modernLibraryBrowser.podcasts")
+        hosting.setAccessibilityLabel("Podcasts")
+        addSubview(hosting)
+        podcastHostingView = hosting
+    }
+
+    private func updatePodcastHostingVisibility() {
+        let inQueueMode = compactMode && compactContentMode == .queue
+        let visible = currentSource.isPodcasts && browseMode == .radio && !isArtOnlyMode && !inQueueMode
+        if visible { ensurePodcastHostingView() }
+        podcastHostingView?.isHidden = !visible
+        updateEmbeddedSubviewFrames()
+    }
+
     private func embeddedHistoryContentRect() -> NSRect {
         var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
@@ -1126,6 +1183,7 @@ class ModernLibraryBrowserView: NSView {
     private func updateEmbeddedSubviewFrames() {
         historyHostingView?.frame = embeddedHistoryContentRect()
         coverFlowView?.frame = embeddedHistoryContentRect()
+        podcastHostingView?.frame = embeddedHistoryContentRect()
         if !isRatingOverlayVisible {
             ratingOverlay.frame = bounds
         }
@@ -1236,6 +1294,7 @@ class ModernLibraryBrowserView: NSView {
     /// It fills the content region below the toggle strip and covers the library chrome
     /// (server bar / tabs / alphabet index) when shown, so queue mode hides library chrome.
     private func updateCompactPlaylistFrame() {
+        updateEmbeddedHostingVisibilityForCompactMode()
         guard compactMode else {
             compactPlaylistView?.removeFromSuperview()
             compactPlaylistView = nil
@@ -1254,10 +1313,7 @@ class ModernLibraryBrowserView: NSView {
             compactPlaylistView = queue
             didCreateQueue = true
         }
-        let border = Layout.borderWidth
-        queue.frame = NSRect(x: border, y: contentRegionBottomY,
-                             width: bounds.width - border * 2,
-                             height: max(0, topChromeBottomY - contentRegionBottomY))
+        queue.frame = compactPlaylistContentRect
         queue.isHidden = (compactContentMode != .queue)
         if didCreateQueue {
             // `reloadData()` needs the final frame so it can scroll the current track into view.
@@ -1266,6 +1322,15 @@ class ModernLibraryBrowserView: NSView {
                 window?.makeFirstResponder(queue)
             }
         }
+    }
+
+    /// The embedded queue is translucent so the configured art/Cava backdrop can show through.
+    /// Hide only opaque SwiftUI content overlays while the queue is visible; do not refresh or
+    /// reframe the backdrop composition as part of this visibility update.
+    private func updateEmbeddedHostingVisibilityForCompactMode() {
+        let inQueueMode = compactMode && compactContentMode == .queue
+        historyHostingView?.isHidden = inQueueMode || !browseMode.isHistoryMode || isArtOnlyMode
+        podcastHostingView?.isHidden = inQueueMode || !currentSource.isPodcasts || browseMode != .radio || isArtOnlyMode
     }
 
     /// Refresh the private playlist presentation after the shared audio-engine queue mutates.
@@ -1415,8 +1480,8 @@ class ModernLibraryBrowserView: NSView {
 
         // In the compact window's Playlist mode the embedded queue subview fills the content
         // region, so skip drawing the library chrome (server bar / tabs / search / list /
-        // alphabet) behind it — the shared Cava/art backdrop then shows through the queue,
-        // matching how it shows behind the library list.
+        // alphabet) behind it. Cava is a sibling backdrop, while album art is painted by this
+        // view, so queue mode draws the same art pass explicitly below the transparent queue.
         let showLibraryContent = !isShowingCompactPlaylist
 
         if showLibraryContent {
@@ -1477,6 +1542,12 @@ class ModernLibraryBrowserView: NSView {
 
             // Status bar text
             drawStatusBarText(in: context, skin: skin)
+        } else {
+            drawArtworkBackground(
+                in: context,
+                listRect: compactPlaylistContentRect,
+                artwork: capturedArtwork
+            )
         }
 
         // Library | Playlist toggle footer at the bottom (compact window only).
@@ -1504,6 +1575,9 @@ class ModernLibraryBrowserView: NSView {
             // radio slot shows "Channels" when the YouTube source is displaying channels.
             if mode == .radio, radioSlotShowingChannels {
                 return "Channels"
+            }
+            if mode == .radio, currentSource.isPodcasts {
+                return "Podcasts"
             }
             return mode.title
         }
@@ -1561,6 +1635,8 @@ class ModernLibraryBrowserView: NSView {
             return "\(displayItems.count) stations"
         case .subsonic, .jellyfin, .emby, .youtube:
             return "\(displayItems.count) items"
+        case .podcasts:
+            return nil
         }
     }
 
@@ -1582,6 +1658,8 @@ class ModernLibraryBrowserView: NSView {
             leftWidth = leadingInset + prefixWidth + textWidth("Internet Radio") + 28 * m + textWidth("+ADD")
         case .youtube:
             leftWidth = leadingInset + prefixWidth + textWidth("YouTube") + 28 * m + textWidth("+ADD")
+        case .podcasts:
+            leftWidth = leadingInset + prefixWidth + textWidth("Podcasts")
         case .plex(let serverId):
             let configured = PlexManager.shared.servers.contains(where: { $0.id == serverId }) ||
                 PlexManager.shared.isLinked
@@ -2291,6 +2369,14 @@ class ModernLibraryBrowserView: NSView {
                 let countX = visEndX - countWidth - 24 * hm
                 drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             }
+
+        case .podcasts:
+            let sourceText = "Podcasts"
+            drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
+            let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
+            sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
+                                      width: sourceNameStartX + sourceTextWidth - barRect.minX,
+                                      height: barRect.height)
         }
     }
     
@@ -4727,6 +4813,8 @@ class ModernLibraryBrowserView: NSView {
         case .youtube:
             if addButtonRect.contains(point) { showYouTubeAddMenu(at: event) }
             else if sourceButtonRect.contains(point) { showSourceMenu(at: event) }
+        case .podcasts:
+            if sourceButtonRect.contains(point) { showSourceMenu(at: event) }
         }
     }
 
@@ -4749,6 +4837,10 @@ class ModernLibraryBrowserView: NSView {
                 displayItems = []
                 needsDisplay = true
             }
+            return
+        }
+        if case .podcasts = currentSource {
+            PodcastStore.shared.refresh()
             return
         }
         if case .radio = currentSource {
@@ -4815,6 +4907,7 @@ class ModernLibraryBrowserView: NSView {
             }
         case .radio: break
         case .youtube: loadYouTubeChannels()
+        case .podcasts: PodcastStore.shared.refresh()
         }
     }
     
@@ -4995,6 +5088,10 @@ class ModernLibraryBrowserView: NSView {
         let youtubeItem = NSMenuItem(title: "YouTube", action: #selector(selectYouTubeSource), keyEquivalent: "")
         youtubeItem.target = self; if case .youtube = currentSource { youtubeItem.state = .on }
         menu.addItem(youtubeItem)
+        menu.addItem(NSMenuItem.separator())
+        let podcastItem = NSMenuItem(title: "Podcasts", action: #selector(selectPodcastSource), keyEquivalent: "")
+        podcastItem.target = self; if case .podcasts = currentSource { podcastItem.state = .on }
+        menu.addItem(podcastItem)
 
         menu.addItem(NSMenuItem.separator())
         for server in PlexManager.shared.servers {
@@ -6012,6 +6109,7 @@ class ModernLibraryBrowserView: NSView {
     @objc private func selectLocalSource() { currentSource = .local }
     @objc private func selectRadioSource() { currentSource = .radio }
     @objc private func selectYouTubeSource() { currentSource = .youtube }
+    @objc private func selectPodcastSource() { currentSource = .podcasts }
 
     private func showYouTubeAddMenu(at event: NSEvent) {
         let menu = NSMenu()
@@ -7663,6 +7761,12 @@ class ModernLibraryBrowserView: NSView {
                                                         headerTitle: "Library Data")
         historyHostingView?.appearance = skinAppearance(for: skin)
         updateHistoryHostingBackground()
+        if let podcastHostingView {
+            let theme = podcastTheme(for: skin)
+            podcastHostingView.rootView = PodcastBrowserView(store: .shared, theme: theme)
+            podcastHostingView.layer?.backgroundColor = theme.background.cgColor
+            podcastHostingView.appearance = skinAppearance(for: skin)
+        }
         backdropView?.reload()
         invalidateServerBarFontCache()
         updateCornerMask()
@@ -7749,6 +7853,7 @@ class ModernLibraryBrowserView: NSView {
                 case .local: break
                 case .radio: self.currentSource = .radio; return
                 case .youtube: self.currentSource = .youtube; return
+                case .podcasts: self.currentSource = .podcasts; return
                 }
             }
             self.clearAllCachedData(); self.reloadData()
@@ -7946,6 +8051,7 @@ class ModernLibraryBrowserView: NSView {
         case .emby(let serverId): currentSource = .emby(serverId: serverId)
         case .radio: currentSource = .radio
         case .youtube: currentSource = .youtube
+        case .podcasts: currentSource = .podcasts
         }
     }
 
@@ -8038,6 +8144,7 @@ class ModernLibraryBrowserView: NSView {
         }
         reloadData()
         startServerNameScroll()
+        updatePodcastHostingVisibility()
     }
     
     private func clearLocalCachedData() {
@@ -9258,6 +9365,16 @@ class ModernLibraryBrowserView: NSView {
             return
         }
 
+        if case .podcasts = currentSource {
+            displayItems = []
+            isLoading = false
+            errorMessage = nil
+            stopLoadingAnimation()
+            updatePodcastHostingVisibility()
+            needsDisplay = true
+            return
+        }
+
         if case .radio = currentSource {
             switch browseMode {
             case .radio:
@@ -9290,6 +9407,8 @@ class ModernLibraryBrowserView: NSView {
                 displayItems = []
             case .youtube:
                 displayItems = []
+            case .podcasts:
+                displayItems = []
             }
             needsDisplay = true
             return
@@ -9309,6 +9428,8 @@ class ModernLibraryBrowserView: NSView {
         case .radio:
             break
         case .youtube:
+            break
+        case .podcasts:
             break
         }
     }

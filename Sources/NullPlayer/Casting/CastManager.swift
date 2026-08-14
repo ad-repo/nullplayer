@@ -1160,6 +1160,10 @@ class CastManager {
             if let embyArtwork = EmbyManager.shared.imageURL(itemId: track.embyId!, imageTag: imageTag, size: 300) {
                 artworkURL = rewriteLocalhostForCasting(embyArtwork)
             }
+        } else if let artworkThumb = track.artworkThumb,
+                  let remoteArtwork = URL(string: artworkThumb),
+                  remoteArtwork.scheme == "http" || remoteArtwork.scheme == "https" {
+            artworkURL = rewriteLocalhostForCasting(remoteArtwork)
         }
 
         // Use effective content type (from track or upstream HEAD detection),
@@ -1413,6 +1417,10 @@ class CastManager {
             if let embyArtwork = EmbyManager.shared.imageURL(itemId: trackToCast.embyId!, imageTag: imageTag, size: 300) {
                 artworkURL = rewriteLocalhostForCasting(embyArtwork)
             }
+        } else if let artworkThumb = trackToCast.artworkThumb,
+                  let remoteArtwork = URL(string: artworkThumb),
+                  remoteArtwork.scheme == "http" || remoteArtwork.scheme == "https" {
+            artworkURL = rewriteLocalhostForCasting(remoteArtwork)
         }
 
         // Use effective content type (from track or upstream HEAD detection),
@@ -1925,11 +1933,18 @@ class CastManager {
             throw CastError.invalidURL
         }
 
+        var artworkURL: URL?
+        if let artworkThumb = sourceTrack?.artworkThumb,
+           let remoteArtwork = URL(string: artworkThumb),
+           remoteArtwork.scheme == "http" || remoteArtwork.scheme == "https" {
+            artworkURL = rewriteLocalhostForCasting(remoteArtwork)
+        }
+
         let metadata = CastMetadata(
             title: title,
-            artist: nil,
-            album: nil,
-            artworkURL: nil,
+            artist: sourceTrack?.artist,
+            album: sourceTrack?.album,
+            artworkURL: artworkURL,
             duration: duration,
             contentType: effectiveContentType,
             mediaType: .video

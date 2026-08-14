@@ -12,6 +12,7 @@ enum BrowserSource: Equatable, Codable {
     case emby(serverId: String)
     case radio
     case youtube
+    case podcasts
 
     /// Display name for the source
     var displayName: String {
@@ -42,6 +43,8 @@ enum BrowserSource: Equatable, Codable {
             return "INTERNET RADIO"
         case .youtube:
             return "YOUTUBE"
+        case .podcasts:
+            return "PODCASTS"
         }
     }
 
@@ -74,6 +77,8 @@ enum BrowserSource: Equatable, Codable {
             return "Radio"
         case .youtube:
             return "YouTube"
+        case .podcasts:
+            return "Podcasts"
         }
     }
 
@@ -113,13 +118,18 @@ enum BrowserSource: Equatable, Codable {
         return false
     }
 
+    var isPodcasts: Bool {
+        if case .podcasts = self { return true }
+        return false
+    }
+
     /// YouTube reuses the Internet Radio tab's UI to list its channels/videos.
-    var usesRadioTab: Bool { isRadio || isYouTube }
+    var usesRadioTab: Bool { isRadio || isYouTube || isPodcasts }
 
     /// Whether this is a remote source (Plex, Subsonic, Jellyfin, or Emby)
     var isRemote: Bool {
         switch self {
-        case .local, .radio, .youtube:
+        case .local, .radio, .youtube, .podcasts:
             return false
         case .plex, .subsonic, .jellyfin, .emby:
             return true
@@ -287,6 +297,7 @@ class PlexBrowserView: NSView {
                 historyAgent.scheduleRefresh()
             }
             updateHistoryHostingVisibility()
+            updatePodcastHostingVisibility()
             needsDisplay = true
         }
     }
@@ -1193,6 +1204,7 @@ class PlexBrowserView: NSView {
 
     private let historyAgent = PlayHistoryAgent()
     private var historyHostingView: NSHostingView<StatsContentView>?
+    private var podcastHostingView: NSHostingView<PodcastBrowserView>?
 
     private struct RadioFolderMembershipAction {
         let station: RadioStation
@@ -1258,6 +1270,7 @@ class PlexBrowserView: NSView {
         didSet {
             artModeLifecycleGeneration &+= 1
             updateHistoryHostingVisibility()
+            updatePodcastHostingVisibility()
             needsDisplay = true
             if isArtOnlyMode {
                 // Cover flow and art view are mutually exclusive list-area modes.
@@ -1526,6 +1539,8 @@ class PlexBrowserView: NSView {
             return "\(displayItems.count) stations"
         case .youtube:
             return "\(displayItems.count) items"
+        case .podcasts:
+            return nil
         case .subsonic, .jellyfin, .emby:
             return isArtOnlyMode ? nil : "\(displayItems.count) items"
         }
@@ -1559,6 +1574,8 @@ class PlexBrowserView: NSView {
             leftWidth = leadingInset + prefixWidth + textWidth("Internet Radio") + 28 + textWidth("+ADD")
         case .youtube:
             leftWidth = leadingInset + prefixWidth + textWidth("YouTube") + 28 + textWidth("+ADD")
+        case .podcasts:
+            leftWidth = leadingInset + prefixWidth + textWidth("Podcasts")
         case .plex(let serverId):
             let configuredServer = PlexManager.shared.servers.first(where: { $0.id == serverId })
             isConfigured = configuredServer != nil || PlexManager.shared.isLinked
@@ -1660,6 +1677,9 @@ class PlexBrowserView: NSView {
             // radio slot shows "Channels" when the YouTube source is displaying channels.
             if mode == .radio, radioSlotShowingChannels {
                 return "Channels"
+            }
+            if mode == .radio, currentSource.isPodcasts {
+                return "Podcasts"
             }
             return mode.title
         }
@@ -1767,6 +1787,8 @@ class PlexBrowserView: NSView {
                 currentSource = .radio
             case .youtube:
                 currentSource = .youtube
+            case .podcasts:
+                currentSource = .podcasts
             }
         } else {
             // Default: local if not linked to Plex, otherwise first Plex server
@@ -2338,6 +2360,7 @@ class PlexBrowserView: NSView {
         // Reload data for new source
         reloadData()
         startServerNameScroll()
+        updatePodcastHostingVisibility()
     }
     
     /// Clear local cached data
@@ -2420,6 +2443,8 @@ class PlexBrowserView: NSView {
         coverFlowView?.removeFromSuperview()
         coverFlowView = nil
         coverFlowSourceItems = []
+        podcastHostingView?.removeFromSuperview()
+        podcastHostingView = nil
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -2494,9 +2519,46 @@ class PlexBrowserView: NSView {
         updateHistoryHostingFrame()
     }
 
+    private func podcastTheme(for colors: PlaylistColors) -> PodcastBrowserTheme {
+        PodcastBrowserTheme(
+            background: colors.normalBackground,
+            surface: colors.normalBackground.blended(withFraction: 0.10, of: colors.normalText) ?? colors.normalBackground,
+            elevated: colors.normalBackground.blended(withFraction: 0.18, of: colors.normalText) ?? colors.normalBackground,
+            accent: colors.currentText,
+            text: colors.normalText,
+            secondaryText: colors.normalText.withAlphaComponent(0.72),
+            separator: colors.normalText.withAlphaComponent(0.28),
+            selection: colors.selectedBackground,
+            selectionText: colors.currentText,
+            warning: colors.currentText
+        )
+    }
+
+    private func ensurePodcastHostingView() {
+        guard podcastHostingView == nil else { return }
+        let colors = currentPlaylistColors()
+        let theme = podcastTheme(for: colors)
+        let hosting = NSHostingView(rootView: PodcastBrowserView(store: .shared, theme: theme))
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = theme.background.cgColor
+        hosting.appearance = classicAppearance(for: theme.background)
+        hosting.setAccessibilityIdentifier("plexBrowser.podcasts")
+        hosting.setAccessibilityLabel("Podcasts")
+        addSubview(hosting)
+        podcastHostingView = hosting
+    }
+
+    private func updatePodcastHostingVisibility() {
+        let visible = currentSource.isPodcasts && browseMode == .radio && !isArtOnlyMode
+        if visible { ensurePodcastHostingView() }
+        podcastHostingView?.isHidden = !visible
+        updateHistoryHostingFrame()
+    }
+
     private func updateHistoryHostingFrame() {
         historyHostingView?.frame = embeddedContentRect()
         coverFlowView?.frame = embeddedContentRect()
+        podcastHostingView?.frame = embeddedContentRect()
     }
 
     /// Content rect (view coordinates) below the tab bar and above the status bar — shared by the
@@ -3943,6 +4005,13 @@ class PlexBrowserView: NSView {
             drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
             let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
             drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+        case .podcasts:
+            let sourceText = "Podcasts"
+            drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
+            sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
+                                      width: sourceNameStartX + sourceTextWidth - barRect.minX,
+                                      height: barRect.height)
         }
 
         // Keep an active FLOW escape hatch visible even when a remote source is unconfigured and
@@ -6644,7 +6713,7 @@ class PlexBrowserView: NSView {
             serverName = configuredServer?.name ?? "Select Server"
             libraryName = embyCurrentLibraryName
             serverWidth = maxRemoteServerWidth
-        case .local, .radio, .youtube:
+        case .local, .radio, .youtube, .podcasts:
             let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
             stopServerNameScroll()
             if hadOffset { needsDisplay = true }
@@ -6782,6 +6851,12 @@ class PlexBrowserView: NSView {
                                                         headerTitle: "Library Data")
         historyHostingView?.layer?.backgroundColor = colors.normalBackground.cgColor
         historyHostingView?.appearance = classicAppearance(for: colors.normalBackground)
+        if let podcastHostingView {
+            let theme = podcastTheme(for: colors)
+            podcastHostingView.rootView = PodcastBrowserView(store: .shared, theme: theme)
+            podcastHostingView.layer?.backgroundColor = theme.background.cgColor
+            podcastHostingView.appearance = classicAppearance(for: theme.background)
+        }
         updateHistoryHostingFrame()
         needsDisplay = true
     }
@@ -6873,6 +6948,9 @@ class PlexBrowserView: NSView {
                     return
                 case .youtube:
                     self.currentSource = .youtube
+                    return
+                case .podcasts:
+                    self.currentSource = .podcasts
                     return
                 }
             }
@@ -6971,6 +7049,7 @@ class PlexBrowserView: NSView {
         case .emby(let serverId): currentSource = .emby(serverId: serverId)
         case .radio: currentSource = .radio
         case .youtube: currentSource = .youtube
+        case .podcasts: currentSource = .podcasts
         }
     }
 
@@ -8895,6 +8974,8 @@ class PlexBrowserView: NSView {
         case .youtube:
             if addButtonRect.contains(skinPoint) { showYouTubeAddMenu(at: event) }
             else if sourceButtonRect.contains(skinPoint) { showSourceMenu(at: event) }
+        case .podcasts:
+            if sourceButtonRect.contains(skinPoint) { showSourceMenu(at: event) }
         }
     }
     
@@ -8920,6 +9001,11 @@ class PlexBrowserView: NSView {
                 displayItems = []
                 needsDisplay = true
             }
+            return
+        }
+
+        if case .podcasts = currentSource {
+            PodcastStore.shared.refresh()
             return
         }
 
@@ -8991,6 +9077,8 @@ class PlexBrowserView: NSView {
         case .youtube:
             // Already handled above
             break
+        case .podcasts:
+            PodcastStore.shared.refresh()
         }
     }
 
@@ -9022,6 +9110,11 @@ class PlexBrowserView: NSView {
             youtubeItem.state = .on
         }
         menu.addItem(youtubeItem)
+        menu.addItem(NSMenuItem.separator())
+        let podcastItem = NSMenuItem(title: "Podcasts", action: #selector(selectPodcastSource), keyEquivalent: "")
+        podcastItem.target = self
+        if case .podcasts = currentSource { podcastItem.state = .on }
+        menu.addItem(podcastItem)
 
         // Separator
         menu.addItem(NSMenuItem.separator())
@@ -9537,6 +9630,10 @@ class PlexBrowserView: NSView {
 
     @objc private func selectYouTubeSource() {
         currentSource = .youtube
+    }
+
+    @objc private func selectPodcastSource() {
+        currentSource = .podcasts
     }
 
     private func showYouTubeAddMenu(at event: NSEvent) {
@@ -13944,6 +14041,16 @@ class PlexBrowserView: NSView {
             return
         }
 
+        if case .podcasts = currentSource {
+            displayItems = []
+            isLoading = false
+            errorMessage = nil
+            stopLoadingAnimation()
+            updatePodcastHostingVisibility()
+            needsDisplay = true
+            return
+        }
+
         if case .radio = currentSource {
             if browseMode == .radio {
                 loadRadioStations()
@@ -13975,6 +14082,8 @@ class PlexBrowserView: NSView {
                 displayItems = []
             case .youtube:
                 displayItems = []
+            case .podcasts:
+                displayItems = []
             }
             needsDisplay = true
             return
@@ -13994,6 +14103,8 @@ class PlexBrowserView: NSView {
         case .youtube:
             break
         case .radio:
+            break
+        case .podcasts:
             break
         }
     }

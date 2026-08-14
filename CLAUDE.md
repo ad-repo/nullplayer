@@ -24,6 +24,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **sonos-casting**, **chromecast-casting**: Casting protocols and debugging
 - **stream-ripper**: Rip a URL to FLAC/MP3/MP4 via yt-dlp — format selection, tagging, cover art, .cue from chapters, activity band
 - **youtube-source**: YouTube channel uploads in the Radio tab — browse channels, download audio (FLAC / MP3) ad-free, store in a user folder, and play/cast locally
+- **podcast-source**: Podcast Index discovery, RSS subscriptions, cover tiles, downloads/progress, playlist conversion, audio/video playback, and casting
 - **cue-sheets**: .cue playback — direct-play virtual split (one backing file → N gapless playlist rows) + library physical split-on-import (ffmpeg per-track FLACs, off by default)
 - **radio-streaming**: Internet radio + library radio support
 - **visualizations**: Index/router across all visualization sub-skills (comparison table, when-to-use)
@@ -54,6 +55,7 @@ Sources/NullPlayer/
 ├── Casting/          # Chromecast, Sonos, DLNA casting
 ├── StreamRipper/     # Rip a URL to FLAC/MP3/MP4 via yt-dlp (tagging, cover art, .cue)
 ├── Radio/            # Internet radio (stations, metadata fallback, ratings, folders)
+├── Podcast/          # Podcast Index discovery, RSS, subscriptions, downloads, shared browser UI
 ├── Skin/             # Classic .wsz skin loading and rendering
 ├── ModernSkin/       # Modern skin engine (independent of classic system)
 ├── Windows/          # All window views (MainWindow, ModernMainWindow, ModernSpectrum, ModernPlaylist, ModernEQ, ModernProjectM, ModernLibraryBrowser, PeppyMeter, ModernPeppyMeter, Playlist, EQ, etc.)
@@ -83,6 +85,7 @@ Sources/NullPlayer/
 | Waveform | `Waveform/WaveformCacheService.swift`, `Waveform/BaseWaveformView.swift` |
 | App | `App/WindowManager.swift`, `App/AppStateManager.swift`, `App/ContextMenuBuilder.swift` |
 | Local Library | `Data/Models/MediaLibrary.swift`, `Utilities/LocalFileDiscovery.swift` |
+| Podcasts | `Podcast/PodcastIndexClient.swift`, `Podcast/PodcastStore.swift`, `Podcast/PodcastBrowserView.swift` |
 
 ## Common Tasks
 

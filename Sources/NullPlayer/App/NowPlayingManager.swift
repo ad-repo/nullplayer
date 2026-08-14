@@ -316,6 +316,12 @@ class NowPlayingManager {
                     image = await self.loadEmbyArtwork(itemId: track.embyId!, imageTag: imageTag)
                 }
             }
+
+            // Generic remote artwork is used by podcasts and other non-library media.
+            // It is also the fallback for downloaded episodes without embedded art.
+            if image == nil, let artworkThumb = track.artworkThumb {
+                image = await self.loadRemoteArtwork(urlString: artworkThumb)
+            }
             
             // Check if cancelled
             guard !Task.isCancelled else { return }
@@ -357,6 +363,25 @@ class NowPlayingManager {
     }
 
     // MARK: - Artwork Loading Helpers
+
+    private func loadRemoteArtwork(urlString: String) async -> NSImage? {
+        guard let url = URL(string: urlString),
+              url.scheme == "http" || url.scheme == "https" else {
+            return nil
+        }
+
+        do {
+            let (data, response) = try await PodcastIndexClient.boundedData(from: url)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else {
+                return nil
+            }
+            return NSImage(data: data)
+        } catch {
+            NSLog("NowPlayingManager: Failed to load remote artwork: %@", error.localizedDescription)
+            return nil
+        }
+    }
     
     /// Load embedded artwork from local audio file
     private func loadLocalArtwork(url: URL) async -> NSImage? {

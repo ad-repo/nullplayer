@@ -239,6 +239,10 @@ class AudioEngine {
 
     /// One-shot stale URL refresh guard for the current playback attempt.
     private var staleStreamingRefreshRetriedServiceIdentity: String?
+
+    /// One-shot resume request for a remote finite track. It is consumed only after the
+    /// streaming backend confirms playback, rather than after an arbitrary wall-clock delay.
+    private var pendingStreamingResume: (trackID: UUID, position: TimeInterval)?
     
     /// Current playback state
     private(set) var state: PlaybackState = .stopped {
@@ -257,6 +261,10 @@ class AudioEngine {
     /// Current track
     private(set) var currentTrack: Track? {
         didSet {
+            if let pendingStreamingResume,
+               currentTrack?.id != pendingStreamingResume.trackID {
+                self.pendingStreamingResume = nil
+            }
             delegate?.audioEngineDidChangeTrack(currentTrack)
             // Reset BPM detector for new track
             bpmDetector.reset()
@@ -3361,7 +3369,9 @@ class AudioEngine {
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .local, .radio, .youtube:
-                LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+                if finishedTrack.podcastEpisodeID == nil {
+                    LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+                }
             }
         }
 
@@ -3834,6 +3844,8 @@ class AudioEngine {
                 jellyfinServerId: track.jellyfinServerId, embyId: track.embyId,
                 embyServerId: track.embyServerId, artworkThumb: track.artworkThumb,
                 mediaType: track.mediaType, genre: track.genre,
+                playHistoryContentTypeOverride: track.playHistoryContentTypeOverride,
+                podcastEpisodeID: track.podcastEpisodeID,
                 contentType: track.contentType
             )
             changed = true
@@ -4033,7 +4045,7 @@ class AudioEngine {
     
     /// Insert tracks after current position and immediately play the first inserted track.
     /// This is the "Play Now" / "Jump the Line" behavior - adds to queue and starts playing immediately.
-    func playNow(_ tracks: [Track]) {
+    func playNow(_ tracks: [Track], resumeStreamingAt: TimeInterval? = nil) {
         guard !tracks.isEmpty else { return }
         
         // When casting local files, block rapid clicks - only accept if not already casting
@@ -4046,6 +4058,16 @@ class AudioEngine {
             incomingTrackURL: tracks.first?.url,
             context: "playNow"
         )
+
+        if let position = resumeStreamingAt,
+           position > 0,
+           let first = tracks.first,
+           !first.url.isFileURL,
+           !isCastingActive {
+            pendingStreamingResume = (first.id, position)
+        } else {
+            pendingStreamingResume = nil
+        }
         
         let insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0
         
@@ -4821,7 +4843,9 @@ class AudioEngine {
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
             case .local, .radio, .youtube:
-                LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+                if finishedTrack.podcastEpisodeID == nil {
+                    LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+                }
             }
         }
 
@@ -5414,7 +5438,9 @@ class AudioEngine {
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .local, .radio, .youtube:
-                LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+                if outgoingTrack.podcastEpisodeID == nil {
+                    LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+                }
             }
         }
 
@@ -5539,7 +5565,9 @@ class AudioEngine {
             case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             case .local, .radio, .youtube:
-                LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+                if outgoingTrack.podcastEpisodeID == nil {
+                    LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+                }
             }
         }
 
@@ -6323,6 +6351,12 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             playbackStartDate = Date()
             suspendedLocalPlaybackClockForSleep = false
             isSeekingStreaming = false  // Clear seeking flag on successful playback
+
+            if let pendingStreamingResume,
+               currentTrack?.id == pendingStreamingResume.trackID {
+                self.pendingStreamingResume = nil
+                seek(to: pendingStreamingResume.position)
+            }
             
             // Notify RadioManager that stream connected successfully
             if RadioManager.shared.isActive {
@@ -6485,6 +6519,8 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                 artworkThumb: track.artworkThumb,
                 mediaType: track.mediaType,
                 genre: track.genre,
+                playHistoryContentTypeOverride: track.playHistoryContentTypeOverride,
+                podcastEpisodeID: track.podcastEpisodeID,
                 contentType: track.contentType
             )
             

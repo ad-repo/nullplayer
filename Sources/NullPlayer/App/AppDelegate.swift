@@ -549,6 +549,13 @@ extension AppDelegate: AudioEngineDelegate {
     }
 
     func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
+        if let episodeID = windowManager.audioEngine.currentTrack?.podcastEpisodeID {
+            PodcastPersistenceCoordinator.shared.recordPlayback(
+                episodeID: episodeID,
+                current: current,
+                duration: duration
+            )
+        }
         // Don't update main window time if video session is active (video has its own time source)
         guard !windowManager.isVideoActivePlayback else { return }
         windowManager.mainWindowController?.updateTime(current: current, duration: duration)
