@@ -174,9 +174,10 @@ final class WasabiTypeRegistry {
             } catch let failure as WalFailure
                 where failure.diagnostics.allSatisfy({ $0.code == .missingGroupDefinition }) {
                 // Real skins/engines inherit from predefined Wasabi standard-library groups
-                // (`wasabi.*`) that ship inside Winamp, not the skin. Treat an unknown base group as
-                // empty and warn, so the derived group still resolves. Inheritance cycles and depth
-                // overflows still hard-fail above. (Fuller predefined-Wasabi coverage is Phase 7.)
+                // (`wasabi.*`) that ship inside Winamp, not the skin. The common bases are now seeded
+                // by `registerWasabiStandardLibrary`; this path only fires for a base outside that
+                // curated set. Treat such an unknown base as empty and warn, so the derived group
+                // still resolves. Inheritance cycles and depth overflows still hard-fail above.
                 diagnostics.append(WalDiagnostic(.missingGroupDefinition,
                     "Group '\(identifier)' inherits unknown predefined group '\(parentReference)'; ignoring that base.",
                     severity: .warning, location: definition.source))
@@ -279,8 +280,10 @@ final class WasabiSkinInitializer {
         passes.append(.resourceRegistration)
 
         let types = WasabiTypeRegistry()
-        registerPhase3BuiltIns(in: types)
+        // Register the skin/engine groupdefs first so an explicit definition always wins over our
+        // predefined shell, then backfill any predefined Wasabi bases the skin inherits but omits.
         registerTypes(in: document.roots, registry: types)
+        registerWasabiStandardLibrary(in: types)
         try types.validateInheritance()
         passes.append(.groupAndXUIRegistration)
 
@@ -408,20 +411,70 @@ final class WasabiSkinInitializer {
         }
     }
 
-    private func registerPhase3BuiltIns(in registry: WasabiTypeRegistry) {
-        // CornerAmp inherits this standard Wasabi client-area group but supplies all visible
-        // artwork itself. Keep the target bootstrap code-only: no Winamp System assets or SDK
-        // files are bundled. Broader predefined Wasabi resources remain Phase 4 work.
-        guard !registry.contains(identifier: "wasabi.panel") else { return }
-        registry.register(WasabiGroupDefinition(
-            identifier: "wasabi.panel",
-            xuiTag: nil,
-            inheritedGroup: nil,
-            embeddedXUITag: nil,
-            defaultAttributes: [:],
-            templateChildren: [],
-            source: WalSourceLocation(path: "/System/Phase3BuiltIns.xml")
-        ))
+    /// Predefined Wasabi standard-library base groups. These ship *inside* Winamp (the stock
+    /// `xml/wasabi.xml` / `xml/standard/*` library), not inside a `.wal` or the ClassicPro engine,
+    /// so real skins and engines routinely `inherit_group="wasabi.*"` from bases we never receive as
+    /// files. We seed them as minimal empty template groups so a derived group resolves a real (if
+    /// artwork-less) base instead of dropping to a graceful-degradation warning. Genuinely unknown
+    /// bases — anything not on this curated list — still warn-and-drop in `resolve(identifier:stack:)`.
+    ///
+    /// The list is curated from the measured targets' inheritance edges (Phase 0B inventory) plus the
+    /// documented Wasabi standard library. No third-party art or SDK files are bundled; these are
+    /// identifier-only shells. Add to this list on measured demand (Phase 7.3), not speculatively.
+    static let wasabiStandardLibraryGroups: [String] = [
+        // Client area / containers
+        "wasabi.panel",
+        "wasabi.frame",
+        "wasabi.objectframe",
+        "wasabi.objectframe.group",
+        // Text
+        "wasabi.text",
+        "wasabi.text.group",
+        // Buttons
+        "wasabi.button",
+        "wasabi.button.group",
+        "wasabi.togglebutton",
+        "wasabi.togglebutton.group",
+        "wasabi.checkbox",
+        // Edits
+        "wasabi.edit",
+        "wasabi.edit.box",
+        "wasabi.edits",
+        // Lists / scrolling
+        "wasabi.list",
+        "wasabi.scrollbar",
+        "wasabi.scrollbar.horizontal",
+        "wasabi.scrollbar.vertical",
+        "wasabi.slider",
+        // Standard window frames
+        "wasabi.standardframe",
+        "wasabi.standardframe.static",
+        "wasabi.standardframe.modal",
+        "wasabi.standardframe.statusbar",
+        "wasabi.standardframe.nostatusbar",
+        // Tabs / grouping
+        "wasabi.tabsheet",
+        "wasabi.titlebar",
+        // Media-facing composites
+        "wasabi.albumart",
+        "wasabi.ratings",
+    ]
+
+    private func registerWasabiStandardLibrary(in registry: WasabiTypeRegistry) {
+        // Seed each predefined base only when the skin/engine hasn't already declared it, so a skin
+        // that *does* ship a fuller definition always wins over our identifier-only shell.
+        for identifier in Self.wasabiStandardLibraryGroups {
+            guard !registry.contains(identifier: identifier) else { continue }
+            registry.register(WasabiGroupDefinition(
+                identifier: identifier,
+                xuiTag: nil,
+                inheritedGroup: nil,
+                embeddedXUITag: nil,
+                defaultAttributes: [:],
+                templateChildren: [],
+                source: WalSourceLocation(path: "/System/WasabiStandardLibrary.xml")
+            ))
+        }
     }
 
     private func createObjects(

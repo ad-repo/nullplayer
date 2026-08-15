@@ -20,6 +20,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private(set) var programs: [MakiProgram] = []
     private(set) var isTornDown = false
 
+    /// Names of MAKI methods the runtime was asked for but does not implement, with a call count each.
+    /// Populated by `unsupported(_:program:)` before it throws. This is the measured-demand signal that
+    /// drives Phase 7.3 API additions and feeds the per-skin compatibility report (Phase 7.2); it never
+    /// changes execution semantics.
+    private(set) var unsupportedMethodCalls: [String: Int] = [:]
+
     var graphDidMutate: (() -> Void)?
     var popupPresenter: (([(String, Int32, Bool, Bool)]) -> Int32)?
     var layoutSwitchRequested: ((String) -> Bool)?
@@ -721,7 +727,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     }
 
     private func unsupported(_ method: String, program: MakiProgram) -> WalFailure {
-        WalFailure(WalDiagnostic(.unsupportedScriptCapability,
+        unsupportedMethodCalls[method.lowercased(), default: 0] += 1
+        return WalFailure(WalDiagnostic(.unsupportedScriptCapability,
                                  "Winamp Modern runtime does not support method '\(method)'.",
                                  location: program.source))
     }

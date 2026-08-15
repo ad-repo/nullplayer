@@ -25,6 +25,20 @@ final class WinampModernLoadedSkin {
     }
 
     func teardown() { runtime.teardown() }
+
+    /// Per-skin compatibility report from load-time diagnostics (missing resources/groups, unresolved
+    /// predefined bases, etc.). A successful load with warnings is `.degraded`. To include runtime
+    /// unsupported-MAKI-method demand, fold in `scriptRuntime.unsupportedMethodCalls` via
+    /// `compatibilityReport(withRuntime:)`.
+    var compatibilityReport: WinampModernCompatibilityReport {
+        WinampModernCompatibilityReport(diagnostics: runtime.diagnostics)
+    }
+
+    func compatibilityReport(withRuntime scriptRuntime: WinampModernScriptRuntime)
+        -> WinampModernCompatibilityReport {
+        WinampModernCompatibilityReport(diagnostics: runtime.diagnostics,
+                                        unsupportedMethodCalls: scriptRuntime.unsupportedMethodCalls)
+    }
 }
 
 final class WinampModernSkinLoader {

@@ -79,6 +79,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 self?.toggleAuxiliaryWindow(for: kind) ?? false
             }
             try scripts.start()
+            #if DEBUG
+            // Surface the per-skin compatibility report (Phase 7.2). After `start()`, the report also
+            // reflects any unsupported MAKI methods the skin's `onscriptloaded` reached for.
+            let report = loaded.compatibilityReport(withRuntime: scripts)
+            if report.level != .full {
+                NSLog("WinampModern compatibility [%@]:\n%@", url.lastPathComponent, report.summary)
+            }
+            #endif
             view.updatePlaybackState()
             view.updateTime(current: host.currentTime, duration: host.duration)
             view.needsDisplay = true
