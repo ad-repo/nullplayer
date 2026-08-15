@@ -4,8 +4,11 @@ final class WinampModernMainView: NSView {
     let renderer: WasabiSceneRenderer
     let scripts: WinampModernScriptRuntime
     let host: WinampModernHost
+    private weak var componentHost: WinampModernComponentHost?
+    private var libraryHostViews: [WasabiObjectID: NSView] = [:]
 
     private var pressedObject: WasabiObject?
+    private var pressedEQHolder: WasabiObject?
     private var hoveredObject: WasabiObject?
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
@@ -14,18 +17,39 @@ final class WinampModernMainView: NSView {
     private var animationTimer: Timer?
     private(set) var isTornDown = false
     var canvasSizeDidChange: ((CGSize) -> Void)?
+    /// Returns true if the skin provides a separate native window for the kind and it was toggled.
+    var componentWindowToggleRequested: ((WinampModernComponentKind) -> Bool)?
+
+    /// The main window drives the shared script runtime's callbacks (layout switching, theme,
+    /// actions). Auxiliary container windows render + take input but must not clobber those
+    /// single-owner callbacks, so they pass `drivesScripts: false`.
+    private let drivesScripts: Bool
 
     init(renderer: WasabiSceneRenderer, scripts: WinampModernScriptRuntime,
-         host: WinampModernHost) {
+         host: WinampModernHost, componentHost: WinampModernComponentHost? = nil,
+         drivesScripts: Bool = true) {
         self.renderer = renderer
         self.scripts = scripts
         self.host = host
+        self.componentHost = componentHost
+        self.drivesScripts = drivesScripts
         super.init(frame: NSRect(origin: .zero, size: renderer.canvasSize))
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         setAccessibilityIdentifier("winampModernMainView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("Winamp Modern skin player")
+        if drivesScripts { wireScriptCallbacks() }
+        if renderer.sceneNodes().contains(where: {
+            ["animatedlayer", "songticker"].contains($0.object.typeName.lowercased())
+        }) {
+            animationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
+                self?.needsDisplay = true
+            }
+        }
+    }
+
+    private func wireScriptCallbacks() {
         scripts.graphDidMutate = { [weak self] in self?.needsDisplay = true }
         scripts.layoutSwitchRequested = { [weak self] layoutID in
             guard let self, let size = try? self.renderer.activateLayout(id: layoutID) else { return false }
@@ -52,13 +76,6 @@ final class WinampModernMainView: NSView {
             if changed { self.needsDisplay = true }
             return changed
         }
-        if renderer.sceneNodes().contains(where: {
-            ["animatedlayer", "songticker"].contains($0.object.typeName.lowercased())
-        }) {
-            animationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
-                self?.needsDisplay = true
-            }
-        }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -77,15 +94,46 @@ final class WinampModernMainView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point), renderer.containsVisiblePixel(at: skinPoint(point)) else { return nil }
-        return self
+        // Live host subviews (e.g. the embedded library) handle their own region.
+        for sub in subviews.reversed() {
+            if let hit = sub.hitTest(point) { return hit }
+        }
+        guard bounds.contains(point) else { return nil }
+        let skin = skinPoint(point)
+        if renderer.componentHolder(at: skin) != nil { return self }
+        return renderer.containsVisiblePixel(at: skin) ? self : nil
     }
 
     override func draw(_ dirtyRect: NSRect) {
         guard !isTornDown, let context = NSGraphicsContext.current?.cgContext else { return }
+        layoutHostedSubviews()
         context.clear(bounds)
         renderer.draw(in: context, pressed: pressedObject?.stableID,
                       hovered: hoveredObject?.stableID)
+    }
+
+    /// Position live host subviews (the embedded library) at their skin-provided holder frames,
+    /// converting from top-left skin coordinates to the view's bottom-left coordinates. Holders that
+    /// vanish (layout switch) have their subviews removed.
+    private func layoutHostedSubviews() {
+        guard !isTornDown else { return }
+        var live: Set<WasabiObjectID> = []
+        for holder in renderer.componentHolders() where holder.kind == .library {
+            var view = libraryHostViews[holder.object.stableID]
+            if view == nil, let created = componentHost?.makeLibraryContentView() {
+                libraryHostViews[holder.object.stableID] = created
+                addSubview(created)
+                view = created
+            }
+            guard let view else { continue }
+            live.insert(holder.object.stableID)
+            view.frame = NSRect(x: holder.frame.minX, y: bounds.height - holder.frame.maxY,
+                                width: holder.frame.width, height: holder.frame.height)
+        }
+        for (id, view) in libraryHostViews where !live.contains(id) {
+            view.removeFromSuperview()
+            libraryHostViews[id] = nil
+        }
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -105,6 +153,23 @@ final class WinampModernMainView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        if let holder = renderer.componentHolder(at: point) {
+            switch holder.kind {
+            case .playlist:
+                if let row = renderer.playlistRow(at: point, in: holder.frame) {
+                    if event.clickCount >= 2 { componentHost?.playlistPlay(row: row) }
+                    else { componentHost?.playlistSelect(row: row) }
+                    needsDisplay = true
+                }
+                return
+            case .equalizer:
+                pressedEQHolder = holder.object
+                updateEqualizer(holder: holder.object, frame: holder.frame, point: point)
+                return
+            case .library, .visualization, .video, .other:
+                return
+            }
+        }
         guard let object = renderer.object(at: point) else { return }
         pressedObject = object
         dispatch(object: object, event: "onleftbuttondown", point: point)
@@ -120,6 +185,10 @@ final class WinampModernMainView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        if let pressedEQHolder, let frame = renderer.frame(of: pressedEQHolder) {
+            updateEqualizer(holder: pressedEQHolder, frame: frame, point: point)
+            return
+        }
         if let pressedObject {
             dispatch(object: pressedObject, event: "onmousemove", point: point)
             updateSlider(pressedObject, point: point)
@@ -136,6 +205,7 @@ final class WinampModernMainView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        if pressedEQHolder != nil { pressedEQHolder = nil; needsDisplay = true; return }
         let releasedOver = renderer.object(at: point)
         if let pressedObject {
             dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
@@ -154,6 +224,31 @@ final class WinampModernMainView: NSView {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
         guard let object = renderer.object(at: point) else { return }
         dispatch(object: object, event: "onrightbuttonup", point: point)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        guard let holder = renderer.componentHolder(at: point), holder.kind == .playlist,
+              let rowCount = componentHost?.playlistSnapshot().rows.count else {
+            super.scrollWheel(with: event)
+            return
+        }
+        let delta = event.deltaY > 0 ? -1 : (event.deltaY < 0 ? 1 : 0)
+        guard delta != 0 else { return }
+        renderer.scrollPlaylist(byRows: delta, rowCount: rowCount, in: holder.frame)
+        needsDisplay = true
+    }
+
+    private func updateEqualizer(holder: WasabiObject, frame: CGRect, point: CGPoint) {
+        guard let snapshot = componentHost?.equalizerSnapshot(), frame.width > 0, frame.height > 0 else { return }
+        let slots = snapshot.bandGainsDB.count + 1 // preamp + bands
+        let slotWidth = frame.width / CGFloat(slots)
+        let slot = max(0, min(slots - 1, Int((point.x - frame.minX) / slotWidth)))
+        let normalized = max(0, min(1, 1 - (point.y - frame.minY) / frame.height))
+        let gainDB = Float(normalized * 24 - 12) // 0…1 → -12…12
+        if slot == 0 { componentHost?.equalizerSetPreampDB(gainDB) }
+        else { componentHost?.equalizerSetBandGainDB(slot - 1, gainDB: gainDB) }
+        needsDisplay = true
     }
 
     func updateTrackInfo() { needsDisplay = true }
@@ -194,10 +289,16 @@ final class WinampModernMainView: NSView {
         animationTimer?.invalidate()
         animationTimer = nil
         pressedObject = nil
+        pressedEQHolder = nil
         hoveredObject = nil
-        scripts.teardown()
+        for view in libraryHostViews.values { view.removeFromSuperview() }
+        libraryHostViews.removeAll()
+        // Auxiliary container views share the skin's single script runtime and host; only the
+        // main (script-driving) view tears those down. Every view tears down its own renderer.
+        if drivesScripts { scripts.teardown() }
         renderer.teardown()
         canvasSizeDidChange = nil
+        componentWindowToggleRequested = nil
         isTornDown = true
     }
 
@@ -261,13 +362,17 @@ final class WinampModernMainView: NSView {
                 needsDisplay = true
             }
         case "TOGGLE":
-            switch parameter?.lowercased() {
-            case "eq": WindowManager.shared.toggleEqualizer()
-            case "guid:pl": WindowManager.shared.togglePlaylist()
-            case "guid:ml": WindowManager.shared.togglePlexBrowser()
-            default: break
-            }
+            if let kind = WinampModernComponentRegistry.kind(for: parameter) { routeComponentToggle(kind) }
         default: break
         }
+    }
+
+    /// Route a component toggle to the skin's own surfaces first, then fall back to the classic
+    /// window. Embedded SUI components are always present, so a toggle over them must not spawn a
+    /// classic auxiliary window (that was the Phase 1 behaviour Phase 5 replaces).
+    func routeComponentToggle(_ kind: WinampModernComponentKind) {
+        if renderer.componentHolders().contains(where: { $0.kind == kind }) { return }
+        if componentWindowToggleRequested?(kind) == true { return }
+        componentHost?.toggleClassicWindow(for: kind)
     }
 }

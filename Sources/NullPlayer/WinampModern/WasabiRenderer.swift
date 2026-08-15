@@ -228,6 +228,11 @@ final class WasabiSceneRenderer {
     private(set) var canvasSize: CGSize
     private let clock: () -> TimeInterval
 
+    /// Optional sandboxed seam supplying playlist/EQ/library content for embedded component holders.
+    /// Weak so the retained graph never keeps the host (owned by the window controller) alive.
+    weak var componentHost: WinampModernComponentHost?
+    private var playlistScrollOffset = 0
+
     var activeLayoutID: String { layout.xmlID ?? "normal" }
     var availableLayoutIDs: [String] {
         container.children.compactMap { child in
@@ -235,7 +240,7 @@ final class WasabiSceneRenderer {
         }
     }
 
-    init(loadedSkin: WinampModernLoadedSkin, host: WinampModernHost,
+    init(loadedSkin: WinampModernLoadedSkin, host: WinampModernHost, containerID: String = "main",
          clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
         self.loadedSkin = loadedSkin
         self.host = host
@@ -244,13 +249,14 @@ final class WasabiSceneRenderer {
         self.resources = WasabiResourceCache(loadedSkin: loadedSkin, themes: themes)
         guard let container = loadedSkin.runtime.graph.roots.first(where: {
             $0.typeName.caseInsensitiveCompare("container") == .orderedSame &&
-            $0.xmlID?.caseInsensitiveCompare("main") == .orderedSame
+            $0.xmlID?.caseInsensitiveCompare(containerID) == .orderedSame
         }), let layout = container.children.first(where: {
             $0.typeName.caseInsensitiveCompare("layout") == .orderedSame &&
-            ($0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame || container.children.count == 1)
+            ($0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame ||
+             container.children.filter { $0.typeName.caseInsensitiveCompare("layout") == .orderedSame }.count == 1)
         }) else {
             throw WalFailure(WalDiagnostic(.malformedXML,
-                                           "Winamp Modern skin has no Main/normal container layout."))
+                                           "Winamp Modern skin has no '\(containerID)'/normal container layout."))
         }
         self.container = container
         self.layout = layout
@@ -339,6 +345,51 @@ final class WasabiSceneRenderer {
         sceneNodes().first(where: { $0.object === object })?.frame
     }
 
+    // MARK: - Embedded component hosting
+
+    /// Every `windowholder`/`componentbucket` in the active scene whose `hold`/id resolves to a
+    /// typed component kind, with its frame in skin coordinates. Used to draw embedded playlist/EQ,
+    /// place the library host view, and route input into the right surface.
+    func componentHolders() -> [WinampModernComponentHolder] {
+        sceneNodes().compactMap { node in
+            let type = node.object.typeName.lowercased()
+            guard type == "windowholder" || type == "componentbucket" else { return nil }
+            guard isVisible(node.object) else { return nil }
+            guard let kind = Self.componentKind(of: node.object) else { return nil }
+            return WinampModernComponentHolder(object: node.object, kind: kind, frame: node.frame)
+        }
+    }
+
+    func componentHolder(at point: CGPoint) -> WinampModernComponentHolder? {
+        componentHolders().reversed().first { $0.frame.contains(point) }
+    }
+
+    static func componentKind(of object: WasabiObject) -> WinampModernComponentKind? {
+        for key in ["hold", "component", "guid", "id"] {
+            if let kind = WinampModernComponentRegistry.kind(for: object.attributes[key]) { return kind }
+        }
+        return nil
+    }
+
+    /// Row height of the embedded playlist, in skin pixels.
+    var playlistRowHeight: CGFloat { 12 }
+
+    func playlistVisibleRowCount(in frame: CGRect) -> Int {
+        max(0, Int(frame.height / playlistRowHeight))
+    }
+
+    /// Which playlist row (absolute index, accounting for scroll) sits under a point in a holder.
+    func playlistRow(at point: CGPoint, in frame: CGRect) -> Int? {
+        guard frame.contains(point), playlistRowHeight > 0 else { return nil }
+        let row = Int((point.y - frame.minY) / playlistRowHeight) + playlistScrollOffset
+        return row >= 0 ? row : nil
+    }
+
+    func scrollPlaylist(byRows delta: Int, rowCount: Int, in frame: CGRect) {
+        let maxOffset = max(0, rowCount - playlistVisibleRowCount(in: frame))
+        playlistScrollOffset = max(0, min(maxOffset, playlistScrollOffset + delta))
+    }
+
     func teardown() { resources.teardown() }
 
     private func append(object: WasabiObject, frame parentFrame: CGRect, clip parentClip: CGRect,
@@ -394,6 +445,9 @@ final class WasabiSceneRenderer {
                       let bitmap = resources.bitmap(identifier: fallback) {
                 draw(bitmap, object: object, frame: node.frame, context: context)
             }
+        } else if (type == "windowholder" || type == "componentbucket"),
+                  let kind = Self.componentKind(of: object) {
+            drawComponent(kind: kind, frame: node.frame, context: context)
         } else if let imageID = resolvedBitmapID(for: object,
                                                   pressed: pressed == object.stableID,
                                                   hovered: hovered == object.stableID),
@@ -576,6 +630,124 @@ final class WasabiSceneRenderer {
                                 width: thumbWidth, height: thumbHeight)
         }
         context.draw(thumb.image, in: thumbFrame)
+    }
+
+    // MARK: - Embedded component drawing
+
+    /// Draw a hosted component into its holder frame. Playlist/EQ/vis are skin-framed but
+    /// engine-drawn here; library/video/other are hosted as live AppKit subviews by the view layer,
+    /// so this only paints a bounded neutral backing for them.
+    private func drawComponent(kind: WinampModernComponentKind, frame: CGRect, context: CGContext) {
+        guard frame.width > 1, frame.height > 1 else { return }
+        switch kind {
+        case .playlist: drawPlaylistComponent(frame: frame, context: context)
+        case .equalizer: drawEqualizerComponent(frame: frame, context: context)
+        case .visualization:
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(frame)
+            drawVisualizationBars(frame: frame, context: context)
+        case .library, .video, .other:
+            context.setFillColor(NSColor(white: 0.06, alpha: 1).cgColor)
+            context.fill(frame)
+        }
+    }
+
+    private func drawPlaylistComponent(frame: CGRect, context: CGContext) {
+        context.setFillColor(NSColor(white: 0.04, alpha: 1).cgColor)
+        context.fill(frame)
+        guard let snapshot = componentHost?.playlistSnapshot() else { return }
+        let visible = playlistVisibleRowCount(in: frame)
+        guard visible > 0 else { return }
+        // Keep the scroll offset in range as the list changes.
+        let maxOffset = max(0, snapshot.rows.count - visible)
+        let offset = max(0, min(maxOffset, playlistScrollOffset))
+        let font = NSFont.systemFont(ofSize: 9)
+        context.saveGState()
+        context.clip(to: frame)
+        for slot in 0..<visible {
+            let index = offset + slot
+            guard index < snapshot.rows.count else { break }
+            let row = snapshot.rows[index]
+            let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * playlistRowHeight,
+                                 width: frame.width, height: playlistRowHeight)
+            if row.isCurrent {
+                context.setFillColor(NSColor(red: 0.12, green: 0.2, blue: 0.32, alpha: 1).cgColor)
+                context.fill(rowRect)
+            } else if index == snapshot.selectedIndex {
+                context.setFillColor(NSColor(white: 0.16, alpha: 1).cgColor)
+                context.fill(rowRect)
+            }
+            let color = row.isCurrent ? NSColor(red: 0.6, green: 0.85, blue: 1, alpha: 1)
+                                      : NSColor(white: 0.75, alpha: 1)
+            let label = "\(index + 1). \(row.title)"
+            drawFlippedText(label, in: rowRect.insetBy(dx: 3, dy: 1), font: font, color: color,
+                            alignment: .left, context: context)
+            if row.duration > 0 {
+                let seconds = Int(row.duration)
+                let time = String(format: "%d:%02d", seconds / 60, seconds % 60)
+                drawFlippedText(time, in: rowRect.insetBy(dx: 3, dy: 1), font: font, color: color,
+                                alignment: .right, context: context)
+            }
+        }
+        context.restoreGState()
+    }
+
+    private func drawEqualizerComponent(frame: CGRect, context: CGContext) {
+        context.setFillColor(NSColor(white: 0.05, alpha: 1).cgColor)
+        context.fill(frame)
+        guard let snapshot = componentHost?.equalizerSnapshot() else { return }
+        let bands = snapshot.bandGainsDB
+        let all = [snapshot.preampDB] + bands
+        guard !all.isEmpty else { return }
+        let slotWidth = frame.width / CGFloat(all.count)
+        context.saveGState()
+        context.clip(to: frame)
+        for (index, gain) in all.enumerated() {
+            let x = frame.minX + CGFloat(index) * slotWidth
+            let normalized = CGFloat((gain + 12) / 24) // -12…12 → 0…1
+            let trackRect = CGRect(x: x + slotWidth * 0.35, y: frame.minY + 2,
+                                   width: max(1, slotWidth * 0.3), height: frame.height - 4)
+            context.setFillColor(NSColor(white: 0.18, alpha: 1).cgColor)
+            context.fill(trackRect)
+            let thumbHeight: CGFloat = 3
+            let travel = max(0, trackRect.height - thumbHeight)
+            let thumbY = trackRect.minY + (1 - normalized) * travel
+            context.setFillColor((snapshot.enabled ? NSColor(red: 0.4, green: 0.8, blue: 1, alpha: 1)
+                                                    : NSColor(white: 0.5, alpha: 1)).cgColor)
+            context.fill(CGRect(x: x + slotWidth * 0.2, y: thumbY,
+                                width: max(2, slotWidth * 0.6), height: thumbHeight))
+        }
+        context.restoreGState()
+    }
+
+    private func drawVisualizationBars(frame: CGRect, context: CGContext) {
+        guard !host.spectrumLevels.isEmpty else { return }
+        let levels = host.spectrumLevels
+        let count = min(64, levels.count)
+        let width = frame.width / CGFloat(count)
+        context.setFillColor(NSColor(red: 0.3, green: 0.9, blue: 0.4, alpha: 1).cgColor)
+        for index in 0..<count {
+            let level = CGFloat(max(0, min(1, levels[index])))
+            context.fill(CGRect(x: frame.minX + CGFloat(index) * width,
+                                y: frame.maxY - level * frame.height,
+                                width: max(1, width - 1), height: level * frame.height))
+        }
+    }
+
+    private func drawFlippedText(_ text: String, in frame: CGRect, font: NSFont, color: NSColor,
+                                 alignment: NSTextAlignment, context: CGContext) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = alignment
+        paragraph.lineBreakMode = .byTruncatingTail
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font, .foregroundColor: color, .paragraphStyle: paragraph
+        ]
+        context.saveGState()
+        context.translateBy(x: 0, y: frame.midY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -frame.midY)
+        (text as NSString).draw(in: frame, withAttributes: attributes)
+        context.restoreGState()
     }
 
     private func resolvedBitmapID(for object: WasabiObject, pressed: Bool, hovered: Bool) -> String? {
