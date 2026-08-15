@@ -186,7 +186,8 @@ let package = Package(
         .testTarget(
             name: "NullPlayerAppTests",
             dependencies: [
-                "NullPlayer"
+                "NullPlayer",
+                "ZIPFoundation"
             ],
             path: "Tests/NullPlayerAppTests"
         ),

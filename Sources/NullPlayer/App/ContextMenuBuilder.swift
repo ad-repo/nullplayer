@@ -815,16 +815,47 @@ class ContextMenuBuilder {
         if AppCapabilities.supports(.metalMode) { uiMenu.addItem(metalItem) }
 
         #if DEBUG
-        // DEBUG-only entry point for the Winamp Modern (.wal) family. Not shipped in release
-        // until Phase 3 can render a real skin; here it only drives the live-switch acceptance loop.
+        // DEBUG-only Phase 2 import/inspection surface. Keep the whole family out of release menus
+        // until Phase 3 can render and drive a real skin.
         uiMenu.addItem(NSMenuItem.separator())
         let winampModernItem = NSMenuItem(
             title: "Winamp Modern (dev)",
-            action: #selector(MenuActions.setWinampModernMode),
+            action: nil,
             keyEquivalent: ""
         )
-        winampModernItem.target = MenuActions.shared
         if activeMode == .winampModern { winampModernItem.state = .on }
+        let winampModernMenu = NSMenu()
+        winampModernMenu.autoenablesItems = false
+
+        if activeMode != .winampModern {
+            let switchItem = NSMenuItem(title: "Switch to Winamp Modern",
+                                        action: #selector(MenuActions.setWinampModernMode), keyEquivalent: "")
+            switchItem.target = MenuActions.shared
+            winampModernMenu.addItem(switchItem)
+            winampModernMenu.addItem(NSMenuItem.separator())
+        }
+
+        let importItem = NSMenuItem(title: "Import .wal Skin...",
+                                    action: #selector(MenuActions.loadWinampModernSkinFromFile), keyEquivalent: "")
+        importItem.target = MenuActions.shared
+        winampModernMenu.addItem(importItem)
+
+        let installed = WinampModernSkinImporter.shared.installedSkins()
+        if !installed.isEmpty {
+            winampModernMenu.addItem(NSMenuItem.separator())
+            for skin in installed {
+                let item = NSMenuItem(title: skin.name, action: nil, keyEquivalent: "")
+                item.isEnabled = false // Selection/rendering begins in Phase 3.
+                winampModernMenu.addItem(item)
+            }
+        }
+
+        winampModernMenu.addItem(NSMenuItem.separator())
+        let openFolder = NSMenuItem(title: "Open Skins Folder...",
+                                    action: #selector(MenuActions.openWinampModernSkinsFolder), keyEquivalent: "")
+        openFolder.target = MenuActions.shared
+        winampModernMenu.addItem(openFolder)
+        winampModernItem.submenu = winampModernMenu
         uiMenu.addItem(winampModernItem)
         #endif
 
@@ -4095,6 +4126,34 @@ class MenuActions: NSObject {
     @objc func loadMetalSkinFromFile() {
         loadModernFamilySkinFromFile(family: .metal)
     }
+
+    #if DEBUG
+    @objc func loadWinampModernSkinFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.init(filenameExtension: "wal")!]
+        panel.message = "Select a Winamp 5.x .wal skin archive"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let imported = try WinampModernSkinImporter.shared.importContainer(at: url)
+            NSLog("WinampModern: Imported validated skin '%@' to %@", imported.name, imported.archiveURL.path)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Failed to Import Winamp Modern Skin"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
+    @objc func openWinampModernSkinsFolder() {
+        let directory = WinampModernSkinImporter.shared.destinationDirectory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(directory)
+    }
+    #endif
 
     private func loadModernFamilySkinFromFile(family: ModernSkinFamily) {
         let panel = NSOpenPanel()
