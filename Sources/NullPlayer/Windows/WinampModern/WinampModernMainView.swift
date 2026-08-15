@@ -11,7 +11,9 @@ final class WinampModernMainView: NSView {
     private var windowDragStartPoint: NSPoint = .zero
     private var lastPlaybackState: PlaybackState = .stopped
     private var tracking: NSTrackingArea?
+    private var animationTimer: Timer?
     private(set) var isTornDown = false
+    var canvasSizeDidChange: ((CGSize) -> Void)?
 
     init(renderer: WasabiSceneRenderer, scripts: WinampModernScriptRuntime,
          host: WinampModernHost) {
@@ -25,6 +27,38 @@ final class WinampModernMainView: NSView {
         setAccessibilityRole(.group)
         setAccessibilityLabel("Winamp Modern skin player")
         scripts.graphDidMutate = { [weak self] in self?.needsDisplay = true }
+        scripts.layoutSwitchRequested = { [weak self] layoutID in
+            guard let self, let size = try? self.renderer.activateLayout(id: layoutID) else { return false }
+            self.setFrameSize(size)
+            self.canvasSizeDidChange?(size)
+            self.needsDisplay = true
+            return true
+        }
+        scripts.layoutResizeRequested = { [weak self] proposed in
+            guard let self else { return }
+            let size = self.renderer.resize(to: proposed)
+            self.setFrameSize(size)
+            self.canvasSizeDidChange?(size)
+            self.needsDisplay = true
+        }
+        scripts.actionRequested = { [weak self] action, parameter in
+            self?.performAction(action: action, parameter: parameter)
+        }
+        scripts.themeNamesRequested = { [weak renderer] in renderer?.themes.themeNames ?? [] }
+        scripts.activeThemeRequested = { [weak renderer] in renderer?.themes.activeTheme ?? "Default" }
+        scripts.themeSwitchRequested = { [weak self] name in
+            guard let self else { return false }
+            let changed = self.renderer.activateTheme(name)
+            if changed { self.needsDisplay = true }
+            return changed
+        }
+        if renderer.sceneNodes().contains(where: {
+            ["animatedlayer", "songticker"].contains($0.object.typeName.lowercased())
+        }) {
+            animationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
+                self?.needsDisplay = true
+            }
+        }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -157,10 +191,13 @@ final class WinampModernMainView: NSView {
         guard !isTornDown else { return }
         if let tracking { removeTrackingArea(tracking) }
         tracking = nil
+        animationTimer?.invalidate()
+        animationTimer = nil
         pressedObject = nil
         hoveredObject = nil
         scripts.teardown()
         renderer.teardown()
+        canvasSizeDidChange = nil
         isTornDown = true
     }
 
@@ -196,21 +233,10 @@ final class WinampModernMainView: NSView {
     }
 
     private func performAction(for object: WasabiObject) {
-        switch object.attributes["action"]?.uppercased() {
-        case "PLAY": host.play()
-        case "PAUSE": host.pause()
-        case "STOP": host.stop()
-        case "PREV": host.previous()
-        case "NEXT": host.next()
-        case "EJECT": host.openFiles()
-        case "TOGGLE":
-            switch object.attributes["param"]?.lowercased() {
-            case "eq": WindowManager.shared.toggleEqualizer()
-            case "guid:pl": WindowManager.shared.togglePlaylist()
-            case "guid:ml": WindowManager.shared.togglePlexBrowser()
-            default: break
-            }
-        default:
+        let action = object.attributes["action"]
+        let parameter = object.attributes["param"]
+        performAction(action: action, parameter: parameter)
+        if action == nil {
             switch object.xmlID?.lowercased() {
             case "shuffle": host.shuffleEnabled.toggle()
             case "repeat": host.repeatEnabled.toggle()
@@ -218,5 +244,30 @@ final class WinampModernMainView: NSView {
             }
         }
         updatePlaybackState()
+    }
+
+    private func performAction(action: String?, parameter: String?) {
+        switch action?.uppercased() {
+        case "PLAY": host.play()
+        case "PAUSE": host.pause()
+        case "STOP": host.stop()
+        case "PREV": host.previous()
+        case "NEXT": host.next()
+        case "EJECT": host.openFiles()
+        case "SWITCH":
+            if let parameter, let size = try? renderer.activateLayout(id: parameter) {
+                setFrameSize(size)
+                canvasSizeDidChange?(size)
+                needsDisplay = true
+            }
+        case "TOGGLE":
+            switch parameter?.lowercased() {
+            case "eq": WindowManager.shared.toggleEqualizer()
+            case "guid:pl": WindowManager.shared.togglePlaylist()
+            case "guid:ml": WindowManager.shared.togglePlexBrowser()
+            default: break
+            }
+        default: break
+        }
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import CoreGraphics
 import CoreText
 import Foundation
@@ -27,9 +28,78 @@ struct WasabiBitmap {
     }
 }
 
+struct WasabiGammaTransform: Equatable {
+    let red: CGFloat
+    let green: CGFloat
+    let blue: CGFloat
+    let grayscale: Bool
+    let boost: Bool
+}
+
+final class WasabiColorThemeCatalog {
+    private let loadedSkin: WinampModernLoadedSkin
+    private var sets: [String: [String: WasabiGammaTransform]] = [:]
+    private var displayNames: [String: String] = [:]
+    private(set) var activeTheme: String = "Default"
+
+    var themeNames: [String] { displayNames.values.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending } }
+
+    init(loadedSkin: WinampModernLoadedSkin) {
+        self.loadedSkin = loadedSkin
+        func collect(_ nodes: [WalXMLNode]) {
+            for node in nodes {
+                if node.name.caseInsensitiveCompare("gammaset") == .orderedSame,
+                   let name = node.attribute("id"), !name.isEmpty {
+                    let key = Self.fold(name)
+                    displayNames[key] = name
+                    var groups: [String: WasabiGammaTransform] = [:]
+                    for child in node.children where child.name.caseInsensitiveCompare("gammagroup") == .orderedSame {
+                        guard let id = child.attribute("id") else { continue }
+                        let values = Self.components(child.attribute("value") ?? "0,0,0")
+                        groups[Self.fold(id)] = WasabiGammaTransform(
+                            red: values[0] / 4096, green: values[1] / 4096, blue: values[2] / 4096,
+                            grayscale: Self.bool(child.attribute("gray")), boost: Self.bool(child.attribute("boost")))
+                    }
+                    sets[key] = groups
+                }
+                collect(node.children)
+            }
+        }
+        collect(loadedSkin.document.roots)
+        let stored = loadedSkin.configuration.string(section: "appearance", key: "theme", default: "")
+        let storedKey = Self.fold(stored)
+        if sets[storedKey] != nil { activeTheme = displayNames[storedKey] ?? stored }
+        else { activeTheme = themeNames.first(where: { $0.caseInsensitiveCompare("Default") == .orderedSame }) ?? themeNames.first ?? "Default" }
+    }
+
+    @discardableResult
+    func activate(_ name: String) -> Bool {
+        let key = Self.fold(name)
+        guard let displayName = displayNames[key], displayName != activeTheme else { return false }
+        activeTheme = displayName
+        loadedSkin.configuration.setString(displayName, section: "appearance", key: "theme")
+        return true
+    }
+
+    func transform(group: String?) -> WasabiGammaTransform? {
+        guard let group else { return nil }
+        return sets[Self.fold(activeTheme)]?[Self.fold(group)]
+    }
+
+    private static func components(_ raw: String) -> [CGFloat] {
+        let parsed = raw.split(separator: ",").map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
+        return (parsed + [0, 0, 0]).prefix(3).map { $0 }
+    }
+    private static func bool(_ raw: String?) -> Bool { raw == "1" || raw?.lowercased() == "true" }
+    private static func fold(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    }
+}
+
 final class WasabiResourceCache {
     let loadedSkin: WinampModernLoadedSkin
     let maximumCost: Int
+    let themes: WasabiColorThemeCatalog
 
     private struct CachedBitmap {
         let bitmap: WasabiBitmap
@@ -41,8 +111,10 @@ final class WasabiResourceCache {
     private var accessCounter: UInt64 = 0
     private(set) var isTornDown = false
 
-    init(loadedSkin: WinampModernLoadedSkin, maximumCost: Int = 256 * 1_024 * 1_024) {
+    init(loadedSkin: WinampModernLoadedSkin, themes: WasabiColorThemeCatalog,
+         maximumCost: Int = 256 * 1_024 * 1_024) {
         self.loadedSkin = loadedSkin
+        self.themes = themes
         self.maximumCost = maximumCost
     }
 
@@ -55,7 +127,7 @@ final class WasabiResourceCache {
             bitmaps[key] = cached
             return cached.bitmap
         }
-        guard let definition = loadedSkin.runtime.resources.definition(identifier: identifier),
+        guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
               definition.kind == "bitmap", let path = definition.logicalFile,
               let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
               let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -68,7 +140,8 @@ final class WasabiResourceCache {
                                 Int(Double(definition.attributes["h"] ?? "") ?? Double(fullImage.height - topY))))
         let cropY = fullImage.height - topY - height
         guard cropY >= 0,
-              let image = fullImage.cropping(to: CGRect(x: x, y: cropY, width: width, height: height)) else { return nil }
+              let cropped = fullImage.cropping(to: CGRect(x: x, y: cropY, width: width, height: height)) else { return nil }
+        let image = themed(cropped, transform: themes.transform(group: definition.attributes["gammagroup"]))
         let cost = width * height * 4
         let bitmap = WasabiBitmap(image: image, width: width, height: height, cost: cost)
         bitmaps[key] = CachedBitmap(bitmap: bitmap, access: accessCounter)
@@ -79,7 +152,7 @@ final class WasabiResourceCache {
 
     func font(identifier: String?, size: CGFloat) -> NSFont {
         guard !isTornDown, let identifier,
-              let definition = loadedSkin.runtime.resources.definition(identifier: identifier),
+              let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
               definition.kind == "truetypefont", let path = definition.logicalFile else {
             return .monospacedSystemFont(ofSize: size, weight: .regular)
         }
@@ -108,6 +181,27 @@ final class WasabiResourceCache {
         isTornDown = true
     }
 
+    func invalidateTheme() {
+        bitmaps.removeAll()
+        currentCost = 0
+    }
+
+    private func themed(_ image: CGImage, transform: WasabiGammaTransform?) -> CGImage {
+        guard let transform, transform != WasabiGammaTransform(red: 0, green: 0, blue: 0,
+                                                               grayscale: false, boost: false) else { return image }
+        var output = CIImage(cgImage: image)
+        if transform.grayscale {
+            output = output.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
+        }
+        if transform.boost {
+            output = output.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.2])
+        }
+        output = output.applyingFilter("CIColorMatrix", parameters: [
+            "inputBiasVector": CIVector(x: transform.red, y: transform.green, z: transform.blue, w: 0)
+        ])
+        return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: output.extent) ?? image
+    }
+
     private func evictIfNeeded(protecting protectedKey: String) {
         while currentCost > maximumCost,
               let victim = bitmaps.filter({ $0.key != protectedKey }).min(by: { $0.value.access < $1.value.access }) {
@@ -128,14 +222,26 @@ final class WasabiSceneRenderer {
     let loadedSkin: WinampModernLoadedSkin
     let host: WinampModernHost
     let resources: WasabiResourceCache
+    let themes: WasabiColorThemeCatalog
     let container: WasabiObject
-    let layout: WasabiObject
-    let canvasSize: CGSize
+    private(set) var layout: WasabiObject
+    private(set) var canvasSize: CGSize
+    private let clock: () -> TimeInterval
 
-    init(loadedSkin: WinampModernLoadedSkin, host: WinampModernHost) throws {
+    var activeLayoutID: String { layout.xmlID ?? "normal" }
+    var availableLayoutIDs: [String] {
+        container.children.compactMap { child in
+            child.typeName.caseInsensitiveCompare("layout") == .orderedSame ? child.xmlID : nil
+        }
+    }
+
+    init(loadedSkin: WinampModernLoadedSkin, host: WinampModernHost,
+         clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
         self.loadedSkin = loadedSkin
         self.host = host
-        self.resources = WasabiResourceCache(loadedSkin: loadedSkin)
+        self.clock = clock
+        self.themes = WasabiColorThemeCatalog(loadedSkin: loadedSkin)
+        self.resources = WasabiResourceCache(loadedSkin: loadedSkin, themes: themes)
         guard let container = loadedSkin.runtime.graph.roots.first(where: {
             $0.typeName.caseInsensitiveCompare("container") == .orderedSame &&
             $0.xmlID?.caseInsensitiveCompare("main") == .orderedSame
@@ -148,9 +254,45 @@ final class WasabiSceneRenderer {
         }
         self.container = container
         self.layout = layout
-        let width = Self.dimension(layout.attributes, keys: ["default_w", "minimum_w", "w"], fallback: 275)
-        let height = Self.dimension(layout.attributes, keys: ["default_h", "minimum_h", "h"], fallback: 116)
+        let width = Self.dimension(layout.attributes, keys: ["default_w", "w", "minimum_w"], fallback: 275)
+        let height = Self.dimension(layout.attributes, keys: ["default_h", "h", "minimum_h"], fallback: 116)
         self.canvasSize = CGSize(width: width, height: height)
+    }
+
+    @discardableResult
+    func activateTheme(_ name: String) -> Bool {
+        guard themes.activate(name) else { return false }
+        resources.invalidateTheme()
+        loadedSkin.runtime.graph.markAllDirty(.appearance)
+        return true
+    }
+
+    @discardableResult
+    func activateLayout(id: String) throws -> CGSize {
+        guard let next = container.children.first(where: {
+            $0.typeName.caseInsensitiveCompare("layout") == .orderedSame &&
+            $0.xmlID?.caseInsensitiveCompare(id) == .orderedSame
+        }) else {
+            throw WalFailure(WalDiagnostic(.malformedXML,
+                                           "Container '\(container.xmlID ?? "Main")' has no layout '\(id)'.",
+                                           location: container.source))
+        }
+        layout = next
+        canvasSize = defaultSize(for: next)
+        loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
+        return canvasSize
+    }
+
+    @discardableResult
+    func resize(to proposedSize: CGSize) -> CGSize {
+        let minimumWidth = Self.dimension(layout.attributes, keys: ["minimum_w"], fallback: 1)
+        let minimumHeight = Self.dimension(layout.attributes, keys: ["minimum_h"], fallback: 1)
+        let maximumWidth = Self.optionalDimension(layout.attributes["maximum_w"]) ?? 16_384
+        let maximumHeight = Self.optionalDimension(layout.attributes["maximum_h"]) ?? 16_384
+        canvasSize = CGSize(width: max(minimumWidth, min(maximumWidth, proposedSize.width)),
+                            height: max(minimumHeight, min(maximumHeight, proposedSize.height)))
+        loadedSkin.runtime.graph.markAllDirty(.geometry)
+        return canvasSize
     }
 
     func sceneNodes() -> [WasabiSceneNode] {
@@ -238,16 +380,29 @@ final class WasabiSceneRenderer {
             context.draw(bitmap.image, in: node.frame)
         }
 
-        if type == "text" {
+        if type == "text" || type == "songticker" {
             drawText(object, frame: node.frame, context: context)
         } else if type == "slider" {
             drawSlider(object, frame: node.frame, context: context,
                        pressed: pressed == object.stableID)
+        } else if type == "vis" {
+            drawVisualization(object, frame: node.frame, context: context)
+        } else if type == "albumart" {
+            if let artwork = host.albumArtwork {
+                context.draw(artwork, in: node.frame)
+            } else if let fallback = object.attributes["notfoundimage"],
+                      let bitmap = resources.bitmap(identifier: fallback) {
+                draw(bitmap, object: object, frame: node.frame, context: context)
+            }
         } else if let imageID = resolvedBitmapID(for: object,
                                                   pressed: pressed == object.stableID,
                                                   hovered: hovered == object.stableID),
                   let bitmap = resources.bitmap(identifier: imageID) {
-            draw(bitmap, object: object, frame: node.frame, context: context)
+            if type == "animatedlayer" {
+                drawAnimated(bitmap, object: object, frame: node.frame, context: context)
+            } else {
+                draw(bitmap, object: object, frame: node.frame, context: context)
+            }
         }
         context.restoreGState()
     }
@@ -280,9 +435,15 @@ final class WasabiSceneRenderer {
         case "songinfo": text = host.trackInfo
         default: text = object.attributes["text"] ?? object.attributes["default"] ?? ""
         }
+        if let fontID = object.attributes["font"],
+           let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
+           definition.kind == "bitmapfont" {
+            drawBitmapText(text, definition: definition, object: object, frame: frame, context: context)
+            return
+        }
         let size = CGFloat(Double(object.attributes["fontsize"] ?? "11") ?? 11)
         let font = resources.font(identifier: object.attributes["font"], size: size)
-        let color = Self.color(object.attributes["color"] ?? "255,255,255")
+        let color = resolvedColor(object.attributes["color"] ?? "255,255,255")
         let alignment: NSTextAlignment
         switch object.attributes["align"]?.lowercased() {
         case "center": alignment = .center
@@ -301,6 +462,84 @@ final class WasabiSceneRenderer {
         context.translateBy(x: 0, y: -frame.midY)
         (text as NSString).draw(in: frame, withAttributes: attributes)
         context.restoreGState()
+    }
+
+    private func drawBitmapText(_ text: String, definition: WalResourceDefinition,
+                                object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard let sheet = resources.bitmap(identifier: definition.attributes["file"]) else { return }
+        let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
+        let charHeight = max(1, Int(Double(definition.attributes["charheight"] ?? "1") ?? 1))
+        let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
+        let advance = max(1, charWidth + spacing)
+        let mapRows = [Array("abcdefghijklmnopqrstuvwxyz\"@  "),
+                       Array("0123456789….:()-'!_+\\/[]^&%,=$#\nâöä?*")]
+        var positions: [Character: (Int, Int)] = [:]
+        for (row, characters) in mapRows.enumerated() {
+            for (column, character) in characters.enumerated() { positions[character] = (column, row) }
+        }
+        let width = CGFloat(text.count * advance)
+        var startX: CGFloat
+        switch object.attributes["align"]?.lowercased() {
+        case "center": startX = frame.midX - width / 2
+        case "right": startX = frame.maxX - width
+        default: startX = frame.minX
+        }
+        if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame, width > frame.width {
+            let travel = width + frame.width
+            startX = frame.maxX - CGFloat(clock().truncatingRemainder(dividingBy: Double(travel) / 30) * 30)
+        }
+        var x = startX
+        context.saveGState()
+        context.clip(to: frame)
+        for character in text.lowercased() {
+            let (column, row) = positions[character] ?? positions[" "] ?? (0, 0)
+            let cropRect = CGRect(x: column * charWidth,
+                                  y: sheet.height - (row + 1) * charHeight,
+                                  width: charWidth, height: charHeight)
+            if cropRect.minY >= 0, cropRect.maxX <= CGFloat(sheet.width),
+               let glyph = sheet.image.cropping(to: cropRect) {
+                context.draw(glyph, in: CGRect(x: x, y: frame.minY,
+                                              width: CGFloat(charWidth), height: CGFloat(charHeight)))
+            }
+            x += CGFloat(advance)
+        }
+        context.restoreGState()
+    }
+
+    private func drawAnimated(_ bitmap: WasabiBitmap, object: WasabiObject,
+                              frame: CGRect, context: CGContext) {
+        let frameWidth = max(1, Int(Double(object.attributes["framewidth"] ?? object.attributes["w"] ?? "") ?? Double(bitmap.width)))
+        let frameHeight = max(1, Int(Double(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Double(bitmap.height)))
+        let columns = max(1, bitmap.width / frameWidth)
+        let rows = max(1, bitmap.height / frameHeight)
+        let count = max(1, Int(Double(object.attributes["frames"] ?? "") ?? Double(columns * rows)))
+        let playing = object.attributes["playing"] == "1" || object.attributes["autoplay"] == "1"
+        let period = max(0.008, (Double(object.attributes["speed"] ?? "100") ?? 100) / 1_000)
+        let selected = Int(object.attributes["frame"] ?? "0") ?? 0
+        let frameIndex = max(0, min(count - 1, playing ? Int(clock() / period) % count : selected))
+        let column = frameIndex % columns
+        let row = frameIndex / columns
+        let crop = CGRect(x: column * frameWidth,
+                          y: bitmap.height - (row + 1) * frameHeight,
+                          width: frameWidth, height: frameHeight)
+        guard crop.minY >= 0, crop.maxX <= CGFloat(bitmap.width),
+              let image = bitmap.image.cropping(to: crop) else { return }
+        context.draw(image, in: frame)
+    }
+
+    private func drawVisualization(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard !host.spectrumLevels.isEmpty, frame.width > 0, frame.height > 0 else { return }
+        let levels = host.spectrumLevels
+        let count = min(64, levels.count)
+        let width = frame.width / CGFloat(count)
+        for index in 0..<count {
+            let level = CGFloat(max(0, min(1, levels[index])))
+            let colorName = object.attributes["colorband\(min(16, index + 1))"] ?? "255,255,255"
+            context.setFillColor(resolvedColor(colorName).cgColor)
+            context.fill(CGRect(x: frame.minX + CGFloat(index) * width,
+                                y: frame.maxY - level * frame.height,
+                                width: max(1, width - 1), height: level * frame.height))
+        }
     }
 
     private func drawSlider(_ object: WasabiObject, frame: CGRect, context: CGContext, pressed: Bool) {
@@ -350,6 +589,15 @@ final class WasabiSceneRenderer {
         }
         if pressed, let down = object.attributes["downimage"] { return down }
         if hovered, let hover = object.attributes["hoverimage"] { return hover }
+        if type == "nstatesbutton", let base = object.attributes["image"] {
+            let state: Int
+            if object.xmlID?.lowercased().contains("repeat") == true {
+                state = host.repeatEnabled ? 1 : 0
+            } else {
+                state = max(0, Int(object.attributes["state"] ?? "0") ?? 0)
+            }
+            return "\(base)\(state)"
+        }
         if type == "togglebutton" || object.attributes["activeimage"] != nil {
             let id = object.xmlID?.lowercased()
             let active = (id == "shuffle" && host.shuffleEnabled) || (id == "repeat" && host.repeatEnabled)
@@ -360,7 +608,7 @@ final class WasabiSceneRenderer {
 
     private func isInteractive(_ object: WasabiObject) -> Bool {
         let type = object.typeName.lowercased()
-        return type == "button" || type == "togglebutton" || type == "slider" ||
+        return type == "button" || type == "togglebutton" || type == "nstatesbutton" || type == "slider" ||
             object.attributes["action"] != nil || object.attributes["move"] == "1" ||
             (type == "layer" && object.attributes["ghost"] != "1")
     }
@@ -368,6 +616,9 @@ final class WasabiSceneRenderer {
     private func isRenderable(_ object: WasabiObject, bitmapID: String?) -> Bool {
         object.attributes["background"] != nil || bitmapID != nil ||
             object.typeName.caseInsensitiveCompare("text") == .orderedSame ||
+            object.typeName.caseInsensitiveCompare("songticker") == .orderedSame ||
+            object.typeName.caseInsensitiveCompare("vis") == .orderedSame ||
+            object.typeName.caseInsensitiveCompare("albumart") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("slider") == .orderedSame
     }
 
@@ -389,6 +640,16 @@ final class WasabiSceneRenderer {
         return fallback
     }
 
+    private func defaultSize(for layout: WasabiObject) -> CGSize {
+        CGSize(width: Self.dimension(layout.attributes, keys: ["default_w", "w", "minimum_w"], fallback: 275),
+               height: Self.dimension(layout.attributes, keys: ["default_h", "h", "minimum_h"], fallback: 116))
+    }
+
+    private static func optionalDimension(_ raw: String?) -> CGFloat? {
+        guard let raw, let value = Double(raw), value > 0 else { return nil }
+        return CGFloat(value)
+    }
+
     private static func color(_ raw: String) -> NSColor {
         let values = raw.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard values.count >= 3 else { return .white }
@@ -396,5 +657,19 @@ final class WasabiSceneRenderer {
                        green: max(0, min(255, values[1])) / 255,
                        blue: max(0, min(255, values[2])) / 255,
                        alpha: 1)
+    }
+
+    private func resolvedColor(_ raw: String) -> NSColor {
+        guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: raw),
+              definition.kind == "color" else { return Self.color(raw) }
+        let base = definition.attributes["value"] ?? "255,255,255"
+        let values = base.split(separator: ",").map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 255) }
+        guard values.count >= 3 else { return .white }
+        let gamma = themes.transform(group: definition.attributes["gammagroup"])
+        let r = values[0] / 255 + (gamma?.red ?? 0)
+        let g = values[1] / 255 + (gamma?.green ?? 0)
+        let b = values[2] / 255 + (gamma?.blue ?? 0)
+        return NSColor(red: max(0, min(1, r)), green: max(0, min(1, g)),
+                       blue: max(0, min(1, b)), alpha: 1)
     }
 }

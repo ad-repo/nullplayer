@@ -12,13 +12,16 @@ final class WinampModernLoadedSkin {
     let vfs: WalVirtualFileSystem
     let document: WalExpandedXMLDocument
     let runtime: WasabiSkinRuntime
+    let configuration: WinampModernConfiguration
 
     init(archive: WalArchive, vfs: WalVirtualFileSystem,
-         document: WalExpandedXMLDocument, runtime: WasabiSkinRuntime) {
+         document: WalExpandedXMLDocument, runtime: WasabiSkinRuntime,
+         configuration: WinampModernConfiguration) {
         self.archive = archive
         self.vfs = vfs
         self.document = document
         self.runtime = runtime
+        self.configuration = configuration
     }
 
     func teardown() { runtime.teardown() }
@@ -46,7 +49,8 @@ final class WinampModernSkinLoader {
         let runtime = try WasabiSkinInitializer(vfs: vfs,
                                                 maximumObjectCount: xmlLimits.maximumExpandedNodeCount)
             .initialize(document: document)
-        return WinampModernLoadedSkin(archive: archive, vfs: vfs, document: document, runtime: runtime)
+        return WinampModernLoadedSkin(archive: archive, vfs: vfs, document: document, runtime: runtime,
+                                     configuration: WinampModernConfiguration(namespace: mountName))
     }
 
     private static func safeMountName(_ name: String) -> String {

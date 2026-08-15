@@ -10,6 +10,7 @@ protocol WinampModernHost: AnyObject {
     var repeatEnabled: Bool { get set }
     var trackTitle: String { get }
     var trackInfo: String { get }
+    var albumArtwork: CGImage? { get }
     var spectrumLevels: [Float] { get set }
 
     func play()
@@ -21,6 +22,10 @@ protocol WinampModernHost: AnyObject {
     func openFiles()
     func beginVisualizationConsumption()
     func endVisualizationConsumption()
+}
+
+extension WinampModernHost {
+    var albumArtwork: CGImage? { nil }
 }
 
 final class WinampModernAudioEngineHost: WinampModernHost {
@@ -98,6 +103,7 @@ final class MakiTimerService {
     }
 
     var activeTimerCount: Int { timers.count }
+    func contains(id: UInt64) -> Bool { timers[id] != nil }
 
     @discardableResult
     func schedule(id: UInt64, period: TimeInterval, handler: @escaping () -> Void) throws -> TimeInterval {

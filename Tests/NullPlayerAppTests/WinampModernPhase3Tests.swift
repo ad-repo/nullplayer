@@ -180,7 +180,7 @@ final class WinampModernPhase3Tests: XCTestCase {
     }
 
     private final class NoOpDispatcher: MakiMethodDispatching {
-        func signature(for method: String) -> MakiMethodSignature? { nil }
+        func signature(for method: String, classGUID: String?) -> MakiMethodSignature? { nil }
         func invoke(method: String, on object: MakiObjectReference, arguments: [MakiValue],
                     program: MakiProgram) throws -> MakiValue { .null }
         func makeObject(classGUID: String, program: MakiProgram) throws -> MakiObjectReference {

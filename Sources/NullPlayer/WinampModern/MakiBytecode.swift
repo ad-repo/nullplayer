@@ -24,6 +24,7 @@ final class MakiObjectReference: Hashable {
         case system
         case gui(WasabiObjectID)
         case popupMenu(UInt64)
+        case dynamic(UInt64)
     }
 
     let kind: Kind
@@ -438,7 +439,7 @@ struct MakiMethodSignature {
 }
 
 protocol MakiMethodDispatching: AnyObject {
-    func signature(for method: String) -> MakiMethodSignature?
+    func signature(for method: String, classGUID: String?) -> MakiMethodSignature?
     func invoke(method: String, on object: MakiObjectReference, arguments: [MakiValue],
                 program: MakiProgram) throws -> MakiValue
     func makeObject(classGUID: String, program: MakiProgram) throws -> MakiObjectReference
@@ -543,14 +544,21 @@ final class MakiInterpreter {
             case 24, 112:
                 let methodIndex = try argument(instruction)
                 let method = program.methods[methodIndex]
-                guard let signature = dispatcher.signature(for: method.name) else {
-                    throw failure(.unsupportedScriptCapability, "CornerAmp MAKI target does not support method '\(method.name)'.")
+                let classGUID = program.classes.indices.contains(method.classIndex)
+                    ? program.classes[method.classIndex] : nil
+                guard let signature = dispatcher.signature(for: method.name, classGUID: classGUID) else {
+                    throw failure(.unsupportedScriptCapability, "Winamp Modern runtime does not support method '\(method.name)'.")
                 }
                 var arguments: [MakiValue] = []
                 arguments.reserveCapacity(signature.argumentCount)
                 for _ in 0..<signature.argumentCount { arguments.append(try pop().value) }
-                guard case .object(let object) = try pop().value else {
-                    throw failure(.invalidScript, "MAKI attempted '\(method.name)' on a null/non-object value.")
+                let receiver = try pop()
+                guard case .object(let object) = receiver.value else {
+                    let variableIndex = program.variables.firstIndex { $0 === receiver }
+                    let suffix = variableIndex.map { " from variable \($0)." } ?? "."
+                    throw failure(.invalidScript,
+                                  "MAKI attempted '\(method.name)' (class \(classGUID ?? "unknown")) on a null/non-object value" +
+                                  suffix)
                 }
                 let result = try dispatcher.invoke(method: method.name, on: object,
                                                    arguments: arguments, program: program)

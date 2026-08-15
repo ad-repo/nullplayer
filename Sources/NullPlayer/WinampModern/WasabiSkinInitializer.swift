@@ -23,6 +23,7 @@ final class WalResourceRegistry {
     private(set) var definitions: [WalResourceDefinition] = []
     private(set) var diagnostics: [WalDiagnostic] = []
     private var byIdentifier: [String: WalResourceDefinition] = [:]
+    private var aliases: [String: String] = [:]
 
     func register(_ definition: WalResourceDefinition) {
         definitions.append(definition)
@@ -41,6 +42,28 @@ final class WalResourceRegistry {
 
     func definition(identifier: String) -> WalResourceDefinition? { byIdentifier[Self.fold(identifier)] }
 
+    func registerAlias(identifier: String, target: String, source: WalSourceLocation) {
+        let key = Self.fold(identifier)
+        if aliases[key] != nil || byIdentifier[key] != nil {
+            diagnostics.append(WalDiagnostic(.duplicateIdentifier,
+                                             "Resource alias '\(identifier)' replaces an earlier resource.",
+                                             severity: .warning, location: source))
+        }
+        aliases[key] = target
+    }
+
+    func resolvedDefinition(identifier: String) -> WalResourceDefinition? {
+        var key = Self.fold(identifier)
+        var visited: Set<String> = []
+        for _ in 0..<64 {
+            guard visited.insert(key).inserted else { return nil }
+            if let definition = byIdentifier[key] { return definition }
+            guard let target = aliases[key] else { return nil }
+            key = Self.fold(target)
+        }
+        return nil
+    }
+
     private static func fold(_ value: String) -> String {
         value.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
@@ -58,6 +81,7 @@ struct WasabiGroupDefinition {
 
 struct WasabiResolvedGroupDefinition {
     let identifier: String
+    let embeddedXUITag: String?
     let defaultAttributes: [String: String]
     let templateChildren: [WalXMLNode]
 }
@@ -149,6 +173,7 @@ final class WasabiTypeRegistry {
         children.append(contentsOf: definition.templateChildren)
 
         let result = WasabiResolvedGroupDefinition(identifier: definition.identifier,
+                                                   embeddedXUITag: definition.embeddedXUITag,
                                                    defaultAttributes: attributes,
                                                    templateChildren: children)
         resolvedCache[key] = result
@@ -216,6 +241,12 @@ final class WasabiSkinInitializer {
         let source: WalSourceLocation
     }
 
+    private struct PendingMetaCommand {
+        weak var owner: WasabiObject?
+        let kind: String
+        let attributes: [String: String]
+    }
+
     let vfs: WalVirtualFileSystem
     let maximumObjectCount: Int
     let resourceLimits: WasabiResourceLimits
@@ -242,9 +273,12 @@ final class WasabiSkinInitializer {
 
         let graph = WasabiObjectGraph()
         var pendingScripts: [PendingScript] = []
+        var pendingMetaCommands: [PendingMetaCommand] = []
         var createdCount = 0
         try createObjects(from: document.roots, parent: nil, graph: graph, types: types,
-                          pendingScripts: &pendingScripts, definitionStack: [], createdCount: &createdCount)
+                          pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                          definitionStack: [], createdCount: &createdCount)
+        applyMetaCommands(pendingMetaCommands)
         passes.append(.objectCreation)
 
         let bindings = try bindScripts(pendingScripts)
@@ -270,9 +304,19 @@ final class WasabiSkinInitializer {
         let resourceTags: Set<String> = ["bitmap", "bitmapfont", "truetypefont", "color", "gammagroup", "gammaset", "cursor"]
         for node in nodes {
             let kind = node.name.lowercased()
+            if kind == "elementalias", let identifier = node.attribute("id"),
+               let target = node.attribute("target"), !identifier.isEmpty, !target.isEmpty {
+                registry.registerAlias(identifier: identifier, target: target, source: node.location)
+            }
             if resourceTags.contains(kind) {
                 var logicalFile: String?
-                if let rawFile = node.attribute("file"), !rawFile.isEmpty {
+                // Bitmap-font `file` values may name a previously declared bitmap rather
+                // than a VFS path (the stock Winamp Modern skin uses this form for every
+                // bitmap font). Keep that identifier in `attributes`; the renderer resolves
+                // it through the bounded resource registry. TrueType fonts and image-backed
+                // resources still resolve through the VFS here and fail closed when missing.
+                if kind != "bitmapfont",
+                   let rawFile = node.attribute("file"), !rawFile.isEmpty {
                     logicalFile = try resolveSkinResource(rawFile, source: node.location).logicalPath
                     if (kind == "bitmap" || kind == "cursor"),
                        validatedImages.insert(logicalFile!).inserted {
@@ -355,11 +399,12 @@ final class WasabiSkinInitializer {
         graph: WasabiObjectGraph,
         types: WasabiTypeRegistry,
         pendingScripts: inout [PendingScript],
+        pendingMetaCommands: inout [PendingMetaCommand],
         definitionStack: [String],
         createdCount: inout Int
     ) throws {
         let wrappers: Set<String> = ["wasabixml", "winampabstractionlayer", "elements", "skininfo"]
-        let declarations: Set<String> = ["groupdef", "bitmap", "bitmapfont", "truetypefont", "color", "gammagroup", "gammaset", "cursor"]
+        let declarations: Set<String> = ["groupdef", "bitmap", "bitmapfont", "truetypefont", "color", "gammagroup", "gammaset", "cursor", "elementalias"]
 
         for node in nodes {
             let lower = node.name.lowercased()
@@ -370,10 +415,16 @@ final class WasabiSkinInitializer {
                 }
                 continue
             }
+            if ["sendparams", "hideobject", "showobject"].contains(lower) {
+                pendingMetaCommands.append(PendingMetaCommand(owner: parent, kind: lower,
+                                                              attributes: node.attributes))
+                continue
+            }
             if declarations.contains(lower) { continue }
             if wrappers.contains(lower) {
                 try createObjects(from: node.children, parent: parent, graph: graph, types: types,
-                                  pendingScripts: &pendingScripts, definitionStack: definitionStack,
+                                  pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: definitionStack,
                                   createdCount: &createdCount)
                 continue
             }
@@ -385,7 +436,9 @@ final class WasabiSkinInitializer {
                                                "Font size '\(rawSize)' exceeds the \(resourceLimits.maximumFontPointSize)-point limit.",
                                                location: node.location))
             }
-            var objectChildren = node.children
+            var templateChildren: [WalXMLNode] = []
+            let instanceChildren = node.children
+            var embeddedXUITag: String?
             var nextDefinitionStack = definitionStack
             if let definition = types.definition(forInstance: node) {
                 let key = definition.identifier.lowercased()
@@ -396,7 +449,8 @@ final class WasabiSkinInitializer {
                 var merged = resolved.defaultAttributes
                 merged.merge(attributes) { _, instance in instance }
                 attributes = merged
-                objectChildren = resolved.templateChildren + objectChildren
+                templateChildren = resolved.templateChildren
+                embeddedXUITag = resolved.embeddedXUITag
                 nextDefinitionStack.append(key)
             }
 
@@ -406,10 +460,46 @@ final class WasabiSkinInitializer {
             }
             let object = graph.makeObject(typeName: node.name, attributes: attributes, source: node.location)
             if let parent { try parent.appendChild(object) } else { graph.appendRoot(object) }
-            try createObjects(from: objectChildren, parent: object, graph: graph, types: types,
-                              pendingScripts: &pendingScripts, definitionStack: nextDefinitionStack,
+            try createObjects(from: templateChildren, parent: object, graph: graph, types: types,
+                              pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: nextDefinitionStack,
+                              createdCount: &createdCount)
+            let embeddedParent = embeddedXUITag.flatMap { findObject(xmlID: $0, beneath: object) } ?? object
+            try createObjects(from: instanceChildren, parent: embeddedParent, graph: graph, types: types,
+                              pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: nextDefinitionStack,
                               createdCount: &createdCount)
         }
+    }
+
+    private func applyMetaCommands(_ commands: [PendingMetaCommand]) {
+        for command in commands {
+            guard let owner = command.owner else { continue }
+            let scope = command.attributes["group"].flatMap { findObject(xmlID: $0, beneath: owner) } ?? owner
+            let targets = (command.attributes["target"] ?? "").split(separator: ";")
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            for targetID in targets {
+                guard let target = findObject(xmlID: targetID, beneath: scope) else { continue }
+                switch command.kind {
+                case "hideobject": _ = target.setAttribute("visible", value: "0")
+                case "showobject": _ = target.setAttribute("visible", value: "1")
+                case "sendparams":
+                    for (name, value) in command.attributes where name != "target" && name != "group" {
+                        _ = target.setAttribute(name, value: value)
+                    }
+                default: break
+                }
+            }
+        }
+    }
+
+    private func findObject(xmlID: String, beneath root: WasabiObject) -> WasabiObject? {
+        if root.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame { return root }
+        for child in root.children {
+            if let match = findObject(xmlID: xmlID, beneath: child) { return match }
+        }
+        return nil
     }
 
     private func bindScripts(_ pendingScripts: [PendingScript]) throws -> [WasabiScriptBinding] {

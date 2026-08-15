@@ -1,9 +1,10 @@
 import AppKit
 
-final class WinampModernMainWindowController: NSWindowController, MainWindowProviding {
+final class WinampModernMainWindowController: NSWindowController, MainWindowProviding, NSWindowDelegate {
     private var loadedSkin: WinampModernLoadedSkin?
     private var skinView: WinampModernMainView?
     private var host: WinampModernAudioEngineHost?
+    private var isApplyingSkinSize = false
     private(set) var loadFailure: Error?
 
     convenience init() {
@@ -34,6 +35,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         window.backgroundColor = .clear
         window.hasShadow = false
         window.isMovableByWindowBackground = false
+        window.styleMask.insert(.resizable)
+        window.delegate = self
         window.center()
         window.setAccessibilityIdentifier("WinampModernMainWindow")
         window.setAccessibilityLabel("Winamp Modern Main Window")
@@ -51,6 +54,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             loadedSkin = loaded
             self.host = host
             skinView = view
+            view.canvasSizeDidChange = { [weak self] size in self?.resizeWindow(to: size) }
             loadFailure = nil
             window?.contentView = view
             resizeWindow(to: renderer.canvasSize)
@@ -68,6 +72,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     private func resizeWindow(to size: NSSize) {
         guard let window else { return }
+        guard !isApplyingSkinSize else { return }
+        isApplyingSkinSize = true
+        defer { isApplyingSkinSize = false }
         let oldTopLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
         let frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
         window.setFrame(NSRect(x: oldTopLeft.x, y: oldTopLeft.y - frame.height,
@@ -99,6 +106,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func updateSpectrum(_ levels: [Float]) { skinView?.updateSpectrum(levels) }
     func skinDidChange() { skinView?.needsDisplay = true }
     func windowVisibilityDidChange() { skinView?.needsDisplay = true }
+
+    func windowDidResize(_ notification: Notification) {
+        guard !isApplyingSkinSize, let view = skinView, let window, window.contentView === view else { return }
+        let size = view.renderer.resize(to: window.contentLayoutRect.size)
+        if size != window.contentLayoutRect.size { resizeWindow(to: size) }
+        if size != view.frame.size { view.setFrameSize(size) }
+        view.needsDisplay = true
+    }
 
     func prepareForUITeardown() { tearDownSkin() }
 
