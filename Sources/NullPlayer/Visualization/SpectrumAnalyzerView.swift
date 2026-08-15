@@ -4151,7 +4151,14 @@ private func displayLinkCallback(
         return kCVReturnSuccess
     }
     
-    view.render()
-    
+    // The CVDisplayLink callback runs on a dedicated thread with no run loop, so
+    // there is no autorelease pool draining between frames. render() creates
+    // per-frame autoreleased Metal objects (nextDrawable(), command buffers,
+    // encoders) whose backing textures would otherwise accumulate forever, leaking
+    // gigabytes over days with the window left open. Drain them every frame.
+    autoreleasepool {
+        view.render()
+    }
+
     return kCVReturnSuccess
 }

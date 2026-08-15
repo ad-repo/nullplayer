@@ -2973,12 +2973,17 @@ class AudioEngine {
         let prevState = state
         let isFirstStatus = CastManager.shared.activeSession?.state == .loaded
 
-        if isBuffering {
-            state = .playing
-        } else if isPlaying {
-            state = .playing
-        } else {
-            state = .paused
+        // Only assign `state` when it actually changes. The cast status poll calls this
+        // ~once per second for the whole cast session, and `state`'s didSet posts
+        // .audioPlaybackStateChanged on *every* assignment (Swift didSet has no equality
+        // check). Assigning the same value each poll fired a notification storm that made
+        // NowPlayingManager re-push MPNowPlayingInfoCenter (and re-fetch remote artwork)
+        // thousands of times, leaking network/dispatch objects into the gigabytes over a
+        // long session. Guarding the assignment keeps the didSet firing only on real
+        // transitions.
+        let newState: PlaybackState = (isBuffering || isPlaying) ? .playing : .paused
+        if newState != prevState {
+            state = newState
         }
 
         if prevState != state || isFirstStatus {
