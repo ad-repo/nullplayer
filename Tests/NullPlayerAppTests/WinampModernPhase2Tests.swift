@@ -281,8 +281,14 @@ final class WinampModernPhase2Tests: XCTestCase {
         """
         XCTAssertEqual(errorCode { try self.initialize(xml: cycleXML, resources: [:]) }, .groupInheritanceCycle)
 
+        // A missing *bitmap* image is tolerated (Winamp draws nothing) — it records a warning rather
+        // than failing the load, so real skins/engines that declare unshipped optional art still open.
+        // Security failures (traversal/escape/oversize/corrupt) and missing includes still hard-fail.
         let missingResourceXML = "<WasabiXML><elements><bitmap id=\"x\" file=\"missing.png\"/></elements></WasabiXML>"
-        XCTAssertEqual(errorCode { try self.initialize(xml: missingResourceXML, resources: [:]) }, .resourceMissing)
+        let tolerant = try self.initialize(xml: missingResourceXML, resources: [:])
+        XCTAssertTrue(tolerant.diagnostics.contains {
+            $0.code == .resourceMissing && $0.severity == .warning
+        }, "missing bitmap should record a warning")
 
         let oversizedFontXML = "<WasabiXML><container><layout><text fontsize=\"513\"/></layout></container></WasabiXML>"
         XCTAssertEqual(errorCode { try self.initialize(xml: oversizedFontXML, resources: [:]) }, .fontSizeExceeded)

@@ -840,6 +840,14 @@ class ContextMenuBuilder {
         importItem.target = MenuActions.shared
         winampModernMenu.addItem(importItem)
 
+        let engineInstalled = ClassicProEngineStore.shared.isInstalled
+        let engineItem = NSMenuItem(
+            title: engineInstalled ? "Reimport ClassicPro Engine..." : "Import ClassicPro Engine...",
+            action: #selector(MenuActions.importClassicProEngineFromFile), keyEquivalent: "")
+        engineItem.target = MenuActions.shared
+        if engineInstalled { engineItem.state = .on }
+        winampModernMenu.addItem(engineItem)
+
         let installed = WinampModernSkinImporter.shared.installedSkins()
         if !installed.isEmpty {
             winampModernMenu.addItem(NSMenuItem.separator())
@@ -4152,6 +4160,32 @@ class MenuActions: NSObject {
         } catch {
             let alert = NSAlert()
             alert.messageText = "Failed to Import Winamp Modern Skin"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
+    @objc func importClassicProEngineFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.message = "Select the ClassicPro installer (.exe), a .zip, or the extracted engine folder"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let info = try ClassicProEngineImporter.shared.importEngine(from: url)
+            NSLog("WinampModern: Imported ClassicPro engine (families %@, %d files, %@)",
+                  info.families.joined(separator: "+"), info.fileCount, String(info.contentHash.prefix(12)))
+            if WindowManager.shared.uiMode == .winampModern,
+               let selected = WinampModernSkinImporter.shared.selectedSkin() {
+                (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
+                    .loadSkin(at: selected.archiveURL)
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Failed to Import ClassicPro Engine"
             alert.informativeText = error.localizedDescription
             alert.alertStyle = .warning
             alert.runModal()

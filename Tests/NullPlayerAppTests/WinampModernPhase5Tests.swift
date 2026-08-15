@@ -272,7 +272,17 @@ final class WinampModernPhase5Tests: XCTestCase {
         guard let path = ProcessInfo.processInfo.environment["WINAMP_MODERN_WAL"] else {
             throw XCTSkip("Set WINAMP_MODERN_WAL to a user-supplied Winamp Modern .wal fixture.")
         }
-        let loaded = try WinampModernSkinLoader().load(from: URL(fileURLWithPath: path))
+        // Engine-dependent skins (e.g. cPro-Bento) also work here when WINAMP_MODERN_ENGINE points at
+        // a ClassicPro engine source; it is imported into a temporary store and mounted by the loader.
+        var engineStore: ClassicProEngineStore? = .shared
+        if let enginePath = ProcessInfo.processInfo.environment["WINAMP_MODERN_ENGINE"] {
+            let store = ClassicProEngineStore(rootDirectory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("Phase5Engine-\(UUID().uuidString)", isDirectory: true))
+            addTeardownBlock { try? FileManager.default.removeItem(at: store.rootDirectory) }
+            _ = try ClassicProEngineImporter(store: store).importEngine(from: URL(fileURLWithPath: enginePath))
+            engineStore = store
+        }
+        let loaded = try WinampModernSkinLoader(engineStore: engineStore).load(from: URL(fileURLWithPath: path))
         let host = Host()
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
         defer { renderer.teardown(); loaded.teardown() }

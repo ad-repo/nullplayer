@@ -30,10 +30,13 @@ final class WinampModernLoadedSkin {
 final class WinampModernSkinLoader {
     let archiveLimits: WalArchiveLimits
     let xmlLimits: WalXMLLimits
+    let engineStore: ClassicProEngineStore?
 
-    init(archiveLimits: WalArchiveLimits = .production, xmlLimits: WalXMLLimits = .production) {
+    init(archiveLimits: WalArchiveLimits = .production, xmlLimits: WalXMLLimits = .production,
+         engineStore: ClassicProEngineStore? = .shared) {
         self.archiveLimits = archiveLimits
         self.xmlLimits = xmlLimits
+        self.engineStore = engineStore
     }
 
     func load(from archiveURL: URL, additionalMounts: [WinampModernAdditionalMount] = []) throws -> WinampModernLoadedSkin {
@@ -43,7 +46,15 @@ final class WinampModernSkinLoader {
         let archive = try WalArchive(url: archiveURL, limits: archiveLimits)
         let mountName = Self.safeMountName(archiveURL.deletingPathExtension().lastPathComponent)
         let vfs = try WalVirtualFileSystem(skinName: mountName, skin: archive)
-        for mount in additionalMounts { try vfs.mount(mount.provider, at: mount.logicalRoot) }
+        // Attach the user-supplied ClassicPro engine (once, reused across all cPro skins) at the
+        // logical path cPro-Bento's include resolves to. Non-cPro skins simply never reference it.
+        var mounts = additionalMounts
+        if let engineStore, engineStore.isInstalled {
+            mounts.append(WinampModernAdditionalMount(
+                logicalRoot: ClassicProEngineStore.logicalMountRoot,
+                provider: try engineStore.provider(limits: archiveLimits)))
+        }
+        for mount in mounts { try vfs.mount(mount.provider, at: mount.logicalRoot) }
         let entryPath = "/Skins/\(mountName)/\(archive.skinXMLPath)"
         let document = try WalXMLDocumentLoader(vfs: vfs, limits: xmlLimits).load(entryPath: entryPath)
         let runtime = try WasabiSkinInitializer(vfs: vfs,

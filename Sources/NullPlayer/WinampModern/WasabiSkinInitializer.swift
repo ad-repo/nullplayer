@@ -40,6 +40,8 @@ final class WalResourceRegistry {
         byIdentifier[key] = definition
     }
 
+    func warn(_ diagnostic: WalDiagnostic) { diagnostics.append(diagnostic) }
+
     func definition(identifier: String) -> WalResourceDefinition? { byIdentifier[Self.fold(identifier)] }
 
     func registerAlias(identifier: String, target: String, source: WalSourceLocation) {
@@ -165,9 +167,20 @@ final class WasabiTypeRegistry {
         // `embed_xui` controls XUI embedding behavior; it is not an inheritance edge.
         if let parentReference = definition.inheritedGroup {
             let parentID = identifierByXUITag[Self.fold(parentReference)] ?? parentReference
-            let parent = try resolve(identifier: parentID, stack: stack + [key])
-            attributes.merge(parent.defaultAttributes) { _, new in new }
-            children.append(contentsOf: parent.templateChildren)
+            do {
+                let parent = try resolve(identifier: parentID, stack: stack + [key])
+                attributes.merge(parent.defaultAttributes) { _, new in new }
+                children.append(contentsOf: parent.templateChildren)
+            } catch let failure as WalFailure
+                where failure.diagnostics.allSatisfy({ $0.code == .missingGroupDefinition }) {
+                // Real skins/engines inherit from predefined Wasabi standard-library groups
+                // (`wasabi.*`) that ship inside Winamp, not the skin. Treat an unknown base group as
+                // empty and warn, so the derived group still resolves. Inheritance cycles and depth
+                // overflows still hard-fail above. (Fuller predefined-Wasabi coverage is Phase 7.)
+                diagnostics.append(WalDiagnostic(.missingGroupDefinition,
+                    "Group '\(identifier)' inherits unknown predefined group '\(parentReference)'; ignoring that base.",
+                    severity: .warning, location: definition.source))
+            }
         }
         attributes.merge(definition.defaultAttributes) { _, new in new }
         children.append(contentsOf: definition.templateChildren)
@@ -316,11 +329,29 @@ final class WasabiSkinInitializer {
                 // it through the bounded resource registry. TrueType fonts and image-backed
                 // resources still resolve through the VFS here and fail closed when missing.
                 if kind != "bitmapfont",
-                   let rawFile = node.attribute("file"), !rawFile.isEmpty {
-                    logicalFile = try resolveSkinResource(rawFile, source: node.location).logicalPath
-                    if (kind == "bitmap" || kind == "cursor"),
-                       validatedImages.insert(logicalFile!).inserted {
-                        try validateImage(at: logicalFile!, source: node.location)
+                   let rawFile = node.attribute("file"), !rawFile.isEmpty,
+                   // Predefined generated bitmaps (`file="$solid"` / `"$gradient"`) are synthesized
+                   // from their `color`/`w`/`h` attributes, not loaded from the VFS. Keep the marker
+                   // in `attributes`; the renderer generates the pixels on demand.
+                   !rawFile.hasPrefix("$") {
+                    do {
+                        let resolved = try resolveSkinResource(rawFile, source: node.location).logicalPath
+                        logicalFile = resolved
+                        if (kind == "bitmap" || kind == "cursor"),
+                           validatedImages.insert(resolved).inserted {
+                            try validateImage(at: resolved, source: node.location)
+                        }
+                    } catch let failure as WalFailure
+                        where (kind == "bitmap" || kind == "cursor")
+                            && failure.diagnostics.allSatisfy({ $0.code == .resourceMissing }) {
+                        // Real skins and the ClassicPro engine declare optional bitmaps whose image
+                        // files aren't shipped; Winamp tolerates this and simply draws nothing.
+                        // Register the resource without a file and record a warning rather than
+                        // failing the whole load. Security failures (traversal/escape/variable/
+                        // oversize/corrupt image) still throw above.
+                        registry.warn(WalDiagnostic(.resourceMissing,
+                            "Optional \(kind) resource '\(rawFile)' is missing; it will not render.",
+                            severity: .warning, location: node.location))
                     }
                 }
                 registry.register(WalResourceDefinition(

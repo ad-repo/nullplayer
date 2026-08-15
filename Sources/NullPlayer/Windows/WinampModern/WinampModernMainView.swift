@@ -363,6 +363,15 @@ final class WinampModernMainView: NSView {
             }
         case "TOGGLE":
             if let kind = WinampModernComponentRegistry.kind(for: parameter) { routeComponentToggle(kind) }
+        case "EQ_TOGGLE":
+            // ClassicPro's embedded EQ drawer: toggle the equalizer surface (embedded → skin window →
+            // classic window), consistent with `TOGGLE guid:eq`.
+            routeComponentToggle(.equalizer)
+        case "EQ_AUTO":
+            if let host = componentHost {
+                host.equalizerSetAuto(!host.equalizerSnapshot().auto)
+                needsDisplay = true
+            }
         default: break
         }
     }

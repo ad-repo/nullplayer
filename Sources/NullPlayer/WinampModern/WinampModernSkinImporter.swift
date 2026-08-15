@@ -39,6 +39,34 @@ struct WalContainerIngestor: WinampModernContainerIngesting {
     }
 }
 
+/// Recognizes user-supplied ClassicPro engine sources for the container seam. The engine is stored
+/// separately from `.wal` skins (in `ClassicProEngineStore`), so this classifies/validates the
+/// source; `ClassicProEngineImporter` performs the actual internal extraction and install.
+struct ClassicProEngineIngestor: WinampModernContainerIngesting {
+    let importer: ClassicProEngineImporter
+
+    init(importer: ClassicProEngineImporter = .shared) { self.importer = importer }
+
+    func supports(_ sourceURL: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory)
+        if exists && isDirectory.boolValue { return true }
+        return ["exe", "zip"].contains(sourceURL.pathExtension.lowercased())
+    }
+
+    func validate(_ sourceURL: URL) throws -> WinampModernValidatedContainer {
+        // A full internal extraction proves the source really contains a ClassicPro "one" engine.
+        let map = try importer.engineFileMap(from: sourceURL)
+        _ = try ClassicProEngineStore.validate(engineFiles: map)
+        return WinampModernValidatedContainer(
+            kind: .classicProInstaller,
+            sourceURL: sourceURL,
+            displayName: "ClassicPro Engine",
+            preferredFilename: sourceURL.lastPathComponent
+        )
+    }
+}
+
 struct WinampModernImportedSkin: Equatable {
     let name: String
     let archiveURL: URL

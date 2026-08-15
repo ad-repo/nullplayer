@@ -35,6 +35,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private var activeLayoutByContainer: [WasabiObjectID: WasabiObjectID] = [:]
     private let preferenceNamespace: String
 
+    /// Version-gate shim. ClassicPro's `WinampVersionCheck.maki` early-returns when the reported build
+    /// number is at least the skin's required build (`2405` for cPro-Bento), so a comfortably modern
+    /// value branches the script past its "please update Winamp" warning without hard-blocking.
+    static let reportedWinampBuild: Int32 = 9999
+    static let reportedWinampVersion = "5.9"
+
     init(loadedSkin: WinampModernLoadedSkin, host: WinampModernHost,
          executionLimits: MakiExecutionLimits = .production,
          timers: MakiTimerService = MakiTimerService()) throws {
@@ -249,6 +255,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "init": .init(argumentCount: 1, returnKind: .null),
             "messagebox": .init(argumentCount: 4, returnKind: .integer),
             "callme": .init(argumentCount: 1, returnKind: .null),
+            // ClassicPro version gate (branch, not hard-block) + public config.
+            "getbuildnumber": .init(argumentCount: 0, returnKind: .integer),
+            "getwinampversion": .init(argumentCount: 0, returnKind: .string),
+            "getpublicint": .init(argumentCount: 2, returnKind: .integer),
+            "setpublicint": .init(argumentCount: 2, returnKind: .null),
+            "getdate": .init(argumentCount: 0, returnKind: .integer),
+            "getdatedoy": .init(argumentCount: 1, returnKind: .integer),
+            // ClassicPro `ClassicProFile` shell service (the entire native surface, P0B §1).
+            "explorefile": .init(argumentCount: 1, returnKind: .null),
+            "openfile": .init(argumentCount: 2, returnKind: .null),
+            "findfiles": .init(argumentCount: 3, returnKind: .integer),
         ]
         return signatures[method.lowercased()]
     }
@@ -385,8 +402,43 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "navigateurl", "navigateurlbrowser": return .null // Sandboxed: no script-driven navigation.
         case "newgroup": return .null
         case "messagebox": return .integer(0) // Sandboxed: skins cannot create modal host UI.
+        // ClassicPro version gate + public config (see `reportedWinampBuild`).
+        case "getbuildnumber": return .integer(Self.reportedWinampBuild)
+        case "getwinampversion": return .string(Self.reportedWinampVersion)
+        case "getpublicint":
+            return .integer(loadedSkin.configuration.integer(section: "@public",
+                                                             key: arguments[0].stringValue,
+                                                             default: arguments[1].integerValue))
+        case "setpublicint":
+            loadedSkin.configuration.setInteger(arguments[1].integerValue,
+                                                section: "@public", key: arguments[0].stringValue)
+            return .null
+        case "getdate": return .integer(Int32(truncatingIfNeeded: Int64(Date().timeIntervalSince1970)))
+        case "getdatedoy":
+            return .integer(Int32(Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0))
         default:
+            if let value = classicProFileMethod(method, arguments: arguments) { return value }
             throw unsupported(method, program: program)
+        }
+    }
+
+    /// The complete native surface ClassicPro's MAKI invokes (P0B §1): three `ClassicProFile`
+    /// filesystem-shell helpers, each routed through the host's intentional reveal/open policy or a
+    /// bounded no-op. Returns `nil` when `method` is not one of them.
+    private func classicProFileMethod(_ method: String, arguments: [MakiValue]) -> MakiValue? {
+        switch method {
+        case "explorefile":
+            host.revealInFinder(arguments[0].stringValue)
+            return .null
+        case "openfile":
+            host.openExternally(arguments[0].stringValue)
+            return .null
+        case "findfiles":
+            // Bounded no-op: report "unavailable" so callers take their early-return path rather than
+            // enumerating results. Skins never gain a filesystem-search capability.
+            return .integer(-1)
+        default:
+            return nil
         }
     }
 
@@ -588,7 +640,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case .generic: return .string("dynamic_\(id)")
             }
         case "init", "callme", "ondatachanged": return .null
-        default: throw unsupported(method, program: program)
+        default:
+            if let value = classicProFileMethod(method, arguments: arguments) { return value }
+            throw unsupported(method, program: program)
         }
     }
 

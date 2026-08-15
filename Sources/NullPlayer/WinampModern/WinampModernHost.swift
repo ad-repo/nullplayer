@@ -22,10 +22,18 @@ protocol WinampModernHost: AnyObject {
     func openFiles()
     func beginVisualizationConsumption()
     func endVisualizationConsumption()
+
+    /// ClassicPro `ClassicProFile` shell adapters (P0B §1). All are gated by an intentional
+    /// reveal/open policy: only existing on-disk files are acted on; skins can never navigate URLs,
+    /// launch executables, or reach arbitrary paths.
+    func revealInFinder(_ path: String)
+    func openExternally(_ path: String)
 }
 
 extension WinampModernHost {
     var albumArtwork: CGImage? { nil }
+    func revealInFinder(_ path: String) {}
+    func openExternally(_ path: String) {}
 }
 
 final class WinampModernAudioEngineHost: WinampModernHost {
@@ -70,6 +78,31 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     func next() { engine.next() }
     func seek(to seconds: TimeInterval) { engine.seek(to: seconds) }
     func openFiles() { MenuActions.shared.openFile() }
+
+    func revealInFinder(_ path: String) {
+        guard let url = Self.existingFileURL(for: path) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func openExternally(_ path: String) {
+        // Reveal/open policy: only open a real, existing document with its default app. Non-existent
+        // paths (e.g. a Windows uninstaller) and URLs are intentionally ignored — no navigation, no
+        // executable launch.
+        guard let url = Self.existingFileURL(for: path) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private static func existingFileURL(for path: String) -> URL? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.contains("://"),
+              !trimmed.hasPrefix("~") else { return nil }
+        let url = URL(fileURLWithPath: trimmed)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else { return nil }
+        return url
+    }
 
     func beginVisualizationConsumption() {
         guard !isConsumingVisualization else { return }
