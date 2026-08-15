@@ -116,6 +116,8 @@ final class WasabiTypeRegistry {
         return nil
     }
 
+    func contains(identifier: String) -> Bool { byIdentifier[Self.fold(identifier)] != nil }
+
     func resolved(identifier: String) throws -> WasabiResolvedGroupDefinition {
         try resolve(identifier: identifier, stack: [])
     }
@@ -233,6 +235,7 @@ final class WasabiSkinInitializer {
         passes.append(.resourceRegistration)
 
         let types = WasabiTypeRegistry()
+        registerPhase3BuiltIns(in: types)
         registerTypes(in: document.roots, registry: types)
         try types.validateInheritance()
         passes.append(.groupAndXUIRegistration)
@@ -270,8 +273,7 @@ final class WasabiSkinInitializer {
             if resourceTags.contains(kind) {
                 var logicalFile: String?
                 if let rawFile = node.attribute("file"), !rawFile.isEmpty {
-                    logicalFile = try vfs.resolve(rawFile, relativeTo: node.location.path,
-                                                  location: node.location).logicalPath
+                    logicalFile = try resolveSkinResource(rawFile, source: node.location).logicalPath
                     if (kind == "bitmap" || kind == "cursor"),
                        validatedImages.insert(logicalFile!).inserted {
                         try validateImage(at: logicalFile!, source: node.location)
@@ -329,6 +331,22 @@ final class WasabiSkinInitializer {
             }
             registerTypes(in: node.children, registry: registry)
         }
+    }
+
+    private func registerPhase3BuiltIns(in registry: WasabiTypeRegistry) {
+        // CornerAmp inherits this standard Wasabi client-area group but supplies all visible
+        // artwork itself. Keep the target bootstrap code-only: no Winamp System assets or SDK
+        // files are bundled. Broader predefined Wasabi resources remain Phase 4 work.
+        guard !registry.contains(identifier: "wasabi.panel") else { return }
+        registry.register(WasabiGroupDefinition(
+            identifier: "wasabi.panel",
+            xuiTag: nil,
+            inheritedGroup: nil,
+            embeddedXUITag: nil,
+            defaultAttributes: [:],
+            templateChildren: [],
+            source: WalSourceLocation(path: "/System/Phase3BuiltIns.xml")
+        ))
     }
 
     private func createObjects(
@@ -396,14 +414,27 @@ final class WasabiSkinInitializer {
 
     private func bindScripts(_ pendingScripts: [PendingScript]) throws -> [WasabiScriptBinding] {
         try pendingScripts.map { pending in
-            let path = try vfs.resolve(pending.rawPath, relativeTo: pending.source.path,
-                                       location: pending.source).logicalPath
+            let path = try resolveSkinResource(pending.rawPath, source: pending.source).logicalPath
             let data = try vfs.data(at: path, location: pending.source)
             guard data.count <= resourceLimits.maximumScriptSize else {
                 throw WalFailure(WalDiagnostic(.entryTooLarge, "Script '\(path)' is \(data.count) bytes; the limit is \(resourceLimits.maximumScriptSize).", location: pending.source))
             }
             return WasabiScriptBinding(ownerID: pending.owner?.stableID, logicalPath: path,
                                        parameter: pending.parameter, source: pending.source)
+        }
+    }
+
+    /// Wasabi includes are XML-file-relative, but bitmap/font/script declarations in real
+    /// Winamp skins are commonly skin-root-relative even when declared by an included XML.
+    /// Preserve the relative form first for authored subfolders, then fall back to the fixed
+    /// `@SKINPATH@` VFS mount. Only a genuine missing-resource diagnostic may fall back;
+    /// traversal, variables, and other security failures remain hard errors.
+    private func resolveSkinResource(_ rawPath: String, source: WalSourceLocation) throws -> WalResolvedResource {
+        do {
+            return try vfs.resolve(rawPath, relativeTo: source.path, location: source)
+        } catch let failure as WalFailure
+            where failure.diagnostics.allSatisfy({ $0.code == .resourceMissing }) {
+            return try vfs.resolve("@SKINPATH@/\(rawPath)", relativeTo: source.path, location: source)
         }
     }
 }

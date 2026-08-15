@@ -47,6 +47,9 @@ enum WalDiagnosticCode: String, Codable {
     case groupInheritanceCycle
     case groupInheritanceDepthExceeded
     case missingGroupDefinition
+    case invalidScript
+    case unsupportedScriptCapability
+    case scriptBudgetExceeded
 }
 
 struct WalDiagnostic: Hashable, Codable, CustomStringConvertible {

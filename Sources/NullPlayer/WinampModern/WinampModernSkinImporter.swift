@@ -48,6 +48,7 @@ struct WinampModernImportedSkin: Equatable {
 /// strategy; Phase 6 adds the internal NSIS strategy without changing picker or storage code.
 final class WinampModernSkinImporter {
     static let shared = WinampModernSkinImporter()
+    static let selectedSkinNameKey = "winampModernSkinName"
 
     let destinationDirectory: URL
     private let fileManager: FileManager
@@ -90,7 +91,9 @@ final class WinampModernSkinImporter {
                 try fileManager.moveItem(at: staging, to: destination)
             }
         }
-        return WinampModernImportedSkin(name: validated.displayName, archiveURL: destination)
+        let imported = WinampModernImportedSkin(name: validated.displayName, archiveURL: destination)
+        selectSkin(imported)
+        return imported
     }
 
     func installedSkins() -> [WinampModernImportedSkin] {
@@ -102,5 +105,19 @@ final class WinampModernSkinImporter {
         return files.filter { $0.pathExtension.lowercased() == "wal" }
             .map { WinampModernImportedSkin(name: $0.deletingPathExtension().lastPathComponent, archiveURL: $0) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func selectedSkin() -> WinampModernImportedSkin? {
+        let installed = installedSkins()
+        guard !installed.isEmpty else { return nil }
+        guard let selected = UserDefaults.standard.string(forKey: Self.selectedSkinNameKey) else {
+            return installed.first
+        }
+        return installed.first { $0.name.caseInsensitiveCompare(selected) == .orderedSame }
+            ?? installed.first
+    }
+
+    func selectSkin(_ skin: WinampModernImportedSkin) {
+        UserDefaults.standard.set(skin.name, forKey: Self.selectedSkinNameKey)
     }
 }

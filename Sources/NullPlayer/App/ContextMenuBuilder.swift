@@ -844,8 +844,14 @@ class ContextMenuBuilder {
         if !installed.isEmpty {
             winampModernMenu.addItem(NSMenuItem.separator())
             for skin in installed {
-                let item = NSMenuItem(title: skin.name, action: nil, keyEquivalent: "")
-                item.isEnabled = false // Selection/rendering begins in Phase 3.
+                let item = NSMenuItem(title: skin.name,
+                                      action: #selector(MenuActions.selectWinampModernSkin(_:)),
+                                      keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = skin.archiveURL
+                if WinampModernSkinImporter.shared.selectedSkin()?.archiveURL == skin.archiveURL {
+                    item.state = .on
+                }
                 winampModernMenu.addItem(item)
             }
         }
@@ -4139,6 +4145,10 @@ class MenuActions: NSObject {
         do {
             let imported = try WinampModernSkinImporter.shared.importContainer(at: url)
             NSLog("WinampModern: Imported validated skin '%@' to %@", imported.name, imported.archiveURL.path)
+            if WindowManager.shared.uiMode == .winampModern {
+                (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
+                    .loadSkin(at: imported.archiveURL)
+            }
         } catch {
             let alert = NSAlert()
             alert.messageText = "Failed to Import Winamp Modern Skin"
@@ -4152,6 +4162,17 @@ class MenuActions: NSObject {
         let directory = WinampModernSkinImporter.shared.destinationDirectory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         NSWorkspace.shared.open(directory)
+    }
+
+    @objc func selectWinampModernSkin(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        let skin = WinampModernImportedSkin(name: url.deletingPathExtension().lastPathComponent,
+                                            archiveURL: url)
+        WinampModernSkinImporter.shared.selectSkin(skin)
+        if WindowManager.shared.uiMode == .winampModern {
+            (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
+                .loadSkin(at: url)
+        }
     }
     #endif
 
