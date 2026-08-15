@@ -814,6 +814,20 @@ class ContextMenuBuilder {
         metalItem.submenu = metalMenu
         if AppCapabilities.supports(.metalMode) { uiMenu.addItem(metalItem) }
 
+        #if DEBUG
+        // DEBUG-only entry point for the Winamp Modern (.wal) family. Not shipped in release
+        // until Phase 3 can render a real skin; here it only drives the live-switch acceptance loop.
+        uiMenu.addItem(NSMenuItem.separator())
+        let winampModernItem = NSMenuItem(
+            title: "Winamp Modern (dev)",
+            action: #selector(MenuActions.setWinampModernMode),
+            keyEquivalent: ""
+        )
+        winampModernItem.target = MenuActions.shared
+        if activeMode == .winampModern { winampModernItem.state = .on }
+        uiMenu.addItem(winampModernItem)
+        #endif
+
         return uiMenu
     }
     
@@ -4208,6 +4222,17 @@ class MenuActions: NSObject {
         guard wm.uiMode != .metal else { return }
         wm.reloadUI(to: .metal)
     }
+
+    #if DEBUG
+    /// DEBUG-only: switch into the Winamp Modern (`.wal`) family. Phase 1 renders only a
+    /// placeholder main window, so this is intentionally not exposed in release builds — it
+    /// exists to drive the live-switch acceptance loop until the Wasabi/MAKI renderer lands.
+    @objc func setWinampModernMode() {
+        let wm = WindowManager.shared
+        guard wm.uiMode != .winampModern else { return }
+        wm.reloadUI(to: .winampModern)
+    }
+    #endif
 
     /// Reset the active modern/metal skin to its shipped defaults, discarding
     /// persisted per-skin visualization overrides. Only meaningful in a modern-family

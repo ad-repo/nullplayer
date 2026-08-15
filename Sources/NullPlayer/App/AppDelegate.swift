@@ -110,7 +110,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Mark app as ready for file opens
         isAppReady = true
-        
+
         // If files were passed at launch (double-clicked to open), play them
         if !pendingFilesToOpen.isEmpty {
             processPendingFiles()
@@ -119,7 +119,68 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             AppStateManager.shared.restorePlaylistState()
         }
 
+        #if DEBUG
+        // Phase 1 acceptance harness: `-winampModernAcceptanceLoop 1` drives the mode-switch
+        // acceptance loop (Classic→Modern→Metal→WinampModern→Classic, repeated) and asserts the
+        // correct controller family after each swap, then terminates with a PASS/FAIL log line.
+        if UserDefaults.standard.bool(forKey: "winampModernAcceptanceLoop") {
+            runWinampModernAcceptanceLoop()
+        }
+        #endif
     }
+
+    #if DEBUG
+    /// DEBUG-only Phase 1 acceptance loop. Repeatedly live-switches through all four UI modes and
+    /// verifies the running main-window controller matches the target mode's controller family
+    /// after each swap. Logs `WINAMP-MODERN-ACCEPTANCE: PASS/FAIL` and terminates. Because
+    /// `reloadUI(to:)` can defer the swap (Compact Mode), each step chains via its completion.
+    private func runWinampModernAcceptanceLoop() {
+        let sequence: [PlayerUIMode] = [.classic, .modern, .metal, .winampModern, .classic]
+        let rounds = 3
+        var steps: [PlayerUIMode] = []
+        for _ in 0..<rounds { steps += sequence }
+        NSLog("WINAMP-MODERN-ACCEPTANCE: starting — %d switches", steps.count)
+
+        func expectedControllerMatches(_ mode: PlayerUIMode) -> Bool {
+            let controller = windowManager.mainWindowController
+            switch mode.controllerFamily {
+            case .classic:
+                return controller is MainWindowController
+            case .nullPlayerModern:
+                return controller is ModernMainWindowController
+            case .winampModern:
+                return controller is WinampModernMainWindowController
+            }
+        }
+
+        func step(_ index: Int) {
+            guard index < steps.count else {
+                NSLog("WINAMP-MODERN-ACCEPTANCE: PASS — %d switches, no crash, controllers matched",
+                      steps.count)
+                NSApp.terminate(nil)
+                return
+            }
+            let target = steps[index]
+            windowManager.reloadUI(to: target) { [weak self] in
+                guard let self else { return }
+                let ok = self.windowManager.uiMode == target && expectedControllerMatches(target)
+                if !ok {
+                    NSLog("WINAMP-MODERN-ACCEPTANCE: FAIL at step %d — target=%@ uiMode=%@ controller=%@",
+                          index, target.displayName, self.windowManager.uiMode.displayName,
+                          String(describing: type(of: self.windowManager.mainWindowController)))
+                    NSApp.terminate(nil)
+                    return
+                }
+                NSLog("WINAMP-MODERN-ACCEPTANCE: step %d/%d → %@ OK",
+                      index + 1, steps.count, target.displayName)
+                // Yield to the run loop between swaps so AppKit can settle teardown/rebuild.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { step(index + 1) }
+            }
+        }
+        // Start after settling the initial launch.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { step(0) }
+    }
+    #endif
     
     // MARK: - UI Testing Mode
     

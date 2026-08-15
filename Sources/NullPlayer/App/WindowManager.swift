@@ -330,10 +330,15 @@ class WindowManager {
         }
     }
 
-    /// Whether the modern-family UI is enabled. Kept as a compatibility mirror for
-    /// call sites that only need to choose classic vs. modern-family controllers.
+    /// Whether the **NullPlayer modern** controller family is active (`.modern`/`.metal`).
+    ///
+    /// Narrowly scoped on purpose: this is `false` for both `.classic` and `.winampModern`.
+    /// The ~15 geometry / size-multiplier / modern-skin call sites that read this want
+    /// "NullPlayer-modern geometry?", and `.winampModern` deliberately uses classic geometry in
+    /// Phase 1. Controller-*factory* decisions that must distinguish all three families switch on
+    /// `uiMode.controllerFamily` instead (see `showMainWindow`).
     var isModernUIEnabled: Bool {
-        get { uiMode.usesModernControllers }
+        get { uiMode.controllerFamily == .nullPlayerModern }
         set { uiMode = newValue ? .modern : .classic }
     }
 
@@ -797,10 +802,15 @@ class WindowManager {
     func showMainWindow(reveal: Bool = true) {
         let isNew = mainWindowController == nil
         if isNew {
-            if isModernUIEnabled {
-                let modern = ModernMainWindowController()
-                mainWindowController = modern
-            } else {
+            // Explicit three-way controller factory — no binary fall-through. The main window is
+            // the one surface that has a real winampModern controller in Phase 1 (a stub); the
+            // auxiliary windows reuse the classic providers (see the playlist/EQ/library factories).
+            switch uiMode.controllerFamily {
+            case .nullPlayerModern:
+                mainWindowController = ModernMainWindowController()
+            case .winampModern:
+                mainWindowController = WinampModernMainWindowController()
+            case .classic:
                 mainWindowController = MainWindowController()
             }
         }
@@ -832,9 +842,11 @@ class WindowManager {
     func showPlaylist(at restoredFrame: NSRect? = nil) {
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
-            if isModernUIEnabled {
+            switch uiMode.controllerFamily {
+            case .nullPlayerModern:
                 playlistWindowController = ModernPlaylistWindowController()
-            } else {
+            case .classic, .winampModern:
+                // Phase 1 aux-window policy (§5): winampModern reuses the classic provider.
                 playlistWindowController = PlaylistWindowController()
             }
         }
@@ -890,9 +902,12 @@ class WindowManager {
     func showEqualizer(at restoredFrame: NSRect? = nil) {
         let isNewWindow = equalizerWindowController == nil
         if isNewWindow {
-            if isModernUIEnabled {
+            switch uiMode.controllerFamily {
+            case .nullPlayerModern:
                 equalizerWindowController = ModernEQWindowController()
-            } else {
+            case .classic, .winampModern:
+                // Phase 1 aux-window policy (§5): winampModern reuses the classic 10-band EQ,
+                // matching usesModernEQLayout == false for this mode.
                 equalizerWindowController = EQWindowController()
             }
         }
@@ -1105,9 +1120,10 @@ class WindowManager {
     }
 
     private func createPlexBrowserWindowController() {
-        if isModernUIEnabled {
+        if uiMode.controllerFamily == .nullPlayerModern {
             plexBrowserWindowController = ModernLibraryBrowserWindowController()
         } else {
+            // Phase 1 aux-window policy (§5): winampModern reuses the classic library provider.
             plexBrowserWindowController = PlexBrowserWindowController()
         }
         markModeDependentWindow(plexBrowserWindowController?.window)
