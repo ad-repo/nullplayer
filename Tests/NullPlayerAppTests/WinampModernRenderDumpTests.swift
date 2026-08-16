@@ -80,6 +80,43 @@ final class WinampModernRenderDumpTests: XCTestCase {
         print("RENDER-DUMP containers: \(containers.map { "\($0.id) main=\($0.isMainPlayer)" })")
         XCTAssertFalse(containers.isEmpty, "Skin declares no window containers.")
 
+        // The surface picture must be *consistent* for any skin, measured or not: each surface has
+        // exactly one home, an SUI skin is never synthesized into, and nothing is synthesized that
+        // the skin already shows. This is the assertion that would catch a duplicate playlist window.
+        let hostedIDs = Set(containers.map(\.id))
+        let catalog = WinampModernSurfaceCoordinator.makeCatalog(
+            loadedSkin: loaded, hostedContainerIDs: hostedIDs,
+            embeddedContainerID: containers.first(where: \.isMainPlayer)?.object.stableID)
+        for kind in WinampModernSurfaceInventory.managedKinds {
+            let embedded = inventory.embeddedKinds.contains(kind)
+            let declared = inventory.declaredContainers[kind]
+            let synthesized = loaded.surfaceSynthesis.synthesizedContainers[kind]
+            if embedded {
+                XCTAssertNil(synthesized,
+                             "\(kind.rawValue) is embedded; synthesizing a window would duplicate it")
+            }
+            if let synthesized {
+                XCTAssertEqual(inventory.arrangement, .separateWindows,
+                               "an SUI skin's surfaces are embedded, not missing")
+                XCTAssertNil(declared, "\(kind.rawValue) already has a declared window")
+                XCTAssertTrue(hostedIDs.contains(synthesized),
+                              "synthesized container '\(synthesized)' never opened")
+            }
+        }
+        print("RENDER-DUMP catalog: \(catalog.summaryLine)")
+
+        // Written beside the PNGs so a dump can be read without the console scrollback.
+        let sidecar = [
+            "skin: \((walPath as NSString).lastPathComponent)",
+            "arrangement: \(inventory.arrangement)",
+            "catalog: \(catalog.summaryLine)",
+            "containers: \(containers.map(\.id).joined(separator: " "))",
+            "",
+            report.summary,
+        ].joined(separator: "\n")
+        try sidecar.write(to: dumpDirectory.appendingPathComponent("surfaces.txt"),
+                          atomically: true, encoding: .utf8)
+
         for info in containers {
             // A fixed clock makes ticker/animation frames reproducible; set
             // WINAMP_MODERN_RENDER_CLOCK to a different value to capture a later frame.
@@ -101,30 +138,6 @@ final class WinampModernRenderDumpTests: XCTestCase {
                               + "frame=\(node.frame) clip=\(node.clip) bitmap=\(node.bitmapID ?? "-") "
                               + "attrs=\(node.object.attributes.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " "))")
                     }
-                }
-                if env["WINAMP_MODERN_RENDER_HOLDERS"] != nil {
-                    func walk(_ objects: [WasabiObject], depth: Int) {
-                        for object in objects {
-                            if object.xmlID == "centro.windowholder.library" {
-                                var chain: [String] = []
-                                var node: WasabiObject? = object
-                                while let current = node {
-                                    chain.append("\(current.typeName)#\(current.xmlID ?? "-")"
-                                                 + "[vis=\(current.attributes["visible"] ?? "-")]")
-                                    node = current.parent
-                                }
-                                print("LIB-CHAIN \(chain.joined(separator: " < "))")
-                            }
-                            if WinampModernComponentRegistry.isHolderElement(object.typeName) {
-                                print("GRAPH-HOLDER \(object.typeName) id=\(object.xmlID ?? "-") "
-                                      + "kind=\(String(describing: WasabiSceneRenderer.componentKind(of: object))) "
-                                      + "visible=\(object.attributes["visible"] ?? "-") "
-                                      + "parent=\(object.parent?.xmlID ?? object.parent?.typeName ?? "-")")
-                            }
-                            walk(object.children, depth: depth + 1)
-                        }
-                    }
-                    walk(loaded.runtime.graph.roots, depth: 0)
                 }
                 let holders = renderer.componentHolders()
                 if !holders.isEmpty {

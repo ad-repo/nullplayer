@@ -6,12 +6,16 @@ covers the headless side; this is the gap.
 
 Run this before treating the experimental label as removable.
 
+Since Phase 13 the playlist, equalizer, and library are skin-owned surfaces rather than classic
+windows, so **§4 is the section that changed most** — run it against all four fixtures.
+
 ## Setup
 
 You supply the fixtures — nothing third-party is committed:
 
 - `CornerAmp_Redux.wal`
 - `WinampModern.wal`
+- `mmd3.wal`
 - `cPro-Bento.wal` **+** `ClassicPro_2.01.exe`
 
 ```sh
@@ -69,13 +73,56 @@ For each of the three fixtures:
 
 ## 4. Hosted components
 
-- [ ] Playlist renders inside its holder frame with rows, selection, and now-playing marker
+Run this section against **all four** skins — they exercise different arrangements (see the table in
+`compatibility.md`): cPro-Bento embeds all three surfaces, mmd3 declares a playlist window and needs a
+synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares playlist + library.
+
+**Where each surface opens**
+
+- [ ] Open the playlist, equalizer, and library from the **Windows menu** and from the **skin's own
+      control**, and confirm both reach the *same* place
+- [ ] cPro-Bento stays a single window throughout — no classic `.wsz` window and no duplicate
+      synthetic window appears for a surface the skin already shows
+- [ ] mmd3 / CornerAmp: the synthesized library window is drawn with **the skin's own frame** (its
+      title bar, borders, and buttons), not NullPlayer chrome
+- [ ] A surface with no home falls back to the classic window, and the DEBUG log names the reason
+
+**Playlist**
+
+- [ ] Renders inside its holder with rows, selection, and now-playing marker, in the skin's colours
 - [ ] Click selects; double-click plays; scroll wheel scrolls and stays bounded
-- [ ] EQ shows preamp + 10 bands; dragging a band audibly changes output
-- [ ] EQ enabled/auto toggles work; presets load
+- [ ] Select a row, press **Delete** — that row is removed, and selection/scroll stay in range
+- [ ] Press Delete with the *player* focused (no row clicked): nothing is removed
+- [ ] The `PE_Info` status line shows item count and total time, and updates as the queue changes
+- [ ] ADD / REM / SEL / MISC buttons draw and hover but do nothing (documented limitation)
+
+**Equalizer**
+
+- [ ] Preamp and all 10 bands drag, and band 1 and band 10 audibly change output
+- [ ] The EQ **on/off** button turns processing on and off (it must not open or close a window)
+- [ ] The Auto button toggles auto mode, and both buttons' lit state follows the engine
+- [ ] The presets button opens the preset list; applying one moves the sliders *and* changes the sound
+- [ ] Change the EQ from the menu bar or the classic window — the skin's sliders follow
+- [ ] `<eqvis>` (where the skin has one) tracks the current curve
 - [ ] EQ gains survive a switch to Classic and back
-- [ ] Library toggle falls back to the classic library window (expected)
-- [ ] `TOGGLE` for eq/pl/ml/video routes to the embedded component where the skin provides one
+
+**Library**
+
+- [ ] The real browser appears inside the skin (cPro's Media Library tab; mmd3/CornerAmp's synthesized
+      window; Winamp Modern's `MLibrary` window) — **not** a classic library window
+- [ ] Browse local files and every configured remote source; artwork, tabs, and search all work
+- [ ] Link a new server from the embedded browser; the sheet attaches to the `.wal` window
+- [ ] CoverFlow and history hosting behave as they do in the classic window
+- [ ] Switch tabs/layouts away and back — the browser is torn down and rebuilt without leaking tasks
+- [ ] Browse mode is remembered across a quit and relaunch
+
+**Themes and sizing**
+
+- [ ] Switch colour theme: main chrome, auxiliary windows, playlist, EQ, and the library all recolour
+- [ ] Resize every native `.wal` window; each obeys its **own** layout minimum
+- [ ] Exercise every UI Size level, including clicking inside the embedded library at 200%
+- [ ] Restore a session whose saved frame is below the layout minimum: the window clamps up and keeps
+      its saved top-left corner
 
 ## 5. Mode switching and lifecycle
 

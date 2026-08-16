@@ -157,9 +157,14 @@ final class WinampModernSurfaceCoordinator {
     func surfaceContentDidChange() { environment.redraw() }
 
     /// One line per surface, for the compatibility report and the render harness.
-    var summary: String {
+    var summary: String { catalog.summaryLine }
+}
+
+extension WinampModernSurfaceCatalog {
+    /// Where each surface lives, in one readable line.
+    var summaryLine: String {
         WinampModernSurfaceInventory.managedKinds.map { kind in
-            switch catalog[kind] {
+            switch self[kind] {
             case .embedded: return "\(kind.rawValue)=embedded"
             case .declaredContainer(let id): return "\(kind.rawValue)=declared:\(id)"
             case .synthesizedContainer(let id): return "\(kind.rawValue)=synthesized:\(id)"

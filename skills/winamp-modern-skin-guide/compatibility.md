@@ -16,7 +16,7 @@ Three skins drove the implementation, in increasing order of demand:
 |--------|------|-------|
 | **CornerAmp_Redux** | first vertical slice | loads, scripts, renders its 246×228 alpha-shaped layout, button input routed |
 | **Winamp Modern** | compatibility expansion | **renders**: window chrome, menubar, display (timer, song ticker, bitrate/sample rate, spectrum), transport, sliders. Normal (354×280) and shade (354×25) switch through script dispatch; resize clamps; theme switching restores. Client area is built at runtime from the frame's `content=` param |
-| **cPro-Bento** + ClassicPro engine | north-star | full 40-file include graph expands, graph builds, scripts bind and run, topology yields exactly one SUI window; **renders** its frame, titlebar, menu bar, display, transport, sliders, and — since the `Wasabi:Frame` splitter builds them — the SUI's tab strip, playlist pane and album-art area. The selected tab's *content* is still empty: the library surface falls back to the standard library window |
+| **cPro-Bento** + ClassicPro engine | north-star | full 40-file include graph expands, graph builds, scripts bind and run, topology yields exactly one SUI window; **renders** its frame, titlebar, menu bar, display, transport, sliders, and — since the `Wasabi:Frame` splitter builds them — the SUI's tab strip, playlist pane and album-art area. Since Phase 13 the Media Library tab hosts the **real library browser** and the playlist pane draws the live queue; all three surfaces resolve inside the skin with no classic window |
 
 None of these ship with NullPlayer. All fixture-based tests are opt-in behind `WINAMP_MODERN_WAL` /
 `WINAMP_MODERN_ENGINE`; everything committed is synthetic and self-authored.
@@ -207,16 +207,58 @@ across the engine but never reached at startup):
 
 | Component | State |
 |-----------|-------|
-| Playlist | Embedded and bound to `AudioEngine` — rows, now-playing marker, selection, bounded scroll, click/double-click/scroll input |
-| EQ | Embedded classic 10-band + preamp, enabled/auto, presets, bound to `AudioEngine`; gains persist across mode switches |
-| Library | Bounded live-subview seam; the production bridge returns `nil`, so a library toggle **falls back to the classic library window** |
+| Playlist | Embedded and bound to `AudioEngine` — rows, now-playing marker, selection, bounded scroll, click/double-click/wheel, Delete/Forward-Delete removal while focused, `PE_Info` status line. Drawn in the skin's palette and list font |
+| EQ | Embedded classic 10-band + preamp, enabled/auto, presets, `<eqvis>`, bound to `AudioEngine`; gains persist across mode switches |
+| Library | **The real browser, embedded** in the skin's holder — servers, tabs, search, CoverFlow, history, linking. Falls back to the classic window only when the skin offers no home for it |
 | Visualization / video | Holder discovered and framed; content per the component host |
 
-Playlist and EQ are **engine-drawn inside the skin-provided frame** — correct geometry and behavior,
-but not painted with the skin's own list bitmaps, scrollbars, or EQ thumbs.
+A holder is any of `<windowholder hold=…>`, `<componentbucket>`, or `<component param=…>` — the last
+is the form separate-window skins use for their real content.
 
-`TOGGLE`/`sendaction` for eq/pl/ml/video resolves in order: embedded component → separate skin window
-→ classic `WindowManager` window.
+Playlist and EQ are **engine-drawn inside the skin-provided frame**: correct geometry, behavior, and
+colours (via `WasabiPalette`, resolved through the skin's own colour resources and active colour
+theme), but not painted with the skin's own list bitmaps, scrollbars, or EQ thumbs.
+
+### Where a surface lives
+
+Every request for the playlist, equalizer, or library — a menu item, a skin button's
+`TOGGLE guid:…`, a restored session — resolves through one catalog, in one order:
+
+1. **Embedded** — the skin already shows it inside a window it owns. Revealing it dispatches
+   `System.onGetCancelComponent(guid, true)`, Wasabi's own "this component wants to be visible"
+   contract, *and* applies `windowholder autoopen="1"` by un-hiding the ancestors between that holder
+   and its layout. (ClassicPro switches tabs from that event but only `if (active_tab != 0)`, and at
+   startup its `active_tab` is already 0 — so the holder half of the contract is what actually opens
+   the Media Library tab.) An embedded surface owns no `NSWindow` and never enters docking,
+   compact-mode snapshots, or frame persistence.
+2. **Declared container** — the skin ships a window for it (`<container id="Pledit" component="guid:…">`).
+3. **Synthesized container** — the skin ships none, so one is built *before initialization* from the
+   skin's own `<Wasabi:StandardFrame:…>` around a `<component>` of that kind. Only in the
+   separate-window arrangement, and only when a frame qualifies: a skin-declared groupdef with a
+   frame script that can instantiate its `content=` group. The empty built-in `wasabi.*` shells do
+   not qualify.
+4. **Classic fallback** — NullPlayer's own `.wsz` window, with a diagnostic naming the prerequisite
+   that failed.
+
+Measured, for the four reference skins:
+
+| Skin | Playlist | Equalizer | Library |
+|---|---|---|---|
+| cPro-Bento | embedded | embedded (drawer) | embedded (tab) |
+| mmd3 | declared `Pledit` | embedded (main-window drawer) | synthesized |
+| CornerAmp_Redux | declared `Pledit` | declared `eq` | synthesized |
+| Winamp Modern | declared `Pledit` | embedded | declared `MLibrary` |
+
+Winamp defines **no equalizer component GUID** — no measured skin contains one — so an equalizer is
+recognized by its controls (`EQ_BAND`, `EQ_PREAMP`, `<eqvis>`), and a synthesized one uses `guid:eq`.
+`EQ_TOGGLE`/`EQ_AUTO` deliberately do not count as evidence: a button that opens the equalizer is not
+an equalizer.
+
+### Not implemented in the playlist
+
+The skin-specific ADD / REM / SEL / MISC button menus are **inert**. They open Winamp's own nested
+popup menus over playlist-manager operations NullPlayer has no equivalent for; the buttons draw and
+respond to hover, and clicking one does nothing.
 
 ## ClassicPro engine policy
 
@@ -295,15 +337,19 @@ skin's own controls. See [manual-qa-checklist.md](manual-qa-checklist.md).
 
 **Known rendering gaps**: the lower third of Winamp Modern's main window (`player.main` and
 `player.normal.drawer` both resolve to y≈17 and overlap, leaving the config/EQ drawer area blank), and
-cPro-Bento's SUI centre.
+any widget whose visuals come entirely from an empty `wasabi.*` standard-library shell.
 
-> **cPro-Bento's empty centre is `Wasabi:Frame`, not the windowholders.** Since Phase 11 the SUI
-> subtree reaches `<Wasabi:Frame id="centro.mainframe" left="centro.components"
-> right="centro.playlist1" orientation="vertical" from="right" width="200">` and stops there. In
-> Winamp that splitter instantiates the two groups it names; ours is one of the identifier-only
-> `wasabi.*` shells (`wasabiStandardLibraryGroups`), so it instantiates nothing and the library tree,
-> playlist and tabs never enter the graph at all. Implementing it is the highest-value next step for
-> this target.
+> **cPro-Bento's centre is no longer empty.** Phase 12 implemented the `Wasabi:Frame` splitter that
+> builds the SUI body, and Phase 13 filled the surfaces inside it: the playlist pane draws the live
+> queue, and the Media Library tab hosts the real browser (verified live against a Plex server).
+
+**Window sizing** (Phase 13.0). A `.wal` window is sized by its own layout, and a frame restored from
+saved state is now honoured for its *position* but clamped to that layout's `minimum_*`/`maximum_*`
+with the saved top-left preserved — restoring verbatim is what brought a 500×500 cPro-Bento window
+back as 376×182. Separately, an object whose parent is smaller than the object's own margins resolves
+to a **negative** box; those are dropped with their subtree rather than flipped across their origin,
+which is what made an undersized window scramble instead of cramp. Zero-sized objects are still
+walked — skins park real content in 0×0 groups that size themselves from their children.
 
 **Not fuzzed**: `NSISArchive` and `LZMA1Decoder`. They are validated byte-for-byte against the real
 installer (309/309 engine files match a reference oracle), but a bounded fuzz over them remains
