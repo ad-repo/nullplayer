@@ -36,10 +36,16 @@ final class WinampModernMainView: NSView {
     /// Returns true if the skin provides a separate native window for the kind and it was toggled.
     var componentWindowToggleRequested: ((WinampModernComponentKind) -> Bool)?
 
-    /// The main window drives the shared script runtime's callbacks (layout switching, theme,
-    /// actions). Auxiliary container windows render + take input but must not clobber those
-    /// single-owner callbacks, so they pass `drivesScripts: false`.
+    /// The main window drives the shared script runtime's *global* callbacks (theme, actions, mouse
+    /// position, EQ). Auxiliary container windows render and take input against the same runtime but
+    /// must not clobber those single-owner callbacks, so they pass `drivesScripts: false`.
+    ///
+    /// Layout switching and resizing are **not** in that set: they are addressed to a container, and
+    /// the window controller routes them to the view that owns it (Phase 13.3).
     private let drivesScripts: Bool
+
+    /// The container this view renders — the address a script's `switchToLayout`/`resize` carries.
+    var containerID: WasabiObjectID { renderer.container.stableID }
 
     init(renderer: WasabiSceneRenderer, scripts: WinampModernScriptRuntime,
          host: WinampModernHost, componentHost: WinampModernComponentHost? = nil,
@@ -69,22 +75,28 @@ final class WinampModernMainView: NSView {
         }
     }
 
+    /// Switch this view's container to one of its own layouts. Returns false when the container has
+    /// no such layout, so a script's `switchToLayout` on a container we do not host is a no-op rather
+    /// than a resize of the wrong window.
+    @discardableResult
+    func activateLayout(id: String) -> Bool {
+        guard (try? renderer.activateLayout(id: id)) != nil else { return false }
+        setFrameSize(scaledCanvasSize)
+        canvasSizeDidChange?(scaledCanvasSize)
+        needsDisplay = true
+        return true
+    }
+
+    /// Resize this view's canvas (clamped by the active layout) and its window with it.
+    func applyCanvasResize(_ proposed: CGSize) {
+        _ = renderer.resize(to: proposed)
+        setFrameSize(scaledCanvasSize)
+        canvasSizeDidChange?(scaledCanvasSize)
+        needsDisplay = true
+    }
+
     private func wireScriptCallbacks() {
         scripts.graphDidMutate = { [weak self] in self?.needsDisplay = true }
-        scripts.layoutSwitchRequested = { [weak self] layoutID in
-            guard let self, (try? self.renderer.activateLayout(id: layoutID)) != nil else { return false }
-            self.setFrameSize(self.scaledCanvasSize)
-            self.canvasSizeDidChange?(self.scaledCanvasSize)
-            self.needsDisplay = true
-            return true
-        }
-        scripts.layoutResizeRequested = { [weak self] proposed in
-            guard let self else { return }
-            _ = self.renderer.resize(to: proposed)
-            self.setFrameSize(self.scaledCanvasSize)
-            self.canvasSizeDidChange?(self.scaledCanvasSize)
-            self.needsDisplay = true
-        }
         scripts.actionRequested = { [weak self] action, parameter in
             self?.performAction(action: action, parameter: parameter)
         }
@@ -400,11 +412,7 @@ final class WinampModernMainView: NSView {
         case "NEXT": host.next()
         case "EJECT": host.openFiles()
         case "SWITCH":
-            if let parameter, (try? renderer.activateLayout(id: parameter)) != nil {
-                setFrameSize(scaledCanvasSize)
-                canvasSizeDidChange?(scaledCanvasSize)
-                needsDisplay = true
-            }
+            if let parameter { activateLayout(id: parameter) }
         case "TOGGLE":
             if let kind = WinampModernComponentRegistry.kind(for: parameter) { routeComponentToggle(kind) }
         case "EQ_TOGGLE":

@@ -54,8 +54,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     var graphDidMutate: (() -> Void)?
     var popupPresenter: (([(String, Int32, Bool, Bool)]) -> Int32)?
-    var layoutSwitchRequested: ((String) -> Bool)?
-    var layoutResizeRequested: ((CGSize) -> Void)?
+    /// A layout switch or resize, addressed to the *container* whose script asked for it. A `.wal`
+    /// skin has one script runtime and several windows; without the container id every playlist
+    /// script that resized itself at startup resized the player instead.
+    var layoutSwitchRequested: ((WasabiObjectID, String) -> Bool)?
+    var layoutResizeRequested: ((WasabiObjectID, CGSize) -> Void)?
     var actionRequested: ((String, String?) -> Void)?
     var themeNamesRequested: (() -> [String])?
     var activeThemeRequested: (() -> String)?
@@ -895,7 +898,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                       $0.xmlID?.caseInsensitiveCompare(arguments[0].stringValue) == .orderedSame
                   }) else { return .null }
             activeLayoutByContainer[object.stableID] = next.stableID
-            _ = layoutSwitchRequested?(arguments[0].stringValue)
+            _ = layoutSwitchRequested?(object.stableID, arguments[0].stringValue)
             _ = try dispatch(object: object, event: "onswitchtolayout", arguments: [objectValue(next)])
             return .null
         case "getnumchildren": return .integer(Int32(clamping: object.children.count))
@@ -922,8 +925,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             for (key, value) in zip(["x", "y", "w", "h"], arguments) {
                 _ = object.setAttribute(key, value: String(value.integerValue))
             }
-            if object.typeName.caseInsensitiveCompare("layout") == .orderedSame {
-                layoutResizeRequested?(CGSize(width: CGFloat(arguments[2].integerValue),
+            if object.typeName.caseInsensitiveCompare("layout") == .orderedSame,
+               let container = ancestor(of: object, type: "container") {
+                layoutResizeRequested?(container.stableID,
+                                       CGSize(width: CGFloat(arguments[2].integerValue),
                                               height: CGFloat(arguments[3].integerValue)))
             }
             graphDidMutate?()

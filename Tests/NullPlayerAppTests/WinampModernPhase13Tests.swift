@@ -446,6 +446,64 @@ final class WinampModernPhase13Tests: XCTestCase {
         try makeSkin(xml: xml).surfaceInventory
     }
 
+    // MARK: - 13.3 Container-scoped runtime
+
+    /// A `switchToLayout`/`resize` is addressed to the container whose script called it. With one
+    /// runtime and several windows, the auxiliary playlist resizing itself must not resize the
+    /// player (R6).
+    func testLayoutCallbacksAreAddressedToTheContainerThatAskedForThem() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" default_w="400" default_h="200" minimum_w="10" minimum_h="10"/>
+            <layout id="shade" default_w="400" default_h="20" minimum_w="10" minimum_h="10"/>
+          </container>
+          <container id="Pledit" component="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}">
+            <layout id="normal" default_w="300" default_h="150" minimum_w="10" minimum_h="10"/>
+            <layout id="plshade" default_w="300" default_h="25" minimum_w="10" minimum_h="10"/>
+          </container>
+        </WasabiXML>
+        """)
+        let host = TestHost()
+        let mainRenderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, containerID: "main")
+        let auxRenderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, containerID: "Pledit")
+        addTeardownBlock { mainRenderer.teardown(); auxRenderer.teardown() }
+
+        // The routing the controller installs, without an AppKit window in the way.
+        let renderers: [WasabiObjectID: WasabiSceneRenderer] = [
+            mainRenderer.container.stableID: mainRenderer,
+            auxRenderer.container.stableID: auxRenderer,
+        ]
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        scripts.layoutSwitchRequested = { container, id in
+            guard let renderer = renderers[container] else { return false }
+            return (try? renderer.activateLayout(id: id)) != nil
+        }
+        scripts.layoutResizeRequested = { container, size in
+            _ = renderers[container]?.resize(to: size)
+        }
+
+        let program = try MakiBytecodeParser().parse(Self.emptyMakiScript(),
+                                                     source: WalSourceLocation(path: "/test.maki"))
+        let playlist = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "Pledit").first)
+        _ = try scripts.invoke(method: "switchtolayout", on: MakiObjectReference(.gui(playlist.stableID)),
+                               arguments: [.string("plshade")], program: program)
+        XCTAssertEqual(auxRenderer.activeLayoutID, "plshade")
+        XCTAssertEqual(mainRenderer.activeLayoutID, "normal", "the player is untouched")
+        XCTAssertEqual(mainRenderer.canvasSize, CGSize(width: 400, height: 200))
+
+        let playlistLayout = try XCTUnwrap(auxRenderer.container.children.first {
+            $0.xmlID == "plshade"
+        })
+        _ = try scripts.invoke(method: "resize", on: MakiObjectReference(.gui(playlistLayout.stableID)),
+                               arguments: [.integer(0), .integer(0), .integer(320), .integer(40)],
+                               program: program)
+        XCTAssertEqual(auxRenderer.canvasSize, CGSize(width: 320, height: 40))
+        XCTAssertEqual(mainRenderer.canvasSize, CGSize(width: 400, height: 200),
+                       "an auxiliary container's resize must not reach the player's window")
+    }
+
     // MARK: - Helpers
 
     private func makeRenderer(layout: String) throws -> WasabiSceneRenderer {

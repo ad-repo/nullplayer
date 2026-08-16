@@ -15,7 +15,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let window: NSWindow
         let view: WinampModernMainView
         let kind: WinampModernComponentKind?
+        let containerID: String
     }
+
+    /// Every container this controller hosts, main included, addressed the way a script addresses it.
+    /// One skin has one script runtime and several windows, so a `switchToLayout`/`resize` has to be
+    /// delivered to the window that owns the container the script called it on — not to whichever
+    /// view happened to install the callback last (Phase 13.3, R6).
+    private var viewsByContainer: [WasabiObjectID: WinampModernMainView] = [:]
     private(set) var loadFailure: Error?
 
     convenience init() {
@@ -74,6 +81,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 self?.resizeWindow(to: size, reason: "canvasSizeDidChange")
                 self?.applyLayoutConstraints()
             }
+            viewsByContainer[view.containerID] = view
             loadFailure = nil
             view.skinScale = skinScale
             window?.contentView = view
@@ -84,6 +92,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 self?.toggleAuxiliaryWindow(for: kind) ?? false
             }
             applyLayoutConstraints()
+            // Container-scoped callbacks must exist *before* the scripts run: a skin that resizes or
+            // switches a layout from `onScriptLoaded` does it during `start()`.
+            wireContainerCallbacks(scripts: scripts)
             try scripts.start()
             #if DEBUG
             // Surface the per-skin compatibility report (Phase 7.2). After `start()`, the report also
@@ -122,17 +133,39 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                                             componentHost: componentBridge, drivesScripts: false)
             view.skinScale = skinScale
             let auxWindow = NSWindow(contentRect: NSRect(origin: .zero, size: view.scaledCanvasSize),
-                                     styleMask: [.borderless], backing: .buffered, defer: false)
+                                     styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
             auxWindow.isReleasedWhenClosed = false
             auxWindow.isOpaque = false
             auxWindow.backgroundColor = .clear
             auxWindow.hasShadow = false
             auxWindow.contentView = view
             auxWindow.setAccessibilityIdentifier("WinampModernContainer_\(info.id)")
+            auxWindow.setAccessibilityLabel(info.object.attributes["name"] ?? info.id)
+            auxWindow.delegate = self
             auxWindow.orderOut(nil)
+            // A script resizing *this* container resizes this window, not the player's.
+            view.canvasSizeDidChange = { [weak self, weak auxWindow] size in
+                guard let auxWindow else { return }
+                self?.resize(window: auxWindow, to: size)
+                self?.applyLayoutConstraints()
+            }
             // The container's own `component=` GUID, not its id — `Pledit` and `MLibrary` only look
             // like their kinds by convention (`WinampModernContainerTopology.kind(of:)`).
-            auxiliaryContainers.append(AuxiliaryContainer(window: auxWindow, view: view, kind: info.kind))
+            auxiliaryContainers.append(AuxiliaryContainer(window: auxWindow, view: view,
+                                                          kind: info.kind, containerID: info.id))
+            viewsByContainer[view.containerID] = view
+        }
+    }
+
+    /// One installation of the two container-addressed callbacks, owned by the controller rather than
+    /// by whichever view was created last.
+    private func wireContainerCallbacks(scripts: WinampModernScriptRuntime) {
+        scripts.layoutSwitchRequested = { [weak self] container, layoutID in
+            guard let view = self?.viewsByContainer[container] else { return false }
+            return view.activateLayout(id: layoutID)
+        }
+        scripts.layoutResizeRequested = { [weak self] container, size in
+            self?.viewsByContainer[container]?.applyCanvasResize(size)
         }
     }
 
@@ -221,11 +254,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     private func resizeWindow(to size: NSSize, reason: String = "skin") {
         guard let window else { return }
-        guard !isApplyingSkinSize else { return }
         #if DEBUG
         NSLog("WinampModern R1: resizeWindow(%@) reason=%@ from=%@",
               NSStringFromSize(size), reason, NSStringFromRect(window.frame))
         #endif
+        resize(window: window, to: size)
+    }
+
+    /// Resize any `.wal` window around its top-left, which is the corner Winamp anchors to.
+    private func resize(window: NSWindow, to size: NSSize) {
+        guard !isApplyingSkinSize else { return }
         isApplyingSkinSize = true
         defer { isApplyingSkinSize = false }
         let oldTopLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
@@ -261,13 +299,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func windowVisibilityDidChange() { skinView?.needsDisplay = true }
 
     func windowDidResize(_ notification: Notification) {
-        guard !isApplyingSkinSize, let view = skinView, let window, window.contentView === view else { return }
+        guard !isApplyingSkinSize,
+              let resized = notification.object as? NSWindow,
+              let view = resized.contentView as? WinampModernMainView else { return }
         // The skin resizes on its own pixel grid, so the dragged size comes back out of UI Size first
-        // and the accepted size goes back in.
-        let content = window.contentLayoutRect.size
-        _ = view.renderer.resize(to: CGSize(width: content.width / skinScale, height: content.height / skinScale))
+        // and the accepted size goes back in. Every `.wal` window works this way, each against the
+        // limits of its own container's active layout.
+        let content = resized.contentLayoutRect.size
+        _ = view.renderer.resize(to: CGSize(width: content.width / skinScale,
+                                            height: content.height / skinScale))
         let size = view.scaledCanvasSize
-        if size != content { resizeWindow(to: size, reason: "windowDidResize") }
+        if size != content { resize(window: resized, to: size) }
         if size != view.frame.size { view.setFrameSize(size) }
         view.needsDisplay = true
     }
@@ -283,6 +325,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             container.window.contentView = nil
         }
         auxiliaryContainers.removeAll()
+        viewsByContainer.removeAll()
         skinView?.teardown()
         skinView = nil
         host?.endVisualizationConsumption()
