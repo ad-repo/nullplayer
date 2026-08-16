@@ -177,6 +177,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// Surface routing for this skin: menus, skin buttons, and restoration all resolve through it.
     private(set) var surfaceCoordinator: WinampModernSurfaceCoordinator?
 
+    /// The loaded skin's live palette, for the surfaces NullPlayer draws in windows of its own
+    /// (Phase 16). Nil before a skin loads and while the placeholder is showing, which is exactly
+    /// when a fallback window should keep its own defaults rather than guess at a theme.
+    var currentPalette: WasabiPalette? { skinView?.renderer.palette }
+
     private func makeSurfaceCoordinator(loaded: WinampModernLoadedSkin,
                                         scripts: WinampModernScriptRuntime) {
         let hosted = Set(auxiliaryContainers.map(\.containerID))

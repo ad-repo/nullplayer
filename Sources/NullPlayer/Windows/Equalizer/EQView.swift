@@ -103,6 +103,10 @@ class EQView: NSView {
         )
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
+        // A `.wal` colour-theme switch recolours this window when it is a Winamp Modern fallback
+        // (Phase 16); the style is re-derived on each draw, so a repaint is the whole job.
+        NotificationCenter.default.addObserver(self, selector: #selector(skinDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
     }
     
     /// Handle track change for Auto EQ
@@ -358,8 +362,14 @@ class EQView: NSView {
         // Use original bounds for drawing (scaling is applied via transform)
         let drawBounds = NSRect(origin: .zero, size: originalSize)
 
-        // Draw normal mode
-        drawNormalMode(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
+        // Draw normal mode — the flat palette version when this window is a `.wal` skin's fallback
+        // equalizer (Phase 16), the classic sprites otherwise.
+        if let style = WindowManager.shared.winampModernSurfaceStyle {
+            drawWinampModernNormalMode(style: style, context: context, isActive: isActive,
+                                       drawBounds: drawBounds)
+        } else {
+            drawNormalMode(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
+        }
 
         context.restoreGState()
 
@@ -401,9 +411,149 @@ class EQView: NSView {
         renderer.drawEQGraph(bands: bands, isEnabled: isEnabled, in: context)
     }
     
+    // MARK: - Winamp Modern drawing (Phase 16)
+
+    /// The equalizer for a `.wal` skin that declares none of its own.
+    ///
+    /// Every rect comes from this view's own `Layout` — the same numbers `hitTestSlider`,
+    /// `updateSlider`, and the button hit tests use — so the controls stay exactly where they were
+    /// and only their appearance changes. dB runs +12 at the top of a slider to −12 at the bottom,
+    /// matching `updateSlider`.
+    private func drawWinampModernNormalMode(style: WinampModernSurfaceStyle, context: CGContext,
+                                            isActive: Bool, drawBounds: NSRect) {
+        context.setFillColor(style.background.cgColor)
+        context.fill(drawBounds)
+        context.setFillColor(style.barBackground.cgColor)
+        context.fill(NSRect(x: 0, y: 0, width: drawBounds.width, height: Layout.titleBarHeight))
+        context.setStrokeColor(style.border.cgColor)
+        context.setLineWidth(1)
+        context.stroke(drawBounds.insetBy(dx: 0.5, dy: 0.5))
+
+        let titleColor = isActive ? style.currentText : style.dimText
+        let title = "EQUALIZER"
+        let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: 1.4)
+        WinampModernSurfaceStyle.drawText(
+            title,
+            at: NSPoint(x: (drawBounds.width - titleWidth) / 2,
+                        y: (Layout.titleBarHeight - WinampModernSurfaceStyle.classicCharHeight * 1.4) / 2),
+            scale: 1.4, color: titleColor, in: context)
+
+        if !WindowManager.shared.hideTitleBars {
+            let close = Layout.closeHitRect
+            if pressedButton == .close {
+                context.setFillColor(style.pressedFill.cgColor)
+                context.fill(close)
+            }
+            let glyph = close.insetBy(dx: 6, dy: 4)
+            context.setStrokeColor(titleColor.cgColor)
+            context.beginPath()
+            context.move(to: CGPoint(x: glyph.minX, y: glyph.minY))
+            context.addLine(to: CGPoint(x: glyph.maxX, y: glyph.maxY))
+            context.move(to: CGPoint(x: glyph.maxX, y: glyph.minY))
+            context.addLine(to: CGPoint(x: glyph.minX, y: glyph.maxY))
+            context.strokePath()
+        }
+
+        drawWinampModernEQButton("ON", rect: Layout.onOffRect, on: isEnabled,
+                                 pressed: false, style: style, context: context)
+        drawWinampModernEQButton("AUTO", rect: Layout.autoRect, on: isAuto,
+                                 pressed: false, style: style, context: context)
+        drawWinampModernEQButton("PRESETS", rect: Layout.presetsRect, on: false,
+                                 pressed: pressedButton == .eqPresets, style: style, context: context)
+
+        drawWinampModernEQGraph(style: style, context: context)
+
+        drawWinampModernEQSlider(value: CGFloat(preamp), rect: Layout.preampRect,
+                                 label: "PRE", style: style, context: context)
+        for index in 0..<10 {
+            let rect = NSRect(x: Layout.bandStartX + CGFloat(index) * Layout.bandSpacing,
+                              y: Layout.bandY, width: Layout.bandWidth, height: Layout.bandHeight)
+            drawWinampModernEQSlider(value: CGFloat(bands[index]), rect: rect,
+                                     label: Layout.frequencies[index], style: style, context: context)
+        }
+    }
+
+    private func drawWinampModernEQButton(_ label: String, rect: NSRect, on: Bool, pressed: Bool,
+                                          style: WinampModernSurfaceStyle, context: CGContext) {
+        let fill: NSColor = pressed ? style.pressedFill : (on ? style.selectionBackground : style.background)
+        context.setFillColor(fill.cgColor)
+        context.fill(rect)
+        context.setStrokeColor(style.divider.cgColor)
+        context.setLineWidth(1)
+        context.stroke(rect.insetBy(dx: 0.5, dy: 0.5))
+        let color = on ? style.selectionText : style.text
+        let width = WinampModernSurfaceStyle.measuredWidth(label, scale: 1)
+        WinampModernSurfaceStyle.drawText(
+            label,
+            at: NSPoint(x: rect.midX - width / 2,
+                        y: rect.midY - WinampModernSurfaceStyle.classicCharHeight / 2),
+            scale: 1, color: color, in: context)
+    }
+
+    /// A vertical track with a thumb at the band's dB, plus the band label beneath it.
+    private func drawWinampModernEQSlider(value: CGFloat, rect: NSRect, label: String,
+                                          style: WinampModernSurfaceStyle, context: CGContext) {
+        let track = NSRect(x: rect.midX - 1.5, y: rect.minY + 2, width: 3, height: rect.height - 4)
+        context.setFillColor(style.divider.cgColor)
+        context.fill(track)
+
+        // Centre line: 0 dB, so a flat band reads as flat at a glance.
+        context.setFillColor(style.border.cgColor)
+        context.fill(NSRect(x: rect.minX, y: rect.midY - 0.5, width: rect.width, height: 1))
+
+        let normalized = min(1, max(0, (value + 12) / 24))
+        let thumbCenterY = track.maxY - track.height * normalized
+        let thumb = NSRect(x: rect.minX, y: thumbCenterY - 3, width: rect.width, height: 6)
+        context.setFillColor((isEnabled ? style.selectionBackground : style.divider).cgColor)
+        context.fill(thumb)
+        context.setStrokeColor(style.text.cgColor)
+        context.setLineWidth(1)
+        context.stroke(thumb.insetBy(dx: 0.5, dy: 0.5))
+
+        let labelWidth = WinampModernSurfaceStyle.measuredWidth(label, scale: 0.8)
+        WinampModernSurfaceStyle.drawText(label,
+                                          at: NSPoint(x: rect.midX - labelWidth / 2, y: rect.maxY + 2),
+                                          scale: 0.8, color: style.dimText, in: context)
+    }
+
+    /// The response curve, in the same well and with the same interpolation the classic graph uses,
+    /// drawn in the skin's own colours.
+    private func drawWinampModernEQGraph(style: WinampModernSurfaceStyle, context: CGContext) {
+        let rect = SkinElements.Equalizer.graphRect
+        context.setFillColor(style.background.cgColor)
+        context.fill(rect)
+        context.setStrokeColor(style.divider.cgColor)
+        context.setLineWidth(1)
+        context.stroke(rect.insetBy(dx: 0.5, dy: 0.5))
+        context.setFillColor(style.divider.cgColor)
+        context.fill(NSRect(x: rect.minX, y: rect.midY - 0.5, width: rect.width, height: 1))
+
+        guard isEnabled, bands.count >= 10 else { return }
+        context.saveGState()
+        context.clip(to: rect)
+        context.setStrokeColor(style.text.cgColor)
+        context.setLineWidth(1)
+        context.beginPath()
+        let maxXIndex = max(1, Int(rect.width.rounded(.down)) - 1)
+        for xIndex in 0...maxXIndex {
+            let bandPosition = CGFloat(xIndex) / CGFloat(maxXIndex) * 9.0
+            let lowerBand = min(8, Int(floor(bandPosition)))
+            let upperBand = min(9, lowerBand + 1)
+            let t = bandPosition - CGFloat(lowerBand)
+            let value = CGFloat(bands[lowerBand])
+                + (CGFloat(bands[upperBand]) - CGFloat(bands[lowerBand])) * t
+            let normalized = min(1, max(0, (value + 12) / 24))
+            let point = CGPoint(x: rect.minX + CGFloat(xIndex),
+                                y: rect.minY + rect.height * (1 - normalized))
+            if xIndex == 0 { context.move(to: point) } else { context.addLine(to: point) }
+        }
+        context.strokePath()
+        context.restoreGState()
+    }
+
     // MARK: - Public Methods
-    
-    func skinDidChange() {
+
+    @objc func skinDidChange() {
         needsDisplay = true
     }
     

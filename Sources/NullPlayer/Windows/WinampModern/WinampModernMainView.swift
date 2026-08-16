@@ -110,8 +110,13 @@ final class WinampModernMainView: NSView {
     }
 
     /// The skin switched colour theme. The renderer has already dropped its themed bitmaps.
+    ///
+    /// Embedded surfaces are told directly; the *fallback* windows have no handle on this view, so
+    /// they learn about it from the notification (Phase 16.2). Both have to happen, because a skin
+    /// can have one of each open at the same time.
     private func themeDidChange() {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
+        NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
         needsDisplay = true
     }
 

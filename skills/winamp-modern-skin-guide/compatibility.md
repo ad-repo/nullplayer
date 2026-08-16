@@ -227,7 +227,7 @@ across the engine but never reached at startup):
 |-----------|-------|
 | Playlist | Embedded and bound to `AudioEngine` — rows, now-playing marker, selection, bounded scroll, click/double-click/wheel, Delete/Forward-Delete removal while focused, `PE_Info` status line. Drawn in the skin's palette and list font |
 | EQ | Embedded classic 10-band + preamp, enabled/auto, presets, `<eqvis>`, bound to `AudioEngine`; gains persist across mode switches |
-| Library | **The real browser, embedded** in the skin's holder — servers, tabs, search, CoverFlow, history, linking. Falls back to the classic window only when the skin offers no home for it |
+| Library | **The real browser, embedded** in the skin's holder — servers, tabs, search, CoverFlow, history, linking. Falls back to a window of its own only when the skin offers no home for it; either way it is drawn in the skin's palette, not with classic `.wsz` artwork |
 | Visualization / video | Holder discovered and framed; content per the component host |
 
 A holder is any of `<windowholder hold=…>`, `<componentbucket>`, or `<component param=…>` — the last
@@ -259,8 +259,11 @@ Every request for the playlist, equalizer, or library — a menu item, a skin bu
    separate-window arrangement, and only when a frame qualifies: a skin-declared groupdef with a
    frame script that can instantiate its `content=` group. The built-in `wasabi.*` shells do not
    qualify — synthesis reads the *document's* groupdefs, so a seeded shell is never a candidate.
-4. **Classic fallback** — NullPlayer's own `.wsz` window, with a diagnostic naming the prerequisite
-   that failed.
+4. **Classic fallback** — NullPlayer's own window, with a diagnostic naming the prerequisite that
+   failed. "Classic" is the *controller*, not the look: since Phase 16 these windows are drawn flat
+   from the loaded skin's `WasabiPalette` (via `WinampModernSurfaceStyle`) rather than with `.wsz`
+   sprites, the 5×6 bitmap font, and the selected classic skin's list colours. Geometry is unchanged
+   — same title-bar height, borders, and button boxes — so only the pixels differ.
 
 Measured, for the four reference skins:
 

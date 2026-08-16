@@ -85,7 +85,7 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
       synthetic window appears for a surface the skin already shows
 - [ ] mmd3 / CornerAmp: the synthesized library window is drawn with **the skin's own frame** (its
       title bar, borders, and buttons), not NullPlayer chrome
-- [ ] A surface with no home falls back to the classic window, and the DEBUG log names the reason
+- [ ] A surface with no home falls back to a window of its own, and the DEBUG log names the reason
 
 **Playlist**
 
@@ -116,9 +116,30 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
 - [ ] Switch tabs/layouts away and back — the browser is torn down and rebuilt without leaking tasks
 - [ ] Browse mode is remembered across a quit and relaunch
 
+**Fallback surfaces are the skin's colours, not a classic skin's (Phase 16)**
+
+> The gate for Phase 16. These windows keep the *classic controller* but are drawn flat from the
+> loaded skin's palette, so what is being checked is colour and legibility, never geometry.
+
+- [ ] Pick a skin that offers **no** playlist / EQ / library of its own and open each from the Windows
+      menu: the window is flat and coloured from the `.wal` skin — **no** `.wsz` sprite frame, no
+      chunky 5×6 bitmap font, and none of the selected classic skin's colours anywhere
+- [ ] cPro-Bento's embedded library reads in the skin's own colours; text is legible against its
+      background, and the tab strip, search bar, status bar, and list rows are all distinguishable
+      from each other (the chrome roles are blends, so this is what proves the blend fractions work)
+- [ ] Try a **light** skin as well as a dark one — the chrome must get *darker* than the content on a
+      light skin, not wash out
+- [ ] Every control is still exactly where it was: close button, tab strip, search field, EQ sliders
+      and the EQ preset/on/auto buttons all respond at the same point they did before
+- [ ] The EQ curve, slider thumbs, and the 0 dB centre lines are visible and track the audio
+- [ ] Switch **back to Classic mode**: the playlist, EQ, and library must look exactly as they always
+      did — no palette leaking into a mode that has no `.wal` skin loaded
+
 **Themes and sizing**
 
-- [ ] Switch colour theme: main chrome, auxiliary windows, playlist, EQ, and the library all recolour
+- [ ] Switch colour theme (MMD3 has 83): main chrome, auxiliary windows, playlist, EQ, and the
+      library all recolour — **including** an already-open fallback window, which repaints from
+      `.winampModernThemeDidChange` rather than being told directly
 - [ ] Resize every native `.wal` window; each obeys its **own** layout minimum
 - [ ] Exercise every UI Size level, including clicking inside the embedded library at 200%
 - [ ] Restore a session whose saved frame is below the layout minimum: the window clamps up and keeps

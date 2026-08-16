@@ -38,6 +38,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Container topology | `WinampModernContainerTopology.swift` |
 | Surface inventory + synthesis | `WasabiSurfaceInventory.swift`, `WasabiSurfaceSynthesizer.swift`, `WasabiStandardFrames.swift` |
 | Colour theme + palette | `WinampModernThemeCoordinator.swift`, `WasabiPalette.swift` |
+| Style for NullPlayer-drawn surfaces | `WinampModernSurfaceStyle.swift` |
 | EQ action decoding | `WinampModernEQActions.swift` |
 | Diagnostics | `WalDiagnostics.swift` |
 | Compatibility report | `WinampModernCompatibilityReport.swift` |
@@ -414,7 +415,9 @@ script callbacks (theme, actions, mouse, EQ) — layout switching and resizing a
 **embedded → declared container → synthesized container → classic fallback**. `WindowManager`'s
 `show*`/`toggle*`/`is*Visible` consult it before their classic paths; the fallback has its own entry
 point (`showClassicSurfaceForWinampModern`) because re-entering the public toggles would route back
-into the coordinator.
+into the coordinator. The *type* is still `classicFallback` and the entry point is still
+`showClassicSurfaceForWinampModern` — it is the classic **controller**, not the classic look: since
+Phase 16 those windows paint from the skin's palette (below).
 
 Two things about the embedded case that are easy to get wrong:
 
@@ -465,6 +468,29 @@ does it during `start()`.
 views subscribe by identity token and drop their themed bitmaps on a switch. `WasabiPalette` gives
 NullPlayer-drawn content (playlist rows, EQ sliders) colours from the skin's own resources, resolved
 through the renderer's *own* resolver so gamma matches.
+
+**The surfaces we draw are palette-themed, never classic-skinned.** `WinampModernSurfaceStyle` widens
+a `WasabiPalette` into a whole chrome for the AppKit views NullPlayer supplies — the embedded library
+(`PlexBrowserView` in embedded mode) and the playlist / EQ / library **fallback windows**. Before
+Phase 16 all of those painted with `SkinRenderer` sprites, the 5×6 bitmap font, and
+`skin.playlistColors` from whatever `.wsz` was selected: a foreign UI coloured by a skin the user is
+not looking at.
+
+- Chrome roles (`barBackground`, `border`, `divider`, `dimText`, `pressedFill`) are **blends of the
+  roles the skin declared**, never fixed greys — real skins declare three of the seven, and the blend
+  is what makes the chrome move the right way on a light skin as well as a dark one.
+- `font(scale:)` solves for a monospaced point size whose advance is exactly
+  `SkinElements.TextFont.charWidth * scale`, and `attributes` adds a `.kern` correction for the
+  remainder. **This is load-bearing**: the views lay themselves out as
+  `text.count * charWidth * scale` in ~77 places in the browser alone, so a font that measured
+  differently would leave every one of those boxes wrong. `drawText` counter-flips about the cell.
+- Chrome is redrawn at the **same metrics** as the classic version — same title-bar height, same 12px
+  borders, same button boxes the hit tests already own — so only pixels change, never geometry.
+- Reaching it: embedded surfaces are pushed a style through the existing
+  `WinampModernLibrarySurface.applyPalette` seam; fallback windows read
+  `WindowManager.winampModernSurfaceStyle`, which is **nil in every other mode** (and nil until a
+  skin loads), so classic mode runs the untouched classic path. A theme switch posts
+  `.winampModernThemeDidChange`; the style is re-derived per draw, so a repaint is the whole job.
 
 Hosted AppKit surfaces (`WinampModernLibrarySurface`) are **reconciled from `layout()`, never from
 `draw`** — creating and adding a subview inside a draw cycle is a re-entrant hierarchy mutation. A

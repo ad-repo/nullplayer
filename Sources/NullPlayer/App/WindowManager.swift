@@ -11,6 +11,9 @@ extension Notification.Name {
     static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
     static let windowDragDidBegin = Notification.Name("windowDragDidBegin")
     static let windowDragDidEnd = Notification.Name("windowDragDidEnd")
+    /// A `.wal` skin switched colour theme. The surfaces NullPlayer draws itself take their colours
+    /// from the skin's palette (Phase 16), and the fallback windows have no handle on the skin view.
+    static let winampModernThemeDidChange = Notification.Name("winampModernThemeDidChange")
 }
 
 #if DEBUG
@@ -850,6 +853,20 @@ class WindowManager {
     private var winampModernSurfaces: WinampModernSurfaceCoordinator? {
         guard uiMode.controllerFamily == .winampModern else { return nil }
         return (mainWindowController as? WinampModernMainWindowController)?.surfaceCoordinator
+    }
+
+    /// How the surfaces NullPlayer draws itself should look right now, or nil when they should use
+    /// their own classic drawing (Phase 16).
+    ///
+    /// Non-nil **only** in `winampModern` mode and only once a skin has actually loaded, so every
+    /// other mode — and this mode's own placeholder — runs the untouched classic path. The style is
+    /// derived on each read rather than cached: a colour-theme switch changes the palette underneath
+    /// us, and `.winampModernThemeDidChange` only tells a window to repaint.
+    var winampModernSurfaceStyle: WinampModernSurfaceStyle? {
+        guard uiMode.controllerFamily == .winampModern,
+              let palette = (mainWindowController as? WinampModernMainWindowController)?.currentPalette
+        else { return nil }
+        return WinampModernSurfaceStyle(palette: palette)
     }
 
     @discardableResult

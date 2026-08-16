@@ -136,6 +136,11 @@ class PlaylistView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeBackingProperties(_:)),
                                                name: NSWindow.didChangeBackingPropertiesNotification, object: nil)
 
+        // A `.wal` colour-theme switch recolours this window when it is a Winamp Modern fallback
+        // (Phase 16); the style is re-derived on each draw, so a repaint is the whole job.
+        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
+
         // Observe playback state changes to restart timer when needed
         NotificationCenter.default.addObserver(self, selector: #selector(playbackStateDidChange),
                                                name: .audioPlaybackStateChanged, object: nil)
@@ -512,12 +517,18 @@ class PlaylistView: NSView {
         // Calculate scroll position for scrollbar (0-1)
         let scrollPosition = calculateScrollPosition()
 
-        // Draw window frame using skin sprites (SkinRenderer tiles to fill the space)
-        renderer.drawPlaylistWindow(in: context, bounds: drawBounds, isActive: isActive,
-                                    pressedButton: pressedButton, scrollPosition: scrollPosition)
+        // Draw window frame using skin sprites (SkinRenderer tiles to fill the space) — or, for a
+        // `.wal` skin's fallback playlist, the flat palette chrome (Phase 16).
+        let style = WindowManager.shared.winampModernSurfaceStyle
+        if let style {
+            drawWinampModernChrome(style: style, context: context, bounds: drawBounds, isActive: isActive)
+        } else {
+            renderer.drawPlaylistWindow(in: context, bounds: drawBounds, isActive: isActive,
+                                        pressedButton: pressedButton, scrollPosition: scrollPosition)
+        }
 
         // Draw track list in the content area
-        let colors = skin?.playlistColors ?? .default
+        let colors = style?.playlistColors ?? skin?.playlistColors ?? .default
         drawTrackList(in: context, colors: colors, drawBounds: drawBounds)
 
         // Bottom bar removed - no track info or playback time rendering needed
@@ -528,6 +539,80 @@ class PlaylistView: NSView {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
         }
+    }
+
+    // MARK: - Winamp Modern chrome (Phase 16)
+
+    @objc private func winampModernThemeDidChange() {
+        needsDisplay = true
+    }
+
+    /// The playlist frame for a `.wal` skin that declares no playlist of its own.
+    ///
+    /// Flat and palette-coloured, drawn at **exactly** the classic metrics so nothing about hit
+    /// testing moves: the title bar is `Layout.titleBarHeight`, the borders are 12px, and every
+    /// bottom-bar button is painted in the box `hitTestBottomButton` already owns.
+    private func drawWinampModernChrome(style: WinampModernSurfaceStyle, context: CGContext,
+                                        bounds: NSRect, isActive: Bool) {
+        let titleHeight = Layout.titleBarHeight
+        let bottomHeight = Layout.bottomBarHeight
+        let leftBorder = Layout.leftBorder
+        let rightBorder = Layout.rightBorder
+
+        context.setFillColor(style.background.cgColor)
+        context.fill(bounds)
+        context.setFillColor(style.barBackground.cgColor)
+        context.fill(NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight))
+        context.fill(NSRect(x: 0, y: bounds.height - bottomHeight, width: bounds.width, height: bottomHeight))
+        context.fill(NSRect(x: 0, y: titleHeight, width: leftBorder,
+                            height: bounds.height - titleHeight - bottomHeight))
+        context.fill(NSRect(x: bounds.width - rightBorder, y: titleHeight, width: rightBorder,
+                            height: bounds.height - titleHeight - bottomHeight))
+
+        context.setStrokeColor(style.border.cgColor)
+        context.setLineWidth(1)
+        context.stroke(bounds.insetBy(dx: 0.5, dy: 0.5))
+        context.setStrokeColor(style.divider.cgColor)
+        context.stroke(NSRect(x: leftBorder - 0.5, y: titleHeight - 0.5,
+                              width: bounds.width - leftBorder - rightBorder + 1,
+                              height: bounds.height - titleHeight - bottomHeight + 1))
+
+        let titleColor = isActive ? style.currentText : style.dimText
+        let titleScale: CGFloat = 1.6
+        let title = "PLAYLIST"
+        let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: titleScale)
+        WinampModernSurfaceStyle.drawText(
+            title,
+            at: NSPoint(x: (bounds.width - titleWidth) / 2,
+                        y: (titleHeight - WinampModernSurfaceStyle.classicCharHeight * titleScale) / 2),
+            scale: titleScale, color: titleColor, in: context)
+
+        if !WindowManager.shared.hideTitleBars {
+            drawWinampModernCloseGlyph(style: style, context: context,
+                                       rect: NSRect(x: bounds.width - 20, y: 0, width: 20, height: 14),
+                                       color: titleColor)
+        }
+        // No bottom-bar buttons on purpose. `Layout.bottomBarHeight` is 7px — the classic playlist's
+        // ADD/REM/SEL row and mini transport were removed long ago (`drawBottomBarInfo` and
+        // `drawPlaybackTime` are dead code, and `hitTestBottomButton`'s boxes are written for a 38px
+        // bar that no longer exists). The bar is a border strip in both looks.
+    }
+
+    private func drawWinampModernCloseGlyph(style: WinampModernSurfaceStyle, context: CGContext,
+                                            rect: NSRect, color: NSColor) {
+        if pressedButton == .close {
+            context.setFillColor(style.pressedFill.cgColor)
+            context.fill(rect)
+        }
+        let glyph = rect.insetBy(dx: 7, dy: 4)
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(1)
+        context.beginPath()
+        context.move(to: CGPoint(x: glyph.minX, y: glyph.minY))
+        context.addLine(to: CGPoint(x: glyph.maxX, y: glyph.maxY))
+        context.move(to: CGPoint(x: glyph.maxX, y: glyph.minY))
+        context.addLine(to: CGPoint(x: glyph.minX, y: glyph.maxY))
+        context.strokePath()
     }
 
     /// Calculate scroll position as 0-1 value

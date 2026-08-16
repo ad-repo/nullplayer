@@ -38,9 +38,10 @@ final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
 
     func applyPalette(_ palette: WasabiPalette) {
         guard !isTornDown else { return }
-        // The browser draws from the classic skin's own colours; the `.wal` palette only needs to
-        // reach it as a repaint today. Kept as a named seam so a future recolour has a home.
-        browser.needsDisplay = true
+        // The browser used to paint with the classic skin's colours and bitmap font, which inside a
+        // `.wal` window is a foreign UI coloured by a skin the user is not even looking at. It now
+        // draws from the loaded skin's own palette instead (Phase 16).
+        browser.applyWinampModernStyle(WinampModernSurfaceStyle(palette: palette))
     }
 
     func applySkinScale(_ scale: CGFloat) {

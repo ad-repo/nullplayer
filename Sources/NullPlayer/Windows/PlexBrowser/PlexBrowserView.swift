@@ -1520,6 +1520,41 @@ class PlexBrowserView: NSView {
 
     var Layout: LayoutMetrics { isEmbeddedInSkin ? .embedded : .classic }
 
+    // MARK: - Winamp Modern styling (Phase 16)
+
+    /// The `.wal` skin's look, pushed in by the embedding holder on creation and on every colour-theme
+    /// switch. Nil for a browser in a classic window, which resolves its own (see `winampModernStyle`).
+    private var embeddedWinampModernStyle: WinampModernSurfaceStyle?
+
+    /// Resolved style for a browser in a window of its own, and whether it has been resolved yet.
+    ///
+    /// Cached because `drawScaledSkinText` asks for it once per string — ~77 times a frame — and
+    /// deriving a style converts seven colours through a colour space. The palette only changes on a
+    /// colour-theme switch, which invalidates this through `winampModernThemeDidChange`.
+    private var cachedWindowWinampModernStyle: WinampModernSurfaceStyle?
+    private var hasResolvedWindowWinampModernStyle = false
+
+    /// How this browser should be painted, or nil for the classic look.
+    ///
+    /// Embedded, the host pushes the style; in a window of its own the browser is only ever a
+    /// `winampModern` *fallback* surface, so it asks `WindowManager` — which answers nil in every
+    /// other mode, leaving the classic drawing exactly as it was.
+    var winampModernStyle: WinampModernSurfaceStyle? {
+        if isEmbeddedInSkin { return embeddedWinampModernStyle }
+        if !hasResolvedWindowWinampModernStyle {
+            cachedWindowWinampModernStyle = WindowManager.shared.winampModernSurfaceStyle
+            hasResolvedWindowWinampModernStyle = true
+        }
+        return cachedWindowWinampModernStyle
+    }
+
+    /// Called by the `.wal` holder that hosts this browser.
+    func applyWinampModernStyle(_ style: WinampModernSurfaceStyle) {
+        guard embeddedWinampModernStyle != style else { return }
+        embeddedWinampModernStyle = style
+        needsDisplay = true
+    }
+
     private func tabRowNaturalWidth(textScale: CGFloat) -> CGFloat {
         let scaledCharWidth = SkinElements.TextFont.charWidth * textScale
         var labels = PlexBrowseMode.allCases.map { $0.title }
@@ -1858,6 +1893,15 @@ class PlexBrowserView: NSView {
             visEffectIntensity = CGFloat(UserDefaults.standard.double(forKey: "browserVisIntensity"))
         }
         
+        // A `.wal` colour-theme switch recolours this browser (Phase 16). The embedded case is told
+        // directly through `applyWinampModernStyle`; a fallback window has no such handle.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(winampModernThemeDidChange),
+            name: .winampModernThemeDidChange,
+            object: nil
+        )
+
         // Observe Plex manager changes
         NotificationCenter.default.addObserver(
             self,
@@ -2507,9 +2551,74 @@ class PlexBrowserView: NSView {
     private func drawWindowChromeIfNeeded(renderer: SkinRenderer, context: CGContext, bounds: NSRect,
                                           isActive: Bool, scrollPosition: CGFloat) {
         guard !isEmbeddedInSkin else { return }
+        if let style = winampModernStyle {
+            drawWinampModernChrome(style: style, context: context, bounds: bounds, isActive: isActive)
+            return
+        }
         renderer.drawPlexBrowserWindow(in: context, bounds: bounds, isActive: isActive,
                                        pressedButton: pressedButton, scrollPosition: scrollPosition,
                                        controlScale: WindowManager.shared.playlistChromeScale)
+    }
+
+    /// The window frame for a fallback browser inside a `.wal` skin (Phase 16).
+    ///
+    /// Flat, palette-coloured, and drawn at **exactly** the classic metrics — same title bar height,
+    /// same 12px side borders, same status bar, and a close glyph inside the same top-right 20×14 box
+    /// `hitTestCloseButton` checks. Nothing about layout, hit testing, or resizing changes; only the
+    /// pixels do.
+    private func drawWinampModernChrome(style: WinampModernSurfaceStyle, context: CGContext,
+                                        bounds: NSRect, isActive: Bool) {
+        let titleHeight = SkinElements.PlexBrowser.Layout.titleBarHeight
+        let leftBorder = SkinElements.PlexBrowser.Layout.leftBorder
+        let rightBorder = SkinElements.PlexBrowser.Layout.rightBorder
+        let statusHeight = SkinElements.PlexBrowser.Layout.statusBarHeight
+
+        context.setFillColor(style.background.cgColor)
+        context.fill(bounds)
+
+        // Borders: one fill for the whole frame, then the content area punched back out of it, so
+        // there are no seams where four separate strips would meet.
+        context.setFillColor(style.barBackground.cgColor)
+        context.fill(NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight))
+        context.fill(NSRect(x: 0, y: titleHeight, width: leftBorder, height: bounds.height - titleHeight))
+        context.fill(NSRect(x: bounds.width - rightBorder, y: titleHeight,
+                            width: rightBorder, height: bounds.height - titleHeight))
+        context.fill(NSRect(x: 0, y: bounds.height - statusHeight, width: bounds.width, height: statusHeight))
+
+        // A hairline where the chrome meets the content, and one around the window.
+        context.setStrokeColor(style.border.cgColor)
+        context.setLineWidth(1)
+        context.stroke(bounds.insetBy(dx: 0.5, dy: 0.5))
+        context.setStrokeColor(style.divider.cgColor)
+        context.stroke(NSRect(x: leftBorder - 0.5, y: titleHeight - 0.5,
+                              width: bounds.width - leftBorder - rightBorder + 1,
+                              height: bounds.height - titleHeight - statusHeight + 1))
+
+        let titleColor = isActive ? style.currentText : style.dimText
+        let titleScale = WindowManager.shared.playlistChromeScale
+        let title = "LIBRARY"
+        let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: titleScale * 1.6)
+        WinampModernSurfaceStyle.drawText(
+            title,
+            at: NSPoint(x: (bounds.width - titleWidth) / 2,
+                        y: (titleHeight - WinampModernSurfaceStyle.classicCharHeight * titleScale * 1.6) / 2),
+            scale: titleScale * 1.6, color: titleColor, in: context)
+
+        // The close button, in the box `hitTestCloseButton` owns.
+        let closeHit = NSRect(x: bounds.width - 20, y: 0, width: 20, height: 14)
+        if pressedButton == .close {
+            context.setFillColor(style.pressedFill.cgColor)
+            context.fill(closeHit)
+        }
+        let glyph = closeHit.insetBy(dx: 7, dy: 4)
+        context.setStrokeColor(titleColor.cgColor)
+        context.setLineWidth(1)
+        context.beginPath()
+        context.move(to: CGPoint(x: glyph.minX, y: glyph.minY))
+        context.addLine(to: CGPoint(x: glyph.maxX, y: glyph.maxY))
+        context.move(to: CGPoint(x: glyph.maxX, y: glyph.minY))
+        context.addLine(to: CGPoint(x: glyph.minX, y: glyph.maxY))
+        context.strokePath()
     }
 
     /// Show the server-link sheet: the classic window's controller presents it, an embedded browser
@@ -2540,6 +2649,7 @@ class PlexBrowserView: NSView {
     }
 
     private func currentPlaylistColors() -> PlaylistColors {
+        if let style = winampModernStyle { return style.playlistColors }
         let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
         return skin.playlistColors
     }
@@ -2994,7 +3104,7 @@ class PlexBrowserView: NSView {
         // Use original bounds for drawing (scaling is applied via transform)
         let drawBounds = NSRect(origin: .zero, size: originalSize)
 
-        let colors = skin.playlistColors
+        let colors = currentPlaylistColors()
 
             // Fast path: scroll timer marks only server bar area dirty — skip tab bar + list
             // Must still draw the window chrome (borders) so the border tiles aren't missing in that row
@@ -3086,17 +3196,40 @@ class PlexBrowserView: NSView {
     
     // MARK: - Content Drawing (in skin coordinates, using skin text font)
     
+    /// The colour the classic sheet's text is drawn in — sampled from `text.bmp` normally, taken
+    /// from the `.wal` palette inside a modern skin (Phase 16). Used by the callers that tint their
+    /// own glyphs rather than going through `drawScaledSkinText`.
+    private func accentTextColor(_ renderer: SkinRenderer) -> NSColor {
+        winampModernStyle?.text ?? renderer.skinTextColor()
+    }
+
     /// Helper to draw scaled skin text (green)
+    ///
+    /// Inside a `.wal` skin this is the skin's own list colour in a proportionally-matched system
+    /// font instead of the classic 5×6 bitmap sprite sheet (Phase 16). The advance is identical
+    /// either way, which is why none of the ~77 callers had to change how they lay themselves out.
     private func drawScaledSkinText(_ text: String, at position: NSPoint, scale: CGFloat, renderer: SkinRenderer, in context: CGContext) {
+        if let style = winampModernStyle {
+            WinampModernSurfaceStyle.drawText(text, at: position, scale: scale, color: style.text,
+                                              in: context)
+            return
+        }
         context.saveGState()
         context.translateBy(x: position.x, y: position.y)
         context.scaleBy(x: scale, y: scale)
         renderer.drawSkinText(text, at: NSPoint(x: 0, y: 0), in: context)
         context.restoreGState()
     }
-    
+
     /// Helper to draw scaled white skin text
     private func drawScaledWhiteSkinText(_ text: String, at position: NSPoint, scale: CGFloat, renderer: SkinRenderer, in context: CGContext) {
+        if let style = winampModernStyle {
+            // "White" is the classic sheet's emphasis colour; the skin's own "current" role is the
+            // same job done in the skin's palette.
+            WinampModernSurfaceStyle.drawText(text, at: position, scale: scale,
+                                              color: style.currentText, in: context)
+            return
+        }
         context.saveGState()
         context.translateBy(x: position.x, y: position.y)
         context.scaleBy(x: scale, y: scale)
@@ -3318,7 +3451,7 @@ class PlexBrowserView: NSView {
                 let rating = currentTrackRating ?? 0
                 let filledCount = rating / 2
                 
-                let greenColor = renderer.skinTextColor()
+                let greenColor = accentTextColor(renderer)
                 let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
                                       green: greenColor.greenComponent * 0.4,
                                       blue: greenColor.blueComponent * 0.4,
@@ -3359,7 +3492,7 @@ class PlexBrowserView: NSView {
                 let outerR: CGFloat = 8
                 let n = 8
                 let step = CGFloat.pi * 2 / CGFloat(n)
-                let textColor = renderer.skinTextColor()
+                let textColor = accentTextColor(renderer)
                 for i in 0..<n {
                     let angle = CGFloat(i) * step - CGFloat.pi / 2 + CGFloat(loadingAnimationFrame) * step
                     textColor.withAlphaComponent(CGFloat(i + 1) / CGFloat(n) * 0.9).setStroke()
@@ -3499,7 +3632,7 @@ class PlexBrowserView: NSView {
                     let rating = currentTrackRating ?? 0
                     let filledCount = rating / 2
                     
-                    let greenColor = renderer.skinTextColor()
+                    let greenColor = accentTextColor(renderer)
                     let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
                                           green: greenColor.greenComponent * 0.4,
                                           blue: greenColor.blueComponent * 0.4,
@@ -3662,7 +3795,7 @@ class PlexBrowserView: NSView {
                     let rating = currentTrackRating ?? 0
                     let filledCount = rating / 2
                     
-                    let greenColor = renderer.skinTextColor()
+                    let greenColor = accentTextColor(renderer)
                     let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
                                           green: greenColor.greenComponent * 0.4,
                                           blue: greenColor.blueComponent * 0.4,
@@ -3797,7 +3930,7 @@ class PlexBrowserView: NSView {
                     let starY = barRect.minY + (barRect.height - starSize) / 2
                     let rating = currentTrackRating ?? 0
                     let filledCount = rating / 2
-                    let greenColor = renderer.skinTextColor()
+                    let greenColor = accentTextColor(renderer)
                     let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
                                           green: greenColor.greenComponent * 0.4,
                                           blue: greenColor.blueComponent * 0.4,
@@ -3929,7 +4062,7 @@ class PlexBrowserView: NSView {
                     let starY = barRect.minY + (barRect.height - starSize) / 2
                     let rating = currentTrackRating ?? 0
                     let filledCount = rating / 2
-                    let greenColor = renderer.skinTextColor()
+                    let greenColor = accentTextColor(renderer)
                     let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
                                           green: greenColor.greenComponent * 0.4,
                                           blue: greenColor.blueComponent * 0.4,
@@ -6884,6 +7017,13 @@ class PlexBrowserView: NSView {
     }
     
     
+    /// A `.wal` skin switched colour theme; the style is re-derived on each draw, so a repaint is
+    /// the whole job.
+    @objc private func winampModernThemeDidChange() {
+        hasResolvedWindowWinampModernStyle = false
+        needsDisplay = true
+    }
+
     @objc private func plexStateDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, case .plex = self.currentSource else { return }
