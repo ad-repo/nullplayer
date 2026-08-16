@@ -36,7 +36,7 @@ final class WinampModernLoadedSkin {
 
     func compatibilityReport(withRuntime scriptRuntime: WinampModernScriptRuntime)
         -> WinampModernCompatibilityReport {
-        WinampModernCompatibilityReport(diagnostics: runtime.diagnostics,
+        WinampModernCompatibilityReport(diagnostics: runtime.diagnostics + scriptRuntime.scriptFailures,
                                         unsupportedMethodCalls: scriptRuntime.unsupportedMethodCalls)
     }
 }

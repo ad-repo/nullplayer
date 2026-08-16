@@ -19,6 +19,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **ui-guide**: Coordinate systems, scaling, skin rendering, window docking, Hide Title Bars, UI Size
 - **audio-system**: Audio pipelines, EQ, spectrum analysis
 - **modern-skin-guide**: Modern skin engine and creation
+- **winamp-modern-skin-guide**: Winamp 5.x `.wal` skins — Wasabi XML/XUI renderer, MAKI bytecode VM, VFS mounts and sandbox, component hosting, ClassicPro engine import, supported/unsupported surface
 - **user-guide**: Features, menus, keyboard shortcuts
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations
 - **sonos-casting**, **chromecast-casting**: Casting protocols and debugging
@@ -56,6 +57,7 @@ Sources/NullPlayer/
 ├── Radio/            # Internet radio (stations, metadata fallback, ratings, folders)
 ├── Skin/             # Classic .wsz skin loading and rendering
 ├── ModernSkin/       # Modern skin engine (independent of classic system)
+├── WinampModern/     # Winamp 5.x .wal engine (Wasabi XML/XUI + MAKI VM, sandboxed)
 ├── Windows/          # All window views (MainWindow, ModernMainWindow, ModernSpectrum, ModernPlaylist, ModernEQ, ModernProjectM, ModernLibraryBrowser, PeppyMeter, ModernPeppyMeter, Playlist, EQ, etc.)
 ├── Plex/             # Plex server integration
 ├── Subsonic/         # Navidrome/Subsonic server integration

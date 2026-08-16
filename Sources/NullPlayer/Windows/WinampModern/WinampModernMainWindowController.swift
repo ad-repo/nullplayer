@@ -34,7 +34,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         if let selected = WinampModernSkinImporter.shared.selectedSkin() {
             loadSkin(at: selected.archiveURL)
         } else {
-            showPlaceholder("Import a .wal skin from the DEBUG Winamp Modern menu")
+            showPlaceholder("Import a .wal skin from the Winamp Modern menu")
         }
     }
 

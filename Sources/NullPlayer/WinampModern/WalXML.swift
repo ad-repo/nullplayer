@@ -133,6 +133,7 @@ struct WalLenientXMLParser {
             var selfClosing = false
             var closed = false
             while cursor < chars.count {
+                let iterationStart = cursor
                 while cursor < chars.count, chars[cursor].isWhitespace { cursor += 1 }
                 if cursor < chars.count, chars[cursor] == ">" {
                     cursor += 1; closed = true; break
@@ -168,6 +169,9 @@ struct WalLenientXMLParser {
                     }
                 }
                 if !attrName.isEmpty { attributes[attrName] = attrValue }
+                // A stray '/' that does not close the tag matches no branch above and would
+                // otherwise leave the cursor parked forever. Skip it so the scan always advances.
+                if cursor == iterationStart { cursor += 1 }
             }
             guard closed else {
                 throw WalFailure(WalDiagnostic(.malformedXML, "Unterminated <\(name)> tag.", location: WalSourceLocation(path: path, line: tagLine, column: tagColumn)))

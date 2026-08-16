@@ -185,6 +185,19 @@ final class WinampModernPhase7Tests: XCTestCase {
         }
     }
 
+    /// Regression: a '/' inside a tag that does not close it (and a '/' at end of input) matched no
+    /// branch of the attribute scanner and left the cursor parked, spinning forever on the calling
+    /// thread. Found by `testFuzzRandomXMLThroughInitializerIsBounded`; every case must now terminate.
+    func testStraySlashInTagDoesNotHangParser() {
+        for xml in ["<WasabiXML><groupdef id=\"a\" /x></WasabiXML>",
+                    "<WasabiXML><groupdef /",
+                    "<WasabiXML><groupdef id=\"a\"//></WasabiXML>",
+                    "<WasabiXML><groupdef / id=\"a\"></groupdef></WasabiXML>"] {
+            // Success or a typed failure are both fine; the assertion is that this returns at all.
+            _ = try? initialize(xml: xml)
+        }
+    }
+
     func testDeeplyNestedXMLHitsDepthLimit() {
         let depth = 5_000
         let xml = "<WasabiXML>" + String(repeating: "<group>", count: depth)
@@ -250,7 +263,10 @@ final class WinampModernPhase7Tests: XCTestCase {
             makeMinimalScript(code: code), source: WalSourceLocation(path: "/loop.maki"))
         var limits = MakiExecutionLimits.production
         limits.maximumInstructionsPerEvent = 50
-        let interpreter = MakiInterpreter(dispatcher: NoOpDispatcher(), limits: limits)
+        // The interpreter holds `dispatcher` weakly, so it must be kept alive here — a temporary
+        // would deallocate immediately and `execute` would silently no-op past the budget check.
+        let dispatcher = NoOpDispatcher()
+        let interpreter = MakiInterpreter(dispatcher: dispatcher, limits: limits)
         XCTAssertThrowsError(try interpreter.execute(program: program, at: 0)) { error in
             XCTAssertEqual((error as? WalFailure)?.diagnostics.first?.code, .scriptBudgetExceeded)
         }
@@ -290,7 +306,7 @@ final class WinampModernPhase7Tests: XCTestCase {
     func testMalformedImageResourceDegradesInsteadOfCrashing() throws {
         // A bitmap whose file is present but is not a valid image must not hard-fail the load.
         var garbage = Data(count: 64)
-        for index in 0..<garbage.count { garbage[index] = UInt8(index &* 7) }
+        for index in 0..<garbage.count { garbage[index] = UInt8(truncatingIfNeeded: index &* 7) }
         do {
             let runtime = try initialize(
                 xml: "<WasabiXML><bitmap id=\"bg\" file=\"junk.png\"/></WasabiXML>",

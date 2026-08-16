@@ -25,6 +25,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// drives Phase 7.3 API additions and feeds the per-skin compatibility report (Phase 7.2); it never
     /// changes execution semantics.
     private(set) var unsupportedMethodCalls: [String: Int] = [:]
+    /// Diagnostics from script events that aborted without stopping the rest of the skin. Capped:
+    /// a handler that fails on a repeating event (a timer or mouse move) would otherwise accumulate
+    /// forever. The report de-duplicates anyway, so the cap costs no distinct information.
+    private(set) var scriptFailures: [WalDiagnostic] = []
+    private static let maximumRecordedScriptFailures = 512
 
     var graphDidMutate: (() -> Void)?
     var popupPresenter: (([(String, Int32, Bool, Bool)]) -> Int32)?
@@ -119,9 +124,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                     if matches { variable.value = .object(target) }
                 }
                 guard matches else { continue }
-                try interpreter.execute(program: program, at: binding.instructionIndex,
-                                        arguments: arguments)
-                executed += 1
+                do {
+                    try interpreter.execute(program: program, at: binding.instructionIndex,
+                                            arguments: arguments)
+                    executed += 1
+                } catch let failure as WalFailure {
+                    // One script hitting an unimplemented capability must not take the whole skin
+                    // down with it — the remaining scripts still run and the skin loads degraded.
+                    // The interpreter's stack is local to `execute`, so an aborted event leaves no
+                    // shared state behind. Every failure lands in the compatibility report.
+                    if scriptFailures.count < Self.maximumRecordedScriptFailures {
+                        scriptFailures.append(contentsOf: failure.diagnostics)
+                    }
+                }
             }
         }
         return executed
@@ -273,7 +288,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "openfile": .init(argumentCount: 2, returnKind: .null),
             "findfiles": .init(argumentCount: 3, returnKind: .integer),
         ]
-        return signatures[method.lowercased()]
+        let name = method.lowercased()
+        if let signature = signatures[name] { return signature }
+        // Record the miss here as well as in `unsupported(_:program:)`: the interpreter fails closed
+        // on a missing *signature* (without an arity it cannot unwind the stack), so this is the path
+        // most unimplemented methods actually take. Phase 7.3's tally never saw it.
+        unsupportedMethodCalls[name, default: 0] += 1
+        return nil
     }
 
     func invoke(method: String, on reference: MakiObjectReference, arguments: [MakiValue],

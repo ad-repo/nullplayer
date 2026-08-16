@@ -5,6 +5,7 @@ struct MakiExecutionLimits: Equatable {
     var maximumCallDepth = 256
     var maximumAllocatedBytesPerEvent = 64 * 1_024 * 1_024
     var maximumStackValues = 1_000_000
+    var maximumObjectMembers = 65_536
 
     static let production = MakiExecutionLimits()
 }
@@ -140,6 +141,8 @@ enum MakiInstructionArgument {
     case method(Int)
     case type(Int)
     case instruction(Int)
+    /// The declared value type of a dynamic `Member` access (opcode 104).
+    case valueKind(MakiValueKind)
 }
 
 struct MakiInstruction {
@@ -176,7 +179,7 @@ final class MakiProgram {
 
 struct MakiBytecodeParser {
     private enum Immediate {
-        case none, variable, method, type, instruction
+        case none, variable, method, type, instruction, valueKind
     }
 
     private struct Reader {
@@ -392,6 +395,11 @@ struct MakiBytecodeParser {
                 case .instruction:
                     guard let target = offsetToInstruction[raw] else { throw ParseError("MAKI jump target \(raw) is not an instruction boundary.") }
                     argument = .instruction(target)
+                case .valueKind:
+                    guard raw >= 0, raw <= Int(UInt8.max), let kind = MakiValueKind(rawValue: UInt8(raw)) else {
+                        throw ParseError("MAKI member access declares unknown value type \(raw).")
+                    }
+                    argument = .valueKind(kind)
                 }
                 return MakiInstruction(opcode: opcode, argument: argument, byteOffset: byteOffset)
             }
@@ -424,6 +432,7 @@ struct MakiBytecodeParser {
         case 16, 17, 18, 25: return .instruction
         case 24, 112: return .method
         case 96: return .type
+        case 104: return .valueKind
         case 2, 8, 9, 10, 11, 12, 13, 33, 40, 48, 56, 57, 58, 59,
              64, 65, 66, 67, 68, 72, 73, 74, 76, 80, 81, 88, 89, 90, 91, 97:
             return .none
@@ -451,6 +460,13 @@ final class MakiInterpreter {
 
     private(set) var lastInstructionCount = 0
     private(set) var isTornDown = false
+
+    /// Backing store for MAKI `Member` declarations (`Member int CProWidget.custombg;`), which attach
+    /// named, typed storage to an object at runtime rather than to a compiled variable slot. Opcode
+    /// 104 resolves one of these to an lvalue, so the entry must persist across events — assignment
+    /// (opcode 48) writes straight through the returned `MakiVariable`.
+    private var objectMembers: [MakiObjectReference: [String: MakiVariable]] = [:]
+    private var objectMemberCount = 0
 
     init(dispatcher: MakiMethodDispatching, limits: MakiExecutionLimits = .production) {
         self.dispatcher = dispatcher
@@ -541,6 +557,18 @@ final class MakiInterpreter {
                 if try pop().value.truthy { next = try argument(instruction) }
             case 18:
                 next = try argument(instruction)
+            case 104:
+                // Dynamic `Member` access: pops the member name and its owning object, and pushes the
+                // member's storage as an lvalue (the compiler emits the declared type as the immediate).
+                guard case .valueKind(let kind) = instruction.argument else {
+                    throw failure(.invalidScript, "MAKI member access is missing its value type.")
+                }
+                let name = try pop().value.stringValue
+                let owner = try pop().value
+                guard case .object(let reference) = owner else {
+                    throw failure(.invalidScript, "MAKI member '\(name)' was accessed on a non-object value.")
+                }
+                try push(try member(name, on: reference, kind: kind))
             case 24, 112:
                 let methodIndex = try argument(instruction)
                 let method = program.methods[methodIndex]
@@ -648,6 +676,33 @@ final class MakiInterpreter {
 
     func teardown() {
         dispatcher = nil
+        objectMembers.removeAll()
+        objectMemberCount = 0
         isTornDown = true
+    }
+
+    /// Resolve (creating on first touch) the storage for `name` on `object`, typed by the member's
+    /// declaration. Returned as an lvalue so reads and assignments both hit the same slot.
+    private func member(_ name: String, on object: MakiObjectReference,
+                        kind: MakiValueKind) throws -> MakiVariable {
+        let key = name.lowercased()
+        if let existing = objectMembers[object]?[key] { return existing }
+        guard objectMemberCount < limits.maximumObjectMembers else {
+            throw WalFailure(WalDiagnostic(.scriptBudgetExceeded,
+                                           "MAKI skin exceeds \(limits.maximumObjectMembers) object members."))
+        }
+        let initial: MakiValue
+        switch kind {
+        case .integer: initial = .integer(0)
+        case .boolean: initial = .boolean(false)
+        case .float: initial = .float(0)
+        case .double: initial = .double(0)
+        case .string: initial = .string("")
+        case .null, .object: initial = .null
+        }
+        let variable = MakiVariable(declaredKind: kind, value: initial)
+        objectMembers[object, default: [:]][key] = variable
+        objectMemberCount += 1
+        return variable
     }
 }
