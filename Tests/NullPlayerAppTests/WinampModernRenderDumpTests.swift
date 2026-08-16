@@ -32,7 +32,10 @@ final class WinampModernRenderDumpTests: XCTestCase {
             store = engineStore
         }
 
-        let loaded = try WinampModernSkinLoader(engineStore: store).load(from: URL(fileURLWithPath: walPath))
+        // With no WINAMP_MODERN_ENGINE the already-installed engine store is used, so a cPro skin
+        // renders from the engine the app itself imported instead of failing on `load.xml`.
+        let loaded = try WinampModernSkinLoader(engineStore: store ?? .shared)
+            .load(from: URL(fileURLWithPath: walPath))
         defer { loaded.teardown() }
         let host = RenderHost()
         let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)

@@ -363,14 +363,26 @@ final class WasabiSceneRenderer {
         return canvasSize
     }
 
+    /// The active layout's own `minimum_w`/`minimum_h`, in skin pixels. Every window hosting this
+    /// renderer takes its `minSize` from here, so a restored or dragged frame can never ask the scene
+    /// for a size the skin does not describe.
+    var layoutMinimumSize: CGSize {
+        CGSize(width: Self.dimension(layout.attributes, keys: ["minimum_w"], fallback: 1),
+               height: Self.dimension(layout.attributes, keys: ["minimum_h"], fallback: 1))
+    }
+
+    /// The active layout's `maximum_w`/`maximum_h`, defaulting to the renderer's own 16384 ceiling.
+    var layoutMaximumSize: CGSize {
+        CGSize(width: Self.optionalDimension(layout.attributes["maximum_w"]) ?? 16_384,
+               height: Self.optionalDimension(layout.attributes["maximum_h"]) ?? 16_384)
+    }
+
     @discardableResult
     func resize(to proposedSize: CGSize) -> CGSize {
-        let minimumWidth = Self.dimension(layout.attributes, keys: ["minimum_w"], fallback: 1)
-        let minimumHeight = Self.dimension(layout.attributes, keys: ["minimum_h"], fallback: 1)
-        let maximumWidth = Self.optionalDimension(layout.attributes["maximum_w"]) ?? 16_384
-        let maximumHeight = Self.optionalDimension(layout.attributes["maximum_h"]) ?? 16_384
-        canvasSize = CGSize(width: max(minimumWidth, min(maximumWidth, proposedSize.width)),
-                            height: max(minimumHeight, min(maximumHeight, proposedSize.height)))
+        let minimum = layoutMinimumSize
+        let maximum = layoutMaximumSize
+        canvasSize = CGSize(width: max(minimum.width, min(maximum.width, proposedSize.width)),
+                            height: max(minimum.height, min(maximum.height, proposedSize.height)))
         loadedSkin.runtime.graph.markAllDirty(.geometry)
         return canvasSize
     }
@@ -515,8 +527,16 @@ final class WasabiSceneRenderer {
                 in: WasabiRect(x: Double(parentFrame.minX), y: Double(parentFrame.minY),
                                width: Double(parentFrame.width), height: Double(parentFrame.height)),
                 intrinsicSize: intrinsic
-            ).standardized
-            resolved = CGRect(x: wasabi.x, y: wasabi.y, width: wasabi.width, height: wasabi.height)
+            )
+            // A *negative* box is not a box drawn backwards — it is an object whose parent is smaller
+            // than the object's own margins (`h="-168" relath="1"` in a parent shorter than 168). Real
+            // Wasabi draws nothing for it; `standardized` would instead flip it across its origin and
+            // paint it over its siblings, which is what scrambles the scene when a window is dragged
+            // below its layout minimum (R1). Drop it, and its subtree with it: every descendant
+            // resolves against a box that does not exist.
+            if wasabi.width < 0 || wasabi.height < 0 { return }
+            let box = wasabi.standardized
+            resolved = CGRect(x: box.x, y: box.y, width: box.width, height: box.height)
         }
         // An object parked outside its parent draws nothing, and neither do its children. Skins use
         // that as a hiding place: MMD3 keeps a dummy volume slider at (400,400) — outside the 583×216

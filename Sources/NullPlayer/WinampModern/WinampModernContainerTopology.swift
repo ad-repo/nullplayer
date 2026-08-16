@@ -12,6 +12,12 @@ struct WinampModernContainerInfo {
     let isVisibleWindow: Bool
     /// The default canvas size of the container's normal layout.
     let defaultSize: CGSize
+    /// The normal layout's `minimum_w`/`minimum_h`, in skin pixels. A layout that declares none is
+    /// still bounded at 1×1 — `WasabiSceneRenderer.resize` uses the same floor.
+    let minimumSize: CGSize
+    /// The normal layout's `maximum_w`/`maximum_h`, in skin pixels, or `nil` per axis when the
+    /// layout declares none (freely resizable up to the renderer's own 16384 ceiling).
+    let maximumSize: CGSize?
 }
 
 /// Classifies a loaded skin's containers so the controller can decide, per P0B §3, between the
@@ -27,15 +33,24 @@ enum WinampModernContainerTopology {
             .map { container in
                 let id = container.xmlID ?? ""
                 let isMain = id.caseInsensitiveCompare("main") == .orderedSame
-                let size = normalLayoutSize(of: container)
+                let layout = normalLayout(of: container)
+                let declared = size(of: layout, keys: [["default_w", "w", "minimum_w"],
+                                                       ["default_h", "h", "minimum_h"]])
                 let hidden = isHidden(container)
-                let collapsed = size.width <= collapsedThreshold && size.height <= collapsedThreshold
+                let collapsed = declared.width <= collapsedThreshold && declared.height <= collapsedThreshold
+                let minimum = size(of: layout, keys: [["minimum_w"], ["minimum_h"]])
+                let maximum = size(of: layout, keys: [["maximum_w"], ["maximum_h"]])
                 return WinampModernContainerInfo(
                     object: container,
                     id: id,
                     isMainPlayer: isMain,
                     isVisibleWindow: isMain || (!hidden && !collapsed),
-                    defaultSize: size
+                    defaultSize: declared,
+                    minimumSize: CGSize(width: max(1, minimum.width), height: max(1, minimum.height)),
+                    maximumSize: (maximum.width > 0 || maximum.height > 0)
+                        ? CGSize(width: maximum.width > 0 ? maximum.width : .greatestFiniteMagnitude,
+                                 height: maximum.height > 0 ? maximum.height : .greatestFiniteMagnitude)
+                        : nil
                 )
             }
     }
@@ -47,20 +62,22 @@ enum WinampModernContainerTopology {
         analyze(graph: graph).filter(\.isVisibleWindow)
     }
 
-    private static func normalLayoutSize(of container: WasabiObject) -> CGSize {
+    private static func normalLayout(of container: WasabiObject) -> WasabiObject? {
         let layouts = container.children.filter { $0.typeName.caseInsensitiveCompare("layout") == .orderedSame }
-        let layout = layouts.first {
-            $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame
-        } ?? layouts.first
+        return layouts.first { $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame } ?? layouts.first
+    }
+
+    /// `keys` is `[widthKeysInPreferenceOrder, heightKeysInPreferenceOrder]`; an axis nothing answers
+    /// for is 0, which callers read as "not declared".
+    private static func size(of layout: WasabiObject?, keys: [[String]]) -> CGSize {
         guard let layout else { return .zero }
-        func dimension(_ keys: [String]) -> CGFloat {
-            for key in keys {
+        func dimension(_ candidates: [String]) -> CGFloat {
+            for key in candidates {
                 if let raw = layout.attributes[key], let value = Double(raw) { return CGFloat(value) }
             }
             return 0
         }
-        return CGSize(width: dimension(["default_w", "w", "minimum_w"]),
-                      height: dimension(["default_h", "h", "minimum_h"]))
+        return CGSize(width: dimension(keys[0]), height: dimension(keys[1]))
     }
 
     private static func isHidden(_ container: WasabiObject) -> Bool {

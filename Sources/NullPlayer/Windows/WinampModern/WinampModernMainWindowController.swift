@@ -69,16 +69,21 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             self.host = host
             self.componentBridge = componentBridge
             skinView = view
-            view.canvasSizeDidChange = { [weak self] size in self?.resizeWindow(to: size) }
+            view.canvasSizeDidChange = { [weak self] size in
+                // A layout switch swaps the active layout, and with it the limits this window obeys.
+                self?.resizeWindow(to: size, reason: "canvasSizeDidChange")
+                self?.applyLayoutConstraints()
+            }
             loadFailure = nil
             view.skinScale = skinScale
             window?.contentView = view
-            resizeWindow(to: view.scaledCanvasSize)
+            resizeWindow(to: view.scaledCanvasSize, reason: "loadSkin")
             setupAuxiliaryContainers(loaded: loaded, host: host, scripts: scripts,
                                      componentBridge: componentBridge)
             view.componentWindowToggleRequested = { [weak self] kind in
                 self?.toggleAuxiliaryWindow(for: kind) ?? false
             }
+            applyLayoutConstraints()
             try scripts.start()
             #if DEBUG
             // Surface the per-skin compatibility report (Phase 7.2). After `start()`, the report also
@@ -157,10 +162,51 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                       height: (view.renderer.canvasSize.height * scale).rounded())
     }
 
+    /// The main layout's own resize limits at the current UI Size. Each `.wal` container has its own
+    /// pair — an auxiliary playlist window is not bounded by the player's minimum — so these are read
+    /// per renderer rather than shared.
+    var mainLayoutMinimumSize: NSSize? { scaled(skinView?.renderer.layoutMinimumSize) }
+    var mainLayoutMaximumSize: NSSize? { scaled(skinView?.renderer.layoutMaximumSize) }
+
+    private func scaled(_ size: CGSize?) -> NSSize? {
+        guard let size else { return nil }
+        return NSSize(width: (size.width * skinScale).rounded(), height: (size.height * skinScale).rounded())
+    }
+
+    /// A frame from saved state is honoured for its position but never for a size the active layout
+    /// rejects: `AppStateManager` restores frames verbatim, which is how a 500×500 cPro-Bento window
+    /// came back as 376×182 (R1). The saved top-left is preserved so a clamped window does not jump.
+    func clampRestoredFrame(_ frame: NSRect) -> NSRect {
+        guard let minimum = mainLayoutMinimumSize, let maximum = mainLayoutMaximumSize else { return frame }
+        return Self.clamp(frame: frame, minimum: minimum, maximum: maximum)
+    }
+
+    /// Pure form of the restore clamp, so the rule can be tested without a live skin or window.
+    static func clamp(frame: NSRect, minimum: NSSize, maximum: NSSize) -> NSRect {
+        let size = NSSize(width: min(max(frame.width, minimum.width), maximum.width),
+                          height: min(max(frame.height, minimum.height), maximum.height))
+        guard size != frame.size else { return frame }
+        return NSRect(x: frame.minX, y: frame.maxY - size.height, width: size.width, height: size.height)
+    }
+
+    /// Give every `.wal` window the limits of the layout it is actually showing.
+    private func applyLayoutConstraints() {
+        if let window, let minimum = mainLayoutMinimumSize, let maximum = mainLayoutMaximumSize {
+            window.contentMinSize = minimum
+            window.contentMaxSize = maximum
+        }
+        for container in auxiliaryContainers {
+            guard let minimum = scaled(container.view.renderer.layoutMinimumSize),
+                  let maximum = scaled(container.view.renderer.layoutMaximumSize) else { continue }
+            container.window.contentMinSize = minimum
+            container.window.contentMaxSize = maximum
+        }
+    }
+
     func applyUIScale(_ scale: CGFloat) {
         skinScale = max(0.1, scale)
         skinView?.skinScale = skinScale
-        if let size = skinView?.scaledCanvasSize { resizeWindow(to: size) }
+        if let size = skinView?.scaledCanvasSize { resizeWindow(to: size, reason: "uiScale=\(skinScale)") }
         for container in auxiliaryContainers {
             container.view.skinScale = skinScale
             let size = container.view.scaledCanvasSize
@@ -168,12 +214,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             container.view.setFrameSize(size)
             container.view.needsDisplay = true
         }
+        applyLayoutConstraints()
         skinView?.needsDisplay = true
     }
 
-    private func resizeWindow(to size: NSSize) {
+    private func resizeWindow(to size: NSSize, reason: String = "skin") {
         guard let window else { return }
         guard !isApplyingSkinSize else { return }
+        #if DEBUG
+        NSLog("WinampModern R1: resizeWindow(%@) reason=%@ from=%@",
+              NSStringFromSize(size), reason, NSStringFromRect(window.frame))
+        #endif
         isApplyingSkinSize = true
         defer { isApplyingSkinSize = false }
         let oldTopLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
@@ -194,7 +245,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         label.frame = NSRect(x: 12, y: 28, width: size.width - 24, height: 60)
         content.addSubview(label)
         window?.contentView = content
-        resizeWindow(to: size)
+        resizeWindow(to: size, reason: "placeholder")
     }
 
     func updateTrackInfo(_ track: Track?) { skinView?.updateTrackInfo() }
@@ -215,7 +266,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let content = window.contentLayoutRect.size
         _ = view.renderer.resize(to: CGSize(width: content.width / skinScale, height: content.height / skinScale))
         let size = view.scaledCanvasSize
-        if size != content { resizeWindow(to: size) }
+        if size != content { resizeWindow(to: size, reason: "windowDidResize") }
         if size != view.frame.size { view.setFrameSize(size) }
         view.needsDisplay = true
     }

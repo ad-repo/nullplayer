@@ -1127,9 +1127,18 @@ class AppStateManager {
         
         // Main window exists at this point, so we can restore its frame directly
         if let frameString = state.mainWindowFrame,
-           let window = wm.mainWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            if frame != .zero {
+           let controller = wm.mainWindowController,
+           let window = controller.window {
+            let saved = NSRectFromString(frameString)
+            if saved != .zero {
+                // Restoring verbatim is what brought a 500×500 `.wal` window back as 376×182 (R1):
+                // the saved frame is honoured for position, but the window that owns it decides which
+                // sizes it can actually render.
+                let frame = controller.clampRestoredFrame(saved)
+                if frame != saved {
+                    NSLog("AppStateManager: clamped restored main frame %@ → %@",
+                          NSStringFromRect(saved), NSStringFromRect(frame))
+                }
                 window.setFrame(frame, display: true)
             }
         }
