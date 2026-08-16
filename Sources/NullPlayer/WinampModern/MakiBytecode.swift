@@ -582,11 +582,12 @@ final class MakiInterpreter {
                 for _ in 0..<signature.argumentCount { arguments.append(try pop().value) }
                 let receiver = try pop()
                 guard case .object(let object) = receiver.value else {
-                    let variableIndex = program.variables.firstIndex { $0 === receiver }
-                    let suffix = variableIndex.map { " from variable \($0)." } ?? "."
-                    throw failure(.invalidScript,
-                                  "MAKI attempted '\(method.name)' (class \(classGUID ?? "unknown")) on a null/non-object value" +
-                                  suffix)
+                    // Winamp ignores a call on a null object and carries on; skins ship with such
+                    // calls (MMD3 checks menu commands from a function that also runs before the menu
+                    // is built). Aborting the whole event instead would take every later statement in
+                    // `onScriptLoaded` — the entire skin's wiring — down with it.
+                    try push(.temporary(.null))
+                    break
                 }
                 let result = try dispatcher.invoke(method: method.name, on: object,
                                                    arguments: arguments, program: program)

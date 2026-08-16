@@ -6,6 +6,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case generic
         case configItem(section: String)
         case configAttribute(section: String, key: String)
+        /// A `Map` that has been given its bitmap. `new Map` and `new Timer` are indistinguishable at
+        /// construction (the class GUIDs are not part of the archive), so the role is settled by the
+        /// first call that only one of them accepts — here, `loadMap`.
+        case map(bitmapID: String)
     }
 
     private struct DynamicObjectState {
@@ -39,6 +43,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     var themeNamesRequested: (() -> [String])?
     var activeThemeRequested: (() -> String)?
     var themeSwitchRequested: ((String) -> Bool)?
+    /// Cursor position in the *skin's own pixel space* — the same units as the x/y a mouse event hands
+    /// a script, which rotary-knob scripts combine in a single expression.
+    var mousePositionRequested: (() -> CGPoint)?
+    /// Whether the equalizer is on, for `System.getEQ()`.
+    var equalizerEnabledRequested: (() -> Bool)?
+    /// One EQ band, on MAKI's −127…127 scale (MMD3's bass/treble knobs read and write the bands).
+    var equalizerBandRequested: ((Int) -> Int)?
+    var equalizerBandSetterRequested: ((Int, Int) -> Void)?
+
+    private struct ScriptEventKey: Hashable {
+        let target: MakiObjectReference.Kind
+        let event: String
+    }
+    /// Events currently on the interpreter stack. A skin can wire two objects to update each other
+    /// (MMD3's seek slider and its ghost both call `setPosition` from the other's `onSetPosition`),
+    /// which is a bounded ping-pong in Winamp but unbounded native recursion here — and native
+    /// recursion is not something the interpreter's own call-depth budget can see.
+    private var eventsBeingDispatched: Set<ScriptEventKey> = []
 
     private var nextPopupID: UInt64 = 1
     private var popupCommands: [UInt64: [(String, Int32, Bool, Bool)]] = [:]
@@ -49,11 +71,28 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Script bindings already parsed into `programs`, so a runtime-instantiated group's scripts are
     /// started exactly once even if the same group is instantiated again.
     private var boundScriptPaths: Set<WasabiScriptBinding> = []
-    /// Memoised bitmap pixel widths for `getAutoWidth`; `nil` records a resolved-but-unknown width.
-    private var bitmapWidths: [String: Int32?] = [:]
+    /// Memoised bitmap pixel sizes for `getAutoWidth`/`getLength`; `nil` records a resolved-but-unknown
+    /// size.
+    private var bitmapSizes: [String: (width: Int32, height: Int32)?] = [:]
+    /// Decoded `Map` bitmaps, keyed by resource id. Maps are small lookup images (44×44 for MMD3's
+    /// volume knob) and there are a handful per skin.
+    private var mapImages: [String: CGImage] = [:]
+    private static let maximumCachedMaps = 16
     /// Ceiling on total loaded programs. Runtime instantiation (`System.newGroup`) can add scripts,
     /// so this bounds a skin that instantiates groups in a loop.
     private static let maximumRuntimePrograms = 512
+
+    /// Standard GUI events a script is allowed to invoke as a method on an object, with their argument
+    /// counts. Kept explicit: an unknown arity would desynchronise the interpreter's stack.
+    private static let dispatchableEventArity: [String: Int] = [
+        "onsetposition": 1,
+        "onsetfinalposition": 1,
+        "onpostedposition": 1,
+        "onleftclick": 0,
+        "onrightclick": 0,
+        "ontargetreached": 0,
+        "ontoggle": 1
+    ]
 
     /// Version-gate shim. ClassicPro's `WinampVersionCheck.maki` early-returns when the reported build
     /// number is at least the skin's required build (`2405` for cPro-Bento), so a comfortably modern
@@ -140,23 +179,67 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     /// Pixel width of a declared bitmap. Uses the resource's explicit `w` when the declaration crops
     /// a sprite sheet, otherwise reads the image header (no full decode) for whole-file bitmaps.
-    private func bitmapWidth(identifier: String) -> Int32? {
+    private func bitmapWidth(identifier: String) -> Int32? { bitmapSize(identifier: identifier)?.width }
+
+    private func bitmapSize(identifier: String) -> (width: Int32, height: Int32)? {
         let key = identifier.lowercased()
-        if let cached = bitmapWidths[key] { return cached }
+        if let cached = bitmapSizes[key] { return cached }
+        var size: (width: Int32, height: Int32)?
+        defer { bitmapSizes[key] = size }
         guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
               definition.kind == "bitmap" else { return nil }
-        var width: Int32?
-        if let raw = definition.attributes["w"], let value = Int32(raw), value > 0 {
-            width = value
-        } else if let path = definition.logicalFile,
-                  let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
-                  let source = CGImageSourceCreateWithData(data as CFData, nil),
-                  let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-                  let pixels = properties[kCGImagePropertyPixelWidth] as? Int {
-            width = Int32(clamping: pixels)
+        var declared: (Int32?, Int32?) = (definition.attributes["w"].flatMap { Int32($0) },
+                                          definition.attributes["h"].flatMap { Int32($0) })
+        if declared.0 == nil || declared.1 == nil,
+           let path = definition.logicalFile,
+           let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
+           let source = CGImageSourceCreateWithData(data as CFData, nil),
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+            declared.0 = declared.0 ?? (properties[kCGImagePropertyPixelWidth] as? Int).map { Int32(clamping: $0) }
+            declared.1 = declared.1 ?? (properties[kCGImagePropertyPixelHeight] as? Int).map { Int32(clamping: $0) }
         }
-        bitmapWidths[key] = width
-        return width
+        if let width = declared.0, let height = declared.1, width > 0, height > 0 {
+            size = (width, height)
+        }
+        return size
+    }
+
+    /// How many frames an `animatedlayer`'s sheet holds: its explicit `frames`, else the sheet
+    /// divided by the layer's frame box (MMD3's volume knob is a 44×1012 strip of 44×44 frames).
+    private func animationFrameCount(of object: WasabiObject) -> Int {
+        if let raw = object.attributes["frames"], let count = Int(raw), count > 0 { return count }
+        guard let imageID = object.attributes["image"], let sheet = bitmapSize(identifier: imageID) else { return 1 }
+        let frameWidth = Int(object.attributes["framewidth"] ?? object.attributes["w"] ?? "") ?? Int(sheet.width)
+        let frameHeight = Int(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Int(sheet.height)
+        guard frameWidth > 0, frameHeight > 0 else { return 1 }
+        return max(1, (Int(sheet.width) / frameWidth) * (Int(sheet.height) / frameHeight))
+    }
+
+    private func animationFrame(of object: WasabiObject) -> Int {
+        WasabiAnimation.state(of: object, frameCount: animationFrameCount(of: object)).frame
+    }
+
+    /// Sample a `Map`'s bitmap at a point in its own pixel space. Decoded images are cached, bounded
+    /// by `maximumCachedMaps`; the bitmap itself passed the loader's dimension limits.
+    private func mapPixel(bitmapID: String, x: Int, y: Int) -> (red: UInt8, alpha: UInt8, inBounds: Bool) {
+        guard let image = mapImage(bitmapID: bitmapID) else { return (0, 0, false) }
+        guard x >= 0, y >= 0, x < image.width, y < image.height else { return (0, 0, false) }
+        let bitmap = WasabiBitmap(image: image, width: image.width, height: image.height, cost: 0)
+        guard let pixel = bitmap.pixel(at: CGPoint(x: x, y: y)) else { return (0, 0, false) }
+        return (pixel.red, pixel.alpha, true)
+    }
+
+    private func mapImage(bitmapID: String) -> CGImage? {
+        let key = bitmapID.lowercased()
+        if let cached = mapImages[key] { return cached }
+        guard mapImages.count < Self.maximumCachedMaps,
+              let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: bitmapID),
+              definition.kind == "bitmap", let path = definition.logicalFile,
+              let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        mapImages[key] = image
+        return image
     }
 
     /// Load and start the scripts a runtime-instantiated subtree declares, so nested components come
@@ -215,6 +298,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                           arguments: [MakiValue], in subset: [MakiProgram]? = nil) throws -> Int {
         guard !isTornDown else { return 0 }
         let eventName = event.lowercased()
+        let key = ScriptEventKey(target: target.kind, event: eventName)
+        guard eventsBeingDispatched.insert(key).inserted else { return 0 }
+        defer { eventsBeingDispatched.remove(key) }
         var executed = 0
         for program in subset ?? programs {
             for binding in program.bindings where program.methods[binding.methodIndex].name == eventName {
@@ -293,6 +379,28 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "gotoframe": .init(argumentCount: 1, returnKind: .null),
             "setframe": .init(argumentCount: 1, returnKind: .null),
             "getcurframe": .init(argumentCount: 0, returnKind: .integer),
+            // Animated-layer playback control. MMD3's volume/bass/treble knobs are animated layers
+            // played frame-range to frame-range, and the driving timer polls `isPlaying()`.
+            "getlength": .init(argumentCount: 0, returnKind: .integer),
+            "setstartframe": .init(argumentCount: 1, returnKind: .null),
+            "setendframe": .init(argumentCount: 1, returnKind: .null),
+            "setspeed": .init(argumentCount: 1, returnKind: .null),
+            "isplaying": .init(argumentCount: 0, returnKind: .boolean),
+            "setalternatetext": .init(argumentCount: 1, returnKind: .null),
+            "leftclick": .init(argumentCount: 0, returnKind: .null),
+            // `Map`: a bitmap sampled by the script (the knob-angle lookup MMD3 drives its rotary
+            // controls with). `new Map` yields a generic dynamic object; `loadMap` gives it its role.
+            "loadmap": .init(argumentCount: 1, returnKind: .null),
+            "inregion": .init(argumentCount: 2, returnKind: .boolean),
+            "getvalue": .init(argumentCount: 2, returnKind: .integer),
+            // Screen-space cursor position, in the same skin-pixel units as the x/y a mouse event
+            // hands the script — the knob scripts mix the two in one expression.
+            "getmouseposx": .init(argumentCount: 0, returnKind: .integer),
+            "getmouseposy": .init(argumentCount: 0, returnKind: .integer),
+            "atan": .init(argumentCount: 1, returnKind: .float),
+            "geteq": .init(argumentCount: 0, returnKind: .integer),
+            "geteqband": .init(argumentCount: 1, returnKind: .integer),
+            "seteqband": .init(argumentCount: 2, returnKind: .null),
             "settargetx": .init(argumentCount: 1, returnKind: .null),
             "settargety": .init(argumentCount: 1, returnKind: .null),
             "settargetw": .init(argumentCount: 1, returnKind: .null),
@@ -393,6 +501,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         ]
         let name = method.lowercased()
         if let signature = signatures[name] { return signature }
+        // A script may call one of its own event handlers directly to reuse it — MMD3 runs its
+        // crossfade slider's handler once at load with `slidercb.onSetPosition(slidercb.getPosition())`.
+        // Without an arity the interpreter cannot unwind the stack, so only events with a known
+        // signature are callable; the call dispatches the event exactly as the UI would.
+        if let arity = Self.dispatchableEventArity[name] {
+            return .init(argumentCount: arity, returnKind: .null)
+        }
         // Record the miss here as well as in `unsupported(_:program:)`: the interpreter fails closed
         // on a missing *signature* (without an arity it cannot unwind the stack), so this is the path
         // most unimplemented methods actually take. Phase 7.3's tally never saw it.
@@ -497,6 +612,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getviewportheightfromguiobject": return .integer(Int32(NSScreen.main?.frame.height ?? 0))
         case "getcurappleft": return .integer(Int32(NSApp.mainWindow?.frame.minX ?? 0))
         case "getcurapptop": return .integer(Int32(NSApp.mainWindow?.frame.minY ?? 0))
+        case "getmouseposx": return .integer(Int32(clamping: Int((mousePositionRequested?().x ?? 0).rounded())))
+        case "getmouseposy": return .integer(Int32(clamping: Int((mousePositionRequested?().y ?? 0).rounded())))
+        case "atan": return .float(atan(arguments[0].doubleValue))
+        case "geteq": return .integer((equalizerEnabledRequested?() ?? false) ? 1 : 0)
+        case "geteqband":
+            return .integer(Int32(clamping: equalizerBandRequested?(Int(arguments[0].integerValue)) ?? 0))
+        case "seteqband":
+            equalizerBandSetterRequested?(Int(arguments[0].integerValue), Int(arguments[1].integerValue))
+            return .null
         case "getruntimeversion": return .integer(5)
         case "getskinname": return .string(preferenceNamespace)
         case "getcolortheme": return .string(activeThemeRequested?() ?? "Default")
@@ -583,6 +707,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     private func invokeGUI(method: String, object: WasabiObject, arguments: [MakiValue],
                            program: MakiProgram) throws -> MakiValue {
+        if Self.dispatchableEventArity[method] != nil {
+            _ = try dispatch(object: object, event: method, arguments: arguments)
+            return .null
+        }
         switch method {
         case "getlayout":
             return objectValue(object.children.first {
@@ -659,7 +787,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getheight", "getguih": return .integer(Int32(object.geometry.height ?? 0))
         case "getposition": return .integer(Int32(object.attributes["value"] ?? object.attributes["position"] ?? "0") ?? 0)
         case "setposition":
-            _ = object.setAttribute("value", value: String(arguments[0].integerValue))
+            // Only an actual change notifies, as in Wasabi. Skins pair sliders that write each
+            // other's position from their own `onSetPosition`; notifying unconditionally turns that
+            // into an endless round trip.
+            let position = String(arguments[0].integerValue)
+            guard object.attributes["value"] != position else { return .null }
+            _ = object.setAttribute("value", value: position)
             graphDidMutate?()
             _ = try dispatch(object: object, event: "onsetposition", arguments: [arguments[0]])
             return .null
@@ -668,18 +801,47 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             graphDidMutate?()
             return .null
         case "play":
+            // Stamp the clock so the frame is a pure function of elapsed time (`WasabiAnimation`),
+            // which keeps the renderer and `isPlaying()` on exactly the same model.
+            _ = object.setAttribute("animstart", value: String(WasabiAnimation.now()))
             _ = object.setAttribute("playing", value: "1")
             graphDidMutate?()
             return .null
         case "pause", "stop":
+            // Freeze where the animation actually is, not where it started.
+            _ = object.setAttribute("frame", value: String(animationFrame(of: object)))
             _ = object.setAttribute("playing", value: "0")
             graphDidMutate?()
             return .null
         case "gotoframe", "setframe":
             _ = object.setAttribute("frame", value: String(max(0, arguments[0].integerValue)))
+            _ = object.setAttribute("playing", value: "0")
             graphDidMutate?()
             return .null
-        case "getcurframe": return .integer(Int32(object.attributes["frame"] ?? "0") ?? 0)
+        case "getcurframe": return .integer(Int32(animationFrame(of: object)))
+        case "getlength": return .integer(Int32(clamping: animationFrameCount(of: object)))
+        case "setstartframe":
+            _ = object.setAttribute("startframe", value: String(max(0, arguments[0].integerValue)))
+            return .null
+        case "setendframe":
+            _ = object.setAttribute("endframe", value: String(max(0, arguments[0].integerValue)))
+            return .null
+        case "setspeed":
+            _ = object.setAttribute("speed", value: String(max(1, arguments[0].integerValue)))
+            return .null
+        case "isplaying":
+            return .boolean(WasabiAnimation.state(of: object,
+                                                  frameCount: animationFrameCount(of: object)).isPlaying)
+        case "setalternatetext":
+            // A `songticker`'s alternate text temporarily replaces the track title (volume readouts,
+            // hints). An empty string restores the normal content.
+            _ = object.setAttribute("alternatetext", value: arguments[0].stringValue)
+            graphDidMutate?()
+            return .null
+        case "leftclick":
+            _ = try dispatch(object: object, event: "onleftclick")
+            actionRequested?(object.attributes["action"] ?? "", object.attributes["param"])
+            return .null
         case "settargetx": return setTarget("targetx", object: object, value: arguments[0])
         case "settargety": return setTarget("targety", object: object, value: arguments[0])
         case "settargetw": return setTarget("targetw", object: object, value: arguments[0])
@@ -737,6 +899,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                program: MakiProgram) throws -> MakiValue {
         guard var state = dynamicObjects[id] else { return .null }
         switch method {
+        case "loadmap":
+            state.role = .map(bitmapID: arguments[0].stringValue)
+            dynamicObjects[id] = state
+            return .null
+        case "inregion", "getvalue":
+            guard case .map(let bitmapID) = state.role else { return method == "inregion" ? .boolean(false) : .integer(0) }
+            let sample = mapPixel(bitmapID: bitmapID,
+                                  x: Int(arguments[0].integerValue), y: Int(arguments[1].integerValue))
+            if method == "inregion" {
+                // A map with an alpha channel masks its region; MMD3's are opaque grayscale, where
+                // being inside the bitmap *is* being in the region.
+                return .boolean(sample.inBounds && sample.alpha > 0)
+            }
+            return .integer(Int32(sample.red))
         case "setdelay":
             state.delayMilliseconds = max(8, arguments[0].integerValue)
             dynamicObjects[id] = state
@@ -774,6 +950,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             switch state.role {
             case .configItem(let section): return .string(section)
             case .configAttribute(_, let key): return .string(key)
+            case .map(let bitmapID): return .string(bitmapID)
             case .generic: return .string("dynamic_\(id)")
             }
         case "init", "callme", "ondatachanged": return .null

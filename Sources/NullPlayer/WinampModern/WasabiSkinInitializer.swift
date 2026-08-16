@@ -365,7 +365,11 @@ final class WasabiSkinInitializer {
 
     private func registerResources(in nodes: [WalXMLNode], registry: WalResourceRegistry,
                                    validatedImages: inout Set<String>) throws {
-        let resourceTags: Set<String> = ["bitmap", "bitmapfont", "truetypefont", "color", "gammagroup", "gammaset", "cursor"]
+        // `gammagroup` is deliberately absent: its `id` is scoped to the enclosing `<gammaset>`, not
+        // the global resource namespace, so registering it made every colour theme after the first
+        // "replace" the previous theme's groups (MMD3 declares 83 themes → 1404 bogus duplicate-id
+        // warnings). `WasabiColorThemeCatalog` reads the gammasets straight from the document.
+        let resourceTags: Set<String> = ["bitmap", "bitmapfont", "truetypefont", "color", "gammaset", "cursor"]
         for node in nodes {
             let kind = node.name.lowercased()
             if kind == "elementalias", let identifier = node.attribute("id"),

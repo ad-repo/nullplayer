@@ -11,10 +11,16 @@ struct WasabiBitmap {
     let height: Int
     let cost: Int
 
-    func alpha(at point: CGPoint) -> UInt8 {
+    func alpha(at point: CGPoint) -> UInt8 { pixel(at: point)?.alpha ?? 0 }
+
+    /// One pixel in top-left (Wasabi) coordinates, or `nil` outside the bitmap.
+    ///
+    /// MMD3's rotary knobs are driven by a `Map`: a grayscale bitmap whose value at the cursor *is*
+    /// the knob's angle, so the script needs the colour channels, not just the mask.
+    func pixel(at point: CGPoint) -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8)? {
         let x = Int(point.x.rounded(.down))
         let y = Int(point.y.rounded(.down))
-        guard x >= 0, y >= 0, x < width, y < height else { return 0 }
+        guard x >= 0, y >= 0, x < width, y < height else { return nil }
         var pixel = [UInt8](repeating: 0, count: 4)
         pixel.withUnsafeMutableBytes { bytes in
             guard let context = CGContext(data: bytes.baseAddress, width: 1, height: 1,
@@ -24,25 +30,62 @@ struct WasabiBitmap {
             context.translateBy(x: CGFloat(-x), y: CGFloat(-(height - y - 1)))
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
-        return pixel[3]
+        return (pixel[0], pixel[1], pixel[2], pixel[3])
     }
 }
 
+/// A colour-theme adjustment, as per-channel **multipliers**.
+///
+/// A `<gammagroup value="r,g,b">` carries three signed values in −4096…4096 where **0 means "leave
+/// this channel alone"**, so the channel factor is `(4096 + v) / 4096` — 4096 doubles a channel, −4096
+/// zeroes it. Reading the value as an additive bias instead (`v / 4096` added to the channel) pushes
+/// every midtone toward white, which is exactly what made MMD3's display render as a washed-out pastel
+/// instead of a saturated orange on black.
 struct WasabiGammaTransform: Equatable {
     let red: CGFloat
     let green: CGFloat
     let blue: CGFloat
     let grayscale: Bool
-    let boost: Bool
+
+    static let identity = WasabiGammaTransform(red: 1, green: 1, blue: 1, grayscale: false)
+    var isIdentity: Bool { self == .identity }
+
+    /// Build from the raw XML attributes of one `<gammagroup>`.
+    ///
+    /// `gray` is a mode, not a flag — MMD3 uses both `gray="1"` and `gray="2"` — so any non-zero value
+    /// desaturates. `boost` only widens the permitted range in Winamp; the multiplier form already
+    /// carries values past 1 unclamped, so it needs no separate filter.
+    init(value: String, gray: String?, boost: String?) {
+        let components = value.split(separator: ",")
+            .map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
+        let padded = (components + [0, 0, 0]).prefix(3).map { $0 }
+        let limit: CGFloat = 4096
+        self.red = max(0, (limit + padded[0]) / limit)
+        self.green = max(0, (limit + padded[1]) / limit)
+        self.blue = max(0, (limit + padded[2]) / limit)
+        let grayMode = Int(Double(gray ?? "0") ?? 0)
+        self.grayscale = grayMode != 0
+        _ = boost
+    }
+
+    init(red: CGFloat, green: CGFloat, blue: CGFloat, grayscale: Bool) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.grayscale = grayscale
+    }
 }
 
 final class WasabiColorThemeCatalog {
     private let loadedSkin: WinampModernLoadedSkin
     private var sets: [String: [String: WasabiGammaTransform]] = [:]
     private var displayNames: [String: String] = [:]
+    /// Folded keys in document order — Winamp's colour-theme list order, and the source of the
+    /// default theme.
+    private var order: [String] = []
     private(set) var activeTheme: String = "Default"
 
-    var themeNames: [String] { displayNames.values.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending } }
+    var themeNames: [String] { order.compactMap { displayNames[$0] } }
 
     init(loadedSkin: WinampModernLoadedSkin) {
         self.loadedSkin = loadedSkin
@@ -51,14 +94,14 @@ final class WasabiColorThemeCatalog {
                 if node.name.caseInsensitiveCompare("gammaset") == .orderedSame,
                    let name = node.attribute("id"), !name.isEmpty {
                     let key = Self.fold(name)
+                    if displayNames[key] == nil { order.append(key) }
                     displayNames[key] = name
                     var groups: [String: WasabiGammaTransform] = [:]
                     for child in node.children where child.name.caseInsensitiveCompare("gammagroup") == .orderedSame {
                         guard let id = child.attribute("id") else { continue }
-                        let values = Self.components(child.attribute("value") ?? "0,0,0")
-                        groups[Self.fold(id)] = WasabiGammaTransform(
-                            red: values[0] / 4096, green: values[1] / 4096, blue: values[2] / 4096,
-                            grayscale: Self.bool(child.attribute("gray")), boost: Self.bool(child.attribute("boost")))
+                        groups[Self.fold(id)] = WasabiGammaTransform(value: child.attribute("value") ?? "0,0,0",
+                                                                     gray: child.attribute("gray"),
+                                                                     boost: child.attribute("boost"))
                     }
                     sets[key] = groups
                 }
@@ -68,8 +111,14 @@ final class WasabiColorThemeCatalog {
         collect(loadedSkin.document.roots)
         let stored = loadedSkin.configuration.string(section: "appearance", key: "theme", default: "")
         let storedKey = Self.fold(stored)
-        if sets[storedKey] != nil { activeTheme = displayNames[storedKey] ?? stored }
-        else { activeTheme = themeNames.first(where: { $0.caseInsensitiveCompare("Default") == .orderedSame }) ?? themeNames.first ?? "Default" }
+        if sets[storedKey] != nil {
+            activeTheme = displayNames[storedKey] ?? stored
+        } else {
+            // Winamp's default colour theme is the **first gammaset in the document**, which skins name
+            // freely ("clean | orange (default)"). Picking the alphabetically first name instead handed
+            // MMD3 a green theme on every launch.
+            activeTheme = order.first.flatMap { displayNames[$0] } ?? "Default"
+        }
     }
 
     @discardableResult
@@ -86,11 +135,6 @@ final class WasabiColorThemeCatalog {
         return sets[Self.fold(activeTheme)]?[Self.fold(group)]
     }
 
-    private static func components(_ raw: String) -> [CGFloat] {
-        let parsed = raw.split(separator: ",").map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
-        return (parsed + [0, 0, 0]).prefix(3).map { $0 }
-    }
-    private static func bool(_ raw: String?) -> Bool { raw == "1" || raw?.lowercased() == "true" }
     private static func fold(_ value: String) -> String {
         value.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
@@ -190,17 +234,16 @@ final class WasabiResourceCache {
     }
 
     private func themed(_ image: CGImage, transform: WasabiGammaTransform?) -> CGImage {
-        guard let transform, transform != WasabiGammaTransform(red: 0, green: 0, blue: 0,
-                                                               grayscale: false, boost: false) else { return image }
+        guard let transform, !transform.isIdentity else { return image }
         var output = CIImage(cgImage: image)
         if transform.grayscale {
             output = output.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
         }
-        if transform.boost {
-            output = output.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.2])
-        }
+        // Scale each channel; alpha is left alone so the theme never dissolves a sprite's mask.
         output = output.applyingFilter("CIColorMatrix", parameters: [
-            "inputBiasVector": CIVector(x: transform.red, y: transform.green, z: transform.blue, w: 0)
+            "inputRVector": CIVector(x: transform.red, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: transform.green, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: transform.blue, w: 0)
         ])
         return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: output.extent) ?? image
     }
@@ -211,6 +254,48 @@ final class WasabiResourceCache {
             currentCost -= victim.value.bitmap.cost
             bitmaps[victim.key] = nil
         }
+    }
+}
+
+/// The playback model shared by the renderer (which paints the current frame) and the script runtime
+/// (which answers `getCurFrame()` / `isPlaying()`).
+///
+/// An `animatedlayer` is a sprite sheet plus a play head. Winamp scripts drive it as a *range*:
+/// `setStartFrame(current)`, `setEndFrame(target)`, `setSpeed(msPerFrame)`, `play()` — MMD3 turns its
+/// volume/bass/treble knobs exactly this way and polls `isPlaying()` to know when the sweep is done.
+/// Keeping the play head a pure function of the elapsed time since `play()` means both sides agree
+/// without either of them owning a ticking clock.
+enum WasabiAnimation {
+    static func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    static func state(of object: WasabiObject, frameCount: Int,
+                      clock: TimeInterval = now()) -> (frame: Int, isPlaying: Bool) {
+        let attributes = object.attributes
+        let count = max(1, frameCount)
+        let selected = max(0, min(count - 1, Int(attributes["frame"] ?? "0") ?? 0))
+        // An explicit `playing` (set by `play()`/`stop()`) wins over the XML's `autoplay`, so a script
+        // can stop a layer the skin declared as self-playing.
+        let playing: Bool
+        if let explicit = attributes["playing"] {
+            playing = explicit == "1"
+        } else {
+            playing = attributes["autoplay"] == "1" || attributes["autoreplay"] == "1"
+        }
+        guard playing else { return (selected, false) }
+        let period = max(0.008, (Double(attributes["speed"] ?? "100") ?? 100) / 1_000)
+        let elapsed = max(0, clock - (Double(attributes["animstart"] ?? "") ?? 0))
+        let steps = Int(elapsed / period)
+
+        guard let endRaw = attributes["endframe"], let end = Int(endRaw) else {
+            // No range set: the classic looping animation.
+            return ((selected + steps) % count, true)
+        }
+        let start = max(0, min(count - 1, Int(attributes["startframe"] ?? "") ?? selected))
+        let target = max(0, min(count - 1, end))
+        let distance = abs(target - start)
+        guard distance > 0 else { return (target, false) }
+        if steps >= distance { return (target, false) }
+        return (start + (target > start ? steps : -steps), true)
     }
 }
 
@@ -418,6 +503,11 @@ final class WasabiSceneRenderer {
             ).standardized
             resolved = CGRect(x: wasabi.x, y: wasabi.y, width: wasabi.width, height: wasabi.height)
         }
+        // An object parked outside its parent draws nothing, and neither do its children. Skins use
+        // that as a hiding place: MMD3 keeps a dummy volume slider at (400,400) — outside the 583×216
+        // layout — whose `thumb` is the 44×1012 knob *sheet*, and a slider centres its thumb on its
+        // track, so without this the whole sheet painted a column of knobs across the window.
+        if !resolved.isEmpty && !resolved.intersects(parentClip) { return }
         let clip = parentClip.intersection(resolved.isEmpty ? parentClip : resolved)
         nodes.append(WasabiSceneNode(object: object, frame: resolved, clip: parentClip,
                                      bitmapID: bitmapID))
@@ -534,6 +624,12 @@ final class WasabiSceneRenderer {
     private func drawText(_ object: WasabiObject, frame: CGRect, context: CGContext) {
         let display = object.attributes["display"]?.lowercased()
         let text: String
+        // `setAlternateText` temporarily overrides whatever the object would otherwise show; the
+        // script clears it with "" to hand the display back.
+        if let alternate = object.attributes["alternatetext"], !alternate.isEmpty {
+            drawText(alternate, object: object, frame: frame, context: context)
+            return
+        }
         switch display {
         case "time":
             let seconds = max(0, Int(host.currentTime))
@@ -549,6 +645,10 @@ final class WasabiSceneRenderer {
                 text = object.attributes["text"] ?? object.attributes["default"] ?? ""
             }
         }
+        drawText(text, object: object, frame: frame, context: context)
+    }
+
+    private func drawText(_ text: String, object: WasabiObject, frame: CGRect, context: CGContext) {
         if let fontID = object.attributes["font"],
            let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
            definition.kind == "bitmapfont" {
@@ -690,10 +790,8 @@ final class WasabiSceneRenderer {
         let columns = max(1, bitmap.width / frameWidth)
         let rows = max(1, bitmap.height / frameHeight)
         let count = max(1, Int(Double(object.attributes["frames"] ?? "") ?? Double(columns * rows)))
-        let playing = object.attributes["playing"] == "1" || object.attributes["autoplay"] == "1"
-        let period = max(0.008, (Double(object.attributes["speed"] ?? "100") ?? 100) / 1_000)
-        let selected = Int(object.attributes["frame"] ?? "0") ?? 0
-        let frameIndex = max(0, min(count - 1, playing ? Int(clock() / period) % count : selected))
+        let frameIndex = max(0, min(count - 1, WasabiAnimation.state(of: object, frameCount: count,
+                                                                     clock: clock()).frame))
         let column = frameIndex % columns
         let row = frameIndex / columns
         let crop = CGRect(x: column * frameWidth, y: row * frameHeight,
@@ -960,12 +1058,17 @@ final class WasabiSceneRenderer {
         guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: raw),
               definition.kind == "color" else { return Self.color(raw) }
         let base = definition.attributes["value"] ?? "255,255,255"
-        let values = base.split(separator: ",").map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 255) }
+        var values = base.split(separator: ",").map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 255) }
         guard values.count >= 3 else { return .white }
-        let gamma = themes.transform(group: definition.attributes["gammagroup"])
-        let r = values[0] / 255 + (gamma?.red ?? 0)
-        let g = values[1] / 255 + (gamma?.green ?? 0)
-        let b = values[2] / 255 + (gamma?.blue ?? 0)
+        let gamma = themes.transform(group: definition.attributes["gammagroup"]) ?? .identity
+        if gamma.grayscale {
+            // Same order as the bitmap path: desaturate, then tint.
+            let luminance = values[0] * 0.299 + values[1] * 0.587 + values[2] * 0.114
+            values = [luminance, luminance, luminance]
+        }
+        let r = values[0] / 255 * gamma.red
+        let g = values[1] / 255 * gamma.green
+        let b = values[2] / 255 * gamma.blue
         return NSColor(red: max(0, min(1, r)), green: max(0, min(1, g)),
                        blue: max(0, min(1, b)), alpha: 1)
     }

@@ -7,6 +7,22 @@ final class WinampModernMainView: NSView {
     private weak var componentHost: WinampModernComponentHost?
     private var libraryHostViews: [WasabiObjectID: NSView] = [:]
 
+    /// UI Size, as a multiplier on the skin's own pixel grid. The scene is always laid out in skin
+    /// pixels — the scale is applied once at the drawing boundary and undone once at the input
+    /// boundary, so nothing in the graph, the renderer, or a script ever sees it.
+    var skinScale: CGFloat = 1 {
+        didSet {
+            guard skinScale != oldValue else { return }
+            setFrameSize(scaledCanvasSize)
+            needsDisplay = true
+        }
+    }
+
+    var scaledCanvasSize: NSSize {
+        NSSize(width: (renderer.canvasSize.width * skinScale).rounded(),
+               height: (renderer.canvasSize.height * skinScale).rounded())
+    }
+
     private var pressedObject: WasabiObject?
     private var pressedEQHolder: WasabiObject?
     private var hoveredObject: WasabiObject?
@@ -56,17 +72,17 @@ final class WinampModernMainView: NSView {
     private func wireScriptCallbacks() {
         scripts.graphDidMutate = { [weak self] in self?.needsDisplay = true }
         scripts.layoutSwitchRequested = { [weak self] layoutID in
-            guard let self, let size = try? self.renderer.activateLayout(id: layoutID) else { return false }
-            self.setFrameSize(size)
-            self.canvasSizeDidChange?(size)
+            guard let self, (try? self.renderer.activateLayout(id: layoutID)) != nil else { return false }
+            self.setFrameSize(self.scaledCanvasSize)
+            self.canvasSizeDidChange?(self.scaledCanvasSize)
             self.needsDisplay = true
             return true
         }
         scripts.layoutResizeRequested = { [weak self] proposed in
             guard let self else { return }
-            let size = self.renderer.resize(to: proposed)
-            self.setFrameSize(size)
-            self.canvasSizeDidChange?(size)
+            _ = self.renderer.resize(to: proposed)
+            self.setFrameSize(self.scaledCanvasSize)
+            self.canvasSizeDidChange?(self.scaledCanvasSize)
             self.needsDisplay = true
         }
         scripts.actionRequested = { [weak self] action, parameter in
@@ -74,6 +90,25 @@ final class WinampModernMainView: NSView {
         }
         scripts.themeNamesRequested = { [weak renderer] in renderer?.themes.themeNames ?? [] }
         scripts.activeThemeRequested = { [weak renderer] in renderer?.themes.activeTheme ?? "Default" }
+        scripts.mousePositionRequested = { [weak self] in
+            guard let self, let window else { return .zero }
+            let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+            return self.skinPoint(self.convert(inWindow, from: nil))
+        }
+        scripts.equalizerEnabledRequested = { [weak self] in
+            self?.componentHost?.equalizerSnapshot().enabled ?? false
+        }
+        // MAKI's EQ scale is −127…127; the engine's is ±12 dB.
+        scripts.equalizerBandRequested = { [weak self] band in
+            guard let gains = self?.componentHost?.equalizerSnapshot().bandGainsDB,
+                  gains.indices.contains(band) else { return 0 }
+            return Int((gains[band] / 12 * 127).rounded())
+        }
+        scripts.equalizerBandSetterRequested = { [weak self] band, value in
+            let clamped = max(-127, min(127, value))
+            self?.componentHost?.equalizerSetBandGainDB(band, gainDB: Float(clamped) / 127 * 12)
+            self?.needsDisplay = true
+        }
         scripts.themeSwitchRequested = { [weak self] name in
             guard let self else { return false }
             let changed = self.renderer.activateTheme(name)
@@ -112,8 +147,11 @@ final class WinampModernMainView: NSView {
         guard !isTornDown, let context = NSGraphicsContext.current?.cgContext else { return }
         layoutHostedSubviews()
         context.clear(bounds)
+        context.saveGState()
+        if skinScale != 1 { context.scaleBy(x: skinScale, y: skinScale) }
         renderer.draw(in: context, pressed: pressedObject?.stableID,
                       hovered: hoveredObject?.stableID)
+        context.restoreGState()
     }
 
     /// Position live host subviews (the embedded library) at their skin-provided holder frames,
@@ -131,8 +169,10 @@ final class WinampModernMainView: NSView {
             }
             guard let view else { continue }
             live.insert(holder.object.stableID)
-            view.frame = NSRect(x: holder.frame.minX, y: bounds.height - holder.frame.maxY,
-                                width: holder.frame.width, height: holder.frame.height)
+            view.frame = NSRect(x: holder.frame.minX * skinScale,
+                                y: bounds.height - holder.frame.maxY * skinScale,
+                                width: holder.frame.width * skinScale,
+                                height: holder.frame.height * skinScale)
         }
         for (id, view) in libraryHostViews where !live.contains(id) {
             view.removeFromSuperview()
@@ -307,7 +347,7 @@ final class WinampModernMainView: NSView {
     }
 
     private func skinPoint(_ point: NSPoint) -> CGPoint {
-        CGPoint(x: point.x, y: bounds.height - point.y)
+        CGPoint(x: point.x / skinScale, y: (bounds.height - point.y) / skinScale)
     }
 
     private func dispatch(object: WasabiObject, event: String, point: CGPoint) {
@@ -360,9 +400,9 @@ final class WinampModernMainView: NSView {
         case "NEXT": host.next()
         case "EJECT": host.openFiles()
         case "SWITCH":
-            if let parameter, let size = try? renderer.activateLayout(id: parameter) {
-                setFrameSize(size)
-                canvasSizeDidChange?(size)
+            if let parameter, (try? renderer.activateLayout(id: parameter)) != nil {
+                setFrameSize(scaledCanvasSize)
+                canvasSizeDidChange?(scaledCanvasSize)
                 needsDisplay = true
             }
         case "TOGGLE":

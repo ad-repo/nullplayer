@@ -217,6 +217,40 @@ Two ordering rules make or break this:
 runtime growth shares the load-time VFS, limits, and object budget). Scripts declared inside the new
 subtree are parsed and started via `startScripts(addedBeneath:)`, bounded by `maximumRuntimePrograms`.
 
+#### Colour themes (`gammaset` / `gammagroup`)
+
+A theme is a set of per-channel adjustments keyed by `gammagroup` id, which bitmaps and `<color>`
+resources opt into with `gammagroup="…"`. Two rules, both of which cost MMD3 its entire look when
+they were wrong:
+
+- The value triplet is a **multiplier**, `(4096 + v) / 4096` — 0 means "leave this channel alone".
+  Treating it as an additive bias (`v / 4096` added) pushes every midtone toward white; MMD3's amber
+  display rendered as washed-out pastel.
+- The **default** theme is the first gammaset in the document (skins name it freely — "clean | orange
+  (default)"), not the alphabetically first name.
+
+`WasabiColorThemeCatalog` reads the gammasets straight from the document, so `gammagroup` is
+deliberately *not* registered as a resource: its id is scoped to its gammaset, and registering it made
+each of MMD3's 83 themes "replace" the previous one's groups (1404 bogus duplicate-id warnings).
+
+#### Animated layers are played as a range
+
+`animatedlayer` is a sprite sheet plus a play head, and scripts drive it as a range:
+`setStartFrame(getCurFrame())`, `setEndFrame(target)`, `setSpeed(msPerFrame)`, `play()`, then poll
+`isPlaying()` (MMD3's rotary volume/bass/treble knobs are exactly this). `WasabiAnimation` makes the
+play head a pure function of the elapsed time since `play()`, which is what keeps the renderer and the
+script runtime agreeing on the current frame without either owning a clock. `stop()` freezes the head
+where it actually is, and an explicit `playing` beats the XML's `autoplay`.
+
+#### Rotary controls: `Map`
+
+A `Map` is a bitmap the script samples rather than draws: `getValue(x, y)` returns the pixel value at
+a point (MMD3's `map.png` is a 44×44 grayscale sweep of the knob's angle) and `inRegion(x, y)` says
+whether the point is on the control. `new Map` and `new Timer` produce the same kind of dynamic
+object — class GUIDs are not in the archive — so an object becomes a map on its first `loadMap`.
+Knob scripts mix `getMousePosX()` with the x/y of a mouse event in one expression, so the cursor
+position is reported in **skin pixels**, not screen points; UI Size never enters the script's world.
+
 #### Track metadata the skins actually read
 
 Skins do not call dedicated bitrate/sample-rate APIs. `songinfo.maki` lowercases
@@ -271,6 +305,12 @@ released.
 > **only**. It is a documented shim, and it is `false` in Winamp Modern mode — the ~15 geometry call
 > sites behind it deliberately route Winamp Modern down the classic path. Do not "fix" it to include
 > the new family.
+
+**UI Size** works in this mode through the shared `UIScaleLevel`: the scene stays on the skin's own
+pixel grid and `WinampModernMainView` applies the scale once at the drawing boundary and undoes it
+once at the input boundary, so no graph object, renderer path, or script ever sees it.
+`applyDoubleSize` takes this mode's window size from the skin's layout rather than
+`Skin.mainWindowSize`, and leaves `minSize` alone so a resizable `.wal` stays resizable.
 
 Winamp Modern uses the **classic 10-band EQ** (`usesModernEQLayout == false`) and has no
 `modernSkinFamily`. Auxiliary windows (playlist/EQ/library) reuse the classic controllers unless the

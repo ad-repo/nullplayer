@@ -3413,7 +3413,14 @@ class WindowManager {
         // For modern UI, sizes already include the multiplier via scaleFactor.
         // For classic UI, sizes are base sizes that need explicit * scale.
         let mainTargetSize: NSSize
-        if runningModernMode {
+        if uiMode == .winampModern,
+           let controller = mainWindowController as? WinampModernMainWindowController {
+            // A `.wal` skin's window size comes from its own layout, not `Skin.mainWindowSize` —
+            // UI Size multiplies the skin's pixel grid. The view is told the scale here too, so the
+            // window and its contents change together.
+            controller.applyUIScale(scale)
+            mainTargetSize = controller.mainWindowSize(atScale: scale) ?? mainWindow.frame.size
+        } else if runningModernMode {
             mainTargetSize = NSSize(width: ModernSkinElements.mainWindowSize.width,
                                     height: fullMainHeightForCurrentScale())
         } else {
@@ -3423,9 +3430,10 @@ class WindowManager {
         
         let mainAdjustedSize = mainTargetSize
         
-        // Update minSize
-        mainWindow.minSize = mainAdjustedSize
-        
+        // Update minSize. A `.wal` skin declares its own `minimum_w`/`minimum_h` and may be freely
+        // resizable, so pinning the minimum to the current size would take that away.
+        if uiMode != .winampModern { mainWindow.minSize = mainAdjustedSize }
+
         // Suppress windowDidMove → windowWillMove feedback during programmatic layout.
         // Animated setFrame fires windowDidMove on every display-link tick, which triggers
         // the docked-window movement loop and causes infinite recursion (stack overflow).

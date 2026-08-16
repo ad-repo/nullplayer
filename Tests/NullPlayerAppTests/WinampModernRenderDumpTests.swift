@@ -54,6 +54,16 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
             walk(loaded.runtime.graph.roots)
         }
+        // The measured-demand list: what the skin's load + `onscriptloaded` pass actually reached for
+        // and did not find. Printed here so the harness answers "missing art, bad geometry, or a
+        // script that never ran" in one run.
+        let report = loaded.compatibilityReport(withRuntime: runtime)
+        print("RENDER-DUMP compatibility level=\(report.level)\n\(report.summary)")
+        for finding in report.findings.sorted(by: { $0.severity.rawValue < $1.severity.rawValue }) {
+            print("FINDING [\(finding.severity)] \(finding.category.rawValue)/\(finding.code) "
+                  + "×\(finding.count) \(finding.message) @\(finding.location ?? "-")")
+        }
+
         let containers = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
         print("RENDER-DUMP containers: \(containers.map { "\($0.id) main=\($0.isMainPlayer)" })")
         XCTAssertFalse(containers.isEmpty, "Skin declares no window containers.")

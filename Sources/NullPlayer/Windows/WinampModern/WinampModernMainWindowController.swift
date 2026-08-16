@@ -71,8 +71,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             skinView = view
             view.canvasSizeDidChange = { [weak self] size in self?.resizeWindow(to: size) }
             loadFailure = nil
+            view.skinScale = skinScale
             window?.contentView = view
-            resizeWindow(to: renderer.canvasSize)
+            resizeWindow(to: view.scaledCanvasSize)
             setupAuxiliaryContainers(loaded: loaded, host: host, scripts: scripts,
                                      componentBridge: componentBridge)
             view.componentWindowToggleRequested = { [weak self] kind in
@@ -114,7 +115,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             renderer.componentHost = componentBridge
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge, drivesScripts: false)
-            let auxWindow = NSWindow(contentRect: NSRect(origin: .zero, size: renderer.canvasSize),
+            view.skinScale = skinScale
+            let auxWindow = NSWindow(contentRect: NSRect(origin: .zero, size: view.scaledCanvasSize),
                                      styleMask: [.borderless], backing: .buffered, defer: false)
             auxWindow.isReleasedWhenClosed = false
             auxWindow.isOpaque = false
@@ -142,6 +144,32 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     /// Number of separate-container windows the current skin declares (0 for a single-window SUI).
     var auxiliaryContainerCount: Int { auxiliaryContainers.count }
+
+    /// UI Size for this mode. The skin's own pixel grid never changes; the view scales at the drawing
+    /// and input boundaries and every window is sized to `canvas × scale`.
+    private(set) var skinScale: CGFloat = 1
+
+    /// The size the main window wants at `scale`, used by `WindowManager.applyDoubleSize` to place
+    /// this mode's window instead of the classic main-window constant.
+    func mainWindowSize(atScale scale: CGFloat) -> NSSize? {
+        guard let view = skinView else { return nil }
+        return NSSize(width: (view.renderer.canvasSize.width * scale).rounded(),
+                      height: (view.renderer.canvasSize.height * scale).rounded())
+    }
+
+    func applyUIScale(_ scale: CGFloat) {
+        skinScale = max(0.1, scale)
+        skinView?.skinScale = skinScale
+        if let size = skinView?.scaledCanvasSize { resizeWindow(to: size) }
+        for container in auxiliaryContainers {
+            container.view.skinScale = skinScale
+            let size = container.view.scaledCanvasSize
+            container.window.setContentSize(size)
+            container.view.setFrameSize(size)
+            container.view.needsDisplay = true
+        }
+        skinView?.needsDisplay = true
+    }
 
     private func resizeWindow(to size: NSSize) {
         guard let window else { return }
@@ -182,8 +210,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     func windowDidResize(_ notification: Notification) {
         guard !isApplyingSkinSize, let view = skinView, let window, window.contentView === view else { return }
-        let size = view.renderer.resize(to: window.contentLayoutRect.size)
-        if size != window.contentLayoutRect.size { resizeWindow(to: size) }
+        // The skin resizes on its own pixel grid, so the dragged size comes back out of UI Size first
+        // and the accepted size goes back in.
+        let content = window.contentLayoutRect.size
+        _ = view.renderer.resize(to: CGSize(width: content.width / skinScale, height: content.height / skinScale))
+        let size = view.scaledCanvasSize
+        if size != content { resizeWindow(to: size) }
         if size != view.frame.size { view.setFrameSize(size) }
         view.needsDisplay = true
     }

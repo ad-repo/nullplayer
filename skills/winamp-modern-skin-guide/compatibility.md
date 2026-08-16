@@ -50,6 +50,13 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 - Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
   and vertical), text, `clipchildren` parent clipping
 - Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups
+- Colour themes: a `<gammagroup value="r,g,b">` is a per-channel **multiplier**, `(4096 + v) / 4096`
+  (0 = unchanged, +4096 = doubled, −4096 = zeroed), applied to bitmaps and to `<color>` resources;
+  `gray` is a mode (any non-zero desaturates). The default theme is the **first gammaset in the
+  document**, and the theme list keeps document order. A `gammagroup` id is scoped to its gammaset,
+  not to the global resource namespace.
+- An object whose frame is **entirely outside its parent** is culled with its subtree — skins park
+  objects off-layout to hide them, and their art must not leak into the window
 - Animated, N-state, ticker, album-art, and visualization elements
 - Layout/shade switching, resize constraints, alpha-shaped window regions
 - Namespaced per-skin configuration persistence
@@ -91,7 +98,29 @@ By area:
 - **System**: viewport/application coordinates, runtime/skin identity, integer/string conversion,
   date helpers, per-skin `getPublicInt`/`setPublicInt`
 - **Timers**: bounded scheduling (see limits)
+- **Animated layers**: `getLength`, `gotoFrame`, `getCurFrame`, `setStartFrame`, `setEndFrame`,
+  `setSpeed`, `play`/`stop`, `isPlaying` — the play head is a pure function of the time since `play()`
+  (`WasabiAnimation`), so the renderer and the script always agree on the current frame
+- **`Map`**: `loadMap`, `inRegion`, `getValue` — a bitmap the script samples. `new Map` and `new Timer`
+  are indistinguishable at construction (class GUIDs are not in the archive), so a dynamic object
+  becomes a map on its first `loadMap`
+- **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **skin pixels**, the same units as a mouse event's
+  x/y), `getEQ`, `getEqBand`/`setEqBand` (MAKI's −127…127 scale ↔ the engine's ±12 dB), `atan`
 - **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
+
+**Script events callable as methods.** A script may invoke one of its own handlers directly to reuse
+it (`slidercb.onSetPosition(slidercb.getPosition())`). Only events with a known arity are callable —
+see `dispatchableEventArity` — because the stack cannot be unwound without one.
+
+**Robustness rules** (each earned from a real skin, and each keeping one skin defect from taking down
+a whole script):
+
+- A method call on a **null object** is a no-op returning null, as in Winamp — not an abort. MMD3
+  checks menu commands from a function that also runs before the menu exists.
+- `setPosition` fires `onSetPosition` **only on a change**. Skins pair two sliders that write each
+  other's position from that handler.
+- Event dispatch is **re-entrancy guarded** per (object, event): the interpreter's own call-depth
+  budget cannot see native recursion through dispatch, and an unguarded pair overflowed the stack.
 
 **Not supported**
 
