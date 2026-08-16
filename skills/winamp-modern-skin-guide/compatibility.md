@@ -16,7 +16,7 @@ Three skins drove the implementation, in increasing order of demand:
 |--------|------|-------|
 | **CornerAmp_Redux** | first vertical slice | loads, scripts, renders its 246×228 alpha-shaped layout, button input routed |
 | **Winamp Modern** | compatibility expansion | **renders**: window chrome, menubar, display (timer, song ticker, bitrate/sample rate, spectrum), transport, sliders. Normal (354×280) and shade (354×25) switch through script dispatch; resize clamps; theme switching restores. Client area is built at runtime from the frame's `content=` param |
-| **cPro-Bento** + ClassicPro engine | north-star | full 40-file include graph expands, graph builds, scripts bind and run, topology yields exactly one SUI window; **renders** its frame, titlebar, display, transport, and sliders. The SUI centre (windowholder-hosted components) is still empty |
+| **cPro-Bento** + ClassicPro engine | north-star | full 40-file include graph expands, graph builds, scripts bind and run, topology yields exactly one SUI window; **renders** its frame, titlebar, menu bar, display, transport, sliders, and — since the `Wasabi:Frame` splitter builds them — the SUI's tab strip, playlist pane and album-art area. The selected tab's *content* is still empty: the library surface falls back to the standard library window |
 
 None of these ship with NullPlayer. All fixture-based tests are opt-in behind `WINAMP_MODERN_WAL` /
 `WINAMP_MODERN_ENGINE`; everything committed is synthetic and self-authored.
@@ -61,6 +61,14 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 - Layout/shade switching, resize constraints, alpha-shaped window regions
 - Namespaced per-skin configuration persistence
 - Aliases and meta-commands
+- `<Wasabi:Frame>` / `<frame>` splitters: the frame instantiates the groups named by
+  `left`/`right` (vertical divider) or `top`/`bottom` (horizontal) and lays them out either side of
+  an 8px divider placed `width`/`height` pixels from the `from` edge. On a frame,
+  `getPosition`/`setPosition` are that offset
+- Auto-sizing from text: a group with `autowidthsource="<id>"` takes the width of the descendant it
+  names, and a `<text>` with no `w` takes its own content's width. `getAutoWidth()` measures with the
+  object's real font (bitmap-font pitch or Core Text) plus `leftpadding`/`rightpadding`, so a skin
+  that sizes its own boxes from that number gets boxes that fit
 - `windowholder hold="guid:…"` component embedding and `componentbucket` discovery
 - The curated predefined `wasabi.*` standard-library base groups (`registerWasabiStandardLibrary`)
 
@@ -74,6 +82,8 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 - A missing **optional** bitmap or cursor is a warning, not an error (Winamp-compatible).
 - `file="$solid"` / `file="$gradient"` predefined bitmaps are recognized but not resolved as files.
 - `embed_xui` is retained as metadata only — it is **not** an inheritance edge.
+- A splitter cannot be **dragged**: its divider is positioned by the skin's own scripts only, so
+  `minwidth`/`maxwidth`/`jump` are parsed but not enforced.
 - Auxiliary container windows render and take input but do **not** drive per-container MAKI layout
   switching; the main window owns the scripted scene. (cPro-Bento is single-window, so this is
   invisible there.)
@@ -116,11 +126,23 @@ By area:
   and asking that layer whether it is invalid
 - **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **skin pixels**, the same units as a mouse event's
   x/y), `getEQ`, `getEqBand`/`setEqBand` (MAKI's −127…127 scale ↔ the engine's ±12 dB), `atan`
+- **`List`**: `addItem`, `enumItem`, `getNumItems`, `removeItem`, `removeAll`, `findItem` (objects
+  match by identity, other values by string form); bounded at 4096 items.
+  **`BitList`**: `setSize`, `getSize`, `setItem`, `getItem` — same backing store, holding flags
+- **`WinampConfig`**: `getGroup(guid)` → `getInt`/`getBool`/`getString`, resolved against the skin's
+  own namespaced configuration, never real Winamp settings. Unset reads 0/""/false, which is also the
+  right answer for the one item ClassicPro asks about (`"frequencies"` = 0, the classic EQ frequencies
+  NullPlayer's `EQConfiguration.classic10` uses). The setters are deliberately absent
+- **Children**: `getNumChildren`, `enumChildren(i)`
+- **`System.getCurrentTrackRating()`** — always 0 (unrated). NullPlayer's playback `Track` carries no
+  user rating (the library's rating is in `MediaLibrary`, which is not on the host adapter), so the
+  ClassicPro ratings widget draws no stars rather than aborting its script
 - **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
 
 **Script events callable as methods.** A script may invoke one of its own handlers directly to reuse
 it (`slidercb.onSetPosition(slidercb.getPosition())`). Only events with a known arity are callable —
-see `dispatchableEventArity` — because the stack cannot be unwound without one.
+see `dispatchableEventArity` — because the stack cannot be unwound without one. This works for
+**system** events too (`System.onEqFreqChanged(freqmode)` in ClassicPro's `eq.m`).
 
 **Robustness rules** (each earned from a real skin, and each keeping one skin defect from taking down
 a whole script):
@@ -144,8 +166,14 @@ cannot degrade any finer than the event: the bytecode does not encode a call's a
 without a signature the interpreter cannot unwind the stack and must abandon the event rather than
 guess. This is why each needed method has to be implemented rather than stubbed.
 
-**Measured demand — cPro-Bento startup.** As of 2026-08-16 (Phase 11): **none.** The target reports
+**Measured demand — cPro-Bento startup.** As of 2026-08-16 (Phase 12): **none.** The target reports
 zero error-severity findings and zero unsupported methods, at compatibility level `degraded`.
+
+Phase 12 emptied the queue a second time, after `Wasabi:Frame` let the SUI's own scripts run for the
+first time: `additem`, `getnumchildren`, `getgroup`, `getcurrenttrackrating`, `oneqfreqchanged` (a
+system event called as a method), then `setsize` — plus a *parse* failure, which is worse than a
+method miss because it fails the whole skin: opcode 104's immediate is a type offset plus an
+"is object" flag, so an object-typed `Member` is `0x0100 | classIndex`, not a value kind.
 
 Getting there took three waves, because each fix let a script run further and reach the next miss —
 so re-measure after every change rather than working from a static list (193 methods are *referenced*
@@ -162,9 +190,9 @@ across the engine but never reached at startup):
 > that deletes anything — which stayed invisible for eight phases because those scripts aborted
 > earlier on a missing method.
 
-**Measured demand — Winamp Modern startup.** Six methods, none of which block the window from
-rendering: `clienttoscreenx` (×10), `snapadjust`, `debugstring`, `getgroup`, `onsetposition`,
-`getnumchildren`.
+**Measured demand — Winamp Modern startup.** Three methods as of Phase 12 (`getgroup` and
+`getnumchildren` were implemented for cPro), none of which block the window from rendering:
+`clienttoscreenx` (×10), `snapadjust`, `debugstring`.
 
 > A method listed in `signature(for:)` but stubbed in dispatch does **not** appear in either list — it
 > looks implemented. `newgroup` hid there and cost the entire Winamp Modern window body. Omit the

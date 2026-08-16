@@ -28,6 +28,8 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Initialization passes, registries | `WasabiSkinInitializer.swift` |
 | Retained object graph | `WasabiObjectGraph.swift` |
 | Coordinates / anchors | `WasabiGeometry.swift` |
+| `<Wasabi:Frame>` splitter | `WasabiFrame.swift` |
+| Fonts + text measurement (shared) | `WasabiTextMetrics.swift` |
 | Resource cache + scene renderer | `WasabiRenderer.swift` |
 | MAKI parser + interpreter | `MakiBytecode.swift` |
 | Script runtime + method dispatch | `WinampModernScriptRuntime.swift` |
@@ -156,6 +158,38 @@ Converting a Wasabi `y` to a bottom-left origin before `cropping(to:)` mirrors t
 the sheet's centreline, so every sprite is cut from the wrong row of the atlas. Sprite-sheet crops in
 `drawBitmapText` and `drawAnimated` index rows directly for the same reason.
 
+#### `<Wasabi:Frame>` — the splitter that builds its own children
+
+Most objects are declared where they appear. A frame is not: it **names** two groups and instantiates
+them itself (`WasabiFrame`). cPro-Bento's entire body is one —
+`left="centro.components" right="centro.playlist1" from="right" width="200"` — so treating it as an
+ordinary group left the library tree, the playlist and the tab strip out of the graph completely.
+
+- `left`/`right` → vertical divider; `top`/`bottom` → horizontal. The pair present decides the axis;
+  `orientation=` is written both ways (`vertical`, `v`, `h`) and is not trusted on its own.
+- `from` is the edge the divider is measured from (`left`/`top`/`right`/`bottom`, often abbreviated).
+- The offset is seeded from `width`/`height` and thereafter owned by the `position` attribute, which
+  `setPosition()` writes. **On a frame, `getPosition`/`setPosition` are the divider offset**, not a
+  slider value — ClassicPro closes its side view with `setPosition(0)` and asks `getPosition()==0`.
+- Layout is expressed by writing the panes' *own* geometry attributes, so `WasabiGeometrySpec`
+  resolves them like anything else and a parent resize needs no frame-specific code. A pane that
+  would go negative collapses to zero instead of flipping inside out.
+- Dragging the divider is not implemented, so `minwidth`/`maxwidth` are not enforced yet.
+
+#### Text width is a layout input, not just a drawing detail
+
+A skin lays *itself* out from `getAutoWidth()`: ClassicPro sizes every SUI tab to
+`label.getAutoWidth() + 14` and positions its five menu-bar groups by accumulating theirs. So the
+script's measurement and the renderer's drawing must be the same measurement, or the skin builds
+boxes that do not fit their own contents. Both go through `WasabiTextMetrics` (fonts, point-size
+clamp, content resolution, width incl. `leftpadding`/`rightpadding`); it hangs off the loaded skin
+because the runtime must be able to measure before any renderer exists — the dump harness runs the
+scripts first.
+
+Two auto-sizing rules in the renderer, both only when the object declares no `w`: a group with
+`autowidthsource="<id>"` takes the width of the descendant it names, and a `<text>` takes its own
+content's width.
+
 #### Layer fill modes
 
 - **Default (no `tile`)**: the bitmap **stretches** to the layer's rect. Resizable window chrome
@@ -203,6 +237,13 @@ enough to use one. `delete` (opcode 97) consumed its operand for eight phases be
 it. `delete obj` is an **expression**: the compiler emits `push; delete; pop`, so the opcode must
 leave the value for the statement's own discard pop. When you first unblock a batch of scripts,
 expect the *next* failure to be an interpreter bug rather than a missing method.
+
+**A parse failure is worse than a runtime one** — it kills the whole skin, not one event. Opcode 104
+(dynamic `Member` access) carries an immediate shaped like a variable record's first two bytes: a
+type offset, then an "is object" flag. `Member GuiObject Tab.left;` therefore compiles to
+`0x0100 | classIndex` (265 in ClassicPro's `CproTabs.maki`), which read as a plain value kind is an
+"unknown value type" and fails the parse. Object members carry their class GUID through to the
+member's storage.
 
 #### Script-built UI: `onSetXuiParam` and `System.newGroup`
 

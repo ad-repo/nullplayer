@@ -141,8 +141,9 @@ enum MakiInstructionArgument {
     case method(Int)
     case type(Int)
     case instruction(Int)
-    /// The declared value type of a dynamic `Member` access (opcode 104).
-    case valueKind(MakiValueKind)
+    /// The declared type of a dynamic `Member` access (opcode 104), with the member's class GUID
+    /// when it is object-typed (`Member GuiObject Tab.left;`).
+    case valueKind(MakiValueKind, classGUID: String?)
 }
 
 struct MakiInstruction {
@@ -396,10 +397,25 @@ struct MakiBytecodeParser {
                     guard let target = offsetToInstruction[raw] else { throw ParseError("MAKI jump target \(raw) is not an instruction boundary.") }
                     argument = .instruction(target)
                 case .valueKind:
-                    guard raw >= 0, raw <= Int(UInt8.max), let kind = MakiValueKind(rawValue: UInt8(raw)) else {
+                    // The immediate has the same shape as a variable record's first two bytes: a type
+                    // offset, then an "is object" flag. For an object member the offset indexes the
+                    // class table (`Member GuiObject Tab.left;` in ClassicPro's CproTabs is
+                    // `0x0100 | 9`), not the primitive value kinds.
+                    guard raw >= 0, raw <= Int(UInt16.max) else {
                         throw ParseError("MAKI member access declares unknown value type \(raw).")
                     }
-                    argument = .valueKind(kind)
+                    let typeOffset = raw & 0xff
+                    if raw >> 8 != 0 {
+                        guard typeOffset < classes.count else {
+                            throw ParseError("MAKI member access references unknown class \(typeOffset).")
+                        }
+                        argument = .valueKind(.object, classGUID: classes[typeOffset])
+                    } else {
+                        guard let kind = MakiValueKind(rawValue: UInt8(typeOffset)) else {
+                            throw ParseError("MAKI member access declares unknown value type \(raw).")
+                        }
+                        argument = .valueKind(kind, classGUID: nil)
+                    }
                 }
                 return MakiInstruction(opcode: opcode, argument: argument, byteOffset: byteOffset)
             }
@@ -572,7 +588,7 @@ final class MakiInterpreter {
             case 104:
                 // Dynamic `Member` access: pops the member name and its owning object, and pushes the
                 // member's storage as an lvalue (the compiler emits the declared type as the immediate).
-                guard case .valueKind(let kind) = instruction.argument else {
+                guard case .valueKind(let kind, let classGUID) = instruction.argument else {
                     throw failure(.invalidScript, "MAKI member access is missing its value type.")
                 }
                 let name = try pop().value.stringValue
@@ -580,7 +596,7 @@ final class MakiInterpreter {
                 guard case .object(let reference) = owner else {
                     throw failure(.invalidScript, "MAKI member '\(name)' was accessed on a non-object value.")
                 }
-                try push(try member(name, on: reference, kind: kind))
+                try push(try member(name, on: reference, kind: kind, classGUID: classGUID))
             case 24, 112:
                 let methodIndex = try argument(instruction)
                 let method = program.methods[methodIndex]
@@ -706,7 +722,7 @@ final class MakiInterpreter {
     /// Resolve (creating on first touch) the storage for `name` on `object`, typed by the member's
     /// declaration. Returned as an lvalue so reads and assignments both hit the same slot.
     private func member(_ name: String, on object: MakiObjectReference,
-                        kind: MakiValueKind) throws -> MakiVariable {
+                        kind: MakiValueKind, classGUID: String? = nil) throws -> MakiVariable {
         let key = name.lowercased()
         if let existing = objectMembers[object]?[key] { return existing }
         guard objectMemberCount < limits.maximumObjectMembers else {
@@ -722,7 +738,7 @@ final class MakiInterpreter {
         case .string: initial = .string("")
         case .null, .object: initial = .null
         }
-        let variable = MakiVariable(declaredKind: kind, value: initial)
+        let variable = MakiVariable(declaredKind: kind, classGUID: classGUID, value: initial)
         objectMembers[object, default: [:]][key] = variable
         objectMemberCount += 1
         return variable

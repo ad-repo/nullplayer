@@ -150,7 +150,9 @@ final class WasabiResourceCache {
         var access: UInt64
     }
     private var bitmaps: [String: CachedBitmap] = [:]
-    private var fonts: [String: CGFont] = [:]
+    /// Fonts and text measurement live in one shared place so a script's `getAutoWidth()` and this
+    /// renderer's drawing agree on how wide a string is. See `WasabiTextMetrics`.
+    let metrics: WasabiTextMetrics
     private var currentCost = 0
     private var accessCounter: UInt64 = 0
     private(set) var isTornDown = false
@@ -160,6 +162,7 @@ final class WasabiResourceCache {
         self.loadedSkin = loadedSkin
         self.themes = themes
         self.maximumCost = maximumCost
+        self.metrics = WasabiTextMetrics(loadedSkin: loadedSkin)
     }
 
     func bitmap(identifier: String?) -> WasabiBitmap? {
@@ -197,47 +200,16 @@ final class WasabiResourceCache {
         return bitmap
     }
 
-    /// A font for a text object, or `nil` when nothing usable could be produced.
-    ///
-    /// Optional on purpose: these are ObjC constructors imported as non-optional that can still
-    /// return null, and a null font reaches CoreText as a nil attribute value, which aborts the
-    /// **process** (`attempt to insert nil object`) from inside `NSView.draw`. A skin resource must
-    /// never be able to do that, so the null is caught here — assigning to an `NSFont?` is what makes
-    /// it visible — and answered by the caller's guaranteed fallback.
+    /// A font for a text object, or `nil` when nothing usable could be produced. See
+    /// `WasabiTextMetrics.font(identifier:size:)` for why this is optional.
     func font(identifier: String?, size: CGFloat) -> NSFont? {
-        guard !isTornDown, let identifier,
-              let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
-              definition.kind == "truetypefont", let path = definition.logicalFile else {
-            let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)
-            return fallback
-        }
-        let key = path.lowercased()
-        let cgFont: CGFont?
-        if let cached = fonts[key] {
-            cgFont = cached
-        } else if let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
-                  let provider = CGDataProvider(data: data as CFData),
-                  let decoded = CGFont(provider) {
-            fonts[key] = decoded
-            cgFont = decoded
-        } else {
-            cgFont = nil
-        }
-        if let cgFont {
-            let created = CTFontCreateWithGraphicsFont(cgFont, size, nil, nil)
-            // A font parsed out of a skin can be missing the name table CoreText expects; it then
-            // builds an attribute dictionary with a nil in it and aborts the process. A font with no
-            // PostScript name is not usable, so fall back rather than hand it on.
-            let named: NSFont? = CTFontCopyPostScriptName(created) == nil ? nil : (created as NSFont)
-            if let named { return named }
-        }
-        let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)
-        return fallback
+        guard !isTornDown else { return nil }
+        return metrics.font(identifier: identifier, size: size)
     }
 
     func teardown() {
         bitmaps.removeAll()
-        fonts.removeAll()
+        metrics.teardown()
         currentCost = 0
         isTornDown = true
     }
@@ -494,13 +466,42 @@ final class WasabiSceneRenderer {
 
     func teardown() { resources.teardown() }
 
+    /// Width an object takes from text rather than from a `w=`, in skin pixels — `nil` when it takes
+    /// none. Two cases: a group with `autowidthsource="<id>"` sizes to that descendant's text, and a
+    /// text object that declares no width at all sizes to its own (ClassicPro's menu labels do the
+    /// latter inside groups that do the former).
+    private func autoWidth(of object: WasabiObject) -> CGFloat? {
+        if let sourceID = object.attributes["autowidthsource"],
+           let source = descendant(of: object, xmlID: sourceID) {
+            return autoWidth(of: source)
+        }
+        let type = object.typeName.lowercased()
+        guard type == "text" || type == "songticker" else { return nil }
+        return resources.metrics.width(of: object,
+                                       text: WasabiTextMetrics.content(of: object, host: host))
+    }
+
+    private func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
+        for child in root.children {
+            if child.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame { return child }
+            if let match = descendant(of: child, xmlID: xmlID) { return match }
+        }
+        return nil
+    }
+
     private func append(object: WasabiObject, frame parentFrame: CGRect, clip parentClip: CGRect,
                         into nodes: inout [WasabiSceneNode], isRoot: Bool = false) {
         guard isVisible(object) else { return }
         let bitmapID = resolvedBitmapID(for: object, pressed: false, hovered: false)
-        let intrinsic = resources.bitmap(identifier: bitmapID).map {
+        var intrinsic = resources.bitmap(identifier: bitmapID).map {
             WasabiSize(width: Double($0.width), height: Double($0.height))
         } ?? .zero
+        // `autowidthsource="<id>"` sizes a group to the text of the named descendant. ClassicPro's
+        // menu bar is five such groups: without this each is 0 wide and its label, a `relatw="1"`
+        // child, has nowhere to draw — the whole File/Play/Options/View/Help strip disappears.
+        if object.attributes["w"] == nil, let width = autoWidth(of: object) {
+            intrinsic.width = Double(width)
+        }
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame
@@ -636,33 +637,20 @@ final class WasabiSceneRenderer {
     }
 
     private func drawText(_ object: WasabiObject, frame: CGRect, context: CGContext) {
-        let display = object.attributes["display"]?.lowercased()
-        let text: String
-        // `setAlternateText` temporarily overrides whatever the object would otherwise show; the
-        // script clears it with "" to hand the display back.
-        if let alternate = object.attributes["alternatetext"], !alternate.isEmpty {
-            drawText(alternate, object: object, frame: frame, context: context)
-            return
-        }
-        switch display {
-        case "time":
-            let seconds = max(0, Int(host.currentTime))
-            text = String(format: "%d:%02d", seconds / 60, seconds % 60)
-        case "songname": text = host.trackTitle
-        case "songinfo": text = host.trackInfo
-        default:
-            // A `songticker` carries no `text`/`default` — its content *is* the current track, which
-            // is why the main display stayed blank while the bitmap-font timer worked.
-            if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame {
-                text = host.trackDisplayTitle
-            } else {
-                text = object.attributes["text"] ?? object.attributes["default"] ?? ""
-            }
-        }
-        drawText(text, object: object, frame: frame, context: context)
+        // Content resolution (`display=`, a songticker's implicit track title, `setAlternateText`)
+        // is shared with the measurement a script's `getAutoWidth()` gets — see `WasabiTextMetrics`.
+        drawText(WasabiTextMetrics.content(of: object, host: host),
+                 object: object, frame: frame, context: context)
     }
 
-    private func drawText(_ text: String, object: WasabiObject, frame: CGRect, context: CGContext) {
+    private func drawText(_ text: String, object: WasabiObject, frame rawFrame: CGRect, context: CGContext) {
+        // `leftpadding`/`rightpadding` inset the text inside its own rect. They are part of the width
+        // a script measures with `getAutoWidth()`, so honouring them here is what makes a box sized
+        // from that measurement fit the string it was sized for (ClassicPro's menu bar and SUI tabs).
+        let left = CGFloat(Double(object.attributes["leftpadding"] ?? "0") ?? 0)
+        let right = CGFloat(Double(object.attributes["rightpadding"] ?? "0") ?? 0)
+        let frame = CGRect(x: rawFrame.minX + left, y: rawFrame.minY,
+                           width: max(0, rawFrame.width - left - right), height: rawFrame.height)
         if let fontID = object.attributes["font"],
            let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
            definition.kind == "bitmapfont" {
@@ -672,8 +660,7 @@ final class WasabiSceneRenderer {
         // A skin (or one of its scripts) can name any point size at all, including 0, a negative, or
         // something that does not parse. CoreText builds its own attribute dictionary from whatever
         // it is handed, and an unusable size or font there aborts the process from inside a draw.
-        let requested = Double(object.attributes["fontsize"] ?? "11") ?? 11
-        let size = CGFloat(requested.isFinite ? min(max(requested, 1), 256) : 11)
+        let size = WasabiTextMetrics.pointSize(of: object)
         let font = resources.font(identifier: object.attributes["font"], size: size)
             ?? NSFont.systemFont(ofSize: size)
         // Optional for the same reason as the font: nothing that ends up in a CoreText attribute

@@ -15,12 +15,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         /// `if (myDoc.exists())`. The callback-driven parser is not implemented, so the document
         /// reports that it does not exist and every caller takes its own skip path.
         case xmlDocument
+        /// A `WinampConfigGroup` — one section of Winamp's own preferences, addressed by GUID.
+        /// ClassicPro reads exactly one value from one (`eq.m` asks whether the EQ uses classic or
+        /// ISO frequencies before it labels the bands).
+        case configGroup(section: String)
     }
 
     private struct DynamicObjectState {
         var role: DynamicRole = .generic
         var delayMilliseconds: Int32 = 5_000
+        /// Backing store for a MAKI `List`. Kept on every dynamic object rather than in the role: a
+        /// `List` is created by the same `new` as a `Timer` or a `Map` and only its first list call
+        /// would distinguish it, and nothing else ever touches these items.
+        var items: [MakiValue] = []
     }
+
+    /// Ceiling on one `List`'s length. ClassicPro's longest is its tab order (a dozen entries); the
+    /// cap is what stops a script appending in a loop from growing without bound.
+    private static let maximumListItems = 4_096
 
     let loadedSkin: WinampModernLoadedSkin
     let host: WinampModernHost
@@ -81,6 +93,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private var bitmapSizes: [String: (width: Int32, height: Int32)?] = [:]
     /// Decoded `Map` bitmaps, keyed by resource id. Maps are small lookup images (44×44 for MMD3's
     /// volume knob) and there are a handful per skin.
+    /// Font resolution and text measurement, shared with the renderer so `getAutoWidth()` answers
+    /// what the text will actually occupy when drawn.
+    private lazy var metrics = WasabiTextMetrics(loadedSkin: loadedSkin)
     private var mapImages: [String: CGImage] = [:]
     private static let maximumCachedMaps = 16
     /// Ceiling on total loaded programs. Runtime instantiation (`System.newGroup`) can add scripts,
@@ -100,7 +115,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // `onAction` is Wasabi's generic message channel, and scripts *send* on it as well as
         // receive: ClassicPro's menu bar posts itself `update_menu`, and the drawer registers its
         // widgets with the widget manager, both by calling the event as a method.
-        "onaction": 7
+        "onaction": 7,
+        // ClassicPro's EQ script labels its bands by calling its own `System.onEqFreqChanged` handler
+        // once at load with the value it read out of Winamp's config.
+        "oneqfreqchanged": 1
     ]
 
     /// Version-gate shim. ClassicPro's `WinampVersionCheck.maki` early-returns when the reported build
@@ -181,9 +199,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         if let imageID = object.attributes["image"], let width = bitmapWidth(identifier: imageID) {
             return width
         }
-        let text = object.attributes["text"] ?? object.attributes["default"] ?? ""
-        let charWidth = Int32(Double(object.attributes["fontsize"] ?? "11") ?? 11) * 3 / 5
-        return max(0, Int32(clamping: text.count) * max(1, charWidth))
+        // Measured with the font the renderer draws with, not estimated: ClassicPro sizes every SUI
+        // tab to `label.getAutoWidth() + 14` and lays its menu bar out from these numbers, so an
+        // estimate that runs narrow clips every label inside a box the skin thinks fits it.
+        let type = object.typeName.lowercased()
+        guard type == "text" || type == "songticker" else { return 0 }
+        let text = WasabiTextMetrics.content(of: object, host: host)
+        return Int32(clamping: Int(metrics.width(of: object, text: text).rounded(.up)))
     }
 
     /// Pixel width of a declared bitmap. Uses the resource's explicit `w` when the declaration crops
@@ -540,6 +562,29 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "exists": .init(argumentCount: 0, returnKind: .boolean),
             "getfilesize": .init(argumentCount: 1, returnKind: .integer),
             "getlanguageid": .init(argumentCount: 0, returnKind: .string),
+            // `List`: MAKI's own container (`extern List.addItem(Any)` …). ClassicPro builds its tab
+            // order, its widget registry and its beat-vis names in one, so a missing `addItem` aborts
+            // the script that assembles the SUI's tab strip.
+            "additem": .init(argumentCount: 1, returnKind: .integer),
+            "enumitem": .init(argumentCount: 1, returnKind: .object),
+            "getnumitems": .init(argumentCount: 0, returnKind: .integer),
+            "removeitem": .init(argumentCount: 1, returnKind: .null),
+            "removeall": .init(argumentCount: 0, returnKind: .null),
+            "finditem": .init(argumentCount: 1, returnKind: .integer),
+            // `BitList` — a sized array of flags, sharing the `List` backing store.
+            "setsize": .init(argumentCount: 1, returnKind: .null),
+            "getsize": .init(argumentCount: 0, returnKind: .integer),
+            "setitem": .init(argumentCount: 2, returnKind: .null),
+            // `WinampConfig.getGroup(guid)` → a `WinampConfigGroup`. Arities follow `winampconfig.mi`,
+            // which is what the skin's compiler encoded.
+            "getgroup": .init(argumentCount: 1, returnKind: .object),
+            "getint": .init(argumentCount: 1, returnKind: .integer),
+            "getbool": .init(argumentCount: 1, returnKind: .boolean),
+            "getstring": .init(argumentCount: 1, returnKind: .string),
+            "getcurrenttrackrating": .init(argumentCount: 0, returnKind: .integer),
+            // A group's children, which ClassicPro walks to find the widgets a component bucket loaded.
+            "getnumchildren": .init(argumentCount: 0, returnKind: .integer),
+            "enumchildren": .init(argumentCount: 1, returnKind: .object),
             "explorefile": .init(argumentCount: 1, returnKind: .null),
             "openfile": .init(argumentCount: 2, returnKind: .null),
             "findfiles": .init(argumentCount: 3, returnKind: .integer),
@@ -610,6 +655,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     }
 
     private func invokeSystem(method: String, arguments: [MakiValue], program: MakiProgram) throws -> MakiValue {
+        // A script may call a *system* event handler as a method to reuse it, exactly as it may an
+        // object's (`System.onEqFreqChanged(freqmode)` in ClassicPro's `eq.m`).
+        if Self.dispatchableEventArity[method] != nil {
+            _ = try dispatchSystem(event: method, arguments: arguments)
+            return method == "onaction" ? .integer(0) : .null
+        }
         switch method {
         case "getcontainer":
             return objectValue(findRoot(type: "container", xmlID: arguments[0].stringValue))
@@ -776,6 +827,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // file-info readout shows 0 bytes rather than the script that draws it aborting.
             return .integer(0)
         case "getlanguageid": return .string("en")
+        case "getgroup":
+            // One section of Winamp's preferences, keyed by GUID. Backed by the skin's own namespaced
+            // configuration store — MAKI never reads or writes real Winamp settings.
+            return dynamicValue(role: .configGroup(section: arguments[0].stringValue))
+        case "getcurrenttrackrating":
+            // NullPlayer's playback `Track` carries no user rating (the library's rating lives in
+            // `MediaLibrary`, which is not on the host adapter), so every track reports unrated. The
+            // ClassicPro ratings widget then draws no stars instead of aborting its script.
+            return .integer(0)
         case "getdateyear":
             // Years since 1900, as C's `tm_year`. Pinned by the engine's own use of it: `cproabout.m`
             // computes an age as `1899 + getDateYear(...) - birthYear` (+1 once the birthday has
@@ -838,6 +898,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             _ = layoutSwitchRequested?(arguments[0].stringValue)
             _ = try dispatch(object: object, event: "onswitchtolayout", arguments: [objectValue(next)])
             return .null
+        case "getnumchildren": return .integer(Int32(clamping: object.children.count))
+        case "enumchildren":
+            let index = Int(arguments[0].integerValue)
+            guard object.children.indices.contains(index) else { return .null }
+            return objectValue(object.children[index])
         case "getid": return .string(object.xmlID ?? "")
         case "getparent": return objectValue(object.parent)
         case "getparentlayout": return objectValue(ancestor(of: object, type: "layout"))
@@ -891,6 +956,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "gettop", "getguiy": return .integer(Int32(object.geometry.y))
         case "getwidth", "getguiw": return .integer(Int32(object.geometry.width ?? 0))
         case "getheight", "getguih": return .integer(Int32(object.geometry.height ?? 0))
+        case "getposition" where WasabiFrame.isFrame(object):
+            // A splitter's position is its divider offset, not a slider value. ClassicPro reads it to
+            // decide whether the side view is open (`mainFrame.getPosition()==0`).
+            return .integer(Int32(clamping: Int(WasabiFrame.position(of: object))))
+        case "setposition" where WasabiFrame.isFrame(object):
+            guard WasabiFrame.setPosition(Double(arguments[0].integerValue), on: object) else { return .null }
+            graphDidMutate?()
+            _ = try dispatch(object: object, event: "onsetposition", arguments: [arguments[0]])
+            return .null
         case "getposition": return .integer(Int32(object.attributes["value"] ?? object.attributes["position"] ?? "0") ?? 0)
         case "setposition":
             // Only an actual change notifies, as in Wasabi. Skins pair sliders that write each
@@ -1072,6 +1146,68 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             guard case .map(let bitmapID, let source) = state.role,
                   let image = mapImage(bitmapID: bitmapID, source: source) else { return .integer(0) }
             return .integer(Int32(clamping: method == "getwidth" ? image.width : image.height))
+        case "additem":
+            guard state.items.count < Self.maximumListItems else { return .integer(-1) }
+            state.items.append(arguments[0])
+            dynamicObjects[id] = state
+            return .integer(Int32(state.items.count - 1))
+        case "enumitem":
+            let index = Int(arguments[0].integerValue)
+            guard state.items.indices.contains(index) else { return .null }
+            return state.items[index]
+        case "getnumitems", "getsize": return .integer(Int32(clamping: state.items.count))
+        case "setsize":
+            // `BitList` — same backing store as `List`, holding booleans. ClassicPro sizes one to the
+            // widget count and ticks off the widgets it has already initialised.
+            let size = max(0, min(Self.maximumListItems, Int(arguments[0].integerValue)))
+            state.items = (0..<size).map { index in
+                index < state.items.count ? state.items[index] : .boolean(false)
+            }
+            dynamicObjects[id] = state
+            return .null
+        case "getitem":
+            let index = Int(arguments[0].integerValue)
+            guard state.items.indices.contains(index) else { return .boolean(false) }
+            return .boolean(state.items[index].truthy)
+        case "setitem":
+            let index = Int(arguments[0].integerValue)
+            guard state.items.indices.contains(index) else { return .null }
+            state.items[index] = .boolean(arguments[1].truthy)
+            dynamicObjects[id] = state
+            return .null
+        case "removeitem":
+            let index = Int(arguments[0].integerValue)
+            guard state.items.indices.contains(index) else { return .null }
+            state.items.remove(at: index)
+            dynamicObjects[id] = state
+            return .null
+        case "removeall":
+            state.items.removeAll()
+            dynamicObjects[id] = state
+            return .null
+        case "finditem":
+            // `Any` items: an object matches by identity, everything else by its string form, which is
+            // how the engine searches its string lists.
+            let index = state.items.firstIndex { item in
+                if case .object(let reference) = arguments[0] { return object(item, equals: reference) }
+                if case .object = item { return false }
+                return item.stringValue == arguments[0].stringValue
+            }
+            return .integer(Int32(index ?? -1))
+        case "getint", "getbool", "getstring":
+            guard case .configGroup(let section) = state.role else {
+                return method == "getstring" ? .string("") : .integer(0)
+            }
+            let key = arguments[0].stringValue
+            // An unset item reads 0. That is also the right answer for the one item ClassicPro asks
+            // about — `"frequencies"`, where 0 means Winamp's classic EQ frequencies, which is what
+            // NullPlayer's `EQConfiguration.classic10` uses.
+            let value = loadedSkin.configuration.integer(section: section, key: key, default: 0)
+            switch method {
+            case "getbool": return .boolean(value != 0)
+            case "getstring": return .string(loadedSkin.configuration.string(section: section, key: key))
+            default: return .integer(value)
+            }
         case "setdelay":
             state.delayMilliseconds = max(8, arguments[0].integerValue)
             dynamicObjects[id] = state
@@ -1111,6 +1247,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case .configAttribute(_, let key): return .string(key)
             case .map(let bitmapID, _): return .string(bitmapID)
             case .xmlDocument: return .string("")
+            case .configGroup(let section): return .string(section)
             case .generic: return .string("dynamic_\(id)")
             }
         case "init", "callme", "ondatachanged": return .null
@@ -1233,6 +1370,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         popupCommands.removeAll()
         dynamicObjects.removeAll()
         activeLayoutByContainer.removeAll()
+        metrics.teardown()
         isTornDown = true
     }
 

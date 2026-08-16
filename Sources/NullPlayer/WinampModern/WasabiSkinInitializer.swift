@@ -605,6 +605,19 @@ final class WasabiSkinInitializer {
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                               definitionStack: nextDefinitionStack,
                               createdCount: &createdCount)
+            // A `<Wasabi:Frame>` declares its two panes by group id rather than nesting them, so the
+            // splitter is what brings them into the graph. cPro-Bento's entire body (library tree,
+            // playlist, tabs) hangs off one, and without this the SUI expands to an empty frame.
+            if WasabiFrame.isFrame(object) {
+                let panes = WasabiFrame.paneIdentifiers(of: object).map {
+                    WalXMLNode(name: "group", attributes: ["id": $0], location: node.location)
+                }
+                try createObjects(from: panes, parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount)
+                WasabiFrame.applyLayout(to: object)
+            }
         }
     }
 
