@@ -61,7 +61,8 @@ final class WinampModernPhase13Tests: XCTestCase {
     /// The R1 case end to end. cPro-Bento's declared minimum is *itself* degenerate: at 168px the
     /// SUI area (`h="-168" relath="1"`) is zero-tall, so its contents go negative. A shrunk window
     /// must cramp — every remaining node inside the canvas — never stack flipped boxes over the
-    /// chrome. `resize` already clamps to the layout minimum, so this is the smallest real size.
+    /// chrome. Since Phase 15 `resize` clamps to the *protective* minimum, which is the smallest size
+    /// at which nothing has gone negative in the first place (here 84, not the declared 80).
     func testShrinkingToTheLayoutMinimumNeverPaintsOutsideTheCanvas() throws {
         let renderer = try makeRenderer(layout: """
         <layer id="header" x="0" y="0" w="0" h="80" relatw="1"/>
@@ -73,11 +74,12 @@ final class WinampModernPhase13Tests: XCTestCase {
             .isSuperset(of: ["header", "body", "body.fill"]))
 
         let clamped = renderer.resize(to: CGSize(width: 10, height: 10))
-        XCTAssertEqual(clamped, CGSize(width: 120, height: 80), "resize clamps to the layout minimum")
+        XCTAssertEqual(clamped, CGSize(width: 120, height: 84), "resize clamps to the protective minimum")
         let nodes = renderer.sceneNodes()
         let ids = Set(nodes.compactMap(\.object.xmlID))
         XCTAssertTrue(ids.contains("header"), "the header is still a valid 80px box")
-        XCTAssertFalse(ids.contains("body.fill"), "4px of margin inside a zero-tall body is negative")
+        XCTAssertTrue(ids.contains("body.fill"),
+                      "the floor stops one pixel above where 4px of margin goes negative (it is 0 tall here)")
         let canvas = CGRect(origin: .zero, size: clamped)
         for node in nodes where !node.frame.isEmpty {
             XCTAssertTrue(canvas.intersects(node.frame),

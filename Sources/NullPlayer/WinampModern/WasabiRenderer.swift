@@ -290,6 +290,9 @@ struct WasabiSceneNode {
     let frame: CGRect
     let clip: CGRect
     let bitmapID: String?
+    /// The box this node resolved against. Only the protective-minimum probe reads it: a child that
+    /// escapes this rect is an object whose parent has become too small to hold it.
+    let parentFrame: CGRect
 }
 
 final class WasabiSceneRenderer {
@@ -391,12 +394,109 @@ final class WasabiSceneRenderer {
         return canvasSize
     }
 
-    /// The active layout's own `minimum_w`/`minimum_h`, in skin pixels. Every window hosting this
-    /// renderer takes its `minSize` from here, so a restored or dragged frame can never ask the scene
-    /// for a size the skin does not describe.
+    /// The active layout's own `minimum_w`/`minimum_h`, in skin pixels, raised to the protective
+    /// minimum below. Every window hosting this renderer takes its `minSize` from here, so a restored
+    /// or dragged frame can never ask the scene for a size the skin does not describe.
     var layoutMinimumSize: CGSize {
+        let declared = declaredMinimumSize
+        let protective = protectiveMinimumSize
+        return CGSize(width: max(declared.width, protective.width),
+                      height: max(declared.height, protective.height))
+    }
+
+    /// What the layout itself declares — the floor the protective probe starts searching from.
+    private var declaredMinimumSize: CGSize {
         CGSize(width: Self.dimension(layout.attributes, keys: ["minimum_w"], fallback: 1),
                height: Self.dimension(layout.attributes, keys: ["minimum_h"], fallback: 1))
+    }
+
+    private var protectiveMinimumCache: [String: CGSize] = [:]
+
+    /// The smallest canvas at which the scene still lays itself out the way its author drew it.
+    ///
+    /// R1's second half: a skin's declared `minimum_w`/`minimum_h` is written for Winamp, where a
+    /// group clips its children; we clip only on `clipchildren="1"`, so below a certain size a child
+    /// that no longer fits paints *over* its siblings instead of being cut off (cPro-Bento at
+    /// 376×182 — above its declared 317×168 — overlaps its tab strip onto the transport). Rather
+    /// than change clipping globally, we refuse to go small enough for it to happen.
+    ///
+    /// The skin's own default size is the reference: at the size its author chose, the scene is by
+    /// definition correct, so any object already escaping its parent there is deliberate (a slider
+    /// centres its thumb on its track, and thumb sheets routinely overhang). Overflow present *only*
+    /// after shrinking is the failure, so the probe searches for the smallest size whose overflow set
+    /// is still a subset of that baseline, per axis, bounded by the default size.
+    private var protectiveMinimumSize: CGSize {
+        let key = activeLayoutID
+        if let cached = protectiveMinimumCache[key] { return cached }
+        let computed = computeProtectiveMinimumSize()
+        protectiveMinimumCache[key] = computed
+        return computed
+    }
+
+    private func computeProtectiveMinimumSize() -> CGSize {
+        let declared = declaredMinimumSize
+        let ceiling = defaultSize(for: layout)
+        guard ceiling.width > declared.width || ceiling.height > declared.height else { return declared }
+        let reference = Set(sceneNodes(canvas: ceiling).map(\.object.stableID))
+        let baseline = fitFailures(atCanvas: ceiling, reference: reference)
+        let width = Self.smallestSatisfying(from: declared.width, to: ceiling.width) { candidate in
+            fitFailures(atCanvas: CGSize(width: candidate, height: ceiling.height), reference: reference)
+                .isNoWorse(than: baseline)
+        }
+        let height = Self.smallestSatisfying(from: declared.height, to: ceiling.height) { candidate in
+            fitFailures(atCanvas: CGSize(width: width, height: candidate), reference: reference)
+                .isNoWorse(than: baseline)
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    /// How a scene fails to place itself at a hypothetical canvas size. The two kinds are kept apart
+    /// deliberately: an object that already overhangs at the skin's own size is allowed to keep
+    /// overhanging, but it is never allowed to *disappear*.
+    struct WasabiFitFailures {
+        var overflowing: Set<WasabiObjectID> = []
+        var missing: Set<WasabiObjectID> = []
+
+        /// No worse than `baseline` — the failures of the scene at the size its author drew it.
+        func isNoWorse(than baseline: WasabiFitFailures) -> Bool {
+            overflowing.isSubset(of: baseline.overflowing) && missing.isSubset(of: baseline.missing)
+        }
+    }
+
+    /// Objects the scene fails to place at a hypothetical canvas size — escaping the box they
+    /// resolved against, or gone entirely (`append` drops a node that lands wholly outside its
+    /// parent, so a shrinking window makes objects *vanish* as well as overlap; count only the first
+    /// and the search loses its monotonicity, because a wildly overflowing object stops being
+    /// counted once it leaves the parent completely). `canvasSize` is untouched — the probe runs off
+    /// to the side of the live scene.
+    func fitFailures(atCanvas size: CGSize, reference: Set<WasabiObjectID>) -> WasabiFitFailures {
+        var present: Set<WasabiObjectID> = []
+        var result = WasabiFitFailures()
+        for node in sceneNodes(canvas: size) {
+            present.insert(node.object.stableID)
+            // A half-pixel slack: geometry resolves in Double, and a box that lands exactly on its
+            // parent's edge is flush, not overflowing.
+            guard !node.frame.isEmpty,
+                  !node.parentFrame.insetBy(dx: -0.5, dy: -0.5).contains(node.frame) else { continue }
+            result.overflowing.insert(node.object.stableID)
+        }
+        result.missing = reference.subtracting(present)
+        return result
+    }
+
+    /// Smallest whole pixel in `from...to` satisfying `predicate`, assuming it is monotone (a scene
+    /// that fits at a size fits at every larger one). ~10 probes; the result is cached per layout.
+    private static func smallestSatisfying(from: CGFloat, to: CGFloat,
+                                           predicate: (CGFloat) -> Bool) -> CGFloat {
+        var low = max(1, from.rounded(.up))
+        var high = max(low, to.rounded(.up))
+        if predicate(low) { return low }
+        guard predicate(high) else { return high }
+        while high - low > 1 {
+            let middle = ((low + high) / 2).rounded()   // whole pixels: this becomes a window's minSize
+            if predicate(middle) { high = middle } else { low = middle }
+        }
+        return high
     }
 
     /// The active layout's `maximum_w`/`maximum_h`, defaulting to the renderer's own 16384 ceiling.
@@ -415,8 +515,10 @@ final class WasabiSceneRenderer {
         return canvasSize
     }
 
-    func sceneNodes() -> [WasabiSceneNode] {
-        let rootRect = CGRect(origin: .zero, size: canvasSize)
+    func sceneNodes() -> [WasabiSceneNode] { sceneNodes(canvas: canvasSize) }
+
+    private func sceneNodes(canvas: CGSize) -> [WasabiSceneNode] {
+        let rootRect = CGRect(origin: .zero, size: canvas)
         var nodes: [WasabiSceneNode] = []
         append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true)
         return nodes
@@ -457,6 +559,32 @@ final class WasabiSceneRenderer {
 
     func frame(of object: WasabiObject) -> CGRect? {
         sceneNodes().first(where: { $0.object === object })?.frame
+    }
+
+    // MARK: - Splitter dragging
+
+    /// Every draggable `<Wasabi:Frame>` divider in the active scene, with its grab strip in skin
+    /// coordinates. Innermost last, so a hit test walking backwards finds the nested splitter first
+    /// (cPro-Bento's playlist frame lives inside its main frame).
+    func frameDividers() -> [(object: WasabiObject, rect: CGRect, isVertical: Bool)] {
+        sceneNodes().compactMap { node in
+            guard WasabiFrame.isFrame(node.object), isVisible(node.object),
+                  let rect = WasabiFrame.dividerRect(of: node.object, in: node.frame) else { return nil }
+            return (node.object, rect, rect.height >= rect.width)
+        }
+    }
+
+    func frameDivider(at point: CGPoint) -> WasabiObject? {
+        frameDividers().reversed().first { $0.rect.contains(point) }?.object
+    }
+
+    /// Move a splitter to where the pointer is. Returns whether anything moved, so the caller can
+    /// skip the repaint — a drag along the divider's own axis produces a great many no-op events.
+    @discardableResult
+    func dragFrameDivider(_ object: WasabiObject, to point: CGPoint) -> Bool {
+        guard let frame = frame(of: object) else { return false }
+        return WasabiFrame.setPosition(WasabiFrame.position(draggedTo: point, in: frame, object: object),
+                                       on: object)
     }
 
     // MARK: - Embedded component hosting
@@ -612,7 +740,7 @@ final class WasabiSceneRenderer {
         if !resolved.isEmpty && !resolved.intersects(parentClip) { return }
         let clip = parentClip.intersection(resolved.isEmpty ? parentClip : resolved)
         nodes.append(WasabiSceneNode(object: object, frame: resolved, clip: parentClip,
-                                     bitmapID: bitmapID))
+                                     bitmapID: bitmapID, parentFrame: isRoot ? resolved : parentFrame))
         let childClip = clipsChildren(object) ? clip : parentClip
         for child in object.children {
             append(object: child, frame: resolved, clip: childClip, into: &nodes)

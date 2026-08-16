@@ -64,7 +64,10 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 - `<Wasabi:Frame>` / `<frame>` splitters: the frame instantiates the groups named by
   `left`/`right` (vertical divider) or `top`/`bottom` (horizontal) and lays them out either side of
   an 8px divider placed `width`/`height` pixels from the `from` edge. On a frame,
-  `getPosition`/`setPosition` are that offset
+  `getPosition`/`setPosition` are that offset. The divider is **draggable**: its grab strip takes the
+  resize cursor and a drag rewrites `position`, bounded by `minwidth`/`maxwidth` (which skins spell
+  that way for both orientations, and which are measured from the far edge when negative —
+  ClassicPro's `maxwidth="-224"` means "always leave 224px for the other pane")
 - Auto-sizing from text: a group with `autowidthsource="<id>"` takes the width of the descendant it
   names, and a `<text>` with no `w` takes its own content's width. `getAutoWidth()` measures with the
   object's real font (bitmap-font pitch or Core Text) plus `leftpadding`/`rightpadding`, so a skin
@@ -89,8 +92,16 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 - A missing **optional** bitmap or cursor is a warning, not an error (Winamp-compatible).
 - `file="$solid"` / `file="$gradient"` predefined bitmaps are recognized but not resolved as files.
 - `embed_xui` is retained as metadata only — it is **not** an inheritance edge.
-- A splitter cannot be **dragged**: its divider is positioned by the skin's own scripts only, so
-  `minwidth`/`maxwidth`/`jump` are parsed but not enforced.
+- A splitter's `jump` (snap-to-detent) is parsed but not honoured — a drag is continuous.
+- **A `xuitag` instance's own script may never initialize, leaving its controls inert.** Measured on
+  cPro-Bento's tab strip: `WINAMP_MODERN_RENDER_XUI` reports `Cpro:Tabs … scripts=["CproTabs.maki"]
+  onsetxuiparam=false onscriptloaded=false`, so the script never looks up its five
+  `cpro.tab.button` toggle buttons and never hooks them. The strip builds and hit-tests correctly
+  (`WINAMP_MODERN_RENDER_CLICK=main/normal@175,115` → `hits togglebutton#cpro.tab.button`), but the
+  button has `bindings=false` and every mouse event dispatches to 0 handlers — the tab names have
+  never switched tabs. Same family as Phase 9.6's `System.newGroup`/`onSetXuiParam` delivery, which
+  does not cover this case. The embedded library is reached through the surface coordinator instead,
+  which is why Windows → Library Browser works where the tab does not.
 - Auxiliary container windows render and take input but do **not** drive per-container MAKI layout
   switching; the main window owns the scripted scene. (cPro-Bento is single-window, so this is
   invisible there.)
@@ -237,7 +248,11 @@ Every request for the playlist, equalizer, or library — a menu item, a skin bu
    and its layout. (ClassicPro switches tabs from that event but only `if (active_tab != 0)`, and at
    startup its `active_tab` is already 0 — so the holder half of the contract is what actually opens
    the Media Library tab.) An embedded surface owns no `NSWindow` and never enters docking,
-   compact-mode snapshots, or frame persistence.
+   compact-mode snapshots, or frame persistence. **An embedded library is revealed once at launch**
+   (`revealEmbeddedLibraryAtStartup`, right after the catalog is reconciled) — cPro-Bento opens on its
+   Media Library tab, and without this that tab is an empty pane until the user picks Windows →
+   Library Browser. Only for `isEmbedded(.library)`, so a skin with its own library window opens
+   nothing at launch.
 2. **Declared container** — the skin ships a window for it (`<container id="Pledit" component="guid:…">`).
 3. **Synthesized container** — the skin ships none, so one is built *before initialization* from the
    skin's own `<Wasabi:StandardFrame:…>` around a `<component>` of that kind. Only in the
@@ -359,6 +374,25 @@ back as 376×182. Separately, an object whose parent is smaller than the object'
 to a **negative** box; those are dropped with their subtree rather than flipped across their origin,
 which is what made an undersized window scramble instead of cramp. Zero-sized objects are still
 walked — skins park real content in 0×0 groups that size themselves from their children.
+
+**The protective minimum** (Phase 15). A skin's declared `minimum_w`/`minimum_h` is written for
+Winamp, where *every* group clips its children; we clip only on `clipchildren="1"`, so below a
+certain size a child that no longer fits paints over its siblings instead of being cut off —
+cPro-Bento at 376×182, comfortably above its declared 317×168, overlaps its tab strip
+(`cpro.tab`) onto the transport. Rather than change clipping globally (which would change what every
+skin draws), `WasabiSceneRenderer.layoutMinimumSize` raises the floor to the smallest size at which
+the scene still lays out the way its author drew it, and every window, script `resize`, and restored
+frame is clamped to it.
+
+The probe calibrates against the layout's **own default size**: at the size its author ships, the
+scene is by definition correct, so overhang already present there is deliberate (a slider centres its
+thumb on its track) and only failures that appear *after* shrinking count. Two failure kinds are
+tracked separately — an object escaping the box it resolved against, and an object disappearing from
+the scene entirely (`append` culls a node that lands wholly outside its parent) — so an object
+allowed to overhang is still never allowed to vanish. ~20 scene builds per layout, binary-searched
+per axis and cached; the result never exceeds the layout's default size. Measured floors: cPro-Bento
+`main/normal` 317×168 → **477×203**, mmd3 `Pledit` 275×116 → 310×116, `ctsbig` → 310×133, Winamp
+Modern unchanged everywhere (its declared minima already dominate).
 
 **Not fuzzed**: `NSISArchive` and `LZMA1Decoder`. They are validated byte-for-byte against the real
 installer (309/309 engine files match a reference oracle), but a bounded fuzz over them remains

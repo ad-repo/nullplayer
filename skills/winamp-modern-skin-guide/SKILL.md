@@ -161,6 +161,25 @@ encoded in `WasabiGeometry`:
 constantly for their SUI/content groups; without it those groups resolve to a 0×0 rect at the origin
 and every descendant collapses into the top-left corner.
 
+#### The protective window minimum
+
+`layoutMinimumSize` is **not** just the layout's `minimum_w`/`minimum_h`. Those numbers are written
+for Winamp, where every group clips its children; we clip only on `clipchildren="1"`, so past a
+certain size a child that no longer fits paints over its siblings instead of being cut off. The
+renderer therefore probes for the smallest size at which the scene still lays out the way its author
+drew it, and raises the declared floor to it (`computeProtectiveMinimumSize`). Every window's
+`contentMinSize`, `resize()`, and `clampRestoredFrame` go through the same number.
+
+The reference is the layout's own **default size** — at the size a skin ships at, its scene is
+correct by definition, so overhang present there is deliberate and only failures introduced by
+shrinking count. There are two failure kinds and they are tracked **separately**: an object escaping
+the box it resolved against, and an object vanishing from the scene (`append` culls a node that
+lands wholly outside its parent). Counting only the first loses the search's monotonicity — a wildly
+overflowing object stops being counted once it leaves its parent completely — and merging them lets
+an object that is allowed to overhang also silently disappear. The result is capped at the default
+size, so this can never make a window bigger than the skin describes. It costs ~20 scene builds per
+layout, cached per layout id.
+
 #### The two y-origin conventions (source of a whole class of bugs)
 
 Three different APIs are involved and only one of them is bottom-left:
@@ -196,7 +215,14 @@ ordinary group left the library tree, the playlist and the tab strip out of the 
 - Layout is expressed by writing the panes' *own* geometry attributes, so `WasabiGeometrySpec`
   resolves them like anything else and a parent resize needs no frame-specific code. A pane that
   would go negative collapses to zero instead of flipping inside out.
-- Dragging the divider is not implemented, so `minwidth`/`maxwidth` are not enforced yet.
+- The divider is draggable. Its 8px grab strip (`frameDividers()`) takes the resize cursor and wins
+  the hit test over whatever is beneath it; a drag rewrites `position` through the same
+  `setPosition` path a script uses, so the panes re-lay out and hosted subviews follow.
+  `minwidth`/`maxwidth` bound it — skins spell them that way for a horizontal frame too
+  (ClassicPro's `centro.plframe`), and a **negative** limit is measured from the far edge
+  (`maxwidth="-224"` = "always leave 224px for the other pane"). `jump` (snapping) is not honoured.
+- A divider pushed flush with an edge (`setPosition(0)`, how ClassicPro closes its side view) offers
+  no grab strip, so a closed split cannot be reopened by dragging where it used to be.
 
 #### Text width is a layout input, not just a drawing detail
 
@@ -548,9 +574,18 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_BITMAPS=1` | count resolved bitmaps and list any that fail to load |
 | `WINAMP_MODERN_RENDER_XUI=1` | list objects with scripts and whether their events bind |
 | `WINAMP_MODERN_RENDER_CLOCK=<seconds>` | pin the animation/ticker clock; render two values to prove motion |
+| `WINAMP_MODERN_RENDER_MINIMUM=1` | name the objects that set each layout's protective minimum |
+| `WINAMP_MODERN_RENDER_CLICKABLE=1` | objects the markup-only hit test rejects but a script hooks the mouse on |
+| `WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y` | drive a click and report what it hit, whether it has handlers, and what the scene did |
 
 Use the probe to answer "is it missing art, bad geometry, or a script that never ran" before changing
 renderer code — `BITMAPS … missing=` distinguishes an unresolved resource from one that draws wrongly.
+
+**A dead control is usually a dead script, not a bad hit test.** `RENDER_CLICK` answers that in one
+run: it prints the object under the point, `bindings=`, and the handler count for each mouse event.
+`hits togglebutton#… bindings=false` with `onleftclick -> 0` means the script that should have hooked
+it never ran — cross-check with `RENDER_XUI`, where `onscriptloaded=false` on the owning `xuitag`
+instance is the tell. That is exactly how cPro-Bento's inert tab strip was pinned down.
 
 > **Gotcha:** the harness must install an `NSGraphicsContext` around `renderer.draw`. `drawText` ends
 > in `NSString.draw(in:withAttributes:)`, which renders into the *current* `NSGraphicsContext`, not

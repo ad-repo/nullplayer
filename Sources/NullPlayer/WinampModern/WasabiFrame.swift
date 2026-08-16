@@ -117,6 +117,53 @@ enum WasabiFrame {
         }
     }
 
+    /// The grab strip between the two panes, in the same space as `frame` (the splitter's own
+    /// resolved rect). `nil` when the object is not actually a splitter, or when the divider has been
+    /// pushed off the end of the axis — ClassicPro closes its side view with `setPosition(0)`, and a
+    /// closed split offers nothing to grab.
+    static func dividerRect(of object: WasabiObject, in frame: CGRect) -> CGRect? {
+        guard paneIdentifiers(of: object).count == 2 else { return nil }
+        let vertical = isVerticalDivider(object)
+        let extent = vertical ? frame.width : frame.height
+        let thickness = dividerHalfThickness * 2
+        guard extent > thickness else { return nil }
+        let offset = position(of: object)
+        let distance = fromEdge(of: object) == .start ? offset : extent - offset
+        let start = distance - dividerHalfThickness
+        guard start >= 0, start + thickness <= extent else { return nil }
+        return vertical
+            ? CGRect(x: frame.minX + start, y: frame.minY, width: thickness, height: frame.height)
+            : CGRect(x: frame.minX, y: frame.minY + start, width: frame.width, height: thickness)
+    }
+
+    /// The divider offset a drag to `point` asks for, clamped to the frame's own limits.
+    static func position(draggedTo point: CGPoint, in frame: CGRect, object: WasabiObject) -> Double {
+        let vertical = isVerticalDivider(object)
+        let extent = Double(vertical ? frame.width : frame.height)
+        let along = Double(vertical ? point.x - frame.minX : point.y - frame.minY)
+        let raw = fromEdge(of: object) == .start ? along : extent - along
+        return clampedPosition(raw, extent: extent, object: object)
+    }
+
+    /// `minwidth`/`maxwidth` (which skins write for *both* orientations — ClassicPro's horizontal
+    /// `centro.plframe` uses them) bound the offset, and 0…extent bounds those in turn.
+    static func clampedPosition(_ raw: Double, extent: Double, object: WasabiObject) -> Double {
+        let low = max(0, min(limit(object, keys: ["minwidth", "minheight"], extent: extent) ?? 0, extent))
+        let high = max(low, min(limit(object, keys: ["maxwidth", "maxheight"], extent: extent) ?? extent, extent))
+        return max(low, min(high, raw.isFinite ? raw : low))
+    }
+
+    /// A negative limit is measured from the far edge: ClassicPro's `maxwidth="-224"` means "always
+    /// leave 224 pixels for the other pane", so the bound grows with the window rather than pinning
+    /// the divider to an absolute column.
+    private static func limit(_ object: WasabiObject, keys: [String], extent: Double) -> Double? {
+        for key in keys {
+            guard let raw = object.attributes[key], let value = Double(raw) else { continue }
+            return value < 0 ? max(0, extent + value) : value
+        }
+        return nil
+    }
+
     private enum Edge { case start, end }
 
     /// `from` names the edge the divider is measured from: `left`/`top` (near) or `right`/`bottom`

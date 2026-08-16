@@ -129,8 +129,10 @@ final class WinampModernRenderDumpTests: XCTestCase {
             for layoutID in renderer.availableLayoutIDs {
                 _ = try? renderer.activateLayout(id: layoutID)
                 let size = renderer.canvasSize
+                let minimum = renderer.layoutMinimumSize
                 print("RENDER-DUMP \(info.id)/\(layoutID): \(Int(size.width))x\(Int(size.height)), "
-                      + "\(renderer.sceneNodes().count) nodes")
+                      + "\(renderer.sceneNodes().count) nodes, "
+                      + "min=\(Int(minimum.width))x\(Int(minimum.height))")
                 // WINAMP_MODERN_RENDER_PROBE=<container>/<layout> dumps that scene's node list.
                 if env["WINAMP_MODERN_RENDER_PROBE"] == "\(info.id)/\(layoutID)" {
                     for node in renderer.sceneNodes() {
@@ -138,6 +140,60 @@ final class WinampModernRenderDumpTests: XCTestCase {
                               + "frame=\(node.frame) clip=\(node.clip) bitmap=\(node.bitmapID ?? "-") "
                               + "attrs=\(node.object.attributes.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " "))")
                     }
+                }
+                // WINAMP_MODERN_RENDER_MINIMUM names the objects that make the protective minimum
+                // what it is: those overflowing one pixel below it but not at the skin's own size.
+                if env["WINAMP_MODERN_RENDER_MINIMUM"] != nil {
+                    let below = CGSize(width: max(1, minimum.width - 1), height: minimum.height)
+                    let reference = Set(renderer.sceneNodes().map(\.object.stableID))
+                    let failures = renderer.fitFailures(atCanvas: below, reference: reference)
+                    let baseline = renderer.fitFailures(atCanvas: size, reference: reference)
+                    let culprits = failures.overflowing.union(failures.missing)
+                        .subtracting(baseline.overflowing.union(baseline.missing))
+                    let named = renderer.sceneNodes().filter { culprits.contains($0.object.stableID) }
+                    print("MINIMUM \(info.id)/\(layoutID) below=\(Int(below.width)): "
+                          + named.map { "\($0.object.typeName)#\($0.object.xmlID ?? "-")" }
+                            .joined(separator: " "))
+                }
+                // WINAMP_MODERN_RENDER_CLICKABLE lists objects the markup-only hit test rejects but
+                // a script hooks the mouse on — the ClassicPro SUI tabs are the measured case.
+                if env["WINAMP_MODERN_RENDER_CLICKABLE"] != nil {
+                    let events = ["onleftbuttondown", "onleftbuttonup", "onleftclick"]
+                    let scripted = renderer.sceneNodes().filter { node in
+                        renderer.object(at: CGPoint(x: node.frame.midX, y: node.frame.midY)) !== node.object
+                            && events.contains { runtime.hasBinding(for: node.object, event: $0) }
+                    }
+                    print("CLICKABLE \(info.id)/\(layoutID): "
+                          + scripted.map { "\($0.object.typeName)#\($0.object.xmlID ?? "-")\($0.frame)" }
+                            .joined(separator: " "))
+                }
+                // WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y drives a real click through the
+                // same sequence the view uses, and reports what the scene did about it.
+                if let spec = env["WINAMP_MODERN_RENDER_CLICK"],
+                   spec.hasPrefix("\(info.id)/\(layoutID)@") {
+                    let coords = spec.split(separator: "@").last?.split(separator: ",")
+                        .compactMap { Double($0) } ?? []
+                    if coords.count == 2 {
+                        let point = CGPoint(x: coords[0], y: coords[1])
+                        let target = renderer.object(at: point)
+                        print("CLICK at \(point) hits "
+                              + "\(target?.typeName ?? "-")#\(target?.xmlID ?? "-") "
+                              + "bindings=\(target.map { runtime.hasBinding(for: $0) } ?? false)")
+                        if let target {
+                            for event in ["onleftbuttondown", "onleftbuttonup", "onleftclick"] {
+                                let handled = (try? runtime.dispatch(object: target, event: event)) ?? -1
+                                print("CLICK   \(event) -> \(handled)")
+                            }
+                        }
+                        print("CLICK after: \(renderer.sceneNodes().count) nodes, holders="
+                              + renderer.componentHolders().map { "\($0.kind.rawValue)" }.joined(separator: ","))
+                    }
+                }
+                let dividers = renderer.frameDividers()
+                if !dividers.isEmpty {
+                    print("DIVIDERS \(info.id)/\(layoutID): "
+                          + dividers.map { "\($0.object.xmlID ?? "-")\($0.rect)"
+                              + (($0.isVertical) ? "|" : "-") }.joined(separator: " "))
                 }
                 let holders = renderer.componentHolders()
                 if !holders.isEmpty {

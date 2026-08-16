@@ -29,6 +29,7 @@ final class WinampModernMainView: NSView {
 
     private var pressedObject: WasabiObject?
     private var pressedEQHolder: WasabiObject?
+    private var draggedDivider: WasabiObject?
     private var hoveredObject: WasabiObject?
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
@@ -262,10 +263,24 @@ final class WinampModernMainView: NSView {
         guard !isTornDown else { return }
         for holder in renderer.componentHolders() where holder.kind == .library {
             guard let surface = librarySurfaces[holder.object.stableID] else { continue }
-            surface.view.frame = NSRect(x: holder.frame.minX * skinScale,
-                                        y: bounds.height - holder.frame.maxY * skinScale,
-                                        width: holder.frame.width * skinScale,
-                                        height: holder.frame.height * skinScale)
+            surface.view.frame = viewRect(fromSkin: holder.frame)
+        }
+    }
+
+    /// Top-left skin coordinates to the view's bottom-left ones, at the current UI Size.
+    private func viewRect(fromSkin rect: CGRect) -> NSRect {
+        NSRect(x: rect.minX * skinScale, y: bounds.height - rect.maxY * skinScale,
+               width: rect.width * skinScale, height: rect.height * skinScale)
+    }
+
+    /// A splitter's grab strip gets the resize cursor, so a divider the skin draws no artwork for is
+    /// still discoverable. Rects are re-derived whenever the divider moves.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard !isTornDown else { return }
+        for divider in renderer.frameDividers() {
+            addCursorRect(viewRect(fromSkin: divider.rect),
+                          cursor: divider.isVertical ? .resizeLeftRight : .resizeUpDown)
         }
     }
 
@@ -286,6 +301,14 @@ final class WinampModernMainView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        // A splitter's grab strip spans the full height of its frame, which means it crosses whatever
+        // the skin has laid over that column — cPro's tab strip runs straight through the 8px seam.
+        // So the divider only claims the click when nothing interactive is under it; a control the
+        // user can actually see always wins, and the seam between the panes is still draggable.
+        if renderer.object(at: point) == nil, let divider = renderer.frameDivider(at: point) {
+            draggedDivider = divider
+            return
+        }
         if let holder = renderer.componentHolder(at: point) {
             switch holder.kind {
             case .playlist:
@@ -321,6 +344,15 @@ final class WinampModernMainView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        if let draggedDivider {
+            guard renderer.dragFrameDivider(draggedDivider, to: point) else { return }
+            // The panes moved, so anything hosted inside one (the embedded library) has to follow,
+            // and the grab strip itself is somewhere else now.
+            needsLayout = true
+            needsDisplay = true
+            window?.invalidateCursorRects(for: self)
+            return
+        }
         if let pressedEQHolder, let frame = renderer.frame(of: pressedEQHolder) {
             updateEqualizer(holder: pressedEQHolder, frame: frame, point: point)
             return
@@ -341,6 +373,7 @@ final class WinampModernMainView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        if draggedDivider != nil { draggedDivider = nil; return }
         if pressedEQHolder != nil { pressedEQHolder = nil; needsDisplay = true; return }
         let releasedOver = renderer.object(at: point)
         if let pressedObject {
@@ -427,6 +460,7 @@ final class WinampModernMainView: NSView {
         animationTimer = nil
         pressedObject = nil
         pressedEQHolder = nil
+        draggedDivider = nil
         hoveredObject = nil
         for surface in librarySurfaces.values { surface.prepareForUITeardown() }
         librarySurfaces.removeAll()

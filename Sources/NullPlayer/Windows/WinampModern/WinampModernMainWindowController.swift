@@ -108,6 +108,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // After `start()`: the catalog is reconciled against the containers that actually opened,
             // and against the holders the skin's own scripts built while starting.
             makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
+            revealEmbeddedLibraryAtStartup()
             #if DEBUG
             NSLog("WinampModern surfaces [%@]: %@", url.lastPathComponent,
                   surfaceCoordinator?.summary ?? "-")
@@ -220,6 +221,22 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         skinView?.surfaceToggleRequested = toggle
         auxiliaryContainers.forEach { $0.view.surfaceToggleRequested = toggle }
+    }
+
+    /// Show the library in the skin's own window at launch, instead of waiting for the user to pick
+    /// Windows → Library Browser.
+    ///
+    /// cPro-Bento opens on its Media Library tab, but the holder that tab displays is only built when
+    /// the component is *revealed* — so the default view was an empty pane until you opened the
+    /// library from the menu. Revealing it once here is the same route the menu takes, so there is no
+    /// second code path to keep in step. Only for a skin that actually embeds the library: one that
+    /// declares its own library window, or falls back to the classic one, is left alone so nothing
+    /// pops open a window at launch.
+    private func revealEmbeddedLibraryAtStartup() {
+        guard let coordinator = surfaceCoordinator, coordinator.isEmbedded(.library) else { return }
+        coordinator.showSurface(.library)
+        skinView?.needsLayout = true
+        skinView?.needsDisplay = true
     }
 
     /// Ask the skin to bring an embedded surface to the front, the way Winamp does.

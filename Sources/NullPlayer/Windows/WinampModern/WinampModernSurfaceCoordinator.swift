@@ -109,6 +109,13 @@ final class WinampModernSurfaceCoordinator {
     /// True when the skin itself owns this surface, so `WindowManager` must not create its own window.
     func handles(_ kind: WinampModernComponentKind) -> Bool { catalog[kind].isSkinOwned }
 
+    /// True when the skin draws this surface inside a window it already owns, rather than in a
+    /// window of its own or NullPlayer's.
+    func isEmbedded(_ kind: WinampModernComponentKind) -> Bool {
+        if case .embedded = catalog[kind] { return true }
+        return false
+    }
+
     func isSurfaceVisible(_ kind: WinampModernComponentKind) -> Bool {
         switch catalog[kind] {
         case .embedded:
