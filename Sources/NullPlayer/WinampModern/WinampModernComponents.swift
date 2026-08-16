@@ -36,9 +36,24 @@ enum WinampModernComponentRegistry {
         "eq": .equalizer, "equalizer": .equalizer,
     ]
 
-    /// Resolve the kind a `windowholder hold="…"` / `componentbucket` value refers to, or a
-    /// `TOGGLE`/`sendaction` parameter. Returns `nil` when nothing recognizable is named (callers
-    /// treat that as no-component / `.other`).
+    /// The element types that can host a component surface. `<component>` is the form real skins use
+    /// for their playlist/video/library *content* (mmd3 `xml/pledit-normal.xml`, CornerAmp
+    /// `xml/pledit.xml`, Winamp Modern `xml/ml-normal.xml`); `windowholder`/`componentbucket` are the
+    /// SUI forms cPro's engine uses.
+    static func isHolderElement(_ typeName: String) -> Bool {
+        switch typeName.lowercased() {
+        case "windowholder", "componentbucket", "component": return true
+        default: return false
+        }
+    }
+
+    /// Resolve the kind a `windowholder hold="…"` / `componentbucket` / `component param="…"` value
+    /// refers to, or a `TOGGLE`/`sendaction` parameter.
+    ///
+    /// This is an **exact** match on a canonical GUID or a documented short token — nothing else. A
+    /// substring rule here would make `Pledit` a playlist *and* `colorthemes` a video window ("vid"
+    /// is not in it, but `MLibrary` does contain "ml"), which is fine by luck and wrong by design;
+    /// container and menu decisions must not rest on that. `nil` means "nothing recognizable named".
     static func kind(for rawValue: String?) -> WinampModernComponentKind? {
         guard var value = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
             return nil
@@ -47,12 +62,26 @@ enum WinampModernComponentRegistry {
         if value == "@all@" { return .other }
         if value.hasPrefix("guid:") { value = String(value.dropFirst("guid:".count)) }
         if let short = shortTokenToKind[value] { return short }
-        let normalized = normalize(value)
-        if let guidKind = guidToKind[normalized] { return guidKind }
-        // Named holders sometimes encode the kind in their id (`centro.windowholder.library`).
-        for (token, kind) in shortTokenToKind where value.contains(token) { return kind }
+        return guidToKind[normalize(value)]
+    }
+
+    /// The deliberately fuzzy companion to `kind(for:)`, for the one measured case that needs it:
+    /// ClassicPro's engine names its holders `centro.windowholder.library`, `PlaylistPro.wdh`, and so
+    /// on, and declares the component nowhere else. Only ever applied to a holder element's `id`,
+    /// never to a container id or a menu parameter.
+    static func kindFromHolderIdentifier(_ identifier: String) -> WinampModernComponentKind? {
+        let value = identifier.lowercased()
+        if let exact = kind(for: value) { return exact }
+        for token in holderIdentifierTokens where value.contains(token.0) { return token.1 }
         return nil
     }
+
+    /// Longest-first so `medialibrary` cannot be claimed by `ml`, and specific before generic.
+    private static let holderIdentifierTokens: [(String, WinampModernComponentKind)] = [
+        ("medialibrary", .library), ("library", .library),
+        ("visualization", .visualization), ("playlist", .playlist), ("equalizer", .equalizer),
+        ("video", .video), ("avs", .visualization),
+    ]
 
     private static func normalize(_ guid: String) -> String {
         String(guid.lowercased().unicodeScalars.filter { CharacterSet(charactersIn: "0123456789abcdef").contains($0) })

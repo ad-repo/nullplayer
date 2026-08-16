@@ -438,10 +438,12 @@ final class WasabiSceneRenderer {
     /// place the library host view, and route input into the right surface.
     func componentHolders() -> [WinampModernComponentHolder] {
         sceneNodes().compactMap { node in
-            let type = node.object.typeName.lowercased()
-            guard type == "windowholder" || type == "componentbucket" else { return nil }
+            guard WinampModernComponentRegistry.isHolderElement(node.object.typeName) else { return nil }
             guard isVisible(node.object) else { return nil }
             guard let kind = Self.componentKind(of: node.object) else { return nil }
+            if kind == .other, let diagnostic = Self.unknownComponentDiagnostic(for: node.object) {
+                loadedSkin.runtime.record(diagnostic)
+            }
             return WinampModernComponentHolder(object: node.object, kind: kind, frame: node.frame)
         }
     }
@@ -450,11 +452,45 @@ final class WasabiSceneRenderer {
         componentHolders().reversed().first { $0.frame.contains(point) }
     }
 
+    /// The kind a holder element hosts. `<component param="guid:…">` is the third holder form (the
+    /// one mmd3/CornerAmp/Winamp Modern actually use for their playlist and library content), and it
+    /// names its component in `param` rather than in `hold`.
     static func componentKind(of object: WasabiObject) -> WinampModernComponentKind? {
-        for key in ["hold", "component", "guid", "id"] {
-            if let kind = WinampModernComponentRegistry.kind(for: object.attributes[key]) { return kind }
+        let reference = componentReference(of: object)
+        guard let reference else { return nil }
+        // A holder that names something unrecognizable stays in the scene as an inert `.other` frame:
+        // an unknown GUID must never fall through to a host surface it did not ask for.
+        return WinampModernComponentRegistry.kind(for: reference) ?? .other
+    }
+
+    /// The raw component reference a holder declares, in the order Wasabi reads them for that element.
+    private static func componentReference(of object: WasabiObject) -> String? {
+        let keys: [String]
+        if object.typeName.caseInsensitiveCompare("component") == .orderedSame {
+            keys = ["param", "guid"]
+        } else {
+            keys = ["hold", "component", "guid"]
         }
-        return nil
+        for key in keys {
+            if let value = object.attributes[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                return value
+            }
+        }
+        // Named engine holders encode the kind in their id (`centro.windowholder.library`) and carry
+        // no explicit reference at all.
+        return object.attributes["id"].flatMap {
+            WinampModernComponentRegistry.kindFromHolderIdentifier($0) != nil ? $0 : nil
+        }
+    }
+
+    private static func unknownComponentDiagnostic(for object: WasabiObject) -> WalDiagnostic? {
+        guard let reference = componentReference(of: object),
+              WinampModernComponentRegistry.kind(for: reference) == nil else { return nil }
+        return WalDiagnostic(.unknownComponent,
+                             "<\(object.typeName)> names unknown component '\(reference)'; "
+                             + "it renders as an inert frame.",
+                             severity: .warning)
     }
 
     /// Row height of the embedded playlist, in skin pixels.
@@ -591,7 +627,7 @@ final class WasabiSceneRenderer {
                       let bitmap = resources.bitmap(identifier: fallback) {
                 draw(bitmap, object: object, frame: node.frame, context: context)
             }
-        } else if (type == "windowholder" || type == "componentbucket"),
+        } else if WinampModernComponentRegistry.isHolderElement(type),
                   let kind = Self.componentKind(of: object) {
             drawComponent(kind: kind, frame: node.frame, context: context)
         } else if let imageID = resolvedBitmapID(for: object,
@@ -1038,7 +1074,13 @@ final class WasabiSceneRenderer {
     }
 
     private func isRenderable(_ object: WasabiObject, bitmapID: String?) -> Bool {
-        object.attributes["background"] != nil || bitmapID != nil ||
+        // A component holder paints a real surface (the playlist list, the EQ sliders), so it is
+        // opaque to hit testing even though it owns no bitmap of its own.
+        if WinampModernComponentRegistry.isHolderElement(object.typeName),
+           Self.componentKind(of: object) != nil {
+            return true
+        }
+        return object.attributes["background"] != nil || bitmapID != nil ||
             object.typeName.caseInsensitiveCompare("text") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("songticker") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("vis") == .orderedSame ||

@@ -130,8 +130,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             auxWindow.contentView = view
             auxWindow.setAccessibilityIdentifier("WinampModernContainer_\(info.id)")
             auxWindow.orderOut(nil)
-            let kind = WinampModernComponentRegistry.kind(for: info.id)
-            auxiliaryContainers.append(AuxiliaryContainer(window: auxWindow, view: view, kind: kind))
+            // The container's own `component=` GUID, not its id — `Pledit` and `MLibrary` only look
+            // like their kinds by convention (`WinampModernContainerTopology.kind(of:)`).
+            auxiliaryContainers.append(AuxiliaryContainer(window: auxWindow, view: view, kind: info.kind))
         }
     }
 

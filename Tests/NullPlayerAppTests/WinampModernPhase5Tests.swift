@@ -67,7 +67,11 @@ final class WinampModernPhase5Tests: XCTestCase {
         XCTAssertEqual(WinampModernComponentRegistry.kind(for: "guid:F0816D7B-FFFC-4343-80F2-E8199AA15CC3"), .video)
         XCTAssertEqual(WinampModernComponentRegistry.kind(for: "guid:pl"), .playlist)
         XCTAssertEqual(WinampModernComponentRegistry.kind(for: "eq"), .equalizer)
-        XCTAssertEqual(WinampModernComponentRegistry.kind(for: "centro.windowholder.library"), .library)
+        // Phase 13.1 split the fuzzy rule out of `kind(for:)`: an engine holder's *id* may still be
+        // read for its kind, but a container id or a menu parameter never is.
+        XCTAssertNil(WinampModernComponentRegistry.kind(for: "centro.windowholder.library"))
+        XCTAssertEqual(WinampModernComponentRegistry.kindFromHolderIdentifier("centro.windowholder.library"),
+                       .library)
         XCTAssertEqual(WinampModernComponentRegistry.kind(for: "@all@"), .other)
         XCTAssertNil(WinampModernComponentRegistry.kind(for: "unrelated-token"))
         XCTAssertNil(WinampModernComponentRegistry.kind(for: nil))

@@ -50,6 +50,9 @@ enum WalDiagnosticCode: String, Codable {
     case invalidScript
     case unsupportedScriptCapability
     case scriptBudgetExceeded
+    /// A `windowholder`/`componentbucket`/`component` names a component NullPlayer has no surface
+    /// for. The holder stays in the scene as an inert frame rather than binding to host behaviour.
+    case unknownComponent
 }
 
 struct WalDiagnostic: Hashable, Codable, CustomStringConvertible {

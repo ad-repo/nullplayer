@@ -224,8 +224,26 @@ final class WasabiSkinRuntime {
     let graph: WasabiObjectGraph
     let scriptBindings: [WasabiScriptBinding]
     let completedPasses: [WasabiInitializationPass]
-    let diagnostics: [WalDiagnostic]
+    let loadDiagnostics: [WalDiagnostic]
     private(set) var state: WasabiRuntimeState = .awaitingFirstPaint
+
+    /// Diagnostics recorded *after* load — surface classification and synthesis decisions happen once
+    /// the graph exists, and they belong in the same compatibility report as the load-time ones.
+    /// Bounded and de-duplicated: a per-frame scene walk must not grow this without limit.
+    private var postLoadDiagnostics: [WalDiagnostic] = []
+    private var postLoadDiagnosticKeys: Set<String> = []
+    private static let maximumPostLoadDiagnostics = 256
+
+    /// Every diagnostic this skin has produced, load-time first.
+    var diagnostics: [WalDiagnostic] { loadDiagnostics + postLoadDiagnostics }
+
+    func record(_ diagnostic: WalDiagnostic) {
+        let key = "\(diagnostic.code.rawValue)\u{1}\(diagnostic.message)\u{1}\(diagnostic.location?.description ?? "")"
+        guard !postLoadDiagnosticKeys.contains(key),
+              postLoadDiagnostics.count < Self.maximumPostLoadDiagnostics else { return }
+        postLoadDiagnosticKeys.insert(key)
+        postLoadDiagnostics.append(diagnostic)
+    }
 
     /// Instantiates a registered groupdef into the live graph, for MAKI's `System.newGroup`.
     /// Winamp Modern's window frames are hollow by design: `Wasabi:MainFrame:NoStatus` ships only
@@ -243,7 +261,7 @@ final class WasabiSkinRuntime {
         self.graph = graph
         self.scriptBindings = scriptBindings
         self.completedPasses = completedPasses
-        self.diagnostics = diagnostics
+        self.loadDiagnostics = diagnostics
     }
 
     func markFirstPaintComplete() {

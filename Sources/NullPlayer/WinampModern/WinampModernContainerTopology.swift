@@ -18,6 +18,25 @@ struct WinampModernContainerInfo {
     /// The normal layout's `maximum_w`/`maximum_h`, in skin pixels, or `nil` per axis when the
     /// layout declares none (freely resizable up to the renderer's own 16384 ceiling).
     let maximumSize: CGSize?
+    /// The surface this container *is*, from its own `component=` GUID. `nil` for a container that
+    /// hosts no NullPlayer surface (colour themes, a notifier, the player itself).
+    let kind: WinampModernComponentKind?
+    /// True when NullPlayer synthesized this container because the skin declared no window for a
+    /// surface it needs (Phase 13.2). Skin-declared containers are always false.
+    let isSynthesized: Bool
+}
+
+/// How a skin lays its surfaces out. cPro-Bento embeds everything in one window; mmd3, CornerAmp,
+/// and Winamp Modern each declare separate windows for the surfaces they support. Synthesis only
+/// ever applies to the separate-window arrangement — an SUI skin's missing container is not missing,
+/// it is embedded.
+///
+/// Container *count* cannot answer this (cPro also declares a notifier, a widget manager, and a
+/// browser window), so the verdict comes from the declarative surface inventory: a skin whose main
+/// container reaches playlist/library holders is an SUI.
+enum WinampModernSurfaceArrangement: Equatable {
+    case singleWindowSUI
+    case separateWindows
 }
 
 /// Classifies a loaded skin's containers so the controller can decide, per P0B §3, between the
@@ -50,9 +69,27 @@ enum WinampModernContainerTopology {
                     maximumSize: (maximum.width > 0 || maximum.height > 0)
                         ? CGSize(width: maximum.width > 0 ? maximum.width : .greatestFiniteMagnitude,
                                  height: maximum.height > 0 ? maximum.height : .greatestFiniteMagnitude)
-                        : nil
+                        : nil,
+                    kind: kind(of: container),
+                    isSynthesized: container.attributes[Self.synthesizedAttribute] == "1"
                 )
             }
+    }
+
+    /// Marks a container appended by `WasabiSurfaceSynthesizer` rather than declared by the skin.
+    static let synthesizedAttribute = "nullplayer_synthesized"
+
+    /// A container declares the surface it *is* with `component="guid:…"` — mmd3's
+    /// `<container id="Pledit" component="guid:{45F3F7C1-…}">`. The id is not evidence: `Pledit`,
+    /// `MLibrary`, and `eq` only look like their kinds by convention, and reading them as such would
+    /// also make `colorthemes` a surface. The one id fallback is an exact short token (`eq`), which is
+    /// how CornerAmp names the equalizer window it declares no GUID for.
+    private static func kind(of container: WasabiObject) -> WinampModernComponentKind? {
+        if let declared = container.attributes["component"],
+           let kind = WinampModernComponentRegistry.kind(for: declared) {
+            return kind
+        }
+        return container.xmlID.flatMap { WinampModernComponentRegistry.kind(for: $0) }
     }
 
     /// The containers that should each become a native window. The main player is always included;

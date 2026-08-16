@@ -160,6 +160,95 @@ final class WinampModernPhase13Tests: XCTestCase {
         }
     }
 
+    // MARK: - 13.1 Component and container classification
+
+    /// `<component param="guid:…">` is the third holder form, and the one every separate-window skin
+    /// actually uses for its playlist and library content.
+    func testComponentElementIsAHolderAndTakesItsKindFromParam() throws {
+        let renderer = try makeRenderer(layout: """
+        <component id="pl.content" param="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}"
+                   x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+        """)
+        let holders = renderer.componentHolders()
+        XCTAssertEqual(holders.count, 1)
+        XCTAssertEqual(holders.first?.kind, .playlist)
+        XCTAssertEqual(holders.first?.frame, CGRect(x: 0, y: 0, width: 200, height: 200))
+        XCTAssertEqual(renderer.componentHolder(at: CGPoint(x: 100, y: 100))?.kind, .playlist)
+    }
+
+    /// The other two forms keep working, and `hold` still wins over an id.
+    func testWindowholderAndBucketRemainHolders() throws {
+        let renderer = try makeRenderer(layout: """
+        <windowholder id="myviswnd" hold="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"
+                      x="0" y="0" w="100" h="100"/>
+        <componentbucket id="my.bucket" x="100" y="0" w="100" h="100" wndtype="skin.config"/>
+        """)
+        XCTAssertEqual(renderer.componentHolders().map(\.kind), [.library],
+                       "a bucket naming no known component is not a surface")
+    }
+
+    /// A holder naming something we have no surface for stays inert instead of falling through to
+    /// the wrong host surface, and says so in the compatibility report.
+    func testUnknownComponentBecomesAnInertOtherSurfaceWithADiagnostic() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="Main">
+            <layout id="normal" w="200" h="200">
+              <component id="mystery" param="guid:{DEADBEEF-0000-0000-0000-000000000000}"
+                         x="0" y="0" w="50" h="50"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost())
+        addTeardownBlock { renderer.teardown() }
+        XCTAssertEqual(renderer.componentHolders().map(\.kind), [.other])
+        let report = loaded.compatibilityReport
+        XCTAssertTrue(report.findings.contains { $0.code == WalDiagnosticCode.unknownComponent.rawValue },
+                      "an unrecognized component GUID is a reported compatibility gap")
+    }
+
+    /// Container kind comes from `component=`, never from a substring of the id.
+    func testContainerKindComesFromItsComponentAttribute() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main"><layout id="normal" w="100" h="100"/></container>
+          <container id="Pledit" component="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}">
+            <layout id="normal" w="100" h="100"/>
+          </container>
+          <container id="MLibrary" component="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}">
+            <layout id="normal" w="100" h="100"/>
+          </container>
+          <container id="eq"><layout id="normal" w="100" h="100"/></container>
+          <container id="colorthemes"><layout id="normal" w="100" h="100"/></container>
+        </WasabiXML>
+        """)
+        let byID = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+            .reduce(into: [String: WinampModernContainerInfo]()) { $0[$1.id] = $1 }
+        XCTAssertEqual(byID["Pledit"]?.kind, .playlist)
+        XCTAssertEqual(byID["MLibrary"]?.kind, .library)
+        XCTAssertEqual(byID["eq"]?.kind, .equalizer, "an exact short-token id is the one id fallback")
+        XCTAssertNil(byID["colorthemes"]?.kind)
+        XCTAssertNil(byID["main"]?.kind)
+        XCTAssertEqual(byID["Pledit"]?.isSynthesized, false)
+    }
+
+    /// The registry itself: exact matches only, with the fuzzy holder-id rule kept separate.
+    func testRegistryMatchesExactlyAndKeepsTheHolderIdHeuristicSeparate() {
+        XCTAssertEqual(WinampModernComponentRegistry.kind(for: "guid:pl"), .playlist)
+        XCTAssertEqual(WinampModernComponentRegistry.kind(for: "{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"), .library)
+        XCTAssertNil(WinampModernComponentRegistry.kind(for: "Pledit"), "no substring matching")
+        XCTAssertNil(WinampModernComponentRegistry.kind(for: "MLibrary"))
+        XCTAssertNil(WinampModernComponentRegistry.kind(for: "colorthemes"))
+        XCTAssertEqual(WinampModernComponentRegistry.kindFromHolderIdentifier("centro.windowholder.library"),
+                       .library)
+        XCTAssertEqual(WinampModernComponentRegistry.kindFromHolderIdentifier("centro.windowholder.visualization"),
+                       .visualization)
+        XCTAssertNil(WinampModernComponentRegistry.kindFromHolderIdentifier("centro.windowholder.other"))
+        XCTAssertTrue(WinampModernComponentRegistry.isHolderElement("Component"))
+        XCTAssertFalse(WinampModernComponentRegistry.isHolderElement("group"))
+    }
+
     // MARK: - Helpers
 
     private func makeRenderer(layout: String) throws -> WasabiSceneRenderer {
