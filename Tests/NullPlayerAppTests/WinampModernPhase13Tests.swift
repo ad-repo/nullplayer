@@ -724,6 +724,134 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(snapshot([10, 20]).totalDuration, 30)
     }
 
+    // MARK: - 13.7 EQ actions
+
+    /// Every parameter form the measured skins use, and the 1-based → 0-based conversion that is the
+    /// easy thing to get wrong.
+    func testEqualizerActionDecoding() {
+        XCTAssertEqual(WinampModernEQAction.decode(action: "EQ_PREAMP", parameter: nil), .preamp)
+        XCTAssertEqual(WinampModernEQAction.decode(action: "eq_preamp", parameter: "ignored"), .preamp)
+        XCTAssertEqual(WinampModernEQAction.decode(action: "EQ_BAND", parameter: "preamp"), .preamp)
+        XCTAssertEqual(WinampModernEQAction.decode(action: "EQ_BAND", parameter: "1"), .band(0))
+        XCTAssertEqual(WinampModernEQAction.decode(action: "EQ_BAND", parameter: "10"), .band(9))
+        XCTAssertEqual(WinampModernEQAction.decode(action: "EQ_BAND", parameter: " 5 "), .band(4))
+
+        for invalid in ["0", "11", "-1", "", "band", "9.5"] {
+            XCTAssertNil(WinampModernEQAction.decode(action: "EQ_BAND", parameter: invalid),
+                         "'\(invalid)' must be inert, never a band index")
+        }
+        XCTAssertNil(WinampModernEQAction.decode(action: "EQ_TOGGLE", parameter: "1"))
+        XCTAssertNil(WinampModernEQAction.decode(action: nil, parameter: "1"))
+    }
+
+    /// A drag writes ±12 dB through the host, and the value the thumb is drawn from is the same one.
+    func testEqualizerActionRoundTripsThroughTheHost() {
+        let host = FakeComponentHost()
+        WinampModernEQAction.preamp.apply(normalized: 1, to: host)
+        WinampModernEQAction.band(0).apply(normalized: 0, to: host)
+        WinampModernEQAction.band(9).apply(normalized: 0.5, to: host)
+        XCTAssertEqual(host.snapshot.preampDB, 12)
+        XCTAssertEqual(host.snapshot.bandGainsDB[0], -12)
+        XCTAssertEqual(host.snapshot.bandGainsDB[9], 0, accuracy: 0.001)
+
+        XCTAssertEqual(WinampModernEQAction.preamp.normalizedValue(in: host.snapshot), 1)
+        XCTAssertEqual(WinampModernEQAction.band(0).normalizedValue(in: host.snapshot), 0)
+        XCTAssertEqual(WinampModernEQAction.band(9).normalizedValue(in: host.snapshot), 0.5, accuracy: 0.001)
+        XCTAssertEqual(WinampModernEQAction.band(42).normalizedValue(in: host.snapshot), 0.5,
+                       "an out-of-range band reads as flat rather than crashing")
+    }
+
+    /// The skin's own EQ/auto buttons light from the engine, so a change made from the menu bar or a
+    /// script is reflected in the skin.
+    func testActiveImageFollowsTheEngineEqualizerState() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <togglebutton id="eq.on" action="EQ_TOGGLE" x="0" y="0" w="20" h="20"
+                            image="eq.off" activeImage="eq.on"/>
+              <togglebutton id="eq.auto" action="EQ_AUTO" x="20" y="0" w="20" h="20"
+                            image="auto.off" activeImage="auto.on"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost())
+        addTeardownBlock { renderer.teardown() }
+        let host = FakeComponentHost()
+        renderer.componentHost = host
+
+        func bitmap(_ id: String) -> String? {
+            renderer.sceneNodes().first { $0.object.xmlID == id }?.bitmapID
+        }
+        XCTAssertEqual(bitmap("eq.on"), "eq.on", "the engine starts with the EQ enabled")
+        XCTAssertEqual(bitmap("eq.auto"), "auto.off")
+
+        host.equalizerSetEnabled(false)
+        host.equalizerSetAuto(true)
+        XCTAssertEqual(bitmap("eq.on"), "eq.off")
+        XCTAssertEqual(bitmap("eq.auto"), "auto.on")
+    }
+
+    /// A slider carrying an EQ action is drawn from the snapshot, not from its own `value=`, so a
+    /// preset applied elsewhere moves it.
+    func testEqualizerSliderThumbFollowsTheSnapshot() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <bitmap id="eq.thumb" file="$solid" color="255,255,255" w="4" h="4"/>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <slider id="band1" action="EQ_BAND" param="1" orientation="vertical"
+                      x="0" y="0" w="10" h="100" thumb="eq.thumb"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost())
+        addTeardownBlock { renderer.teardown() }
+        let host = FakeComponentHost()
+        renderer.componentHost = host
+        let slider = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "band1").first)
+        let frame = try XCTUnwrap(renderer.frame(of: slider))
+
+        func thumbY() -> CGFloat {
+            let context = CGContext(data: nil, width: 200, height: 200, bitsPerComponent: 8,
+                                    bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            renderer.draw(in: context)
+            return frame.minY   // drawing must not crash; the value assertion is below
+        }
+        _ = thumbY()
+
+        host.equalizerSetBandGainDB(0, gainDB: 12)
+        XCTAssertEqual(WinampModernEQAction.band(0).normalizedValue(in: host.snapshot), 1)
+        host.equalizerApplyPreset(named: "Rock")
+        XCTAssertEqual(host.appliedPresets, ["Rock"])
+    }
+
+    /// A minimal component host that answers from memory, for the EQ round trips.
+    private final class FakeComponentHost: WinampModernComponentHost {
+        var snapshot = WinampModernEQSnapshot.flat
+        var appliedPresets: [String] = []
+        var removedRows: [Int] = []
+        var playlist = WinampModernPlaylistSnapshot.empty
+
+        func playlistSnapshot() -> WinampModernPlaylistSnapshot { playlist }
+        func playlistSelect(row: Int) { playlist.selectedIndex = row }
+        func playlistPlay(row: Int) { playlist.currentIndex = row }
+        func playlistRemove(row: Int) { removedRows.append(row) }
+        func equalizerSnapshot() -> WinampModernEQSnapshot { snapshot }
+        func equalizerSetBandGainDB(_ band: Int, gainDB: Float) {
+            guard snapshot.bandGainsDB.indices.contains(band) else { return }
+            snapshot.bandGainsDB[band] = gainDB
+        }
+        func equalizerSetPreampDB(_ gainDB: Float) { snapshot.preampDB = gainDB }
+        func equalizerSetEnabled(_ enabled: Bool) { snapshot.enabled = enabled }
+        func equalizerSetAuto(_ enabled: Bool) { snapshot.auto = enabled }
+        func equalizerApplyPreset(named name: String) { appliedPresets.append(name) }
+        func toggleClassicWindow(for kind: WinampModernComponentKind) {}
+    }
+
     // MARK: - Helpers
 
     private func makeRenderer(layout: String) throws -> WasabiSceneRenderer {

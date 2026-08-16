@@ -651,6 +651,8 @@ final class WasabiSceneRenderer {
                        pressed: pressed == object.stableID)
         } else if type == "vis" {
             drawVisualization(object, frame: node.frame, context: context)
+        } else if type == "eqvis" {
+            drawEQVis(object, frame: node.frame, context: context)
         } else if type == "albumart" {
             if let artwork = host.albumArtwork {
                 drawImage(artwork, in: node.frame, context: context)
@@ -927,6 +929,35 @@ final class WasabiSceneRenderer {
         }
     }
 
+    /// `<eqvis>` — the little curve a skin draws over its equalizer, from the current band gains.
+    /// Winamp colours it with a top/middle/bottom triple plus a separate preamp line colour.
+    private func drawEQVis(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard frame.width > 1, frame.height > 1, let snapshot = componentHost?.equalizerSnapshot() else { return }
+        let bands = snapshot.bandGainsDB
+        guard !bands.isEmpty else { return }
+        let top = resolvedColor(object.attributes["colortop"] ?? "0,255,0")
+        let middle = resolvedColor(object.attributes["colormiddle"] ?? "255,255,0")
+        let bottom = resolvedColor(object.attributes["colorbottom"] ?? "255,0,0")
+        let preampColor = resolvedColor(object.attributes["colorpreamp"] ?? "255,255,255")
+
+        context.saveGState()
+        context.clip(to: frame)
+        let step = frame.width / CGFloat(bands.count)
+        for (index, gain) in bands.enumerated() {
+            let normalized = CGFloat((gain + 12) / 24)             // 0…1, bottom to top
+            let y = frame.maxY - normalized * frame.height
+            let color = normalized > 0.66 ? top : (normalized < 0.33 ? bottom : middle)
+            context.setFillColor(color.cgColor)
+            context.fill(CGRect(x: frame.minX + CGFloat(index) * step, y: y - 1,
+                                width: max(1, step - 1), height: 2))
+        }
+        let preamp = CGFloat((snapshot.preampDB + 12) / 24)
+        context.setFillColor(preampColor.cgColor)
+        context.fill(CGRect(x: frame.minX, y: frame.maxY - preamp * frame.height,
+                            width: frame.width, height: 1))
+        context.restoreGState()
+    }
+
     private func drawSlider(_ object: WasabiObject, frame: CGRect, context: CGContext, pressed: Bool) {
         guard frame.width > 0, frame.height > 0 else { return }
         let thumbID = pressed ? (object.attributes["downthumb"] ?? object.attributes["thumb"])
@@ -938,6 +969,12 @@ final class WasabiSceneRenderer {
             normalized = CGFloat(host.volume)
         } else if action == "seek", host.duration > 0 {
             normalized = CGFloat(host.currentTime / host.duration)
+        } else if let eq = WinampModernEQAction.decode(action: object.attributes["action"],
+                                                       parameter: object.attributes["param"]),
+                  let snapshot = componentHost?.equalizerSnapshot() {
+            // The thumb reads the same snapshot the drag writes, so a preset applied from a menu (or
+            // from outside the skin entirely) moves the slider.
+            normalized = eq.normalizedValue(in: snapshot)
         } else {
             let low = Double(object.attributes["low"] ?? "0") ?? 0
             let high = Double(object.attributes["high"] ?? "255") ?? 255
@@ -1137,7 +1174,14 @@ final class WasabiSceneRenderer {
         }
         if type == "togglebutton" || object.attributes["activeimage"] != nil {
             let id = object.xmlID?.lowercased()
-            let active = (id == "shuffle" && host.shuffleEnabled) || (id == "repeat" && host.repeatEnabled)
+            var active = (id == "shuffle" && host.shuffleEnabled) || (id == "repeat" && host.repeatEnabled)
+            // EQ on/auto read the engine, not a local toggle state, so a change made from the menu
+            // bar or a script lights the skin's own button.
+            switch object.attributes["action"]?.uppercased() {
+            case "EQ_TOGGLE": active = componentHost?.equalizerSnapshot().enabled ?? false
+            case "EQ_AUTO": active = componentHost?.equalizerSnapshot().auto ?? false
+            default: break
+            }
             if active, let image = object.attributes["activeimage"] { return image }
         }
         return object.attributes["image"]
@@ -1161,6 +1205,7 @@ final class WasabiSceneRenderer {
             object.typeName.caseInsensitiveCompare("text") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("songticker") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("vis") == .orderedSame ||
+            object.typeName.caseInsensitiveCompare("eqvis") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("albumart") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("slider") == .orderedSame
     }

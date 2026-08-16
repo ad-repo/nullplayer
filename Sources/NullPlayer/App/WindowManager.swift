@@ -867,6 +867,12 @@ class WindowManager {
         return true
     }
 
+    /// Repaint every `.wal` surface — an EQ preset, a theme, or a queue change made anywhere.
+    func refreshWinampModernSurfaces() {
+        winampModernSurfaces?.surfaceContentDidChange()
+        equalizerWindowController?.window?.contentView?.needsDisplay = true
+    }
+
     /// The classic fallback's only entry point, called *by* the coordinator when a skin offers no
     /// surface of its own. It deliberately bypasses the public `show*`/`toggle*` above: those consult
     /// the coordinator, which would route straight back here.

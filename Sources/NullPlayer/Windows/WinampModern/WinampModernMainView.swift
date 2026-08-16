@@ -437,6 +437,14 @@ final class WinampModernMainView: NSView {
         let value = vertical ? 1 - (point.y - frame.minY) / frame.height
                              : (point.x - frame.minX) / frame.width
         let normalized = max(0, min(1, value))
+        if let eq = WinampModernEQAction.decode(action: object.attributes["action"],
+                                                parameter: object.attributes["param"]),
+           let componentHost {
+            // ±12 dB through the host, which is the same value the thumb is drawn from.
+            eq.apply(normalized: normalized, to: componentHost)
+            needsDisplay = true
+            return
+        }
         switch object.attributes["action"]?.lowercased() {
         case "seek": host.seek(to: host.duration * normalized)
         case "volume": host.volume = normalized
@@ -472,16 +480,48 @@ final class WinampModernMainView: NSView {
         case "TOGGLE":
             if let kind = WinampModernComponentRegistry.kind(for: parameter) { routeComponentToggle(kind) }
         case "EQ_TOGGLE":
-            // ClassicPro's embedded EQ drawer: toggle the equalizer surface (embedded → skin window →
-            // classic window), consistent with `TOGGLE guid:eq`.
-            routeComponentToggle(.equalizer)
-        case "EQ_AUTO":
-            if let host = componentHost {
-                host.equalizerSetAuto(!host.equalizerSnapshot().auto)
+            // Winamp's `EQ_TOGGLE` turns the equalizer *on and off*. It is not a window command:
+            // showing the equalizer is `TOGGLE guid:eq`, which routes through the surface coordinator.
+            if let componentHost {
+                componentHost.equalizerSetEnabled(!componentHost.equalizerSnapshot().enabled)
                 needsDisplay = true
             }
+        case "EQ_AUTO":
+            if let componentHost {
+                componentHost.equalizerSetAuto(!componentHost.equalizerSnapshot().auto)
+                needsDisplay = true
+            }
+        case "EQ_PREAMP", "EQ_BAND":
+            // A *button* carrying a band action (a reset, a nudge) has no position to read; the
+            // slider path owns the values. Inert rather than wrong.
+            break
+        case "MENU":
+            if parameter?.lowercased() == "presets" { showEqualizerPresetMenu() }
         default: break
         }
+    }
+
+    /// The skin's own "presets" button. Winamp opens the equalizer preset list from it; we build the
+    /// same list from `EQPreset.allPresets` and apply through the component host, so every EQ surface
+    /// (this window, an auxiliary one, the classic window) sees the change at once.
+    private func showEqualizerPresetMenu() {
+        guard let componentHost, let event = NSApp.currentEvent else { return }
+        let menu = NSMenu(title: "Equalizer Presets")
+        for preset in EQPreset.allPresets {
+            let item = NSMenuItem(title: preset.name, action: #selector(applyEqualizerPreset(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = preset.name
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func applyEqualizerPreset(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        componentHost?.equalizerApplyPreset(named: name)
+        WindowManager.shared.refreshWinampModernSurfaces()
+        needsDisplay = true
     }
 
     /// Route a component toggle to the skin's own surfaces first, then fall back to the classic
