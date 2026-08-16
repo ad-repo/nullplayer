@@ -129,6 +129,16 @@ Group semantics worth knowing:
 - `registerWasabiStandardLibrary` seeds the curated `wasabi.*` base groups that ship inside Winamp
   rather than in the archive. Skin/engine definitions register first and always win. A base outside
   the curated set warns and is dropped rather than failing the load.
+  - The shells are **identifier-only on purpose** — a body would push structure we invented into every
+    skin that inherits it. `wasabi.titlebar` is the one measured exception: a clean-room
+    `<text default=":componentname">` filling the box, because CornerAmp instantiates
+    `<Wasabi:TitleBar>` inside its own standard frame and never defines the tag, so every CornerAmp
+    window came up with a nameless title bar. It invents no artwork (CornerAmp ships no
+    `wasabi.titlebar.*` bitmaps) and adds exactly one node per framed window.
+  - Two alias passes, and the order matters: `WasabiStandardFrames.conventionalXUITags` runs *before*
+    seeding (its destinations are the skin's own groupdefs), `wasabiStandardLibraryXUITags` *after*
+    (its destinations are the shells). Both only fill an *unclaimed* tag, so a skin's own `xuitag=`
+    always wins.
 
 ### Retained graph and coordinates
 
@@ -406,8 +416,8 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
 - Ambiguity suppresses synthesis. A duplicate skin window is a much worse failure than a classic
   fallback.
 - A frame qualifies only if the skin declares it *and* it carries the script that instantiates its
-  `content=` group. The empty built-in `wasabi.*` shells never qualify — they would produce a titled
-  empty box.
+  `content=` group. The built-in `wasabi.*` shells never qualify — synthesis reads the *document's*
+  groupdefs, so a seeded shell is not a candidate, and one would produce a titled empty box.
 - mmd3 declares `wasabi.standardframe.*` with **no `xuitag`** (real Winamp's standard library supplies
   it). `WasabiTypeRegistry.registerXUITagAlias` fills an *unclaimed* tag pointing at an *existing*
   groupdef, before the shells are seeded, so a skin's own `xuitag=` always wins.

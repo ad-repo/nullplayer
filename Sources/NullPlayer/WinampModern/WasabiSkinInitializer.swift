@@ -547,14 +547,58 @@ final class WasabiSkinInitializer {
         // Tabs / grouping
         "wasabi.tabsheet",
         "wasabi.titlebar",
+        "wasabi.tooltip",
         // Media-facing composites
         "wasabi.albumart",
         "wasabi.ratings",
     ]
 
+    /// Where the seeded shells claim to come from. Not a real file — it exists so a diagnostic can say
+    /// which definition a skin is actually using.
+    static let wasabiStandardLibrarySource = WalSourceLocation(path: "/System/WasabiStandardLibrary.xml")
+
+    /// Conventional tag → shell pairings, applied *after* the shells exist.
+    ///
+    /// `wasabi.standardframe.*` is aliased earlier (`WasabiStandardFrames.conventionalXUITags`) because
+    /// there the destination is the skin's *own* groupdef. These point at our shells instead, so they
+    /// have to run after seeding — `registerXUITagAlias` requires the destination to exist. Both passes
+    /// only fill an *unclaimed* tag, so Winamp Modern's own `xuitag="Wasabi:TitleBar"` still wins.
+    static let wasabiStandardLibraryXUITags: [(tag: String, identifier: String)] = [
+        ("Wasabi:TitleBar", "wasabi.titlebar"),
+    ]
+
+    /// The one shell that draws something.
+    ///
+    /// The shells are identifier-only by design, but a title bar is a measured exception: CornerAmp
+    /// instantiates `<Wasabi:TitleBar>` inside its own `wasabi.standardframe.nostatusbar` and never
+    /// defines the tag — in real Winamp the standard library supplies it — so every CornerAmp window
+    /// came up with a nameless title bar. The skin ships no `wasabi.titlebar.*` bitmaps either, so this
+    /// invents no artwork: it restores the window *title*, resolved from `:componentname` the same way
+    /// a skin-supplied title bar's own `<text>` is. `wasabi.window.text` and `wasabi.font.default` are
+    /// the conventional ids — CornerAmp defines the colour, nothing measured defines the font, and both
+    /// degrade (white, system font) when absent.
+    private static func shellTemplateChildren(for identifier: String) -> [WalXMLNode] {
+        guard identifier == "wasabi.titlebar" else { return [] }
+        return [WalXMLNode(
+            name: "text",
+            attributes: [
+                "id": "window.titlebar.title",
+                "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+                "align": "center",
+                // A point under the 11 default: text draws from the top of its box and CornerAmp's
+                // title bar is 11px tall, where 11pt clips the descenders of "Playlist Editor".
+                "fontsize": "10",
+                "default": ":componentname",
+                "font": "wasabi.font.default",
+                "color": "wasabi.window.text",
+            ],
+            location: wasabiStandardLibrarySource
+        )]
+    }
+
     private func registerWasabiStandardLibrary(in registry: WasabiTypeRegistry) {
         // Seed each predefined base only when the skin/engine hasn't already declared it, so a skin
-        // that *does* ship a fuller definition always wins over our identifier-only shell.
+        // that *does* ship a fuller definition always wins over our shell.
         for identifier in Self.wasabiStandardLibraryGroups {
             guard !registry.contains(identifier: identifier) else { continue }
             registry.register(WasabiGroupDefinition(
@@ -563,9 +607,12 @@ final class WasabiSkinInitializer {
                 inheritedGroup: nil,
                 embeddedXUITag: nil,
                 defaultAttributes: [:],
-                templateChildren: [],
-                source: WalSourceLocation(path: "/System/WasabiStandardLibrary.xml")
+                templateChildren: Self.shellTemplateChildren(for: identifier),
+                source: Self.wasabiStandardLibrarySource
             ))
+        }
+        for pair in Self.wasabiStandardLibraryXUITags {
+            registry.registerXUITagAlias(pair.tag, to: pair.identifier)
         }
     }
 

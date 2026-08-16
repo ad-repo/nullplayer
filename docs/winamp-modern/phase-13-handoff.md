@@ -177,8 +177,11 @@ and PNGs before/after, the way 13.0 and 13.1 did). **Do that as its own step, no
 
 ### C. Still open from earlier phases
 
-- **R2** — `wasabi.*` shells render empty. The largest remaining *visual* gap; unfixable without
-  artwork we will not bundle.
+- **R2** — body-less `wasabi.*` shells draw nothing. **Re-audited and narrowed in Phase 14**: the
+  skins ship the standard artwork themselves, so what is missing is structure, not pixels — and
+  cPro-Bento and Winamp Modern turn out not to use the shells at all. `wasabi.tooltip` and
+  `wasabi.titlebar` are done; what is left is `wasabi.panel` / `wasabi.objectframe.group` and the
+  unresolved `<Wasabi:Button>` / `<Wasabi:TabSheet>` tags. See Appendix A for the measured list.
 - **R3 (remainder)** — the playlist and EQ are engine-drawn. They now use the skin's colours and font,
   but not its list bitmaps, scrollbars, or EQ thumbs.
 - **R5** — splitter *dragging*; `minwidth`/`maxwidth`/`jump` parsed but unenforced.

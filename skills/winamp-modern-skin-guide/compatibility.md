@@ -70,14 +70,21 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
   object's real font (bitmap-font pitch or Core Text) plus `leftpadding`/`rightpadding`, so a skin
   that sizes its own boxes from that number gets boxes that fit
 - `windowholder hold="guid:…"` component embedding and `componentbucket` discovery
-- The curated predefined `wasabi.*` standard-library base groups (`registerWasabiStandardLibrary`)
+- The curated predefined `wasabi.*` standard-library base groups (`registerWasabiStandardLibrary`),
+  including a clean-room text-only `Wasabi:TitleBar` that draws the window's own name
 
 **Not supported / degraded**
 
-- **`wasabi.*` widgets render empty.** The predefined bases are identifier-only shells with no
-  artwork, frames, or scrollbars — the real assets live inside Winamp, which NullPlayer does not
-  bundle. A widget whose visuals come entirely from such a base draws nothing. This is the single
-  largest visual gap on cPro-Bento.
+- **`wasabi.*` shells are structure-free, so a widget that has no body of its own draws nothing.**
+  What is missing is the standard library's *structure*, not the pixels: the skins ship the standard
+  artwork themselves under the conventional ids (mmd3 declares 174 `wasabi.*` bitmaps, Winamp Modern
+  114, CornerAmp 22), but the groupdef bodies that compose them live inside Winamp. Measured across
+  the four reference skins the live footprint is small — cPro-Bento references no `wasabi.*` group at
+  all (the ClassicPro engine supplies real definitions) and Winamp Modern declares its own; what falls
+  to a shell is `wasabi.panel` (CornerAmp ×4, mmd3 ×1 — all inside `modal`/`static` frames, which
+  synthesis never selects), `wasabi.objectframe.group` (mmd3 ×1), and `wasabi.titlebar`. Unresolved
+  conventional *tags* — `<Wasabi:Button>` (CornerAmp, mmd3 colour-theme dialogs) and `<Wasabi:TabSheet>`
+  (mmd3's winshade sidecar) — become inert nodes the same way.
 - A base group outside the curated set warns and is dropped.
 - A missing **optional** bitmap or cursor is a warning, not an error (Winamp-compatible).
 - `file="$solid"` / `file="$gradient"` predefined bitmaps are recognized but not resolved as files.
@@ -235,8 +242,8 @@ Every request for the playlist, equalizer, or library — a menu item, a skin bu
 3. **Synthesized container** — the skin ships none, so one is built *before initialization* from the
    skin's own `<Wasabi:StandardFrame:…>` around a `<component>` of that kind. Only in the
    separate-window arrangement, and only when a frame qualifies: a skin-declared groupdef with a
-   frame script that can instantiate its `content=` group. The empty built-in `wasabi.*` shells do
-   not qualify.
+   frame script that can instantiate its `content=` group. The built-in `wasabi.*` shells do not
+   qualify — synthesis reads the *document's* groupdefs, so a seeded shell is never a candidate.
 4. **Classic fallback** — NullPlayer's own `.wsz` window, with a diagnostic naming the prerequisite
    that failed.
 
@@ -337,7 +344,9 @@ skin's own controls. See [manual-qa-checklist.md](manual-qa-checklist.md).
 
 **Known rendering gaps**: the lower third of Winamp Modern's main window (`player.main` and
 `player.normal.drawer` both resolve to y≈17 and overlap, leaving the config/EQ drawer area blank), and
-any widget whose visuals come entirely from an empty `wasabi.*` standard-library shell.
+any widget whose visuals come entirely from a body-less `wasabi.*` standard-library shell — measured,
+that is `wasabi.panel` and `wasabi.objectframe.group` only, and none of it on cPro-Bento or Winamp
+Modern.
 
 > **cPro-Bento's centre is no longer empty.** Phase 12 implemented the `Wasabi:Frame` splitter that
 > builds the SUI body, and Phase 13 filled the surfaces inside it: the playlist pane draws the live
