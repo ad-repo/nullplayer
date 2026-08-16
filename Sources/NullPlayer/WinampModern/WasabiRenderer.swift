@@ -829,6 +829,21 @@ final class WasabiSceneRenderer {
 
     private func drawBitmapText(_ text: String, definition: WalResourceDefinition,
                                 object: WasabiObject, frame: CGRect, context: CGContext) {
+        let alignment: NSTextAlignment
+        switch object.attributes["align"]?.lowercased() {
+        case "center": alignment = .center
+        case "right": alignment = .right
+        default: alignment = .left
+        }
+        drawBitmapText(text, definition: definition, frame: frame, alignment: alignment,
+                       ticker: object, context: context)
+    }
+
+    /// Draw a run of bitmap-font glyphs. `ticker` is the object whose scroll state applies, or nil for
+    /// content NullPlayer draws itself (a playlist row never scrolls).
+    private func drawBitmapText(_ text: String, definition: WalResourceDefinition, frame: CGRect,
+                                alignment: NSTextAlignment, ticker: WasabiObject?,
+                                context: CGContext) {
         guard let sheet = resources.bitmap(identifier: definition.attributes["file"]) else { return }
         let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
         let charHeight = max(1, Int(Double(definition.attributes["charheight"] ?? "1") ?? 1))
@@ -842,17 +857,17 @@ final class WasabiSceneRenderer {
         }
         let width = CGFloat(text.count * advance)
         var startX: CGFloat
-        switch object.attributes["align"]?.lowercased() {
-        case "center": startX = frame.midX - width / 2
-        case "right": startX = frame.maxX - width
+        switch alignment {
+        case .center: startX = frame.midX - width / 2
+        case .right: startX = frame.maxX - width
         default: startX = frame.minX
         }
         // Bitmap-font tickers share the TrueType path's motion model. The previous formula anchored
         // the run at `frame.maxX`, so at rest the text sat entirely off the right edge and a long
         // title simply vanished instead of scrolling.
         var repeats: [CGFloat] = []
-        if width > frame.width, let scroll = tickerMotion(for: object, overflow: width - frame.width,
-                                                          textWidth: width) {
+        if width > frame.width, let ticker,
+           let scroll = tickerMotion(for: ticker, overflow: width - frame.width, textWidth: width) {
             startX = frame.minX - scroll.offset
             repeats = scroll.wraps ? [width + Self.tickerGap] : []
         }
@@ -968,6 +983,36 @@ final class WasabiSceneRenderer {
         }
     }
 
+    /// The font NullPlayer's own surfaces draw with inside this skin.
+    ///
+    /// A skin's list font may be a bitmap-font *sheet*, which has no `NSFont` at all — passing its id
+    /// into a CoreText attribute dictionary is how the Phase 11 `drawText` crash happened. This
+    /// returns the resolved resource so the caller can take the right path, never a bare id.
+    private var surfaceFont: WalResourceDefinition? {
+        for identifier in ["pledit.font", "wasabi.list.font", "studio.list.font"] {
+            if let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
+               definition.kind == "bitmapfont" || definition.kind == "truetypefont" {
+                return definition
+            }
+        }
+        return nil
+    }
+
+    /// Draw one line of NullPlayer-owned content (a playlist row, a status line) with the skin's own
+    /// font when it has one, and a system font when it does not.
+    private func drawSurfaceText(_ text: String, in rect: CGRect, color: NSColor,
+                                 alignment: NSTextAlignment, pointSize: CGFloat,
+                                 context: CGContext) {
+        if let definition = surfaceFont, definition.kind == "bitmapfont" {
+            drawBitmapText(text, definition: definition, frame: rect, alignment: alignment,
+                           ticker: nil, context: context)
+            return
+        }
+        let font = resources.font(identifier: surfaceFont?.identifier, size: pointSize)
+            ?? NSFont.systemFont(ofSize: pointSize)
+        drawFlippedText(text, in: rect, font: font, color: color, alignment: alignment, context: context)
+    }
+
     private func drawPlaylistComponent(frame: CGRect, context: CGContext) {
         // Drawn by us, coloured by the skin: the list sits inside the skin's own frame, so its text
         // and selection follow the skin's colour resources and its active colour theme.
@@ -996,13 +1041,13 @@ final class WasabiSceneRenderer {
             let color = row.isCurrent ? palette.currentText
                 : (index == snapshot.selectedIndex ? palette.selectionText : palette.listText)
             let label = "\(index + 1). \(row.title)"
-            drawFlippedText(label, in: rowRect.insetBy(dx: 3, dy: 1), font: font, color: color,
-                            alignment: .left, context: context)
+            drawSurfaceText(label, in: rowRect.insetBy(dx: 3, dy: 1), color: color,
+                            alignment: .left, pointSize: font.pointSize, context: context)
             if row.duration > 0 {
                 let seconds = Int(row.duration)
                 let time = String(format: "%d:%02d", seconds / 60, seconds % 60)
-                drawFlippedText(time, in: rowRect.insetBy(dx: 3, dy: 1), font: font, color: color,
-                                alignment: .right, context: context)
+                drawSurfaceText(time, in: rowRect.insetBy(dx: 3, dy: 1), color: color,
+                                alignment: .right, pointSize: font.pointSize, context: context)
             }
         }
         context.restoreGState()

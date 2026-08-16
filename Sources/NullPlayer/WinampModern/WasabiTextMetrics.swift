@@ -68,9 +68,21 @@ final class WasabiTextMetrics {
         return CGFloat(requested.isFinite ? min(max(requested, 1), 256) : 11)
     }
 
+    /// The one place a component's own text comes from.
+    ///
+    /// A skin's playlist status line is `<text id="PE_Info">`, whose contents Winamp fills in from the
+    /// playlist component. The renderer draws it and a script measures it with `getAutoWidth()`, so
+    /// both have to ask the same question — and neither may reach into the component host directly
+    /// (the script runtime has no host adapter, and the measurement runs in the headless harness).
+    /// The window controller installs this; unset, a `PE_Info` simply reads empty.
+    static var componentTextProvider: (() -> WinampModernPlaylistSnapshot?)?
+
     /// What a text object currently shows. `display=` binds it to a playback value; a `songticker`
     /// carries no text of its own and always shows the current track.
     static func content(of object: WasabiObject, host: WinampModernHost) -> String {
+        if let identifier = object.xmlID, identifier.caseInsensitiveCompare("PE_Info") == .orderedSame {
+            return componentTextProvider?()?.infoLine ?? ""
+        }
         if let alternate = object.attributes["alternatetext"], !alternate.isEmpty { return alternate }
         switch object.attributes["display"]?.lowercased() {
         case "time":

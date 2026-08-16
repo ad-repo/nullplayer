@@ -671,6 +671,59 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(bare.palette, .fallback, "a skin with no colours gets the documented defaults")
     }
 
+    // MARK: - 13.6 Playlist content
+
+    /// `PE_Info` is Winamp's playlist status line, and the renderer and a script's `getAutoWidth()`
+    /// must read the same string from the same place.
+    func testPlaylistInfoLineIsSharedBetweenDrawingAndMeasurement() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <text id="PE_Info" x="0" y="0" w="120" h="12"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let info = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "PE_Info").first)
+        let host = TestHost()
+
+        WasabiTextMetrics.componentTextProvider = nil
+        XCTAssertEqual(WasabiTextMetrics.content(of: info, host: host), "",
+                       "with no playlist component the status line is empty, not a literal")
+
+        WasabiTextMetrics.componentTextProvider = {
+            WinampModernPlaylistSnapshot(
+                rows: [WinampModernPlaylistRow(title: "A", secondary: "", duration: 90, isCurrent: true),
+                       WinampModernPlaylistRow(title: "B", secondary: "", duration: 30, isCurrent: false)],
+                currentIndex: 0, selectedIndex: 1)
+        }
+        addTeardownBlock { WasabiTextMetrics.componentTextProvider = nil }
+        XCTAssertEqual(WasabiTextMetrics.content(of: info, host: host), "2 items, 2:00")
+
+        // The measurement a script gets is of that same string.
+        let metrics = loaded.runtime.resources
+        _ = metrics
+        let width = WasabiTextMetrics(loadedSkin: loaded)
+            .width(of: info, text: WasabiTextMetrics.content(of: info, host: host))
+        XCTAssertGreaterThan(width, 0)
+    }
+
+    /// Item and duration formatting, including the singular and the hour rollover.
+    func testPlaylistSnapshotSummarizesItsQueue() {
+        func snapshot(_ durations: [TimeInterval]) -> WinampModernPlaylistSnapshot {
+            WinampModernPlaylistSnapshot(
+                rows: durations.map { WinampModernPlaylistRow(title: "t", secondary: "", duration: $0,
+                                                              isCurrent: false) },
+                currentIndex: -1, selectedIndex: -1)
+        }
+        XCTAssertEqual(WinampModernPlaylistSnapshot.empty.infoLine, "0 items")
+        XCTAssertEqual(snapshot([61]).infoLine, "1 item, 1:01")
+        XCTAssertEqual(snapshot([3600, 61]).infoLine, "2 items, 1:01:01")
+        XCTAssertEqual(snapshot([0, 0]).trackCount, 2)
+        XCTAssertEqual(snapshot([10, 20]).totalDuration, 30)
+    }
+
     // MARK: - Helpers
 
     private func makeRenderer(layout: String) throws -> WasabiSceneRenderer {

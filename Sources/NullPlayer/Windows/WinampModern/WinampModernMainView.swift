@@ -149,6 +149,42 @@ final class WinampModernMainView: NSView {
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// Only claim the keyboard once the user has actually clicked a playlist row. A `.wal` window is
+    /// borderless chrome the user drags by; taking first responder unconditionally would swallow
+    /// Delete (and the app's other key equivalents) for the whole window.
+    override var acceptsFirstResponder: Bool { playlistHasFocus }
+    private var playlistHasFocus = false
+
+    override func resignFirstResponder() -> Bool {
+        playlistHasFocus = false
+        return true
+    }
+
+    /// Delete / Forward Delete remove the selected playlist row — but only while the playlist surface
+    /// in this window owns focus, so the key never reaches the queue from the player chrome.
+    override func keyDown(with event: NSEvent) {
+        let deleteKeys: Set<UInt16> = [51, 117]   // Delete, Forward Delete
+        guard playlistHasFocus, deleteKeys.contains(event.keyCode),
+              let host = componentHost else {
+            super.keyDown(with: event)
+            return
+        }
+        let snapshot = host.playlistSnapshot()
+        guard snapshot.selectedIndex >= 0, snapshot.selectedIndex < snapshot.rows.count else { return }
+        host.playlistRemove(row: snapshot.selectedIndex)
+        clampPlaylistScroll()
+        needsDisplay = true
+    }
+
+    /// Keep the scroll offset inside the list after a removal or a queue replacement, so a deleted
+    /// tail does not leave the view scrolled past the end.
+    func clampPlaylistScroll() {
+        guard let host = componentHost,
+              let holder = renderer.componentHolders().first(where: { $0.kind == .playlist }) else { return }
+        renderer.scrollPlaylist(byRows: 0, rowCount: host.playlistSnapshot().rows.count,
+                                in: holder.frame)
+    }
+
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }
         let area = NSTrackingArea(rect: bounds,
@@ -230,6 +266,9 @@ final class WinampModernMainView: NSView {
                 if let row = renderer.playlistRow(at: point, in: holder.frame) {
                     if event.clickCount >= 2 { componentHost?.playlistPlay(row: row) }
                     else { componentHost?.playlistSelect(row: row) }
+                    // Clicking a row is what gives this window the keyboard, and with it Delete.
+                    playlistHasFocus = true
+                    window?.makeFirstResponder(self)
                     needsDisplay = true
                 }
                 return

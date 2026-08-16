@@ -94,6 +94,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             applyLayoutConstraints()
             // Container-scoped callbacks must exist *before* the scripts run: a skin that resizes or
             // switches a layout from `onScriptLoaded` does it during `start()`.
+            // `PE_Info` is filled from the playlist component, and both the renderer and a script's
+            // `getAutoWidth()` read it from here so they agree on the string.
+            WasabiTextMetrics.componentTextProvider = { [weak componentBridge] in
+                componentBridge?.playlistSnapshot()
+            }
             wireContainerCallbacks(scripts: scripts)
             try scripts.start()
             // After `start()`: the catalog is reconciled against the containers that actually opened,
@@ -195,8 +200,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                     WindowManager.shared.showClassicSurfaceForWinampModern(kind, showOnly: showOnly)
                 },
                 redraw: { [weak self] in
+                    // A replaced or shortened queue must not leave a surface scrolled past its end.
+                    self?.skinView?.clampPlaylistScroll()
                     self?.skinView?.needsDisplay = true
-                    self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+                    self?.auxiliaryContainers.forEach {
+                        $0.view.clampPlaylistScroll()
+                        $0.view.needsDisplay = true
+                    }
                 }))
         // Every view's own `TOGGLE guid:…` now resolves through the same catalog the menu uses.
         let toggle: (WinampModernComponentKind) -> Bool = { [weak self] kind in
@@ -408,6 +418,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         auxiliaryContainers.removeAll()
         viewsByContainer.removeAll()
         surfaceCoordinator = nil
+        WasabiTextMetrics.componentTextProvider = nil
         skinView?.teardown()
         skinView = nil
         host?.endVisualizationConsumption()

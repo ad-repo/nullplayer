@@ -122,6 +122,32 @@ struct WinampModernPlaylistSnapshot: Equatable {
     var rows: [WinampModernPlaylistRow]
     var currentIndex: Int
     var selectedIndex: Int
+    /// Total queue length, which is `rows.count` today but is the number `PE_Info` shows and must
+    /// stay meaningful if the row list is ever windowed.
+    var trackCount: Int
+    /// Summed duration of the whole queue, in seconds.
+    var totalDuration: TimeInterval
+
+    init(rows: [WinampModernPlaylistRow], currentIndex: Int, selectedIndex: Int,
+         trackCount: Int? = nil, totalDuration: TimeInterval? = nil) {
+        self.rows = rows
+        self.currentIndex = currentIndex
+        self.selectedIndex = selectedIndex
+        self.trackCount = trackCount ?? rows.count
+        self.totalDuration = totalDuration ?? rows.reduce(0) { $0 + $1.duration }
+    }
+
+    /// What a skin's `PE_Info` text shows: "N items, h:mm:ss" — Winamp's playlist status line.
+    var infoLine: String {
+        let items = trackCount == 1 ? "1 item" : "\(trackCount) items"
+        guard totalDuration > 0 else { return items }
+        let seconds = Int(totalDuration.rounded())
+        let (hours, minutes, remainder) = (seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+        let length = hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+            : String(format: "%d:%02d", minutes, remainder)
+        return "\(items), \(length)"
+    }
 
     static let empty = WinampModernPlaylistSnapshot(rows: [], currentIndex: -1, selectedIndex: -1)
 }
