@@ -13,15 +13,23 @@ final class WinampModernLoadedSkin {
     let document: WalExpandedXMLDocument
     let runtime: WasabiSkinRuntime
     let configuration: WinampModernConfiguration
+    /// What the skin declared, measured before the graph existed (Phase 13.2).
+    let surfaceInventory: WinampModernSurfaceInventory
+    /// Which missing surfaces got a synthetic window, and why the others did not.
+    let surfaceSynthesis: WasabiSurfaceSynthesizer.Result
 
     init(archive: WalArchive, vfs: WalVirtualFileSystem,
          document: WalExpandedXMLDocument, runtime: WasabiSkinRuntime,
-         configuration: WinampModernConfiguration) {
+         configuration: WinampModernConfiguration,
+         surfaceInventory: WinampModernSurfaceInventory,
+         surfaceSynthesis: WasabiSurfaceSynthesizer.Result) {
         self.archive = archive
         self.vfs = vfs
         self.document = document
         self.runtime = runtime
         self.configuration = configuration
+        self.surfaceInventory = surfaceInventory
+        self.surfaceSynthesis = surfaceSynthesis
     }
 
     func teardown() { runtime.teardown() }
@@ -70,12 +78,21 @@ final class WinampModernSkinLoader {
         }
         for mount in mounts { try vfs.mount(mount.provider, at: mount.logicalRoot) }
         let entryPath = "/Skins/\(mountName)/\(archive.skinXMLPath)"
-        let document = try WalXMLDocumentLoader(vfs: vfs, limits: xmlLimits).load(entryPath: entryPath)
+        let loaded = try WalXMLDocumentLoader(vfs: vfs, limits: xmlLimits).load(entryPath: entryPath)
+        // Take stock of the skin's declared surfaces and append windows for the ones it leaves out,
+        // *before* initialization, so synthetic XML is registered, validated, instantiated, and
+        // script-bound by exactly the same passes as everything the skin wrote (Phase 13.2).
+        let inventory = WinampModernSurfaceInventory.build(document: loaded)
+        let synthesis = WasabiSurfaceSynthesizer.synthesize(document: loaded, inventory: inventory,
+                                                            limits: xmlLimits)
+        let document = synthesis.document
         let runtime = try WasabiSkinInitializer(vfs: vfs,
                                                 maximumObjectCount: xmlLimits.maximumExpandedNodeCount)
             .initialize(document: document)
+        for diagnostic in inventory.diagnostics { runtime.record(diagnostic) }
         return WinampModernLoadedSkin(archive: archive, vfs: vfs, document: document, runtime: runtime,
-                                     configuration: WinampModernConfiguration(namespace: mountName))
+                                      configuration: WinampModernConfiguration(namespace: mountName),
+                                      surfaceInventory: inventory, surfaceSynthesis: synthesis)
     }
 
     private static func safeMountName(_ name: String) -> String {

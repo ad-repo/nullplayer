@@ -249,6 +249,203 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertFalse(WinampModernComponentRegistry.isHolderElement("group"))
     }
 
+    // MARK: - 13.2 Inventory
+
+    /// A skin that declares a playlist window and embeds nothing: separate windows, one declared
+    /// surface, the rest synthesizable.
+    func testInventoryReadsDeclaredContainersAndMissingSurfaces() throws {
+        let inventory = try makeInventory(xml: Self.separateWindowSkin)
+        XCTAssertEqual(inventory.arrangement, .separateWindows)
+        XCTAssertEqual(inventory.declaredContainers[.playlist], "Pledit")
+        XCTAssertTrue(inventory.embeddedKinds.isEmpty)
+        XCTAssertEqual(inventory.synthesizableKinds.sorted { $0.rawValue < $1.rawValue },
+                       [.equalizer, .library])
+    }
+
+    /// Reachability follows a standard frame's `content=` into the group it names, and on through
+    /// `inherit_group`, XUI tags, and `Wasabi:Frame` panes.
+    func testInventoryFollowsContentInheritanceAndFramePanes() throws {
+        let inventory = try makeInventory(xml: """
+        <WasabiXML>
+          <groupdef id="frame.base">
+            <component param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}" x="0" y="0" w="10" h="10"/>
+          </groupdef>
+          <groupdef id="content.group" inherit_group="frame.base">
+            <Wasabi:Frame id="split" left="pane.left" right="pane.right" from="left" width="60"/>
+          </groupdef>
+          <groupdef id="pane.left">
+            <component param="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}" x="0" y="0" w="10" h="10"/>
+          </groupdef>
+          <groupdef id="pane.right"><slider action="EQ_BAND" param="3" x="0" y="0" w="8" h="40"/></groupdef>
+          <groupdef id="wasabi.standardframe.statusbar" xuitag="Wasabi:StandardFrame:Status">
+            <script id="frame.script" file="scripts/standardframe.maki"/>
+          </groupdef>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <Wasabi:StandardFrame:Status content="content.group" x="0" y="0" w="0" h="0"
+                                           relatw="1" relath="1"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let main = try XCTUnwrap(inventory.containers.first { $0.isMainPlayer })
+        XCTAssertEqual(main.reachableKinds, [.playlist, .library],
+                       "content= → inherit_group → frame panes are all reachable")
+        XCTAssertTrue(main.hasEqualizerControls, "an EQ_BAND slider inside a pane is an EQ surface")
+        XCTAssertEqual(inventory.arrangement, .singleWindowSUI)
+        XCTAssertTrue(inventory.synthesizableKinds.isEmpty, "an SUI skin is never synthesized into")
+    }
+
+    /// The cPro shape: surfaces embedded in the main window through engine holders. Nothing is
+    /// missing, so nothing may be synthesized — a duplicate window is the failure to avoid.
+    func testSUISkinWithScriptBuiltHoldersSynthesizesNothing() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <groupdef id="centro.sui">
+            <windowholder id="centro.windowholder.library" x="0" y="0" w="10" h="10"/>
+            <windowholder id="PlaylistPro.wdh" hold="guid:pl" x="0" y="10" w="10" h="10"/>
+          </groupdef>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <group id="centro.sui" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        XCTAssertEqual(loaded.surfaceInventory.arrangement, .singleWindowSUI)
+        XCTAssertEqual(loaded.surfaceInventory.embeddedKinds, [.playlist, .library])
+        XCTAssertTrue(loaded.surfaceSynthesis.synthesizedContainers.isEmpty)
+        XCTAssertEqual(WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph).count, 1)
+    }
+
+    // MARK: - 13.2 Synthesis
+
+    /// The measured mmd3 shape: conventional frame ids with no `xuitag=`. The alias lets the frame be
+    /// found, and the synthesized container is a real window built from the skin's own frame.
+    func testMissingSurfaceIsSynthesizedFromAConventionalStandardFrame() throws {
+        let loaded = try makeSkin(xml: Self.separateWindowSkin)
+        let synthesis = loaded.surfaceSynthesis
+        XCTAssertEqual(synthesis.synthesizedContainers[.library], "nullplayer.library")
+        XCTAssertEqual(synthesis.synthesizedContainers[.equalizer], "nullplayer.equalizer")
+        XCTAssertTrue(synthesis.unavailable.isEmpty)
+
+        let containers = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+        let library = try XCTUnwrap(containers.first { $0.id == "nullplayer.library" })
+        XCTAssertTrue(library.isSynthesized)
+        XCTAssertEqual(library.kind, .library)
+        XCTAssertEqual(library.defaultSize, CGSize(width: 640, height: 400))
+        XCTAssertTrue(library.isVisibleWindow)
+
+        // The window is a real, renderable container whose frame points at a registered content
+        // group. Instantiating that group is the frame script's job at runtime (the fixture's script
+        // is a stub); the render harness covers the real thing on mmd3 and CornerAmp.
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost(),
+                                               containerID: "nullplayer.library")
+        addTeardownBlock { renderer.teardown() }
+        let frame = try XCTUnwrap(renderer.sceneNodes().first {
+            $0.object.typeName.caseInsensitiveCompare("Wasabi:StandardFrame:Status") == .orderedSame
+        })
+        XCTAssertEqual(frame.object.attributes["content"], "nullplayer.library.content")
+        XCTAssertEqual(frame.object.attributes["componentname"], "Media Library")
+        XCTAssertEqual(frame.frame, CGRect(x: 0, y: 0, width: 640, height: 400))
+        XCTAssertTrue(loaded.runtime.types.contains(identifier: "nullplayer.library.content"))
+    }
+
+    /// Winamp's identifier-only standard-library shells are not a window. A skin that declares no
+    /// frame of its own must fall back to the classic window, with a reason.
+    func testEmptyWasabiShellsProduceAClassicFallbackNotABlankWindow() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main"><layout id="normal" w="200" h="200"/></container>
+          <container id="Pledit" component="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}">
+            <layout id="normal" w="100" h="100"/>
+          </container>
+        </WasabiXML>
+        """)
+        XCTAssertTrue(loaded.surfaceSynthesis.synthesizedContainers.isEmpty)
+        XCTAssertNotNil(loaded.surfaceSynthesis.unavailable[.library])
+        XCTAssertNotNil(loaded.surfaceSynthesis.unavailable[.equalizer])
+        XCTAssertTrue(loaded.surfaceSynthesis.unavailable[.library]?.contains("standardframe") == true,
+                      "the reason names the prerequisite that failed")
+        XCTAssertFalse(WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+            .contains { $0.isSynthesized })
+    }
+
+    /// `<text default=":componentname">` is a placeholder the frame fills, not a string to draw.
+    func testComponentNamePlaceholderResolvesFromTheNearestFrameOrContainer() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="Pledit" name="Playlist Editor">
+            <layout id="normal" w="200" h="200">
+              <group id="frame" componentname="My Component" x="0" y="0" w="100" h="20">
+                <text id="title" default=":componentname" x="0" y="0" w="100" h="20"/>
+              </group>
+              <text id="outer.title" default=":componentname" x="0" y="40" w="100" h="20"/>
+              <text id="plain" default="literal" x="0" y="60" w="100" h="20"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let host = TestHost()
+        func text(_ id: String) throws -> String {
+            let object = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: id).first)
+            return WasabiTextMetrics.content(of: object, host: host)
+        }
+        XCTAssertEqual(try text("title"), "My Component", "the nearest componentname wins")
+        XCTAssertEqual(try text("outer.title"), "Playlist Editor", "otherwise the container's name")
+        XCTAssertEqual(try text("plain"), "literal")
+    }
+
+    /// A skin declaring its own `xuitag=` always wins; an alias only fills an unclaimed tag.
+    func testXUITagAliasNeverStealsATagASkinDeclared() {
+        let registry = WasabiTypeRegistry()
+        func define(_ identifier: String, xuiTag: String?) {
+            registry.register(WasabiGroupDefinition(identifier: identifier, xuiTag: xuiTag,
+                                                    inheritedGroup: nil, embeddedXUITag: nil,
+                                                    defaultAttributes: [:], templateChildren: [],
+                                                    source: WalSourceLocation(path: "/test.xml")))
+        }
+        define("skin.frame", xuiTag: "Wasabi:StandardFrame:Status")
+        define("wasabi.standardframe.statusbar", xuiTag: nil)
+        XCTAssertFalse(registry.registerXUITagAlias("Wasabi:StandardFrame:Status",
+                                                    to: "wasabi.standardframe.statusbar"),
+                       "the skin already claimed this tag")
+        XCTAssertFalse(registry.registerXUITagAlias("Wasabi:StandardFrame:NoStatus",
+                                                    to: "wasabi.standardframe.nostatusbar"),
+                       "the destination groupdef does not exist")
+        define("wasabi.standardframe.nostatusbar", xuiTag: nil)
+        XCTAssertTrue(registry.registerXUITagAlias("Wasabi:StandardFrame:NoStatus",
+                                                   to: "wasabi.standardframe.nostatusbar"))
+        XCTAssertTrue(registry.isXUITag("Wasabi:StandardFrame:NoStatus"))
+    }
+
+    /// An mmd3-shaped skin: a declared playlist window, a usable statusbar frame declared with the
+    /// conventional id and *no* `xuitag`, and no equalizer or library window.
+    private static let separateWindowSkin = """
+    <WasabiXML>
+      <groupdef id="wasabi.standardframe.statusbar" background="wasabi.frame.basetexture">
+        <layer id="window.top" image="wasabi.frame.top" x="0" y="0" w="0" relatw="1" h="8"/>
+        <script id="standardframe.script" file="scripts/standardframe.maki"/>
+      </groupdef>
+      <groupdef id="pledit.content.group">
+        <component param="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}"
+                   x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+      </groupdef>
+      <container id="main"><layout id="normal" default_w="400" default_h="200"/></container>
+      <container id="Pledit" component="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}">
+        <layout id="normal" default_w="381" default_h="260">
+          <Wasabi:StandardFrame:Status content="pledit.content.group" x="0" y="0" w="0" h="0"
+                                       relatw="1" relath="1"/>
+        </layout>
+      </container>
+    </WasabiXML>
+    """
+
+    /// The inventory as taken *before* synthesis — `loaded.document` is the post-synthesis document.
+    private func makeInventory(xml: String) throws -> WinampModernSurfaceInventory {
+        try makeSkin(xml: xml).surfaceInventory
+    }
+
     // MARK: - Helpers
 
     private func makeRenderer(layout: String) throws -> WasabiSceneRenderer {
@@ -280,14 +477,41 @@ final class WinampModernPhase13Tests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("Synthetic.wal")
         let archive = try Archive(url: url, accessMode: .create)
-        let payload = Data(xml.utf8)
-        try archive.addEntry(with: "skin.xml", type: .file, uncompressedSize: Int64(payload.count),
-                             compressionMethod: .none) { position, size in
-            let start = Int(position)
-            guard start < payload.count else { return Data() }
-            return payload.subdata(in: start..<min(payload.count, start + size))
+        func add(_ path: String, _ payload: Data) throws {
+            try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(payload.count),
+                                 compressionMethod: .none) { position, size in
+                let start = Int(position)
+                guard start < payload.count else { return Data() }
+                return payload.subdata(in: start..<min(payload.count, start + size))
+            }
         }
+        try add("skin.xml", Data(xml.utf8))
+        // A standard frame is only usable if it carries the script that builds its client area, and a
+        // declared `<script file=…>` must resolve, so the fixtures ship a do-nothing one.
+        try add("scripts/standardframe.maki", Self.emptyMakiScript())
         return url
+    }
+
+    /// The smallest well-formed MAKI object: header, one class, one no-op method, no code.
+    private static func emptyMakiScript() -> Data {
+        var data = Data([0x46, 0x47])                              // "FG"
+        func appendUInt16(_ value: UInt16) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        func appendUInt32(_ value: UInt32) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        appendUInt16(0x0403)                                       // version
+        appendUInt32(23)
+        appendUInt32(1)                                            // classes
+        data.append(contentsOf: repeatElement(UInt8(0), count: 16))
+        appendUInt32(1)                                            // methods
+        appendUInt16(0)
+        appendUInt16(0)
+        let name = Array("getid".utf8)
+        appendUInt16(UInt16(name.count))
+        data.append(contentsOf: name)
+        appendUInt32(0)                                            // variables
+        appendUInt32(0)                                            // constants
+        appendUInt32(0)                                            // bindings
+        appendUInt32(0)                                            // code length
+        return data
     }
 
     private final class TestHost: WinampModernHost {

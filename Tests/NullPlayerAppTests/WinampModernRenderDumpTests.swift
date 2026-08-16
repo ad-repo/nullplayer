@@ -67,6 +67,15 @@ final class WinampModernRenderDumpTests: XCTestCase {
                   + "×\(finding.count) \(finding.message) @\(finding.location ?? "-")")
         }
 
+        // The reconciled surface picture: what the skin declared, what was embedded, what NullPlayer
+        // synthesized, and what is left to the classic fallback.
+        let inventory = loaded.surfaceInventory
+        print("RENDER-DUMP arrangement=\(inventory.arrangement) "
+              + "embedded=\(inventory.embeddedKinds.map(\.rawValue).sorted()) "
+              + "declared=\(inventory.declaredContainers.map { "\($0.key.rawValue)=\($0.value)" }.sorted()) "
+              + "synthesized=\(loaded.surfaceSynthesis.synthesizedContainers.map { "\($0.key.rawValue)=\($0.value)" }.sorted()) "
+              + "fallback=\(loaded.surfaceSynthesis.unavailable.map(\.key.rawValue).sorted())")
+
         let containers = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
         print("RENDER-DUMP containers: \(containers.map { "\($0.id) main=\($0.isMainPlayer)" })")
         XCTAssertFalse(containers.isEmpty, "Skin declares no window containers.")

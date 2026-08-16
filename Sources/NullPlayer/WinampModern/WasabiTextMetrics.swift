@@ -82,8 +82,33 @@ final class WasabiTextMetrics {
             if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame {
                 return host.trackDisplayTitle
             }
-            return object.attributes["text"] ?? object.attributes["default"] ?? ""
+            let literal = object.attributes["text"] ?? object.attributes["default"] ?? ""
+            return resolvePlaceholder(literal, on: object)
         }
+    }
+
+    /// Wasabi's title-bar placeholders. A standard frame's title is
+    /// `<text default=":componentname"/>` — the colon marks a value the frame supplies, not a string
+    /// to draw. Left unresolved, a window's title bar reads ":componentname" *and* the script's
+    /// `getAutoWidth()` sizes the title to that literal, so the box does not fit the real name.
+    private static func resolvePlaceholder(_ value: String, on object: WasabiObject) -> String {
+        guard value.hasPrefix(":") else { return value }
+        let key = String(value.dropFirst()).lowercased()
+        guard key == "componentname" || key == "name" else { return value }
+        // Nearest wins: the XUI frame instance that declares `componentname=`, else the container's
+        // own `name=`.
+        var current: WasabiObject? = object
+        var depth = 0
+        while let node = current, depth < 64 {
+            if let name = node.attributes["componentname"], !name.isEmpty { return name }
+            if node.typeName.caseInsensitiveCompare("container") == .orderedSame,
+               let name = node.attributes["name"], !name.isEmpty {
+                return name
+            }
+            current = node.parent
+            depth += 1
+        }
+        return ""
     }
 
     /// Width the object's text occupies when drawn, in skin pixels, including its horizontal padding.

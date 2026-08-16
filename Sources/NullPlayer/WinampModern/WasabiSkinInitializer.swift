@@ -125,6 +125,21 @@ final class WasabiTypeRegistry {
         resolvedCache.removeAll()
     }
 
+    /// Point an unclaimed XUI tag at a groupdef the skin already declares.
+    ///
+    /// Narrow on purpose: it applies only when the destination groupdef exists *and* nothing has
+    /// claimed the tag, so a skin that declares its own `xuitag=` always wins and no tag is ever
+    /// silently repointed. Used for the conventional `wasabi.standardframe.*` pairs that mmd3 (like
+    /// real Winamp's standard library) leaves to convention. Returns whether the alias was applied.
+    @discardableResult
+    func registerXUITagAlias(_ tag: String, to identifier: String) -> Bool {
+        let tagKey = Self.fold(tag)
+        guard identifierByXUITag[tagKey] == nil, contains(identifier: identifier) else { return false }
+        identifierByXUITag[tagKey] = identifier
+        resolvedCache.removeAll()
+        return true
+    }
+
     func validateInheritance() throws {
         for definition in byIdentifier.values.sorted(by: { $0.identifier < $1.identifier }) {
             _ = try resolved(identifier: definition.identifier)
@@ -313,6 +328,13 @@ final class WasabiSkinInitializer {
         // Register the skin/engine groupdefs first so an explicit definition always wins over our
         // predefined shell, then backfill any predefined Wasabi bases the skin inherits but omits.
         registerTypes(in: document.roots, registry: types)
+        // Conventional tag → groupdef pairs before the shells: a skin that declares
+        // `wasabi.standardframe.statusbar` without an `xuitag` (mmd3 does, exactly as real Winamp's
+        // standard library expects) must still answer to `<Wasabi:StandardFrame:Status>`, and it must
+        // win over the artwork-less shell registered next.
+        for pair in WasabiStandardFrames.conventionalXUITags {
+            types.registerXUITagAlias(pair.tag, to: pair.identifier)
+        }
         registerWasabiStandardLibrary(in: types)
         try types.validateInheritance()
         passes.append(.groupAndXUIRegistration)
