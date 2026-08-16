@@ -12,6 +12,15 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     private let eqLayout = EQConfiguration.classic10
     private var selectedRow = -1
 
+    /// The `.wal` window's current UI Size, read live so a scale change needs no re-creation.
+    var skinScaleProvider: (() -> CGFloat)?
+    /// How the embedded browser asks for the server-link sheet, since it has no classic controller.
+    var linkSheetPresenter: (() -> Void)?
+    private var librarySurface: WinampModernLibrarySurface?
+    /// The surface if one has been created, without creating one — session restore must not
+    /// instantiate a browser for a skin that never asked for it.
+    var currentLibrarySurface: WinampModernLibrarySurface? { librarySurface }
+
     init(engine: AudioEngine) {
         self.engine = engine
     }
@@ -96,10 +105,28 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
 
     // MARK: - Library
 
-    /// Embedding NullPlayer's full library browser inside the skin frame is a live, GUI-only
-    /// integration; the bounded seam returns nil so the runtime falls back to the classic library
-    /// window (see `toggleClassicWindow`). Wiring the live browser view is deferred to Phase 7.
-    func makeLibraryContentView() -> NSView? { nil }
+    /// The real library browser, embedded in the skin's own holder (Phase 13.8).
+    ///
+    /// The bridge owns it rather than the view layer, so it survives a layout switch that removes and
+    /// re-adds the holder's subview, and so browse mode can be saved and restored through the
+    /// provider protocol. One per skin: a second holder for the same component reuses this surface's
+    /// state rather than opening a second browser against the same servers.
+    func makeLibrarySurface() -> WinampModernLibrarySurface? {
+        if let librarySurface { return librarySurface }
+        let surface = WinampModernLibrarySurfaceView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300),
+            skinScale: { [weak self] in self?.skinScaleProvider?() ?? 1 },
+            presentLinkSheet: { [weak self] in self?.linkSheetPresenter?() })
+        librarySurface = surface
+        return surface
+    }
+
+    /// Release the embedded browser. The view layer tears the surface down first; this only drops the
+    /// bridge's own reference, and is safe to call twice.
+    func releaseLibrarySurface() {
+        librarySurface?.prepareForUITeardown()
+        librarySurface = nil
+    }
 
     // MARK: - Classic-window fallback
 

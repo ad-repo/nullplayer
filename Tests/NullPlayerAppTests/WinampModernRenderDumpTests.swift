@@ -102,6 +102,36 @@ final class WinampModernRenderDumpTests: XCTestCase {
                               + "attrs=\(node.object.attributes.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " "))")
                     }
                 }
+                if env["WINAMP_MODERN_RENDER_HOLDERS"] != nil {
+                    func walk(_ objects: [WasabiObject], depth: Int) {
+                        for object in objects {
+                            if object.xmlID == "centro.windowholder.library" {
+                                var chain: [String] = []
+                                var node: WasabiObject? = object
+                                while let current = node {
+                                    chain.append("\(current.typeName)#\(current.xmlID ?? "-")"
+                                                 + "[vis=\(current.attributes["visible"] ?? "-")]")
+                                    node = current.parent
+                                }
+                                print("LIB-CHAIN \(chain.joined(separator: " < "))")
+                            }
+                            if WinampModernComponentRegistry.isHolderElement(object.typeName) {
+                                print("GRAPH-HOLDER \(object.typeName) id=\(object.xmlID ?? "-") "
+                                      + "kind=\(String(describing: WasabiSceneRenderer.componentKind(of: object))) "
+                                      + "visible=\(object.attributes["visible"] ?? "-") "
+                                      + "parent=\(object.parent?.xmlID ?? object.parent?.typeName ?? "-")")
+                            }
+                            walk(object.children, depth: depth + 1)
+                        }
+                    }
+                    walk(loaded.runtime.graph.roots, depth: 0)
+                }
+                let holders = renderer.componentHolders()
+                if !holders.isEmpty {
+                    print("HOLDERS \(info.id)/\(layoutID): "
+                          + holders.map { "\($0.kind.rawValue)@\($0.object.xmlID ?? "-")\($0.frame)" }
+                            .joined(separator: " "))
+                }
                 if env["WINAMP_MODERN_RENDER_BITMAPS"] != nil {
                     var missing: Set<String> = []
                     var resolved = 0

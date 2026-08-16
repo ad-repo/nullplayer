@@ -345,7 +345,7 @@ class PlexBrowserView: NSView {
     /// The window itself is stretchable, so scale the content rather than deriving this from
     /// the current window dimensions (which would also enlarge text during a manual resize).
     private var contentScale: CGFloat {
-        WindowManager.shared.classicScaleMultiplier
+        embeddedScale?() ?? WindowManager.shared.classicScaleMultiplier
     }
 
     private var itemHeight: CGFloat {
@@ -1473,9 +1473,52 @@ class PlexBrowserView: NSView {
     
     // MARK: - Layout Constants (reference to SkinElements)
     
-    private var Layout: SkinElements.PlexBrowser.Layout.Type {
-        SkinElements.PlexBrowser.Layout.self
+    /// Per-instance layout metrics.
+    ///
+    /// The classic browser is a skinned window: a title bar, side borders, and a bottom border it
+    /// draws itself. Embedded inside a `.wal` skin, the frame belongs to the skin and this view owns
+    /// only the client area, so those collapse to zero and everything measured from them moves up.
+    /// Every geometry and hit-test site in this file reads `Layout`, so there is one place to change.
+    struct LayoutMetrics {
+        var titleBarHeight: CGFloat
+        var tabBarHeight: CGFloat
+        var serverBarHeight: CGFloat
+        var searchBarHeight: CGFloat
+        var statusBarHeight: CGFloat
+        var scrollbarWidth: CGFloat
+        var alphabetWidth: CGFloat
+        var leftBorder: CGFloat
+        var rightBorder: CGFloat
+        var padding: CGFloat
+
+        static let classic = LayoutMetrics(
+            titleBarHeight: SkinElements.PlexBrowser.Layout.titleBarHeight,
+            tabBarHeight: SkinElements.PlexBrowser.Layout.tabBarHeight,
+            serverBarHeight: SkinElements.PlexBrowser.Layout.serverBarHeight,
+            searchBarHeight: SkinElements.PlexBrowser.Layout.searchBarHeight,
+            statusBarHeight: SkinElements.PlexBrowser.Layout.statusBarHeight,
+            scrollbarWidth: SkinElements.PlexBrowser.Layout.scrollbarWidth,
+            alphabetWidth: SkinElements.PlexBrowser.Layout.alphabetWidth,
+            leftBorder: SkinElements.PlexBrowser.Layout.leftBorder,
+            rightBorder: SkinElements.PlexBrowser.Layout.rightBorder,
+            padding: SkinElements.PlexBrowser.Layout.padding)
+
+        /// No window chrome of our own: the `.wal` frame around us already drew it.
+        static let embedded: LayoutMetrics = {
+            var metrics = classic
+            metrics.titleBarHeight = 0
+            metrics.leftBorder = 0
+            metrics.rightBorder = 0
+            metrics.statusBarHeight = 0
+            return metrics
+        }()
     }
+
+    /// True when this browser is hosted inside a `.wal` skin's component holder rather than in its
+    /// own classic window (Phase 13.8). Set once, at construction.
+    private(set) var isEmbeddedInSkin = false
+
+    var Layout: LayoutMetrics { isEmbeddedInSkin ? .embedded : .classic }
 
     private func tabRowNaturalWidth(textScale: CGFloat) -> CGFloat {
         let scaledCharWidth = SkinElements.TextFont.charWidth * textScale
@@ -1689,7 +1732,29 @@ class PlexBrowserView: NSView {
         super.init(frame: frameRect)
         setupView()
     }
-    
+
+    /// Build the browser as a `.wal` skin's embedded library surface (Phase 13.8).
+    ///
+    /// Everything the classic window supplies has to be injected instead, because there is no
+    /// `PlexBrowserWindowController` here: the palette and the content scale come from the skin, and
+    /// the link sheet is presented by whoever owns the hosting window. The browsing behaviour —
+    /// servers, tabs, search, CoverFlow, history — is the same code either way.
+    convenience init(embeddedFrame frame: NSRect,
+                     skinScale: @escaping () -> CGFloat,
+                     presentLinkSheet: @escaping () -> Void) {
+        self.init(frame: frame)
+        isEmbeddedInSkin = true
+        embeddedScale = skinScale
+        embeddedLinkSheet = presentLinkSheet
+    }
+
+    /// UI Size for an embedded browser: the `.wal` window's own skin scale, not the classic
+    /// multiplier. A `.wal` window is not run through classic scaling, so relying on the two matching
+    /// would make the embedded text the wrong size at every level but 100%.
+    private var embeddedScale: (() -> CGFloat)?
+    /// Presented instead of `controller?.showLinkSheet()` when embedded.
+    private var embeddedLinkSheet: (() -> Void)?
+
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupView()
@@ -2436,6 +2501,33 @@ class PlexBrowserView: NSView {
     // MARK: - Scaling Support
 
     /// Get the original window size for drawing and hit testing
+    /// Draw the classic window frame — title bar, borders, resize corner. An embedded browser sits
+    /// inside the `.wal` skin's own frame, which has already drawn all of that, so this is skipped
+    /// and the client area fills the holder.
+    private func drawWindowChromeIfNeeded(renderer: SkinRenderer, context: CGContext, bounds: NSRect,
+                                          isActive: Bool, scrollPosition: CGFloat) {
+        guard !isEmbeddedInSkin else { return }
+        renderer.drawPlexBrowserWindow(in: context, bounds: bounds, isActive: isActive,
+                                       pressedButton: pressedButton, scrollPosition: scrollPosition,
+                                       controlScale: WindowManager.shared.playlistChromeScale)
+    }
+
+    /// Show the server-link sheet: the classic window's controller presents it, an embedded browser
+    /// asks its host.
+    private func presentLinkSheet() {
+        if let embeddedLinkSheet { embeddedLinkSheet() } else { controller?.showLinkSheet() }
+    }
+
+    /// Let an embedding host trigger the same link flow the toolbar button does.
+    func showLinkSheetFromHost() { presentLinkSheet() }
+
+    /// Hide Title Bars is a classic-window preference. An embedded browser has no title bar to hide
+    /// (its `Layout.titleBarHeight` is already zero), so it must not also take the shift-up offset —
+    /// that would move the content off the top of the holder.
+    private var hidesClassicTitleBar: Bool {
+        !isEmbeddedInSkin && WindowManager.shared.hideTitleBars
+    }
+
     private var originalWindowSize: NSSize {
         // Use actual bounds, no scaling
         return bounds.size
@@ -2503,7 +2595,7 @@ class PlexBrowserView: NSView {
     /// embedded history subview and the cover flow overlay.
     private func embeddedContentRect() -> NSRect {
         let scale = scaleFactor
-        let hiddenTitleBarOffset = WindowManager.shared.hideTitleBars ? Layout.titleBarHeight : 0
+        let hiddenTitleBarOffset = hidesClassicTitleBar ? Layout.titleBarHeight : 0
         let searchBarInset = browseMode == .search ? Layout.searchBarHeight : 0
         let topInset = (Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight + searchBarInset - hiddenTitleBarOffset) * scale
         let bottomInset = Layout.statusBarHeight * scale
@@ -2858,7 +2950,7 @@ class PlexBrowserView: NSView {
         // No scaling, just flip Y coordinate (macOS bottom-left to skin top-left)
         var skinPoint = NSPoint(x: point.x, y: bounds.height - point.y)
         // When title bars are hidden, offset to match the shifted drawing
-        if WindowManager.shared.hideTitleBars {
+        if hidesClassicTitleBar {
             skinPoint.y += Layout.titleBarHeight
         }
         return skinPoint
@@ -2892,7 +2984,7 @@ class PlexBrowserView: NSView {
         context.scaleBy(x: 1, y: -1)
         
         // When hiding title bars, shift content up to clip the title bar off the top
-        if WindowManager.shared.hideTitleBars {
+        if hidesClassicTitleBar {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
 
@@ -2909,18 +3001,16 @@ class PlexBrowserView: NSView {
             let serverBarMinY = bounds.height - CGFloat(Layout.titleBarHeight + Layout.serverBarHeight)
             if dirtyRect.minY >= serverBarMinY {
                 let scrollPosition = calculateScrollPosition()
-                renderer.drawPlexBrowserWindow(in: context, bounds: drawBounds, isActive: isActive,
-                                               pressedButton: pressedButton, scrollPosition: scrollPosition,
-                                               controlScale: WindowManager.shared.playlistChromeScale)
+                drawWindowChromeIfNeeded(renderer: renderer, context: context, bounds: drawBounds,
+                                         isActive: isActive, scrollPosition: scrollPosition)
                 drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             } else {
                 // Calculate scroll position for scrollbar (0-1)
                 let scrollPosition = calculateScrollPosition()
 
                 // Draw window frame using skin sprites
-                renderer.drawPlexBrowserWindow(in: context, bounds: drawBounds, isActive: isActive,
-                                               pressedButton: pressedButton, scrollPosition: scrollPosition,
-                                               controlScale: WindowManager.shared.playlistChromeScale)
+                drawWindowChromeIfNeeded(renderer: renderer, context: context, bounds: drawBounds,
+                                         isActive: isActive, scrollPosition: scrollPosition)
 
                 // Draw server/library selector bar
                 drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
@@ -7920,7 +8010,10 @@ class PlexBrowserView: NSView {
     
     /// Check if point hits title bar (for dragging)
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars {
+        // Embedded: the skin owns the window frame, so there is no title bar of ours to grab and no
+        // close button to press. Claiming those regions would eat clicks meant for the list.
+        if isEmbeddedInSkin { return false }
+        if hidesClassicTitleBar {
             // Invisible drag zone at the top of the visible window
             return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
         }
@@ -7931,7 +8024,8 @@ class PlexBrowserView: NSView {
     
     /// Check if point hits close button (enlarged hit area extends to right edge and top)
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
+        if isEmbeddedInSkin { return false }
+        if hidesClassicTitleBar { return false }
         let originalSize = originalWindowSize
         let closeRect = NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
         return closeRect.contains(skinPoint)
@@ -8774,7 +8868,7 @@ class PlexBrowserView: NSView {
             // For local files, radio, or subsonic - always handle the click
             // For Plex - check if linked first
             if case .plex = currentSource, !PlexManager.shared.isLinked {
-                controller?.showLinkSheet()
+                presentLinkSheet()
             } else {
                 handleServerBarClick(at: skinPoint, event: event)
             }
@@ -9627,7 +9721,7 @@ class PlexBrowserView: NSView {
     }
     
     @objc private func linkPlexAccount() {
-        controller?.showLinkSheet()
+        presentLinkSheet()
     }
     
     @objc private func selectSubsonicServer(_ sender: NSMenuItem) {

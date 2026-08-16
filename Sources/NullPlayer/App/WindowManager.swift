@@ -1207,14 +1207,27 @@ class WindowManager {
         return window.frame
     }
     
-    /// Get/set the library browser browse mode raw value (for state save/restore)
+    /// Get/set the library browser browse mode raw value (for state save/restore).
+    ///
+    /// In Winamp Modern the library may live inside the skin, where there is no window controller to
+    /// ask — the embedded surface holds the mode instead, and must still save and restore with the
+    /// session.
     var plexBrowserBrowseMode: Int? {
-        get { plexBrowserWindowController?.browseModeRawValue }
+        get { winampModernLibrarySurface?.browseModeRawValue ?? plexBrowserWindowController?.browseModeRawValue }
         set {
-            if let value = newValue {
+            guard let value = newValue else { return }
+            if let surface = winampModernLibrarySurface {
+                surface.browseModeRawValue = value
+            } else {
                 plexBrowserWindowController?.browseModeRawValue = value
             }
         }
+    }
+
+    /// The skin's embedded library, when this mode/skin has one.
+    private var winampModernLibrarySurface: WinampModernLibrarySurface? {
+        guard let coordinator = winampModernSurfaces, coordinator.handles(.library) else { return nil }
+        return (mainWindowController as? WinampModernMainWindowController)?.embeddedLibrarySurface
     }
 
     var isLibraryHistoryVisible: Bool {

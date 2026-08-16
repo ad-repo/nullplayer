@@ -183,8 +183,8 @@ protocol WinampModernComponentHost: AnyObject {
     func equalizerSetAuto(_ enabled: Bool)
     func equalizerApplyPreset(named name: String)
 
-    // Library — a live host view embedded at the skin-provided frame, or nil when unavailable.
-    func makeLibraryContentView() -> NSView?
+    // Library — a live host surface embedded at the skin-provided frame, or nil when unavailable.
+    func makeLibrarySurface() -> WinampModernLibrarySurface?
 
     /// Fallback for a component the skin does not embed: surface it through the classic
     /// WindowManager window instead of a skin-owned holder.
@@ -192,5 +192,26 @@ protocol WinampModernComponentHost: AnyObject {
 }
 
 extension WinampModernComponentHost {
-    func makeLibraryContentView() -> NSView? { nil }
+    func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
+}
+
+/// A live library browser embedded in a `.wal` skin's holder.
+///
+/// The previous seam returned a bare `NSView` the view layer held unowned, which gave the surface no
+/// way to be told anything — not a palette change, not a UI Size change, and crucially not "you are
+/// about to be removed", so its in-flight server tasks and timers outlived it. This is the typed
+/// handle instead: the component bridge creates and owns it, the view positions its `view`, and every
+/// lifecycle event has a name.
+protocol WinampModernLibrarySurface: AnyObject {
+    var view: NSView { get }
+    /// Browse mode, for session save/restore through `LibraryBrowserWindowProviding`.
+    var browseModeRawValue: Int { get set }
+    func reloadData()
+    func showLinkSheet()
+    /// Recolour to the skin's active colour theme.
+    func applyPalette(_ palette: WasabiPalette)
+    /// UI Size, as the `.wal` window's own skin scale.
+    func applySkinScale(_ scale: CGFloat)
+    /// Cancel work and release resources before the view is removed. Must be idempotent.
+    func prepareForUITeardown()
 }

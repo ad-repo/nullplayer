@@ -5,7 +5,9 @@ final class WinampModernMainView: NSView {
     let scripts: WinampModernScriptRuntime
     let host: WinampModernHost
     private weak var componentHost: WinampModernComponentHost?
-    private var libraryHostViews: [WasabiObjectID: NSView] = [:]
+    /// Live library surfaces by holder id. Typed, so each one can be told about a palette change, a
+    /// UI Size change, and its own teardown (Phase 13.8).
+    private var librarySurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
 
     /// UI Size, as a multiplier on the skin's own pixel grid. The scene is always laid out in skin
     /// pixels — the scale is applied once at the drawing boundary and undone once at the input
@@ -14,6 +16,8 @@ final class WinampModernMainView: NSView {
         didSet {
             guard skinScale != oldValue else { return }
             setFrameSize(scaledCanvasSize)
+            for surface in librarySurfaces.values { surface.applySkinScale(skinScale) }
+            needsLayout = true
             needsDisplay = true
         }
     }
@@ -106,12 +110,18 @@ final class WinampModernMainView: NSView {
 
     /// The skin switched colour theme. The renderer has already dropped its themed bitmaps.
     private func themeDidChange() {
-        for surface in libraryHostViews.values { surface.needsDisplay = true }
+        for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
         needsDisplay = true
     }
 
     private func wireScriptCallbacks() {
-        scripts.graphDidMutate = { [weak self] in self?.needsDisplay = true }
+        scripts.graphDidMutate = { [weak self] in
+            // A script can add or remove a component holder — cPro builds its Media Library holder
+            // when that tab is first opened — so a graph change has to re-run surface reconciliation,
+            // not just repaint. Without this the tab opens onto an empty hole.
+            self?.needsLayout = true
+            self?.needsDisplay = true
+        }
         scripts.actionRequested = { [weak self] action, parameter in
             self?.performAction(action: action, parameter: parameter)
         }
@@ -206,9 +216,16 @@ final class WinampModernMainView: NSView {
         return renderer.containsVisiblePixel(at: skin) ? self : nil
     }
 
+    override func layout() {
+        super.layout()
+        // Creating and adding subviews from inside `draw` is a re-entrant view-hierarchy mutation
+        // during a draw cycle; reconciliation belongs here, and drawing only draws.
+        reconcileHostedSurfaces()
+        layoutHostedSubviews()
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard !isTornDown, let context = NSGraphicsContext.current?.cgContext else { return }
-        layoutHostedSubviews()
         context.clear(bounds)
         context.saveGState()
         if skinScale != 1 { context.scaleBy(x: skinScale, y: skinScale) }
@@ -217,29 +234,38 @@ final class WinampModernMainView: NSView {
         context.restoreGState()
     }
 
-    /// Position live host subviews (the embedded library) at their skin-provided holder frames,
-    /// converting from top-left skin coordinates to the view's bottom-left coordinates. Holders that
-    /// vanish (layout switch) have their subviews removed.
-    private func layoutHostedSubviews() {
+    /// Create a live surface for each library holder the scene now has, and tear down the ones whose
+    /// holder has gone (a layout switch, a script hiding the tab). A surface is told to stand down
+    /// *before* its view leaves the hierarchy, so its in-flight server tasks and timers do not
+    /// outlive it.
+    private func reconcileHostedSurfaces() {
         guard !isTornDown else { return }
         var live: Set<WasabiObjectID> = []
         for holder in renderer.componentHolders() where holder.kind == .library {
-            var view = libraryHostViews[holder.object.stableID]
-            if view == nil, let created = componentHost?.makeLibraryContentView() {
-                libraryHostViews[holder.object.stableID] = created
-                addSubview(created)
-                view = created
-            }
-            guard let view else { continue }
             live.insert(holder.object.stableID)
-            view.frame = NSRect(x: holder.frame.minX * skinScale,
-                                y: bounds.height - holder.frame.maxY * skinScale,
-                                width: holder.frame.width * skinScale,
-                                height: holder.frame.height * skinScale)
+            guard librarySurfaces[holder.object.stableID] == nil,
+                  let surface = componentHost?.makeLibrarySurface() else { continue }
+            librarySurfaces[holder.object.stableID] = surface
+            surface.applySkinScale(skinScale)
+            surface.applyPalette(renderer.palette)
+            addSubview(surface.view)
         }
-        for (id, view) in libraryHostViews where !live.contains(id) {
-            view.removeFromSuperview()
-            libraryHostViews[id] = nil
+        for (id, surface) in librarySurfaces where !live.contains(id) {
+            surface.prepareForUITeardown()
+            librarySurfaces[id] = nil
+        }
+    }
+
+    /// Position live host surfaces at their skin-provided holder frames, converting from top-left
+    /// skin coordinates to the view's bottom-left ones. Positioning only — nothing is created here.
+    private func layoutHostedSubviews() {
+        guard !isTornDown else { return }
+        for holder in renderer.componentHolders() where holder.kind == .library {
+            guard let surface = librarySurfaces[holder.object.stableID] else { continue }
+            surface.view.frame = NSRect(x: holder.frame.minX * skinScale,
+                                        y: bounds.height - holder.frame.maxY * skinScale,
+                                        width: holder.frame.width * skinScale,
+                                        height: holder.frame.height * skinScale)
         }
     }
 
@@ -402,8 +428,8 @@ final class WinampModernMainView: NSView {
         pressedObject = nil
         pressedEQHolder = nil
         hoveredObject = nil
-        for view in libraryHostViews.values { view.removeFromSuperview() }
-        libraryHostViews.removeAll()
+        for surface in librarySurfaces.values { surface.prepareForUITeardown() }
+        librarySurfaces.removeAll()
         // Auxiliary container views share the skin's single script runtime and host; only the
         // main (script-driving) view tears those down. Every view tears down its own renderer.
         if drivesScripts { scripts.teardown() }

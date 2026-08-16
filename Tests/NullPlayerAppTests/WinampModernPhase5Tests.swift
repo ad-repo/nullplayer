@@ -39,7 +39,7 @@ final class WinampModernPhase5Tests: XCTestCase {
         var enabled: Bool?
         var auto: Bool?
         var preset: String?
-        var libraryView: NSView?
+        var librarySurface: StubLibrarySurface?
         var libraryViewRequests = 0
         var classicToggles: [WinampModernComponentKind] = []
 
@@ -53,7 +53,10 @@ final class WinampModernPhase5Tests: XCTestCase {
         func equalizerSetEnabled(_ enabled: Bool) { self.enabled = enabled }
         func equalizerSetAuto(_ enabled: Bool) { auto = enabled }
         func equalizerApplyPreset(named name: String) { preset = name }
-        func makeLibraryContentView() -> NSView? { libraryViewRequests += 1; return libraryView }
+        func makeLibrarySurface() -> WinampModernLibrarySurface? {
+            libraryViewRequests += 1
+            return librarySurface
+        }
         func toggleClassicWindow(for kind: WinampModernComponentKind) { classicToggles.append(kind) }
     }
 
@@ -247,24 +250,48 @@ final class WinampModernPhase5Tests: XCTestCase {
         let loaded = try WinampModernSkinLoader().load(from: try makeArchive(xml: Self.suiSkin))
         let host = Host()
         let mock = MockComponentHost()
-        mock.libraryView = NSView(frame: .zero)
+        let surface = StubLibrarySurface()
+        mock.librarySurface = surface
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
         renderer.componentHost = mock
         let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
         let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host, componentHost: mock)
 
         view.setFrameSize(renderer.canvasSize)
-        // Force a draw pass that lays out hosted subviews.
-        let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
-        view.cacheDisplay(in: view.bounds, to: rep)
+        // Phase 13.8: hosted surfaces are reconciled from `layout()`, never from `draw` — creating
+        // and adding a subview inside a draw cycle is a re-entrant hierarchy mutation.
+        view.layoutSubtreeIfNeeded()
 
-        XCTAssertTrue(view.subviews.contains(mock.libraryView!), "Library holder hosts the live view")
+        XCTAssertTrue(view.subviews.contains(surface.view), "Library holder hosts the live surface")
         XCTAssertGreaterThanOrEqual(mock.libraryViewRequests, 1)
+        XCTAssertEqual(surface.scaleUpdates, 1, "the surface is told the skin's UI Size on creation")
+        XCTAssertEqual(surface.paletteUpdates, 1)
 
         view.teardown()
-        XCTAssertFalse(view.subviews.contains(mock.libraryView!), "Teardown removes hosted subviews")
+        XCTAssertTrue(surface.isTornDown, "teardown reaches the surface, not just its view")
+        XCTAssertFalse(view.subviews.contains(surface.view), "Teardown removes hosted subviews")
 
         loaded.teardown()
+    }
+
+    /// A library surface that records what it was told, with no live browser behind it.
+    private final class StubLibrarySurface: WinampModernLibrarySurface {
+        let view = NSView(frame: .zero)
+        var browseModeRawValue = 0
+        var reloads = 0
+        var linkSheets = 0
+        var paletteUpdates = 0
+        var scaleUpdates = 0
+        private(set) var isTornDown = false
+
+        func reloadData() { reloads += 1 }
+        func showLinkSheet() { linkSheets += 1 }
+        func applyPalette(_ palette: WasabiPalette) { paletteUpdates += 1 }
+        func applySkinScale(_ scale: CGFloat) { scaleUpdates += 1 }
+        func prepareForUITeardown() {
+            isTornDown = true
+            view.removeFromSuperview()
+        }
     }
 
     // MARK: - Opt-in user-supplied fixtures

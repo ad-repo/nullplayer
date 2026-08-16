@@ -75,6 +75,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             loadedSkin = loaded
             self.host = host
             self.componentBridge = componentBridge
+            componentBridge.skinScaleProvider = { [weak self] in self?.skinScale ?? 1 }
+            componentBridge.linkSheetPresenter = { [weak self] in
+                self?.presentEmbeddedLibraryLinkSheet()
+            }
             skinView = view
             view.canvasSizeDidChange = { [weak self] size in
                 // A layout switch swaps the active layout, and with it the limits this window obeys.
@@ -235,7 +239,69 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         let handled = (try? scripts.dispatchSystem(event: "ongetcancelcomponent",
                                                    arguments: [.string(guid), .boolean(true)])) ?? 0
-        return handled > 0
+        let opened = Self.openHolders(for: kind, in: scripts.loadedSkin.runtime.graph)
+        #if DEBUG
+        NSLog("WinampModern reveal %@ guid=%@ handlers=%d opened=%d", kind.rawValue, guid, handled, opened)
+        #endif
+        return handled > 0 || opened > 0
+    }
+
+    /// Wasabi's `windowholder autoopen="1"`: when the component a holder holds becomes visible, the
+    /// holder brings its own surroundings on screen with it.
+    ///
+    /// This is the half of the contract a script cannot do for us. ClassicPro's SUI *does* switch
+    /// tabs from `onGetCancelComponent`, but only `if (active_tab != 0)` — and at startup its
+    /// `active_tab` is already 0, so asking for the Media Library made it decide it was already
+    /// showing one while `centro.library` had never actually been shown. Winamp does not rely on the
+    /// script here; the holder itself opens. So do we: reveal the hidden ancestors between an
+    /// `autoopen` holder of this kind and its layout, and nothing else.
+    ///
+    /// Returns how many holders were opened.
+    @discardableResult
+    private static func openHolders(for kind: WinampModernComponentKind,
+                                    in graph: WasabiObjectGraph) -> Int {
+        var opened = 0
+        func isAutoOpen(_ object: WasabiObject) -> Bool {
+            switch object.attributes["autoopen"]?.lowercased() {
+            case "1", "true", "yes": return true
+            default: return false
+            }
+        }
+        func visit(_ object: WasabiObject) {
+            if WinampModernComponentRegistry.isHolderElement(object.typeName),
+               WasabiSceneRenderer.componentKind(of: object) == kind, isAutoOpen(object) {
+                var node: WasabiObject? = object
+                var depth = 0
+                while let current = node, depth < 64 {
+                    if current.typeName.caseInsensitiveCompare("layout") == .orderedSame { break }
+                    switch current.attributes["visible"]?.lowercased() {
+                    case "0", "false", "no": _ = current.setAttribute("visible", value: "1")
+                    default: break
+                    }
+                    node = current.parent
+                    depth += 1
+                }
+                opened += 1
+            }
+            for child in object.children { visit(child) }
+        }
+        for root in graph.roots { visit(root) }
+        return opened
+    }
+
+    /// The skin's embedded library surface, for browse-mode save/restore. Nil until a holder for it
+    /// has actually appeared in a scene.
+    var embeddedLibrarySurface: WinampModernLibrarySurface? { componentBridge?.currentLibrarySurface }
+
+    /// The embedded browser's "link a server" flow. It has no classic controller to present from, so
+    /// the sheet is attached to whichever `.wal` window is hosting it.
+    private func presentEmbeddedLibraryLinkSheet() {
+        guard let window else { return }
+        let sheet = PlexLinkSheet()
+        sheet.showAsSheet(from: window) { [weak self] success in
+            guard success else { return }
+            self?.componentBridge?.currentLibrarySurface?.reloadData()
+        }
     }
 
     private func setAuxiliaryWindow(id: String, visible: Bool) {
@@ -253,7 +319,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private func wireContainerCallbacks(scripts: WinampModernScriptRuntime) {
         scripts.layoutSwitchRequested = { [weak self] container, layoutID in
             guard let view = self?.viewsByContainer[container] else { return false }
-            return view.activateLayout(id: layoutID)
+            let switched = view.activateLayout(id: layoutID)
+            // A different layout is a different set of component holders.
+            if switched { view.needsLayout = true }
+            return switched
         }
         scripts.layoutResizeRequested = { [weak self] container, size in
             self?.viewsByContainer[container]?.applyCanvasResize(size)
@@ -419,6 +488,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         viewsByContainer.removeAll()
         surfaceCoordinator = nil
         WasabiTextMetrics.componentTextProvider = nil
+        // Views tear their own surfaces down; this releases the bridge's reference behind them.
+        componentBridge?.releaseLibrarySurface()
         skinView?.teardown()
         skinView = nil
         host?.endVisualizationConsumption()

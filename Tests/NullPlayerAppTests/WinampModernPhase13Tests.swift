@@ -831,6 +831,8 @@ final class WinampModernPhase13Tests: XCTestCase {
 
     /// A minimal component host that answers from memory, for the EQ round trips.
     private final class FakeComponentHost: WinampModernComponentHost {
+        var librarySurface: WinampModernLibrarySurface?
+        var surfaceRequests = 0
         var snapshot = WinampModernEQSnapshot.flat
         var appliedPresets: [String] = []
         var removedRows: [Int] = []
@@ -849,7 +851,140 @@ final class WinampModernPhase13Tests: XCTestCase {
         func equalizerSetEnabled(_ enabled: Bool) { snapshot.enabled = enabled }
         func equalizerSetAuto(_ enabled: Bool) { snapshot.auto = enabled }
         func equalizerApplyPreset(named name: String) { appliedPresets.append(name) }
+        func makeLibrarySurface() -> WinampModernLibrarySurface? {
+            surfaceRequests += 1
+            return librarySurface
+        }
         func toggleClassicWindow(for kind: WinampModernComponentKind) {}
+    }
+
+    // MARK: - 13.8 Typed embedded library
+
+    /// The typed seam replaces an unowned `NSView`: a surface is created once per holder, told its
+    /// scale and palette, and torn down — before its view leaves the hierarchy — when the holder
+    /// goes, when the layout switches, and again on teardown.
+    func testLibrarySurfaceLifecycleFollowsItsHolder() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <component id="ml" param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"
+                         x="10" y="20" w="100" h="50"/>
+            </layout>
+            <layout id="shade" w="200" h="20"/>
+          </container>
+        </WasabiXML>
+        """)
+        let host = TestHost()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
+        addTeardownBlock { renderer.teardown() }
+        let componentHost = FakeComponentHost()
+        let surface = StubLibrarySurface()
+        componentHost.librarySurface = surface
+        renderer.componentHost = componentHost
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
+                                        componentHost: componentHost)
+        view.setFrameSize(renderer.canvasSize)
+        view.layoutSubtreeIfNeeded()
+
+        XCTAssertTrue(view.subviews.contains(surface.view))
+        XCTAssertEqual(componentHost.surfaceRequests, 1)
+        XCTAssertEqual(surface.scaleUpdates, 1)
+        XCTAssertEqual(surface.paletteUpdates, 1)
+        // Positioned at the holder's frame, converted from top-left skin space.
+        XCTAssertEqual(surface.view.frame, NSRect(x: 10, y: 200 - 70, width: 100, height: 50))
+
+        // A layout switch removes the holder; the surface must be told, not merely unparented.
+        view.activateLayout(id: "shade")
+        view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(surface.isTornDown, "the surface stands down before its view is removed")
+        XCTAssertFalse(view.subviews.contains(surface.view))
+
+        // Idempotent: teardown after a removal must not fail or double-report.
+        let teardownsAfterRemoval = surface.teardowns
+        view.teardown()
+        XCTAssertEqual(surface.teardowns, teardownsAfterRemoval, "repeated teardown is a no-op")
+    }
+
+    /// UI Size and colour themes reach the hosted surface, not just the scene around it.
+    func testLibrarySurfaceIsToldAboutScaleAndThemeChanges() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <gammaset id="Default"><gammagroup id="g" value="0,0,0"/></gammaset>
+          <gammaset id="Blue"><gammagroup id="g" value="0,0,4096"/></gammaset>
+          <color id="pledit.text" value="120,120,120" gammagroup="g"/>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <component id="ml" param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"
+                         x="0" y="0" w="100" h="100"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let host = TestHost()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
+        addTeardownBlock { renderer.teardown() }
+        let componentHost = FakeComponentHost()
+        let surface = StubLibrarySurface()
+        componentHost.librarySurface = surface
+        renderer.componentHost = componentHost
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
+                                        componentHost: componentHost)
+        view.setFrameSize(renderer.canvasSize)
+        view.layoutSubtreeIfNeeded()
+
+        view.skinScale = 2
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(surface.scaleUpdates, 2, "UI Size reaches the hosted browser")
+        XCTAssertEqual(surface.lastScale, 2)
+        XCTAssertEqual(surface.view.frame, NSRect(x: 0, y: 400 - 200, width: 200, height: 200),
+                       "and its geometry scales with the rest of the scene")
+
+        loaded.themeCoordinator.activate("Blue")
+        XCTAssertGreaterThanOrEqual(surface.paletteUpdates, 2, "a theme switch recolours it too")
+        view.teardown()
+    }
+
+    /// Embedded mode removes this view's own window chrome and the hit regions that go with it.
+    func testEmbeddedBrowserDropsItsClassicChromeAndTitleBarRegions() {
+        let classic = PlexBrowserView.LayoutMetrics.classic
+        let embedded = PlexBrowserView.LayoutMetrics.embedded
+        XCTAssertGreaterThan(classic.titleBarHeight, 0)
+        XCTAssertEqual(embedded.titleBarHeight, 0, "the `.wal` frame already drew the title bar")
+        XCTAssertEqual(embedded.leftBorder, 0)
+        XCTAssertEqual(embedded.rightBorder, 0)
+        XCTAssertEqual(embedded.statusBarHeight, 0)
+        XCTAssertEqual(embedded.tabBarHeight, classic.tabBarHeight,
+                       "the content controls are unchanged — only the window chrome goes")
+        XCTAssertEqual(embedded.serverBarHeight, classic.serverBarHeight)
+        XCTAssertEqual(embedded.searchBarHeight, classic.searchBarHeight)
+    }
+
+    /// A stub surface that records what it was told, with no live browser behind it.
+    private final class StubLibrarySurface: WinampModernLibrarySurface {
+        let view = NSView(frame: .zero)
+        var browseModeRawValue = 0
+        var reloads = 0
+        var linkSheets = 0
+        var paletteUpdates = 0
+        var scaleUpdates = 0
+        var lastScale: CGFloat = 0
+        var teardowns = 0
+        var isTornDown: Bool { teardowns > 0 }
+
+        func reloadData() { reloads += 1 }
+        func showLinkSheet() { linkSheets += 1 }
+        func applyPalette(_ palette: WasabiPalette) { paletteUpdates += 1 }
+        func applySkinScale(_ scale: CGFloat) { scaleUpdates += 1; lastScale = scale }
+        func prepareForUITeardown() {
+            guard !isTornDown else { return }
+            teardowns += 1
+            view.removeFromSuperview()
+        }
     }
 
     // MARK: - Helpers
