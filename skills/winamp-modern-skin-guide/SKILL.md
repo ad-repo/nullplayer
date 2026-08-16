@@ -36,6 +36,9 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Skin-facing host API | `WinampModernHost.swift` |
 | Component model + host protocol | `WinampModernComponents.swift` |
 | Container topology | `WinampModernContainerTopology.swift` |
+| Surface inventory + synthesis | `WasabiSurfaceInventory.swift`, `WasabiSurfaceSynthesizer.swift`, `WasabiStandardFrames.swift` |
+| Colour theme + palette | `WinampModernThemeCoordinator.swift`, `WasabiPalette.swift` |
+| EQ action decoding | `WinampModernEQActions.swift` |
 | Diagnostics | `WalDiagnostics.swift` |
 | Compatibility report | `WinampModernCompatibilityReport.swift` |
 | Complete loader | `WinampModernSkinLoader.swift` |
@@ -43,6 +46,8 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | ClassicPro engine import | `ClassicProEngine.swift`, `NSISArchive.swift`, `LZMA1Decoder.swift` |
 | Window controller / view | `Windows/WinampModern/WinampModernMainWindowController.swift`, `…MainView.swift` |
 | `AudioEngine` component bridge | `Windows/WinampModern/WinampModernComponentBridge.swift` |
+| Surface routing | `Windows/WinampModern/WinampModernSurfaceCoordinator.swift` |
+| Embedded library surface | `Windows/WinampModern/WinampModernLibrarySurfaceView.swift` |
 
 Design records and per-phase handoffs: `docs/winamp-modern/`.
 
@@ -53,11 +58,18 @@ Design records and per-phase handoffs: `docs/winamp-modern/`.
   └─ WalArchive              validate + bound (ZIP, read-only, on-demand inflate)
       └─ WalVirtualFileSystem  mount at /Skins/<name>/, resolve @VARS@, case-insensitive
           └─ WalXMLDocumentLoader  parse skin.xml, expand <include>/<elementinclude> + globs
-              └─ WasabiSkinInitializer  6 ordered passes → registries + retained graph
-                  ├─ WasabiSceneRenderer   graph → Core Graphics
-                  ├─ WinampModernScriptRuntime  MAKI programs bound to graph objects
-                  └─ WinampModernHost      the only door to AudioEngine
+              ├─ WinampModernSurfaceInventory   what the skin declares (pre-graph, bounded walk)
+              └─ WasabiSurfaceSynthesizer       append windows for missing surfaces
+                  └─ WasabiSkinInitializer  6 ordered passes → registries + retained graph
+                      ├─ WasabiSceneRenderer   graph → Core Graphics
+                      ├─ WinampModernScriptRuntime  MAKI programs bound to graph objects
+                      └─ WinampModernHost      the only door to AudioEngine
 ```
+
+Synthesis sits **before** initialization on purpose: synthetic XML must go through the same
+registration, inheritance validation, object creation, and script binding as the skin's own. After
+`scripts.start()`, `WinampModernSurfaceCoordinator` reconciles the catalog against the containers that
+actually opened.
 
 `WinampModernSkinLoader.load(from:additionalMounts:)` is the headless entry point for the whole
 left column and returns a `WinampModernLoadedSkin`. Every test and the window controller go through
@@ -337,22 +349,92 @@ bitmap-font paths share `tickerMotion(for:overflow:textWidth:)`.
 
 ### Component hosting
 
-cPro-Bento is a single-window SUI: the playlist, library, visualization, video, and EQ are embedded in
-the main window via `windowholder hold="guid:…"` rather than living in separate windows. The engine is
-therefore **component-hosting-first**:
+A `.wal` skin is a whole UI suite, and skins disagree about where the playlist, equalizer, and library
+*are*: cPro-Bento embeds all three in one SUI window, mmd3 ships a playlist window and no library,
+CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engine is therefore
+**component-hosting-first**:
 
 - `WinampModernComponentRegistry` maps the standard Winamp component GUIDs to a typed
-  `WinampModernComponentKind`. **GUIDs never escape the registry.**
-- `WinampModernContainerTopology.analyze` classifies each container as a real visible window or an
-  SUI-collapsed stub (1×1 / `window-overrides` invisible), and yields the container→window mapping.
+  `WinampModernComponentKind`. **GUIDs never escape the registry**, and matching is *exact* — the
+  fuzzy id rule lives in `kindFromHolderIdentifier` and is only ever applied to an engine holder's id
+  (`centro.windowholder.library`), never to a container id or a menu parameter.
+- Three element types are holders: `<windowholder hold=…>`, `<componentbucket>`, and
+  `<component param=…>` (`isHolderElement`). The last is what separate-window skins use for their real
+  content — mmd3's `pledit-normal.xml`, Winamp Modern's `ml-normal.xml`.
+- `WinampModernContainerTopology.analyze` classifies each container: a real visible window or an
+  SUI-collapsed stub (1×1 / `window-overrides` invisible), its `kind` (from its own `component=`
+  GUID), its layout's `minimumSize`/`maximumSize`, and whether NullPlayer synthesized it.
 - `WinampModernComponentHost` is the sandboxed seam supplying app-side content per kind;
-  `WinampModernComponentBridge` implements it over `AudioEngine`.
-- `TOGGLE`/`sendaction` for eq/pl/ml/video resolves to the embedded component first, then a separate
-  skin window, then the classic `WindowManager` window as a fallback.
+  `WinampModernComponentBridge` implements it over `AudioEngine` and owns the embedded library.
 
 There is **one** script runtime and **one** component host per loaded skin, shared by the main window
-and every auxiliary container window. Only the main view (`drivesScripts: true`) tears down the shared
-runtime.
+and every auxiliary container window. Only the main view (`drivesScripts: true`) owns the *global*
+script callbacks (theme, actions, mouse, EQ) — layout switching and resizing are **container-scoped**
+(below).
+
+#### Where a surface lives
+
+`WinampModernSurfaceCoordinator` is the single answer, for menus, skin buttons, and restore alike:
+**embedded → declared container → synthesized container → classic fallback**. `WindowManager`'s
+`show*`/`toggle*`/`is*Visible` consult it before their classic paths; the fallback has its own entry
+point (`showClassicSurfaceForWinampModern`) because re-entering the public toggles would route back
+into the coordinator.
+
+Two things about the embedded case that are easy to get wrong:
+
+- **Revealing one is a Wasabi contract, not a search.** Winamp calls
+  `System.onGetCancelComponent(guid, true)` when a component wants to be visible, and an SUI skin uses
+  that to switch to the tab/drawer holding it. Detecting a holder and returning does nothing visible.
+- **The script is not enough.** ClassicPro handles that event but only `if (active_tab != 0)`, and its
+  `active_tab` is already 0 at startup — so it concludes it is already showing the library while
+  `centro.library` has never been shown. `windowholder autoopen="1"` is the other half: the holder
+  opens its own surroundings. `openHolders(for:in:)` un-hides the ancestors between an `autoopen`
+  holder and its layout.
+- An embedded surface owns **no `NSWindow`** and must never reach docking, compact-mode snapshots, or
+  frame persistence.
+
+#### Synthesizing a missing window
+
+`WasabiSurfaceInventory` walks the *expanded document* before graph creation — through `<group id>`,
+XUI tags, `inherit_group`, `embed_xui`, `Wasabi:Frame` panes, standard-frame `content=`, and typed
+holders — and `WasabiSurfaceSynthesizer` appends a `<groupdef>` + `<container>` for each missing
+surface in a **separate-window** skin. Both run before `WasabiSkinInitializer`, so synthetic XML is
+registered, inheritance-validated, instantiated, and script-bound exactly like the skin's own.
+
+- It has to be pre-graph: reading the live graph would come too late for synthesis *and* would mistake
+  cPro's script-built holders for missing surfaces.
+- Ambiguity suppresses synthesis. A duplicate skin window is a much worse failure than a classic
+  fallback.
+- A frame qualifies only if the skin declares it *and* it carries the script that instantiates its
+  `content=` group. The empty built-in `wasabi.*` shells never qualify — they would produce a titled
+  empty box.
+- mmd3 declares `wasabi.standardframe.*` with **no `xuitag`** (real Winamp's standard library supplies
+  it). `WasabiTypeRegistry.registerXUITagAlias` fills an *unclaimed* tag pointing at an *existing*
+  groupdef, before the shells are seeded, so a skin's own `xuitag=` always wins.
+- **Winamp defines no equalizer component GUID.** An equalizer is recognized by its controls
+  (`EQ_BAND`/`EQ_PREAMP`/`<eqvis>`) and a synthesized one uses `guid:eq`. `EQ_TOGGLE`/`EQ_AUTO` do not
+  count as evidence — a button that opens the EQ is not an EQ.
+
+#### Container-scoped layout callbacks
+
+One skin, one runtime, several windows: `layoutSwitchRequested`/`layoutResizeRequested` carry the
+container's `WasabiObjectID` (derived from the receiver), and the window controller routes each to the
+view that owns that container. Without the id, a playlist script resizing itself resized the player.
+The controller installs both **before `scripts.start()`** — a skin that resizes from `onScriptLoaded`
+does it during `start()`.
+
+#### Colours and hosted AppKit content
+
+`WinampModernThemeCoordinator` owns the one `WasabiColorThemeCatalog` per loaded skin; renderers and
+views subscribe by identity token and drop their themed bitmaps on a switch. `WasabiPalette` gives
+NullPlayer-drawn content (playlist rows, EQ sliders) colours from the skin's own resources, resolved
+through the renderer's *own* resolver so gamma matches.
+
+Hosted AppKit surfaces (`WinampModernLibrarySurface`) are **reconciled from `layout()`, never from
+`draw`** — creating and adding a subview inside a draw cycle is a re-entrant hierarchy mutation. A
+script mutating the graph or switching layout sets `needsLayout`, because a script can create or
+reveal a holder. Each surface is told `prepareForUITeardown()` *before* its view leaves the hierarchy,
+so its in-flight tasks and timers do not outlive it.
 
 ### Teardown order
 
@@ -363,7 +445,9 @@ Synchronous and idempotent — every async producer must stop before its resourc
 3. `WasabiSceneRenderer.teardown()` — decoded resource caches
 4. `WinampModernLoadedSkin.teardown()` — retained graph + VFS-owned state
 
-Auxiliary container views tear down **before** the main view; the graph goes last.
+Auxiliary container views tear down **before** the main view; the graph goes last. Hosted surfaces
+(the embedded library) are told `prepareForUITeardown()` before step 1 removes their view, and the
+component bridge releases its own reference behind them.
 `WinampModernMainWindowController.prepareForUITeardown()` drives this before a mode controller is
 released.
 
@@ -384,9 +468,14 @@ once at the input boundary, so no graph object, renderer path, or script ever se
 `Skin.mainWindowSize`, and leaves `minSize` alone so a resizable `.wal` stays resizable.
 
 Winamp Modern uses the **classic 10-band EQ** (`usesModernEQLayout == false`) and has no
-`modernSkinFamily`. Auxiliary windows (playlist/EQ/library) reuse the classic controllers unless the
-skin embeds them as components. Mode switching is live, and `AudioEngine` is owned by `WindowManager`,
-so playback survives a switch untouched.
+`modernSkinFamily`. Since Phase 13 the playlist, EQ, and library are **skin-owned surfaces** routed by
+`WinampModernSurfaceCoordinator`; the classic controllers are the explicit last resort, not the
+default. Mode switching is live, and `AudioEngine` is owned by `WindowManager`, so playback survives a
+switch untouched.
+
+A frame restored from saved state is clamped to the active layout's `minimum_*`/`maximum_*` with the
+saved top-left preserved (`MainWindowProviding.clampRestoredFrame`, a no-op for the fixed-size
+families). Restoring verbatim is what brought a 500×500 cPro-Bento window back as 376×182.
 
 Persistence writes `false` to the legacy `modernUIEnabled` bool so older clients degrade to classic
 rather than reading a corrupt value.
