@@ -39,6 +39,11 @@ For each of the three fixtures:
 - [ ] Artwork, fonts, colors, and gamma look like the skin's intent
 - [ ] Record which widgets draw empty (expected for `wasabi.*`-backed ones) with a screenshot
 - [ ] cPro-Bento: the SUI expands to exactly **one** window, not a scattering of stubs
+- [ ] cPro-Bento: beat visualization, spectrum, and the kbps/kHz/stereo readouts are all alive, and
+      the window frame has no holes in its edges (each was a Phase 11 symptom)
+- [ ] cPro-Bento: leave it open and **use** it for several minutes — clicking, opening drawers,
+      switching colour themes, changing UI Size. A live run crashed in text drawing on 2026-08-16
+      that no headless harness reproduces; if it recurs, record what you did immediately before.
 - [ ] Capture a reference screenshot per fixture into `docs/winamp-modern/screenshots/`
 
 ## 2. Input and transport

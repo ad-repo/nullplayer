@@ -197,11 +197,19 @@ final class WasabiResourceCache {
         return bitmap
     }
 
-    func font(identifier: String?, size: CGFloat) -> NSFont {
+    /// A font for a text object, or `nil` when nothing usable could be produced.
+    ///
+    /// Optional on purpose: these are ObjC constructors imported as non-optional that can still
+    /// return null, and a null font reaches CoreText as a nil attribute value, which aborts the
+    /// **process** (`attempt to insert nil object`) from inside `NSView.draw`. A skin resource must
+    /// never be able to do that, so the null is caught here — assigning to an `NSFont?` is what makes
+    /// it visible — and answered by the caller's guaranteed fallback.
+    func font(identifier: String?, size: CGFloat) -> NSFont? {
         guard !isTornDown, let identifier,
               let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
               definition.kind == "truetypefont", let path = definition.logicalFile else {
-            return .monospacedSystemFont(ofSize: size, weight: .regular)
+            let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)
+            return fallback
         }
         let key = path.lowercased()
         let cgFont: CGFont?
@@ -216,9 +224,15 @@ final class WasabiResourceCache {
             cgFont = nil
         }
         if let cgFont {
-            return CTFontCreateWithGraphicsFont(cgFont, size, nil, nil) as NSFont
+            let created = CTFontCreateWithGraphicsFont(cgFont, size, nil, nil)
+            // A font parsed out of a skin can be missing the name table CoreText expects; it then
+            // builds an attribute dictionary with a nil in it and aborts the process. A font with no
+            // PostScript name is not usable, so fall back rather than hand it on.
+            let named: NSFont? = CTFontCopyPostScriptName(created) == nil ? nil : (created as NSFont)
+            if let named { return named }
         }
-        return .monospacedSystemFont(ofSize: size, weight: .regular)
+        let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)
+        return fallback
     }
 
     func teardown() {
@@ -655,9 +669,17 @@ final class WasabiSceneRenderer {
             drawBitmapText(text, definition: definition, object: object, frame: frame, context: context)
             return
         }
-        let size = CGFloat(Double(object.attributes["fontsize"] ?? "11") ?? 11)
+        // A skin (or one of its scripts) can name any point size at all, including 0, a negative, or
+        // something that does not parse. CoreText builds its own attribute dictionary from whatever
+        // it is handed, and an unusable size or font there aborts the process from inside a draw.
+        let requested = Double(object.attributes["fontsize"] ?? "11") ?? 11
+        let size = CGFloat(requested.isFinite ? min(max(requested, 1), 256) : 11)
         let font = resources.font(identifier: object.attributes["font"], size: size)
-        let color = resolvedColor(object.attributes["color"] ?? "255,255,255")
+            ?? NSFont.systemFont(ofSize: size)
+        // Optional for the same reason as the font: nothing that ends up in a CoreText attribute
+        // dictionary may be a null pointer, and only an `Optional` binding can see one.
+        let resolved: NSColor? = resolvedColor(object.attributes["color"] ?? "255,255,255")
+        let color = resolved ?? .white
         let alignment: NSTextAlignment
         switch object.attributes["align"]?.lowercased() {
         case "center": alignment = .center

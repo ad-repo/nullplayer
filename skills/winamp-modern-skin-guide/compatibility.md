@@ -101,9 +101,19 @@ By area:
 - **Animated layers**: `getLength`, `gotoFrame`, `getCurFrame`, `setStartFrame`, `setEndFrame`,
   `setSpeed`, `play`/`stop`, `isPlaying` — the play head is a pure function of the time since `play()`
   (`WasabiAnimation`), so the renderer and the script always agree on the current frame
-- **`Map`**: `loadMap`, `inRegion`, `getValue` — a bitmap the script samples. `new Map` and `new Timer`
-  are indistinguishable at construction (class GUIDs are not in the archive), so a dynamic object
-  becomes a map on its first `loadMap`
+- **`Map`**: `loadMap`, `inRegion`, `getValue`, `getWidth`, `getHeight`, `getARGBValue(x, y, channel)`
+  — a bitmap the script samples. `new Map` and `new Timer` are indistinguishable at construction
+  (class GUIDs are not in the archive), so a dynamic object becomes a map on its first `loadMap`.
+  `loadMap` takes **either a declared bitmap id or a VFS path**; ClassicPro's "is the plugin
+  installed?" probe is the path form (`…/engine/image/installed.png`, width 1). The `getARGBValue`
+  channel index is **BGRA** — pinned by `player.maki` building `colorbandpeak="r,g,b"` from channels
+  2, 1, 0
+- **`XmlDoc`**: `load`, `exists` — **inert**. The callback-driven parser is not implemented, so a
+  document always reports that it does not exist and every caller takes its own skip path. Cost: a
+  skin's optional `ClassicPro.xml` extras (songticker antialiasing, custom beat-vis names) are ignored
+- **Object validity**: `isInvalid()` is true for a null receiver *and* for an object whose declared
+  bitmap never resolved. ClassicPro probes for optional artwork by declaring a hidden layer over it
+  and asking that layer whether it is invalid
 - **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **skin pixels**, the same units as a mouse event's
   x/y), `getEQ`, `getEqBand`/`setEqBand` (MAKI's −127…127 scale ↔ the engine's ±12 dB), `atan`
 - **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
@@ -134,20 +144,23 @@ cannot degrade any finer than the event: the bytecode does not encode a call's a
 without a signature the interpreter cannot unwind the stack and must abandon the event rather than
 guess. This is why each needed method has to be implemented rather than stubbed.
 
-**Measured demand — cPro-Bento startup.** As of 2026-08-15, exactly five methods block the
-north-star target's `onscriptloaded` (from the report; 193 methods are *referenced* across the engine
-but never reached at startup):
+**Measured demand — cPro-Bento startup.** As of 2026-08-16 (Phase 11): **none.** The target reports
+zero error-severity findings and zero unsupported methods, at compatibility level `degraded`.
 
-| Method | Calls |
-|--------|-------|
-| `loadmap` | 5 |
-| `getitembyguid` | 2 |
-| `getposition` | 1 |
-| `getscale` | 1 |
-| `isinvalid` | 1 |
+Getting there took three waves, because each fix let a script run further and reach the next miss —
+so re-measure after every change rather than working from a static list (193 methods are *referenced*
+across the engine but never reached at startup):
 
-Two follow-on `findobject`-on-null errors are downstream of these. Implement these five (each with a
-signature and a regression test) before looking any further down the list.
+1. `getargbvalue`, `getwidth`/`getheight` (on `Map`), `getitembyguid`, `getposition`, `getscale`,
+   `isinvalid`, `setredraw`, `setregionfrommap`, `getdateyear`
+2. `delete` (opcode 97) underflowing the value stack — see the note below — then `load`/`exists`
+   (`XmlDoc`), `getfilesize`, `getlanguageid`
+3. `switchskin`, `getpublicstring`/`setpublicstring`, `getcurcfgval`, `onaction` as a method
+
+> **`delete` is an expression.** The compiler emits `push; delete; pop`, so the delete opcode must
+> leave its operand for that discard pop. Consuming it underflowed the stack and killed every script
+> that deletes anything — which stayed invisible for eight phases because those scripts aborted
+> earlier on a missing method.
 
 **Measured demand — Winamp Modern startup.** Six methods, none of which block the window from
 rendering: `clienttoscreenx` (×10), `snapadjust`, `debugstring`, `getgroup`, `onsetposition`,
@@ -233,10 +246,19 @@ budget aborts; fuzzing of the archive, XML, group-expansion, MAKI-parser, and VM
 outcome, no trap or hang); stress (timer caps, 50× rapid load/teardown, malformed images, 2,000
 groupdefs); teardown completeness; live four-mode switching.
 
-**Verified by rendering** (2026-08-15, `WinampModernRenderDumpTests` against user-supplied archives,
-plus a manual GUI pass): Winamp Modern and cPro-Bento both render their frames and controls; sprite
-crop origin, upright orientation, layer stretching, tiling, and `fitparent` are pinned per pixel by
-`WinampModernRenderPixelTests`.
+**Verified by rendering** (2026-08-15/16, `WinampModernRenderDumpTests` against user-supplied
+archives, plus a manual GUI pass): Winamp Modern and cPro-Bento both render their frames and controls;
+sprite crop origin, upright orientation, layer stretching, tiling, and `fitparent` are pinned per
+pixel by `WinampModernRenderPixelTests`. Since Phase 11 cPro-Bento also renders its beat
+visualization, spectrum and stream-info readouts, with all engine scripts completing.
+
+**Open crash report (2026-08-16, not reproduced).** A live cPro-Bento run aborted in `drawText` with
+`-[__NSPlaceholderDictionary initWithObjects:forKeys:count:]: attempt to insert nil object` from
+`NSString.size(withAttributes:)`. The text boundary is now hardened (optional-typed font, clamped
+point size, PostScript-name check, optional-typed colour), but neither the dump harness nor
+`WinampModernCrashRepro` — which fires every standard event at all 290 objects with a redraw after
+each — triggers it, with or without the hardening reverted. **Treat the fix as plausible, not
+proven**, and see `docs/winamp-modern/phase-11-handoff.md` §5 for what is still untried.
 
 **Not verified**: casting continuity in this mode, Compact Mode, UI Size, window docking, and
 pixel-exact fidelity against real Winamp. Playback and casting are `AudioEngine`-owned and
@@ -245,7 +267,15 @@ skin's own controls. See [manual-qa-checklist.md](manual-qa-checklist.md).
 
 **Known rendering gaps**: the lower third of Winamp Modern's main window (`player.main` and
 `player.normal.drawer` both resolve to y≈17 and overlap, leaving the config/EQ drawer area blank), and
-cPro-Bento's SUI centre (windowholder-hosted playlist/library/vis content).
+cPro-Bento's SUI centre.
+
+> **cPro-Bento's empty centre is `Wasabi:Frame`, not the windowholders.** Since Phase 11 the SUI
+> subtree reaches `<Wasabi:Frame id="centro.mainframe" left="centro.components"
+> right="centro.playlist1" orientation="vertical" from="right" width="200">` and stops there. In
+> Winamp that splitter instantiates the two groups it names; ours is one of the identifier-only
+> `wasabi.*` shells (`wasabiStandardLibraryGroups`), so it instantiates nothing and the library tree,
+> playlist and tabs never enter the graph at all. Implementing it is the highest-value next step for
+> this target.
 
 **Not fuzzed**: `NSISArchive` and `LZMA1Decoder`. They are validated byte-for-byte against the real
 installer (309/309 engine files match a reference oracle), but a bounded fuzz over them remains

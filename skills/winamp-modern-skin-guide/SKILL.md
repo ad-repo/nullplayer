@@ -193,6 +193,17 @@ Use the measured-demand signal rather than porting reference stubs blindly — s
 > Modern window body was missing. If you cannot implement a method, leave it out of `signature(for:)`
 > so the demand tally records it.
 
+> **Gotcha:** the blocking list is a **queue, not a set**. Each method you add lets its script run
+> further and reach the next thing it needs, so the report after a fix names methods the report
+> before it could not have known about. cPro-Bento took three full rounds (9 methods → 4 → 0).
+> Re-measure after every change; never work down a static list.
+
+**Opcodes are exercised at the same rate as methods** — that is, barely, until a script gets far
+enough to use one. `delete` (opcode 97) consumed its operand for eight phases before anything reached
+it. `delete obj` is an **expression**: the compiler emits `push; delete; pop`, so the opcode must
+leave the value for the statement's own discard pop. When you first unblock a batch of scripts,
+expect the *next* failure to be an interpreter bug rather than a missing method.
+
 #### Script-built UI: `onSetXuiParam` and `System.newGroup`
 
 Winamp Modern's window frames are **hollow XML**. `Wasabi:MainFrame:NoStatus` ships only titlebar and
@@ -250,6 +261,25 @@ whether the point is on the control. `new Map` and `new Timer` produce the same 
 object — class GUIDs are not in the archive — so an object becomes a map on its first `loadMap`.
 Knob scripts mix `getMousePosX()` with the x/y of a mouse event in one expression, so the cursor
 position is reported in **skin pixels**, not screen points; UI Size never enters the script's world.
+
+A `Map` is also a general **image-inspection** object, not only a knob lookup: `getWidth`/`getHeight`
+size things from artwork, and `getARGBValue(x, y, channel)` reads whole pixels — ClassicPro derives
+its visualization colour bands this way (`colorbandpeak="r,g,b"` from channels **2, 1, 0**, i.e. the
+index is BGRA). And `loadMap` takes **either a resource id or a VFS path**; ClassicPro's "is the
+plugin installed?" probe is the path form (a 1×1 `installed.png`, checked with `getWidth() != 1`).
+Supporting only ids made cPro-Bento conclude the engine was missing and try to switch skins.
+
+#### Asking a skin what it actually shipped
+
+Engines are written to run against skins that omit optional pieces, and they ask two questions:
+
+- **`isInvalid()`** — is this object real? True for a null receiver *and* for an object whose declared
+  bitmap never resolved. ClassicPro probes for optional artwork by declaring a hidden layer over it
+  (`<layer id="read.bg.left" image="player.left.alt" visible="0"/>`) and asking that layer. Answering
+  "valid" for a skin that ships no `mainframe_lr.png` sent `player.maki` on to swap the window frame
+  over to bitmaps that do not exist — visible as holes punched through the window's edges.
+- **`getCurCfgVal()`** — the value of the config attribute the object is bound to via
+  `cfgattrib="{GUID};Name"`. The GUID is the section key, the same addressing `getItemByGuid` uses.
 
 #### Track metadata the skins actually read
 
@@ -340,7 +370,14 @@ render path. They are adapted under a strict policy: `exploreFile` reveals an ex
 `findFiles` is a bounded no-op returning −1 so callers early-return.
 
 `WinampVersionCheck` is satisfied by reporting a build number past the `2405` gate, so `load.xml`
-*branches* through its "please update Winamp" path rather than being hard-blocked.
+*branches* through its "please update Winamp" path rather than being hard-blocked. The skin's own
+`warning.maki` runs a **second, independent** check — a `Map` load of the engine's 1×1
+`image/installed.png` — and `switchSkin`es away if it fails; that is why `loadMap` must accept a path.
+`switchSkin` itself is accepted and inert: choosing a skin is the host's decision, not a script's.
+
+**The engine ships its MAKI `.m` source next to the bytecode.** Read the script that owns the broken
+feature instead of inferring semantics — `getARGBValue`'s BGRA channel order, `getDateYear`'s
+years-since-1900 scale, and the `isInvalid` probe idiom were all pinned that way rather than guessed.
 
 ## Debugging a skin
 
@@ -379,6 +416,20 @@ renderer code — `BITMAPS … missing=` distinguishes an unresolved resource fr
 > in `NSString.draw(in:withAttributes:)`, which renders into the *current* `NSGraphicsContext`, not
 > the `CGContext` it was handed. Without it every TrueType/system-font string is silently dropped from
 > the dump while the real app (always inside `NSView.draw`) shows them — the harness lies to you.
+
+**The dump only ever renders a skin's *initial* state.** A defect a script mutation introduces later
+(a font swapped at runtime, an object shown after a click) is invisible to it. `WinampModernCrashRepro`
+is the opt-in harness for that case: it fires every standard event at every object in graph order,
+redrawing after each, then sweeps the clock. It was written for a live-run crash it still does not
+reproduce — extend it rather than starting over.
+
+> **Anything a skin controls can reach CoreText, and a nil there kills the process.**
+> `NSString.size(withAttributes:)` aborts with `attempt to insert nil object` if any attribute value
+> is null — inside `NSView.draw`, so it is an app crash, not a bad frame. AppKit/CoreText
+> constructors are imported as non-optional but can still return null, and **only an `Optional`
+> binding sees it** (`let font: NSFont? = …`). `WasabiResources.font` therefore returns `NSFont?`,
+> point sizes are clamped to a finite 1…256, and a skin TrueType with no PostScript name is rejected.
+> Apply the same discipline to any new skin-derived value handed to a system API.
 
 `WinampModernRenderPixelTests` is the synthetic guard for all of the above: a banded atlas whose crop
 origin, upright orientation, tiling, and `fitparent` sizing are asserted per pixel. When you touch

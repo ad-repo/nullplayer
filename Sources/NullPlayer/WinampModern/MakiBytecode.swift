@@ -452,6 +452,18 @@ protocol MakiMethodDispatching: AnyObject {
     func invoke(method: String, on object: MakiObjectReference, arguments: [MakiValue],
                 program: MakiProgram) throws -> MakiValue
     func makeObject(classGUID: String, program: MakiProgram) throws -> MakiObjectReference
+    /// What a call on a *null* receiver evaluates to. Null is right for almost everything (the call
+    /// is a no-op), but a handful of methods are questions *about* the receiver, and for those "no
+    /// object" is a real answer rather than an absence of one.
+    func nullReceiverResult(for method: String) -> MakiValue
+    /// A script `delete`d an object it made with `new`. Anything the host was holding for it (a
+    /// timer, a decoded map) can go.
+    func releaseObject(_ reference: MakiObjectReference)
+}
+
+extension MakiMethodDispatching {
+    func nullReceiverResult(for method: String) -> MakiValue { .null }
+    func releaseObject(_ reference: MakiObjectReference) {}
 }
 
 final class MakiInterpreter {
@@ -586,7 +598,7 @@ final class MakiInterpreter {
                     // calls (MMD3 checks menu commands from a function that also runs before the menu
                     // is built). Aborting the whole event instead would take every later statement in
                     // `onScriptLoaded` — the entire skin's wiring — down with it.
-                    try push(.temporary(.null))
+                    try push(.temporary(dispatcher.nullReceiverResult(for: method.name)))
                     break
                 }
                 let result = try dispatcher.invoke(method: method.name, on: object,
@@ -666,7 +678,16 @@ final class MakiInterpreter {
                 try push(.temporary(.object(try dispatcher.makeObject(classGUID: program.classes[classIndex], program: program))))
                 allocatedBytes += 128
             case 97:
-                _ = try pop()
+                // `delete obj` — destroys the object but is still an *expression*, so the compiler
+                // emits its own discard pop straight after (`push; delete; pop`). Popping here as
+                // well underflowed the stack and killed the rest of the event: ClassicPro's
+                // `mainmenu.maki` reads its colours out of a `Map` and then deletes it, three
+                // statements into `onScriptLoaded`.
+                let target = stack.last?.value
+                if case .object(let reference) = target {
+                    objectMemberCount -= objectMembers.removeValue(forKey: reference)?.count ?? 0
+                    dispatcher.releaseObject(reference)
+                }
             default:
                 throw failure(.unsupportedScriptCapability, "Unsupported MAKI opcode \(instruction.opcode).")
             }

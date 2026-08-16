@@ -9,7 +9,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         /// A `Map` that has been given its bitmap. `new Map` and `new Timer` are indistinguishable at
         /// construction (the class GUIDs are not part of the archive), so the role is settled by the
         /// first call that only one of them accepts — here, `loadMap`.
-        case map(bitmapID: String)
+        case map(bitmapID: String, source: WalSourceLocation)
+        /// An `XmlDoc` the script asked to `load`. ClassicPro uses one only to read the optional
+        /// `ClassicPro.xml` extras (songticker antialiasing, custom beat-vis names), always behind
+        /// `if (myDoc.exists())`. The callback-driven parser is not implemented, so the document
+        /// reports that it does not exist and every caller takes its own skip path.
+        case xmlDocument
     }
 
     private struct DynamicObjectState {
@@ -91,7 +96,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "onleftclick": 0,
         "onrightclick": 0,
         "ontargetreached": 0,
-        "ontoggle": 1
+        "ontoggle": 1,
+        // `onAction` is Wasabi's generic message channel, and scripts *send* on it as well as
+        // receive: ClassicPro's menu bar posts itself `update_menu`, and the drawer registers its
+        // widgets with the widget manager, both by calling the event as a method.
+        "onaction": 7
     ]
 
     /// Version-gate shim. ClassicPro's `WinampVersionCheck.maki` early-returns when the reported build
@@ -221,25 +230,40 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     /// Sample a `Map`'s bitmap at a point in its own pixel space. Decoded images are cached, bounded
     /// by `maximumCachedMaps`; the bitmap itself passed the loader's dimension limits.
-    private func mapPixel(bitmapID: String, x: Int, y: Int) -> (red: UInt8, alpha: UInt8, inBounds: Bool) {
-        guard let image = mapImage(bitmapID: bitmapID) else { return (0, 0, false) }
-        guard x >= 0, y >= 0, x < image.width, y < image.height else { return (0, 0, false) }
+    private func mapPixel(bitmapID: String, source: WalSourceLocation, x: Int, y: Int)
+        -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8, inBounds: Bool) {
+        guard let image = mapImage(bitmapID: bitmapID, source: source) else { return (0, 0, 0, 0, false) }
+        guard x >= 0, y >= 0, x < image.width, y < image.height else { return (0, 0, 0, 0, false) }
         let bitmap = WasabiBitmap(image: image, width: image.width, height: image.height, cost: 0)
-        guard let pixel = bitmap.pixel(at: CGPoint(x: x, y: y)) else { return (0, 0, false) }
-        return (pixel.red, pixel.alpha, true)
+        guard let pixel = bitmap.pixel(at: CGPoint(x: x, y: y)) else { return (0, 0, 0, 0, false) }
+        return (pixel.red, pixel.green, pixel.blue, pixel.alpha, true)
     }
 
-    private func mapImage(bitmapID: String) -> CGImage? {
+    private func mapImage(bitmapID: String, source scriptSource: WalSourceLocation) -> CGImage? {
         let key = bitmapID.lowercased()
         if let cached = mapImages[key] { return cached }
         guard mapImages.count < Self.maximumCachedMaps,
-              let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: bitmapID),
-              definition.kind == "bitmap", let path = definition.logicalFile,
-              let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
-              let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+              let data = mapData(bitmapID: bitmapID, source: scriptSource),
+              let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else { return nil }
         mapImages[key] = image
         return image
+    }
+
+    /// `loadMap` takes *either* a declared bitmap id or a path. ClassicPro's install check is the
+    /// second form — `warning.maki` loads `…\Plugins\classicPro\engine\image\installed.png` and
+    /// treats a width other than 1 as "the plugin is missing", which made cPro-Bento conclude the
+    /// engine was not installed and try to switch skins. Paths go through the VFS like any other
+    /// resource, so they stay inside the mounts.
+    private func mapData(bitmapID: String, source scriptSource: WalSourceLocation) -> Data? {
+        if let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: bitmapID),
+           definition.kind == "bitmap", let path = definition.logicalFile,
+           let data = try? loadedSkin.vfs.data(at: path, location: definition.source) {
+            return data
+        }
+        guard let resolved = try? loadedSkin.vfs.resolve(bitmapID, relativeTo: scriptSource.path,
+                                                         location: scriptSource) else { return nil }
+        return try? loadedSkin.vfs.data(at: resolved.logicalPath, location: scriptSource)
     }
 
     /// Load and start the scripts a runtime-instantiated subtree declares, so nested components come
@@ -373,6 +397,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getguih": .init(argumentCount: 0, returnKind: .integer),
             "getposition": .init(argumentCount: 0, returnKind: .integer),
             "setposition": .init(argumentCount: 1, returnKind: .null),
+            // `isInvalid()` is how a ClassicPro script asks "did this element survive the skin's
+            // overrides?" before configuring it; `getScale()` is a layout's zoom factor.
+            "isinvalid": .init(argumentCount: 0, returnKind: .boolean),
+            "getscale": .init(argumentCount: 0, returnKind: .float),
+            "setredraw": .init(argumentCount: 1, returnKind: .null),
+            "setregionfrommap": .init(argumentCount: 3, returnKind: .null),
             "setmode": .init(argumentCount: 1, returnKind: .null),
             "play": .init(argumentCount: 0, returnKind: .null),
             "pause": .init(argumentCount: 0, returnKind: .null),
@@ -393,6 +423,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "loadmap": .init(argumentCount: 1, returnKind: .null),
             "inregion": .init(argumentCount: 2, returnKind: .boolean),
             "getvalue": .init(argumentCount: 2, returnKind: .integer),
+            // A `Map` is also queried for its own size and for whole pixels: ClassicPro reads its
+            // colour scheme out of a bitmap (`player.maki` builds the classic-vis colour bands from
+            // `getARGBValue`) and sizes animations from `getWidth`/`getHeight`.
+            "getargbvalue": .init(argumentCount: 3, returnKind: .integer),
             // Screen-space cursor position, in the same skin-pixel units as the x/y a mouse event
             // hands the script — the knob scripts mix the two in one expression.
             "getmouseposx": .init(argumentCount: 0, returnKind: .integer),
@@ -433,6 +467,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getprivateint": .init(argumentCount: 3, returnKind: .integer),
             "setprivateint": .init(argumentCount: 3, returnKind: .null),
             "getitem": .init(argumentCount: 1, returnKind: .object),
+            "getitembyguid": .init(argumentCount: 1, returnKind: .object),
             "newitem": .init(argumentCount: 2, returnKind: .object),
             "newattribute": .init(argumentCount: 2, returnKind: .object),
             "getattribute": .init(argumentCount: 1, returnKind: .object),
@@ -492,9 +527,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getwinampversion": .init(argumentCount: 0, returnKind: .string),
             "getpublicint": .init(argumentCount: 2, returnKind: .integer),
             "setpublicint": .init(argumentCount: 2, returnKind: .null),
+            "getpublicstring": .init(argumentCount: 2, returnKind: .string),
+            "setpublicstring": .init(argumentCount: 2, returnKind: .null),
+            "switchskin": .init(argumentCount: 1, returnKind: .null),
+            "getcurcfgval": .init(argumentCount: 0, returnKind: .integer),
             "getdate": .init(argumentCount: 0, returnKind: .integer),
             "getdatedoy": .init(argumentCount: 1, returnKind: .integer),
+            "getdateyear": .init(argumentCount: 1, returnKind: .integer),
             // ClassicPro `ClassicProFile` shell service (the entire native surface, P0B §1).
+            // `XmlDoc`: load an optional config document. Bounded — see `DynamicRole.xmlDocument`.
+            "load": .init(argumentCount: 1, returnKind: .null),
+            "exists": .init(argumentCount: 0, returnKind: .boolean),
+            "getfilesize": .init(argumentCount: 1, returnKind: .integer),
+            "getlanguageid": .init(argumentCount: 0, returnKind: .string),
             "explorefile": .init(argumentCount: 1, returnKind: .null),
             "openfile": .init(argumentCount: 2, returnKind: .null),
             "findfiles": .init(argumentCount: 3, returnKind: .integer),
@@ -506,7 +551,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // Without an arity the interpreter cannot unwind the stack, so only events with a known
         // signature are callable; the call dispatches the event exactly as the UI would.
         if let arity = Self.dispatchableEventArity[name] {
-            return .init(argumentCount: arity, returnKind: .null)
+            // `onAction` answers with an int (the drawer keeps the slot the widget manager gives it);
+            // the rest are void.
+            return .init(argumentCount: arity, returnKind: name == "onaction" ? .integer : .null)
         }
         // Record the miss here as well as in `unsupported(_:program:)`: the interpreter fails closed
         // on a missing *signature* (without an arity it cannot unwind the stack), so this is the path
@@ -528,6 +575,26 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return invokePopup(method: method, id: id, arguments: arguments)
         case .dynamic(let id):
             return try invokeDynamic(method: method, id: id, arguments: arguments, program: program)
+        }
+    }
+
+    /// An object that was never found *is* invalid, which is the whole reason ClassicPro asks:
+    /// `player.maki` guards `if (!bgLeftRead.isInvalid())` around elements a skin is free to remove,
+    /// and answering `false` (the generic null-call result) would send it on to configure something
+    /// that does not exist.
+    func nullReceiverResult(for method: String) -> MakiValue {
+        method.lowercased() == "isinvalid" ? .boolean(true) : .null
+    }
+
+    func releaseObject(_ reference: MakiObjectReference) {
+        switch reference.kind {
+        case .dynamic(let id):
+            timers.cancel(id: id)
+            dynamicObjects.removeValue(forKey: id)
+        case .popupMenu(let id):
+            popupCommands.removeValue(forKey: id)
+        case .system, .gui:
+            break // Not script-owned; a skin cannot delete the graph out from under the renderer.
         }
     }
 
@@ -566,6 +633,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             host.seek(to: TimeInterval(arguments[0].integerValue))
             return .null
         case "getplayitemlength": return .integer(Int32(clamping: Int64(host.duration)))
+        case "getposition":
+            // Same unit as `getPlayItemLength` and `seekTo` — seconds. The engine's scripts only ever
+            // use the two together as a ratio (`SC-ProgressGrid` scales its grid by
+            // `getPosition()/getPlayItemLength()`), so the unit must match, and `integerToTime`
+            // is applied to the length elsewhere, which pins both to seconds.
+            return .integer(Int32(clamping: Int64(host.currentTime)))
         case "integertostring": return .string(String(arguments[0].integerValue))
         case "integertotime":
             let seconds = max(0, Int(arguments[0].integerValue))
@@ -600,6 +673,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                                 key: arguments[1].stringValue)
             return .null
         case "getitem":
+            return dynamicValue(role: .configItem(section: arguments[0].stringValue))
+        case "getitembyguid":
+            // Winamp's config is addressed either by display name or by the owning component's GUID.
+            // Both name the same private store here, so the GUID is simply the section key —
+            // `loadattribs.maki` and `playlistmenu.maki` reach every attribute they need this way.
             return dynamicValue(role: .configItem(section: arguments[0].stringValue))
         case "newitem":
             return dynamicValue(role: .configItem(section: arguments[1].stringValue.isEmpty
@@ -672,6 +750,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .integer(loadedSkin.configuration.integer(section: "@public",
                                                              key: arguments[0].stringValue,
                                                              default: arguments[1].integerValue))
+        case "getpublicstring":
+            return .string(loadedSkin.configuration.string(section: "@public",
+                                                           key: arguments[0].stringValue,
+                                                           default: arguments[1].stringValue))
+        case "setpublicstring":
+            loadedSkin.configuration.setString(arguments[1].stringValue,
+                                               section: "@public", key: arguments[0].stringValue)
+            return .null
+        case "switchskin":
+            // A skin asking the player to load a *different* skin is a host decision, not a script's.
+            // The one caller here is ClassicPro's "the plugin is not installed" bail-out, which this
+            // runtime does not reach: the engine is mounted or the skin does not load at all.
+            return .null
         case "setpublicint":
             loadedSkin.configuration.setInteger(arguments[1].integerValue,
                                                 section: "@public", key: arguments[0].stringValue)
@@ -679,6 +770,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getdate": return .integer(Int32(truncatingIfNeeded: Int64(Date().timeIntervalSince1970)))
         case "getdatedoy":
             return .integer(Int32(Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0))
+        case "getfilesize":
+            // Bounded no-op, for the same reason `findFiles` is one: a script that can stat any path
+            // it names has a filesystem-probe capability, which this runtime does not grant. The
+            // file-info readout shows 0 bytes rather than the script that draws it aborting.
+            return .integer(0)
+        case "getlanguageid": return .string("en")
+        case "getdateyear":
+            // Years since 1900, as C's `tm_year`. Pinned by the engine's own use of it: `cproabout.m`
+            // computes an age as `1899 + getDateYear(...) - birthYear` (+1 once the birthday has
+            // passed) and leap-year-tests it with `% 4`, both of which are only correct on that scale.
+            let date = arguments[0].integerValue > 0
+                ? Date(timeIntervalSince1970: TimeInterval(arguments[0].integerValue)) : Date()
+            return .integer(Int32(Calendar.current.component(.year, from: date) - 1900))
         default:
             if let value = classicProFileMethod(method, arguments: arguments) { return value }
             throw unsupported(method, program: program)
@@ -709,7 +813,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                            program: MakiProgram) throws -> MakiValue {
         if Self.dispatchableEventArity[method] != nil {
             _ = try dispatch(object: object, event: method, arguments: arguments)
-            return .null
+            // No handler can answer through this path (the interpreter's return value belongs to the
+            // handler's own frame), so `onAction` reports the neutral slot 0 rather than a fiction.
+            return method == "onaction" ? .integer(0) : .null
         }
         switch method {
         case "getlayout":
@@ -867,6 +973,34 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "triggeraction":
             actionRequested?(arguments[0].stringValue, arguments[1].stringValue)
             return .null
+        case "isinvalid":
+            return .boolean(isInvalid(object))
+        case "getcurcfgval":
+            // A button bound to a config attribute (`cfgattrib="{GUID};Name"`) reports that
+            // attribute's value; the GUID is the section key, exactly as `getItemByGuid` uses it.
+            // Unbound objects fall back to their own toggle state.
+            if let attribute = object.attributes["cfgattrib"] {
+                let parts = attribute.components(separatedBy: ";")
+                if parts.count >= 2 {
+                    return .integer(loadedSkin.configuration.integer(section: parts[0],
+                                                                     key: parts[1...].joined(separator: ";"),
+                                                                     default: 0))
+                }
+            }
+            return .integer(Int32(object.attributes["value"] ?? "") ?? (object.attributes["activated"] == "1" ? 1 : 0))
+        case "getscale":
+            // The scene is always on the skin's own pixel grid: UI Size is applied at the view's
+            // drawing/input boundary and is deliberately invisible to scripts (Phase 10), so the
+            // layout's own scale is 1. ClassicPro multiplies its resize arithmetic by this.
+            return .float(1)
+        case "setredraw":
+            // A redraw hint (`widgetsManager` throttles its list while populating). The renderer
+            // repaints from the graph, so there is no suspended-drawing state to honour.
+            return .null
+        case "setregionfrommap":
+            // Accepted so the calling script continues; per-object regions are not implemented, so
+            // the object simply stays rectangular. See compatibility.md.
+            return .null
         case "islayoutanimationsafe", "istransparencysafe": return .boolean(true)
         case "init", "callme", "ondatachanged": return .null
         default:
@@ -900,12 +1034,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         guard var state = dynamicObjects[id] else { return .null }
         switch method {
         case "loadmap":
-            state.role = .map(bitmapID: arguments[0].stringValue)
+            state.role = .map(bitmapID: arguments[0].stringValue, source: program.source)
             dynamicObjects[id] = state
             return .null
+        case "load":
+            state.role = .xmlDocument
+            dynamicObjects[id] = state
+            return .null
+        case "exists":
+            return .boolean(false)
         case "inregion", "getvalue":
-            guard case .map(let bitmapID) = state.role else { return method == "inregion" ? .boolean(false) : .integer(0) }
-            let sample = mapPixel(bitmapID: bitmapID,
+            guard case .map(let bitmapID, let source) = state.role else {
+                return method == "inregion" ? .boolean(false) : .integer(0)
+            }
+            let sample = mapPixel(bitmapID: bitmapID, source: source,
                                   x: Int(arguments[0].integerValue), y: Int(arguments[1].integerValue))
             if method == "inregion" {
                 // A map with an alpha channel masks its region; MMD3's are opaque grayscale, where
@@ -913,6 +1055,23 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 return .boolean(sample.inBounds && sample.alpha > 0)
             }
             return .integer(Int32(sample.red))
+        case "getargbvalue":
+            // One channel of one pixel. The channel index is BGRA — pinned by `player.maki`, which
+            // builds a `colorbandpeak="r,g,b"` attribute from channels 2, 1, 0 in that order.
+            guard case .map(let bitmapID, let source) = state.role else { return .integer(0) }
+            let sample = mapPixel(bitmapID: bitmapID, source: source,
+                                  x: Int(arguments[0].integerValue), y: Int(arguments[1].integerValue))
+            switch arguments[2].integerValue {
+            case 0: return .integer(Int32(sample.blue))
+            case 1: return .integer(Int32(sample.green))
+            case 2: return .integer(Int32(sample.red))
+            case 3: return .integer(Int32(sample.alpha))
+            default: return .integer(0)
+            }
+        case "getwidth", "getheight":
+            guard case .map(let bitmapID, let source) = state.role,
+                  let image = mapImage(bitmapID: bitmapID, source: source) else { return .integer(0) }
+            return .integer(Int32(clamping: method == "getwidth" ? image.width : image.height))
         case "setdelay":
             state.delayMilliseconds = max(8, arguments[0].integerValue)
             dynamicObjects[id] = state
@@ -950,7 +1109,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             switch state.role {
             case .configItem(let section): return .string(section)
             case .configAttribute(_, let key): return .string(key)
-            case .map(let bitmapID): return .string(bitmapID)
+            case .map(let bitmapID, _): return .string(bitmapID)
+            case .xmlDocument: return .string("")
             case .generic: return .string("dynamic_\(id)")
             }
         case "init", "callme", "ondatachanged": return .null
@@ -1005,6 +1165,21 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         guard !levels.isEmpty else { return 0 }
         let range = left ? levels.prefix((levels.count + 1) / 2) : levels.suffix(levels.count / 2)
         return Int32(max(0, min(255, (range.max() ?? 0) * 255)))
+    }
+
+    /// `isInvalid()` — the object did not come up. For a *null* receiver that is answered in the
+    /// interpreter; here it means an image-backed object whose bitmap never resolved, which is what
+    /// the engine actually asks about. ClassicPro probes for optional artwork by declaring a hidden
+    /// layer over it (`read.bg.left image="player.left.alt"`) and asking whether that layer is
+    /// invalid; answering "valid" for a skin that ships no `mainframe_lr.png` made `player.maki`
+    /// swap the window frame over to bitmaps that do not exist, punching holes in the window.
+    private func isInvalid(_ object: WasabiObject) -> Bool {
+        guard let imageID = object.attributes["image"] ?? object.attributes["bitmap"] else { return false }
+        guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: imageID),
+              definition.kind == "bitmap" else { return true }
+        // Generated bitmaps (`file="$solid"`) carry no file and are perfectly valid.
+        if definition.attributes["file"]?.hasPrefix("$") == true { return false }
+        return definition.logicalFile == nil
     }
 
     private func isVisible(_ object: WasabiObject) -> Bool {
