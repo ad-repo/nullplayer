@@ -35,6 +35,10 @@ final class WinampModernMainView: NSView {
     var canvasSizeDidChange: ((CGSize) -> Void)?
     /// Returns true if the skin provides a separate native window for the kind and it was toggled.
     var componentWindowToggleRequested: ((WinampModernComponentKind) -> Bool)?
+    /// Ask the surface coordinator to toggle a surface — the same route the View menu takes, so a
+    /// skin button and a menu item can never resolve differently. Returns false before the
+    /// coordinator exists (during `scripts.start()`), where the older direct routing still applies.
+    var surfaceToggleRequested: ((WinampModernComponentKind) -> Bool)?
 
     /// The main window drives the shared script runtime's *global* callbacks (theme, actions, mouse
     /// position, EQ). Auxiliary container windows render and take input against the same runtime but
@@ -355,6 +359,7 @@ final class WinampModernMainView: NSView {
         renderer.teardown()
         canvasSizeDidChange = nil
         componentWindowToggleRequested = nil
+        surfaceToggleRequested = nil
         isTornDown = true
     }
 
@@ -432,6 +437,7 @@ final class WinampModernMainView: NSView {
     /// window. Embedded SUI components are always present, so a toggle over them must not spawn a
     /// classic auxiliary window (that was the Phase 1 behaviour Phase 5 replaces).
     func routeComponentToggle(_ kind: WinampModernComponentKind) {
+        if surfaceToggleRequested?(kind) == true { return }
         if renderer.componentHolders().contains(where: { $0.kind == kind }) { return }
         if componentWindowToggleRequested?(kind) == true { return }
         componentHost?.toggleClassicWindow(for: kind)

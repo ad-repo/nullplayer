@@ -504,6 +504,104 @@ final class WinampModernPhase13Tests: XCTestCase {
                        "an auxiliary container's resize must not reach the player's window")
     }
 
+    // MARK: - 13.4 Surface catalog and routing
+
+    /// The catalog reconciles three sources — what the skin embeds, what it declares, and what
+    /// synthesis produced — against the containers that actually opened.
+    func testCatalogPrefersEmbeddedThenContainerThenClassicFallback() throws {
+        let loaded = try makeSkin(xml: Self.separateWindowSkin)
+        let catalog = WinampModernSurfaceCoordinator.makeCatalog(
+            loadedSkin: loaded,
+            hostedContainerIDs: ["Pledit", "nullplayer.library", "nullplayer.equalizer"],
+            embeddedContainerID: nil)
+        XCTAssertEqual(catalog.playlist, .declaredContainer(id: "Pledit"))
+        XCTAssertEqual(catalog.library, .synthesizedContainer(id: "nullplayer.library"))
+        XCTAssertEqual(catalog.equalizer, .synthesizedContainer(id: "nullplayer.equalizer"))
+
+        // A declared container whose window never opened is a fallback, not a phantom target.
+        let unopened = WinampModernSurfaceCoordinator.makeCatalog(
+            loadedSkin: loaded, hostedContainerIDs: [], embeddedContainerID: nil)
+        XCTAssertFalse(unopened.playlist.isSkinOwned)
+    }
+
+    /// An embedded surface wins over everything and never claims a window of its own.
+    func testEmbeddedSurfaceIsRoutedToTheSkinAndOwnsNoWindow() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <groupdef id="sui">
+            <windowholder id="hold.pl" hold="guid:pl" x="0" y="0" w="10" h="10"/>
+          </groupdef>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <group id="sui" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let mainContainer = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "main").first)
+        let catalog = WinampModernSurfaceCoordinator.makeCatalog(
+            loadedSkin: loaded, hostedContainerIDs: [], embeddedContainerID: mainContainer.stableID)
+        XCTAssertEqual(catalog.playlist, .embedded(containerID: mainContainer.stableID))
+
+        var revealed: [WinampModernComponentKind] = []
+        var classicCalls: [WinampModernComponentKind] = []
+        let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
+            revealEmbedded: { kind, _ in revealed.append(kind); return true },
+            isMainWindowVisible: { true },
+            window: { _ in nil },
+            setVisible: { _, _ in XCTFail("an embedded surface has no window to show") },
+            classicFallback: { kind, _ in classicCalls.append(kind) },
+            redraw: {}))
+
+        XCTAssertTrue(coordinator.handles(.playlist))
+        coordinator.toggleSurface(.playlist)
+        coordinator.showSurface(.playlist)
+        XCTAssertEqual(revealed, [.playlist, .playlist])
+        XCTAssertTrue(classicCalls.isEmpty)
+        XCTAssertNil(coordinator.nativeWindow(for: .playlist),
+                     "embedded surfaces must stay out of docking and frame persistence")
+        XCTAssertTrue(coordinator.isSurfaceVisible(.playlist))
+
+        // The library, which this skin does not host at all, goes to the classic window instead.
+        XCTAssertFalse(coordinator.handles(.library))
+        coordinator.showSurface(.library)
+        XCTAssertEqual(classicCalls, [.library])
+    }
+
+    /// A container surface toggles its own window and nothing else.
+    func testContainerSurfaceTogglesItsOwnWindow() throws {
+        let catalog = WinampModernSurfaceCatalog(playlist: .declaredContainer(id: "Pledit"),
+                                                 equalizer: .classicFallback(reason: "none"),
+                                                 library: .synthesizedContainer(id: "nullplayer.library"))
+        var visibility: [String: Bool] = ["Pledit": false, "nullplayer.library": false]
+        let windows: [String: NSWindow] = [:]
+        let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
+            revealEmbedded: { _, _ in XCTFail("nothing is embedded here"); return false },
+            isMainWindowVisible: { true },
+            window: { windows[$0] },
+            setVisible: { id, visible in visibility[id] = visible },
+            classicFallback: { _, _ in },
+            redraw: {}))
+
+        coordinator.showSurface(.playlist)
+        XCTAssertEqual(visibility["Pledit"], true)
+        XCTAssertEqual(visibility["nullplayer.library"], false, "only the addressed surface moves")
+        coordinator.showSurface(.library)
+        XCTAssertEqual(visibility["nullplayer.library"], true)
+    }
+
+    /// The summary the compatibility report and the render harness print.
+    func testCatalogSummaryNamesEverySurface() {
+        let catalog = WinampModernSurfaceCatalog(playlist: .declaredContainer(id: "Pledit"),
+                                                 equalizer: .embedded(containerID: WasabiObjectID(rawValue: 1)),
+                                                 library: .classicFallback(reason: "no frame"))
+        let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
+            revealEmbedded: { _, _ in true }, isMainWindowVisible: { true }, window: { _ in nil },
+            setVisible: { _, _ in }, classicFallback: { _, _ in }, redraw: {}))
+        XCTAssertEqual(coordinator.summary,
+                       "playlist=declared:Pledit equalizer=embedded library=classic(no frame)")
+    }
+
     // MARK: - Helpers
 
     private func makeRenderer(layout: String) throws -> WasabiSceneRenderer {

@@ -96,6 +96,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // switches a layout from `onScriptLoaded` does it during `start()`.
             wireContainerCallbacks(scripts: scripts)
             try scripts.start()
+            // After `start()`: the catalog is reconciled against the containers that actually opened,
+            // and against the holders the skin's own scripts built while starting.
+            makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
+            #if DEBUG
+            NSLog("WinampModern surfaces [%@]: %@", url.lastPathComponent,
+                  surfaceCoordinator?.summary ?? "-")
+            #endif
             #if DEBUG
             // Surface the per-skin compatibility report (Phase 7.2). After `start()`, the report also
             // reflects any unsupported MAKI methods the skin's `onscriptloaded` reached for.
@@ -154,6 +161,80 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             auxiliaryContainers.append(AuxiliaryContainer(window: auxWindow, view: view,
                                                           kind: info.kind, containerID: info.id))
             viewsByContainer[view.containerID] = view
+        }
+    }
+
+    /// Surface routing for this skin: menus, skin buttons, and restoration all resolve through it.
+    private(set) var surfaceCoordinator: WinampModernSurfaceCoordinator?
+
+    private func makeSurfaceCoordinator(loaded: WinampModernLoadedSkin,
+                                        scripts: WinampModernScriptRuntime) {
+        let hosted = Set(auxiliaryContainers.map(\.containerID))
+        let catalog = WinampModernSurfaceCoordinator.makeCatalog(
+            loadedSkin: loaded,
+            hostedContainerIDs: hosted,
+            embeddedContainerID: skinView?.containerID)
+        surfaceCoordinator = WinampModernSurfaceCoordinator(
+            catalog: catalog,
+            environment: .init(
+                revealEmbedded: { [weak self, weak scripts] kind, _ in
+                    guard let self, let scripts else { return false }
+                    window?.makeKeyAndOrderFront(nil)
+                    let revealed = Self.revealEmbeddedSurface(kind, scripts: scripts)
+                    skinView?.needsDisplay = true
+                    return revealed
+                },
+                isMainWindowVisible: { [weak self] in self?.window?.isVisible == true },
+                window: { [weak self] id in
+                    self?.auxiliaryContainers.first { $0.containerID == id }?.window
+                },
+                setVisible: { [weak self] id, visible in
+                    self?.setAuxiliaryWindow(id: id, visible: visible)
+                },
+                classicFallback: { kind, showOnly in
+                    WindowManager.shared.showClassicSurfaceForWinampModern(kind, showOnly: showOnly)
+                },
+                redraw: { [weak self] in
+                    self?.skinView?.needsDisplay = true
+                    self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+                }))
+        // Every view's own `TOGGLE guid:…` now resolves through the same catalog the menu uses.
+        let toggle: (WinampModernComponentKind) -> Bool = { [weak self] kind in
+            guard let coordinator = self?.surfaceCoordinator, coordinator.handles(kind) else { return false }
+            coordinator.toggleSurface(kind)
+            return true
+        }
+        skinView?.surfaceToggleRequested = toggle
+        auxiliaryContainers.forEach { $0.view.surfaceToggleRequested = toggle }
+    }
+
+    /// Ask the skin to bring an embedded surface to the front, the way Winamp does.
+    ///
+    /// Wasabi has one contract for this: when a component is about to become visible the host calls
+    /// `System.onGetCancelComponent(guid, true)`, and an SUI skin uses it to switch to the tab, mini
+    /// area, or drawer that holds that component — ClassicPro's `CentroSUI2.m` compares the GUID
+    /// against `PL_GUID`/`ML_GUID`/`VIDEO_GUID`/`VIS_GUID` and calls `openTabNo`. Sending the same
+    /// event is what actually opens cPro's Media Library tab; finding the holder and returning (the
+    /// old behaviour) left the click doing nothing at all.
+    private static func revealEmbeddedSurface(_ kind: WinampModernComponentKind,
+                                              scripts: WinampModernScriptRuntime) -> Bool {
+        guard let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else {
+            // The equalizer has no component GUID; a skin-drawn EQ is already on screen wherever the
+            // skin drew it, so revealing the player window is the whole job.
+            return true
+        }
+        let handled = (try? scripts.dispatchSystem(event: "ongetcancelcomponent",
+                                                   arguments: [.string(guid), .boolean(true)])) ?? 0
+        return handled > 0
+    }
+
+    private func setAuxiliaryWindow(id: String, visible: Bool) {
+        guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return }
+        if visible {
+            container.view.needsDisplay = true
+            container.window.makeKeyAndOrderFront(nil)
+        } else {
+            container.window.orderOut(nil)
         }
     }
 
@@ -326,6 +407,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         auxiliaryContainers.removeAll()
         viewsByContainer.removeAll()
+        surfaceCoordinator = nil
         skinView?.teardown()
         skinView = nil
         host?.endVisualizationConsumption()

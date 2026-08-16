@@ -839,7 +839,48 @@ class WindowManager {
         mainWindowController?.windowVisibilityDidChange()
     }
     
+    // MARK: - Winamp Modern surface routing
+
+    /// The loaded `.wal` skin's surface router, or nil when this mode/skin has no opinion.
+    ///
+    /// A `.wal` skin is a whole UI suite: it may draw the playlist inside its own window, open a
+    /// window of its own for it, or offer nothing at all. Every public `show*`/`toggle*`/`is*Visible`
+    /// asks here first, so the View menu and the skin's own button can never resolve to different
+    /// windows. When the router does not handle a surface, the classic path below runs unchanged.
+    private var winampModernSurfaces: WinampModernSurfaceCoordinator? {
+        guard uiMode.controllerFamily == .winampModern else { return nil }
+        return (mainWindowController as? WinampModernMainWindowController)?.surfaceCoordinator
+    }
+
+    @discardableResult
+    private func routeWinampModernSurface(_ kind: WinampModernComponentKind, toggle: Bool,
+                                          restoredFrame: NSRect? = nil) -> Bool {
+        guard let coordinator = winampModernSurfaces, coordinator.handles(kind) else { return false }
+        if toggle { coordinator.toggleSurface(kind) } else { coordinator.showSurface(kind) }
+        // A skin-owned *container* window keeps its saved geometry; an embedded surface has no window
+        // of its own and is never fed a frame.
+        if let restoredFrame, restoredFrame != .zero, let window = coordinator.nativeWindow(for: kind) {
+            window.setFrame(restoredFrame, display: true)
+        }
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+        return true
+    }
+
+    /// The classic fallback's only entry point, called *by* the coordinator when a skin offers no
+    /// surface of its own. It deliberately bypasses the public `show*`/`toggle*` above: those consult
+    /// the coordinator, which would route straight back here.
+    func showClassicSurfaceForWinampModern(_ kind: WinampModernComponentKind, showOnly: Bool) {
+        switch kind {
+        case .playlist: showOnly ? showPlaylist() : classicTogglePlaylist()
+        case .equalizer: showOnly ? showEqualizer() : classicToggleEqualizer()
+        case .library: showOnly ? showPlexBrowser() : classicTogglePlexBrowser()
+        default: break
+        }
+    }
+
     func showPlaylist(at restoredFrame: NSRect? = nil) {
+        if routeWinampModernSurface(.playlist, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
             switch uiMode.controllerFamily {
@@ -880,10 +921,18 @@ class WindowManager {
     }
 
     var isPlaylistVisible: Bool {
-        playlistWindowController?.window?.isVisible == true
+        if let coordinator = winampModernSurfaces, coordinator.handles(.playlist) {
+            return coordinator.isSurfaceVisible(.playlist)
+        }
+        return playlistWindowController?.window?.isVisible == true
     }
-    
+
     func togglePlaylist() {
+        if routeWinampModernSurface(.playlist, toggle: true) { return }
+        classicTogglePlaylist()
+    }
+
+    private func classicTogglePlaylist() {
         if let controller = playlistWindowController,
            let window = controller.window,
            window.isVisible {
@@ -900,6 +949,7 @@ class WindowManager {
     }
     
     func showEqualizer(at restoredFrame: NSRect? = nil) {
+        if routeWinampModernSurface(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = equalizerWindowController == nil
         if isNewWindow {
             switch uiMode.controllerFamily {
@@ -933,10 +983,18 @@ class WindowManager {
     }
 
     var isEqualizerVisible: Bool {
-        equalizerWindowController?.window?.isVisible == true
+        if let coordinator = winampModernSurfaces, coordinator.handles(.equalizer) {
+            return coordinator.isSurfaceVisible(.equalizer)
+        }
+        return equalizerWindowController?.window?.isVisible == true
     }
-    
+
     func toggleEqualizer() {
+        if routeWinampModernSurface(.equalizer, toggle: true) { return }
+        classicToggleEqualizer()
+    }
+
+    private func classicToggleEqualizer() {
         if let controller = equalizerWindowController,
            let window = controller.window,
            window.isVisible {
@@ -1087,6 +1145,7 @@ class WindowManager {
     // MARK: - Plex Browser Window
     
     func showPlexBrowser(at restoredFrame: NSRect? = nil) {
+        if routeWinampModernSurface(.library, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = plexBrowserWindowController == nil
         if isNewWindow {
             createPlexBrowserWindowController()
@@ -1130,7 +1189,10 @@ class WindowManager {
     }
 
     var isPlexBrowserVisible: Bool {
-        plexBrowserWindowController?.window?.isVisible == true
+        if let coordinator = winampModernSurfaces, coordinator.handles(.library) {
+            return coordinator.isSurfaceVisible(.library)
+        }
+        return plexBrowserWindowController?.window?.isVisible == true
     }
     
     /// Get the Plex Browser window frame if visible (for positioning other windows)
@@ -1206,6 +1268,11 @@ class WindowManager {
     }
 
     func togglePlexBrowser() {
+        if routeWinampModernSurface(.library, toggle: true) { return }
+        classicTogglePlexBrowser()
+    }
+
+    private func classicTogglePlexBrowser() {
         if let controller = plexBrowserWindowController, controller.window?.isVisible == true {
             rememberPlexBrowserFrame()
             controller.window?.orderOut(nil)
@@ -1818,6 +1885,8 @@ class WindowManager {
     func reloadPlaylistViews() {
         playlistWindowController?.reloadPlaylist()
         compactWindowController?.reloadPlaylist()
+        // A `.wal` skin draws its own playlist; it has no controller to reload, only a repaint.
+        winampModernSurfaces?.surfaceContentDidChange()
     }
 
     // MARK: - Library History

@@ -65,6 +65,19 @@ enum WinampModernComponentRegistry {
         return guidToKind[normalize(value)]
     }
 
+    /// The canonical Winamp GUID for a kind, in the braced upper-case form a skin's script compares
+    /// against (`if (guid == PL_GUID)` in ClassicPro's `CentroSUI2.m`). `nil` for the equalizer:
+    /// Winamp defines no EQ component GUID, which is why every skin draws its own.
+    static func canonicalGUID(for kind: WinampModernComponentKind) -> String? {
+        switch kind {
+        case .playlist: return "{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}"
+        case .library: return "{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"
+        case .visualization: return "{0000000A-000C-0010-FF7B-01014263450C}"
+        case .video: return "{F0816D7B-FFFC-4343-80F2-E8199AA15CC3}"
+        case .equalizer, .other: return nil
+        }
+    }
+
     /// The deliberately fuzzy companion to `kind(for:)`, for the one measured case that needs it:
     /// ClassicPro's engine names its holders `centro.windowholder.library`, `PlaylistPro.wdh`, and so
     /// on, and declares the component nowhere else. Only ever applied to a holder element's `id`,
