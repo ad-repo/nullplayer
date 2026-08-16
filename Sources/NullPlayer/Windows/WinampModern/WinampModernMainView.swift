@@ -66,6 +66,11 @@ final class WinampModernMainView: NSView {
         setAccessibilityRole(.group)
         setAccessibilityLabel("Winamp Modern skin player")
         if drivesScripts { wireScriptCallbacks() }
+        // Every `.wal` window repaints on a colour-theme switch, whichever window triggered it, and
+        // so does any AppKit content it hosts.
+        renderer.themeCoordinator.addObserver(self) { [weak self] in
+            self?.themeDidChange()
+        }
         if renderer.sceneNodes().contains(where: {
             let type = $0.object.typeName.lowercased()
             if ["animatedlayer", "songticker"].contains(type) { return true }
@@ -96,6 +101,12 @@ final class WinampModernMainView: NSView {
         _ = renderer.resize(to: proposed)
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
+        needsDisplay = true
+    }
+
+    /// The skin switched colour theme. The renderer has already dropped its themed bitmaps.
+    private func themeDidChange() {
+        for surface in libraryHostViews.values { surface.needsDisplay = true }
         needsDisplay = true
     }
 
@@ -344,6 +355,7 @@ final class WinampModernMainView: NSView {
 
     func teardown() {
         guard !isTornDown else { return }
+        renderer.themeCoordinator.removeObserver(self)
         if let tracking { removeTrackingArea(tracking) }
         tracking = nil
         animationTimer?.invalidate()

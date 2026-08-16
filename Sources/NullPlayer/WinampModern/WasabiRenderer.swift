@@ -296,6 +296,7 @@ final class WasabiSceneRenderer {
     let loadedSkin: WinampModernLoadedSkin
     let host: WinampModernHost
     let resources: WasabiResourceCache
+    let themeCoordinator: WinampModernThemeCoordinator
     let themes: WasabiColorThemeCatalog
     let container: WasabiObject
     private(set) var layout: WasabiObject
@@ -319,7 +320,10 @@ final class WasabiSceneRenderer {
         self.loadedSkin = loadedSkin
         self.host = host
         self.clock = clock
-        self.themes = WasabiColorThemeCatalog(loadedSkin: loadedSkin)
+        // One catalog per skin, shared by every window it opens: a colour theme belongs to the skin,
+        // not to a window, so switching one has to recolour the player and the playlist together.
+        self.themeCoordinator = loadedSkin.themeCoordinator
+        self.themes = loadedSkin.themeCoordinator.catalog
         self.resources = WasabiResourceCache(loadedSkin: loadedSkin, themes: themes)
         guard let container = loadedSkin.runtime.graph.roots.first(where: {
             $0.typeName.caseInsensitiveCompare("container") == .orderedSame &&
@@ -337,14 +341,38 @@ final class WasabiSceneRenderer {
         let width = Self.dimension(layout.attributes, keys: ["default_w", "w", "minimum_w"], fallback: 275)
         let height = Self.dimension(layout.attributes, keys: ["default_h", "h", "minimum_h"], fallback: 116)
         self.canvasSize = CGSize(width: width, height: height)
+        // Whichever window switches the theme, every renderer of this skin drops its themed bitmaps.
+        themeCoordinator.addObserver(self) { [weak self] in self?.themeDidChange() }
     }
 
     @discardableResult
     func activateTheme(_ name: String) -> Bool {
-        guard themes.activate(name) else { return false }
+        // The coordinator switches once and notifies every subscriber, this renderer included.
+        themeCoordinator.activate(name)
+    }
+
+    /// Drop this renderer's themed bitmaps and repaint. Called for every renderer of the skin when
+    /// any of them switches theme.
+    func themeDidChange() {
         resources.invalidateTheme()
+        paletteCache = nil
         loadedSkin.runtime.graph.markAllDirty(.appearance)
-        return true
+    }
+
+    private var paletteCache: WasabiPalette?
+
+    /// The colours NullPlayer's own surfaces draw with inside this skin, resolved through the very
+    /// same resource + gamma path the skin's own drawing uses.
+    var palette: WasabiPalette {
+        if let paletteCache { return paletteCache }
+        let palette = WasabiPalette.make { [weak self] identifier in
+            guard let self,
+                  let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
+                  definition.kind == "color" else { return nil }
+            return resolvedColor(identifier)
+        }
+        paletteCache = palette
+        return palette
     }
 
     @discardableResult
@@ -512,7 +540,10 @@ final class WasabiSceneRenderer {
         playlistScrollOffset = max(0, min(maxOffset, playlistScrollOffset + delta))
     }
 
-    func teardown() { resources.teardown() }
+    func teardown() {
+        themeCoordinator.removeObserver(self)
+        resources.teardown()
+    }
 
     /// Width an object takes from text rather than from a `w=`, in skin pixels — `nil` when it takes
     /// none. Two cases: a group with `autowidthsource="<id>"` sizes to that descendant's text, and a
@@ -932,13 +963,16 @@ final class WasabiSceneRenderer {
             context.fill(frame)
             drawVisualizationBars(frame: frame, context: context)
         case .library, .video, .other:
-            context.setFillColor(NSColor(white: 0.06, alpha: 1).cgColor)
+            context.setFillColor(palette.contentBackground.cgColor)
             context.fill(frame)
         }
     }
 
     private func drawPlaylistComponent(frame: CGRect, context: CGContext) {
-        context.setFillColor(NSColor(white: 0.04, alpha: 1).cgColor)
+        // Drawn by us, coloured by the skin: the list sits inside the skin's own frame, so its text
+        // and selection follow the skin's colour resources and its active colour theme.
+        let palette = palette
+        context.setFillColor(palette.contentBackground.cgColor)
         context.fill(frame)
         guard let snapshot = componentHost?.playlistSnapshot() else { return }
         let visible = playlistVisibleRowCount(in: frame)
@@ -955,15 +989,12 @@ final class WasabiSceneRenderer {
             let row = snapshot.rows[index]
             let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * playlistRowHeight,
                                  width: frame.width, height: playlistRowHeight)
-            if row.isCurrent {
-                context.setFillColor(NSColor(red: 0.12, green: 0.2, blue: 0.32, alpha: 1).cgColor)
-                context.fill(rowRect)
-            } else if index == snapshot.selectedIndex {
-                context.setFillColor(NSColor(white: 0.16, alpha: 1).cgColor)
+            if index == snapshot.selectedIndex {
+                context.setFillColor(palette.selectionBackground.cgColor)
                 context.fill(rowRect)
             }
-            let color = row.isCurrent ? NSColor(red: 0.6, green: 0.85, blue: 1, alpha: 1)
-                                      : NSColor(white: 0.75, alpha: 1)
+            let color = row.isCurrent ? palette.currentText
+                : (index == snapshot.selectedIndex ? palette.selectionText : palette.listText)
             let label = "\(index + 1). \(row.title)"
             drawFlippedText(label, in: rowRect.insetBy(dx: 3, dy: 1), font: font, color: color,
                             alignment: .left, context: context)
@@ -978,7 +1009,8 @@ final class WasabiSceneRenderer {
     }
 
     private func drawEqualizerComponent(frame: CGRect, context: CGContext) {
-        context.setFillColor(NSColor(white: 0.05, alpha: 1).cgColor)
+        let palette = palette
+        context.setFillColor(palette.contentBackground.cgColor)
         context.fill(frame)
         guard let snapshot = componentHost?.equalizerSnapshot() else { return }
         let bands = snapshot.bandGainsDB
@@ -997,8 +1029,8 @@ final class WasabiSceneRenderer {
             let thumbHeight: CGFloat = 3
             let travel = max(0, trackRect.height - thumbHeight)
             let thumbY = trackRect.minY + (1 - normalized) * travel
-            context.setFillColor((snapshot.enabled ? NSColor(red: 0.4, green: 0.8, blue: 1, alpha: 1)
-                                                    : NSColor(white: 0.5, alpha: 1)).cgColor)
+            context.setFillColor((snapshot.enabled ? palette.currentText
+                                                    : palette.listText.withAlphaComponent(0.5)).cgColor)
             context.fill(CGRect(x: x + slotWidth * 0.2, y: thumbY,
                                 width: max(2, slotWidth * 0.6), height: thumbHeight))
         }
@@ -1125,7 +1157,7 @@ final class WasabiSceneRenderer {
                        alpha: 1)
     }
 
-    private func resolvedColor(_ raw: String) -> NSColor {
+    func resolvedColor(_ raw: String) -> NSColor {
         guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: raw),
               definition.kind == "color" else { return Self.color(raw) }
         let base = definition.attributes["value"] ?? "255,255,255"

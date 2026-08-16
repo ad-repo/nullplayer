@@ -602,6 +602,75 @@ final class WinampModernPhase13Tests: XCTestCase {
                        "playlist=declared:Pledit equalizer=embedded library=classic(no frame)")
     }
 
+    // MARK: - 13.5 Shared theme and palette
+
+    /// A colour theme belongs to the skin, not to a window: switching it from one renderer must
+    /// recolour every other renderer of the same skin.
+    func testThemeSwitchReachesEveryRendererOfTheSkin() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <gammaset id="Default"><gammagroup id="global" value="0,0,0"/></gammaset>
+          <gammaset id="Blue"><gammagroup id="global" value="-4096,-4096,4096"/></gammaset>
+          <color id="pledit.text" value="200,200,200" gammagroup="global"/>
+          <container id="main"><layout id="normal" w="100" h="100"/></container>
+          <container id="Pledit" component="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}">
+            <layout id="normal" w="100" h="100"/>
+          </container>
+        </WasabiXML>
+        """)
+        let host = TestHost()
+        let main = try WasabiSceneRenderer(loadedSkin: loaded, host: host, containerID: "main")
+        let aux = try WasabiSceneRenderer(loadedSkin: loaded, host: host, containerID: "Pledit")
+        addTeardownBlock { main.teardown(); aux.teardown() }
+        var hostedRepaints = 0
+        let hostedToken = NSObject()
+        loaded.themeCoordinator.addObserver(hostedToken) { hostedRepaints += 1 }
+
+        XCTAssertEqual(main.palette.listText, aux.palette.listText)
+        let before = main.palette.listText
+
+        XCTAssertTrue(main.activateTheme("Blue"))
+        XCTAssertEqual(loaded.themeCoordinator.activeTheme, "Blue")
+        XCTAssertEqual(hostedRepaints, 1, "hosted AppKit content is told too")
+        XCTAssertNotEqual(main.palette.listText, before, "the switching renderer recolours")
+        XCTAssertEqual(aux.palette.listText, main.palette.listText,
+                       "and so does every other window of the same skin")
+    }
+
+    /// Each role falls back through its chain, and a skin that declares nothing still gets a
+    /// deterministic colour rather than an accidental one.
+    func testPaletteFallsBackThroughEachRoleChain() throws {
+        let studioOnly = try makeSkin(xml: """
+        <WasabiXML>
+          <color id="studio.list.text" value="10,20,30"/>
+          <color id="studio.list.item.selected" value="40,50,60"/>
+          <color id="studio.tree.text" value="70,80,90"/>
+          <container id="main"><layout id="normal" w="100" h="100"/></container>
+        </WasabiXML>
+        """)
+        let renderer = try WasabiSceneRenderer(loadedSkin: studioOnly, host: TestHost())
+        addTeardownBlock { renderer.teardown() }
+        let palette = renderer.palette
+        func rgb(_ color: NSColor) -> [Int] {
+            let converted = color.usingColorSpace(.deviceRGB) ?? color
+            return [Int((converted.redComponent * 255).rounded()),
+                    Int((converted.greenComponent * 255).rounded()),
+                    Int((converted.blueComponent * 255).rounded())]
+        }
+        XCTAssertEqual(rgb(palette.listText), [10, 20, 30], "no pledit.text, so studio.list.text wins")
+        XCTAssertEqual(rgb(palette.currentText), [10, 20, 30], "current text falls back to list text")
+        XCTAssertEqual(rgb(palette.selectionBackground), [40, 50, 60])
+        XCTAssertEqual(rgb(palette.treeText), [70, 80, 90])
+        XCTAssertEqual(rgb(palette.treeSelection), [40, 50, 60],
+                       "no studio.tree.selected, so the selection background carries it")
+
+        let bare = try WasabiSceneRenderer(loadedSkin: try makeSkin(xml: """
+        <WasabiXML><container id="main"><layout id="normal" w="10" h="10"/></container></WasabiXML>
+        """), host: TestHost())
+        addTeardownBlock { bare.teardown() }
+        XCTAssertEqual(bare.palette, .fallback, "a skin with no colours gets the documented defaults")
+    }
+
     // MARK: - Helpers
 
     private func makeRenderer(layout: String) throws -> WasabiSceneRenderer {
@@ -631,7 +700,10 @@ final class WinampModernPhase13Tests: XCTestCase {
             .appendingPathComponent("WinampModernPhase13Tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("Synthetic.wal")
+        // A unique archive name gives each fixture its own `WinampModernConfiguration` namespace, so
+        // a skin's persisted colour theme cannot leak between tests (or into the real app's prefs
+        // under a shared "Synthetic" name).
+        let url = directory.appendingPathComponent("Phase13-\(UUID().uuidString).wal")
         let archive = try Archive(url: url, accessMode: .create)
         func add(_ path: String, _ payload: Data) throws {
             try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(payload.count),

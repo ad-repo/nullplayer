@@ -32,6 +32,10 @@ final class WinampModernLoadedSkin {
         self.surfaceSynthesis = surfaceSynthesis
     }
 
+    /// The skin's one active colour theme, shared by every renderer and hosted surface it owns
+    /// (Phase 13.5). Lazily built so a headless load that never renders pays nothing.
+    lazy var themeCoordinator = WinampModernThemeCoordinator(loadedSkin: self)
+
     func teardown() { runtime.teardown() }
 
     /// Per-skin compatibility report from load-time diagnostics (missing resources/groups, unresolved
