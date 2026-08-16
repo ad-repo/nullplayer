@@ -144,6 +144,10 @@ final class WasabiTypeRegistry {
 
     func contains(identifier: String) -> Bool { byIdentifier[Self.fold(identifier)] != nil }
 
+    /// Whether `tag` is a registered XUI tag (e.g. `Wasabi:MainFrame:NoStatus`). Objects created
+    /// from one receive `onSetXuiParam` for their attributes, the way Wasabi delivers XUI params.
+    func isXUITag(_ tag: String) -> Bool { identifierByXUITag[Self.fold(tag)] != nil }
+
     func resolved(identifier: String) throws -> WasabiResolvedGroupDefinition {
         try resolve(identifier: identifier, stack: [])
     }
@@ -222,6 +226,14 @@ final class WasabiSkinRuntime {
     let completedPasses: [WasabiInitializationPass]
     let diagnostics: [WalDiagnostic]
     private(set) var state: WasabiRuntimeState = .awaitingFirstPaint
+
+    /// Instantiates a registered groupdef into the live graph, for MAKI's `System.newGroup`.
+    /// Winamp Modern's window frames are hollow by design: `Wasabi:MainFrame:NoStatus` ships only
+    /// the titlebar/menubar chrome, and `standardframe.maki` builds the client area at runtime from
+    /// the frame's `content=` XUI param. Without this the main window renders as bare chrome.
+    /// Set by `WasabiSkinInitializer`, which owns the expansion machinery (type registry, object
+    /// limits, script path resolution).
+    var instantiateGroup: ((_ identifier: String, _ parent: WasabiObject) throws -> WasabiObject)?
 
     init(resources: WalResourceRegistry, types: WasabiTypeRegistry, graph: WasabiObjectGraph,
          scriptBindings: [WasabiScriptBinding], completedPasses: [WasabiInitializationPass],
@@ -305,7 +317,7 @@ final class WasabiSkinInitializer {
         graph.markAllDirty(.all)
         passes.append(.firstPaint)
 
-        return WasabiSkinRuntime(
+        let runtime = WasabiSkinRuntime(
             resources: resources,
             types: types,
             graph: graph,
@@ -313,6 +325,42 @@ final class WasabiSkinInitializer {
             completedPasses: passes,
             diagnostics: document.diagnostics + resources.diagnostics + types.diagnostics
         )
+        // The closure retains this initializer so runtime expansion keeps the same VFS, limits, and
+        // object budget as load time. `createdCount` continues from the load-time total, so scripts
+        // cannot grow the graph past `maximumObjectCount` by instantiating in a loop.
+        runtime.instantiateGroup = { [self] identifier, parent in
+            try instantiateGroupAtRuntime(identifier: identifier, parent: parent,
+                                          graph: graph, types: types, createdCount: &createdCount)
+        }
+        return runtime
+    }
+
+    /// Expand `identifier`'s groupdef beneath `parent` after load, binding any scripts it declares
+    /// so nested components (display, seek, vis…) come up exactly as they would have at load time.
+    private func instantiateGroupAtRuntime(identifier: String, parent: WasabiObject,
+                                           graph: WasabiObjectGraph, types: WasabiTypeRegistry,
+                                           createdCount: inout Int) throws -> WasabiObject {
+        guard types.contains(identifier: identifier) else {
+            throw WalFailure(WalDiagnostic(.missingGroupDefinition,
+                                           "Script requested unknown group '\(identifier)'.",
+                                           location: parent.source))
+        }
+        let node = WalXMLNode(name: "group", attributes: ["id": identifier], location: parent.source)
+        let existingChildren = parent.children.count
+        var pendingScripts: [PendingScript] = []
+        var pendingMetaCommands: [PendingMetaCommand] = []
+        try createObjects(from: [node], parent: parent, graph: graph, types: types,
+                          pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                          definitionStack: [], createdCount: &createdCount)
+        applyMetaCommands(pendingMetaCommands)
+        let bindings = try bindScripts(pendingScripts)
+        for (pending, binding) in zip(pendingScripts, bindings) { pending.owner?.addScriptBinding(binding) }
+        guard parent.children.count > existingChildren else {
+            throw WalFailure(WalDiagnostic(.missingGroupDefinition,
+                                           "Group '\(identifier)' expanded to no objects.",
+                                           location: parent.source))
+        }
+        return parent.children[existingChildren]
     }
 
     private func registerResources(in nodes: [WalXMLNode], registry: WalResourceRegistry,

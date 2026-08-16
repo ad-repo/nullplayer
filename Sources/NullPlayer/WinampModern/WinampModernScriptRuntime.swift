@@ -46,6 +46,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private var activeLayoutByContainer: [WasabiObjectID: WasabiObjectID] = [:]
     private let preferenceNamespace: String
 
+    /// Script bindings already parsed into `programs`, so a runtime-instantiated group's scripts are
+    /// started exactly once even if the same group is instantiated again.
+    private var boundScriptPaths: Set<WasabiScriptBinding> = []
+    /// Memoised bitmap pixel widths for `getAutoWidth`; `nil` records a resolved-but-unknown width.
+    private var bitmapWidths: [String: Int32?] = [:]
+    /// Ceiling on total loaded programs. Runtime instantiation (`System.newGroup`) can add scripts,
+    /// so this bounds a skin that instantiates groups in a loop.
+    private static let maximumRuntimePrograms = 512
+
     /// Version-gate shim. ClassicPro's `WinampVersionCheck.maki` early-returns when the reported build
     /// number is at least the skin's required build (`2405` for cPro-Bento), so a comfortably modern
     /// value branches the script past its "please update Winamp" warning without hard-blocking.
@@ -69,6 +78,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                                   ownerID: binding.ownerID,
                                                   parameter: binding.parameter)
         }
+        self.boundScriptPaths = Set(loadedSkin.runtime.scriptBindings)
         for root in loadedSkin.runtime.graph.roots where root.typeName.caseInsensitiveCompare("container") == .orderedSame {
             if let normal = root.children.first(where: {
                 $0.typeName.caseInsensitiveCompare("layout") == .orderedSame &&
@@ -82,6 +92,94 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     func start() throws {
         host.beginVisualizationConsumption()
         try dispatchSystem(event: "onscriptloaded")
+        deliverXUIParams(for: loadedSkin.runtime.graph.roots)
+    }
+
+    /// Wasabi hands a XUI object's XML attributes to its script as `onSetXuiParam(name, value)`.
+    /// Winamp Modern's window frames rely on this entirely: `Wasabi:MainFrame:NoStatus
+    /// content="player.content.group"` is inert XML until the script sees the `content` param and
+    /// instantiates that group.
+    ///
+    /// Must run *after* `onScriptLoaded`: the handler is bound to the script's own group variable,
+    /// which the script only populates via `getScriptGroup()` inside `onScriptLoaded`. Dispatched
+    /// before that, no binding matches and every param is silently dropped.
+    private func deliverXUIParams(for objects: [WasabiObject]) {
+        for object in objects {
+            if loadedSkin.runtime.types.isXUITag(object.typeName), !object.scriptBindings.isEmpty {
+                // `onSetXuiParam` is a *System* event, and each XUI instance gets its own program
+                // instance, so the params must go only to the programs that instance owns —
+                // dispatching to every program would hand one frame's `content` to all of them.
+                let owned = programs.filter { $0.ownerID == object.stableID }
+                for (name, value) in object.attributes.sorted(by: { $0.key < $1.key }) where !owned.isEmpty {
+                    _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
+                                      arguments: [.string(name), .string(value)], in: owned)
+                }
+            }
+            deliverXUIParams(for: object.children)
+        }
+    }
+
+    /// `getAutoWidth()` — the width an object wants to be. A group delegates to the object named by
+    /// its `autowidthsource` attribute, which is how the menubar sizes itself: each `menugroup.*`
+    /// points at the layer holding its rendered label bitmap, and `menualign.maki` reads these
+    /// widths to lay the menus out left-to-right. Returning a text estimate for those groups (the
+    /// previous behaviour) left every menu at width 0, stacked on the same x.
+    private func autoWidth(of object: WasabiObject) -> Int32 {
+        if let sourceID = object.attributes["autowidthsource"],
+           let source = descendant(of: object, xmlID: sourceID), source !== object {
+            return autoWidth(of: source)
+        }
+        if let explicit = object.attributes["w"], let width = Int32(explicit), width > 0 { return width }
+        if let imageID = object.attributes["image"], let width = bitmapWidth(identifier: imageID) {
+            return width
+        }
+        let text = object.attributes["text"] ?? object.attributes["default"] ?? ""
+        let charWidth = Int32(Double(object.attributes["fontsize"] ?? "11") ?? 11) * 3 / 5
+        return max(0, Int32(clamping: text.count) * max(1, charWidth))
+    }
+
+    /// Pixel width of a declared bitmap. Uses the resource's explicit `w` when the declaration crops
+    /// a sprite sheet, otherwise reads the image header (no full decode) for whole-file bitmaps.
+    private func bitmapWidth(identifier: String) -> Int32? {
+        let key = identifier.lowercased()
+        if let cached = bitmapWidths[key] { return cached }
+        guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
+              definition.kind == "bitmap" else { return nil }
+        var width: Int32?
+        if let raw = definition.attributes["w"], let value = Int32(raw), value > 0 {
+            width = value
+        } else if let path = definition.logicalFile,
+                  let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
+                  let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                  let pixels = properties[kCGImagePropertyPixelWidth] as? Int {
+            width = Int32(clamping: pixels)
+        }
+        bitmapWidths[key] = width
+        return width
+    }
+
+    /// Load and start the scripts a runtime-instantiated subtree declares, so nested components come
+    /// up exactly as they would have at load time. Bounded by `maximumRuntimePrograms` so a script
+    /// cannot grow the program list without limit by instantiating groups in a loop.
+    private func startScripts(addedBeneath root: WasabiObject) throws {
+        var added: [MakiProgram] = []
+        func collect(_ object: WasabiObject) throws {
+            for binding in object.scriptBindings where !boundScriptPaths.contains(binding) {
+                guard programs.count + added.count < Self.maximumRuntimePrograms else { return }
+                boundScriptPaths.insert(binding)
+                let data = try loadedSkin.vfs.data(at: binding.logicalPath, location: binding.source)
+                added.append(try MakiBytecodeParser().parse(data, source: binding.source,
+                                                            ownerID: binding.ownerID,
+                                                            parameter: binding.parameter))
+            }
+            for child in object.children { try collect(child) }
+        }
+        try collect(root)
+        guard !added.isEmpty else { return }
+        programs.append(contentsOf: added)
+        try dispatchSystem(event: "onscriptloaded", to: added)
+        deliverXUIParams(for: [root])
     }
 
     @discardableResult
@@ -108,12 +206,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
     }
 
+    @discardableResult
+    private func dispatchSystem(event: String, to programs: [MakiProgram]) throws -> Int {
+        try dispatch(target: MakiObjectReference(.system), event: event, arguments: [], in: programs)
+    }
+
     private func dispatch(target: MakiObjectReference, event: String,
-                          arguments: [MakiValue]) throws -> Int {
+                          arguments: [MakiValue], in subset: [MakiProgram]? = nil) throws -> Int {
         guard !isTornDown else { return 0 }
         let eventName = event.lowercased()
         var executed = 0
-        for program in programs {
+        for program in subset ?? programs {
             for binding in program.bindings where program.methods[binding.methodIndex].name == eventName {
                 let variable = program.variables[binding.variableIndex]
                 var matches = object(variable.value, equals: target)
@@ -406,8 +509,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let index = Int(arguments[0].integerValue)
             return .string(themes.indices.contains(index) ? themes[index] : "")
         case "gettimeofday": return .integer(Int32(truncatingIfNeeded: Int64(Date().timeIntervalSince1970 * 1000)))
-        case "getplayitemdisplaytitle": return .string(host.trackTitle)
-        case "getplayitemstring": return .string(host.trackTitle)
+        case "getplayitemdisplaytitle": return .string(host.trackDisplayTitle)
+        case "getplayitemstring": return .string(host.trackDisplayTitle)
         case "getplayitemmetadatastring":
             switch arguments[0].stringValue.lowercased() {
             case "title": return .string(host.trackTitle)
@@ -420,14 +523,23 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case .paused: return .integer(-1)
             case .stopped: return .integer(0)
             }
-        case "getsonginfotext": return .string(host.trackInfo)
+        case "getsonginfotext": return .string(host.songInfoText)
         case "isvideo", "isvideofullscreen", "iskeydown", "isminimized", "isnamedwindowvisible":
             return .boolean(false)
         case "isdesktopalphaavailable", "istransparencyavailable", "istransparencysafe", "islayoutanimationsafe":
             return .boolean(true)
         case "lockui", "unlockui", "hidenamedwindow": return .null
         case "navigateurl", "navigateurlbrowser": return .null // Sandboxed: no script-driven navigation.
-        case "newgroup": return .null
+        case "newgroup":
+            // Wasabi creates the group as a child of the calling script's own group; the script then
+            // positions it with `setXmlParam`. This is how Winamp Modern fills a window frame's
+            // client area (`content=` → `newGroup` → the whole player UI).
+            guard let owner = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:)),
+                  let instantiate = loadedSkin.runtime.instantiateGroup else { return .null }
+            let created = try instantiate(arguments[0].stringValue, owner)
+            try startScripts(addedBeneath: created)
+            graphDidMutate?()
+            return objectValue(created)
         case "messagebox": return .integer(0) // Sandboxed: skins cannot create modal host UI.
         // ClassicPro version gate + public config (see `reportedWinampBuild`).
         case "getbuildnumber": return .integer(Self.reportedWinampBuild)
@@ -506,9 +618,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .null
         case "gettext": return .string(object.attributes["text"] ?? object.attributes["default"] ?? "")
         case "getautowidth":
-            let text = object.attributes["text"] ?? object.attributes["default"] ?? ""
-            let charWidth = Int32(Double(object.attributes["fontsize"] ?? "11") ?? 11) * 3 / 5
-            return .integer(max(0, Int32(clamping: text.count) * max(1, charWidth)))
+            return .integer(autoWidth(of: object))
         case "resize":
             for (key, value) in zip(["x", "y", "w", "h"], arguments) {
                 _ = object.setAttribute(key, value: String(value.integerValue))

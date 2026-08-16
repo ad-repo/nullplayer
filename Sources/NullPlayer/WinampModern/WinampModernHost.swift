@@ -10,6 +10,13 @@ protocol WinampModernHost: AnyObject {
     var repeatEnabled: Bool { get set }
     var trackTitle: String { get }
     var trackInfo: String { get }
+    /// What a song ticker shows — Winamp's playlist display title, i.e. "Artist - Title".
+    var trackDisplayTitle: String { get }
+    /// Stream properties the skin's `songinfo` script parses out of `getSongInfoText()`.
+    /// Zero means "unknown", which renders as the skin's own placeholder.
+    var bitrateKbps: Int { get }
+    var sampleRateHz: Int { get }
+    var channelCount: Int { get }
     var albumArtwork: CGImage? { get }
     var spectrumLevels: [Float] { get set }
 
@@ -32,8 +39,28 @@ protocol WinampModernHost: AnyObject {
 
 extension WinampModernHost {
     var albumArtwork: CGImage? { nil }
+    var trackDisplayTitle: String { trackTitle }
+    var bitrateKbps: Int { 0 }
+    var sampleRateHz: Int { 0 }
+    var channelCount: Int { 0 }
     func revealInFinder(_ path: String) {}
     func openExternally(_ path: String) {}
+
+    /// Winamp's `System.getSongInfoText()` string. Skins do not read bitrate/sample rate through
+    /// dedicated APIs — `songinfo.maki` lowercases this string and pulls the values out around the
+    /// literals "kbps", "khz" and the channel words, so the shape matters more than the wording.
+    var songInfoText: String {
+        var parts: [String] = []
+        if bitrateKbps > 0 { parts.append("\(bitrateKbps)kbps") }
+        switch channelCount {
+        case 1: parts.append("mono")
+        case 2: parts.append("stereo")
+        case let count where count > 2: parts.append("surround")
+        default: break
+        }
+        if sampleRateHz > 0 { parts.append("\(sampleRateHz / 1_000)khz") }
+        return parts.joined(separator: " ")
+    }
 }
 
 final class WinampModernAudioEngineHost: WinampModernHost {
@@ -63,6 +90,14 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         set { engine.repeatEnabled = newValue }
     }
     var trackTitle: String { engine.currentTrack?.title ?? "" }
+    var trackDisplayTitle: String {
+        guard let track = engine.currentTrack else { return "" }
+        guard let artist = track.artist, !artist.isEmpty else { return track.title }
+        return "\(artist) - \(track.title)"
+    }
+    var bitrateKbps: Int { engine.currentTrack?.bitrate ?? 0 }
+    var sampleRateHz: Int { engine.currentTrack?.sampleRate ?? 0 }
+    var channelCount: Int { engine.currentTrack?.channels ?? 0 }
     var trackInfo: String {
         guard let track = engine.currentTrack else { return "" }
         return [track.artist, track.album].compactMap { value in

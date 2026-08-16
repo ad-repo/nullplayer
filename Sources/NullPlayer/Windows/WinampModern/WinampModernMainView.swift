@@ -41,7 +41,11 @@ final class WinampModernMainView: NSView {
         setAccessibilityLabel("Winamp Modern skin player")
         if drivesScripts { wireScriptCallbacks() }
         if renderer.sceneNodes().contains(where: {
-            ["animatedlayer", "songticker"].contains($0.object.typeName.lowercased())
+            let type = $0.object.typeName.lowercased()
+            if ["animatedlayer", "songticker"].contains(type) { return true }
+            // A plain `text` that opts into ticker scrolling also needs the redraw clock.
+            let ticker = ($0.object.attributes["ticker"] ?? "0").lowercased()
+            return type == "text" && !["0", "off", "false", "no"].contains(ticker)
         }) {
             animationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
                 self?.needsDisplay = true

@@ -138,9 +138,12 @@ final class WasabiResourceCache {
                                Int(Double(definition.attributes["w"] ?? "") ?? Double(fullImage.width - x))))
         let height = max(1, min(fullImage.height - topY,
                                 Int(Double(definition.attributes["h"] ?? "") ?? Double(fullImage.height - topY))))
-        let cropY = fullImage.height - topY - height
-        guard cropY >= 0,
-              let cropped = fullImage.cropping(to: CGRect(x: x, y: cropY, width: width, height: height)) else { return nil }
+        // `CGImage.cropping(to:)` addresses raw pixel data, whose origin is the image's TOP-left —
+        // the same convention Wasabi's `y=` uses. Converting to a bottom-left origin here mirrored
+        // every sprite's source rect about the sheet's centreline, so each element was cut from the
+        // wrong row of the atlas.
+        guard topY + height <= fullImage.height,
+              let cropped = fullImage.cropping(to: CGRect(x: x, y: topY, width: width, height: height)) else { return nil }
         let image = themed(cropped, transform: themes.transform(group: definition.attributes["gammagroup"]))
         let cost = width * height * 4
         let bitmap = WasabiBitmap(image: image, width: width, height: height, cost: cost)
@@ -402,6 +405,11 @@ final class WasabiSceneRenderer {
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame
+        } else if object.attributes["fitparent"] == "1" {
+            // `fitparent="1"` fills the parent regardless of x/y/w/h. Groups use it constantly
+            // (`<group id="cpro.normal.background" fitparent="1"/>`); without it they resolve to a
+            // 0×0 rect at the origin and every descendant collapses into the top-left corner.
+            resolved = parentFrame
         } else {
             let wasabi = object.geometry.resolve(
                 in: WasabiRect(x: Double(parentFrame.minX), y: Double(parentFrame.minY),
@@ -419,6 +427,19 @@ final class WasabiSceneRenderer {
         }
     }
 
+    /// Draw a `CGImage` into the flipped (top-left origin) skin space `draw(in:)` establishes.
+    /// `CGContext.draw` always puts the image's *bottom* row at `rect.minY`, which under that flip is
+    /// the visual top — so every bitmap has to be re-flipped about its own rect or it renders
+    /// vertically mirrored in place. Text uses the same trick (`drawFlippedText`).
+    private func drawImage(_ image: CGImage, in rect: CGRect, context: CGContext) {
+        context.saveGState()
+        context.translateBy(x: 0, y: rect.midY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -rect.midY)
+        context.draw(image, in: rect)
+        context.restoreGState()
+    }
+
     private func draw(_ node: WasabiSceneNode, in context: CGContext,
                       pressed: WasabiObjectID?, hovered: WasabiObjectID?) {
         let object = node.object
@@ -428,7 +449,7 @@ final class WasabiSceneRenderer {
 
         if let background = object.attributes["background"],
            let bitmap = resources.bitmap(identifier: background) {
-            context.draw(bitmap.image, in: node.frame)
+            drawImage(bitmap.image, in: node.frame, context: context)
         }
 
         if type == "text" || type == "songticker" {
@@ -440,7 +461,7 @@ final class WasabiSceneRenderer {
             drawVisualization(object, frame: node.frame, context: context)
         } else if type == "albumart" {
             if let artwork = host.albumArtwork {
-                context.draw(artwork, in: node.frame)
+                drawImage(artwork, in: node.frame, context: context)
             } else if let fallback = object.attributes["notfoundimage"],
                       let bitmap = resources.bitmap(identifier: fallback) {
                 draw(bitmap, object: object, frame: node.frame, context: context)
@@ -465,17 +486,49 @@ final class WasabiSceneRenderer {
                       frame: CGRect, context: CGContext) {
         let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
         context.setAlpha(CGFloat(alpha) / 255)
-        let explicitSize = object.attributes["w"] != nil || object.attributes["h"] != nil
-        let shouldScale = object.attributes["scale"] != nil || object.typeName.caseInsensitiveCompare("layout") == .orderedSame
-        if explicitSize && !shouldScale {
-            context.saveGState()
-            context.clip(to: frame)
-            context.draw(bitmap.image, in: CGRect(x: frame.minX, y: frame.minY,
-                                                  width: CGFloat(bitmap.width), height: CGFloat(bitmap.height)))
-            context.restoreGState()
-        } else {
-            context.draw(bitmap.image, in: frame)
+        let tileX = object.attributes["tile"] == "1" || object.attributes["tilex"] == "1"
+        let tileY = object.attributes["tile"] == "1" || object.attributes["tiley"] == "1"
+        if tileX || tileY {
+            drawTiled(bitmap, in: frame, tileX: tileX, tileY: tileY, context: context)
+            return
         }
+        // A non-tiled layer stretches its bitmap to fill its rect. Resizable window chrome depends on
+        // this: `wasabi.frame.top` is a 10×18 sprite stretched across the whole titlebar, and the
+        // menubar/titlebar streaks are 5–10px sprites stretched to hundreds of pixels. Drawing them
+        // at natural size instead painted one sprite and left the rest of the bar blank.
+        drawImage(bitmap.image, in: frame, context: context)
+    }
+
+    /// `tile`/`tilex`/`tiley`: repeat the bitmap across the layer instead of stretching it. Every
+    /// resizable strip in a Bento-style frame (top/bottom/left/right/center) is a tiled layer, so
+    /// without this the frame paints one tile and leaves the rest of the window empty.
+    private func drawTiled(_ bitmap: WasabiBitmap, in frame: CGRect, tileX: Bool, tileY: Bool,
+                           context: CGContext) {
+        let tileWidth = CGFloat(bitmap.width)
+        let tileHeight = CGFloat(bitmap.height)
+        guard tileWidth >= 1, tileHeight >= 1, frame.width > 0, frame.height > 0 else { return }
+        let columns = tileX ? Int(ceil(frame.width / tileWidth)) : 1
+        let rows = tileY ? Int(ceil(frame.height / tileHeight)) : 1
+        // A degenerate tile against a huge frame must not turn into an unbounded draw loop.
+        guard columns * rows <= 8_192 else {
+            drawImage(bitmap.image, in: frame, context: context)
+            return
+        }
+        context.saveGState()
+        context.clip(to: frame)
+        // Tiles are blitted 1:1; smoothing would resample each tile's edge and leave a visible seam
+        // grid across every tiled background strip.
+        context.interpolationQuality = .none
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let rect = CGRect(x: frame.minX + CGFloat(column) * tileWidth,
+                                  y: frame.minY + CGFloat(row) * tileHeight,
+                                  width: tileX ? tileWidth : frame.width,
+                                  height: tileY ? tileHeight : frame.height)
+                drawImage(bitmap.image, in: rect, context: context)
+            }
+        }
+        context.restoreGState()
     }
 
     private func drawText(_ object: WasabiObject, frame: CGRect, context: CGContext) {
@@ -487,7 +540,14 @@ final class WasabiSceneRenderer {
             text = String(format: "%d:%02d", seconds / 60, seconds % 60)
         case "songname": text = host.trackTitle
         case "songinfo": text = host.trackInfo
-        default: text = object.attributes["text"] ?? object.attributes["default"] ?? ""
+        default:
+            // A `songticker` carries no `text`/`default` — its content *is* the current track, which
+            // is why the main display stayed blank while the bitmap-font timer worked.
+            if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame {
+                text = host.trackDisplayTitle
+            } else {
+                text = object.attributes["text"] ?? object.attributes["default"] ?? ""
+            }
         }
         if let fontID = object.attributes["font"],
            let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
@@ -507,15 +567,68 @@ final class WasabiSceneRenderer {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
         paragraph.lineBreakMode = .byClipping
-        let attributes: [NSAttributedString.Key: Any] = [
+        var attributes: [NSAttributedString.Key: Any] = [
             .font: font, .foregroundColor: color, .paragraphStyle: paragraph
         ]
+        let measured = (text as NSString).size(withAttributes: attributes).width
+        let overflow = measured - frame.width
+        let scroll = overflow > 0 ? tickerMotion(for: object, overflow: overflow, textWidth: measured) : nil
+        if scroll != nil {
+            // While scrolling, the string is drawn into an oversized rect, so any alignment other
+            // than left would re-centre it inside that rect and cancel the motion out.
+            paragraph.alignment = .left
+            attributes[.paragraphStyle] = paragraph
+        }
+
         context.saveGState()
+        context.clip(to: frame)
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -frame.midY)
-        (text as NSString).draw(in: frame, withAttributes: attributes)
+        if let scroll {
+            var textFrame = frame
+            textFrame.origin.x -= scroll.offset
+            textFrame.size.width = measured
+            (text as NSString).draw(in: textFrame, withAttributes: attributes)
+            if scroll.wraps {
+                // Continuous mode runs the tail off the left edge, so draw a second copy a gap
+                // behind it; otherwise the ticker would blank out between cycles.
+                textFrame.origin.x += measured + Self.tickerGap
+                (text as NSString).draw(in: textFrame, withAttributes: attributes)
+            }
+        } else {
+            (text as NSString).draw(in: frame, withAttributes: attributes)
+        }
         context.restoreGState()
+    }
+
+    /// Gap between the repeats of a continuously scrolling ticker, in skin pixels.
+    private static let tickerGap: CGFloat = 40
+    /// Ticker scroll speed, in skin pixels per second.
+    private static let tickerSpeed: Double = 30
+
+    /// How far to shift an over-long string this frame, and whether the motion wraps.
+    ///
+    /// `ticker="bounce"` slides to the end and back; any other enabled value scrolls continuously.
+    /// A `songticker` scrolls by default — that is the whole point of the object — while a plain
+    /// `text` only scrolls when it opts in, so static labels stay put.
+    private func tickerMotion(for object: WasabiObject, overflow: CGFloat,
+                              textWidth: CGFloat) -> (offset: CGFloat, wraps: Bool)? {
+        let isSongticker = object.typeName.caseInsensitiveCompare("songticker") == .orderedSame
+        let mode = (object.attributes["ticker"] ?? (isSongticker ? "1" : "0")).lowercased()
+        guard !["0", "off", "false", "no"].contains(mode) else { return nil }
+        if mode == "bounce" {
+            let span = Double(overflow)
+            let cycle = span * 2
+            guard cycle > 0 else { return nil }
+            let phase = (clock() * Self.tickerSpeed).truncatingRemainder(dividingBy: cycle)
+            return (CGFloat(phase <= span ? phase : cycle - phase), false)
+        }
+        // One cycle carries the string its own width plus the gap, at which point the trailing copy
+        // has taken its place exactly.
+        let cycle = Double(textWidth + Self.tickerGap)
+        guard cycle > 0 else { return nil }
+        return (CGFloat((clock() * Self.tickerSpeed).truncatingRemainder(dividingBy: cycle)), true)
     }
 
     private func drawBitmapText(_ text: String, definition: WalResourceDefinition,
@@ -538,24 +651,34 @@ final class WasabiSceneRenderer {
         case "right": startX = frame.maxX - width
         default: startX = frame.minX
         }
-        if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame, width > frame.width {
-            let travel = width + frame.width
-            startX = frame.maxX - CGFloat(clock().truncatingRemainder(dividingBy: Double(travel) / 30) * 30)
+        // Bitmap-font tickers share the TrueType path's motion model. The previous formula anchored
+        // the run at `frame.maxX`, so at rest the text sat entirely off the right edge and a long
+        // title simply vanished instead of scrolling.
+        var repeats: [CGFloat] = []
+        if width > frame.width, let scroll = tickerMotion(for: object, overflow: width - frame.width,
+                                                          textWidth: width) {
+            startX = frame.minX - scroll.offset
+            repeats = scroll.wraps ? [width + Self.tickerGap] : []
         }
-        var x = startX
+
         context.saveGState()
         context.clip(to: frame)
-        for character in text.lowercased() {
-            let (column, row) = positions[character] ?? positions[" "] ?? (0, 0)
-            let cropRect = CGRect(x: column * charWidth,
-                                  y: sheet.height - (row + 1) * charHeight,
-                                  width: charWidth, height: charHeight)
-            if cropRect.minY >= 0, cropRect.maxX <= CGFloat(sheet.width),
-               let glyph = sheet.image.cropping(to: cropRect) {
-                context.draw(glyph, in: CGRect(x: x, y: frame.minY,
-                                              width: CGFloat(charWidth), height: CGFloat(charHeight)))
+        for origin in [CGFloat.zero] + repeats {
+            var x = startX + origin
+            for character in text.lowercased() {
+                let (column, row) = positions[character] ?? positions[" "] ?? (0, 0)
+                // Top-left origin: `cropping(to:)` indexes pixel rows directly (see `bitmap(identifier:)`).
+                let cropRect = CGRect(x: column * charWidth, y: row * charHeight,
+                                      width: charWidth, height: charHeight)
+                if x + CGFloat(advance) >= frame.minX, x <= frame.maxX,
+                   cropRect.maxY <= CGFloat(sheet.height), cropRect.maxX <= CGFloat(sheet.width),
+                   let glyph = sheet.image.cropping(to: cropRect) {
+                    drawImage(glyph, in: CGRect(x: x, y: frame.minY,
+                                                width: CGFloat(charWidth), height: CGFloat(charHeight)),
+                              context: context)
+                }
+                x += CGFloat(advance)
             }
-            x += CGFloat(advance)
         }
         context.restoreGState()
     }
@@ -573,12 +696,11 @@ final class WasabiSceneRenderer {
         let frameIndex = max(0, min(count - 1, playing ? Int(clock() / period) % count : selected))
         let column = frameIndex % columns
         let row = frameIndex / columns
-        let crop = CGRect(x: column * frameWidth,
-                          y: bitmap.height - (row + 1) * frameHeight,
+        let crop = CGRect(x: column * frameWidth, y: row * frameHeight,
                           width: frameWidth, height: frameHeight)
-        guard crop.minY >= 0, crop.maxX <= CGFloat(bitmap.width),
+        guard crop.maxY <= CGFloat(bitmap.height), crop.maxX <= CGFloat(bitmap.width),
               let image = bitmap.image.cropping(to: crop) else { return }
-        context.draw(image, in: frame)
+        drawImage(image, in: frame, context: context)
     }
 
     private func drawVisualization(_ object: WasabiObject, frame: CGRect, context: CGContext) {
@@ -629,7 +751,7 @@ final class WasabiSceneRenderer {
                                 y: frame.midY - thumbHeight / 2,
                                 width: thumbWidth, height: thumbHeight)
         }
-        context.draw(thumb.image, in: thumbFrame)
+        drawImage(thumb.image, in: thumbFrame, context: context)
     }
 
     // MARK: - Embedded component drawing
@@ -768,7 +890,10 @@ final class WasabiSceneRenderer {
             } else {
                 state = max(0, Int(object.attributes["state"] ?? "0") ?? 0)
             }
-            return "\(base)\(state)"
+            // Not every skin names its states `<base><n>`; Winamp Modern's LEDs use a plain `image`
+            // with separate `activeimage`. Fall back to the base rather than a dangling id.
+            let stateID = "\(base)\(state)"
+            return resources.bitmap(identifier: stateID) != nil ? stateID : base
         }
         if type == "togglebutton" || object.attributes["activeimage"] != nil {
             let id = object.xmlID?.lowercased()

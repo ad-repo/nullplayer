@@ -133,6 +133,39 @@ encoded in `WasabiGeometry`:
 > drawing boundary in `WasabiSceneRenderer` (and once at the event boundary in `WinampModernMainView`).
 > Never store flipped coordinates back into the graph, and never insert AppKit types into graph objects.
 
+`fitparent="1"` fills the parent regardless of `x/y/w/h`. Winamp Modern and ClassicPro use it
+constantly for their SUI/content groups; without it those groups resolve to a 0×0 rect at the origin
+and every descendant collapses into the top-left corner.
+
+#### The two y-origin conventions (source of a whole class of bugs)
+
+Three different APIs are involved and only one of them is bottom-left:
+
+| Operation | Origin | Rule |
+|---|---|---|
+| Wasabi `y=` in XML, graph frames | top-left | native, never converted |
+| `CGImage.cropping(to:)` | **top-left** | indexes raw pixel rows — pass the Wasabi `y` **unchanged** |
+| `CGContext.draw(image:in:)` | bottom-left | places the image's *bottom* row at `rect.minY` |
+
+Because `draw(in:)` runs under the renderer's flipped CTM, `rect.minY` is the visual *top*, so every
+bitmap must be re-flipped about its own rect or it renders vertically mirrored in place. That is what
+`drawImage(_:in:context:)` exists for — **use it for every image draw**, never `context.draw` directly.
+`drawFlippedText` does the same job for text.
+
+Converting a Wasabi `y` to a bottom-left origin before `cropping(to:)` mirrors the source rect about
+the sheet's centreline, so every sprite is cut from the wrong row of the atlas. Sprite-sheet crops in
+`drawBitmapText` and `drawAnimated` index rows directly for the same reason.
+
+#### Layer fill modes
+
+- **Default (no `tile`)**: the bitmap **stretches** to the layer's rect. Resizable window chrome
+  depends on this — `wasabi.frame.top` is a 10×18 sprite stretched across the whole titlebar, and the
+  menubar/titlebar streaks are 5–10px sprites stretched to hundreds of pixels. Drawing them at
+  natural size paints one sprite and leaves the rest of the bar blank.
+- **`tile`/`tilex`/`tiley`**: repeat the bitmap instead. Bento-style frames tile their
+  top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
+  edges leave a visible seam grid.
+
 ### MAKI
 
 `MakiBytecodeParser` reads the `FG` compiled-script format (classes, methods, typed
@@ -153,6 +186,49 @@ Extending the API: add to `signature(for:)` **and** the matching system/GUI/obje
 together, so argument counts and return kinds stay explicit. Add a regression test with each method.
 Use the measured-demand signal rather than porting reference stubs blindly — see
 [Debugging](#debugging-a-skin) below.
+
+> **Gotcha:** a method with a `signature(for:)` entry but a stubbed dispatch case is **invisible to
+> the compatibility report** — it looks implemented and returns a plausible value. `newgroup`
+> returned `.null` this way, and the report showed zero script findings while the entire Winamp
+> Modern window body was missing. If you cannot implement a method, leave it out of `signature(for:)`
+> so the demand tally records it.
+
+#### Script-built UI: `onSetXuiParam` and `System.newGroup`
+
+Winamp Modern's window frames are **hollow XML**. `Wasabi:MainFrame:NoStatus` ships only titlebar and
+menubar chrome; the entire client area comes from its `content=` param at runtime:
+
+1. The object is created from the groupdef, and its script (`standardframe.maki`) is bound to it.
+2. `onScriptLoaded` fires (a **System** event) and the script caches `getScriptGroup()`.
+3. Each XML attribute is delivered as `onSetXuiParam(name, value)`.
+4. The handler for `content` calls `System.newGroup(id)`, which expands that groupdef as a child of
+   the calling script's own group; the script then positions it with `setXmlParam`.
+
+Two ordering rules make or break this:
+
+- `onSetXuiParam` is a **System** event, not a GUI-object event, and each XUI instance has its own
+  program instance. Dispatch it only to programs whose `ownerID` is that object, or one frame's
+  `content` reaches all of them.
+- It must run **after** `onScriptLoaded`. The handler binds to the script-group variable that
+  `getScriptGroup()` populates during `onScriptLoaded`; dispatched earlier, no binding matches and
+  every param is silently dropped.
+
+`WasabiSkinRuntime.instantiateGroup` performs the expansion (set by `WasabiSkinInitializer`, so
+runtime growth shares the load-time VFS, limits, and object budget). Scripts declared inside the new
+subtree are parsed and started via `startScripts(addedBeneath:)`, bounded by `maximumRuntimePrograms`.
+
+#### Track metadata the skins actually read
+
+Skins do not call dedicated bitrate/sample-rate APIs. `songinfo.maki` lowercases
+`System.getSongInfoText()` and pulls values out around the literals `kbps`, `khz`, and the channel
+words. The units must be **attached to the number** (`320kbps`, `44khz`) — a space between them and
+the fields stay empty. `WinampModernHost.songInfoText` builds this; `trackDisplayTitle` supplies the
+`"Artist - Title"` a song ticker shows (`trackTitle` alone drops the artist).
+
+A `songticker` carries no `text`/`default` attribute — its content **is** the current track, and it
+scrolls by default. `ticker="bounce"` slides to the end and back; any other enabled value scrolls
+continuously and is drawn twice with a gap so it never blanks between cycles. Both the TrueType and
+bitmap-font paths share `tickerMotion(for:overflow:textWidth:)`.
 
 ### Component hosting
 
@@ -234,6 +310,39 @@ tally into de-duplicated categories (`archive`, `resources`, `groups`, `scripts`
 `unsupportedMethods`, `other`) with a coarse level (`.full` / `.degraded` / `.unsupported`). In DEBUG
 builds the main window controller logs it after `scripts.start()` whenever the level is not `.full`.
 The `unsupportedMethods` bucket is the **measured-demand list** for what to implement next.
+
+**Then look at the pixels.** Structural assertions (graph built, scripts ran, node counts) cannot see
+a rendering bug: a vertical-flip and a wrong crop origin survived 490+ green tests because nothing
+ever rendered a frame. `WinampModernRenderDumpTests` renders every container/layout of a real skin to
+PNG and reports the scene:
+
+```sh
+WINAMP_MODERN_WAL=/path/Skin.wal \
+WINAMP_MODERN_RENDER_DUMP=/tmp/render \
+  swift test --filter WinampModernRenderDumpTests
+```
+
+Optional env switches, all off by default:
+
+| Variable | Effect |
+|---|---|
+| `WINAMP_MODERN_ENGINE` | import + mount the ClassicPro engine first (cPro skins) |
+| `WINAMP_MODERN_RENDER_PROBE=<container>/<layout>` | dump every scene node: type, id, frame, clip, bitmap, attributes |
+| `WINAMP_MODERN_RENDER_BITMAPS=1` | count resolved bitmaps and list any that fail to load |
+| `WINAMP_MODERN_RENDER_XUI=1` | list objects with scripts and whether their events bind |
+| `WINAMP_MODERN_RENDER_CLOCK=<seconds>` | pin the animation/ticker clock; render two values to prove motion |
+
+Use the probe to answer "is it missing art, bad geometry, or a script that never ran" before changing
+renderer code — `BITMAPS … missing=` distinguishes an unresolved resource from one that draws wrongly.
+
+> **Gotcha:** the harness must install an `NSGraphicsContext` around `renderer.draw`. `drawText` ends
+> in `NSString.draw(in:withAttributes:)`, which renders into the *current* `NSGraphicsContext`, not
+> the `CGContext` it was handed. Without it every TrueType/system-font string is silently dropped from
+> the dump while the real app (always inside `NSView.draw`) shows them — the harness lies to you.
+
+`WinampModernRenderPixelTests` is the synthetic guard for all of the above: a banded atlas whose crop
+origin, upright orientation, tiling, and `fitparent` sizing are asserted per pixel. When you touch
+`WasabiSceneRenderer`, verify a fix *fails* without the change before trusting it.
 
 Load a developer archive directly (DEBUG builds):
 

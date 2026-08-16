@@ -15,8 +15,8 @@ Three skins drove the implementation, in increasing order of demand:
 | Target | Role | State |
 |--------|------|-------|
 | **CornerAmp_Redux** | first vertical slice | loads, scripts, renders its 246×228 alpha-shaped layout, button input routed |
-| **Winamp Modern** | compatibility expansion | loads and runs `onscriptloaded` headlessly; normal (354×280) and shade (354×25) switch through script dispatch; resize clamps; theme switching restores |
-| **cPro-Bento** + ClassicPro engine | north-star | full 40-file include graph expands, graph builds, scripts bind and run, topology yields exactly one SUI window |
+| **Winamp Modern** | compatibility expansion | **renders**: window chrome, menubar, display (timer, song ticker, bitrate/sample rate, spectrum), transport, sliders. Normal (354×280) and shade (354×25) switch through script dispatch; resize clamps; theme switching restores. Client area is built at runtime from the frame's `content=` param |
+| **cPro-Bento** + ClassicPro engine | north-star | full 40-file include graph expands, graph builds, scripts bind and run, topology yields exactly one SUI window; **renders** its frame, titlebar, display, transport, and sliders. The SUI centre (windowholder-hosted components) is still empty |
 
 None of these ship with NullPlayer. All fixture-based tests are opt-in behind `WINAMP_MODERN_WAL` /
 `WINAMP_MODERN_ENGINE`; everything committed is synthetic and self-authored.
@@ -119,9 +119,17 @@ but never reached at startup):
 
 Two follow-on `findobject`-on-null errors are downstream of these. Implement these five (each with a
 signature and a regression test) before looking any further down the list.
+
+**Measured demand — Winamp Modern startup.** Six methods, none of which block the window from
+rendering: `clienttoscreenx` (×10), `snapadjust`, `debugstring`, `getgroup`, `onsetposition`,
+`getnumchildren`.
+
+> A method listed in `signature(for:)` but stubbed in dispatch does **not** appear in either list — it
+> looks implemented. `newgroup` hid there and cost the entire Winamp Modern window body. Omit the
+> signature instead of stubbing.
 - `messagebox` — denied (no arbitrary modal host UI)
 - `navigateurl` — sandboxed no-op
-- `newgroup` — returns a safe null result; broad runtime group instantiation is not implemented
+- `newgroup` — **implemented**: expands a registered groupdef as a child of the calling script's group, and starts the scripts the new subtree declares (bounded by the load-time object budget and `maximumRuntimePrograms`)
 - Popup menus use an inert command model with an injected presenter
 - `getPublicInt`/`setPublicInt` are per-skin namespaced, not truly app-global
 
@@ -196,10 +204,19 @@ budget aborts; fuzzing of the archive, XML, group-expansion, MAKI-parser, and VM
 outcome, no trap or hang); stress (timer caps, 50× rapid load/teardown, malformed images, 2,000
 groupdefs); teardown completeness; live four-mode switching.
 
-**Not verified**: live GUI rendering and interaction for any target skin, casting continuity in this
-mode, Compact Mode, UI Size, window docking, and pixel-level fidelity. Playback and casting are
-`AudioEngine`-owned and mode-independent, and are proven for the other three families, but have not
-been driven from a `.wal` skin's own controls. See [manual-qa-checklist.md](manual-qa-checklist.md).
+**Verified by rendering** (2026-08-15, `WinampModernRenderDumpTests` against user-supplied archives,
+plus a manual GUI pass): Winamp Modern and cPro-Bento both render their frames and controls; sprite
+crop origin, upright orientation, layer stretching, tiling, and `fitparent` are pinned per pixel by
+`WinampModernRenderPixelTests`.
+
+**Not verified**: casting continuity in this mode, Compact Mode, UI Size, window docking, and
+pixel-exact fidelity against real Winamp. Playback and casting are `AudioEngine`-owned and
+mode-independent, and are proven for the other three families, but have not been driven from a `.wal`
+skin's own controls. See [manual-qa-checklist.md](manual-qa-checklist.md).
+
+**Known rendering gaps**: the lower third of Winamp Modern's main window (`player.main` and
+`player.normal.drawer` both resolve to y≈17 and overlap, leaving the config/EQ drawer area blank), and
+cPro-Bento's SUI centre (windowholder-hosted playlist/library/vis content).
 
 **Not fuzzed**: `NSISArchive` and `LZMA1Decoder`. They are validated byte-for-byte against the real
 installer (309/309 engine files match a reference oracle), but a bounded fuzz over them remains
