@@ -641,6 +641,22 @@ and every auxiliary container window. Only the main view (`drivesScripts: true`)
 script callbacks (theme, actions, mouse, EQ) — layout switching and resizing are **container-scoped**
 (below).
 
+#### The window layer these views sit in
+
+Every `.wal` window is `.borderless`, which changes what AppKit will do for you:
+
+- **`performClose(_:)` does nothing.** It simulates a click on the window's close button, and a
+  borderless window has none — it beeps and returns. A skin's `action="CLOSE"` therefore has to route
+  to the controller, which quits from the player window (as the classic skin's close button does) and
+  hides an auxiliary one. `MINIMIZE` likewise takes the whole set of the skin's windows down together,
+  and their style masks carry `.miniaturizable` — no chrome is drawn for it, but AppKit will not
+  miniaturize a window whose mask forbids it. Both go through `closeRequested`/`minimizeRequested` on
+  the view; nothing in the view calls AppKit's window commands directly. Phase 24
+- **A window created with `NSRect(origin: .zero, …)` opens at the bottom-left corner of the screen**,
+  which is where every auxiliary container window used to appear. They are placed on **first show**
+  — stacked under the main window, clamped to the screen — and never repositioned again, so a window
+  the user has moved stays where they put it (`placedAuxiliaryWindows`). Phase 24
+
 #### Where a surface lives
 
 `WinampModernSurfaceCoordinator` is the single answer, for menus, skin buttons, and restore alike:

@@ -6,6 +6,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private var host: WinampModernAudioEngineHost?
     private var componentBridge: WinampModernComponentBridge?
     private var auxiliaryContainers: [AuxiliaryContainer] = []
+    /// Containers whose window has been given a position. Placement happens once, on first show, so
+    /// re-opening a window the user has moved never yanks it back.
+    private var placedAuxiliaryWindows: Set<String> = []
     private var isApplyingSkinSize = false
 
     /// A separate visible container (the "separate windows" arrangement) rendered in its own native
@@ -54,6 +57,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         window.hasShadow = false
         window.isMovableByWindowBackground = false
         window.styleMask.insert(.resizable)
+        // `.miniaturizable` on a window with no chrome to draw it: nothing appears, but AppKit will
+        // only miniaturize a window whose mask allows it, and a skin's own Minimize button is the
+        // only way into the Dock for a `.borderless` window.
+        window.styleMask.insert(.miniaturizable)
         window.delegate = self
         window.center()
         window.setAccessibilityIdentifier("WinampModernMainWindow")
@@ -95,6 +102,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             view.componentWindowToggleRequested = { [weak self] kind in
                 self?.toggleAuxiliaryWindow(for: kind) ?? false
             }
+            installWindowCommands()
             applyLayoutConstraints()
             // Container-scoped callbacks must exist *before* the scripts run: a skin that resizes or
             // switches a layout from `onScriptLoaded` does it during `start()`.
@@ -156,7 +164,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                                             componentHost: componentBridge, drivesScripts: false)
             view.skinScale = skinScale
             let auxWindow = NSWindow(contentRect: NSRect(origin: .zero, size: view.scaledCanvasSize),
-                                     styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
+                                     styleMask: [.borderless, .resizable, .miniaturizable],
+                                     backing: .buffered, defer: false)
             auxWindow.isReleasedWhenClosed = false
             auxWindow.isOpaque = false
             auxWindow.backgroundColor = .clear
@@ -336,10 +345,58 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return }
         if visible {
             container.view.needsDisplay = true
+            place(container)
             container.window.makeKeyAndOrderFront(nil)
         } else {
             container.window.orderOut(nil)
         }
+    }
+
+    /// Close / Minimize as Winamp means them, wired to every window this skin owns.
+    ///
+    /// Not left to the view: `performClose(_:)` simulates a click on a close *button*, which a
+    /// `.borderless` window does not have — it beeps and returns, which is why no skin's close button
+    /// worked. And the commands are about the player, not one window: closing the player quits (the
+    /// classic skin's close button does the same), closing an auxiliary window hides just it, and
+    /// minimize takes the whole set down together instead of leaving the rest of the skin on screen.
+    private func installWindowCommands() {
+        skinView?.closeRequested = { NSApplication.shared.terminate(nil) }
+        skinView?.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
+        for container in auxiliaryContainers {
+            container.view.closeRequested = { [weak auxWindow = container.window] in
+                auxWindow?.orderOut(nil)
+            }
+            container.view.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
+        }
+    }
+
+    private func minimizeAllWindows() {
+        window?.miniaturize(nil)
+        for container in auxiliaryContainers where container.window.isVisible {
+            container.window.miniaturize(nil)
+        }
+    }
+
+    /// Put an auxiliary window somewhere the user can see the first time it opens, then never move it
+    /// again — a window created at `NSRect(origin: .zero, …)` sits at the **bottom-left corner of the
+    /// screen**, which is where every one of these opened. Winamp stacks its extra windows under the
+    /// player, so they go there: below the main window, each under the last, clamped to the screen.
+    private func place(_ container: AuxiliaryContainer) {
+        guard !placedAuxiliaryWindows.contains(container.containerID) else { return }
+        placedAuxiliaryWindows.insert(container.containerID)
+        let size = container.window.frame.size
+        guard let anchor = window?.frame ?? NSScreen.main?.visibleFrame else { return }
+        // Stack under whatever this skin already has on screen, so opening the playlist and then the
+        // library does not put one on top of the other.
+        let occupied = auxiliaryContainers
+            .filter { $0.containerID != container.containerID && $0.window.isVisible }
+            .reduce(0) { $0 + $1.window.frame.height }
+        var origin = NSPoint(x: anchor.minX, y: anchor.minY - occupied - size.height)
+        if let visible = (window?.screen ?? NSScreen.main)?.visibleFrame {
+            origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
+            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        }
+        container.window.setFrameOrigin(origin)
     }
 
     /// One installation of the two container-addressed callbacks, owned by the controller rather than
@@ -378,6 +435,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             container.window.orderOut(nil)
         } else {
             container.view.needsDisplay = true
+            place(container)
             container.window.orderFront(nil)
         }
         return true
@@ -533,6 +591,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             container.window.contentView = nil
         }
         auxiliaryContainers.removeAll()
+        placedAuxiliaryWindows.removeAll()
         viewsByContainer.removeAll()
         surfaceCoordinator = nil
         WasabiTextMetrics.componentTextProvider = nil

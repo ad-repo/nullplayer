@@ -49,6 +49,16 @@ final class WinampModernMainView: NSView {
     /// skin button and a menu item can never resolve differently. Returns false before the
     /// coordinator exists (during `scripts.start()`), where the older direct routing still applies.
     var surfaceToggleRequested: ((WinampModernComponentKind) -> Bool)?
+    /// The window commands a skin draws on its titlebar, routed to whoever owns the window layer.
+    ///
+    /// They cannot be answered from here with the obvious AppKit calls. `performClose(_:)` *simulates
+    /// a click on the close button*, and a `.wal` window is `.borderless` — it has none, so the call
+    /// beeps and returns; that is why no skin's close button did anything. And Close/Minimize are
+    /// Winamp's, not one window's: closing the player quits (as the classic skin's close button does),
+    /// while closing a playlist window only hides that window, and minimizing takes the whole set of
+    /// skin windows down together rather than leaving the rest of the skin on screen.
+    var closeRequested: (() -> Void)?
+    var minimizeRequested: (() -> Void)?
 
     /// The main window drives the shared script runtime's *global* callbacks (theme, actions, mouse
     /// position, EQ). Auxiliary container windows render and take input against the same runtime but
@@ -714,9 +724,12 @@ final class WinampModernMainView: NSView {
         case "SWITCH":
             if let parameter { activateLayout(id: parameter) }
         // The window commands every skin puts on its titlebar. T800 draws all three (minimize,
-        // shade-switch, close) as 4×5px buttons on the machine's chest.
-        case "MINIMIZE": window?.miniaturize(nil)
-        case "CLOSE": window?.performClose(nil)
+        // shade-switch, close) as 4×5px buttons on the machine's chest. The fallbacks are for a view
+        // with no controller over it (tests): never `performClose`, which a borderless window ignores.
+        case "MINIMIZE":
+            if let minimizeRequested { minimizeRequested() } else { window?.miniaturize(nil) }
+        case "CLOSE":
+            if let closeRequested { closeRequested() } else { window?.close() }
         case "TOGGLE":
             if let kind = WinampModernComponentRegistry.kind(for: parameter) { routeComponentToggle(kind) }
         case "EQ_TOGGLE":

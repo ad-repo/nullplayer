@@ -544,6 +544,54 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertNil(points.last ?? nil, "`popAtMouse` passes no point")
     }
 
+    // MARK: - D9: the window commands on a skin's titlebar
+
+    /// Reported from a live run: "none of the winamp-modern window close/minimize work". The click
+    /// path was fine — every skin's `action="CLOSE"` reached `window.performClose(_:)`, which
+    /// *simulates a click on the close button* and does nothing on a `.borderless` window. Both
+    /// commands now go to the window layer's own seam, and this drives the real mouse path to prove
+    /// the button reaches it.
+    func testCloseAndMinimizeButtonsReachTheWindowCommands() throws {
+        let loaded = try load(xml: skin(size: 40, body: """
+            <button id="Close" action="CLOSE" x="0" y="0" w="10" h="10"/>
+            <button id="Minimize" action="MINIMIZE" x="20" y="0" w="10" h="10"/>
+            """))
+        let host = Host()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
+        addTeardownBlock { renderer.teardown() }
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host)
+        addTeardownBlock { view.teardown() }
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: renderer.canvasSize),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = view
+        view.setFrameSize(renderer.canvasSize)
+        var commands: [String] = []
+        view.closeRequested = { commands.append("close") }
+        view.minimizeRequested = { commands.append("minimize") }
+
+        // Skin space is top-left origin; the view's is bottom-left, so a button at skin y=0..10 in a
+        // 40-tall canvas is at view y=30..40.
+        click(view, in: window, at: NSPoint(x: 5, y: 35))
+        XCTAssertEqual(commands, ["close"], "a CLOSE button reaches the close command")
+        click(view, in: window, at: NSPoint(x: 25, y: 35))
+        XCTAssertEqual(commands, ["close", "minimize"])
+    }
+
+    /// Press and release over the same point, as a real click arrives.
+    private func click(_ view: NSView, in window: NSWindow, at point: NSPoint) {
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            guard let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                                 timestamp: 0, windowNumber: window.windowNumber,
+                                                 context: nil, eventNumber: 0, clickCount: 1,
+                                                 pressure: 1) else {
+                return XCTFail("could not synthesize a \(type) event")
+            }
+            if type == .leftMouseDown { view.mouseDown(with: event) } else { view.mouseUp(with: event) }
+        }
+    }
+
     // MARK: - Fixtures
 
     /// The skin's report. Post-load renderer diagnostics land in `runtime.diagnostics`, so this needs
