@@ -140,6 +140,86 @@ final class WasabiColorThemeCatalog {
     }
 }
 
+/// A non-rectangular clip a script put on one object, taken from a greyscale **map** bitmap.
+///
+/// `Region.loadFromMap(Map, Int threshold, Boolean reversed)` (the signature is `std.mi`'s, not a
+/// guess) reads the map's red channel as a 0–255 *position*: reversed selects every pixel at or
+/// below the threshold, which is how a skin fills a bar as the value rises, and the unreversed form
+/// selects everything at or above it. `Layer.setRegion` then clips the control to that shape;
+/// `Layer.setRegionFromMap` is the same thing without the intermediate object.
+///
+/// It lives on the object as attributes because the renderer draws from the graph and nothing else —
+/// the same route every animation call takes. The keys are namespaced so they cannot collide with a
+/// skin's own markup.
+struct WasabiRegionClip: Equatable {
+    static let mapKey = "nullplayer.script.region.map"
+    static let mapPathKey = "nullplayer.script.region.mappath"
+    static let thresholdKey = "nullplayer.script.region.threshold"
+    static let reversedKey = "nullplayer.script.region.reversed"
+    static let offsetXKey = "nullplayer.script.region.offsetx"
+    static let offsetYKey = "nullplayer.script.region.offsety"
+
+    /// The map's declared `<bitmap>` id, or the raw string `loadMap` was given when it was a path.
+    let mapID: String
+    /// The logical path the id resolved to, for the path form of `loadMap`, which has no definition.
+    let mapPath: String?
+    let threshold: Int
+    let reversed: Bool
+    /// `Region.offset`, in map pixels: skins whose map covers a whole window shift the region back
+    /// into the clipped layer's own space (the stock `customseek.m` does exactly this).
+    let offsetX: Int
+    let offsetY: Int
+
+    init(mapID: String, mapPath: String?, threshold: Int, reversed: Bool,
+         offsetX: Int = 0, offsetY: Int = 0) {
+        self.mapID = mapID
+        self.mapPath = mapPath
+        self.threshold = threshold
+        self.reversed = reversed
+        self.offsetX = offsetX
+        self.offsetY = offsetY
+    }
+
+    init?(object: WasabiObject) {
+        guard let mapID = object.attributes[Self.mapKey], !mapID.isEmpty else { return nil }
+        self.mapID = mapID
+        self.mapPath = object.attributes[Self.mapPathKey]
+        self.threshold = Int(object.attributes[Self.thresholdKey] ?? "") ?? 0
+        self.reversed = object.attributes[Self.reversedKey] == "1"
+        self.offsetX = Int(object.attributes[Self.offsetXKey] ?? "") ?? 0
+        self.offsetY = Int(object.attributes[Self.offsetYKey] ?? "") ?? 0
+    }
+
+    var cacheKey: String {
+        "\(mapPath ?? mapID.lowercased())|\(threshold)|\(reversed ? 1 : 0)"
+    }
+
+    /// Whether the map's value at one pixel is inside the region.
+    static func contains(value: UInt8, threshold: Int, reversed: Bool) -> Bool {
+        reversed ? Int(value) <= threshold : Int(value) >= threshold
+    }
+
+    @discardableResult
+    func apply(to object: WasabiObject) -> Bool {
+        var changed = object.setAttribute(Self.mapKey, value: mapID)
+        changed = object.setAttribute(Self.mapPathKey, value: mapPath) || changed
+        changed = object.setAttribute(Self.thresholdKey, value: String(threshold)) || changed
+        changed = object.setAttribute(Self.reversedKey, value: reversed ? "1" : "0") || changed
+        changed = object.setAttribute(Self.offsetXKey, value: String(offsetX)) || changed
+        changed = object.setAttribute(Self.offsetYKey, value: String(offsetY)) || changed
+        return changed
+    }
+
+    @discardableResult
+    static func clear(on object: WasabiObject) -> Bool {
+        var changed = false
+        for key in [mapKey, mapPathKey, thresholdKey, reversedKey, offsetXKey, offsetYKey] {
+            changed = object.setAttribute(key, value: nil) || changed
+        }
+        return changed
+    }
+}
+
 final class WasabiResourceCache {
     let loadedSkin: WinampModernLoadedSkin
     let maximumCost: Int
@@ -150,6 +230,11 @@ final class WasabiResourceCache {
         var access: UInt64
     }
     private var bitmaps: [String: CachedBitmap] = [:]
+    /// Region masks, keyed by map and threshold. Separate from `bitmaps` because they are derived
+    /// data with a different lifetime: a drag regenerates them, and the colour theme cannot touch
+    /// them.
+    private var regionMasks: [String: CGImage] = [:]
+    private static let maximumCachedRegionMasks = 256
     /// Fonts and text measurement live in one shared place so a script's `getAutoWidth()` and this
     /// renderer's drawing agree on how wide a string is. See `WasabiTextMetrics`.
     let metrics: WasabiTextMetrics
@@ -200,6 +285,72 @@ final class WasabiResourceCache {
         return bitmap
     }
 
+    /// The alpha mask for a script-set region, or `nil` when the map cannot be resolved — in which
+    /// case the caller must leave the object unclipped rather than draw an empty control.
+    ///
+    /// The map is decoded **without** the colour theme's gamma: a map's channels are data, not
+    /// artwork, and a `gammagroup` on one (T800 puts its maps in `Background`) would move every
+    /// threshold. The rows are written bottom-up because the mask is mapped onto its rect exactly as
+    /// a drawn image is, and the scene is painted in a y-flipped context — see `drawImage`.
+    func regionMask(_ region: WasabiRegionClip) -> CGImage? {
+        guard !isTornDown else { return nil }
+        let key = region.cacheKey
+        if let cached = regionMasks[key] { return cached }
+        guard let source = rawMapImage(region) else { return nil }
+        let width = source.width
+        let height = source.height
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        rgba.withUnsafeMutableBytes { bytes in
+            guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        var mask = [UInt8](repeating: 0, count: width * height)
+        for row in 0..<height {
+            // Row 0 of a bitmap context's data is the image's *top* row, so this reads the map
+            // bottom-up: the mask has to arrive pre-flipped to survive the y-flipped scene context.
+            let sourceRow = height - 1 - row
+            for column in 0..<width {
+                let offset = (sourceRow * width + column) * 4
+                let inside = WasabiRegionClip.contains(value: rgba[offset],
+                                                       threshold: region.threshold,
+                                                       reversed: region.reversed)
+                // A transparent pixel is outside every region: it is not part of the artwork.
+                mask[row * width + column] = inside && rgba[offset + 3] > 0 ? 255 : 0
+            }
+        }
+        guard let provider = CGDataProvider(data: Data(mask) as CFData),
+              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8,
+                                  bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: false,
+                                  intent: .defaultIntent) else { return nil }
+        // A volume drag walks the threshold, so this fills with one entry per value it passes.
+        // Small (a map is a control-sized bitmap), but bounded all the same.
+        if regionMasks.count >= Self.maximumCachedRegionMasks { regionMasks.removeAll() }
+        regionMasks[key] = image
+        return image
+    }
+
+    /// The map bitmap behind a region, gamma-free. `loadMap` takes either a declared id or a path,
+    /// and the runtime records whichever it resolved.
+    private func rawMapImage(_ region: WasabiRegionClip) -> CGImage? {
+        let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: region.mapID)
+        let path = (definition?.kind == "bitmap" ? definition?.logicalFile : nil) ?? region.mapPath
+        guard let path, let data = try? loadedSkin.vfs.data(at: path),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let full = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        guard let definition, definition.kind == "bitmap", definition.logicalFile == path else { return full }
+        let x = max(0, Int(Double(definition.attributes["x"] ?? "0") ?? 0))
+        let y = max(0, Int(Double(definition.attributes["y"] ?? "0") ?? 0))
+        let width = max(1, min(full.width - x, Int(Double(definition.attributes["w"] ?? "") ?? Double(full.width - x))))
+        let height = max(1, min(full.height - y, Int(Double(definition.attributes["h"] ?? "") ?? Double(full.height - y))))
+        guard y + height <= full.height else { return full }
+        return full.cropping(to: CGRect(x: x, y: y, width: width, height: height)) ?? full
+    }
+
     /// The glyph sheet behind a `<bitmapfont>`.
     ///
     /// Winamp accepts **either** form for `file=`, exactly as `loadMap` does: the stock Winamp Modern
@@ -245,6 +396,7 @@ final class WasabiResourceCache {
 
     func teardown() {
         bitmaps.removeAll()
+        regionMasks.removeAll()
         metrics.teardown()
         currentCost = 0
         isTornDown = true
@@ -438,8 +590,30 @@ final class WasabiSceneRenderer {
                       height: max(declared.height, protective.height))
     }
 
+    /// Whether the skin described a resize range for the active layout **at all** — any one of
+    /// `minimum_w`/`minimum_h`/`maximum_w`/`maximum_h`.
+    ///
+    /// A layout that declares none of them is fixed at the size its author drew, and Winamp gives
+    /// its window no resize affordance. Treating "undeclared" as "unbounded" instead let a restored
+    /// frame stretch the scene: T800 is a 177×400 window whose whole face is one background layer,
+    /// and it came back from saved state in a frame several hundred pixels wider with the head
+    /// smeared across it. cPro-Bento declares 317×168…1920×1080 and is unaffected; so is Winamp
+    /// Modern 5.66, which declares a minimum and is meant to widen.
+    var layoutIsUserResizable: Bool {
+        ["minimum_w", "minimum_h", "maximum_w", "maximum_h"].contains {
+            Self.optionalDimension(layout.attributes[$0]) != nil
+        }
+    }
+
+    /// The size range a *window* hosting this layout may take, which is not the same as the range
+    /// `resize(to:)` accepts: a script may still resize a fixed layout, exactly as Winamp lets one.
+    var userResizeLimits: (minimum: CGSize, maximum: CGSize) {
+        guard layoutIsUserResizable else { return (canvasSize, canvasSize) }
+        return (layoutMinimumSize, layoutMaximumSize)
+    }
+
     /// What the layout itself declares — the floor the protective probe starts searching from.
-    private var declaredMinimumSize: CGSize {
+    var declaredMinimumSize: CGSize {
         CGSize(width: Self.dimension(layout.attributes, keys: ["minimum_w"], fallback: 1),
                height: Self.dimension(layout.attributes, keys: ["minimum_h"], fallback: 1))
     }
@@ -800,6 +974,7 @@ final class WasabiSceneRenderer {
         let type = object.typeName.lowercased()
         context.saveGState()
         context.clip(to: node.clip)
+        applyRegionClip(of: object, frame: node.frame, context: context)
 
         if let background = object.attributes["background"],
            let bitmap = resources.bitmap(identifier: background) {
@@ -836,6 +1011,24 @@ final class WasabiSceneRenderer {
             }
         }
         context.restoreGState()
+    }
+
+    /// Clip one object to the region a script gave it, if any.
+    ///
+    /// The mask is placed at its own natural size at the object's origin, not stretched to the
+    /// object's rect: a region is a set of *map pixels*, and `Region.offset` moves it in those same
+    /// units. An unresolvable map leaves the object unclipped — a skin whose map is missing should
+    /// look the way it did before regions existed, not lose the control altogether.
+    private func applyRegionClip(of object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard let region = WasabiRegionClip(object: object),
+              let mask = resources.regionMask(region) else { return }
+        let rect = CGRect(x: frame.minX + CGFloat(region.offsetX),
+                          y: frame.minY + CGFloat(region.offsetY),
+                          width: CGFloat(mask.width), height: CGFloat(mask.height))
+        let quality = context.interpolationQuality
+        context.interpolationQuality = .none
+        context.clip(to: rect, mask: mask)
+        context.interpolationQuality = quality
     }
 
     private func draw(_ bitmap: WasabiBitmap, object: WasabiObject,
@@ -1106,9 +1299,25 @@ final class WasabiSceneRenderer {
         let levels = host.spectrumLevels
         let count = min(64, levels.count)
         guard count > 0 else { return }
+        // A skin colours its analyzer per band (`colorband1`…`colorband16`) **or** in one stroke with
+        // `colorallbands`, and its oscilloscope with `colorosc1`…`colorosc5`. Reading only the
+        // per-band form and defaulting to white painted Rika's spectrum as bright white bars across
+        // the butterfly it sits on: that skin asks for `colorallbands="0,0,0"` at `alpha="50"`, a
+        // dark shading over its own art.
         func color(_ index: Int) -> CGColor {
-            resolvedColor(object.attributes["colorband\(min(16, index + 1))"] ?? "255,255,255").cgColor
+            resolvedColor(object.attributes["colorband\(min(16, index + 1))"]
+                          ?? object.attributes["colorallbands"] ?? "255,255,255").cgColor
         }
+        func oscilloscopeColor(_ index: Int) -> CGColor {
+            resolvedColor(object.attributes["colorosc\(min(5, index + 1))"]
+                          ?? object.attributes["colorallbands"] ?? "255,255,255").cgColor
+        }
+        // The `<vis>`'s own `alpha`, which only bitmap drawing honoured. Rika's 50 is half the point
+        // of the effect.
+        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.setAlpha(CGFloat(alpha) / 255)
         switch VisualizationMode(attribute: object.attributes["mode"]) {
         case .off:
             return
@@ -1128,7 +1337,7 @@ final class WasabiSceneRenderer {
             let step = frame.width / CGFloat(max(1, count - 1))
             context.saveGState()
             context.setLineWidth(1)
-            context.setStrokeColor(color(0))
+            context.setStrokeColor(oscilloscopeColor(0))
             context.beginPath()
             for index in 0..<count {
                 let level = CGFloat(max(0, min(1, levels[index])))

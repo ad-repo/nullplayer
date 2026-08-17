@@ -191,6 +191,11 @@ renderer therefore probes for the smallest size at which the scene still lays ou
 drew it, and raises the declared floor to it (`computeProtectiveMinimumSize`). Every window's
 `contentMinSize`, `resize()`, and `clampRestoredFrame` go through the same number.
 
+A layout that declares **no** range at all (none of `minimum_w`/`minimum_h`/`maximum_w`/`maximum_h`)
+is a different case: it is fixed at its own size, and `userResizeLimits` reports that size as both
+limits so the window cannot be dragged or restored to anything else. Only the user-facing range is
+pinned — a script's `resize()` still goes through `resize(to:)`'s own clamp.
+
 The reference is the layout's own **default size** — at the size a skin ships at, its scene is
 correct by definition, so overhang present there is deliberate and only failures introduced by
 shrinking count. There are two failure kinds and they are tracked **separately**: an object escaping
@@ -219,6 +224,31 @@ bitmap must be re-flipped about its own rect or it renders vertically mirrored i
 Converting a Wasabi `y` to a bottom-left origin before `cropping(to:)` mirrors the source rect about
 the sheet's centreline, so every sprite is cut from the wrong row of the atlas. Sprite-sheet crops in
 `drawBitmapText` and `drawAnimated` index rows directly for the same reason.
+
+A **clip mask** goes through the same rule as a drawn image, and cannot be re-flipped afterwards the
+way `drawImage` re-flips its rect — restoring the graphics state would discard the clip. So the mask
+is built pre-flipped instead (`WasabiResourceCache.regionMask`, which reads its source buffer bottom
+row first). A mask built the wrong way up looks plausible on a symmetric control and is wrong on
+every other one.
+
+#### Region clipping
+
+A script can clip one control to a shape taken from a greyscale **map** bitmap. `Region` is created
+by the same bare `new` as `Map`/`Timer`/`List`, and `Region.loadFromMap(map, threshold, reversed)`
+settles its role; the map's red channel is read as a 0–255 position, `reversed` keeping every pixel
+at or below the threshold and the plain form everything at or above. `Layer.setRegion(r)` applies it,
+`Layer.setRegionFromMap(map, threshold, reversed)` is the same without the intermediate object, and
+`Region.offset(dx, dy)` moves the shape in map pixels.
+
+The renderer draws from the graph and nothing else, so `setRegion` stamps the region onto the object
+as namespaced `nullplayer.script.region.*` attributes and calls `graphDidMutate` — the same route
+`play`/`gotoFrame` take. `WasabiSceneRenderer.applyRegionClip` turns them into a `CGContext.clip(to:
+mask:)`, and the mask is decoded **without** the colour theme's gamma: a map's channels are data, not
+artwork, and skins routinely put maps in a `gammagroup` (T800 puts its in `Background`) which would
+move every threshold. The mask is placed at its **natural size** at the object's origin, not
+stretched to the object's rect — a region is a set of map pixels. A map that cannot be resolved
+leaves the object unclipped, and regions deliberately do not affect hit testing: T800 drags its
+volume by tracking the mouse across the whole strip, most of which the region has clipped away.
 
 #### Hit testing: who owns a point
 

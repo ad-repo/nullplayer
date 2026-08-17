@@ -10,6 +10,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         /// construction (the class GUIDs are not part of the archive), so the role is settled by the
         /// first call that only one of them accepts — here, `loadMap`.
         case map(bitmapID: String, source: WalSourceLocation)
+        /// A `Region` that has been loaded from a map. Settled the same way a `Map` is: `new Region`
+        /// is the same bare `new` as `new Map`, and only `loadFromMap` accepts a region.
+        case region(clip: WasabiRegionClip)
         /// An `XmlDoc` the script asked to `load`. ClassicPro uses one only to read the optional
         /// `ClassicPro.xml` extras (songticker antialiasing, custom beat-vis names), always behind
         /// `if (myDoc.exists())`. The callback-driven parser is not implemented, so the document
@@ -71,6 +74,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// One EQ band, on MAKI's −127…127 scale (MMD3's bass/treble knobs read and write the bands).
     var equalizerBandRequested: ((Int) -> Int)?
     var equalizerBandSetterRequested: ((Int, Int) -> Void)?
+    /// The EQ preamp, on the same MAKI −127…127 scale as a band.
+    var equalizerPreampRequested: (() -> Int)?
+    var equalizerPreampSetterRequested: ((Int) -> Void)?
 
     private struct ScriptEventKey: Hashable {
         let target: MakiObjectReference.Kind
@@ -281,14 +287,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// engine was not installed and try to switch skins. Paths go through the VFS like any other
     /// resource, so they stay inside the mounts.
     private func mapData(bitmapID: String, source scriptSource: WalSourceLocation) -> Data? {
+        guard let path = mapLogicalPath(bitmapID: bitmapID, source: scriptSource) else { return nil }
+        return try? loadedSkin.vfs.data(at: path, location: scriptSource)
+    }
+
+    /// Where a map's bitmap actually lives, by either route. The renderer needs this for a region,
+    /// because the path form leaves nothing in the resource registry for it to look the map up by.
+    private func mapLogicalPath(bitmapID: String, source scriptSource: WalSourceLocation) -> String? {
         if let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: bitmapID),
            definition.kind == "bitmap", let path = definition.logicalFile,
-           let data = try? loadedSkin.vfs.data(at: path, location: definition.source) {
-            return data
+           (try? loadedSkin.vfs.data(at: path, location: definition.source)) != nil {
+            return path
         }
-        guard let resolved = try? loadedSkin.vfs.resolve(bitmapID, relativeTo: scriptSource.path,
-                                                         location: scriptSource) else { return nil }
-        return try? loadedSkin.vfs.data(at: resolved.logicalPath, location: scriptSource)
+        return try? loadedSkin.vfs.resolve(bitmapID, relativeTo: scriptSource.path,
+                                           location: scriptSource).logicalPath
     }
 
     /// Load and start the scripts a runtime-instantiated subtree declares, so nested components come
@@ -452,6 +464,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // colour scheme out of a bitmap (`player.maki` builds the classic-vis colour bands from
             // `getARGBValue`) and sizes animations from `getWidth`/`getHeight`.
             "getargbvalue": .init(argumentCount: 3, returnKind: .integer),
+            // `Region`: `loadFromMap(Map, Int threshold, Boolean reversed)` turns a map into a
+            // shape, `offset` moves it into the clipped object's own space, and `setRegion` clips
+            // the object to it. T800 fills its volume bar this way; the stock `customseek.m` its
+            // seek ghost.
+            "loadfrommap": .init(argumentCount: 3, returnKind: .null),
+            "offset": .init(argumentCount: 2, returnKind: .null),
+            "setregion": .init(argumentCount: 1, returnKind: .null),
             // Screen-space cursor position, in the same skin-pixel units as the x/y a mouse event
             // hands the script — the knob scripts mix the two in one expression.
             "getmouseposx": .init(argumentCount: 0, returnKind: .integer),
@@ -460,6 +479,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "geteq": .init(argumentCount: 0, returnKind: .integer),
             "geteqband": .init(argumentCount: 1, returnKind: .integer),
             "seteqband": .init(argumentCount: 2, returnKind: .null),
+            "geteqpreamp": .init(argumentCount: 0, returnKind: .integer),
+            "seteqpreamp": .init(argumentCount: 1, returnKind: .null),
             "settargetx": .init(argumentCount: 1, returnKind: .null),
             "settargety": .init(argumentCount: 1, returnKind: .null),
             "settargetw": .init(argumentCount: 1, returnKind: .null),
@@ -752,6 +773,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .integer(Int32(clamping: equalizerBandRequested?(Int(arguments[0].integerValue)) ?? 0))
         case "seteqband":
             equalizerBandSetterRequested?(Int(arguments[0].integerValue), Int(arguments[1].integerValue))
+            return .null
+        // The preamp is the band before band 0, on the same −127…127 scale. Rika's `eq.xml` reads it
+        // while wiring its own equalizer window, and the miss aborted that whole script.
+        case "geteqpreamp":
+            return .integer(Int32(clamping: equalizerPreampRequested?() ?? 0))
+        case "seteqpreamp":
+            equalizerPreampSetterRequested?(Int(arguments[0].integerValue))
             return .null
         case "getruntimeversion": return .integer(5)
         case "getskinname": return .string(preferenceNamespace)
@@ -1087,9 +1115,35 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // A redraw hint (`widgetsManager` throttles its list while populating). The renderer
             // repaints from the graph, so there is no suspended-drawing state to honour.
             return .null
+        case "setregion":
+            // The renderer draws from the graph and nothing else, so a region is stamped onto the
+            // object and the scene redrawn — the same route `play`/`gotoFrame` take. A region that
+            // was never loaded from a map (or an explicitly null one) clears the clip.
+            var applied = false
+            if case .object(let reference) = arguments[0],
+               case .dynamic(let regionID) = reference.kind,
+               let regionState = dynamicObjects[regionID],
+               case .region(let clip) = regionState.role {
+                applied = clip.apply(to: object)
+            } else {
+                applied = WasabiRegionClip.clear(on: object)
+            }
+            if applied { graphDidMutate?() }
+            return .null
         case "setregionfrommap":
-            // Accepted so the calling script continues; per-object regions are not implemented, so
-            // the object simply stays rectangular. See compatibility.md.
+            // The short form: a map, a threshold and the reversed flag, with no `Region` in between.
+            guard case .object(let reference) = arguments[0],
+                  case .dynamic(let mapID) = reference.kind,
+                  let mapState = dynamicObjects[mapID],
+                  case .map(let bitmapID, let source) = mapState.role else {
+                if WasabiRegionClip.clear(on: object) { graphDidMutate?() }
+                return .null
+            }
+            let clip = WasabiRegionClip(mapID: bitmapID,
+                                        mapPath: mapLogicalPath(bitmapID: bitmapID, source: source),
+                                        threshold: Int(arguments[1].integerValue),
+                                        reversed: arguments[2].truthy)
+            if clip.apply(to: object) { graphDidMutate?() }
             return .null
         case "islayoutanimationsafe", "istransparencysafe": return .boolean(true)
         case "init", "callme", "ondatachanged": return .null
@@ -1125,6 +1179,28 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         switch method {
         case "loadmap":
             state.role = .map(bitmapID: arguments[0].stringValue, source: program.source)
+            dynamicObjects[id] = state
+            return .null
+        case "loadfrommap":
+            // Argument 0 is the `Map` object itself, so the region borrows the bitmap that map
+            // already resolved — including the path form, which has no `<bitmap>` definition and so
+            // has to be handed to the renderer as an already-resolved logical path.
+            guard case .object(let reference) = arguments[0],
+                  case .dynamic(let mapID) = reference.kind,
+                  let mapState = dynamicObjects[mapID],
+                  case .map(let bitmapID, let source) = mapState.role else { return .null }
+            state.role = .region(clip: WasabiRegionClip(mapID: bitmapID,
+                                                        mapPath: mapLogicalPath(bitmapID: bitmapID, source: source),
+                                                        threshold: Int(arguments[1].integerValue),
+                                                        reversed: arguments[2].truthy))
+            dynamicObjects[id] = state
+            return .null
+        case "offset":
+            guard case .region(let clip) = state.role else { return .null }
+            state.role = .region(clip: WasabiRegionClip(mapID: clip.mapID, mapPath: clip.mapPath,
+                                                        threshold: clip.threshold, reversed: clip.reversed,
+                                                        offsetX: clip.offsetX + Int(arguments[0].integerValue),
+                                                        offsetY: clip.offsetY + Int(arguments[1].integerValue)))
             dynamicObjects[id] = state
             return .null
         case "load":
@@ -1262,6 +1338,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case .configItem(let section): return .string(section)
             case .configAttribute(_, let key): return .string(key)
             case .map(let bitmapID, _): return .string(bitmapID)
+            case .region(let clip): return .string(clip.mapID)
             case .xmlDocument: return .string("")
             case .configGroup(let section): return .string(section)
             case .generic: return .string("dynamic_\(id)")

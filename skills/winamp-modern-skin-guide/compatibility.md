@@ -159,6 +159,16 @@ By area:
   installed?" probe is the path form (`…/engine/image/installed.png`, width 1). The `getARGBValue`
   channel index is **BGRA** — pinned by `player.maki` building `colorbandpeak="r,g,b"` from channels
   2, 1, 0
+- **`Region`**: `loadFromMap(map, threshold, reversed)`, `offset(dx, dy)`, and `<object>.setRegion(r)`
+  — plus the short `<object>.setRegionFromMap(map, threshold, reversed)`, which skips the intermediate
+  object. Clips one control to a shape taken from a map's red channel: **reversed** keeps every pixel
+  at or below the threshold (how a skin fills a bar as its value rises), the plain form everything at
+  or above. `offset` moves the shape in map pixels, for skins whose map covers a whole window rather
+  than the control. Settled by the same first-call rule as `Map`. `setRegion` with anything that is
+  not a loaded region clears the clip, and a map that cannot be resolved leaves the control
+  **unclipped** rather than clipping it away to nothing. The region does not affect hit testing: T800
+  drags its volume by tracking the mouse across the *whole* strip, most of which the region has
+  clipped away
 - **`XmlDoc`**: `load`, `exists` — **inert**. The callback-driven parser is not implemented, so a
   document always reports that it does not exist and every caller takes its own skip path. Cost: a
   skin's optional `ClassicPro.xml` extras (songticker antialiasing, custom beat-vis names) are ignored
@@ -166,7 +176,8 @@ By area:
   bitmap never resolved. ClassicPro probes for optional artwork by declaring a hidden layer over it
   and asking that layer whether it is invalid
 - **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **skin pixels**, the same units as a mouse event's
-  x/y), `getEQ`, `getEqBand`/`setEqBand` (MAKI's −127…127 scale ↔ the engine's ±12 dB), `atan`
+  x/y), `getEQ`, `getEqBand`/`setEqBand` and `getEqPreamp`/`setEqPreamp` (MAKI's −127…127 scale ↔ the
+  engine's ±12 dB), `atan`
 - **`List`**: `addItem`, `enumItem`, `getNumItems`, `removeItem`, `removeAll`, `findItem` (objects
   match by identity, other values by string form); bounded at 4096 items.
   **`BitList`**: `setSize`, `getSize`, `setItem`, `getItem` — same backing store, holding flags
@@ -200,13 +211,10 @@ a whole script):
 - Any method not in `signature(for:)` — fails closed with `.unsupportedScriptCapability` and is
   recorded in the compatibility report's `unsupportedMethods` bucket
 - Unsupported opcodes fail closed; they never become silent no-ops
-- **Per-object regions.** A skin can clip a control to an arbitrary shape taken from a greyscale
-  *map* bitmap — `Region.loadFromMap(map, value, tolerance)` + `<object>.setRegion(r)`, and the
-  shorter `setRegionFromMap`, which is accepted as a no-op so the calling script continues. The
-  control simply stays rectangular. `Map` itself is fully implemented; this is the region half only.
-  Measured cost: T800's volume strip never fills or empties (its clicks still set the volume), and
-  the "Volume: NN%" flash the same handler writes to the song ticker is lost with the aborted event.
-  mmd3 is the only measured `setRegionFromMap` caller. Handoff with the design in `TASKS.md`, Phase 20
+- **Region set operations** — `Region.add`, `sub`, `stretch`, `copy`, `loadFromBitmap` and the
+  `getBoundingBox*` readers. No measured skin calls them; a region is built from one map and used.
+  `WindowHolder.setRegionFromMap` and `MouseRedir.setRegion` share the region model but not the
+  window-shaping half: a region on a container does not reshape the window
 
 **Failure granularity.** A method miss aborts *that script event only*; the remaining scripts still
 run and the skin loads degraded, with every failure collected into the compatibility report. It
@@ -411,6 +419,31 @@ back as 376×182. Separately, an object whose parent is smaller than the object'
 to a **negative** box; those are dropped with their subtree rather than flipped across their origin,
 which is what made an undersized window scramble instead of cramp. Zero-sized objects are still
 walked — skins park real content in 0×0 groups that size themselves from their children.
+
+**A missing optional resource never fails the load** (Phase 22). Bitmaps, cursors and bitmap fonts
+were already tolerated; `truetypefont` was not, and one skin naming a font it does not ship (Rika's
+`SUPERGLU.ttf`) failed the **whole skin** — nothing on screen at all. Winamp falls back to a default
+face, and `WasabiTextMetrics.font` already answers `nil` for a face it cannot produce, so the cost of
+the miss is a substitute font. Security failures (traversal, escape, oversize, corrupt image) still
+throw.
+
+**A `<vis>` box is painted as the skin declares it** (Phase 22). Band colour resolves
+`colorband1`…`colorband16` → `colorallbands` → white, the oscilloscope reads `colorosc1`…`colorosc5`,
+and the object's own `alpha` applies to both. Reading only the per-band form and defaulting to white
+put bright bars over the artwork of every skin that colours its analyzer in one stroke — Rika
+(`colorallbands="0,0,0"` at `alpha="50"`, a shading over its display), T800, micro and Anexa.
+`mode="3"` still means "the skin draws its own here" (Phase 17).
+
+**A layout with no declared range is fixed** (Phase 21). "Undeclared" is not "unbounded": a layout
+that declares none of `minimum_w`/`minimum_h`/`maximum_w`/`maximum_h` takes its own size as both
+limits, and its window gets no resize affordance — Winamp gives one none either. Reading undeclared
+as unbounded let a restored frame stretch the scene: T800 is a 177×400 window whose entire face is
+one background layer, and it came back from another skin's saved frame several hundred pixels wide
+with the head smeared across it. The rule keys on whether the skin *described* a range, so cPro-Bento
+(317×168…1920×1080) and Winamp Modern 5.66 (a declared minimum, meant to widen) are untouched, while
+T800, ZDL Reel-To-Reel and mmd3's shade layouts become fixed. A *script* may still resize a fixed
+layout — `WasabiSceneRenderer.resize(to:)` keeps its own clamp; only `userResizeLimits`, which the
+window's `contentMinSize`/`contentMaxSize` and the restore clamp read, is pinned.
 
 **The protective minimum** (Phase 15). A skin's declared `minimum_w`/`minimum_h` is written for
 Winamp, where *every* group clips its children; we clip only on `clipchildren="1"`, so below a

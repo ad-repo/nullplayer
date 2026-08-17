@@ -381,8 +381,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// The main layout's own resize limits at the current UI Size. Each `.wal` container has its own
     /// pair — an auxiliary playlist window is not bounded by the player's minimum — so these are read
     /// per renderer rather than shared.
-    var mainLayoutMinimumSize: NSSize? { scaled(skinView?.renderer.layoutMinimumSize) }
-    var mainLayoutMaximumSize: NSSize? { scaled(skinView?.renderer.layoutMaximumSize) }
+    var mainLayoutMinimumSize: NSSize? { scaled(skinView?.renderer.userResizeLimits.minimum) }
+    var mainLayoutMaximumSize: NSSize? { scaled(skinView?.renderer.userResizeLimits.maximum) }
 
     private func scaled(_ size: CGSize?) -> NSSize? {
         guard let size else { return nil }
@@ -412,8 +412,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             window.contentMaxSize = maximum
         }
         for container in auxiliaryContainers {
-            guard let minimum = scaled(container.view.renderer.layoutMinimumSize),
-                  let maximum = scaled(container.view.renderer.layoutMaximumSize) else { continue }
+            let limits = container.view.renderer.userResizeLimits
+            guard let minimum = scaled(limits.minimum), let maximum = scaled(limits.maximum) else { continue }
             container.window.contentMinSize = minimum
             container.window.contentMaxSize = maximum
         }
@@ -488,8 +488,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // and the accepted size goes back in. Every `.wal` window works this way, each against the
         // limits of its own container's active layout.
         let content = resized.contentLayoutRect.size
-        _ = view.renderer.resize(to: CGSize(width: content.width / skinScale,
-                                            height: content.height / skinScale))
+        // A layout the skin gave no resize range is fixed, and a frame can still arrive at one
+        // without a drag — `AppStateManager` restores saved frames, and a stale one is how T800 came
+        // back stretched. Clamp here as well as in `contentMinSize`/`contentMaxSize`.
+        let limits = view.renderer.userResizeLimits
+        let proposed = CGSize(width: content.width / skinScale, height: content.height / skinScale)
+        _ = view.renderer.resize(to: CGSize(
+            width: min(max(proposed.width, limits.minimum.width), limits.maximum.width),
+            height: min(max(proposed.height, limits.minimum.height), limits.maximum.height)))
         let size = view.scaledCanvasSize
         if size != content { resize(window: resized, to: size) }
         if size != view.frame.size { view.setFrameSize(size) }

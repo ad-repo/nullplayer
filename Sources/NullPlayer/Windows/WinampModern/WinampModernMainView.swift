@@ -152,6 +152,15 @@ final class WinampModernMainView: NSView {
             self?.componentHost?.equalizerSetBandGainDB(band, gainDB: Float(clamped) / 127 * 12)
             self?.needsDisplay = true
         }
+        scripts.equalizerPreampRequested = { [weak self] in
+            guard let preamp = self?.componentHost?.equalizerSnapshot().preampDB else { return 0 }
+            return Int((preamp / 12 * 127).rounded())
+        }
+        scripts.equalizerPreampSetterRequested = { [weak self] value in
+            let clamped = max(-127, min(127, value))
+            self?.componentHost?.equalizerSetPreampDB(Float(clamped) / 127 * 12)
+            self?.needsDisplay = true
+        }
         scripts.themeSwitchRequested = { [weak self] name in
             guard let self else { return false }
             let changed = self.renderer.activateTheme(name)

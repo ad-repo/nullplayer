@@ -480,10 +480,17 @@ final class WasabiSkinInitializer {
                             try validateImage(at: resolved, source: node.location)
                         }
                     } catch let failure as WalFailure
-                        where (kind == "bitmap" || kind == "cursor" || kind == "bitmapfont")
+                        where (kind == "bitmap" || kind == "cursor" || kind == "bitmapfont"
+                                || kind == "truetypefont")
                             && failure.diagnostics.allSatisfy({ $0.code == .resourceMissing }) {
                         // Real skins and the ClassicPro engine declare optional bitmaps whose image
                         // files aren't shipped; Winamp tolerates this and simply draws nothing.
+                        // A `truetypefont` is tolerated for the same reason and was not: Rika
+                        // declares `<truetypefont file="SUPERGLU.ttf">` and ships no such file, and
+                        // one missing font failed the **whole skin** — it would not load at all,
+                        // where Winamp falls back to a default face. `WasabiTextMetrics.font` already
+                        // answers `nil` for a face it cannot produce and every caller has a fallback,
+                        // so the cost of the miss is the skin's text in a substitute font.
                         // Register the resource without a file and record a warning rather than
                         // failing the whole load. Security failures (traversal/escape/variable/
                         // oversize/corrupt image) still throw above.

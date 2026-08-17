@@ -130,9 +130,13 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 _ = try? renderer.activateLayout(id: layoutID)
                 let size = renderer.canvasSize
                 let minimum = renderer.layoutMinimumSize
+                let declared = renderer.declaredMinimumSize
+                let maximum = renderer.layoutMaximumSize
                 print("RENDER-DUMP \(info.id)/\(layoutID): \(Int(size.width))x\(Int(size.height)), "
                       + "\(renderer.sceneNodes().count) nodes, "
-                      + "min=\(Int(minimum.width))x\(Int(minimum.height))")
+                      + "min=\(Int(minimum.width))x\(Int(minimum.height)), "
+                      + "declared=\(Int(declared.width))x\(Int(declared.height)), "
+                      + "max=\(Int(maximum.width))x\(Int(maximum.height))")
                 // WINAMP_MODERN_RENDER_PROBE=<container>/<layout> dumps that scene's node list.
                 if env["WINAMP_MODERN_RENDER_PROBE"] == "\(info.id)/\(layoutID)" {
                     for node in renderer.sceneNodes() {
