@@ -725,6 +725,26 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "start": .init(argumentCount: 0, returnKind: .boolean),
             "stop": .init(argumentCount: 0, returnKind: .null),
             "isrunning": .init(argumentCount: 0, returnKind: .boolean),
+            // Client → screen coordinate conversion. Arity and return are pinned by ClassicPro's use of
+            // them: `popAtXY(clientToScreenX(b.getLeft()), clientToScreenY(b.getTop()+26))`.
+            // …and the inverse, which the same code calls to convert back.
+            // `clientToScreenX/Y` and their inverses are **deliberately absent**. Implementing them lets
+            // Winamp Modern's titlebar script complete, and that script then re-centres the window
+            // title on the window — while the skin's decorative streaks keep the fixed, left-of-centre
+            // slot they are laid out with at load, so the title ends up *under* the streaks and reads
+            // as "WI…". Until that layout is understood the title stays where the skin leaves it. Their
+            // main other caller is `popAtXY`, which is unimplemented anyway.
+            // Window-manager notifications around a layout resize. Arities read out of the bytecode
+            // rather than guessed (`WINAMP_MODERN_RENDER_DISASM`): each is called on the layout, and
+            // counting the net pushes between receiver and call gives `beforeRedock()` /
+            // `snapAdjust(x, y, w, h)`. Guessing here is not an option — a wrong count desynchronises
+            // the interpreter's stack.
+            "beforeredock": .init(argumentCount: 0, returnKind: .null),
+            "redock": .init(argumentCount: 0, returnKind: .null),
+            "snapadjust": .init(argumentCount: 4, returnKind: .null),
+            // `debugString(msg, level)` — a skin's own trace output. Two arguments, pinned by
+            // ClassicPro (`debugString("setCustomVis=" + …, 9)`).
+            "debugstring": .init(argumentCount: 2, returnKind: .null),
             "getviewportwidth": .init(argumentCount: 0, returnKind: .integer),
             "getviewportheight": .init(argumentCount: 0, returnKind: .integer),
             "getviewportleft": .init(argumentCount: 0, returnKind: .integer),
@@ -983,6 +1003,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "newitem":
             return dynamicValue(role: .configItem(section: arguments[1].stringValue.isEmpty
                                                    ? arguments[0].stringValue : arguments[1].stringValue))
+        // A `.wal` window is borderless and positioned by us, and every measured caller feeds the
+        // result straight back into placement inside that same window — so screen space *is* skin
+        // space here. Answering the input keeps that arithmetic self-consistent; a real screen origin
+        // would only matter for `popAtXY`, which is not implemented.
+        // A skin's trace output. Deliberately dropped rather than logged: it is per-frame in some
+        // skins, and nothing in NullPlayer consumes it.
+        case "debugstring": return .null
         case "getviewportwidth": return .integer(Int32(NSScreen.main?.frame.width ?? 0))
         case "getviewportheight": return .integer(Int32(NSScreen.main?.frame.height ?? 0))
         case "getviewportleft", "getviewporttop", "getviewportleftfromguiobject", "getviewporttopfromguiobject":
@@ -1230,7 +1257,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(arguments[0].truthy)])
             return .null
         case "getactivated": return .boolean(object.attributes["activated"] == "1")
-        // Where the object actually **is**, not what its markup says. See `resolvedFrame`.
+        // Client ↔ screen conversion on an object receiver. **Identity**, exactly as the System form:
+        // a `.wal` window is borderless and positioned by us, so the window's client area *is* skin
+        // space, and the only property these need is that they round-trip. Offsetting by the object's
+        // own origin (the first attempt) does not round-trip — Winamp Modern's titlebar converts
+        // through one object and back through another while laying its title out, and the mismatch
+        // pushed its decorative streaks over the word "WINAMP".
+        // Docking/snapping notifications a layout sends while resizing itself. NullPlayer places `.wal`
+        // windows itself and has no docking model for them, so these are deliberate no-ops — but they
+        // must *exist*, because a missing method aborts the whole handler: this trio is what stopped
+        // Winamp Modern's CONFIG button from ever opening its drawer.
+        case "beforeredock", "redock", "snapadjust": return .null
+        case "debugstring": return .null
         case "getleft", "getguix":
             return .integer(dimension(resolvedFrame(of: object)?.minX, declared: object.geometry.x))
         case "gettop", "getguiy":

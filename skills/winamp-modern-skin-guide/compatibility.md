@@ -244,6 +244,13 @@ By area:
   container. The declared attribute is only the fallback for an object the active scene cannot place.
   Reading the markup instead is wrong for any relative geometry: cPro's tab strip is `w="-4"
   relatw="1"`, and `getWidth()` = −4 made its script squeeze every tab to its minimum. Phase 24
+- **Window-manager notifications**: `beforeRedock()`, `redock()`, `snapAdjust(x, y, w, h)` — deliberate
+  no-ops (NullPlayer places `.wal` windows itself and has no docking model for them), but they must
+  *exist*: a missing method aborts the whole handler, and this trio is what stopped the stock Winamp
+  Modern skin's CONFIG button from ever opening its equalizer drawer. Their arities were read out of the
+  bytecode with `WINAMP_MODERN_RENDER_DISASM`, not guessed — a wrong argument count desynchronises the
+  interpreter's stack. Phase 24
+- **`debugString(message, level)`** — a skin's own trace output, dropped. Phase 24
 - **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
 
 **Events dispatched to scripts.** Occurrence counts are call sites across the ClassicPro engine's
@@ -297,10 +304,25 @@ a whole script):
 - Any method not in `signature(for:)` — fails closed with `.unsupportedScriptCapability` and is
   recorded in the compatibility report's `unsupportedMethods` bucket
 - Unsupported opcodes fail closed; they never become silent no-ops
+- **`clientToScreenX/Y` and `screenToClientX/Y`** — absent **on purpose**, not merely unimplemented.
+  They are trivial to add (a `.wal` window is borderless and positioned by us, so identity round-trips),
+  and adding them lets the stock Winamp Modern skin's titlebar script run to completion — at which point
+  it re-centres the window title on the window, while the skin's decorative streaks keep the fixed,
+  left-of-centre slot they are laid out with at load. The title then sits *under* the streaks and reads
+  as "WI…". Their other main caller is `popAtXY`, which is unimplemented anyway, so nothing is gained by
+  adding them until that titlebar layout is understood. Measured: at a 354px window the streaks reserve
+  105–165 and the script puts the title at 152–202; at 500px the title moves to 225 and the streaks do
+  not move at all.
 - **Region set operations** — `Region.add`, `sub`, `stretch`, `copy`, `loadFromBitmap` and the
   `getBoundingBox*` readers. No measured skin calls them; a region is built from one map and used.
   `WindowHolder.setRegionFromMap` and `MouseRedir.setRegion` share the region model but not the
   window-shaping half: a region on a container does not reshape the window
+
+**Never guess an arity.** The bytecode does not encode a call's argument count, so a wrong `signature`
+desynchronises the interpreter's stack — silently, and long after the call. `WINAMP_MODERN_RENDER_DISASM`
+reads it out instead: the compiler emits the receiver, then one push per argument, then the call, so the
+*net* stack effect between receiver and call is the count (mind the binary operators — opcode 64 is `+`,
+which pops two and pushes one). That is how `beforeRedock()` and `snapAdjust(x, y, w, h)` were settled.
 
 **Failure granularity.** A method miss aborts *that script event only*; the remaining scripts still
 run and the skin loads degraded, with every failure collected into the compatibility report. It

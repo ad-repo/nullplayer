@@ -17,7 +17,7 @@ is the reference to compare against.
 | Love is War Miku | Phase 23 | renders and drives correctly | `fliph`; oscilloscope is a mirrored spectrum |
 | mmd3 | Phase 17 | text, knobs, drawers, own display all live | `wasabi.*`-backed widgets draw empty |
 | cPro-Bento (+ ClassicPro engine) | Phase 24 | SUI body drawn and framed, live tabs, beat vis, playlist, embedded library | script-built menus (`popAtXY`), Guilist widgets |
-| Winamp Modern (stock) | Phase 13 | frame, script-built body, playlist + library | — |
+| Winamp Modern (stock) | Phase 24 | frame, script-built body, playlist + library, **EQ drawer** | window title re-centres under its own streaks if the titlebar script completes |
 | CornerAmp Redux | Phase 13 | frame, titles, playlist + EQ | synthesized library window |
 | T800 | Phase 20–22 | per-layout groups, region-clipped volume, drag | — |
 | ZDL Reel-To-Reel | Phase 18 | sized from its background art | — |
@@ -140,6 +140,33 @@ synthesized and nothing left to the classic fallback.
   `showBeat`/`showPromo` nowhere else, and `System.onPlay()` → `refreshView()` → `showGroup(0)` hides
   both display groups first. Without an `onResize` having fired, pressing play made the visualization
   disappear for good. Any new window/scene must seed a resize after `scripts.start()`.
+
+---
+
+## Winamp Modern (`winampmodern566.wal`) — the stock 5.x skin
+
+**Shape of the skin:** separate windows — `main` (354×280) plus declared `Pledit`, `MLibrary`,
+`Video`, `AVS`, `winamp.albumart` and `notifier` containers. The main window is **hollow XML**: the
+whole client area is built at runtime by `standardframe.maki` from its `content=` XUI param.
+
+### Working
+
+- The frame, the script-built body, the playlist and library windows (Phase 13).
+- **The config drawer** — the `CONFIG` button at the bottom right slides it open, revealing the
+  equalizer (preamp + 10 bands with the dB scale, ON / AUTO / PRESETS), the crossfade controls, and the
+  EQ / Options / Color Themes tab strip. Phase 24; it had never opened in any version.
+
+### Not implemented or knowingly wrong
+
+- **The window title moves under the skin's own decorative streaks if the titlebar script completes.**
+  The streaks reserve a fixed, *left-of-centre* slot (105–165 at a 354px window) and never move with the
+  window; the titlebar's `onResize` re-centres the title on the window instead (152 at 354px, 225 at
+  500px), so it lands under them and reads as "WI…". That handler aborts on the deliberately-absent
+  `clientToScreenX` (see `compatibility.md`), which is what keeps the title in its slot — a knowingly
+  chosen degradation, not an accident. Understanding the streak layout is the prerequisite for adding
+  those methods.
+- Its EQ drawer's crossfade and EQ buttons shift 14px once `onResize` runs — the layout its own script
+  computes, and invisible until the drawer is opened.
 
 ---
 

@@ -141,6 +141,31 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 }
             }
         }
+        // WINAMP_MODERN_RENDER_DISASM=<method> — the instructions around every call site of a method,
+        // which is how an unknown **arity** is settled. The compiler emits the receiver, then one push
+        // per argument, then the call, so counting the pushes between the receiver and the call gives
+        // the argument count — the one thing the interpreter cannot guess and cannot recover from
+        // getting wrong.
+        if let wanted = env["WINAMP_MODERN_RENDER_DISASM"]?.lowercased() {
+            for program in runtime.programs {
+                for (index, instruction) in program.instructions.enumerated()
+                where instruction.opcode == 24 || instruction.opcode == 112 {
+                    guard case .method(let methodIndex) = instruction.argument,
+                          program.methods.indices.contains(methodIndex),
+                          program.methods[methodIndex].name.lowercased() == wanted else { continue }
+                    let window = program.instructions[max(0, index - 8)...index]
+                    let text = window.map { step -> String in
+                        var label = "op\(step.opcode)"
+                        if case .method(let m) = step.argument, program.methods.indices.contains(m) {
+                            label += "(\(program.methods[m].name))"
+                        }
+                        if case .variable(let v) = step.argument { label += "(v\(v))" }
+                        return label
+                    }.joined(separator: " ")
+                    print("DISASM \((program.source.path as NSString).lastPathComponent): \(text)")
+                }
+            }
+        }
         // The measured-demand list: what the skin's load + `onscriptloaded` pass actually reached for
         // and did not find. Printed here so the harness answers "missing art, bad geometry, or a
         // script that never ran" in one run.
