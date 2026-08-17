@@ -753,6 +753,16 @@ final class WasabiSkinInitializer {
                 let resolved = try types.resolved(definition)
                 var merged = resolved.defaultAttributes
                 merged.merge(attributes) { _, instance in instance }
+                // `instanceid` *names the instance*: the expanded object answers to it instead of the
+                // groupdef's id, which is how a skin tells two instantiations of one groupdef apart.
+                // Winamp Modern's titlebar instantiates `wasabi.titlebar.streak` twice — left and
+                // right — and both its `sendparams` and its script's
+                // `findObject("wasabi.titlebar.streak.left")` address them this way. Without it the
+                // script found neither streak, so the streaks kept their declared slot while the
+                // title centred itself on the window and landed underneath them.
+                if let instanceID = merged["instanceid"], !instanceID.isEmpty {
+                    merged["id"] = instanceID
+                }
                 attributes = merged
                 templateChildren = resolved.templateChildren
                 embeddedXUITag = resolved.embeddedXUITag

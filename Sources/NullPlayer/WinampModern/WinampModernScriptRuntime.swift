@@ -66,9 +66,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private static let maximumRecordedScriptFailures = 512
 
     var graphDidMutate: (() -> Void)?
-    /// Show a script-built popup menu at the mouse and answer the command the user picked, or 0.
-    /// The runtime resolves the submenu tree before calling, so the presenter only builds UI.
-    var popupPresenter: (([WinampModernPopupMenuItem]) -> Int32)?
+    /// Show a script-built popup menu and answer the command the user picked, or 0. The runtime
+    /// resolves the submenu tree before calling, so the presenter only builds UI.
+    ///
+    /// A `nil` point is `popAtMouse`. A point is `popAtXY`, in **window-client space** — the space
+    /// `clientToScreenX/Y` answer in, which is what every measured caller computes the point with.
+    var popupPresenter: (([WinampModernPopupMenuItem], CGPoint?) -> Int32)?
     /// A layout switch or resize, addressed to the *container* whose script asked for it. A `.wal`
     /// skin has one script runtime and several windows; without the container id every playlist
     /// script that resized itself at startup resized the player instead.
@@ -621,6 +624,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getguih": .init(argumentCount: 0, returnKind: .integer),
             "getposition": .init(argumentCount: 0, returnKind: .integer),
             "setposition": .init(argumentCount: 1, returnKind: .null),
+            "clienttoscreenx": .init(argumentCount: 1, returnKind: .integer),
+            "clienttoscreeny": .init(argumentCount: 1, returnKind: .integer),
+            "screentoclientx": .init(argumentCount: 1, returnKind: .integer),
+            "screentoclienty": .init(argumentCount: 1, returnKind: .integer),
             // `isInvalid()` is how a ClassicPro script asks "did this element survive the skin's
             // overrides?" before configuring it; `getScale()` is a layout's zoom factor.
             "isinvalid": .init(argumentCount: 0, returnKind: .boolean),
@@ -725,15 +732,6 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "start": .init(argumentCount: 0, returnKind: .boolean),
             "stop": .init(argumentCount: 0, returnKind: .null),
             "isrunning": .init(argumentCount: 0, returnKind: .boolean),
-            // Client → screen coordinate conversion. Arity and return are pinned by ClassicPro's use of
-            // them: `popAtXY(clientToScreenX(b.getLeft()), clientToScreenY(b.getTop()+26))`.
-            // …and the inverse, which the same code calls to convert back.
-            // `clientToScreenX/Y` and their inverses are **deliberately absent**. Implementing them lets
-            // Winamp Modern's titlebar script complete, and that script then re-centres the window
-            // title on the window — while the skin's decorative streaks keep the fixed, left-of-centre
-            // slot they are laid out with at load, so the title ends up *under* the streaks and reads
-            // as "WI…". Until that layout is understood the title stays where the skin leaves it. Their
-            // main other caller is `popAtXY`, which is unimplemented anyway.
             // Window-manager notifications around a layout resize. Arities read out of the bytecode
             // rather than guessed (`WINAMP_MODERN_RENDER_DISASM`): each is called on the layout, and
             // counting the net pushes between receiver and call gives `beforeRedock()` /
@@ -786,6 +784,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "addsubmenu": .init(argumentCount: 2, returnKind: .null),
             "checkcommand": .init(argumentCount: 2, returnKind: .null),
             "popatmouse": .init(argumentCount: 0, returnKind: .integer),
+            "popatxy": .init(argumentCount: 2, returnKind: .integer),
             "newgroup": .init(argumentCount: 1, returnKind: .object),
             "init": .init(argumentCount: 1, returnKind: .null),
             // Paint order within the parent. ClassicPro raises a tab while it is being dragged along
@@ -1003,10 +1002,6 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "newitem":
             return dynamicValue(role: .configItem(section: arguments[1].stringValue.isEmpty
                                                    ? arguments[0].stringValue : arguments[1].stringValue))
-        // A `.wal` window is borderless and positioned by us, and every measured caller feeds the
-        // result straight back into placement inside that same window — so screen space *is* skin
-        // space here. Answering the input keeps that arithmetic self-consistent; a real screen origin
-        // would only matter for `popAtXY`, which is not implemented.
         // A skin's trace output. Deliberately dropped rather than logged: it is per-frame in some
         // skins, and nothing in NullPlayer consumes it.
         case "debugstring": return .null
@@ -1257,12 +1252,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(arguments[0].truthy)])
             return .null
         case "getactivated": return .boolean(object.attributes["activated"] == "1")
-        // Client ↔ screen conversion on an object receiver. **Identity**, exactly as the System form:
-        // a `.wal` window is borderless and positioned by us, so the window's client area *is* skin
-        // space, and the only property these need is that they round-trip. Offsetting by the object's
-        // own origin (the first attempt) does not round-trip — Winamp Modern's titlebar converts
-        // through one object and back through another while laying its title out, and the mismatch
-        // pushed its decorative streaks over the word "WINAMP".
+        // Client ↔ screen conversion, relative to the receiver's **parent** client area — the space
+        // `getLeft()`/`getTop()` already answer in, which is what every measured call site converts:
+        // `b.clientToScreenX(b.getLeft())`, receiver and coordinate the same object. Reading it as the
+        // receiver's *own* box instead double-counts that idiom, and reading it as pure identity loses
+        // the parent chain, which is what put ClassicPro's tab menu at the window's left edge instead
+        // of under its tab.
+        //
+        // "Screen" is this window's client space: a `.wal` window is borderless and positioned by us,
+        // so the window origin is a constant that cancels in the round trip every caller makes, and
+        // the popup presenter places `popAtXY` in the same window the point came from. Winamp Modern's
+        // titlebar centres its title with `layout.clientToScreenX((w − titleW) / 2)`, converts back
+        // through the titlebar group and subtracts that group's own `getLeft()`; both objects hang off
+        // the layout, so the round trip returns the input and the correction lands.
+        case "clienttoscreenx", "clienttoscreeny", "screentoclientx", "screentoclienty":
+            let origin = resolvedGeometryRequested?(object)?.parent.origin ?? .zero
+            let offset = method.hasSuffix("x") ? origin.x : origin.y
+            let signed = method.hasPrefix("client") ? offset : -offset
+            return .integer(Int32(clamping: Int(Double(arguments[0].integerValue) + Double(signed))))
         // Docking/snapping notifications a layout sends while resizing itself. NullPlayer places `.wal`
         // windows itself and has no docking model for them, so these are deliberate no-ops — but they
         // must *exist*, because a missing method aborts the whole handler: this trio is what stopped
@@ -1509,7 +1516,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 popupCommands[id]![index].checked = arguments[1].truthy
             }
             return .null
-        case "popatmouse": return .integer(popupPresenter?(popupItems(of: id, depth: 0)) ?? 0)
+        case "popatmouse": return .integer(popupPresenter?(popupItems(of: id, depth: 0), nil) ?? 0)
+        case "popatxy":
+            // ClassicPro positions its tab-strip and "goto" menus with
+            // `popAtXY(clientToScreenX(b.getLeft()), clientToScreenY(b.getTop() + 26))` — the point is
+            // whatever those conversions answer, so the two have to agree. They do: both are
+            // window-client space, and the presenter places the menu in that window.
+            return .integer(popupPresenter?(popupItems(of: id, depth: 0),
+                                            CGPoint(x: Int(arguments[0].integerValue),
+                                                    y: Int(arguments[1].integerValue))) ?? 0)
         default: return .null
         }
     }

@@ -16,8 +16,8 @@ is the reference to compare against.
 |---|---|---|---|
 | Love is War Miku | Phase 23 | renders and drives correctly | `fliph`; oscilloscope is a mirrored spectrum |
 | mmd3 | Phase 17 | text, knobs, drawers, own display all live | `wasabi.*`-backed widgets draw empty |
-| cPro-Bento (+ ClassicPro engine) | Phase 24 | SUI body drawn and framed, live tabs, beat vis, playlist, embedded library | script-built menus (`popAtXY`), Guilist widgets |
-| Winamp Modern (stock) | Phase 24 | frame, script-built body, playlist + library, **EQ drawer** | window title re-centres under its own streaks if the titlebar script completes |
+| cPro-Bento (+ ClassicPro engine) | Phase 24 | SUI body drawn and framed, live tabs, beat vis, playlist, embedded library, **script-built menus** | Guilist widgets |
+| Winamp Modern (stock) | Phase 24 | frame, script-built body, playlist + library, **EQ drawer**, **centred title + streaks** | the 1px title overlay keeps its declared slot |
 | CornerAmp Redux | Phase 13 | frame, titles, playlist + EQ | synthesized library window |
 | T800 | Phase 20–22 | per-layout groups, region-clipped volume, drag | — |
 | ZDL Reel-To-Reel | Phase 18 | sized from its background art | — |
@@ -79,12 +79,13 @@ synthesized and nothing left to the classic fallback.
   `centro.plframe` horizontal), and the mini view opens and closes.
 - Transport, volume, mute, the kbps/kHz/stereo readouts, the clock, the menu bar, the drawer, the
   embedded library browser, the embedded EQ, and the colour themes.
+- **The script-built menus placed at a computed point** (`popAtXY`, 6 call sites, with
+  `clientToScreenX/Y` behind it). Right-clicking a tab opens its `Show Status Bar` / `Auto Close Tab`
+  menu under the tab — measured with `RENDER_CLICK`, which prints the point the menu is placed at
+  (`CLICK menu at 10,130` for the first tab, whose own frame is `(10, 104, 35, 29)`). Phase 24.
 
 ### Not implemented or knowingly wrong
 
-- **`popAtXY` (6 call sites)** — a script-built menu positioned at a computed point, with
-  `clientToScreenX`/`clientToScreenY` (7 each) behind it. So the tab strip's own right-click menu and
-  the drawer's "goto" menu do not open. `popAtMouse` menus do.
 - **Guilist-backed widgets** — `getItemLabel`, `getItemFocused`, `setSubItem`, `getAttributeName`: the
   skin lists (skin switcher, tag viewer fields) draw empty.
 - **`XmlDoc` callback parsing** (`parser_addCallback`/`parser_start`/`parser_destroy`, 4–5 sites) —
@@ -155,16 +156,46 @@ whole client area is built at runtime by `standardframe.maki` from its `content=
 - **The config drawer** — the `CONFIG` button at the bottom right slides it open, revealing the
   equalizer (preamp + 10 bands with the dB scale, ON / AUTO / PRESETS), the crossfade controls, and the
   EQ / Options / Color Themes tab strip. Phase 24; it had never opened in any version.
+- **The titlebar** — title centred on the window with a decorative streak flanking it either side, at
+  every width. Phase 24, and the last of this skin's error-severity findings: the skin now loads at
+  `degraded`, not `unsupported`.
+
+### The titlebar streaks: laid out by the script, not by the markup
+
+Worth knowing because it looked for two phases like a *rendering* problem. `titlebar.maki` lays out
+all three pieces in one routine — called from `onResize`, `onTextChanged` and `onSetXuiParam` — and
+every position is derived from the centred title:
+
+```
+titleX  = layout.clientToScreenX((layoutW − title.getAutoWidth()) / 2)   // → window-client space
+titleX  = titlebargroup.screenToClientX(titleX) − titlebargroup.getLeft() // → group-local
+title.x = titleX                       streakLeft.x  = padTitleLeft
+streakLeft.w  = titleX − padTitleLeft  streakRight.x = titleX + titleW + 1
+streakRight.w = −(titleX + titleW + padTitleRight + 2), relatw="1"
+```
+
+The markup's `x="0" w="95"` / `x="155" relatw="1"` values are only what the streaks wear until that
+routine first runs. Two things had to be true before it could:
+
+- **`clientToScreenX`/`screenToClientX` must exist** — they abort the handler otherwise — **and must
+  convert relative to the receiver's parent**. Here both objects hang off the layout, so the round trip
+  returns the input and the script's own `− getLeft()` is the group correction. See
+  `compatibility.md`; the reading is pinned by ClassicPro's call sites, not by this one.
+- **`instanceid` must name the instance.** Both streaks are instantiations of one `wasabi.titlebar.streak`
+  groupdef and are told apart *only* by `instanceid`. While that was ignored, the script's
+  `findObject("wasabi.titlebar.streak.left")` returned null for both, so the streaks kept their declared
+  slot while the title centred itself — landing underneath them, reading "WI…". That was the whole of
+  the symptom this skin was documented with, and it was never about the streak *geometry*.
+
+Measured after the fix: at 354px the left streak is 20–152, the title 152–202, the right streak
+203–309; at 500px they follow the title to 20–225 / 225–275 / 276–455.
 
 ### Not implemented or knowingly wrong
 
-- **The window title moves under the skin's own decorative streaks if the titlebar script completes.**
-  The streaks reserve a fixed, *left-of-centre* slot (105–165 at a 354px window) and never move with the
-  window; the titlebar's `onResize` re-centres the title on the window instead (152 at 354px, 225 at
-  500px), so it lands under them and reads as "WI…". That handler aborts on the deliberately-absent
-  `clientToScreenX` (see `compatibility.md`), which is what keeps the title in its slot — a knowingly
-  chosen degradation, not an accident. Understanding the streak layout is the prerequisite for adding
-  those methods.
+- The 1px `window.titlebar.title.overlay` layer keeps its declared slot instead of being stretched over
+  the title. The script resolves it with `title.findObject("window.titlebar.title.overlay")` — a lookup
+  *inside* the title object it just resolved, which finds nothing. Matching Winamp here would mean
+  inventing lookup semantics for a 1px decorative sliver; measured and left alone.
 - Its EQ drawer's crossfade and EQ buttons shift 14px once `onResize` runs — the layout its own script
   computes, and invisible until the drawer is opened.
 

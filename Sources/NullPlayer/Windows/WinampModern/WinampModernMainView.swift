@@ -209,8 +209,8 @@ final class WinampModernMainView: NSView {
         // A skin's own right-click menus (Love is War Miku's visualization presets, MMD3's display
         // menu) are built by a script and shown through `popAtMouse`. With no presenter installed
         // that call answered 0 — "the user picked nothing" — so those menus never appeared at all.
-        scripts.popupPresenter = { [weak self] items in
-            self?.presentScriptPopup(items) ?? 0
+        scripts.popupPresenter = { [weak self] items, point in
+            self?.presentScriptPopup(items, at: point) ?? 0
         }
         scripts.themeSwitchRequested = { [weak self] name in
             guard let self else { return false }
@@ -618,11 +618,18 @@ final class WinampModernMainView: NSView {
     /// `popAtMouse` is synchronous in MAKI — the script reads the answer on the next line — and
     /// `NSMenu.popUp` runs its own tracking loop, so the call blocks here exactly as the skin
     /// expects. The menu is built from the resolved tree, so submenus nest.
-    private func presentScriptPopup(_ items: [WinampModernPopupMenuItem]) -> Int32 {
+    /// `point` is `popAtXY`'s: window-client space, top-left origin, unscaled — the inverse of
+    /// `skinPoint`. `nil` is `popAtMouse`.
+    private func presentScriptPopup(_ items: [WinampModernPopupMenuItem], at point: CGPoint?) -> Int32 {
         let target = ScriptPopupTarget()
         let menu = build(popupMenu: items, target: target)
         guard menu.numberOfItems > 0 else { return 0 }
-        let location = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
+        let location: NSPoint?
+        if let point {
+            location = NSPoint(x: point.x * skinScale, y: bounds.height - point.y * skinScale)
+        } else {
+            location = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
+        }
         menu.popUp(positioning: nil, at: location ?? .zero, in: self)
         return target.chosen
     }

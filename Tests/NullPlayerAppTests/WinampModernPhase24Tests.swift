@@ -447,6 +447,103 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertGreaterThan(thin, 0, "but they are still drawn")
     }
 
+    // MARK: - D8: the titlebar lays its own streaks out
+
+    /// `instanceid` is how a skin tells two instantiations of one groupdef apart: the expanded object
+    /// answers to it instead of the groupdef's id. Winamp Modern's titlebar instantiates
+    /// `wasabi.titlebar.streak` twice and addresses the two by instance id from both its `sendparams`
+    /// and its script, which is what lays the streaks out either side of the window title.
+    func testInstanceIDNamesTheExpandedGroupInstance() throws {
+        let renderer = try makeRenderer(xml: """
+        <WasabiXML>
+          <groupdef id="streak">
+            <layer id="mark" x="0" y="0" w="5" h="5"/>
+          </groupdef>
+          <container id="Main">
+            <layout id="normal" w="40" h="20">
+              <group id="streak" instanceid="streak.left" x="0" y="0" w="20" h="20"/>
+              <group id="streak" instanceid="streak.right" x="20" y="0" w="20" h="20"/>
+              <sendparams group="streak.left" target="mark" w="7"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let graph = renderer.loadedSkin.runtime.graph
+        XCTAssertEqual(graph.objects(xmlID: "streak.left").count, 1)
+        XCTAssertEqual(graph.objects(xmlID: "streak.right").count, 1)
+        XCTAssertTrue(graph.objects(xmlID: "streak").isEmpty,
+                      "the groupdef's own id names the definition, not either instance")
+        let left = try XCTUnwrap(graph.objects(xmlID: "streak.left").first)
+        let right = try XCTUnwrap(graph.objects(xmlID: "streak.right").first)
+        XCTAssertEqual(left.children.first?.attributes["w"], "7",
+                       "`sendparams` scoped by instance id reaches that instance's child")
+        XCTAssertEqual(right.children.first?.attributes["w"], "5",
+                       "and leaves the other instance alone")
+    }
+
+    /// Client ↔ screen conversion is relative to the receiver's **parent**, which is the space
+    /// `getLeft()` answers in — every measured call site is `b.clientToScreenX(b.getLeft())`, receiver
+    /// and coordinate the same object. Reading it as the receiver's own box double-counts that idiom;
+    /// reading it as identity loses the parent chain, which put ClassicPro's tab menu at the window
+    /// edge instead of under its tab.
+    func testClientToScreenIsRelativeToTheReceiversParent() throws {
+        let renderer = try makeRenderer(xml: """
+        <WasabiXML>
+          <container id="Main">
+            <layout id="normal" w="100" h="100">
+              <group id="holder" x="30" y="40" w="50" h="50">
+                <layer id="child" x="5" y="5" w="10" h="10"/>
+              </group>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let graph = renderer.loadedSkin.runtime.graph
+        let runtime = try WinampModernScriptRuntime(loadedSkin: renderer.loadedSkin, host: Host())
+        addTeardownBlock { runtime.teardown() }
+        runtime.resolvedGeometryRequested = { [weak renderer] in renderer?.resolvedGeometry(of: $0) }
+        let child = try XCTUnwrap(graph.objects(xmlID: "child").first)
+        let holder = try XCTUnwrap(graph.objects(xmlID: "holder").first)
+        func call(_ method: String, on target: WasabiObject, _ value: Int32) throws -> Int32 {
+            try runtime.invoke(method: method, on: reference(target), arguments: [.integer(value)],
+                               program: emptyProgram()).integerValue
+        }
+        XCTAssertEqual(try call("clienttoscreenx", on: child, 5), 35,
+                       "the idiom `child.clientToScreenX(child.getLeft())` lands on the child")
+        XCTAssertEqual(try call("clienttoscreeny", on: child, 5), 45)
+        XCTAssertEqual(try call("screentoclientx", on: child, 35), 5, "and it round-trips")
+        XCTAssertEqual(try call("clienttoscreenx", on: holder, 30), 30,
+                       "an object straight off the layout converts to itself")
+    }
+
+    /// `popAtXY` is the other half of those conversions: ClassicPro's tab strip and its drawer build a
+    /// menu and place it at a computed point rather than at the mouse. Both forms reach the same
+    /// presenter — the point is what tells them apart.
+    func testPopAtXYPresentsTheMenuAtTheGivenPoint() throws {
+        let runtime = try makeRuntime()
+        var points: [CGPoint?] = []
+        runtime.popupPresenter = { _, point in
+            points.append(point)
+            return 7
+        }
+        // Wasabi's `PopupMenu` class GUID as the *bytecode* carries it — little-endian per field, the
+        // form `new PopupMenu` compiles to, which the runtime reorders into `f4787af4…`.
+        let menu = try runtime.makeObject(classGUID: "f47a78f4bbb2f74e9cfbe74ba9bea88d",
+                                          program: emptyProgram())
+        _ = try runtime.invoke(method: "addcommand", on: menu,
+                               arguments: [.string("Auto Close Tab"), .integer(1), .boolean(false),
+                                           .boolean(false)],
+                               program: emptyProgram())
+        let chosen = try runtime.invoke(method: "popatxy", on: menu,
+                                        arguments: [.integer(40), .integer(133)],
+                                        program: emptyProgram())
+        XCTAssertEqual(chosen.integerValue, 7, "the command the user picked is answered to the script")
+        _ = try runtime.invoke(method: "popatmouse", on: menu, arguments: [], program: emptyProgram())
+        XCTAssertEqual(points.count, 2)
+        XCTAssertEqual(points.first ?? nil, CGPoint(x: 40, y: 133))
+        XCTAssertNil(points.last ?? nil, "`popAtMouse` passes no point")
+    }
+
     // MARK: - Fixtures
 
     /// The skin's report. Post-load renderer diagnostics land in `runtime.diagnostics`, so this needs

@@ -146,7 +146,47 @@ final class WinampModernRenderDumpTests: XCTestCase {
         // per argument, then the call, so counting the pushes between the receiver and the call gives
         // the argument count — the one thing the interpreter cannot guess and cannot recover from
         // getting wrong.
+        //
+        // `WINAMP_MODERN_RENDER_DISASM=@<source-substring>` instead lists a whole program: every
+        // handler's entry point and every instruction, with constants and method names resolved. An
+        // arity can be counted from a window of eight instructions; *what a handler computes* cannot,
+        // and that is what a layout question ("who moves the titlebar streaks?") actually needs.
         if let wanted = env["WINAMP_MODERN_RENDER_DISASM"]?.lowercased() {
+            if wanted.hasPrefix("@") {
+                let needle = String(wanted.dropFirst())
+                for program in runtime.programs
+                where program.source.path.lowercased().contains(needle) {
+                    let owner = program.ownerID.flatMap(loaded.runtime.graph.object(withID:))
+                    print("DISASM-ALL \(program.source.path) owner=\(owner?.typeName ?? "-")"
+                          + "#\(owner?.xmlID ?? "-") param=\(program.parameter ?? "-")")
+                    var entryPoints: [Int: [String]] = [:]
+                    for binding in program.bindings where program.methods.indices.contains(binding.methodIndex) {
+                        entryPoints[binding.instructionIndex, default: []]
+                            .append(program.methods[binding.methodIndex].name)
+                    }
+                    for (index, step) in program.instructions.enumerated() {
+                        if let events = entryPoints[index] {
+                            print("DISASM-ALL   --- \(events.sorted().joined(separator: " / ")) ---")
+                        }
+                        var label = "op\(step.opcode)"
+                        switch step.argument {
+                        case .method(let m) where program.methods.indices.contains(m):
+                            label += " \(program.methods[m].name)"
+                        case .variable(let v) where program.variables.indices.contains(v):
+                            let variable = program.variables[v]
+                            label += " v\(v)=\(Self.describe(variable.value))"
+                        case .instruction(let target):
+                            label += " -> \(target)"
+                        case .type(let t) where program.classes.indices.contains(t):
+                            label += " \(program.classes[t])"
+                        case .valueKind(_, let guid):
+                            label += " member\(guid.map { " \($0)" } ?? "")"
+                        default: break
+                        }
+                        print("DISASM-ALL   \(index): \(label)")
+                    }
+                }
+            }
             for program in runtime.programs {
                 for (index, instruction) in program.instructions.enumerated()
                 where instruction.opcode == 24 || instruction.opcode == 112 {
@@ -375,8 +415,9 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                     : [.integer(Int32(point.x)), .integer(Int32(point.y))]
                                 if event == "onrightbuttonup" {
                                     // No view here to show a menu, so record what the skin built.
-                                    runtime.popupPresenter = { items in
-                                        print("CLICK menu: " + Self.describe(items))
+                                    runtime.popupPresenter = { items, point in
+                                        let where_ = point.map { " at \(Int($0.x)),\(Int($0.y))" } ?? ""
+                                        print("CLICK menu\(where_): " + Self.describe(items))
                                         return 0
                                     }
                                 }
@@ -524,6 +565,19 @@ final class WinampModernRenderDumpTests: XCTestCase {
             if let match = descendant(of: child, xmlID: xmlID) { return match }
         }
         return nil
+    }
+
+    /// A MAKI constant as it reads in source, for the `@` listing.
+    private static func describe(_ value: MakiValue) -> String {
+        switch value {
+        case .null: return "null"
+        case .integer(let v): return "\(v)"
+        case .float(let v): return "\(v)f"
+        case .double(let v): return "\(v)"
+        case .boolean(let v): return "\(v)"
+        case .string(let v): return "\"\(v)\""
+        case .object: return "object"
+        }
     }
 
     private final class RenderHost: WinampModernHost {

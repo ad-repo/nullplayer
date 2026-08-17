@@ -46,6 +46,10 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 
 - Multiple document roots and raw ampersands (real skins contain both) — but tags must balance
 - `groupdef` with `inherit_group` inheritance; `xuitag` custom tag registration
+- `instanceid` on a group instance **renames the expanded object**: it answers to the instance id
+  instead of the groupdef's id, which is the only way a skin can address one of several instantiations
+  of one definition — from `sendparams group="…"` and from a script's `findObject`. Winamp Modern's
+  titlebar instantiates `wasabi.titlebar.streak` twice this way (Phase 24)
 - Group template expansion during object creation, resolved **in document order**: an id defined
   twice serves each `<group>` the version written above it, the way Winamp's streaming parser does
   (T800 gives `player.main.cms` one body for its full player and another for its shade layout).
@@ -92,7 +96,8 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
   `<truetypefont>`, an archive path, **or** an installed family name, `bold`/`italic` are honoured, the
   string is centred in its box, and `forcefixed`/`timecolonwidth` give fixed-pitch cells
 - Script-built menus: `PopupMenu` with `addCommand`/`addSeparator`/`addSubMenu`/`checkCommand`/
-  `popAtMouse`, shown as a real `NSMenu` at the mouse; `popAtMouse` blocks and answers the picked id
+  `popAtMouse`/`popAtXY`, shown as a real `NSMenu` at the mouse or at a computed point; both block and
+  answer the picked id
 - Hit testing follows Wasabi's region rule: a `group`/`layout` claims a point only where it paints a
   `background` — a bare container declared over the whole window does not swallow clicks meant for
   what is beneath it — and `animatedlayer` takes clicks like `layer` (MMD3's rotary knobs)
@@ -186,9 +191,10 @@ By area:
   them, which is where a volume handler lives), date helpers, per-skin
   `getPublicInt`/`setPublicInt`
 - **`PopupMenu`**: `addCommand(title, id, checked, disabled)`, `addSeparator`, `addSubMenu(child,
-  title)`, `checkCommand`, `popAtMouse` — shown as a real `NSMenu` at the mouse through
-  `popupPresenter`, which the main view installs. `popAtMouse` blocks and answers the picked id (0 =
-  cancelled)
+  title)`, `checkCommand`, `popAtMouse`, `popAtXY(x, y)` — shown as a real `NSMenu` through
+  `popupPresenter`, which the main view installs. `popAtMouse` pops at the mouse; `popAtXY` at the
+  given point, in the window-client space `clientToScreenX/Y` answer in (Phase 24). Both block and
+  answer the picked id (0 = cancelled)
 - **Events dispatched to scripts** — see the table below
 - **Timers**: bounded scheduling (see limits)
 - **Animated layers**: `getLength`, `gotoFrame`, `getCurFrame`, `setStartFrame`, `setEndFrame`,
@@ -251,6 +257,20 @@ By area:
   bytecode with `WINAMP_MODERN_RENDER_DISASM`, not guessed — a wrong argument count desynchronises the
   interpreter's stack. Phase 24
 - **`debugString(message, level)`** — a skin's own trace output, dropped. Phase 24
+- **`clientToScreenX/Y` and `screenToClientX/Y`** — relative to the receiver's **parent** client area,
+  which is the space `getLeft()`/`getTop()` already answer in. Every measured call site is the idiom
+  `b.clientToScreenX(b.getLeft())` — receiver and coordinate the same object — which only makes sense
+  under that reading: taking it as the receiver's *own* box double-counts, and taking it as pure
+  identity loses the parent chain (that is what put ClassicPro's tab menu at the window's left edge
+  instead of under its tab). "Screen" is the window's client space: a `.wal` window is borderless and
+  positioned by us, so the window origin is a constant that cancels in the round trip every caller
+  makes, and `popAtXY` places its menu in the same window the point came from. The stock skin's
+  titlebar exercises the other shape — `layout.clientToScreenX(…)` out, titlebar **group**
+  `screenToClientX(…)` back, then `− group.getLeft()` — and both objects hang off the layout, so it
+  returns the input and the correction lands. Phase 24
+- **`popAtXY(x, y)`** — a script-built menu at a computed point, in the same coordinates the
+  conversions above answer in. ClassicPro's tab-strip right-click menu and its drawer's "goto" menu.
+  Phase 24
 - **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
 
 **Events dispatched to scripts.** Occurrence counts are call sites across the ClassicPro engine's
@@ -304,15 +324,6 @@ a whole script):
 - Any method not in `signature(for:)` — fails closed with `.unsupportedScriptCapability` and is
   recorded in the compatibility report's `unsupportedMethods` bucket
 - Unsupported opcodes fail closed; they never become silent no-ops
-- **`clientToScreenX/Y` and `screenToClientX/Y`** — absent **on purpose**, not merely unimplemented.
-  They are trivial to add (a `.wal` window is borderless and positioned by us, so identity round-trips),
-  and adding them lets the stock Winamp Modern skin's titlebar script run to completion — at which point
-  it re-centres the window title on the window, while the skin's decorative streaks keep the fixed,
-  left-of-centre slot they are laid out with at load. The title then sits *under* the streaks and reads
-  as "WI…". Their other main caller is `popAtXY`, which is unimplemented anyway, so nothing is gained by
-  adding them until that titlebar layout is understood. Measured: at a 354px window the streaks reserve
-  105–165 and the script puts the title at 152–202; at 500px the title moves to 225 and the streaks do
-  not move at all.
 - **Region set operations** — `Region.add`, `sub`, `stretch`, `copy`, `loadFromBitmap` and the
   `getBoundingBox*` readers. No measured skin calls them; a region is built from one map and used.
   `WindowHolder.setRegionFromMap` and `MouseRedir.setRegion` share the region model but not the
@@ -337,12 +348,12 @@ zero error-severity findings and zero unsupported methods at startup, at compati
 **Measured demand — cPro-Bento once its scripts are actually driven** (Phase 24, after `onResize`,
 `onTitleChange`, `onPlay` and a tab click). Counts are call sites in the ClassicPro main-window script
 set; the whole engine's totals are larger. **Recorded, not implemented** — each would need a host seam
-of its own and none is behind a reported symptom except the first:
+of its own and none is behind a reported symptom. `popAtXY` and `clientToScreen*` were on this list and
+came off it in Phase 24; the tab strip's right-click menu (`Show Status Bar` / `Auto Close Tab`) now
+opens under its tab, measured with `RENDER_CLICK`, which prints the point the menu is placed at:
 
 | Method | Sites | What it costs |
 |---|---|---|
-| `popAtXY` | 6 | a script-built menu at a computed point: the tab strip's right-click menu, the drawer's "goto" menu. `popAtMouse` menus work |
-| `clientToScreenX` / `clientToScreenY` | 7 / 7 | the coordinates those menus are positioned with |
 | `parser_addCallback` / `parser_start` / `parser_destroy` | 5 / 4 / 4 | `XmlDoc` callback parsing — the optional `classicpro.xml` extras |
 | `enqueueFile` | 5 | the skin adding files to the queue |
 | `getTextWidth` | 4 | a script measuring a string itself rather than through `getAutoWidth` |
