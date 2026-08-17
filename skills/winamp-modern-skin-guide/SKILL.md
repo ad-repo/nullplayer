@@ -158,6 +158,16 @@ encoded in `WasabiGeometry`:
 > drawing boundary in `WasabiSceneRenderer` (and once at the event boundary in `WinampModernMainView`).
 > Never store flipped coordinates back into the graph, and never insert AppKit types into graph objects.
 
+A `<layout>`'s `w`/`h` are **optional**, exactly like any other object's: one that declares neither
+is sized by its `background` bitmap (`WasabiSceneRenderer.defaultSize(for:resources:)`), and only a
+layout with no background at all falls through to the classic 275×116. ZDL's Reel-To-Reel writes
+every one of its layouts that way — with the old unconditional fallback its 275×348 player got a
+275×116 canvas, everything below the reels landed outside it where `append` culls it, and what was
+left stacked on top of the reels. Same rule in the two collapsed-window checks
+(`WinampModernContainerTopology`, `WasabiSurfaceInventory.isVisibleWindow`): a window is collapsed
+only when it *declares* a ≤2px box, or a skin that sizes its equalizer from art looks like it has
+none and gets a synthesized one built over the top of it.
+
 `fitparent="1"` fills the parent regardless of `x/y/w/h`. Winamp Modern and ClassicPro use it
 constantly for their SUI/content groups; without it those groups resolve to a 0×0 rect at the origin
 and every descendant collapses into the top-left corner.

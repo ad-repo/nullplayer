@@ -56,7 +56,11 @@ enum WinampModernContainerTopology {
                 let declared = size(of: layout, keys: [["default_w", "w", "minimum_w"],
                                                        ["default_h", "h", "minimum_h"]])
                 let hidden = isHidden(container)
-                let collapsed = declared.width <= collapsedThreshold && declared.height <= collapsedThreshold
+                // Only a layout that *declares* a tiny box has been collapsed. A layout that declares
+                // no box at all is sized by its `background` bitmap (ZDL's Reel-To-Reel declares its
+                // equalizer that way), and reading its two zeroes as 0×0 hid the window the skin ships.
+                let collapsed = (declared.width > 0 || declared.height > 0) &&
+                    declared.width <= collapsedThreshold && declared.height <= collapsedThreshold
                 let minimum = size(of: layout, keys: [["minimum_w"], ["minimum_h"]])
                 let maximum = size(of: layout, keys: [["maximum_w"], ["maximum_h"]])
                 return WinampModernContainerInfo(

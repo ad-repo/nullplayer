@@ -277,6 +277,10 @@ struct WinampModernSurfaceInventory {
         }
         let width = dimension(["default_w", "w", "minimum_w"])
         let height = dimension(["default_h", "h", "minimum_h"])
+        // A layout that declares no box at all is not collapsed — it is sized by its `background`
+        // bitmap. Counting its two zeroes as 0×0 made the skin's own equalizer look absent, and the
+        // synthesizer then built a plain one over the top of it.
+        guard width > 0 || height > 0 else { return true }
         return !(width <= 2 && height <= 2)
     }
 

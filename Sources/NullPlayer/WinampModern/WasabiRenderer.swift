@@ -377,9 +377,7 @@ final class WasabiSceneRenderer {
         }
         self.container = container
         self.layout = layout
-        let width = Self.dimension(layout.attributes, keys: ["default_w", "w", "minimum_w"], fallback: 275)
-        let height = Self.dimension(layout.attributes, keys: ["default_h", "h", "minimum_h"], fallback: 116)
-        self.canvasSize = CGSize(width: width, height: height)
+        self.canvasSize = Self.defaultSize(for: layout, resources: self.resources)
         // Whichever window switches the theme, every renderer of this skin drops its themed bitmaps.
         themeCoordinator.addObserver(self) { [weak self] in self?.themeDidChange() }
     }
@@ -1456,8 +1454,25 @@ final class WasabiSceneRenderer {
     }
 
     private func defaultSize(for layout: WasabiObject) -> CGSize {
-        CGSize(width: Self.dimension(layout.attributes, keys: ["default_w", "w", "minimum_w"], fallback: 275),
-               height: Self.dimension(layout.attributes, keys: ["default_h", "h", "minimum_h"], fallback: 116))
+        Self.defaultSize(for: layout, resources: resources)
+    }
+
+    /// A layout's canvas size.
+    ///
+    /// `w`/`h` are **optional** on a layout: Wasabi sizes one that declares none to its `background`
+    /// bitmap, exactly as it sizes every other object with artwork and no box. ZDL's Reel-To-Reel
+    /// declares every one of its layouts that way, so falling straight through to the 275×116 classic
+    /// default gave its 275×348 player a canvas a third of its height — everything below the reels
+    /// landed outside the canvas, where `append` drops it, and what was left stacked on top of the
+    /// reels. The declared box still wins where a skin gives one.
+    private static func defaultSize(for layout: WasabiObject, resources: WasabiResourceCache) -> CGSize {
+        let background = resources.bitmap(identifier: layout.attributes["background"])
+        return CGSize(
+            width: dimension(layout.attributes, keys: ["default_w", "w", "minimum_w"],
+                             fallback: background.map { CGFloat($0.width) } ?? 275),
+            height: dimension(layout.attributes, keys: ["default_h", "h", "minimum_h"],
+                              fallback: background.map { CGFloat($0.height) } ?? 116)
+        )
     }
 
     private static func optionalDimension(_ raw: String?) -> CGFloat? {
