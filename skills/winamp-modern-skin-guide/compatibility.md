@@ -157,6 +157,13 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
   invisible there.)
 - Pixel-exact fidelity against real Winamp has never been verified for any target.
 
+**Skin-script corrections.** The engine runs a skin's scripts and draws what they compute; it does not
+second-guess them. There is exactly **one** exception, in `WasabiSkinQuirks`: ClassicPro's promo art
+double-centres itself, so it jumped sideways whenever a double-click swapped it in for the beat
+visualization. The bar for a second entry is in that file's doc comment — the correct placement must be
+derivable from the skin's own numbers, exact at every size, and a provable no-op wherever the skin
+already lands correctly.
+
 Duplicate resource/group/XUI definitions **replace** earlier ones and warn — this is intentional
 override behavior, not an error.
 

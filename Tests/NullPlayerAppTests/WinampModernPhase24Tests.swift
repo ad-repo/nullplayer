@@ -351,6 +351,53 @@ final class WinampModernPhase24Tests: XCTestCase {
                       "and it is told when it moves")
     }
 
+    // MARK: - The one skin-script correction
+
+    /// ClassicPro's promo art double-centres itself, so it jumps sideways when a double-click swaps it
+    /// in for the beat visualization — which lands centred at every width. The box is placed at
+    /// `centre − artWidth/2`, already centring the *picture*, and then the picture is placed at an
+    /// offset *inside* the box as well. Shifting the box back by that offset is exact.
+    func testTheClassicProPromoBoxIsShiftedBackByItsPicturesOffset() throws {
+        let renderer = try makeRenderer(xml: skin(size: 500, body: """
+            <group id="beatpromo" x="185" y="47" w="300" h="45">
+              <layer id="beat.promo" x="150" y="0" w="99" h="45"/>
+            </group>
+            """))
+        let box = try XCTUnwrap(node(in: renderer, xmlID: "beatpromo"))
+        let art = try XCTUnwrap(node(in: renderer, xmlID: "beat.promo"))
+        XCTAssertEqual(box.frame.minX, 35, "the box moves left by the picture's in-box offset")
+        XCTAssertEqual(art.frame.minX, 185, "so the picture lands where the box was told to go")
+    }
+
+    /// The branch that already works must not move: the widest promo art sits at offset 0 and is
+    /// exactly centred today, which is the evidence that our `resize()`/`getWidth()` semantics are
+    /// right and the skin's arithmetic is what is off.
+    func testAPromoBoxWhosePictureIsAtOriginIsUntouched() throws {
+        let renderer = try makeRenderer(xml: skin(size: 700, body: """
+            <group id="beatpromo" x="184" y="47" w="300" h="45">
+              <layer id="beat.promo" x="0" y="0" w="300" h="45"/>
+            </group>
+            """))
+        XCTAssertEqual(try XCTUnwrap(node(in: renderer, xmlID: "beatpromo")).frame.minX, 184)
+    }
+
+    /// And it is scoped to the pair of ids ClassicPro declares — nothing else in any installed skin
+    /// gets its geometry rewritten.
+    func testTheCorrectionDoesNotApplyToAnyOtherGroup() throws {
+        let renderer = try makeRenderer(xml: skin(size: 500, body: """
+            <group id="ordinary.box" x="185" y="47" w="300" h="45">
+              <layer id="beat.promo" x="150" y="0" w="99" h="45"/>
+            </group>
+            <group id="beatpromo" x="185" y="100" w="300" h="45">
+              <layer id="some.other.art" x="150" y="0" w="99" h="45"/>
+            </group>
+            """))
+        XCTAssertEqual(try XCTUnwrap(node(in: renderer, xmlID: "ordinary.box")).frame.minX, 185,
+                       "a different box holding that picture is left alone")
+        XCTAssertEqual(try XCTUnwrap(node(in: renderer, xmlID: "beatpromo")).frame.minX, 185,
+                       "and so is that box holding a different picture")
+    }
+
     // MARK: - D4: the analyzer repaints when levels arrive
 
     /// `updateSpectrum` used to set the levels without invalidating. cPro happens to have animated

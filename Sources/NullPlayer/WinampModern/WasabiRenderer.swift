@@ -982,7 +982,10 @@ final class WasabiSceneRenderer {
             // resolves against a box that does not exist.
             if wasabi.width < 0 || wasabi.height < 0 { return }
             let box = wasabi.standardized
-            resolved = CGRect(x: box.x, y: box.y, width: box.width, height: box.height)
+            let placed = CGRect(x: box.x, y: box.y, width: box.width, height: box.height)
+            // A correction for arithmetic the skin's own script gets wrong. Deliberately rare — see
+            // `WasabiSkinQuirks` for the bar an entry has to clear.
+            resolved = WasabiSkinQuirks.correctedFrame(for: object, resolved: placed) ?? placed
         }
         // An object parked outside its parent draws nothing, and neither do its children. Skins use
         // that as a hiding place: MMD3 keeps a dummy volume slider at (400,400) — outside the 583×216
