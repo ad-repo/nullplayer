@@ -14,6 +14,8 @@ Read first:
   and the float-decode gotcha under "MAKI"
 - `skills/winamp-modern-skin-guide/compatibility.md` — supported surface for the new text metrics,
   `ProgressGrid`, `PopupMenu`, the corrected `vis mode` numbering, and the dispatched-events list
+- `skills/winamp-modern-skin-guide/skins.md` — **new**: per-skin status, starting with this fixture's
+  working/missing/traps list. Update it whenever a phase closes on a skin
 - `skills/winamp-modern-skin-guide/manual-qa-checklist.md` §1 — four new Miku lines, **the open gate**
 
 ## 1. What Phase 23 was

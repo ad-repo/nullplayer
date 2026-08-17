@@ -783,7 +783,10 @@ years-since-1900 scale, and the `isInvalid` probe idiom were all pinned that way
 
 ## Debugging a skin
 
-**Start with the compatibility report.** `WinampModernLoadedSkin.compatibilityReport` (and
+**Start with [skins.md](skins.md) if the report names a skin we have measured** — it records what
+already works, what is knowingly missing, and the traps that skin sets.
+
+**Then the compatibility report.** `WinampModernLoadedSkin.compatibilityReport` (and
 `compatibilityReport(withRuntime:)`) aggregates load diagnostics plus the runtime's unsupported-method
 tally into de-duplicated categories (`archive`, `resources`, `groups`, `scripts`,
 `unsupportedMethods`, `other`) with a coarse level (`.full` / `.degraded` / `.unsupported`). In DEBUG
@@ -896,6 +899,8 @@ cPro-Bento is the wrong fixture for it.
 ## Related
 
 - [compatibility.md](compatibility.md) — supported/unsupported Wasabi + MAKI surface, limits, engine policy
+- [skins.md](skins.md) — **per-skin status**: what each measured fixture does today and what is still
+  missing for it. Start here when a report names a skin, and update it when a phase closes on one
 - [manual-qa-checklist.md](manual-qa-checklist.md) — the GUI verification pass
 - `docs/winamp-modern/` — decision records and per-phase handoffs
 - `docs/legal/winamp_modern_provenance.md` — clean-room provenance record
