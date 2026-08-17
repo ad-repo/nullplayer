@@ -118,11 +118,24 @@ synthesized and nothing left to the classic fallback.
   `wasabi.list.background` as both a `<color>` and a `$solid` bitmap, and the bitmap wins the registry
   — so a lookup insisting on `kind == "color"` fell through to the literal parser and became **white**,
   painting a white slab across the tab strip of a near-black skin.
-- **The promo art (what shows when the beat display is off) is centred by arithmetic that
-  double-counts** — `beat.m` places the promo *group* at `centre − promoPic.getWidth()/2` and then
-  `resize()`s the picture to a +150/+50/0 offset inside it, so at 500px the picture lands at x=335 with
-  the display centre at 234. Unresolved: it may depend on Winamp's `getWidth()` answering the
-  pre-`resize` width. Measure against a real Winamp before changing anything here.
+- **The promo art (what shows when the beat display is off) sits right of centre below ~620px, and
+  that is almost certainly the skin's own quirk — not ours.** `beat.m` centres it *twice*: the promo
+  **group** goes at `centre − promoPic.getWidth()/2`, and the **picture inside** the 300-wide group is
+  `resize()`d to a +0/+50/+150 offset. Measured across all three branches (display centre =
+  `143 + (w−317)/2`):
+
+  | canvas | centre | art | off by |
+  |---|---|---|---|
+  | 700 | 334.5 | 184–484 (`promo.3`, offset 0) | **0 — exact** |
+  | 560 | 264.5 | 214–414 (`promo.2`, offset 50) | +50 |
+  | 500 | 234 | 335–434 (`promo.1`, offset 150) | +150 |
+
+  The art is off by exactly its own in-group offset, and the offset-0 branch is **exactly** centred —
+  positive evidence that our `resize()`/`getWidth()` semantics are right. A "Winamp defers layout, so
+  `getWidth()` answers the pre-`resize` width" theory does not rescue the other two either:
+  `beat.promo` declares no `w`, so it takes its bitmap's natural size and the 99px case reads 99 under
+  both models. Do not "fix" this by moving the art — you would be overriding what the skin computes,
+  and the widest branch is already correct.
 - **The beat visualization is only ever enabled inside `frameGroup.onResize`.** `beat.m` assigns
   `showBeat`/`showPromo` nowhere else, and `System.onPlay()` → `refreshView()` → `showGroup(0)` hides
   both display groups first. Without an `onResize` having fired, pressing play made the visualization
