@@ -263,6 +263,10 @@ alpha-tests the node's bitmap. Two rules about *which* objects may claim a point
   strip, and the EQ tabs (all declared *before* it) were completely dead while the play buttons
   *inside* it worked, which is exactly what the bug report said. Window dragging is a separate policy
   (below) and is unaffected.
+- **`rectrgn="1"` *is* the object's region — its whole rect, artwork or not.** Skins use a bare layer
+  with it as an invisible click target (Love is War Miku switches its visualization mode through
+  `visual.trigger`, a layer with no image at all), and a hit test that insists on a bitmap can never
+  reach one.
 - **`animatedlayer` is clickable like `layer`.** MMD3's rotary volume/bass/treble knobs are animated
   layers whose scripts hook `onLeftButtonDown`; leaving the type out of `isInteractive` meant no click
   ever reached them.
@@ -276,7 +280,9 @@ object the hit test returned:
   hangs nothing but controls off it (T800) has no other handle, and without this it cannot be moved.
 - a bare **`group`** with `move="1"` — a group has no artwork, so a click reaching one landed on the
   background it covers, and `move="1"` is the skin calling that background a handle.
-- a **`layer`** with no `action`, as before.
+- a **`layer`** with no `action` — *unless a script hooks a mouse event on it*, which makes it a
+  control rather than a handle (the same thing `move="0"` says explicitly, for the skins that do not
+  bother to say it). Dragging the window off an invisible trigger eats the click it exists for.
 - never anything with `move="0"` (T800's volume strip is a layer whose script owns the drag), and
   never the named transport/title objects on the exclusion list.
 
@@ -286,11 +292,20 @@ share a rect and only the topmost can win — but a control the user can see sho
 
 #### `<vis mode>` — the skin says whether it wants a visualization at all
 
-`1` = oscilloscope, `2` = spectrum analyzer, `0`/`3` = **off**; an undeclared mode is the analyzer.
+`1` = **spectrum analyzer**, `2` = **oscilloscope**, `0`/`3` = **off**; an undeclared mode is the
+analyzer. A skin's own menu script pins the pairing: Love is War Miku's `visualizer.maki` writes
+`bandwidth` (`wide`/`thin`) then `setMode(1)` for its *Spectrum Analyzer* commands and `oscstyle`
+(`Solid`/`Dots`/`Lines`) then `setMode(2)` for its *Oscilloscope* ones. Reversed, every skin drew the
+other visualization than the one its menu had just asked for, and this skin's shipped default
+(`Visualizer Mode` = 1) came up as a scope where its own screenshot shows bars.
+
 MMD3 ships `mode="3"` and its `ShowVISBg` switches between all three, because for six of its nine
 display styles the box is filled by the skin's *own* animated layer and the vis must be silent.
 Ignoring the mode painted our bars straight over the skin's artwork. `setMode` writes the same
 attribute, so honouring it in the renderer is the whole implementation.
+
+A `<vis ghost="1">` takes **no** clicks — Love is War Miku puts an invisible `<layer rectrgn="1">`
+beside it as the click target instead, so the menu is reached through that, not the box.
 
 #### `<Wasabi:Frame>` — the splitter that builds its own children
 
@@ -330,6 +345,29 @@ scripts first.
 Two auto-sizing rules in the renderer, both only when the object declares no `w`: a group with
 `autowidthsource="<id>"` takes the width of the descendant it names, and a `<text>` takes its own
 content's width.
+
+#### How big the font is, and which one
+
+Three rules, all measured against Love is War Miku's shipped `screenshot.png` (a skin's own reference
+render is the ground truth for this kind of thing):
+
+- **`fontsize` is a pixel height, not a point size.** Winamp hands it to GDI as a font height and the
+  em it draws is measurably smaller: `fontsize="30"` draws digits 17px tall, Arial's cap height at a
+  **24pt** em, and `fontsize="10"` matches an 8pt em — the same 0.8 ratio
+  (`WasabiTextMetrics.pixelHeightToPointSize`). Taken at face value every string is a quarter too big
+  and overflows the box the skin drew for it: this skin's song ticker spilled its descenders onto the
+  seek bar below and its `0:00` collided with the title.
+- **`font=` is an id *or* a plain family name.** A skin that ships no `<truetypefont>` simply names one
+  it expects the system to have (`font="Arial"`), exactly as it asks GDI. Resolving only declared
+  resources drew every such string in the monospaced fallback. `bold="1"`/`italic="1"` are their own
+  attributes, not part of the name.
+- **Text is centred in its box**, not drawn from the top edge the way `NSString.draw(in:)` does. On a
+  30px-tall readout that is a whole line's leading; on a tight one it is the difference between a
+  ticker inside its slot and one sitting on whatever is under it.
+
+`forcefixed="1"` gives every glyph the same advance (the widest digit's) so a clock's digits do not
+shuffle sideways as they tick, and `timecolonwidth` gives the colon a narrower cell of its own. Both
+go through `WasabiTextMetrics.fixedPitch`, so `getAutoWidth()` measures what the renderer draws.
 
 #### A bitmap font's `file=` is an id **or** a path
 
@@ -376,6 +414,35 @@ song name is), `songinfo` → `songInfoText` — the **stream info** line, not t
   top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
   edges leave a visible seam grid.
 
+#### `<ProgressGrid>` — the bar's *filled* part
+
+`left` cap + stretched (or tiled) `middle` + `right` cap, growing from the edge `orientation` names
+(`right`/`down` anchor at the near edge, `left`/`up` at the far one). It carries no `action` of its
+own, so the value comes from the sibling that does — the `<slider>` drawn over the same rect — and
+both go through the renderer's one `normalizedValue(of:)`.
+
+Skins pair the two and give the slider a thumb that is deliberately invisible: Love is War Miku's seek
+"thumb" is a **1×1 pixel**, and the grid is the only thing that shows a position anywhere in the
+window. Drawing nothing for the grid left its seek bar an empty white box — which reads as a blank
+text field, not as a seek bar.
+
+#### A skin's own right-click menus
+
+A script builds them with `new PopupMenu`, `addCommand(title, id, checked, disabled)`,
+`addSeparator()`, `addSubMenu(child, title)` and shows one with `popAtMouse()`, which **blocks** and
+answers the id the user picked (0 = nothing). Three things this needs, and all three were missing at
+once, so no `.wal` skin could show a menu at all:
+
+- `addSubMenu` — without it the whole `onRightButtonUp` handler fails closed at the first submenu.
+- A **presenter**: `WinampModernScriptRuntime.popupPresenter` is installed by the main view
+  (`presentScriptPopup`), which builds an `NSMenu` from the resolved tree and runs it at the mouse.
+  Unset, `popAtMouse` answers 0 and the skin concludes the user cancelled.
+- `addCommand`'s fourth argument is **disabled**, not "separator" — storing it in the separator slot
+  turns every greyed-out row into a divider.
+
+`WINAMP_MODERN_RENDER_CLICK` prints the menu a right-click builds, which is the fastest way to see
+whether the failure is the menu or what it does afterwards.
+
 ### MAKI
 
 `MakiBytecodeParser` reads the `FG` compiled-script format (classes, methods, typed
@@ -407,6 +474,19 @@ Use the measured-demand signal rather than porting reference stubs blindly — s
 > further and reach the next thing it needs, so the report after a fix names methods the report
 > before it could not have known about. cPro-Bento took three full rounds (9 methods → 4 → 0).
 > Re-measure after every change; never work down a static list.
+
+> **Gotcha: a float constant is two 16-bit halves, and the high half must be widened before it is
+> shifted.** `(0x80 | (initial2 & 0x7f)) << 16` on a `UInt16` shifts the implicit leading one and every
+> stored bit clean out of the word and leaves only `initial1`, so **every** float and double in every
+> script decoded to a fraction of its value. Nothing failed and nothing was reported: Love is War
+> Miku's volume step (2.55 of 255) arrived as 0.003, so the buttons ran their whole handler, called
+> `setVolume`, and moved the level by nothing. Scripts reach for floats rarely enough that this
+> survived every phase — assume any *arithmetic* result is untested until a skin has been watched
+> doing the arithmetic.
+
+MAKI's casts are System methods (`System.Integer(v)`, `Float`, `String`, `Boolean`), and a script
+reaches for them wherever it mixes a float with an int-typed API — which is exactly where the volume
+path runs.
 
 **Opcodes are exercised at the same rate as methods** — that is, barely, until a script gets far
 enough to use one. `delete` (opcode 97) consumed its operand for eight phases before anything reached
@@ -732,7 +812,8 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_CLOCK=<seconds>` | pin the animation/ticker clock; render two values to prove motion |
 | `WINAMP_MODERN_RENDER_MINIMUM=1` | name the objects that set each layout's protective minimum |
 | `WINAMP_MODERN_RENDER_CLICKABLE=1` | objects the markup-only hit test rejects but a script hooks the mouse on |
-| `WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y` | drive a click and report what it hit, whether it has handlers, and what the scene did |
+| `WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y` | drive a click (left **and** right) and report what it hit, its handler counts, the menu a right-click builds, the resulting volume, and a compatibility report taken *after* the click |
+| `WINAMP_MODERN_RENDER_SETTLE=<seconds>` | pump the run loop before dumping, so timer-driven state has happened |
 
 Use the probe to answer "is it missing art, bad geometry, or a script that never ran" before changing
 renderer code — `BITMAPS … missing=` distinguishes an unresolved resource from one that draws wrongly.
@@ -747,6 +828,13 @@ instance is the tell. That is exactly how cPro-Bento's inert tab strip was pinne
 > in `NSString.draw(in:withAttributes:)`, which renders into the *current* `NSGraphicsContext`, not
 > the `CGContext` it was handed. Without it every TrueType/system-font string is silently dropped from
 > the dump while the real app (always inside `NSView.draw`) shows them — the harness lies to you.
+
+`RENDER_SETTLE` is usually the difference between a dump that means something and one that does not:
+Love is War Miku's whole opening animation (the display panel sliding to `y=84`, the character to
+`x=129`) runs on a 300ms timer, so without it the dump shows a scene the user never sees. And the
+load-time compatibility report is **clean** for anything a click reaches — a handler that fails on a
+missing method records nothing until something drives the event, which is why `RENDER_CLICK` prints its
+own report afterwards.
 
 **The dump only ever renders a skin's *initial* state.** A defect a script mutation introduces later
 (a font swapped at runtime, an object shown after a click) is invisible to it. `WinampModernCrashRepro`

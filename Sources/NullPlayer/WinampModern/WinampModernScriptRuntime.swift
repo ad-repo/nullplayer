@@ -1,6 +1,16 @@
 import AppKit
 import Foundation
 
+/// One row of a menu a script built with `PopupMenu`, submenus resolved.
+struct WinampModernPopupMenuItem {
+    let title: String
+    let commandID: Int32
+    let checked: Bool
+    let disabled: Bool
+    let isSeparator: Bool
+    let children: [WinampModernPopupMenuItem]
+}
+
 final class WinampModernScriptRuntime: MakiMethodDispatching {
     private enum DynamicRole {
         case generic
@@ -56,7 +66,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private static let maximumRecordedScriptFailures = 512
 
     var graphDidMutate: (() -> Void)?
-    var popupPresenter: (([(String, Int32, Bool, Bool)]) -> Int32)?
+    /// Show a script-built popup menu at the mouse and answer the command the user picked, or 0.
+    /// The runtime resolves the submenu tree before calling, so the presenter only builds UI.
+    var popupPresenter: (([WinampModernPopupMenuItem]) -> Int32)?
     /// A layout switch or resize, addressed to the *container* whose script asked for it. A `.wal`
     /// skin has one script runtime and several windows; without the container id every playlist
     /// script that resized itself at startup resized the player instead.
@@ -89,7 +101,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private var eventsBeingDispatched: Set<ScriptEventKey> = []
 
     private var nextPopupID: UInt64 = 1
-    private var popupCommands: [UInt64: [(String, Int32, Bool, Bool)]] = [:]
+    private var popupCommands: [UInt64: [PopupEntry]] = [:]
     private var dynamicObjects: [UInt64: DynamicObjectState] = [:]
     private var activeLayoutByContainer: [WasabiObjectID: WasabiObjectID] = [:]
     private let preferenceNamespace: String
@@ -127,7 +139,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "onaction": 7,
         // ClassicPro's EQ script labels its bands by calling its own `System.onEqFreqChanged` handler
         // once at load with the value it read out of Winamp's config.
-        "oneqfreqchanged": 1
+        "oneqfreqchanged": 1,
+        // Winamp fires this whenever the level moves, and a skin with no volume slider relies on it
+        // for the only feedback it has: Love is War Miku's `+`/`-` buttons show "Volume: 40%" on the
+        // song ticker from this handler and clear it a moment later.
+        "onvolumechanged": 1
     ]
 
     /// Version-gate shim. ClassicPro's `WinampVersionCheck.maki` early-returns when the reported build
@@ -503,6 +519,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "integertotime": .init(argumentCount: 1, returnKind: .string),
             "floattostring": .init(argumentCount: 2, returnKind: .string),
             "stringtointeger": .init(argumentCount: 1, returnKind: .integer),
+            "stringtofloat": .init(argumentCount: 1, returnKind: .float),
+            // MAKI's casts are System methods: `System.Integer(v)`, `System.Float(v)`, … A script
+            // reaches for them wherever it mixes a float with an int-typed API — Love is War Miku's
+            // volume buttons keep the level as a float and hand `Integer(level)` to `setVolume`, so
+            // without these the whole volume path aborted at the first press.
+            "integer": .init(argumentCount: 1, returnKind: .integer),
+            "float": .init(argumentCount: 1, returnKind: .float),
+            "string": .init(argumentCount: 1, returnKind: .string),
+            "boolean": .init(argumentCount: 1, returnKind: .boolean),
             "strlen": .init(argumentCount: 1, returnKind: .integer),
             "strlower": .init(argumentCount: 1, returnKind: .string),
             "strsearch": .init(argumentCount: 2, returnKind: .integer),
@@ -562,6 +587,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "navigateurlbrowser": .init(argumentCount: 1, returnKind: .null),
             "addcommand": .init(argumentCount: 4, returnKind: .null),
             "addseparator": .init(argumentCount: 0, returnKind: .null),
+            "addsubmenu": .init(argumentCount: 2, returnKind: .null),
             "checkcommand": .init(argumentCount: 2, returnKind: .null),
             "popatmouse": .init(argumentCount: 0, returnKind: .integer),
             "newgroup": .init(argumentCount: 1, returnKind: .object),
@@ -699,7 +725,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getrightvumeter": return .integer(vuValue(left: false))
         case "getvolume": return .integer(Int32((host.volume * 255).rounded()))
         case "setvolume":
-            host.volume = Double(arguments[0].integerValue) / 255
+            let level = max(0, min(255, arguments[0].integerValue))
+            host.volume = Double(level) / 255
+            // The change is what a skin listens for. Re-entrancy is bounded by the dispatch guard, so
+            // a handler that sets the volume again cannot recurse.
+            _ = try? dispatchSystem(event: "onvolumechanged", arguments: [.integer(level)])
             return .null
         case "play": host.play(); return .null
         case "pause": host.pause(); return .null
@@ -722,6 +752,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let digits = max(0, min(12, Int(arguments[1].integerValue)))
             return .string(String(format: "%.*f", digits, arguments[0].doubleValue))
         case "stringtointeger": return .integer(Int32(arguments[0].stringValue) ?? 0)
+        // The mirror of `floattostring`, and the last method Love is War Miku's notifier preferences
+        // reached for. A string that is not a number is 0, as it is on the integer side.
+        case "stringtofloat": return .float(Double(arguments[0].stringValue) ?? 0)
+        case "integer": return .integer(arguments[0].integerValue)
+        case "float": return .float(arguments[0].doubleValue)
+        case "string": return .string(arguments[0].stringValue)
+        case "boolean": return .boolean(arguments[0].truthy)
         case "strlen": return .integer(Int32(clamping: arguments[0].stringValue.count))
         case "strlower": return .string(arguments[0].stringValue.lowercased())
         case "strsearch":
@@ -1155,21 +1192,56 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private func invokePopup(method: String, id: UInt64, arguments: [MakiValue]) -> MakiValue {
         switch method {
         case "addcommand":
-            popupCommands[id, default: []].append((arguments[0].stringValue, arguments[1].integerValue,
-                                                   arguments[2].truthy, arguments[3].truthy))
+            // Winamp's fourth argument is *disabled*, not "separator": storing it in the separator
+            // slot turned every greyed-out command into a divider.
+            popupCommands[id, default: []].append(
+                PopupEntry(title: arguments[0].stringValue, commandID: arguments[1].integerValue,
+                           checked: arguments[2].truthy, disabled: arguments[3].truthy))
             return .null
         case "addseparator":
-            popupCommands[id, default: []].append(("", 0, false, true))
+            popupCommands[id, default: []].append(PopupEntry(isSeparator: true))
+            return .null
+        case "addsubmenu":
+            // `parent.addSubMenu(child, title)` — the child is a PopupMenu the script has already
+            // filled in. It is referenced rather than copied, so a script that keeps adding to the
+            // child after attaching it still gets what it built (Love is War Miku's visualization
+            // menu nests its Spectrum Analyzer and Oscilloscope presets this way).
+            guard case .object(let reference) = arguments[0],
+                  case .popupMenu(let child) = reference.kind else { return .null }
+            popupCommands[id, default: []].append(
+                PopupEntry(title: arguments[1].stringValue, submenu: child))
             return .null
         case "checkcommand":
             let commandID = arguments[0].integerValue
-            if let index = popupCommands[id]?.firstIndex(where: { $0.1 == commandID }) {
-                let old = popupCommands[id]![index]
-                popupCommands[id]![index] = (old.0, old.1, arguments[1].truthy, old.3)
+            if let index = popupCommands[id]?.firstIndex(where: { $0.commandID == commandID }) {
+                popupCommands[id]![index].checked = arguments[1].truthy
             }
             return .null
-        case "popatmouse": return .integer(popupPresenter?(popupCommands[id] ?? []) ?? 0)
+        case "popatmouse": return .integer(popupPresenter?(popupItems(of: id, depth: 0)) ?? 0)
         default: return .null
+        }
+    }
+
+    /// One entry of a script-built menu, before its submenus are resolved.
+    private struct PopupEntry {
+        var title = ""
+        var commandID: Int32 = 0
+        var checked = false
+        var disabled = false
+        var isSeparator = false
+        /// The id of the `PopupMenu` this entry opens, for a submenu row.
+        var submenu: UInt64?
+    }
+
+    /// Resolve a menu and everything it nests into the presenter's shape. A skin could attach a menu
+    /// to itself, so the walk is depth-bounded rather than trusting the graph of menus to be a tree.
+    private func popupItems(of id: UInt64, depth: Int) -> [WinampModernPopupMenuItem] {
+        guard depth < 8, let entries = popupCommands[id] else { return [] }
+        return entries.map { entry in
+            WinampModernPopupMenuItem(
+                title: entry.title, commandID: entry.commandID, checked: entry.checked,
+                disabled: entry.disabled, isSeparator: entry.isSeparator,
+                children: entry.submenu.map { popupItems(of: $0, depth: depth + 1) } ?? [])
         }
     }
 

@@ -318,8 +318,14 @@ struct MakiBytecodeParser {
                     case .boolean:
                         value = .boolean(initial1 != 0)
                     case .float, .double:
+                        // The mantissa's high bits must be widened *before* the shift: `initial2` is
+                        // a `UInt16`, so `(0x80 | …) << 16` shifted the implicit leading one and every
+                        // stored bit clean out of the word and left only `initial1`. Every float and
+                        // double constant in every script decoded to a fraction of its real value —
+                        // Love is War Miku's volume step (2.55 of 255) arrived as 0.003, so the
+                        // buttons ran the whole handler and moved the level by nothing.
                         let exponent = Int((initial2 & 0xff80) >> 7)
-                        let mantissa = Int((0x80 | (initial2 & 0x7f)) << 16) | Int(initial1)
+                        let mantissa = (Int(0x80 | (initial2 & 0x7f)) << 16) | Int(initial1)
                         let decoded = Double(mantissa) * pow(2, Double(exponent - 0x96))
                         value = kind == .float ? .float(decoded) : .double(decoded)
                     case .string:

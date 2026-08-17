@@ -60,8 +60,10 @@ final class WinampModernPhase22Tests: XCTestCase {
         XCTAssertNotEqual(sample[3], 255, "which is the whole difference from painting over the skin")
     }
 
+    /// `mode="2"` is the oscilloscope and `mode="1"` the analyzer — the pairing Love is War Miku's own
+    /// menu script writes (`oscstyle` then `setMode(2)`; `bandwidth` then `setMode(1)`).
     func testTheOscilloscopeUsesTheOscilloscopeColours() throws {
-        let pixels = try render(visAttributes: #"mode="1" colorosc1="0,255,0" colorband1="255,0,0""#)
+        let pixels = try render(visAttributes: #"mode="2" colorosc1="0,255,0" colorband1="255,0,0""#)
         let painted = (0..<64).flatMap { x in (0..<20).map { y in pixel(pixels, x: x, y: y) } }
             .filter { $0[3] > 0 }
         XCTAssertFalse(painted.isEmpty, "the scope draws something")

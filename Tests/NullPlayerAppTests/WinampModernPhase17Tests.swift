@@ -48,6 +48,8 @@ final class WinampModernPhase17Tests: XCTestCase {
             <button id="tab" x="0" y="0" w="10" h="10" image="panel"/>
           </group>
           <AnimatedLayer id="knob" image="panel" x="60" y="30" w="8" h="8"/>
+          <text id="system.font" text="AAAA" font="Helvetica" fontsize="20" bold="1"
+                x="0" y="20" w="56" h="40"/>
           <text id="title" display="songname" font="path.font" x="0" y="40" w="112" h="8"/>
           <text id="info" display="songinfo" x="0" y="48" w="112" h="8"/>
           <text id="ticker" display="songname" alternatetext="placeholder" x="0" y="56" w="112" h="8"/>
@@ -79,6 +81,36 @@ final class WinampModernPhase17Tests: XCTestCase {
         XCTAssertTrue(hasOpaquePixel(pixels, canvas: renderer.canvasSize,
                                      in: CGRect(x: 0, y: 40, width: 112, height: 8)),
                       "A path-backed bitmap font must draw glyphs")
+    }
+
+    func testSystemFontFamilyAndBoldAreResolvedAtAPixelHeight() throws {
+        let (loaded, renderer, _) = try makeSkin()
+        let object = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "system.font").first)
+        // `fontsize` is a pixel height, not a point size (Love is War Miku's 30px time readout draws
+        // at a 24pt em); taken at face value every string is a quarter too big for its box.
+        let size = WasabiTextMetrics.pointSize(of: object)
+        XCTAssertEqual(size, 16, accuracy: 0.001)
+        // A skin that declares no font resource names one it expects the system to have. Resolving
+        // only declared resources drew all of those in the monospaced fallback.
+        let font = try XCTUnwrap(renderer.resources.font(identifier: object.attributes["font"],
+                                                        size: size,
+                                                        traits: WasabiTextMetrics.traits(of: object)))
+        XCTAssertEqual(font.familyName, "Helvetica")
+        XCTAssertEqual(font.pointSize, 16, accuracy: 0.001)
+        XCTAssertTrue(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+    }
+
+    func testTextIsCentredInItsBoxRatherThanDrawnFromTheTop() throws {
+        let (_, renderer, _) = try makeSkin()
+        let pixels = try render(renderer)
+        // The box is 40px tall around a ~18px line, so the two conventions are ~11px apart. Top of
+        // the box stays clear; the glyphs sit in the middle band. (`x < 56` keeps the knob out.)
+        XCTAssertFalse(hasOpaquePixel(pixels, canvas: renderer.canvasSize,
+                                      in: CGRect(x: 0, y: 21, width: 56, height: 9)),
+                       "Text must not be drawn from the top edge of its box")
+        XCTAssertTrue(hasOpaquePixel(pixels, canvas: renderer.canvasSize,
+                                     in: CGRect(x: 0, y: 34, width: 56, height: 12)),
+                      "Text must be drawn centred in its box")
     }
 
     func testDisplayBindingsCarryTheValuesTheSkinsScriptsRead() throws {

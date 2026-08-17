@@ -65,8 +65,18 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
   `display=` binding (`time`, `songname` → "Artist - Title", `songinfo` → the stream-info line a
   `songinfo.maki` tokenises), then `text`/`default`, then the XML `alternatetext` as the
   nothing-to-show placeholder. `getText()` answers with the same resolved string
-- `<vis mode>`: `1` = oscilloscope, `2` = spectrum analyzer, `0`/`3` = off (a skin uses "off" when it
-  fills the box with its own animated layer); an undeclared mode is the analyzer. `setMode` switches it
+- `<vis mode>`: `1` = **spectrum analyzer**, `2` = **oscilloscope**, `0`/`3` = off (a skin uses "off"
+  when it fills the box with its own animated layer); an undeclared mode is the analyzer. `setMode`
+  switches it. A skin's menu script is the proof of the pairing (`bandwidth` + `setMode(1)` vs
+  `oscstyle` + `setMode(2)`)
+- `<ProgressGrid>`: `left`/`middle`/`right` over the filled span, growing from `orientation`'s edge,
+  valued from the sibling `<slider>` that carries the `action`. Skins pair the two and make the thumb
+  invisible (a 1×1 pixel), so the grid is the only position indicator they draw
+- `<text>` metrics: `fontsize` is a **pixel height** (em ≈ 0.8 ×), `font=` resolves a declared
+  `<truetypefont>`, an archive path, **or** an installed family name, `bold`/`italic` are honoured, the
+  string is centred in its box, and `forcefixed`/`timecolonwidth` give fixed-pitch cells
+- Script-built menus: `PopupMenu` with `addCommand`/`addSeparator`/`addSubMenu`/`checkCommand`/
+  `popAtMouse`, shown as a real `NSMenu` at the mouse; `popAtMouse` blocks and answers the picked id
 - Hit testing follows Wasabi's region rule: a `group`/`layout` claims a point only where it paints a
   `background` — a bare container declared over the whole window does not swallow clicks meant for
   what is beneath it — and `animatedlayer` takes clicks like `layer` (MMD3's rotary knobs)
@@ -113,7 +123,7 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 - `file="$solid"` / `file="$gradient"` predefined bitmaps are recognized but not resolved as files.
 - `embed_xui` is retained as metadata only — it is **not** an inheritance edge.
 - A splitter's `jump` (snap-to-detent) is parsed but not honoured — a drag is continuous.
-- `<vis mode="1">` (oscilloscope) is drawn from the same band levels as the analyzer, mirrored about
+- `<vis mode="2">` (oscilloscope) is drawn from the same band levels as the analyzer, mirrored about
   the centre line: the host publishes a spectrum, not raw PCM, so it is the shape of the signal rather
   than the waveform itself. It is distinguishable from the analyzer, not faithful to Winamp's scope.
 - **A `xuitag` instance's own script may never initialize, leaving its controls inert.** Measured on
@@ -146,8 +156,19 @@ By area:
   spectrum levels, transport (play/pause/stop/prev/next), seek, file-open
 - **GUI mutation**: `setxmlparam`, `resize`, `show`, `hide` (each invalidates the view)
 - **Lookups**: containers, layouts, object descendants, script group, script parameter/token access
-- **System**: viewport/application coordinates, runtime/skin identity, integer/string conversion,
-  date helpers, per-skin `getPublicInt`/`setPublicInt`
+- **System**: viewport/application coordinates, runtime/skin identity, integer/string/float
+  conversion (`integerToString`, `stringToInteger`, `floatToString`, `stringToFloat`) and the casts
+  (`Integer`, `Float`, `String`, `Boolean` — a script mixing a float with an int-typed API needs
+  them, which is where a volume handler lives), date helpers, per-skin
+  `getPublicInt`/`setPublicInt`
+- **`PopupMenu`**: `addCommand(title, id, checked, disabled)`, `addSeparator`, `addSubMenu(child,
+  title)`, `checkCommand`, `popAtMouse` — shown as a real `NSMenu` at the mouse through
+  `popupPresenter`, which the main view installs. `popAtMouse` blocks and answers the picked id (0 =
+  cancelled)
+- **Events dispatched to scripts**: `onScriptLoaded`, `onSetXuiParam`, the mouse events (with the
+  click's x/y), `onPlay`/`onStop`, `onVolumeChanged` (from `setVolume` and from any change made
+  outside the skin), `onPostedPosition`, `onTargetReached`, `onToggle`, `onAction`, `onEqFreqChanged`,
+  `onGetCancelComponent`
 - **Timers**: bounded scheduling (see limits)
 - **Animated layers**: `getLength`, `gotoFrame`, `getCurFrame`, `setStartFrame`, `setEndFrame`,
   `setSpeed`, `play`/`stop`, `isPlaying` — the play head is a pure function of the time since `play()`

@@ -42,6 +42,10 @@ final class WinampModernRenderDumpTests: XCTestCase {
         defer { runtime.teardown() }
         try runtime.start()
 
+        if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
+            RunLoop.current.run(until: Date().addingTimeInterval(settle))
+        }
+
         if env["WINAMP_MODERN_RENDER_XUI"] != nil {
             func walk(_ objects: [WasabiObject]) {
                 for object in objects {
@@ -184,13 +188,35 @@ final class WinampModernRenderDumpTests: XCTestCase {
                               + "\(target?.typeName ?? "-")#\(target?.xmlID ?? "-") "
                               + "bindings=\(target.map { runtime.hasBinding(for: $0) } ?? false)")
                         if let target {
-                            for event in ["onleftbuttondown", "onleftbuttonup", "onleftclick"] {
-                                let handled = (try? runtime.dispatch(object: target, event: event)) ?? -1
+                            for event in ["onleftbuttondown", "onleftbuttonup", "onleftclick",
+                                          "onrightbuttonup"] {
+                                // The button events carry the click's x/y, exactly as the view sends
+                                // them: a handler that pops two arguments off an empty stack fails
+                                // with an underflow that belongs to the harness, not the skin.
+                                let arguments: [MakiValue] = event == "onleftclick" ? []
+                                    : [.integer(Int32(point.x)), .integer(Int32(point.y))]
+                                if event == "onrightbuttonup" {
+                                    // No view here to show a menu, so record what the skin built.
+                                    runtime.popupPresenter = { items in
+                                        print("CLICK menu: " + Self.describe(items))
+                                        return 0
+                                    }
+                                }
+                                let handled = (try? runtime.dispatch(object: target, event: event,
+                                                                     arguments: arguments)) ?? -1
                                 print("CLICK   \(event) -> \(handled)")
                             }
                         }
+                        print("CLICK volume: \(host.volume)")
                         print("CLICK after: \(renderer.sceneNodes().count) nodes, holders="
                               + renderer.componentHolders().map { "\($0.kind.rawValue)" }.joined(separator: ","))
+                        // A handler that ran to *zero* handlers is a binding problem; one that ran
+                        // and failed is a missing capability, and only a report taken after the
+                        // click can tell you which — the load-time one was clean before it.
+                        for finding in loaded.compatibilityReport(withRuntime: runtime).findings
+                        where finding.category == .scripts || finding.category == .unsupportedMethods {
+                            print("CLICK finding: \(finding.code) ×\(finding.count) \(finding.message)")
+                        }
                     }
                 }
                 let dividers = renderer.frameDividers()
@@ -239,6 +265,16 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
             renderer.teardown()
         }
+    }
+
+    /// A script-built menu as one line: `Title > [child, …]`, separators as `--`.
+    private static func describe(_ items: [WinampModernPopupMenuItem]) -> String {
+        items.map { item in
+            if item.isSeparator { return "--" }
+            let flags = (item.checked ? "*" : "") + (item.disabled ? "!" : "")
+            guard !item.children.isEmpty else { return "\(flags)\(item.title)#\(item.commandID)" }
+            return "\(flags)\(item.title) > [\(describe(item.children))]"
+        }.joined(separator: ", ")
     }
 
     private final class RenderHost: WinampModernHost {

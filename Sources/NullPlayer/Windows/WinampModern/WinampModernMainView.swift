@@ -34,6 +34,8 @@ final class WinampModernMainView: NSView {
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     private var lastPlaybackState: PlaybackState = .stopped
+    /// Last volume the scripts were told about, 0…255. −1 until the first update.
+    private var lastPostedVolume: Int32 = -1
     private var tracking: NSTrackingArea?
     private var animationTimer: Timer?
     private(set) var isTornDown = false
@@ -160,6 +162,12 @@ final class WinampModernMainView: NSView {
             let clamped = max(-127, min(127, value))
             self?.componentHost?.equalizerSetPreampDB(Float(clamped) / 127 * 12)
             self?.needsDisplay = true
+        }
+        // A skin's own right-click menus (Love is War Miku's visualization presets, MMD3's display
+        // menu) are built by a script and shown through `popAtMouse`. With no presenter installed
+        // that call answered 0 — "the user picked nothing" — so those menus never appeared at all.
+        scripts.popupPresenter = { [weak self] items in
+            self?.presentScriptPopup(items) ?? 0
         }
         scripts.themeSwitchRequested = { [weak self] name in
             guard let self else { return false }
@@ -454,6 +462,13 @@ final class WinampModernMainView: NSView {
             lastPlaybackState = state
         }
         let postedVolume = Int32(max(0, min(255, host.volume * 255)))
+        // A volume change from outside the skin (the menu bar, a keyboard shortcut, another window)
+        // has to reach the scripts too, or a readout the skin drives from `onVolumeChanged` sits on a
+        // stale number. `setVolume` fires its own, so this only covers what the skin did not do.
+        if postedVolume != lastPostedVolume {
+            lastPostedVolume = postedVolume
+            _ = try? scripts.dispatchSystem(event: "onvolumechanged", arguments: [.integer(postedVolume)])
+        }
         for object in renderer.loadedSkin.runtime.graph.objects(xmlID: "HiddenVolume") {
             _ = try? scripts.dispatch(object: object, event: "onpostedposition",
                                       arguments: [.integer(postedVolume)])
@@ -512,7 +527,63 @@ final class WinampModernMainView: NSView {
         // A bare group has no artwork of its own, so a click reaching one landed on the background it
         // covers; `move="1"` is the skin declaring that background a drag handle (MMD3's main group).
         if type == "group" { return object.attributes["move"] == "1" }
+        // A layer a script hooks the mouse on is a control, not a handle — the same thing `move="0"`
+        // says explicitly, for the skins that do not bother to say it. Love is War Miku's invisible
+        // `visual.trigger` is one: dragging the window off it would eat the click that cycles the
+        // visualization.
+        if type == "layer", Self.mouseEvents.contains(where: { scripts.hasBinding(for: object, event: $0) }) {
+            return false
+        }
         return type == "layer" && object.attributes["action"] == nil
+    }
+
+    private static let mouseEvents = ["onleftbuttondown", "onleftbuttonup", "onleftclick",
+                                      "ondoubleclick", "onrightbuttondown"]
+
+    /// Show a script-built menu at the mouse and answer the command id the user picked (0 = nothing).
+    ///
+    /// `popAtMouse` is synchronous in MAKI — the script reads the answer on the next line — and
+    /// `NSMenu.popUp` runs its own tracking loop, so the call blocks here exactly as the skin
+    /// expects. The menu is built from the resolved tree, so submenus nest.
+    private func presentScriptPopup(_ items: [WinampModernPopupMenuItem]) -> Int32 {
+        let target = ScriptPopupTarget()
+        let menu = build(popupMenu: items, target: target)
+        guard menu.numberOfItems > 0 else { return 0 }
+        let location = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
+        menu.popUp(positioning: nil, at: location ?? .zero, in: self)
+        return target.chosen
+    }
+
+    private func build(popupMenu items: [WinampModernPopupMenuItem],
+                       target: ScriptPopupTarget) -> NSMenu {
+        let menu = NSMenu()
+        // The skin owns whether a row is greyed out; AppKit's automatic enabling would second-guess
+        // it from the action's validation.
+        menu.autoenablesItems = false
+        for item in items {
+            if item.isSeparator {
+                menu.addItem(.separator())
+                continue
+            }
+            let entry = NSMenuItem(title: item.title, action: #selector(ScriptPopupTarget.pick(_:)),
+                                   keyEquivalent: "")
+            entry.target = target
+            entry.tag = Int(item.commandID)
+            entry.state = item.checked ? .on : .off
+            entry.isEnabled = !item.disabled
+            if !item.children.isEmpty {
+                entry.submenu = build(popupMenu: item.children, target: target)
+                entry.action = nil
+            }
+            menu.addItem(entry)
+        }
+        return menu
+    }
+
+    /// Carries the picked command out of `NSMenu.popUp`'s tracking loop.
+    private final class ScriptPopupTarget: NSObject {
+        var chosen: Int32 = 0
+        @objc func pick(_ sender: NSMenuItem) { chosen = Int32(sender.tag) }
     }
 
     private func updateSlider(_ object: WasabiObject, point: CGPoint) {

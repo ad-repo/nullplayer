@@ -30,12 +30,20 @@ final class WasabiTextMetrics {
     /// **process** (`attempt to insert nil object`) from inside `NSView.draw`. A skin resource must
     /// never be able to do that, so the null is caught here — assigning to an `NSFont?` is what makes
     /// it visible — and answered by the caller's guaranteed fallback.
-    func font(identifier: String?, size: CGFloat) -> NSFont? {
+    func font(identifier: String?, size: CGFloat, traits: NSFontTraitMask = []) -> NSFont? {
         guard !isTornDown, let identifier,
               let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
               definition.kind == "truetypefont", let path = definition.logicalFile else {
+            // `font=` is an id **or** a plain family name. A skin that ships no font resource simply
+            // names one it expects the system to have ("Arial", "Tahoma"), which is what Winamp asks
+            // GDI for — resolving only declared resources drew every such string in the monospaced
+            // fallback (the whole of Love is War Miku's display).
+            if let identifier, let installed = Self.installedFont(named: identifier, size: size,
+                                                                 traits: traits) {
+                return installed
+            }
             let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)
-            return fallback
+            return fallback.flatMap { Self.applying(traits, to: $0) }
         }
         let key = path.lowercased()
         let cgFont: CGFont?
@@ -55,18 +63,86 @@ final class WasabiTextMetrics {
             // builds an attribute dictionary with a nil in it and aborts the process. A font with no
             // PostScript name is not usable, so fall back rather than hand it on.
             let named: NSFont? = CTFontCopyPostScriptName(created) == nil ? nil : (created as NSFont)
-            if let named { return named }
+            if let named { return Self.applying(traits, to: named) }
         }
         let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)
-        return fallback
+        return fallback.flatMap { Self.applying(traits, to: $0) }
+    }
+
+    /// A font installed on the system, by family or PostScript name. Optional for the same reason as
+    /// everything else here: the name comes from the skin, and a null must never reach CoreText.
+    private static func installedFont(named name: String, size: CGFloat,
+                                      traits: NSFontTraitMask) -> NSFont? {
+        let manager = NSFontManager.shared
+        if let family: NSFont = manager.font(withFamily: name, traits: traits, weight: 5, size: size) {
+            return family
+        }
+        guard let exact: NSFont = NSFont(name: name, size: size) else { return nil }
+        return applying(traits, to: exact)
+    }
+
+    private static func applying(_ traits: NSFontTraitMask, to font: NSFont) -> NSFont? {
+        guard !traits.isEmpty else { return font }
+        let converted: NSFont? = NSFontManager.shared.convert(font, toHaveTrait: traits)
+        return converted ?? font
+    }
+
+    /// A cell width per character, for a text object that asks to be drawn fixed-pitch.
+    ///
+    /// `forcefixed="1"` gives every glyph the same advance — a clock whose digits do not shuffle
+    /// sideways as they tick — and `timecolonwidth` gives the colon a narrower cell of its own, since
+    /// a full digit cell around a colon leaves a visible hole. Love is War Miku's `0:00` readout is
+    /// exactly this pair, and drawn proportionally it is both narrower and unstable.
+    struct FixedPitch {
+        let cell: CGFloat
+        let colon: CGFloat
+
+        func width(of text: String) -> CGFloat {
+            text.reduce(0) { $0 + ($1 == ":" ? colon : cell) }
+        }
+    }
+
+    /// The widest digit is the cell: Winamp sizes the run so any digit fits any position.
+    static func fixedPitch(of object: WasabiObject, font: NSFont) -> FixedPitch? {
+        guard isEnabled(object.attributes["forcefixed"]) else { return nil }
+        let cell = "0123456789".map {
+            (String($0) as NSString).size(withAttributes: [.font: font]).width
+        }.max() ?? font.pointSize
+        // A skin pixel, not a point size: this is a width in the same units as `w`/`h`.
+        let colon = object.attributes["timecolonwidth"].flatMap { Double($0) }
+        return FixedPitch(cell: cell, colon: colon.map { CGFloat($0) } ?? cell)
+    }
+
+    /// The bold/italic a text object asks for. Winamp spells them as their own attributes rather than
+    /// as part of the font name.
+    static func traits(of object: WasabiObject) -> NSFontTraitMask {
+        var traits: NSFontTraitMask = []
+        if isEnabled(object.attributes["bold"]) { traits.insert(.boldFontMask) }
+        if isEnabled(object.attributes["italic"]) { traits.insert(.italicFontMask) }
+        return traits
+    }
+
+    private static func isEnabled(_ value: String?) -> Bool {
+        guard let value = value?.lowercased() else { return false }
+        return !["0", "off", "false", "no", ""].contains(value)
     }
 
     /// Point size a text object draws at, clamped to something CoreText will accept. A skin (or one
     /// of its scripts) may name 0, a negative, or an unparseable size.
+    ///
+    /// `fontsize=` is a **pixel height**, not a point size: Winamp hands it to GDI as a font height,
+    /// and the em it ends up drawing is measurably smaller than the number. Measured against Love is
+    /// War Miku's own screenshot (its shipped reference for the skin): `fontsize="30"` draws digits
+    /// 17px tall — Arial's cap height at a 24px em — and `fontsize="10"` matches an 8px em, both at
+    /// the same 0.8 ratio. Taken as a point size, every string is a quarter too big and overflows the
+    /// box the skin drew for it.
     static func pointSize(of object: WasabiObject) -> CGFloat {
         let requested = Double(object.attributes["fontsize"] ?? "11") ?? 11
-        return CGFloat(requested.isFinite ? min(max(requested, 1), 256) : 11)
+        let clamped = requested.isFinite ? min(max(requested, 1), 256) : 11
+        return CGFloat(clamped * pixelHeightToPointSize)
     }
+
+    static let pixelHeightToPointSize = 0.8
 
     /// The one place a component's own text comes from.
     ///
@@ -158,7 +234,11 @@ final class WasabiTextMetrics {
             return CGFloat(text.count * max(1, charWidth + spacing)) + padding
         }
         let size = Self.pointSize(of: object)
-        let font = font(identifier: object.attributes["font"], size: size) ?? NSFont.systemFont(ofSize: size)
+        let font = font(identifier: object.attributes["font"], size: size,
+                        traits: Self.traits(of: object)) ?? NSFont.systemFont(ofSize: size)
+        if let pitch = Self.fixedPitch(of: object, font: font) {
+            return pitch.width(of: text) + padding
+        }
         return (text as NSString).size(withAttributes: [.font: font]).width + padding
     }
 }

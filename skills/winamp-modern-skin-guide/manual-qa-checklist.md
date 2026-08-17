@@ -17,6 +17,8 @@ You supply the fixtures — nothing third-party is committed:
 - `WinampModern.wal`
 - `mmd3.wal`
 - `cPro-Bento.wal` **+** `ClassicPro_2.01.exe`
+- `Love is War Miku.wal` — the Phase 23 fixture, and the one whose author ships a `screenshot.png`
+  inside the archive: **compare against it**, it is the skin's own reference render
 
 ```sh
 ./scripts/kill_build_run.sh
@@ -53,6 +55,19 @@ For each of the three fixtures:
       every click that was not over the transport)
 - [ ] mmd3: the animated display in the middle is **unobstructed** — no spectrum bars painted over it
       in its animated modes; the drawer's analyzer and oscilloscope buttons still switch it
+- [ ] Miku: the display's text sits **inside** the box — the song line above the seek bar with a gap,
+      the big time readout in Arial Bold with steady digit columns and neither string overflowing its
+      slot (Phase 23: `fontsize` is a pixel height, `font="Arial"` is a system family, text is centred
+      in its box, `forcefixed`/`timecolonwidth` give the clock fixed cells)
+- [ ] Miku: the seek bar shows a **teal fill** proportional to the elapsed time, and it tracks playback
+      (Phase 23: the `<ProgressGrid>` is the only position indicator this skin draws — its slider thumb
+      is a 1×1 pixel)
+- [ ] Miku: the **+/− arrows left of the display** change the volume, click-and-hold repeats and
+      accelerates, and the song ticker flashes `Volume: NN%` while it moves (Phase 23: every float
+      constant in every script was decoding to a fraction of its value)
+- [ ] Miku: **right-click** the strip left of the display — the skin's own menu appears with
+      *Spectrum Analyzer* and *Oscilloscope* submenus, the current mode ticked; each entry selects the
+      visualization it names, and the window comes up with **bars** by default
 - [ ] cPro-Bento: leave it open and **use** it for several minutes — clicking, opening drawers,
       switching colour themes, changing UI Size. A live run crashed in text drawing on 2026-08-16
       that no headless harness reproduces; if it recurs, record what you did immediately before.

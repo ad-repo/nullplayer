@@ -58,6 +58,17 @@ final class WinampModernPhase8Tests: XCTestCase {
         }
     }
 
+    /// A float/double constant is stored as two 16-bit halves, and the high half must be widened
+    /// *before* it is shifted into place: `(0x80 | hi) << 16` on a `UInt16` shifts the implicit
+    /// leading one and every stored bit clean out of the word, leaving only the low half. 2.55
+    /// decoded as 0.003 that way, so a script's float arithmetic quietly did nothing — Love is War
+    /// Miku's volume buttons ran their whole handler and moved the level by a fraction of a step.
+    func testFloatConstantsDecodeToTheirRealValue() throws {
+        let program = try MakiBytecodeParser().parse(
+            makeScript(code: Data()), source: WalSourceLocation(path: "/float.maki"))
+        XCTAssertEqual(program.variables[5].value.doubleValue, 2.55, accuracy: 0.0001)
+    }
+
     /// The immediate is a `MakiValueKind`, not a class index — a bogus one must be rejected at parse
     /// time rather than mis-typing storage at run time.
     func testMemberAccessWithUnknownValueTypeIsRejected() {
@@ -259,12 +270,15 @@ final class WinampModernPhase8Tests: XCTestCase {
         appendUInt16(0, to: &data)
         appendString("onscriptloaded", to: &data)
 
-        appendUInt32(5, to: &data)                                  // variables
+        appendUInt32(6, to: &data)                                  // variables
         appendVariable(typeOffset: 0, object: true, system: true, to: &data)     // v0
         appendVariable(typeOffset: MakiValueKind.string.rawValue, to: &data)     // v1
         appendVariable(typeOffset: MakiValueKind.integer.rawValue, initial: 7, to: &data) // v2
         appendVariable(typeOffset: MakiValueKind.integer.rawValue, to: &data)    // v3
         appendVariable(typeOffset: MakiValueKind.string.rawValue, to: &data)     // v4
+        // v5: the double 2.55, as MAKI stores it — low mantissa half, then exponent + high half.
+        appendVariable(typeOffset: MakiValueKind.double.rawValue, initial: 13107,
+                       initial2: 16419, to: &data)
 
         appendUInt32(2, to: &data)                                  // constants
         appendUInt32(1, to: &data)
@@ -279,12 +293,12 @@ final class WinampModernPhase8Tests: XCTestCase {
     }
 
     private func appendVariable(typeOffset: UInt8, object: Bool = false, system: Bool = false,
-                                initial: UInt16 = 0, to data: inout Data) {
+                                initial: UInt16 = 0, initial2: UInt16 = 0, to data: inout Data) {
         data.append(typeOffset)
         data.append(object ? 1 : 0)
         appendUInt16(0, to: &data)          // subclass
         appendUInt16(initial, to: &data)
-        appendUInt16(0, to: &data)
+        appendUInt16(initial2, to: &data)
         appendUInt16(0, to: &data)
         appendUInt16(0, to: &data)
         data.append(0)                      // global

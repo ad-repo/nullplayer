@@ -389,9 +389,9 @@ final class WasabiResourceCache {
 
     /// A font for a text object, or `nil` when nothing usable could be produced. See
     /// `WasabiTextMetrics.font(identifier:size:)` for why this is optional.
-    func font(identifier: String?, size: CGFloat) -> NSFont? {
+    func font(identifier: String?, size: CGFloat, traits: NSFontTraitMask = []) -> NSFont? {
         guard !isTornDown else { return nil }
-        return metrics.font(identifier: identifier, size: size)
+        return metrics.font(identifier: identifier, size: size, traits: traits)
     }
 
     func teardown() {
@@ -986,6 +986,8 @@ final class WasabiSceneRenderer {
         } else if type == "slider" {
             drawSlider(object, frame: node.frame, context: context,
                        pressed: pressed == object.stableID)
+        } else if type == "progressgrid" {
+            drawProgressGrid(object, frame: node.frame, context: context)
         } else if type == "vis" {
             drawVisualization(object, frame: node.frame, context: context)
         } else if type == "eqvis" {
@@ -1105,7 +1107,8 @@ final class WasabiSceneRenderer {
         // something that does not parse. CoreText builds its own attribute dictionary from whatever
         // it is handed, and an unusable size or font there aborts the process from inside a draw.
         let size = WasabiTextMetrics.pointSize(of: object)
-        let font = resources.font(identifier: object.attributes["font"], size: size)
+        let font = resources.font(identifier: object.attributes["font"], size: size,
+                                  traits: WasabiTextMetrics.traits(of: object))
             ?? NSFont.systemFont(ofSize: size)
         // Optional for the same reason as the font: nothing that ends up in a CoreText attribute
         // dictionary may be a null pointer, and only an `Optional` binding can see one.
@@ -1123,8 +1126,12 @@ final class WasabiSceneRenderer {
         var attributes: [NSAttributedString.Key: Any] = [
             .font: font, .foregroundColor: color, .paragraphStyle: paragraph
         ]
-        let measured = (text as NSString).size(withAttributes: attributes).width
-        let overflow = measured - frame.width
+        // `forcefixed` is a different layout, not a different font: every glyph gets the same cell.
+        // A fixed run is a clock or a counter and is sized to fit, so it never enters the ticker.
+        let pitch = WasabiTextMetrics.fixedPitch(of: object, font: font)
+        let measured = pitch?.width(of: text)
+            ?? (text as NSString).size(withAttributes: attributes).width
+        let overflow = pitch == nil ? measured - frame.width : 0
         let scroll = overflow > 0 ? tickerMotion(for: object, overflow: overflow, textWidth: measured) : nil
         if scroll != nil {
             // While scrolling, the string is drawn into an oversized rect, so any alignment other
@@ -1133,13 +1140,22 @@ final class WasabiSceneRenderer {
             attributes[.paragraphStyle] = paragraph
         }
 
+        // Wasabi centres a string in its box; `NSString.draw(in:)` starts at the box's top edge. The
+        // difference is a whole line's leading on a tall box (Love is War Miku's 30px time readout)
+        // and enough on a tight one to push the song ticker's descenders onto the seek bar below it.
+        // Under the local mirror below, a rect's *top* edge is its `maxY`, so lowering the text by
+        // `inset` means moving the rect down the same amount.
+        let cell = font.ascender - font.descender
+        let inset = max(0, (frame.height - cell) / 2)
+        let drawFrame = frame.offsetBy(dx: 0, dy: -inset)
+
         context.saveGState()
         context.clip(to: frame)
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -frame.midY)
         if let scroll {
-            var textFrame = frame
+            var textFrame = drawFrame
             textFrame.origin.x -= scroll.offset
             textFrame.size.width = measured
             (text as NSString).draw(in: textFrame, withAttributes: attributes)
@@ -1149,10 +1165,35 @@ final class WasabiSceneRenderer {
                 textFrame.origin.x += measured + Self.tickerGap
                 (text as NSString).draw(in: textFrame, withAttributes: attributes)
             }
+        } else if let pitch {
+            var origin: CGFloat
+            switch alignment {
+            case .right: origin = drawFrame.maxX - measured
+            case .center: origin = drawFrame.midX - measured / 2
+            default: origin = drawFrame.minX
+            }
+            // Each glyph is centred in its own cell, which is what keeps a `1` in the same column as
+            // an `8` — the point of asking for fixed pitch in the first place.
+            let cellAttributes = attributes.merging([.paragraphStyle: centredParagraph]) { _, new in new }
+            for character in text {
+                let width = character == ":" ? pitch.colon : pitch.cell
+                (String(character) as NSString).draw(
+                    in: CGRect(x: origin, y: drawFrame.minY, width: width, height: drawFrame.height),
+                    withAttributes: cellAttributes)
+                origin += width
+            }
         } else {
-            (text as NSString).draw(in: frame, withAttributes: attributes)
+            (text as NSString).draw(in: drawFrame, withAttributes: attributes)
         }
         context.restoreGState()
+    }
+
+    /// Centres a single glyph inside its fixed-pitch cell.
+    private var centredParagraph: NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        style.lineBreakMode = .byClipping
+        return style
     }
 
     /// Gap between the repeats of a continuously scrolling ticker, in skin pixels.
@@ -1277,16 +1318,23 @@ final class WasabiSceneRenderer {
 
     /// `<vis mode>` — which visualization the skin wants in this box, and whether it wants one at all.
     ///
-    /// The values are the ones a skin's own script switches between: MMD3's `ShowVISBg` sets 1 for its
-    /// oscilloscope display, 2 for its analyzer display, and **3 whenever its own animated display is
-    /// showing** — which is the shipped default (`mode="3"`), and which is why our bars were being
-    /// painted straight over the skin's artwork. `setMode` writes the same attribute.
+    /// `1` is the **spectrum analyzer** and `2` the **oscilloscope**; `0`/`3` are off, and an
+    /// undeclared mode is the analyzer. A skin's own menu script pins the pairing beyond doubt:
+    /// Love is War Miku's `visualizer.maki` sets `bandwidth` (`wide`/`thin`) then `setMode(1)` for its
+    /// Spectrum Analyzer commands, and `oscstyle` (`Solid`/`Dots`/`Lines`) then `setMode(2)` for its
+    /// Oscilloscope ones. Reversed, every skin drew the other visualization than the one its menu had
+    /// just been asked for — and this skin's shipped default (`Visualizer Mode` = 1) came up as an
+    /// oscilloscope where its own screenshot shows bars.
+    ///
+    /// MMD3's `ShowVISBg` switches between all three and ships `mode="3"`, its own animated display,
+    /// which is why an unrecognized mode must stay silent rather than paint over the skin's artwork.
+    /// `setMode` writes the same attribute.
     private enum VisualizationMode {
         case oscilloscope, analyzer, off
 
         init(attribute: String?) {
             switch attribute?.trimmingCharacters(in: .whitespaces) {
-            case "1": self = .oscilloscope
+            case "2": self = .oscilloscope
             case "0", "3": self = .off
             // A skin that declares no mode gets the analyzer, which is what a `<vis>` box is for.
             default: self = .analyzer
@@ -1379,11 +1427,9 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
-    private func drawSlider(_ object: WasabiObject, frame: CGRect, context: CGContext, pressed: Bool) {
-        guard frame.width > 0, frame.height > 0 else { return }
-        let thumbID = pressed ? (object.attributes["downthumb"] ?? object.attributes["thumb"])
-                              : object.attributes["thumb"]
-        guard let thumb = resources.bitmap(identifier: thumbID) else { return }
+    /// Where a value-carrying object currently stands, 0…1. Shared by the slider thumb and the
+    /// progress grid drawn under it so the two can never disagree about the same value.
+    private func normalizedValue(of object: WasabiObject) -> CGFloat {
         let action = object.attributes["action"]?.lowercased()
         let normalized: CGFloat
         if action == "volume" {
@@ -1402,7 +1448,86 @@ final class WasabiSceneRenderer {
             let value = Double(object.attributes["value"] ?? "0") ?? 0
             normalized = high == low ? 0 : CGFloat((value - low) / (high - low))
         }
-        let clamped = max(0, min(1, normalized))
+        return max(0, min(1, normalized))
+    }
+
+    /// `<ProgressGrid>` — the *filled* part of a bar, drawn as `left` cap + stretched `middle` +
+    /// `right` cap growing from the edge `orientation` names.
+    ///
+    /// A skin pairs one with a `<slider>` over the same rect and gives the slider a thumb that is
+    /// deliberately invisible — Love is War Miku's seek "thumb" is a 1×1 pixel, and the grid is the
+    /// only thing that shows a position at all. Drawing nothing for the grid left its seek bar an
+    /// empty white box with no indication of progress anywhere in the window.
+    ///
+    /// The grid carries no `action` of its own there, so the value comes from the sibling that does:
+    /// pairing them by rect is the whole idiom.
+    private func drawProgressGrid(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        let source = object.attributes["action"] != nil ? object : (valueSibling(of: object) ?? object)
+        let clamped = normalizedValue(of: source)
+        let left = resources.bitmap(identifier: object.attributes["left"])
+        let middle = resources.bitmap(identifier: object.attributes["middle"])
+        let right = resources.bitmap(identifier: object.attributes["right"])
+        guard left != nil || middle != nil || right != nil else { return }
+
+        // `orientation` names the direction the fill *grows*, so it is also the edge it is anchored
+        // to. Skins spell it both ways round and in both axes; the vertical forms anchor the same way.
+        let orientation = object.attributes["orientation"]?.lowercased() ?? "right"
+        let vertical = orientation == "up" || orientation == "down" || orientation == "vertical"
+        let reversed = orientation == "left" || orientation == "up"
+        let span = (vertical ? frame.height : frame.width) * clamped
+        guard span > 0 else { return }
+        let filled: CGRect
+        if vertical {
+            filled = CGRect(x: frame.minX, y: reversed ? frame.maxY - span : frame.minY,
+                            width: frame.width, height: span)
+        } else {
+            filled = CGRect(x: reversed ? frame.maxX - span : frame.minX, y: frame.minY,
+                            width: span, height: frame.height)
+        }
+
+        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
+        context.saveGState()
+        context.setAlpha(CGFloat(alpha) / 255)
+        context.clip(to: filled)
+        // The caps keep their own size and the middle takes everything between them, which is what
+        // makes a one-pixel `middle` stretch across the whole elapsed span.
+        var body = filled
+        if let left {
+            let width = min(CGFloat(left.width), body.width)
+            drawImage(left.image, in: CGRect(x: body.minX, y: body.minY,
+                                             width: width, height: body.height), context: context)
+            body = CGRect(x: body.minX + width, y: body.minY,
+                          width: body.width - width, height: body.height)
+        }
+        if let right {
+            let width = min(CGFloat(right.width), body.width)
+            drawImage(right.image, in: CGRect(x: body.maxX - width, y: body.minY,
+                                              width: width, height: body.height), context: context)
+            body = CGRect(x: body.minX, y: body.minY,
+                          width: body.width - width, height: body.height)
+        }
+        if let middle, body.width > 0, body.height > 0 {
+            draw(middle, object: object, frame: body, context: context)
+        }
+        context.restoreGState()
+    }
+
+    /// The sibling whose value a bare `<ProgressGrid>` shows: the slider drawn over the same rect.
+    private func valueSibling(of object: WasabiObject) -> WasabiObject? {
+        guard let parent = object.parent else { return nil }
+        return parent.children.first {
+            $0 !== object && $0.attributes["action"] != nil &&
+                $0.typeName.caseInsensitiveCompare("slider") == .orderedSame
+        }
+    }
+
+    private func drawSlider(_ object: WasabiObject, frame: CGRect, context: CGContext, pressed: Bool) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        let thumbID = pressed ? (object.attributes["downthumb"] ?? object.attributes["thumb"])
+                              : object.attributes["thumb"]
+        guard let thumb = resources.bitmap(identifier: thumbID) else { return }
+        let clamped = normalizedValue(of: object)
         let vertical = object.attributes["orientation"]?.lowercased() == "vertical"
         let thumbWidth = CGFloat(thumb.width)
         let thumbHeight = CGFloat(thumb.height)
@@ -1635,6 +1760,10 @@ final class WasabiSceneRenderer {
            Self.componentKind(of: object) != nil {
             return true
         }
+        // `rectrgn="1"` *is* the object's region: its whole rect, artwork or not. Skins use a bare
+        // layer with it as an invisible click target (Love is War Miku switches its visualization mode
+        // through `visual.trigger`), and a hit test that insists on a bitmap can never reach one.
+        if object.attributes["rectrgn"] == "1" { return true }
         return object.attributes["background"] != nil || bitmapID != nil ||
             object.typeName.caseInsensitiveCompare("text") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("songticker") == .orderedSame ||
