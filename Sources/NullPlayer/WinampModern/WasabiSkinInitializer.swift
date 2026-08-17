@@ -340,6 +340,20 @@ final class WasabiSkinInitializer {
         let source: WalSourceLocation
     }
 
+    /// A `<script param="…">` carries macros Winamp expands before the script reads it back with
+    /// `getParam()`, not a path, so this is deliberately separate from the VFS's path variables.
+    ///
+    /// `@HAVE_LIBRARY@` is the one skins act on: Defix's global script takes
+    /// `stringToInteger(getParam())` as "is there a media library?" and, reading the literal `0`,
+    /// dropped the Media Library and Playlist tabs out of its SUI tab strip and squeezed the two it
+    /// kept to their 20px floor. NullPlayer hosts the library surface, so the answer is 1. An
+    /// unrecognized macro is left alone — a skin that invented one gets what it wrote.
+    private static func resolvedScriptParameter(_ raw: String?) -> String? {
+        guard let raw, raw.contains("@") else { return raw }
+        return raw.replacingOccurrences(of: "@HAVE_LIBRARY@", with: "1",
+                                        options: [.caseInsensitive])
+    }
+
     private struct PendingMetaCommand {
         weak var owner: WasabiObject?
         let kind: String
@@ -711,7 +725,8 @@ final class WasabiSkinInitializer {
             if lower == "script" {
                 if let rawFile = node.attribute("file"), !rawFile.isEmpty {
                     pendingScripts.append(PendingScript(owner: parent, rawPath: rawFile,
-                                                        parameter: node.attribute("param"), source: node.location))
+                                                        parameter: Self.resolvedScriptParameter(node.attribute("param")),
+                                                        source: node.location))
                 }
                 continue
             }

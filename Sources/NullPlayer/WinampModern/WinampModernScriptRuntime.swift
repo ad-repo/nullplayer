@@ -233,8 +233,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     func start() throws {
         host.beginVisualizationConsumption()
-        try dispatchSystem(event: "onscriptloaded")
-        deliverXUIParams(for: loadedSkin.runtime.graph.roots)
+        // A skin-level `<scripts>` block sits at the end of `skin.xml`, after every object and every
+        // XUI param, and Winamp loads it there — so it is the one script that may assume the rest of
+        // the skin is already configured. Defix's does exactly that: its `onScriptLoaded` lays out
+        // the whole SUI tab strip as `label.getAutoWidth() + 20` per tab, and run before the tab
+        // labels arrived as params it sized all five to that bare 20px, stacked at the left edge.
+        //
+        // Object-owned scripts keep the order they had: all of them, then the params (a XUI object's
+        // handler binds to the script group `onScriptLoaded` populates, so its own params can never
+        // come first — see `deliverXUIParams`).
+        let skinLevel = programs.filter { isSkinLevel($0) }
+        let owned = programs.filter { !isSkinLevel($0) }
+        if !owned.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: owned) }
+        deliverXUIParams(forSubtreeOf: loadedSkin.runtime.graph.roots)
+        if !skinLevel.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: skinLevel) }
     }
 
     /// Wasabi hands a XUI object's XML attributes to its script as `onSetXuiParam(name, value)`.
@@ -245,19 +257,32 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Must run *after* `onScriptLoaded`: the handler is bound to the script's own group variable,
     /// which the script only populates via `getScriptGroup()` inside `onScriptLoaded`. Dispatched
     /// before that, no binding matches and every param is silently dropped.
-    private func deliverXUIParams(for objects: [WasabiObject]) {
-        for object in objects {
-            if loadedSkin.runtime.types.isXUITag(object.typeName), !object.scriptBindings.isEmpty {
-                // `onSetXuiParam` is a *System* event, and each XUI instance gets its own program
-                // instance, so the params must go only to the programs that instance owns —
-                // dispatching to every program would hand one frame's `content` to all of them.
-                let owned = programs.filter { $0.ownerID == object.stableID }
-                for (name, value) in object.attributes.sorted(by: { $0.key < $1.key }) where !owned.isEmpty {
-                    _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
-                                      arguments: [.string(name), .string(value)], in: owned)
-                }
-            }
-            deliverXUIParams(for: object.children)
+    /// A script declared in a skin-level `<scripts>` block rather than on an object of its own.
+    private func isSkinLevel(_ program: MakiProgram) -> Bool {
+        guard let ownerID = program.ownerID,
+              let owner = loadedSkin.runtime.graph.object(withID: ownerID) else { return true }
+        return owner.typeName.caseInsensitiveCompare("scripts") == .orderedSame
+    }
+
+    private func deliverXUIParams(forSubtreeOf objects: [WasabiObject]) {
+        for object in objects { deliverXUIParams(forSubtreeOf: object) }
+    }
+
+    private func deliverXUIParams(forSubtreeOf object: WasabiObject) {
+        deliverXUIParams(for: object)
+        for child in object.children { deliverXUIParams(forSubtreeOf: child) }
+    }
+
+    private func deliverXUIParams(for object: WasabiObject) {
+        guard loadedSkin.runtime.types.isXUITag(object.typeName), !object.scriptBindings.isEmpty else { return }
+        // `onSetXuiParam` is a *System* event, and each XUI instance gets its own program
+        // instance, so the params must go only to the programs that instance owns —
+        // dispatching to every program would hand one frame's `content` to all of them.
+        let owned = programs.filter { $0.ownerID == object.stableID }
+        guard !owned.isEmpty else { return }
+        for (name, value) in object.attributes.sorted(by: { $0.key < $1.key }) {
+            _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
+                              arguments: [.string(name), .string(value)], in: owned)
         }
     }
 
@@ -445,7 +470,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         guard !added.isEmpty else { return }
         programs.append(contentsOf: added)
         try dispatchSystem(event: "onscriptloaded", to: added)
-        deliverXUIParams(for: [root])
+        deliverXUIParams(forSubtreeOf: root)
     }
 
     @discardableResult
@@ -479,6 +504,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "x", "y", "w", "h", "relatx", "relaty", "relatw", "relath",
         "visible", "fitparent", "position", "sysregion"
     ]
+
+    /// `setXmlParam` keys whose value names a resource rather than being a value in itself.
+    private static let imageKeys: Set<String> = [
+        "image", "bitmap", "background", "downimage", "hoverimage", "activeimage",
+        "thumb", "downthumb", "hoverthumb", "notfoundimage"
+    ]
+
+    /// Does this identifier name a resource the skin actually registered? `background` is written
+    /// with a colour id as well as a bitmap one, so the question is registration, not kind.
+    private func resolvesToResource(_ identifier: String) -> Bool {
+        loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier) != nil
+    }
 
     private func settleGeometryIfNeeded() {
         guard geometryMayHaveChanged, !isSettlingGeometry, let geometryDidSettle else { return }
@@ -589,6 +626,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
         let signatures: [String: MakiMethodSignature] = [
             "getcontainer": .init(argumentCount: 1, returnKind: .object),
+            "newdynamiccontainer": .init(argumentCount: 1, returnKind: .object),
             "getlayout": .init(argumentCount: 1, returnKind: .object),
             "getobject": .init(argumentCount: 1, returnKind: .object),
             "findobject": .init(argumentCount: 1, returnKind: .object),
@@ -648,7 +686,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "setspeed": .init(argumentCount: 1, returnKind: .null),
             "isplaying": .init(argumentCount: 0, returnKind: .boolean),
             "setalternatetext": .init(argumentCount: 1, returnKind: .null),
+            "setfontsize": .init(argumentCount: 1, returnKind: .null),
             "leftclick": .init(argumentCount: 0, returnKind: .null),
+            // Layer FX: Winamp warps a layer through a grid whose per-pixel source is supplied by the
+            // skin's own `fx_onGetPixel*` callbacks. We draw the layer undistorted, so these setters
+            // are accepted and inert — the alternative is not "no effect" but no display at all, since
+            // a method we refuse aborts the whole event. Defix configures its analog VU meter with
+            // eight of them in one `onScriptLoaded`, so refusing them left the main window's display
+            // area permanently empty. Arities are read off the call sites, not assumed
+            // (`WINAMP_MODERN_RENDER_DISASM=fx_setgridsize`): every setter takes one argument except
+            // `fx_setGridSize(w, h)`, and `fx_update()` takes none.
+            "fx_setenabled": .init(argumentCount: 1, returnKind: .null),
+            "fx_setwrap": .init(argumentCount: 1, returnKind: .null),
+            "fx_setrect": .init(argumentCount: 1, returnKind: .null),
+            "fx_setbgfx": .init(argumentCount: 1, returnKind: .null),
+            "fx_setclear": .init(argumentCount: 1, returnKind: .null),
+            "fx_setrealtime": .init(argumentCount: 1, returnKind: .null),
+            "fx_setlocalized": .init(argumentCount: 1, returnKind: .null),
+            "fx_setbilinear": .init(argumentCount: 1, returnKind: .null),
+            "fx_setspeed": .init(argumentCount: 1, returnKind: .null),
+            "fx_setgridsize": .init(argumentCount: 2, returnKind: .null),
+            "fx_update": .init(argumentCount: 0, returnKind: .null),
             // `Map`: a bitmap sampled by the script (the knob-angle lookup MMD3 drives its rotary
             // controls with). `new Map` yields a generic dynamic object; `loadMap` gives it its role.
             "loadmap": .init(argumentCount: 1, returnKind: .null),
@@ -712,6 +770,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "strleft": .init(argumentCount: 2, returnKind: .string),
             "strright": .init(argumentCount: 2, returnKind: .string),
             "strmid": .init(argumentCount: 3, returnKind: .string),
+            // The extension of a filename, without the dot. Defix reads it off the playing item
+            // (`getExtension(getPlayItemMetaDataString("filename"))`) for the display's format
+            // readout, in the middle of the main layout's `onScriptLoaded` — so refusing it took the
+            // rest of that handler, and the whole display area, down with it.
+            "getextension": .init(argumentCount: 1, returnKind: .string),
             "translate": .init(argumentCount: 1, returnKind: .string),
             "getprivateint": .init(argumentCount: 3, returnKind: .integer),
             "setprivateint": .init(argumentCount: 3, returnKind: .null),
@@ -773,6 +836,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "istransparencyavailable": .init(argumentCount: 0, returnKind: .boolean),
             "istransparencysafe": .init(argumentCount: 0, returnKind: .boolean),
             "islayoutanimationsafe": .init(argumentCount: 0, returnKind: .boolean),
+            "hasvideosupport": .init(argumentCount: 0, returnKind: .boolean),
             "lockui": .init(argumentCount: 0, returnKind: .null),
             "unlockui": .init(argumentCount: 0, returnKind: .null),
             "hidenamedwindow": .init(argumentCount: 1, returnKind: .null),
@@ -911,7 +975,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return method == "onaction" ? .integer(0) : .null
         }
         switch method {
-        case "getcontainer":
+        case "getcontainer", "newdynamiccontainer":
+            // Winamp's `newDynamicContainer` builds a *fresh instance* of a declared container so a
+            // skin can have several of the same window. Every container the skin declares is already
+            // instantiated here, and a script's next move is always to reach into the one it just
+            // asked for (`newDynamicContainer("browserpro").getLayout("resultslayout")
+            // .findObject("BrowserPro.list")`), so it is answered with that container. One instance
+            // rather than N is a real limit — but refusing the method took Defix's *global* script
+            // down in `onScriptLoaded`, along with the playlist window's, the mini browser's and the
+            // notifier's, which is most of the skin for the sake of a duplicate window.
             return objectValue(findRoot(type: "container", xmlID: arguments[0].stringValue))
         case "getscriptgroup":
             return objectValue(program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:)))
@@ -973,6 +1045,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let count = max(0, Int(arguments[2].integerValue))
             let lower = value.index(value.startIndex, offsetBy: start)
             return .string(String(value[lower...].prefix(count)))
+        case "getextension":
+            // Windows separators as well as POSIX ones: a skin reads these out of playlist entries
+            // and Winamp's own paths, and a dot in a *directory* name is not an extension.
+            let name = arguments[0].stringValue
+                .split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? ""
+            guard let dot = name.lastIndex(of: "."), dot != name.startIndex else { return .string("") }
+            return .string(String(name[name.index(after: dot)...]))
         case "translate": return .string(arguments[0].stringValue)
         case "getprivateint":
             return .integer(loadedSkin.configuration.integer(section: arguments[0].stringValue,
@@ -1060,6 +1139,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .boolean(false)
         case "isdesktopalphaavailable", "istransparencyavailable", "istransparencysafe", "islayoutanimationsafe":
             return .boolean(true)
+        // No video *component*: a `.wal` video holder gets the neutral backing every unhosted kind
+        // gets, so a skin that asks is told the truth and lays itself out without a video tab. Defix
+        // asks in the same `onScriptLoaded` that positions its whole tab strip — while the question
+        // was refused, the strip was never laid out and its Album Art and Video tabs sat on top of
+        // each other at the x both are declared at.
+        case "hasvideosupport": return .boolean(false)
         case "lockui", "unlockui", "hidenamedwindow": return .null
         case "navigateurl", "navigateurlbrowser": return .null // Sandboxed: no script-driven navigation.
         case "newgroup":
@@ -1190,8 +1275,23 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getparentlayout": return objectValue(ancestor(of: object, type: "layout"))
         case "getxmlparam": return .string(object.attributes[arguments[0].stringValue.lowercased()] ?? "")
         case "setxmlparam":
-            _ = object.setAttribute(arguments[0].stringValue, value: arguments[1].stringValue)
-            if Self.geometryKeys.contains(arguments[0].stringValue.lowercased()) { noteGeometryChange() }
+            let key = arguments[0].stringValue
+            let value = arguments[1].stringValue
+            // An image-valued param is a *load*, and a load that fails leaves the object wearing the
+            // artwork it already had — including when the new id is empty, which loads nothing.
+            //
+            // Defix names its background art from a stored preference and never seeds one:
+            // `getPrivateString(getSkinName(), "BG", "")`. On a profile that has not opened its
+            // configurator that is `""`, so the layout is asked for background `""` and every one of
+            // the nine frame slices for `"" + "_background_material.Element.top.left"` — ids no skin
+            // defines. Taking them literally threw away the wood panel the layout declares
+            // (`background="BG1"`) and the frame around the player, both speakers, the playlist and
+            // the library, leaving flat black boxes. The skin ships a screenshot of itself framed and
+            // panelled, which is what Winamp shows for a set that never loaded.
+            guard !Self.imageKeys.contains(key.lowercased()) || resolvesToResource(value)
+            else { return .null }
+            _ = object.setAttribute(key, value: value)
+            if Self.geometryKeys.contains(key.lowercased()) { noteGeometryChange() }
             graphDidMutate?()
             return .null
         case "settext":
@@ -1343,6 +1443,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "isplaying":
             return .boolean(WasabiAnimation.state(of: object,
                                                   frameCount: animationFrameCount(of: object)).isPlaying)
+        case "setfontsize":
+            // The same pixel height the XML attribute carries, so it goes through the one
+            // `WasabiTextMetrics` conversion the renderer and `getAutoWidth()` share.
+            _ = object.setAttribute("fontsize", value: String(arguments[0].integerValue))
+            graphDidMutate?()
+            return .null
         case "setalternatetext":
             // A script's alternate text *replaces* what the object shows — MMD3 puts its SEEK, VOLUME,
             // BASS and TREBLE readouts on the song ticker this way, then clears them a second later.
@@ -1419,6 +1525,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "setredraw":
             // A redraw hint (`widgetsManager` throttles its list while populating). The renderer
             // repaints from the graph, so there is no suspended-drawing state to honour.
+            return .null
+        case "navigateurl":
+            // The object form: a `<browser>`'s own navigation, as against `System.navigateUrl`.
+            // Denied for the same reason — a skin script does not get to drive the network — but
+            // denied *quietly*, because refusing the method aborts the handler that called it.
+            return .null
+        case "fx_setenabled", "fx_setwrap", "fx_setrect", "fx_setbgfx", "fx_setclear",
+             "fx_setrealtime", "fx_setlocalized", "fx_setbilinear", "fx_setspeed",
+             "fx_setgridsize", "fx_update":
+            // Configuration for a per-pixel layer warp we do not run. See `signature(for:)`.
             return .null
         case "setregion":
             // The renderer draws from the graph and nothing else, so a region is stamped onto the

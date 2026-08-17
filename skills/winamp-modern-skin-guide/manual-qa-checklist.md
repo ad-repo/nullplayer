@@ -19,6 +19,9 @@ You supply the fixtures — nothing third-party is committed:
 - `cPro-Bento.wal` **+** `ClassicPro_2.01.exe`
 - `Love is War Miku.wal` — the Phase 23 fixture, and the one whose author ships a `screenshot.png`
   inside the archive: **compare against it**, it is the skin's own reference render
+- `Defix Hi-END 200.WAL` — the Phase 25 fixture: four windows at once (player, two speaker cabinets,
+  playlist) plus an 800×600 SUI. Its own `screenshot.png` is a 275×116 browser thumbnail, so it settles
+  what the skin looks like, not any measurement
 
 ```sh
 ./scripts/kill_build_run.sh
@@ -71,6 +74,21 @@ For each of the three fixtures:
 - [ ] cPro-Bento: leave it open and **use** it for several minutes — clicking, opening drawers,
       switching colour themes, changing UI Size. A live run crashed in text drawing on 2026-08-16
       that no headless harness reproduces; if it recurs, record what you did immediately before.
+- [ ] Defix: the player, **both speaker cabinets**, the playlist window and the SUI all come up
+      **wood-panelled and framed** — none of them a flat black box (Phase 25: the skin names its
+      background art by prefixing a preference it never seeds, so every id resolved to nothing)
+- [ ] Defix: the display shows the **cassette deck** with the song title on its label, the time, and
+      `Kbps:` / `Extension:` — **one readout variant at a time**, never Kbps and KHz and Channels
+      printed over each other (Phase 25: `alpha` on text)
+- [ ] Defix: the SUI's **Media Library / Visualization / Explorer** tabs sit side by side at readable
+      widths, not stacked as narrow stubs at the left edge (Phase 25: a skin-level `<scripts>` block
+      loads last, after the XUI params its layout maths reads)
+- [ ] Defix: **known-empty** — the SUI body below the tabs (its library tree, file browser and search
+      results are `guilist` widgets, the same engine gap as cPro-Bento's lists). Record anything else
+      that is empty
+- [ ] Defix: work through its configurator — the 31 changeable backgrounds, the nine display styles
+      (cassette, the VU meters, the oscilloscopes), the colour/ink options. None of this has ever been
+      driven, headless or live; note which ones fail and how
 - [ ] Capture a reference screenshot per fixture into `docs/winamp-modern/screenshots/`
 
 ## 2. Input and transport

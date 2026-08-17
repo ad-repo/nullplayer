@@ -1022,6 +1022,13 @@ final class WasabiSceneRenderer {
         context.saveGState()
         context.clip(to: node.clip)
         applyRegionClip(of: object, frame: node.frame, context: context)
+        // `alpha` belongs to the *object*, not to one kind of drawing. Only the bitmap paths honoured
+        // it, so a `<text alpha="0">` drew at full strength: Defix stacks its Kbps / KHz / Channels
+        // readouts in one slot and shows one at a time purely by moving their alphas, and all three
+        // (plus Extension over Broadcasting) came up printed on top of each other. Setting it here
+        // covers text, bitmap fonts and the `background=` draw below as well; the per-drawer calls
+        // that follow read the same attribute, so they are idempotent.
+        context.setAlpha(Self.alphaFraction(of: object))
 
         if let background = object.attributes["background"],
            let bitmap = resources.bitmap(identifier: background) {
@@ -1086,10 +1093,15 @@ final class WasabiSceneRenderer {
         context.interpolationQuality = quality
     }
 
+    /// An object's `alpha` as a 0…1 fraction. An absent or unparsable value is opaque.
+    static func alphaFraction(of object: WasabiObject) -> CGFloat {
+        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
+        return CGFloat(alpha) / 255
+    }
+
     private func draw(_ bitmap: WasabiBitmap, object: WasabiObject,
                       frame: CGRect, context: CGContext) {
-        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
-        context.setAlpha(CGFloat(alpha) / 255)
+        context.setAlpha(Self.alphaFraction(of: object))
         let tileX = object.attributes["tile"] == "1" || object.attributes["tilex"] == "1"
         let tileY = object.attributes["tile"] == "1" || object.attributes["tiley"] == "1"
         if tileX || tileY {
@@ -1415,10 +1427,9 @@ final class WasabiSceneRenderer {
         }
         // The `<vis>`'s own `alpha`, which only bitmap drawing honoured. Rika's 50 is half the point
         // of the effect.
-        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
         context.saveGState()
         defer { context.restoreGState() }
-        context.setAlpha(CGFloat(alpha) / 255)
+        context.setAlpha(Self.alphaFraction(of: object))
         switch VisualizationMode(attribute: object.attributes["mode"]) {
         case .off:
             return
@@ -1545,9 +1556,8 @@ final class WasabiSceneRenderer {
                             width: span, height: frame.height)
         }
 
-        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
         context.saveGState()
-        context.setAlpha(CGFloat(alpha) / 255)
+        context.setAlpha(Self.alphaFraction(of: object))
         context.clip(to: filled)
         // The caps keep their own size and the middle takes everything between them, which is what
         // makes a one-pixel `middle` stretch across the whole elapsed span.
@@ -1628,10 +1638,9 @@ final class WasabiSceneRenderer {
         let columns = extents(total: frame.width, declared: declaredColumns) { widest(columnArt[$0]) }
         let rows = extents(total: frame.height, declared: declaredRows) { tallest(rowArt[$0]) }
 
-        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
         let tiles = object.attributes["tile"] == "1"
         context.saveGState()
-        context.setAlpha(CGFloat(alpha) / 255)
+        context.setAlpha(Self.alphaFraction(of: object))
         var y = frame.minY
         for (row, rowHeight) in rows.enumerated() {
             var x = frame.minX
@@ -1660,9 +1669,8 @@ final class WasabiSceneRenderer {
         guard frame.width > 0, frame.height > 0 else { return }
         let color = objectColor(object.attributes["color"] ?? "255,255,255",
                                gammaGroup: object.attributes["gammagroup"])
-        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
         context.saveGState()
-        context.setAlpha(CGFloat(alpha) / 255)
+        context.setAlpha(Self.alphaFraction(of: object))
         // Winamp's default is an outline; the engine writes `filled="1"` wherever it wants a fill and
         // `filled="0"` wherever it wants the border, so neither case is guessed at.
         if ["1", "true", "yes"].contains(object.attributes["filled"]?.lowercased() ?? "0") {
@@ -1734,9 +1742,8 @@ final class WasabiSceneRenderer {
                             y: frame.minY + coordinate("gradient_y1") * frame.height)
         let end = CGPoint(x: frame.minX + coordinate("gradient_x2") * frame.width,
                           y: frame.minY + coordinate("gradient_y2") * frame.height)
-        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
         context.saveGState()
-        context.setAlpha(CGFloat(alpha) / 255)
+        context.setAlpha(Self.alphaFraction(of: object))
         context.clip(to: frame)
         context.drawLinearGradient(gradient, start: start, end: end,
                                    options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])

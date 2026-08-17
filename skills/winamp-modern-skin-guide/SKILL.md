@@ -404,6 +404,24 @@ because `songinfo.maki` reads a text object back out and tokenises it:
 song name is), `songinfo` → `songInfoText` — the **stream info** line, not the artist/album. See
 [Track metadata](#track-metadata-the-skins-actually-read) for why the shape of that string matters.
 
+#### `alpha` belongs to the object, not to one kind of drawing
+
+It is set once per scene node, before the type-specific draw, so text and bitmap fonts fade with
+everything else. Skins stack several readouts in one slot and show one at a time purely by moving
+their alphas — Defix does it with Kbps / KHz / Channels and again with Extension / Broadcasting — and
+while only the bitmap paths honoured it, all of them printed on top of each other. `setAlpha` writes
+the same attribute, so the script path needs nothing of its own.
+
+#### An image param is a *load*, and a failed load changes nothing
+
+`setXmlParam("image", …)` (and `bitmap`, `background`, the button/slider state images) only takes
+effect when the new id resolves to a registered resource; an unknown id — the empty string included —
+leaves the object wearing what it already had, which is what Winamp shows for a bitmap that never
+loaded. Defix builds every background id by prefixing a preference it never seeds
+(`getPrivateString(getSkinName(), "BG", "")`), so taking those writes literally asked for
+`"" + "_background_material.Element.top.left"` nine times per window and stripped the skin's wood
+panelling off the player, both speakers, the playlist and the library.
+
 #### Layer fill modes
 
 - **Default (no `tile`)**: the bitmap **stretches** to the layer's rect. Resizable window chrome
@@ -512,7 +530,7 @@ menubar chrome; the entire client area comes from its `content=` param at runtim
 4. The handler for `content` calls `System.newGroup(id)`, which expands that groupdef as a child of
    the calling script's own group; the script then positions it with `setXmlParam`.
 
-Two ordering rules make or break this:
+Three ordering rules make or break this:
 
 - `onSetXuiParam` is a **System** event, not a GUI-object event, and each XUI instance has its own
   program instance. Dispatch it only to programs whose `ownerID` is that object, or one frame's
@@ -520,6 +538,17 @@ Two ordering rules make or break this:
 - It must run **after** `onScriptLoaded`. The handler binds to the script-group variable that
   `getScriptGroup()` populates during `onScriptLoaded`; dispatched earlier, no binding matches and
   every param is silently dropped.
+- A **skin-level `<scripts>` block loads last** — after every object's `onScriptLoaded` *and* after the
+  params. It sits at the end of `skin.xml`, which is where Winamp reads it, and it is the one script
+  that may assume the rest of the skin is configured. Defix's lays out its whole SUI tab strip as
+  `label.getAutoWidth() + 20` per tab; run before the labels arrived as params, all five tabs came out
+  at that bare 20px, stacked at the left edge. `start()` therefore runs object-owned scripts, then
+  `deliverXUIParams`, then the skin-level ones — do not collapse it back into one pass.
+
+`<script param="…">` carries Winamp's own macros rather than a path, so it is expanded in
+`WasabiSkinInitializer`, not by the VFS: `@HAVE_LIBRARY@` → `1` (we host a library surface), anything
+else passed through. Defix's global script reads `stringToInteger(getParam())` as "is there a media
+library?" and drops the tab when told there is not.
 
 `WasabiSkinRuntime.instantiateGroup` performs the expansion (set by `WasabiSkinInitializer`, so
 runtime growth shares the load-time VFS, limits, and object budget). Scripts declared inside the new

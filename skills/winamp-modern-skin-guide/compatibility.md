@@ -127,6 +127,14 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
   names, and a `<text>` with no `w` takes its own content's width. `getAutoWidth()` measures with the
   object's real font (bitmap-font pitch or Core Text) plus `leftpadding`/`rightpadding`, so a skin
   that sizes its own boxes from that number gets boxes that fit
+- `alpha` is honoured for **every** object, not only bitmap-backed ones: it is set once per node
+  before the type-specific drawing, so a `<text alpha="0">` is invisible. Skins stack readouts in one
+  slot and show one at a time by moving their alphas (Defix's Kbps / KHz / Channels), so text that
+  ignores it prints every variant on top of the others. Phase 25
+- A `<script param="…">` carries Winamp's macros, not a path: `@HAVE_LIBRARY@` expands to `1` (we host
+  a library surface). A skin reads it with `getParam()` and lays itself out from the answer — Defix
+  drops the Media Library tab out of its SUI tab strip when told there is none. An unrecognized macro
+  is passed through unchanged. Phase 25
 - `windowholder hold="guid:…"` component embedding and `componentbucket` discovery
 - The curated predefined `wasabi.*` standard-library base groups (`registerWasabiStandardLibrary`),
   including a clean-room text-only `Wasabi:TitleBar` that draws the window's own name
@@ -183,7 +191,12 @@ By area:
 
 - **Playback host**: playback state, current time, duration, volume, shuffle/repeat, title/info,
   spectrum levels, transport (play/pause/stop/prev/next), seek, file-open
-- **GUI mutation**: `setxmlparam`, `resize`, `show`, `hide` (each invalidates the view)
+- **GUI mutation**: `setxmlparam`, `resize`, `show`, `hide` (each invalidates the view). An
+  image-valued param (`image`, `bitmap`, `background`, the button/slider state images) is a **load**:
+  an id the skin never registered — the empty string included — leaves the object wearing the artwork
+  it already had, as a failed load does in Winamp. Defix names its background art from a preference it
+  never seeds, so taking those writes literally stripped the wood panel off the player and the frame
+  off every other window. Phase 25
 - **Lookups**: containers, layouts, object descendants, script group, script parameter/token access
 - **System**: viewport/application coordinates, runtime/skin identity, integer/string/float
   conversion (`integerToString`, `stringToInteger`, `floatToString`, `stringToFloat`) and the casts
@@ -271,6 +284,26 @@ By area:
 - **`popAtXY(x, y)`** — a script-built menu at a computed point, in the same coordinates the
   conversions above answer in. ClassicPro's tab-strip right-click menu and its drawer's "goto" menu.
   Phase 24
+- **`System.getExtension(path)`** — the extension of a filename, without the dot, from the last path
+  component (Windows separators included). Defix reads it off the playing item for its format readout.
+  Phase 25
+- **`System.hasVideoSupport()`** — **false**. A `.wal` video holder gets the neutral backing every
+  unhosted component kind gets, so a skin that asks is told the truth and lays itself out without a
+  video tab. Phase 25
+- **`System.newDynamicContainer(id)`** — answered with the **already-instantiated** container of that
+  id rather than a fresh instance. Every declared container exists from load, and a script's next move
+  is always to reach into the one it asked for
+  (`newDynamicContainer("browserpro").getLayout(…).findObject(…)`). A skin that wants two copies of one
+  window gets one. Phase 25
+- **`<object>.setFontSize(px)`** — writes the same pixel height the XML attribute carries. Phase 25
+- **Layer FX** (`fx_setEnabled`, `fx_setWrap`, `fx_setRect`, `fx_setBgFx`, `fx_setClear`,
+  `fx_setRealtime`, `fx_setLocalized`, `fx_setBilinear`, `fx_setSpeed`, `fx_setGridSize(w, h)`,
+  `fx_update`) — **accepted and inert**. Winamp warps a layer through a grid whose per-pixel source is
+  the skin's own `fx_onGetPixel*` callbacks; we draw the layer undistorted. Refusing them is not "no
+  effect" but no display at all — Defix configures its analog VU meter with eight of them in one
+  `onScriptLoaded`. Phase 25
+- **`<object>.navigateUrl(url)`** — the `<browser>` form of `System.navigateUrl`. Denied like it, but
+  **quietly**: refusing the method would abort the handler that called it. Phase 25
 - **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
 
 **Events dispatched to scripts.** Occurrence counts are call sites across the ClassicPro engine's
@@ -278,7 +311,7 @@ By area:
 
 | Event | Dispatched | From / why not |
 |---|---|---|
-| `onScriptLoaded` | yes | at `start()`, and per subtree when a runtime group is attached |
+| `onScriptLoaded` | yes | at `start()`, and per subtree when a runtime group is attached. Object-owned scripts first, then the XUI params, then a skin-level `<scripts>` block — which sits at the end of `skin.xml` and may assume the rest of the skin is configured (Defix's lays out its whole SUI tab strip from the tab labels' `getAutoWidth()`) |
 | `onScriptUnloading` | yes (Phase 24) | first thing in `teardown()`, while timers and the graph are still alive |
 | `onSetXuiParam` | yes | after `onScriptLoaded`, to the owning XUI instance's own programs only |
 | `onResize` | yes (Phase 24) | a canvas change, a layout activation, a divider drag, **and whenever a script's own mutation moves something** (it settles once as the outermost event unwinds); plus one seeding pass after `start()`. Only objects whose own box moved, each with its own parent-relative `(x, y, w, h)`. **Not** from a UI Size change, which moves only the drawing boundary |

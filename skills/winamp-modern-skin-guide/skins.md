@@ -22,6 +22,7 @@ is the reference to compare against.
 | T800 | Phase 20–22 | per-layout groups, region-clipped volume, drag | — |
 | ZDL Reel-To-Reel | Phase 18 | sized from its background art | — |
 | Rika | Phase 22 | loads without its missing TTF; vis colours honoured | — |
+| Defix Hi-End 200 | Phase 25 | wood panel + framed windows, cassette display, laid-out SUI tabs | its own guilist library/browser widgets |
 
 ---
 
@@ -261,3 +262,65 @@ embedded (a second panel over the same box, swapped by `maineq.maki`). Compatibi
 - **The volume buttons carry no `action`.** They do nothing on their own; the script's `leftClick()`
   is what moves the level, and its `onLeftClick` body is guarded so a *user* click alone does not
   double-apply.
+
+---
+
+## Defix Hi-End 200 (`Defix Hi-END 200.WAL`)
+
+**Fixture note:** the archive ships `screenshot.png`, but it is a 275×116 skin-browser thumbnail of the
+whole three-window arrangement, not a reference render — good enough to settle *what the skin looks
+like* (wood-panelled player flanked by two speaker cabinets), not to measure against.
+
+**Shape of the skin:** separate windows — `main` (406×355) plus `pledit`, `SUI` (its media
+library/browser/visualization window, 800×600), two `SPEAKER` cabinets, `Config` (an About page),
+`browserpro`, `searchresults` and `notifier`. The equalizer is synthesized. Almost everything the skin
+draws is script-driven: a global `<scripts>` block in `skin.xml` (`CORE_SCRIPT.maki`, 47 KB) plus a
+55 KB main-layout script.
+
+**Measured status** — `WINAMP_MODERN_RENDER_DUMP`, 2026-08-17 (Phase 25): `degraded`, **0 errors and
+0 unsupported methods at startup**; the remaining findings are duplicate ids and optional missing
+bitmaps. `main/normal` 406×355, 69 nodes.
+
+### Working
+
+- **The wood panel and the framed windows** — see the trap below; this is the skin's whole look.
+- **The display** — the audio-cassette visualizer (its shipped default, one of nine styles), the song
+  ticker on the cassette label, the time readout, and the Shuffle / Repeat / Kbps / Extension
+  readouts, one variant at a time.
+- **The SUI tab strip** — Media Library / Visualization / Explorer, each sized to its own label.
+- Transport, seek and volume with their scales, the playlist window with its own titlebar buttons,
+  both speaker cabinets, the About page.
+
+### Not implemented or knowingly wrong
+
+- **Its own guilist widgets** — the media-library tree, the file browser and the search results are
+  built from `guilist`/`Guitree` objects (engine-wide gap, same as cPro-Bento), so the SUI's body is
+  empty below the tabs.
+- **Layer FX** — the analog VU meter styles configure a per-pixel warp we accept and ignore, so those
+  display styles draw undistorted artwork.
+- **`newDynamicContainer` returns the existing container**, so the skin's detachable visualizer and
+  second mini-browser share one window rather than opening a copy.
+
+### Traps this skin sets
+
+- **It names its background art from a preference it never seeds.** `getPrivateString(getSkinName(),
+  "BG", "")` is `""` on a profile that has not opened the skin's configurator, and every background id
+  is built by prefixing it — so the layout is asked for background `""` and the nine frame slices for
+  `"" + "_background_material.Element.top.left"`. Winamp keeps the artwork a failed load did not
+  replace; taking the writes literally left the player, both speakers, the playlist and the library as
+  flat black boxes. That is the rule in `setXmlParam` now: an image-valued param only changes when the
+  new id resolves.
+- **It shows one readout at a time by moving alphas, not by hiding.** Kbps, KHz and Channels share one
+  slot at `alpha="0"`/`145`, as do Extension and Broadcasting. Text that ignored `alpha` printed all of
+  them on top of each other.
+- **Its global script assumes the skin is already configured.** `CORE_SCRIPT`'s `onScriptLoaded` lays
+  out the SUI tab strip as `label.getAutoWidth() + 20` per tab — run before the tab labels arrive as
+  XUI params, every tab came out at that bare 20px, stacked at the left edge. A skin-level `<scripts>`
+  block loads *after* the objects and their params, which is why `start()` orders it last.
+- **`@HAVE_LIBRARY@` is a script param, not a path variable.** The core script reads
+  `stringToInteger(getParam())` as "is there a media library?" and drops the Media Library tab when the
+  answer is 0 — which the literal string is.
+- **One refused method costs the whole window.** Every early defect here was a handler aborting
+  partway: `getExtension` took the main layout's display with it, `fx_setGridSize` the VU meter,
+  `newDynamicContainer` → `setFontSize` → `navigateUrl` → `hasVideoSupport` the global script, each
+  surfacing only once the one before it was implemented.
