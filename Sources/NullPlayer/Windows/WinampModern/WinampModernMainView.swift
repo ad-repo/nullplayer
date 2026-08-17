@@ -488,10 +488,21 @@ final class WinampModernMainView: NSView {
                                   arguments: [.integer(Int32(point.x)), .integer(Int32(point.y))])
     }
 
-    private func shouldDragWindow(from object: WasabiObject) -> Bool {
+    /// Whether a press on `object` moves the window. Internal so the drag policy can be tested
+    /// against a real scene without synthesizing mouse events.
+    func shouldDragWindow(from object: WasabiObject) -> Bool {
         let id = object.xmlID?.lowercased() ?? ""
         if ["volume1", "seek1", "title1", "title2", "title3", "title4"].contains(id) { return false }
+        // `move="0"` is how a skin says "this piece of the window is not a handle" — T800's volume
+        // strip is a layer whose script owns the drag, and dragging the window off it loses the drag.
+        if object.attributes["move"] == "0" { return false }
         let type = object.typeName.lowercased()
+        // The layout is the window's own background. A skin that paints the whole frame there and
+        // hangs only controls off it (T800) otherwise has nothing to drag by at all.
+        if type == "layout" { return true }
+        // A bare group has no artwork of its own, so a click reaching one landed on the background it
+        // covers; `move="1"` is the skin declaring that background a drag handle (MMD3's main group).
+        if type == "group" { return object.attributes["move"] == "1" }
         return type == "layer" && object.attributes["action"] == nil
     }
 
@@ -542,6 +553,10 @@ final class WinampModernMainView: NSView {
         case "EJECT": host.openFiles()
         case "SWITCH":
             if let parameter { activateLayout(id: parameter) }
+        // The window commands every skin puts on its titlebar. T800 draws all three (minimize,
+        // shade-switch, close) as 4×5px buttons on the machine's chest.
+        case "MINIMIZE": window?.miniaturize(nil)
+        case "CLOSE": window?.performClose(nil)
         case "TOGGLE":
             if let kind = WinampModernComponentRegistry.kind(for: parameter) { routeComponentToggle(kind) }
         case "EQ_TOGGLE":

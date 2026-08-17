@@ -79,6 +79,12 @@ struct WasabiGroupDefinition {
     let defaultAttributes: [String: String]
     let templateChildren: [WalXMLNode]
     let source: WalSourceLocation
+    /// Where this `<groupdef>` sits in the expanded document, in pre-order. Winamp's parser is
+    /// streaming: a `<group>` instantiates whatever definition of that id has been read *so far*,
+    /// so a skin may redefine an id later in the document without disturbing the groups already
+    /// built from the earlier one. `Int.min` (the default) means "predates the whole document",
+    /// which is what our predefined Wasabi shells and test fixtures want.
+    var documentOrder: Int = .min
 }
 
 struct WasabiResolvedGroupDefinition {
@@ -92,6 +98,9 @@ final class WasabiTypeRegistry {
     let maximumInheritanceDepth: Int
     private(set) var diagnostics: [WalDiagnostic] = []
     private var byIdentifier: [String: WasabiGroupDefinition] = [:]
+    /// Every definition registered for an id, in registration (document) order. Only ids a skin
+    /// actually redefines have more than one, so this costs nothing for the common case.
+    private var versionsByIdentifier: [String: [WasabiGroupDefinition]] = [:]
     private var identifierByXUITag: [String: String] = [:]
     private var resolvedCache: [String: WasabiResolvedGroupDefinition] = [:]
 
@@ -104,12 +113,14 @@ final class WasabiTypeRegistry {
         if let previous = byIdentifier[key] {
             diagnostics.append(WalDiagnostic(
                 .duplicateIdentifier,
-                "Group definition '\(definition.identifier)' replaces the earlier definition at \(previous.source).",
+                "Group definition '\(definition.identifier)' is redefined; the earlier definition at "
+                    + "\(previous.source) still serves the groups declared before this point.",
                 severity: .warning,
                 location: definition.source
             ))
         }
         byIdentifier[key] = definition
+        versionsByIdentifier[key, default: []].append(definition)
         if let xuiTag = definition.xuiTag, !xuiTag.isEmpty {
             let xuiKey = Self.fold(xuiTag)
             if let previousID = identifierByXUITag[xuiKey] {
@@ -141,20 +152,37 @@ final class WasabiTypeRegistry {
     }
 
     func validateInheritance() throws {
-        for definition in byIdentifier.values.sorted(by: { $0.identifier < $1.identifier }) {
-            _ = try resolved(identifier: definition.identifier)
+        for definition in versionsByIdentifier.values.flatMap({ $0 })
+            .sorted(by: { ($0.identifier, $0.documentOrder) < ($1.identifier, $1.documentOrder) }) {
+            _ = try resolved(definition)
         }
     }
 
-    func definition(forInstance node: WalXMLNode) -> WasabiGroupDefinition? {
+    /// The definition a `<group>`/XUI-tag instance expands to. `documentOrder` is where the instance
+    /// sits in the expanded document: the definition in force *there* wins, so a later redefinition
+    /// of the same id (T800 gives `player.main.cms` a second body for its shade layout) reaches only
+    /// the groups declared after it, exactly as Winamp's streaming parser does. Pass `nil` for an
+    /// instance with no document position of its own — a script's `System.newGroup`, a synthesized
+    /// node — which takes the newest definition.
+    func definition(forInstance node: WalXMLNode, documentOrder: Int? = nil) -> WasabiGroupDefinition? {
         if let identifier = identifierByXUITag[Self.fold(node.name)] {
-            return byIdentifier[Self.fold(identifier)]
+            return definition(identifier: identifier, documentOrder: documentOrder)
         }
         if node.name.caseInsensitiveCompare("group") == .orderedSame,
            let identifier = node.attribute("id") {
-            return byIdentifier[Self.fold(identifier)]
+            return definition(identifier: identifier, documentOrder: documentOrder)
         }
         return nil
+    }
+
+    private func definition(identifier: String, documentOrder: Int?) -> WasabiGroupDefinition? {
+        let key = Self.fold(identifier)
+        guard let versions = versionsByIdentifier[key], versions.count > 1, let documentOrder else {
+            return byIdentifier[key]
+        }
+        // Lenient where Winamp is not: a group referenced before any definition of its id gets the
+        // first one rather than nothing, so a forward reference still renders something.
+        return versions.last { $0.documentOrder <= documentOrder } ?? versions.first
     }
 
     func contains(identifier: String) -> Bool { byIdentifier[Self.fold(identifier)] != nil }
@@ -164,15 +192,23 @@ final class WasabiTypeRegistry {
     func isXUITag(_ tag: String) -> Bool { identifierByXUITag[Self.fold(tag)] != nil }
 
     func resolved(identifier: String) throws -> WasabiResolvedGroupDefinition {
-        try resolve(identifier: identifier, stack: [])
-    }
-
-    private func resolve(identifier: String, stack: [String]) throws -> WasabiResolvedGroupDefinition {
-        let key = Self.fold(identifier)
-        if let cached = resolvedCache[key] { return cached }
-        guard let definition = byIdentifier[key] else {
+        guard let definition = byIdentifier[Self.fold(identifier)] else {
             throw WalFailure(WalDiagnostic(.missingGroupDefinition, "Group definition '\(identifier)' does not exist."))
         }
+        return try resolve(definition: definition, stack: [])
+    }
+
+    /// Resolve one specific version of a definition — the one `definition(forInstance:documentOrder:)`
+    /// picked, which is not necessarily the newest.
+    func resolved(_ definition: WasabiGroupDefinition) throws -> WasabiResolvedGroupDefinition {
+        try resolve(definition: definition, stack: [])
+    }
+
+    private func resolve(definition: WasabiGroupDefinition, stack: [String]) throws -> WasabiResolvedGroupDefinition {
+        let identifier = definition.identifier
+        let key = Self.fold(identifier)
+        let cacheKey = "\(key)#\(definition.documentOrder)"
+        if let cached = resolvedCache[cacheKey] { return cached }
         guard stack.count < maximumInheritanceDepth else {
             throw WalFailure(WalDiagnostic(.groupInheritanceDepthExceeded, "Group inheritance exceeds \(maximumInheritanceDepth) levels.", location: definition.source))
         }
@@ -187,7 +223,11 @@ final class WasabiTypeRegistry {
         if let parentReference = definition.inheritedGroup {
             let parentID = identifierByXUITag[Self.fold(parentReference)] ?? parentReference
             do {
-                let parent = try resolve(identifier: parentID, stack: stack + [key])
+                guard let base = self.definition(identifier: parentID, documentOrder: definition.documentOrder) else {
+                    throw WalFailure(WalDiagnostic(.missingGroupDefinition,
+                                                   "Group definition '\(parentID)' does not exist."))
+                }
+                let parent = try resolve(definition: base, stack: stack + [key])
                 attributes.merge(parent.defaultAttributes) { _, new in new }
                 children.append(contentsOf: parent.templateChildren)
             } catch let failure as WalFailure
@@ -209,7 +249,7 @@ final class WasabiTypeRegistry {
                                                    embeddedXUITag: definition.embeddedXUITag,
                                                    defaultAttributes: attributes,
                                                    templateChildren: children)
-        resolvedCache[key] = result
+        resolvedCache[cacheKey] = result
         return result
     }
 
@@ -327,7 +367,8 @@ final class WasabiSkinInitializer {
         let types = WasabiTypeRegistry()
         // Register the skin/engine groupdefs first so an explicit definition always wins over our
         // predefined shell, then backfill any predefined Wasabi bases the skin inherits but omits.
-        registerTypes(in: document.roots, registry: types)
+        let documentOrder = documentOrder(of: document.roots)
+        registerTypes(in: document.roots, registry: types, documentOrder: documentOrder)
         // Conventional tag → groupdef pairs before the shells: a skin that declares
         // `wasabi.standardframe.statusbar` without an `xuitag` (mmd3 does, exactly as real Winamp's
         // standard library expects) must still answer to `<Wasabi:StandardFrame:Status>`, and it must
@@ -345,7 +386,8 @@ final class WasabiSkinInitializer {
         var createdCount = 0
         try createObjects(from: document.roots, parent: nil, graph: graph, types: types,
                           pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
-                          definitionStack: [], createdCount: &createdCount)
+                          definitionStack: [], createdCount: &createdCount,
+                          documentOrder: documentOrder, enclosingOrder: nil)
         applyMetaCommands(pendingMetaCommands)
         passes.append(.objectCreation)
 
@@ -391,7 +433,8 @@ final class WasabiSkinInitializer {
         var pendingMetaCommands: [PendingMetaCommand] = []
         try createObjects(from: [node], parent: parent, graph: graph, types: types,
                           pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
-                          definitionStack: [], createdCount: &createdCount)
+                          definitionStack: [], createdCount: &createdCount,
+                          documentOrder: [:], enclosingOrder: nil)
         applyMetaCommands(pendingMetaCommands)
         let bindings = try bindScripts(pendingScripts)
         for (pending, binding) in zip(pendingScripts, bindings) { pending.owner?.addScriptBinding(binding) }
@@ -488,7 +531,26 @@ final class WasabiSkinInitializer {
         }
     }
 
-    private func registerTypes(in nodes: [WalXMLNode], registry: WasabiTypeRegistry) {
+    /// Number every node of the expanded document in pre-order — the order Winamp's streaming parser
+    /// reads them in. `registerTypes` stamps each `<groupdef>` with its number and `createObjects`
+    /// stamps each `<group>` instance with its own, which is what lets a redefined id serve two
+    /// different bodies to the layouts on either side of it.
+    private func documentOrder(of nodes: [WalXMLNode]) -> [ObjectIdentifier: Int] {
+        var order: [ObjectIdentifier: Int] = [:]
+        var next = 0
+        func walk(_ nodes: [WalXMLNode]) {
+            for node in nodes {
+                order[ObjectIdentifier(node)] = next
+                next += 1
+                walk(node.children)
+            }
+        }
+        walk(nodes)
+        return order
+    }
+
+    private func registerTypes(in nodes: [WalXMLNode], registry: WasabiTypeRegistry,
+                               documentOrder: [ObjectIdentifier: Int]) {
         for node in nodes {
             if node.name.caseInsensitiveCompare("groupdef") == .orderedSame,
                let identifier = node.attribute("id"), !identifier.isEmpty {
@@ -501,10 +563,11 @@ final class WasabiSkinInitializer {
                     embeddedXUITag: node.attribute("embed_xui"),
                     defaultAttributes: defaults,
                     templateChildren: node.children,
-                    source: node.location
+                    source: node.location,
+                    documentOrder: documentOrder[ObjectIdentifier(node)] ?? .min
                 ))
             }
-            registerTypes(in: node.children, registry: registry)
+            registerTypes(in: node.children, registry: registry, documentOrder: documentOrder)
         }
     }
 
@@ -629,7 +692,9 @@ final class WasabiSkinInitializer {
         pendingScripts: inout [PendingScript],
         pendingMetaCommands: inout [PendingMetaCommand],
         definitionStack: [String],
-        createdCount: inout Int
+        createdCount: inout Int,
+        documentOrder: [ObjectIdentifier: Int],
+        enclosingOrder: Int?
     ) throws {
         let wrappers: Set<String> = ["wasabixml", "winampabstractionlayer", "elements", "skininfo"]
         let declarations: Set<String> = ["groupdef", "bitmap", "bitmapfont", "truetypefont", "color", "gammagroup", "gammaset", "cursor", "elementalias"]
@@ -653,7 +718,8 @@ final class WasabiSkinInitializer {
                 try createObjects(from: node.children, parent: parent, graph: graph, types: types,
                                   pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                                   definitionStack: definitionStack,
-                                  createdCount: &createdCount)
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: enclosingOrder)
                 continue
             }
 
@@ -668,12 +734,16 @@ final class WasabiSkinInitializer {
             let instanceChildren = node.children
             var embeddedXUITag: String?
             var nextDefinitionStack = definitionStack
-            if let definition = types.definition(forInstance: node) {
+            // A node the document itself contains is stamped with its own position; a template child
+            // — expanded here, but written elsewhere — instantiates at the position of the reference
+            // that brought it in, which is when Winamp would have read it.
+            let nodeOrder = documentOrder[ObjectIdentifier(node)] ?? enclosingOrder
+            if let definition = types.definition(forInstance: node, documentOrder: nodeOrder) {
                 let key = definition.identifier.lowercased()
                 guard !definitionStack.contains(key) else {
                     throw WalFailure(WalDiagnostic(.groupInheritanceCycle, "Recursive group expansion for '\(definition.identifier)'.", location: node.location))
                 }
-                let resolved = try types.resolved(identifier: definition.identifier)
+                let resolved = try types.resolved(definition)
                 var merged = resolved.defaultAttributes
                 merged.merge(attributes) { _, instance in instance }
                 attributes = merged
@@ -691,12 +761,14 @@ final class WasabiSkinInitializer {
             try createObjects(from: templateChildren, parent: object, graph: graph, types: types,
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                               definitionStack: nextDefinitionStack,
-                              createdCount: &createdCount)
+                              createdCount: &createdCount,
+                              documentOrder: documentOrder, enclosingOrder: nodeOrder)
             let embeddedParent = embeddedXUITag.flatMap { findObject(xmlID: $0, beneath: object) } ?? object
             try createObjects(from: instanceChildren, parent: embeddedParent, graph: graph, types: types,
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                               definitionStack: nextDefinitionStack,
-                              createdCount: &createdCount)
+                              createdCount: &createdCount,
+                              documentOrder: documentOrder, enclosingOrder: nodeOrder)
             // A `<Wasabi:Frame>` declares its two panes by group id rather than nesting them, so the
             // splitter is what brings them into the graph. cPro-Bento's entire body (library tree,
             // playlist, tabs) hangs off one, and without this the SUI expands to an empty frame.
@@ -707,7 +779,8 @@ final class WasabiSkinInitializer {
                 try createObjects(from: panes, parent: object, graph: graph, types: types,
                                   pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                                   definitionStack: nextDefinitionStack,
-                                  createdCount: &createdCount)
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
                 WasabiFrame.applyLayout(to: object)
             }
         }

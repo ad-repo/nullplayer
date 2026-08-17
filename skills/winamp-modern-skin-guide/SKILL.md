@@ -125,8 +125,18 @@ Group semantics worth knowing:
 - `inherit_group` **is** the inheritance edge (depth limit 64, cycle-detected).
 - `embed_xui` is retained as metadata and is **not** an inheritance edge.
 - `xuitag` registers a custom XML tag name for group instantiation.
-- A later duplicate definition **replaces** an earlier one and emits a warning — this is deliberate;
-  it is how skins override engine defaults.
+- A duplicate definition does **not** replace the earlier one wholesale: every version is kept, and a
+  `<group>` expands the version in force *where that group is written*. Winamp's parser is streaming,
+  so an id redefined mid-document serves the groups after it and leaves the ones before it alone.
+  T800 is the measured case — it gives `player.main.cms` one body for its full player and a
+  completely different one for its shade layout; last-wins gave the full player the shade's controls,
+  most of which then fell outside the canvas and were culled, leaving every button in the skin dead.
+  `WasabiGroupDefinition.documentOrder` is the node's pre-order index in the expanded document
+  (`documentOrder(of:)`); `definition(forInstance:documentOrder:)` picks the newest version at or
+  before it. Template children inherit the position of the reference that expanded them, which is
+  when Winamp would have read them. Two deliberate leniencies: a reference with no document position
+  (`System.newGroup`, a synthesized node) takes the newest version, and one that precedes every
+  definition of its id takes the first rather than nothing. The redefinition still warns.
 - `registerWasabiStandardLibrary` seeds the curated `wasabi.*` base groups that ship inside Winamp
   rather than in the archive. Skin/engine definitions register first and always win. A base outside
   the curated set warns and is dropped rather than failing the load.
@@ -221,13 +231,26 @@ alpha-tests the node's bitmap. Two rules about *which* objects may claim a point
   **last** in its layout, covering the whole window, so accepting a bare group for `move="1"` made it
   swallow every click that was not over one of its own children: the drawer tabs, the colour-theme
   strip, and the EQ tabs (all declared *before* it) were completely dead while the play buttons
-  *inside* it worked, which is exactly what the bug report said. Window dragging does not go through
-  this — `shouldDragWindow` only ever accepts a `layer`.
+  *inside* it worked, which is exactly what the bug report said. Window dragging is a separate policy
+  (below) and is unaffected.
 - **`animatedlayer` is clickable like `layer`.** MMD3's rotary volume/bass/treble knobs are animated
   layers whose scripts hook `onLeftButtonDown`; leaving the type out of `isInteractive` meant no click
   ever reached them.
 
-`WINAMP_MODERN_RENDER_CLICKABLE=1` is the check for both: it lists objects a script hooks the mouse on
+#### Dragging the window
+
+`WinampModernMainView.shouldDragWindow(from:)` decides whether a press moves the window, from the
+object the hit test returned:
+
+- the **`layout`** itself — the window's own background. A skin that paints its whole frame there and
+  hangs nothing but controls off it (T800) has no other handle, and without this it cannot be moved.
+- a bare **`group`** with `move="1"` — a group has no artwork, so a click reaching one landed on the
+  background it covers, and `move="1"` is the skin calling that background a handle.
+- a **`layer`** with no `action`, as before.
+- never anything with `move="0"` (T800's volume strip is a layer whose script owns the drag), and
+  never the named transport/title objects on the exclusion list.
+
+`WINAMP_MODERN_RENDER_CLICKABLE=1` is the check for both hit-test rules: it lists objects a script hooks the mouse on
 that the markup-only hit test rejects. It is not expected to be empty — several objects legitimately
 share a rect and only the topmost can win — but a control the user can see should never be in it.
 

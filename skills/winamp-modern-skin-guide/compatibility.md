@@ -46,7 +46,16 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 
 - Multiple document roots and raw ampersands (real skins contain both) — but tags must balance
 - `groupdef` with `inherit_group` inheritance; `xuitag` custom tag registration
-- Group template expansion during object creation
+- Group template expansion during object creation, resolved **in document order**: an id defined
+  twice serves each `<group>` the version written above it, the way Winamp's streaming parser does
+  (T800 gives `player.main.cms` one body for its full player and another for its shade layout).
+  A reference with no document position of its own — `System.newGroup`, a synthesized node — takes
+  the newest version, and one written before every definition of its id takes the first
+- Window dragging from the layout background, from a bare `move="1"` group, and from an `action`-less
+  layer; `move="0"` opts a piece out (a layer whose own script owns the press)
+- Button actions: `PLAY` / `PAUSE` / `STOP` / `PREV` / `NEXT` / `EJECT` / `SEEK` / `SWITCH` /
+  `TOGGLE guid:…` / `EQ_TOGGLE` / `EQ_AUTO` / `EQ_BAND` / `EQ_PREAMP` / `MENU presets` /
+  `MINIMIZE` / `CLOSE`
 - Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
   and vertical), text, `clipchildren` parent clipping
 - Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups. A
@@ -191,6 +200,13 @@ a whole script):
 - Any method not in `signature(for:)` — fails closed with `.unsupportedScriptCapability` and is
   recorded in the compatibility report's `unsupportedMethods` bucket
 - Unsupported opcodes fail closed; they never become silent no-ops
+- **Per-object regions.** A skin can clip a control to an arbitrary shape taken from a greyscale
+  *map* bitmap — `Region.loadFromMap(map, value, tolerance)` + `<object>.setRegion(r)`, and the
+  shorter `setRegionFromMap`, which is accepted as a no-op so the calling script continues. The
+  control simply stays rectangular. `Map` itself is fully implemented; this is the region half only.
+  Measured cost: T800's volume strip never fills or empties (its clicks still set the volume), and
+  the "Volume: NN%" flash the same handler writes to the song ticker is lost with the aborted event.
+  mmd3 is the only measured `setRegionFromMap` caller. Handoff with the design in `TASKS.md`, Phase 20
 
 **Failure granularity.** A method miss aborts *that script event only*; the remaining scripts still
 run and the skin loads degraded, with every failure collected into the compatibility report. It
