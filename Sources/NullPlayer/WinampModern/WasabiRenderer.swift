@@ -557,7 +557,7 @@ final class WasabiSceneRenderer {
         let palette = WasabiPalette.make { [weak self] identifier in
             guard let self,
                   let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
-                  definition.kind == "color" else { return nil }
+                  Self.declaredColor(of: definition) != nil else { return nil }
             return resolvedColor(identifier)
         }
         paletteCache = palette
@@ -732,6 +732,21 @@ final class WasabiSceneRenderer {
         return nodes
     }
 
+    /// The active layout's geometry **including hidden subtrees** — what is laid out, not what is
+    /// painted. Never used for drawing or hit testing.
+    ///
+    /// Wasabi lays a hidden object out anyway, and skins depend on that: cPro-Bento's side view is
+    /// hidden when it closes, and the only thing that can bring it back is its own `onResize` deciding
+    /// the pane is wide again (`if (w < 10) hide() else show()`). Resolving geometry only for what is
+    /// on screen made that unreachable — closing the playlist hid it permanently.
+    private func layoutNodes() -> [WasabiSceneNode] {
+        let rootRect = CGRect(origin: .zero, size: canvasSize)
+        var nodes: [WasabiSceneNode] = []
+        append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true,
+               includingHidden: true)
+        return nodes
+    }
+
     func draw(in context: CGContext, pressed: WasabiObjectID? = nil,
               hovered: WasabiObjectID? = nil) {
         context.saveGState()
@@ -767,6 +782,33 @@ final class WasabiSceneRenderer {
 
     func frame(of object: WasabiObject) -> CGRect? {
         sceneNodes().first(where: { $0.object === object })?.frame
+    }
+
+    /// One object's resolved geometry: where it actually landed, and the box it resolved against.
+    ///
+    /// Scripts ask for this constantly (`getWidth`, `getGuiX`, …) and a *declared* attribute is no
+    /// answer at all for relative geometry: cPro's tab strip is `w="-4" relatw="1"`, so
+    /// `getWidth()` off the attribute is −4, and `CproTabs.m` compares that against the space its tabs
+    /// need and collapses every one of them to 20px. See `WinampModernScriptRuntime.resolvedFrame`.
+    func resolvedGeometry(of object: WasabiObject) -> (frame: CGRect, parent: CGRect)? {
+        layoutNodes().first { $0.object === object }.map { ($0.frame, $0.parentFrame) }
+    }
+
+    /// The objects in the active scene a resize is reported to, with their resolved frames.
+    ///
+    /// Wasabi addresses `onResize` to containers of other objects, and every handler ClassicPro
+    /// declares is on one: a layout (`beat.m`'s `frameGroup` *is* `layout id=normal`, `player.m`'s
+    /// `myLayout`), a group (`shade.m`, `mainmenu.m`, `eq.m`), or a XUI instance of a groupdef. Leaf
+    /// controls are excluded so a window resize does not spray the event across every button.
+    /// Frames are **parent-relative**, the space a script's own `getGuiX`/`getGuiY` reports in.
+    func resizeTargets() -> [(object: WasabiObject, frame: CGRect)] {
+        layoutNodes().compactMap { node in
+            let type = node.object.typeName.lowercased()
+            guard type == "layout" || type == "group" || WasabiFrame.isFrame(node.object)
+                    || loadedSkin.runtime.types.isXUITag(node.object.typeName) else { return nil }
+            return (node.object, node.frame.offsetBy(dx: -node.parentFrame.minX,
+                                                     dy: -node.parentFrame.minY))
+        }
     }
 
     // MARK: - Splitter dragging
@@ -905,8 +947,9 @@ final class WasabiSceneRenderer {
     }
 
     private func append(object: WasabiObject, frame parentFrame: CGRect, clip parentClip: CGRect,
-                        into nodes: inout [WasabiSceneNode], isRoot: Bool = false) {
-        guard isVisible(object) else { return }
+                        into nodes: inout [WasabiSceneNode], isRoot: Bool = false,
+                        includingHidden: Bool = false) {
+        guard includingHidden || isVisible(object) else { return }
         let bitmapID = resolvedBitmapID(for: object, pressed: false, hovered: false)
         var intrinsic = resources.bitmap(identifier: bitmapID).map {
             WasabiSize(width: Double($0.width), height: Double($0.height))
@@ -945,13 +988,14 @@ final class WasabiSceneRenderer {
         // that as a hiding place: MMD3 keeps a dummy volume slider at (400,400) — outside the 583×216
         // layout — whose `thumb` is the 44×1012 knob *sheet*, and a slider centres its thumb on its
         // track, so without this the whole sheet painted a column of knobs across the window.
-        if !resolved.isEmpty && !resolved.intersects(parentClip) { return }
+        if !includingHidden, !resolved.isEmpty, !resolved.intersects(parentClip) { return }
         let clip = parentClip.intersection(resolved.isEmpty ? parentClip : resolved)
         nodes.append(WasabiSceneNode(object: object, frame: resolved, clip: parentClip,
                                      bitmapID: bitmapID, parentFrame: isRoot ? resolved : parentFrame))
-        let childClip = clipsChildren(object) ? clip : parentClip
+        let childClip = clipsChildren(object) || isFramePane(object) ? clip : parentClip
         for child in object.children {
-            append(object: child, frame: resolved, clip: childClip, into: &nodes)
+            append(object: child, frame: resolved, clip: childClip, into: &nodes,
+                   includingHidden: includingHidden)
         }
     }
 
@@ -988,6 +1032,12 @@ final class WasabiSceneRenderer {
                        pressed: pressed == object.stableID)
         } else if type == "progressgrid" {
             drawProgressGrid(object, frame: node.frame, context: context)
+        } else if type == "grid" {
+            drawGrid(object, frame: node.frame, context: context)
+        } else if type == "rect" {
+            drawRect(object, frame: node.frame, context: context)
+        } else if type == "gradient" {
+            drawGradient(object, frame: node.frame, context: context)
         } else if type == "vis" {
             drawVisualization(object, frame: node.frame, context: context)
         } else if type == "eqvis" {
@@ -1371,12 +1421,18 @@ final class WasabiSceneRenderer {
             return
         case .analyzer:
             let width = frame.width / CGFloat(count)
+            // `bandwidth` is Winamp's band count (`thin` packs many narrow bars into the box, `wide`
+            // draws few fat ones). The host publishes a fixed band count, so it lands here as bar
+            // thickness: the visible difference is a thin comb versus a solid row of blocks, which is
+            // what a skin's own visualization menu is switching between.
+            let barWidth = object.attributes["bandwidth"]?.lowercased() == "thin"
+                ? max(1, (width - 1) / 2) : max(1, width - 1)
             for index in 0..<count {
                 let level = CGFloat(max(0, min(1, levels[index])))
                 context.setFillColor(color(index))
                 context.fill(CGRect(x: frame.minX + CGFloat(index) * width,
                                     y: frame.maxY - level * frame.height,
-                                    width: max(1, width - 1), height: level * frame.height))
+                                    width: barWidth, height: level * frame.height))
             }
         case .oscilloscope:
             // Drawn from the same band levels, mirrored about the centre line: the host publishes a
@@ -1511,6 +1567,229 @@ final class WasabiSceneRenderer {
             draw(middle, object: object, frame: body, context: context)
         }
         context.restoreGState()
+    }
+
+    /// `<grid>` — nine-slice chrome: the element every framed surface in a Bento-style skin is made of.
+    ///
+    /// The corners keep their own size, the four edges stretch (or tile) along one axis only, and
+    /// `middle` fills what is left. Every part is optional and a grid carries no `image` of its own, so
+    /// before this it fell through to the bitmap fallback and drew **nothing** — which is why
+    /// cPro-Bento's tab pills read as bare text on black, and its SUI sheet, playlist box, mini-view
+    /// strip and seek track as flat black holes. 49 of them in that skin's include graph alone.
+    ///
+    /// A grid with only the three `top*` parts is a horizontal three-slice (the tab pills, and the
+    /// engine's `left`/`middle`/`right` seek track is the same thing rotated); its absent rows take no
+    /// height, rather than a missing `middle` being stretched over everything.
+    private func drawGrid(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        func part(_ key: String) -> WasabiBitmap? { resources.bitmap(identifier: object.attributes[key]) }
+        let topLeft = part("topleft"), top = part("top"), topRight = part("topright")
+        let left = part("left"), middle = part("middle"), right = part("right")
+        let bottomLeft = part("bottomleft"), bottom = part("bottom"), bottomRight = part("bottomright")
+        let parts = [topLeft, top, topRight, left, middle, right, bottomLeft, bottom, bottomRight]
+        guard parts.contains(where: { $0 != nil }) else { return }
+
+        // Which of the three columns and rows the skin actually declared. A grid that declares one
+        // row is a **three-slice**, and its row takes the whole height: cPro's tab pills carry only
+        // `topleft`/`top`/`topright`, and the engine's seek track only `left`/`middle`/`right`.
+        // Splitting the extent as though the absent rows were there would leave most of the surface
+        // blank — the same hole the missing element left in the first place.
+        let declaredColumns = (0..<3).filter { column in (0..<3).contains { parts[$0 * 3 + column] != nil } }
+        let declaredRows = (0..<3).filter { row in (0..<3).contains { parts[row * 3 + $0] != nil } }
+
+        /// Extents for the three slots along one axis: a single declared slot spans everything, and
+        /// otherwise the edges keep their art's own size and the centre takes the remainder. Edges
+        /// that together exceed the box (a pane the user collapsed) shrink instead of overlapping.
+        func extents(total: CGFloat, declared: [Int], natural: (Int) -> CGFloat) -> [CGFloat] {
+            if declared.count == 1 {
+                var result: [CGFloat] = [0, 0, 0]
+                result[declared[0]] = total
+                return result
+            }
+            var (start, end) = (natural(0), natural(2))
+            if start + end > total {
+                let scale = total / max(1, start + end)
+                start = (start * scale).rounded(.down)
+                end = total - start
+            }
+            return [start, total - start - end, end]
+        }
+        func widest(_ candidates: [WasabiBitmap?]) -> CGFloat {
+            CGFloat(candidates.compactMap { $0?.width }.max() ?? 0)
+        }
+        func tallest(_ candidates: [WasabiBitmap?]) -> CGFloat {
+            CGFloat(candidates.compactMap { $0?.height }.max() ?? 0)
+        }
+        let columnArt = [[topLeft, left, bottomLeft], [top, middle, bottom], [topRight, right, bottomRight]]
+        let rowArt = [[topLeft, top, topRight], [left, middle, right], [bottomLeft, bottom, bottomRight]]
+        let columns = extents(total: frame.width, declared: declaredColumns) { widest(columnArt[$0]) }
+        let rows = extents(total: frame.height, declared: declaredRows) { tallest(rowArt[$0]) }
+
+        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
+        let tiles = object.attributes["tile"] == "1"
+        context.saveGState()
+        context.setAlpha(CGFloat(alpha) / 255)
+        var y = frame.minY
+        for (row, rowHeight) in rows.enumerated() {
+            var x = frame.minX
+            for (column, columnWidth) in columns.enumerated() {
+                defer { x += columnWidth }
+                guard let bitmap = parts[row * 3 + column], columnWidth > 0, rowHeight > 0 else { continue }
+                let cell = CGRect(x: x, y: y, width: columnWidth, height: rowHeight)
+                // A corner is one natural-size blit whatever `tile` says; only the stretched axes of
+                // an edge or the middle repeat.
+                let tileX = tiles && column == 1
+                let tileY = tiles && row == 1
+                if tileX || tileY {
+                    drawTiled(bitmap, in: cell, tileX: tileX, tileY: tileY, context: context)
+                } else {
+                    drawImage(bitmap.image, in: cell, context: context)
+                }
+            }
+            y += rowHeight
+        }
+        context.restoreGState()
+    }
+
+    /// `<rect>` — a flat colour fill or outline. 44 of them in the ClassicPro engine, including the
+    /// backing behind the SUI list surfaces and the browser, all of which drew nothing.
+    private func drawRect(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        let color = objectColor(object.attributes["color"] ?? "255,255,255",
+                               gammaGroup: object.attributes["gammagroup"])
+        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
+        context.saveGState()
+        context.setAlpha(CGFloat(alpha) / 255)
+        // Winamp's default is an outline; the engine writes `filled="1"` wherever it wants a fill and
+        // `filled="0"` wherever it wants the border, so neither case is guessed at.
+        if ["1", "true", "yes"].contains(object.attributes["filled"]?.lowercased() ?? "0") {
+            context.setFillColor(color.cgColor)
+            context.fill(frame)
+        } else {
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(1)
+            // Half-pixel inset so a 1px stroke lands *inside* the rect rather than straddling its edge.
+            context.stroke(frame.insetBy(dx: 0.5, dy: 0.5))
+        }
+        context.restoreGState()
+    }
+
+    /// One stop of a `<gradient points>` list: a position and a premultiplication-free RGBA.
+    private struct WasabiGradientStop {
+        let location: CGFloat
+        let red: CGFloat
+        let green: CGFloat
+        let blue: CGFloat
+        let alpha: CGFloat
+    }
+
+    /// `<gradient>` — ClassicPro uses it for one thing, and uses it in exactly one shape:
+    ///
+    /// ```xml
+    /// <gradient id="cdbox.fg.fademask" fitparent="1" ghost="1" mode="linear"
+    ///           gradient_x1="0" gradient_y1="0" gradient_x2="0" gradient_y2="1"
+    ///           points="0.0=128,128,128,0;1.0=128,128,128,255" gammagroup="n.Color.ListBg"/>
+    /// ```
+    ///
+    /// The direction is normalized 0…1 across the object's own rect and each stop carries its own
+    /// alpha — which is the whole point of the element here, a fade that masks a reflection back into
+    /// the list background. Anything this cannot parse draws nothing and records a diagnostic rather
+    /// than guessing at a colour to paint over the skin's artwork with.
+    private func drawGradient(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        let mode = (object.attributes["mode"] ?? "linear").lowercased()
+        guard mode == "linear" else {
+            loadedSkin.runtime.record(WalDiagnostic(.unsupportedElement,
+                                                    "<gradient mode=\"\(mode)\"> is not implemented; "
+                                                    + "it draws nothing.",
+                                                    severity: .warning, location: object.source))
+            return
+        }
+        let stops = Self.gradientStops(object.attributes["points"])
+        guard stops.count >= 2 else {
+            loadedSkin.runtime.record(WalDiagnostic(.malformedXML,
+                                                    "<gradient points=…> needs at least two parseable "
+                                                    + "stops; it draws nothing.",
+                                                    severity: .warning, location: object.source))
+            return
+        }
+        let gamma = themes.transform(group: object.attributes["gammagroup"]) ?? .identity
+        let colors = stops.map { stop -> CGColor in
+            let (red, green, blue) = Self.themed(red: stop.red, green: stop.green, blue: stop.blue,
+                                                 gamma: gamma)
+            return NSColor(red: red, green: green, blue: blue, alpha: stop.alpha).cgColor
+        }
+        guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: colors as CFArray,
+                                        locations: stops.map(\.location)) else { return }
+        func coordinate(_ key: String) -> CGFloat {
+            max(0, min(1, CGFloat(Double(object.attributes[key] ?? "0") ?? 0)))
+        }
+        // The scene is painted y-flipped, so `frame.minY` *is* the object's visual top edge and
+        // `gradient_y1="0"` lands there without any further correction.
+        let start = CGPoint(x: frame.minX + coordinate("gradient_x1") * frame.width,
+                            y: frame.minY + coordinate("gradient_y1") * frame.height)
+        let end = CGPoint(x: frame.minX + coordinate("gradient_x2") * frame.width,
+                          y: frame.minY + coordinate("gradient_y2") * frame.height)
+        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
+        context.saveGState()
+        context.setAlpha(CGFloat(alpha) / 255)
+        context.clip(to: frame)
+        context.drawLinearGradient(gradient, start: start, end: end,
+                                   options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        context.restoreGState()
+    }
+
+    /// `"0.0=R,G,B,A;1.0=R,G,B,A"` → sorted stops. Every position and channel is clamped, and a stop
+    /// that does not parse is dropped rather than defaulted, so a malformed list fails the ≥2 check
+    /// above instead of painting an invented colour.
+    private static func gradientStops(_ raw: String?) -> [WasabiGradientStop] {
+        guard let raw else { return [] }
+        return raw.split(separator: ";").compactMap { entry -> WasabiGradientStop? in
+            let halves = entry.split(separator: "=", maxSplits: 1)
+            guard halves.count == 2,
+                  let location = Double(halves[0].trimmingCharacters(in: .whitespaces)) else { return nil }
+            let channels = halves[1].split(separator: ",")
+                .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard channels.count >= 3 else { return nil }
+            func channel(_ index: Int) -> CGFloat {
+                CGFloat(max(0, min(255, channels[index])) / 255)
+            }
+            return WasabiGradientStop(location: CGFloat(max(0, min(1, location))),
+                                      red: channel(0), green: channel(1), blue: channel(2),
+                                      // An omitted alpha is opaque, as everywhere else here.
+                                      alpha: channels.count >= 4 ? channel(3) : 1)
+        }.sorted { $0.location < $1.location }
+    }
+
+    /// The colour an object declares **inline**, with that object's own `gammagroup` applied.
+    ///
+    /// A named `<color>` resource carries its own gammagroup and `resolvedColor` already applies it;
+    /// applying the object's on top would tint the same channels twice.
+    private func objectColor(_ raw: String, gammaGroup: String?) -> NSColor {
+        if let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: raw),
+           Self.declaredColor(of: definition) != nil {
+            return resolvedColor(raw)
+        }
+        let base = Self.color(raw)
+        guard let gamma = themes.transform(group: gammaGroup), !gamma.isIdentity else { return base }
+        let (red, green, blue) = Self.themed(red: base.redComponent, green: base.greenComponent,
+                                             blue: base.blueComponent, gamma: gamma)
+        return NSColor(red: red, green: green, blue: blue, alpha: base.alphaComponent)
+    }
+
+    /// One colour through a `<gammagroup>`: desaturate first if the group asks, then scale each
+    /// channel — the same order the bitmap and `<color>` paths use.
+    private static func themed(red: CGFloat, green: CGFloat, blue: CGFloat,
+                               gamma: WasabiGammaTransform) -> (CGFloat, CGFloat, CGFloat) {
+        var (red, green, blue) = (red, green, blue)
+        if gamma.grayscale {
+            let luminance = red * 0.299 + green * 0.587 + blue * 0.114
+            (red, green, blue) = (luminance, luminance, luminance)
+        }
+        return (max(0, min(1, red * gamma.red)),
+                max(0, min(1, green * gamma.green)),
+                max(0, min(1, blue * gamma.blue)))
     }
 
     /// The sibling whose value a bare `<ProgressGrid>` shows: the slider drawn over the same rect.
@@ -1784,6 +2063,25 @@ final class WasabiSceneRenderer {
         return value == "1" || value == "true"
     }
 
+    /// Whether this object is one of the two panes of a `<Wasabi:Frame>`.
+    ///
+    /// A pane is a **window** in real Wasabi, so it always clips, `clipchildren` or not — and that is
+    /// load-bearing for a *collapsed* one. cPro-Bento closes its mini view by putting the horizontal
+    /// splitter's divider 10px from the top, which correctly leaves `centro.playlist.directory` 6px
+    /// tall; but that pane's children are all bottom-anchored for the 27px strip it has when open
+    /// (`y="-27" relaty="1"`), so they resolve to y = 6 − 27 = −21 → **21px above the pane**, straight
+    /// over the volume slider, the mute button and the kbps/kHz readouts, with `comp.goto` left
+    /// floating as a stray `▭≡` on the display. Only the pane's own rect bounds them.
+    private func isFramePane(_ object: WasabiObject) -> Bool {
+        guard let parent = object.parent, WasabiFrame.isFrame(parent), let id = object.xmlID else {
+            return false
+        }
+        let panes = WasabiFrame.paneIdentifiers(of: parent)
+        // Exactly two is what makes it a splitter at all; real skins use a `<Wasabi:Frame>` naming
+        // neither pair as a plain group, and that one keeps the inherited clip.
+        return panes.count == 2 && panes.contains { $0.caseInsensitiveCompare(id) == .orderedSame }
+    }
+
     private static func dimension(_ attributes: [String: String], keys: [String], fallback: CGFloat) -> CGFloat {
         for key in keys {
             if let raw = attributes[key], let value = Double(raw), value > 0 { return CGFloat(value) }
@@ -1818,6 +2116,21 @@ final class WasabiSceneRenderer {
         return CGFloat(value)
     }
 
+    /// The `r,g,b` a resource declares, or `nil` when it declares no colour at all.
+    ///
+    /// Two kinds carry one. A `<color>` obviously does — and a **generated solid bitmap**
+    /// (`<bitmap file="$solid" color="8,9,10">`) does too: it *is* a colour, with the pixels
+    /// synthesized from it. cPro-Bento declares `wasabi.list.background` as both, and the bitmap wins
+    /// the registry, so insisting on `kind == "color"` sent the name down the literal-parsing path,
+    /// where it is not three numbers and became the **white** fallback — a white slab across the tab
+    /// strip and behind the SUI list surfaces of a near-black skin.
+    private static func declaredColor(of definition: WalResourceDefinition) -> String? {
+        if definition.kind == "color" { return definition.attributes["value"] ?? "255,255,255" }
+        guard definition.kind == "bitmap",
+              definition.attributes["file"]?.hasPrefix("$") == true else { return nil }
+        return definition.attributes["color"]
+    }
+
     private static func color(_ raw: String) -> NSColor {
         let values = raw.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard values.count >= 3 else { return .white }
@@ -1829,8 +2142,8 @@ final class WasabiSceneRenderer {
 
     func resolvedColor(_ raw: String) -> NSColor {
         guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: raw),
-              definition.kind == "color" else { return Self.color(raw) }
-        let base = definition.attributes["value"] ?? "255,255,255"
+              let declared = Self.declaredColor(of: definition) else { return Self.color(raw) }
+        let base = declared
         var values = base.split(separator: ",").map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 255) }
         guard values.count >= 3 else { return .white }
         let gamma = themes.transform(group: definition.attributes["gammagroup"]) ?? .identity

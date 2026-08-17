@@ -36,6 +36,9 @@ final class WinampModernMainView: NSView {
     private var lastPlaybackState: PlaybackState = .stopped
     /// Last volume the scripts were told about, 0…255. −1 until the first update.
     private var lastPostedVolume: Int32 = -1
+    /// Last title the scripts were told about, so `onTitleChange` fires per track rather than per
+    /// redraw. `nil` until the first update, which is not the same as the empty "no track" title.
+    private var lastPostedTitle: String?
     private var tracking: NSTrackingArea?
     private var animationTimer: Timer?
     private(set) var isTornDown = false
@@ -99,6 +102,9 @@ final class WinampModernMainView: NSView {
         guard (try? renderer.activateLayout(id: id)) != nil else { return false }
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
+        // A different layout is a different scene, so nothing carries over: every object in it hears
+        // its geometry for the first time, exactly as it does when the window first comes up.
+        dispatchResize(seeding: true)
         needsDisplay = true
         return true
     }
@@ -108,7 +114,44 @@ final class WinampModernMainView: NSView {
         _ = renderer.resize(to: proposed)
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
+        dispatchResize(seeding: false)
         needsDisplay = true
+    }
+
+    /// Give the scene's scripts their geometry, once, straight after `scripts.start()`.
+    ///
+    /// A script that only assigns state inside `onResize` has none of it until the event has fired.
+    /// ClassicPro's `beat.m` is exactly that: `showBeat`/`showPromo` are written nowhere else, so with
+    /// the event never dispatched they stayed false, the beat display was visible only from its XML
+    /// state, and the first `System.onPlay()` → `refreshView()` → `showGroup(0)` hid both display
+    /// groups with nothing able to bring either back. That is the reported "the visualization goes away
+    /// when you play a track".
+    ///
+    /// Not gated on `drivesScripts`: a resize is addressed to a *container*, not to the runtime's
+    /// single-owner callbacks, so every container window seeds its own scene (Phase 13.3).
+    func scriptsDidStart() {
+        dispatchResize(seeding: true)
+    }
+
+    /// Tell whatever moved that it moved, after a change this view did not itself cause — a script
+    /// collapsing a splitter, hiding a group, reparenting one. Cheap when nothing actually moved: the
+    /// frames are compared against the last dispatch and an unchanged scene dispatches nothing.
+    func dispatchResizeIfChanged() {
+        dispatchResize(seeding: false)
+    }
+
+    /// Resolved frames at the last dispatch, so only an object whose own box actually moved is told
+    /// about it — Wasabi does not resize what did not change.
+    private var lastResizeFrames: [WasabiObjectID: CGRect] = [:]
+
+    private func dispatchResize(seeding: Bool) {
+        guard !isTornDown else { return }
+        let targets = renderer.resizeTargets()
+        scripts.dispatchResize(targets: targets, previous: seeding ? nil : lastResizeFrames)
+        // Recorded *after* the handlers ran: a script that re-solves its own geometry from `onResize`
+        // has already moved things, and the next comparison has to be against where they now are.
+        lastResizeFrames = Dictionary(renderer.resizeTargets().map { ($0.object.stableID, $0.frame) },
+                                      uniquingKeysWith: { _, latest in latest })
     }
 
     /// The skin switched colour theme. The renderer has already dropped its themed bitmaps.
@@ -354,6 +397,11 @@ final class WinampModernMainView: NSView {
         guard let object = renderer.object(at: point) else { return }
         pressedObject = object
         dispatch(object: object, event: "onleftbuttondown", point: point)
+        // A skin puts real commands on a double-click: cPro's beat display cycles its animation from
+        // `mouseTrap.onLeftButtonDblClk`, and a tab's own dblclk suppresses the drag-to-reorder.
+        if event.clickCount == 2 {
+            dispatch(object: object, event: "onleftbuttondblclk", point: point)
+        }
         updateSlider(object, point: point)
         needsDisplay = true
 
@@ -369,7 +417,9 @@ final class WinampModernMainView: NSView {
         if let draggedDivider {
             guard renderer.dragFrameDivider(draggedDivider, to: point) else { return }
             // The panes moved, so anything hosted inside one (the embedded library) has to follow,
-            // and the grab strip itself is somewhere else now.
+            // the grab strip itself is somewhere else now, and the skin's own scripts want to know:
+            // cPro re-aligns its tab strip and swaps its side-view buttons from `onResize`.
+            dispatchResizeIfChanged()
             needsLayout = true
             needsDisplay = true
             window?.invalidateCursorRects(for: self)
@@ -442,7 +492,16 @@ final class WinampModernMainView: NSView {
         needsDisplay = true
     }
 
-    func updateTrackInfo() { needsDisplay = true }
+    func updateTrackInfo() {
+        // `onTitleChange` is per *track*, not per redraw: `beat.m` resets its running VU maximum from
+        // it, so firing it on every info refresh would keep rescaling the beat animation mid-song.
+        let title = host.trackDisplayTitle
+        if title != lastPostedTitle {
+            lastPostedTitle = title
+            _ = try? scripts.dispatchSystem(event: "ontitlechange", arguments: [.string(title)])
+        }
+        needsDisplay = true
+    }
 
     func updateTime(current: TimeInterval, duration: TimeInterval) {
         if duration > 0 {
@@ -457,8 +516,18 @@ final class WinampModernMainView: NSView {
     func updatePlaybackState() {
         let state = host.playbackState
         if state != lastPlaybackState {
-            if state == .playing { _ = try? scripts.dispatchSystem(event: "onplay") }
-            if state == .stopped { _ = try? scripts.dispatchSystem(event: "onstop") }
+            // Winamp reports the *transition*, not the level, and a skin acts differently on each:
+            // ClassicPro's `beat.m` restarts its VU timer with a fresh running maximum on `onPlay` but
+            // resumes the existing one on `onResume`, and stops it on `onPause`. Sending `onPlay` for a
+            // resume (the previous behaviour) rescaled the animation every time the user unpaused, and
+            // a pause was reported as nothing at all.
+            switch (lastPlaybackState, state) {
+            case (.paused, .playing): _ = try? scripts.dispatchSystem(event: "onresume")
+            case (_, .playing): _ = try? scripts.dispatchSystem(event: "onplay")
+            case (.playing, .paused): _ = try? scripts.dispatchSystem(event: "onpause")
+            case (_, .stopped): _ = try? scripts.dispatchSystem(event: "onstop")
+            default: break
+            }
             lastPlaybackState = state
         }
         let postedVolume = Int32(max(0, min(255, host.volume * 255)))
@@ -478,6 +547,10 @@ final class WinampModernMainView: NSView {
 
     func updateSpectrum(_ levels: [Float]) {
         host.spectrumLevels = levels
+        // Delivering levels without invalidating left the analyzer repainting only by luck: cPro-Bento
+        // has animated layers and therefore a 30 Hz redraw timer, so its bars moved, but a skin whose
+        // scene holds nothing animated would never repaint its `<vis>` from a spectrum update at all.
+        needsDisplay = true
     }
 
     func teardown() {

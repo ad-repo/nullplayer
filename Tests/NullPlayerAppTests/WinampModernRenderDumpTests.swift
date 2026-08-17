@@ -40,6 +40,20 @@ final class WinampModernRenderDumpTests: XCTestCase {
         let host = RenderHost()
         let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
         defer { runtime.teardown() }
+        // Installed *before* `start()`: the whole point of the tap is to see which `onScriptLoaded`
+        // handlers ran, and they all run inside it.
+        var executedEvents: [ObjectIdentifier: Set<String>] = [:]
+        var failedEvents: [ObjectIdentifier: [String: String]] = [:]
+        if env["WINAMP_MODERN_RENDER_SCRIPTS"] != nil {
+            runtime.dispatchObserver = { event, program, failure in
+                let key = ObjectIdentifier(program)
+                executedEvents[key, default: []].insert(event)
+                if let failure {
+                    failedEvents[key, default: [:]][event] =
+                        failure.diagnostics.map(\.message).joined(separator: "; ")
+                }
+            }
+        }
         try runtime.start()
 
         if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
@@ -60,6 +74,72 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 }
             }
             walk(loaded.runtime.graph.roots)
+        }
+        // WINAMP_MODERN_RENDER_SCRIPTS answers the question `WINAMP_MODERN_RENDER_XUI` cannot: for
+        // every parsed program, who owns it, whether its `onScriptLoaded` actually *ran* (or failed and
+        // with what), and where the objects it hooks ended up. `hasBinding` reads the bytecode's
+        // declared bindings; only the dispatch tap sees execution.
+        if env["WINAMP_MODERN_RENDER_SCRIPTS"] != nil {
+            for program in runtime.programs {
+                let key = ObjectIdentifier(program)
+                let owner = program.ownerID.flatMap(loaded.runtime.graph.object(withID:))
+                let handlers = Set(program.bindings.map { program.methods[$0.methodIndex].name })
+                print("SCRIPT \((program.source.path as NSString).lastPathComponent) "
+                      + "owner=\(owner?.typeName ?? "-")#\(owner?.xmlID ?? "-") "
+                      + "param=\(program.parameter ?? "-") "
+                      + "handlers=\(handlers.sorted().joined(separator: ",")) "
+                      + "ran=\((executedEvents[key] ?? []).sorted().joined(separator: ",")) "
+                      + "failed=\(failedEvents[key]?.map { "\($0.key): \($0.value)" }.sorted().joined(separator: " | ") ?? "-")")
+                // What each handler is bound *to* right now. A binding whose variable is still null is
+                // a script whose `onScriptLoaded` never assigned it, and one pointing at the wrong
+                // object is a lookup that resolved somewhere unexpected — the two failure modes behind
+                // "the event dispatches to 0 handlers".
+                for binding in program.bindings {
+                    let event = program.methods[binding.methodIndex].name
+                    guard env["WINAMP_MODERN_RENDER_SCRIPTS"] == "bindings" else { continue }
+                    let variable = program.variables[binding.variableIndex]
+                    var bound = "null"
+                    if case .object(let reference) = variable.value {
+                        switch reference.kind {
+                        case .system: bound = "System"
+                        case .gui(let id):
+                            let object = loaded.runtime.graph.object(withID: id)
+                            bound = "\(object?.typeName ?? "?")#\(object?.xmlID ?? "-")"
+                        case .popupMenu: bound = "PopupMenu"
+                        case .dynamic: bound = "dynamic"
+                        }
+                    }
+                    print("SCRIPT   bind \(event) -> \(bound)"
+                          + (variable.isClass ? " (class, \(variable.classMembers.count) members)" : ""))
+                }
+                // ClassicPro addresses other scripts by walking `getParent()` a fixed number of times
+                // (`CproTabs.m` reaches the SUI with four of them), so the exact ancestor chain of a
+                // script's own group is load-bearing and worth printing.
+                if let owner {
+                    var chain: [String] = []
+                    var node: WasabiObject? = owner.parent
+                    while let current = node, chain.count < 8 {
+                        chain.append("\(current.typeName)#\(current.xmlID ?? "-")")
+                        node = current.parent
+                    }
+                    print("SCRIPT   ancestors=\(chain.joined(separator: " < "))")
+                }
+                // The D6 subject: a runtime-created `cpro.tab` group's button is what
+                // `CproTabButton.maki` resolves through `getScriptGroup().findObject(...)`, so print
+                // the same lookup and the handler state it should have left behind.
+                guard let owner, owner.xmlID?.lowercased().hasPrefix("cpro.tab") == true else { continue }
+                for id in ["cpro.tab.button", "cpro.tab.text", "cpro.tab.grid"] {
+                    guard let found = Self.descendant(of: owner, xmlID: id) else {
+                        print("SCRIPT   findObject(\(id))=nil")
+                        continue
+                    }
+                    let hooks: [String] = ["onleftbuttondown", "onleftbuttonup", "onmousemove",
+                                           "onleftbuttondblclk"]
+                        .filter { runtime.hasBinding(for: found, event: $0) }
+                    print("SCRIPT   findObject(\(id))=\(found.typeName)#\(found.xmlID ?? "-") "
+                          + "mouseHandlers=\(hooks.joined(separator: ","))")
+                }
+            }
         }
         // The measured-demand list: what the skin's load + `onscriptloaded` pass actually reached for
         // and did not find. Printed here so the harness answers "missing art, bad geometry, or a
@@ -130,8 +210,50 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 print("RENDER-DUMP \(info.id): no renderable normal layout")
                 continue
             }
+            // Scripts ask this renderer where its objects landed, exactly as the app's window layer
+            // does — without it `getWidth()` on a relatively-sized object answers its raw attribute
+            // and the skin lays itself out against a negative number.
+            runtime.resolvedGeometryRequested = { object in renderer.resolvedGeometry(of: object) }
+            // And the same settle the window layer drives, so a script that collapses a pane sees the
+            // `onResize` it is waiting on — cPro's side-view buttons swap from it.
+            var lastFrames: [WasabiObjectID: CGRect] = [:]
+            runtime.geometryDidSettle = {
+                let targets = renderer.resizeTargets()
+                runtime.dispatchResize(targets: targets, previous: lastFrames)
+                lastFrames = Dictionary(renderer.resizeTargets().map { ($0.object.stableID, $0.frame) },
+                                        uniquingKeysWith: { _, latest in latest })
+            }
+            defer {
+                runtime.resolvedGeometryRequested = nil
+                runtime.geometryDidSettle = nil
+            }
             for layoutID in renderer.availableLayoutIDs {
                 _ = try? renderer.activateLayout(id: layoutID)
+                // WINAMP_MODERN_RENDER_SIZE=WxH measures the scene at the *user's* window size rather
+                // than only the size the layout declares. Clamped by the layout, exactly as a drag is.
+                if let spec = env["WINAMP_MODERN_RENDER_SIZE"] {
+                    let parts = spec.lowercased().split(separator: "x").compactMap { Double($0) }
+                    if parts.count == 2 {
+                        _ = renderer.resize(to: CGSize(width: parts[0], height: parts[1]))
+                    }
+                }
+                // WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,… drives the named
+                // events in order before the scene is measured and drawn, which is how a symptom that
+                // only appears *after* playback starts (cPro's beat vis) reproduces headlessly.
+                if let spec = env["WINAMP_MODERN_RENDER_EVENTS"] {
+                    let addressed = spec.contains("@")
+                    let target = spec.split(separator: "@").first.map(String.init) ?? ""
+                    let list = addressed ? spec.split(separator: "@").dropFirst().joined(separator: "@") : spec
+                    let applies = addressed ? target == "\(info.id)/\(layoutID)"
+                        : (info.isMainPlayer && layoutID == renderer.availableLayoutIDs.first)
+                    if applies {
+                        for event in list.split(separator: ",").map({
+                            $0.trimmingCharacters(in: .whitespaces).lowercased()
+                        }) where !event.isEmpty {
+                            drive(event: event, renderer: renderer, runtime: runtime, host: host)
+                        }
+                    }
+                }
                 let size = renderer.canvasSize
                 let minimum = renderer.layoutMinimumSize
                 let declared = renderer.declaredMinimumSize
@@ -176,20 +298,51 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             .joined(separator: " "))
                 }
                 // WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y drives a real click through the
-                // same sequence the view uses, and reports what the scene did about it.
+                // same sequence the view uses, and reports what the scene did about it. Several points
+                // may be given as `x,y;x,y` and are driven **in order** — which is how a "does the
+                // second click undo the first" question gets answered (cPro's close/open side buttons
+                // sit at the same place, one hidden behind the other).
                 if let spec = env["WINAMP_MODERN_RENDER_CLICK"],
                    spec.hasPrefix("\(info.id)/\(layoutID)@") {
-                    let coords = spec.split(separator: "@").last?.split(separator: ",")
-                        .compactMap { Double($0) } ?? []
-                    if coords.count == 2 {
-                        let point = CGPoint(x: coords[0], y: coords[1])
+                    let points = (spec.split(separator: "@").last?.split(separator: ";") ?? [])
+                        .compactMap { entry -> CGPoint? in
+                            let coords = entry.split(separator: ",").compactMap { Double($0) }
+                            return coords.count == 2 ? CGPoint(x: coords[0], y: coords[1]) : nil
+                        }
+                    for point in points {
+                        // Every object in the graph, not only the ones currently on screen: a control
+                        // that was hidden and becomes visible is exactly what a click like this does
+                        // (cPro swaps its close-side button for its open-side one).
+                        var beforeState: [WasabiObjectID: String] = [:]
+                        func record(_ objects: [WasabiObject]) {
+                            for object in objects {
+                                beforeState[object.stableID] = Self.state(of: object)
+                                record(object.children)
+                            }
+                        }
+                        record(loaded.runtime.graph.roots)
                         let target = renderer.object(at: point)
                         print("CLICK at \(point) hits "
                               + "\(target?.typeName ?? "-")#\(target?.xmlID ?? "-") "
                               + "bindings=\(target.map { runtime.hasBinding(for: $0) } ?? false)")
+                        // Every handler the click reaches, in order — the only way to see where a
+                        // chain of script-to-script messages stops (the D6 subject: a tab's
+                        // `onLeftButtonUp` → `sendAction("show_tab")` → the SUI's `onAction`).
+                        var chain: [String] = []
+                        runtime.dispatchObserver = { event, program, failure in
+                            chain.append("\((program.source.path as NSString).lastPathComponent)."
+                                         + event + (failure == nil ? "" : "!FAILED"))
+                        }
+                        defer {
+                            print("CLICK chain: \(chain.joined(separator: " -> "))")
+                            runtime.dispatchObserver = nil
+                        }
                         if let target {
-                            for event in ["onleftbuttondown", "onleftbuttonup", "onleftclick",
-                                          "onrightbuttonup"] {
+                            // `onleftbuttondblclk` is included because the view sends it (on
+                            // `clickCount == 2`) between the down and the up, and skins put real
+                            // commands on it — cPro cycles its beat animations from one.
+                            for event in ["onleftbuttondown", "onleftbuttondblclk", "onleftbuttonup",
+                                          "onleftclick", "onrightbuttonup"] {
                                 // The button events carry the click's x/y, exactly as the view sends
                                 // them: a handler that pops two arguments off an empty stack fails
                                 // with an underflow that belongs to the harness, not the skin.
@@ -205,6 +358,28 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 let handled = (try? runtime.dispatch(object: target, event: event,
                                                                      arguments: arguments)) ?? -1
                                 print("CLICK   \(event) -> \(handled)")
+                            }
+                        }
+                        // What the click actually *changed* in the scene — the question a click probe
+                        // exists to answer. A control that swaps two buttons or moves a splitter shows
+                        // up here even when the node count is identical.
+                        for (id, before) in beforeState {
+                            let object = loaded.runtime.graph.object(withID: id)
+                            let after = object.map { Self.state(of: $0) }
+                            guard let after, after != before else { continue }
+                            print("CLICK changed \(object?.typeName ?? "?")#\(object?.xmlID ?? "-") "
+                                  + "\(before) -> \(after)")
+                        }
+                        // WINAMP_MODERN_RENDER_CLICK_WATCH=id,id — where these objects ended up after
+                        // the click, whether or not they changed. For "it opened, but in the wrong
+                        // place" questions, which a changed-attributes list cannot answer.
+                        for id in (env["WINAMP_MODERN_RENDER_CLICK_WATCH"] ?? "")
+                            .split(separator: ",").map(String.init) where !id.isEmpty {
+                            for object in loaded.runtime.graph.objects(xmlID: id) {
+                                let geometry = renderer.resolvedGeometry(of: object)
+                                print("CLICK watch \(object.typeName)#\(id) "
+                                      + "frame=\(geometry.map { "\($0.frame)" } ?? "not laid out") "
+                                      + "state=[\(Self.state(of: object))]")
                             }
                         }
                         print("CLICK volume: \(host.volume)")
@@ -267,6 +442,39 @@ final class WinampModernRenderDumpTests: XCTestCase {
         }
     }
 
+    /// Drive one named event at its real target with its real arguments.
+    ///
+    /// The arity matters as much as the target: a handler that pops four arguments off an empty stack
+    /// fails with an underflow that belongs to the harness, not to the skin. `onresize` is the only
+    /// GUI-addressed one here, and it carries each object's own frame (see `dispatchResize`).
+    private func drive(event: String, renderer: WasabiSceneRenderer,
+                       runtime: WinampModernScriptRuntime, host: RenderHost) {
+        switch event {
+        case "onresize":
+            let dispatched = runtime.dispatchResize(targets: renderer.resizeTargets(), previous: nil)
+            print("EVENT onresize -> \(dispatched) handlers over \(renderer.resizeTargets().count) targets")
+        case "onplay", "onresume":
+            host.playbackState = .playing
+            print("EVENT \(event) -> \((try? runtime.dispatchSystem(event: event)) ?? -1)")
+        case "onpause":
+            host.playbackState = .paused
+            print("EVENT \(event) -> \((try? runtime.dispatchSystem(event: event)) ?? -1)")
+        case "onstop":
+            host.playbackState = .stopped
+            print("EVENT \(event) -> \((try? runtime.dispatchSystem(event: event)) ?? -1)")
+        case "ontitlechange":
+            let handled = (try? runtime.dispatchSystem(event: event,
+                                                       arguments: [.string(host.trackDisplayTitle)])) ?? -1
+            print("EVENT \(event) -> \(handled)")
+        case "onvolumechanged":
+            let handled = (try? runtime.dispatchSystem(
+                event: event, arguments: [.integer(Int32((host.volume * 255).rounded()))])) ?? -1
+            print("EVENT \(event) -> \(handled)")
+        default:
+            print("EVENT \(event): no harness target/arity — add one to `drive(event:…)`")
+        }
+    }
+
     /// A script-built menu as one line: `Title > [child, …]`, separators as `--`.
     private static func describe(_ items: [WinampModernPopupMenuItem]) -> String {
         items.map { item in
@@ -275,6 +483,22 @@ final class WinampModernRenderDumpTests: XCTestCase {
             guard !item.children.isEmpty else { return "\(flags)\(item.title)#\(item.commandID)" }
             return "\(flags)\(item.title) > [\(describe(item.children))]"
         }.joined(separator: ", ")
+    }
+
+    /// The attributes a click is likely to move: geometry, visibility, and which art is showing.
+    private static func state(of object: WasabiObject) -> String {
+        ["x", "y", "w", "h", "visible", "image", "position", "text"]
+            .compactMap { key in object.attributes[key].map { "\(key)=\($0)" } }
+            .joined(separator: " ")
+    }
+
+    /// First descendant with this `id`, matching `findObject`'s own search.
+    private static func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
+        for child in root.children {
+            if child.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame { return child }
+            if let match = descendant(of: child, xmlID: xmlID) { return match }
+        }
+        return nil
     }
 
     private final class RenderHost: WinampModernHost {

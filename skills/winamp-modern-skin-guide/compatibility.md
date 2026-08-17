@@ -69,6 +69,22 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
   when it fills the box with its own animated layer); an undeclared mode is the analyzer. `setMode`
   switches it. A skin's menu script is the proof of the pairing (`bandwidth` + `setMode(1)` vs
   `oscstyle` + `setMode(2)`)
+- `<grid>`: nine-slice chrome — `topleft top topright left middle right bottomleft bottom
+  bottomright`, corners at their art's natural size, edges stretched (or tiled with `tile="1"`) along
+  one axis, `middle` filling the centre, all at the object's `alpha`. Every part is optional, and a
+  grid that declares a single row or column is a **three-slice** whose one row/column takes the whole
+  extent (cPro's tab pills carry only `top*`; the ClassicPro seek track only `left/middle/right`).
+  Edges that together exceed the box shrink rather than overlap. Phase 24
+- `<rect>`: a flat fill (`filled="1"`) or a 1px outline, in the resolved `color` at the object's
+  `alpha`, with the object's own `gammagroup` applied. Phase 24
+- `<gradient mode="linear">`: normalized `gradient_x1/y1/x2/y2` across the object's own rect and
+  `points="0.0=R,G,B,A;1.0=R,G,B,A"`, per-stop alpha preserved, multiplied by the object's `alpha` and
+  passed through its `gammagroup`. This is the exact form ClassicPro ships (a fade mask over a
+  reflection). Any other `mode`, or fewer than two parseable stops, draws **nothing** and records a
+  bounded diagnostic rather than inventing a colour. Phase 24
+- A colour reference resolves from a `<color value="r,g,b">` **or** from a generated solid bitmap
+  (`<bitmap file="$solid" color="r,g,b">`) — a skin may declare the same id as both, and the bitmap can
+  win the registry. Phase 24
 - `<ProgressGrid>`: `left`/`middle`/`right` over the filled span, growing from `orientation`'s edge,
   valued from the sibling `<slider>` that carries the `action`. Skins pair the two and make the thumb
   invisible (a 1×1 pixel), so the grid is the only position indicator they draw
@@ -85,6 +101,10 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
   `gray` is a mode (any non-zero desaturates). The default theme is the **first gammaset in the
   document**, and the theme list keeps document order. A `gammagroup` id is scoped to its gammaset,
   not to the global resource namespace.
+- **Hidden objects are still laid out.** They are not painted and take no clicks, but their geometry
+  resolves, they receive `onResize`, and `getWidth()` answers for them — Wasabi lays a hidden window out
+  too, and a skin that hides a pane can only bring it back from its own `onResize` seeing the pane grow
+  (cPro-Bento's side view). Phase 24
 - An object whose frame is **entirely outside its parent** is culled with its subtree — skins park
   objects off-layout to hide them, and their art must not leak into the window
 - Animated, N-state, ticker, album-art, and visualization elements
@@ -120,21 +140,18 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
   (mmd3's winshade sidecar) — become inert nodes the same way.
 - A base group outside the curated set warns and is dropped.
 - A missing **optional** bitmap or cursor is a warning, not an error (Winamp-compatible).
-- `file="$solid"` / `file="$gradient"` predefined bitmaps are recognized but not resolved as files.
+- `file="$solid"` / `file="$gradient"` predefined bitmaps generate no **pixels**, so a layer that
+  names one draws nothing. Their `color` is read where one is used as a colour resource (above), which
+  is how skins mostly use them.
 - `embed_xui` is retained as metadata only — it is **not** an inheritance edge.
 - A splitter's `jump` (snap-to-detent) is parsed but not honoured — a drag is continuous.
+- **`<vis>` attributes read: `mode`, `bandwidth` (`thin` narrows the bars, `wide` is the solid row),
+  the band/oscilloscope colours and `alpha`. Ignored: `peaks`, `peakfalloff`, `falloff`, `coloring`,
+  `oscstyle`, `fliph` — a skin's visualization menu sets all of them (Love is War Miku's does), so those
+  menu items appear to do nothing.**
 - `<vis mode="2">` (oscilloscope) is drawn from the same band levels as the analyzer, mirrored about
   the centre line: the host publishes a spectrum, not raw PCM, so it is the shape of the signal rather
   than the waveform itself. It is distinguishable from the analyzer, not faithful to Winamp's scope.
-- **A `xuitag` instance's own script may never initialize, leaving its controls inert.** Measured on
-  cPro-Bento's tab strip: `WINAMP_MODERN_RENDER_XUI` reports `Cpro:Tabs … scripts=["CproTabs.maki"]
-  onsetxuiparam=false onscriptloaded=false`, so the script never looks up its five
-  `cpro.tab.button` toggle buttons and never hooks them. The strip builds and hit-tests correctly
-  (`WINAMP_MODERN_RENDER_CLICK=main/normal@175,115` → `hits togglebutton#cpro.tab.button`), but the
-  button has `bindings=false` and every mouse event dispatches to 0 handlers — the tab names have
-  never switched tabs. Same family as Phase 9.6's `System.newGroup`/`onSetXuiParam` delivery, which
-  does not cover this case. The embedded library is reached through the surface coordinator instead,
-  which is why Windows → Library Browser works where the tab does not.
 - Auxiliary container windows render and take input but do **not** drive per-container MAKI layout
   switching; the main window owns the scripted scene. (cPro-Bento is single-window, so this is
   invisible there.)
@@ -165,10 +182,7 @@ By area:
   title)`, `checkCommand`, `popAtMouse` — shown as a real `NSMenu` at the mouse through
   `popupPresenter`, which the main view installs. `popAtMouse` blocks and answers the picked id (0 =
   cancelled)
-- **Events dispatched to scripts**: `onScriptLoaded`, `onSetXuiParam`, the mouse events (with the
-  click's x/y), `onPlay`/`onStop`, `onVolumeChanged` (from `setVolume` and from any change made
-  outside the skin), `onPostedPosition`, `onTargetReached`, `onToggle`, `onAction`, `onEqFreqChanged`,
-  `onGetCancelComponent`
+- **Events dispatched to scripts** — see the table below
 - **Timers**: bounded scheduling (see limits)
 - **Animated layers**: `getLength`, `gotoFrame`, `getCurFrame`, `setStartFrame`, `setEndFrame`,
   `setSpeed`, `play`/`stop`, `isPlaying` — the play head is a pure function of the time since `play()`
@@ -210,7 +224,42 @@ By area:
 - **`System.getCurrentTrackRating()`** — always 0 (unrated). NullPlayer's playback `Track` carries no
   user rating (the library's rating is in `MediaLibrary`, which is not on the host adapter), so the
   ClassicPro ratings widget draws no stars rather than aborting its script
+- **Runtime instantiation**: `System.newGroup(id)` creates a registered groupdef's subtree under the
+  calling script's group, and `<object>.init(parent)` **moves it where the script wants it**. The new
+  subtree's own scripts start on that attachment, not on creation — a script's first act is to look
+  around from its own group, so starting it before `init` gives it the wrong parent. A group that is
+  never `init`'d still starts, once the outermost dispatch unwinds. Phase 24
+- **Paint order**: `bringToFront` / `bringToBack` — sibling order within the parent. Phase 24
+- **Per-skin string config**: `getPrivateString` / `setPrivateString`, beside the integer pair.
+  Phase 24 — `CproTabs.m` stores its tab order here
+- **Resolved geometry**: `getLeft`/`getTop`/`getWidth`/`getHeight` and `getGuiX/Y/W/H` answer where the
+  object actually **landed**, in its parent's coordinates, supplied by the window that renders its
+  container. The declared attribute is only the fallback for an object the active scene cannot place.
+  Reading the markup instead is wrong for any relative geometry: cPro's tab strip is `w="-4"
+  relatw="1"`, and `getWidth()` = −4 made its script squeeze every tab to its minimum. Phase 24
 - **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
+
+**Events dispatched to scripts.** Occurrence counts are call sites across the ClassicPro engine's
+`.m` sources, which is the largest measured script corpus.
+
+| Event | Dispatched | From / why not |
+|---|---|---|
+| `onScriptLoaded` | yes | at `start()`, and per subtree when a runtime group is attached |
+| `onScriptUnloading` | yes (Phase 24) | first thing in `teardown()`, while timers and the graph are still alive |
+| `onSetXuiParam` | yes | after `onScriptLoaded`, to the owning XUI instance's own programs only |
+| `onResize` | yes (Phase 24) | a canvas change, a layout activation, a divider drag, **and whenever a script's own mutation moves something** (it settles once as the outermost event unwinds); plus one seeding pass after `start()`. Only objects whose own box moved, each with its own parent-relative `(x, y, w, h)`. **Not** from a UI Size change, which moves only the drawing boundary |
+| `onPlay` / `onStop` / `onPause` / `onResume` | yes (pause/resume Phase 24) | an explicit transition table: stopped→playing sends `onPlay`, paused→playing `onResume`, playing→paused `onPause`. Never both `onPlay` and `onResume` for one resume |
+| `onTitleChange` | yes (Phase 24) | per track, not per redraw — scripts reset per-track state from it |
+| `onSetVisible` | yes (Phase 24) | from `show`/`hide`, on the object whose visibility actually changed |
+| `onLeftButtonDblClk` | yes (Phase 24) | `mouseDown` with `clickCount == 2` |
+| mouse down/up/click/move, `onEnterArea`/`onLeaveArea`, `onRightButtonUp` | yes | with the click's x/y |
+| `onVolumeChanged` | yes | `setVolume`, and any change made outside the skin |
+| `onPostedPosition`, `onSetPosition`, `onTargetReached`, `onToggle`, `onAction`, `onEqFreqChanged`, `onGetCancelComponent` | yes | — |
+| `onKeyDown` (4) | **no** | needs a first-responder seam; no reported symptom behind it |
+| `onDock` / `onUndock` (3 / 3) | **no** | no docked-state model for `.wal` windows |
+| `onShowLayout` / `onHideLayout` (2 / 2) | **no** | shade↔normal transitions |
+| `onMouseWheelUp` / `Down` (2 / 2) | **no** | the wheel is consumed by the embedded playlist |
+| `onCreateLayout`, `onTextChanged`, `onNotify`, `onOpenUrl` (1–2 each) | **no** | minor |
 
 **Script events callable as methods.** A script may invoke one of its own handlers directly to reuse
 it (`slidercb.onSetPosition(slidercb.getPosition())`). Only events with a known arity are callable —
@@ -222,6 +271,15 @@ a whole script):
 
 - A method call on a **null object** is a no-op returning null, as in Winamp — not an abort. MMD3
   checks menu commands from a function that also runs before the menu exists.
+- A **member** on a null object reads as its declared type's default and writes nowhere, for the same
+  reason. ClassicPro's tab strip opens every click with `closeTab(lastActiveT)`, and on the first click
+  `lastActiveT` is NULL while `closeTab` reads `.ID` off it — throwing there meant no tab could ever be
+  activated. A member on a non-null non-object still fails closed: the compiler cannot emit one, so it
+  means the stack is not what the instruction thinks it is. Phase 24
+- `sendAction(action, param, x, y, p1, p2)` is delivered to the addressed object as
+  `onAction(…, source)` **as well as** to the host's action handler. It is the channel the standard
+  library's own `sendMessage`/`onMessage` pair rides on, so without it every internal script-to-script
+  message in a skin was silently dropped. Phase 24
 - `setPosition` fires `onSetPosition` **only on a change**. Skins pair two sliders that write each
   other's position from that handler.
 - Event dispatch is **re-entrancy guarded** per (object, event): the interpreter's own call-depth
@@ -243,8 +301,31 @@ cannot degrade any finer than the event: the bytecode does not encode a call's a
 without a signature the interpreter cannot unwind the stack and must abandon the event rather than
 guess. This is why each needed method has to be implemented rather than stubbed.
 
-**Measured demand — cPro-Bento startup.** As of 2026-08-16 (Phase 12): **none.** The target reports
-zero error-severity findings and zero unsupported methods, at compatibility level `degraded`.
+**Measured demand — cPro-Bento startup.** As of 2026-08-17 (Phase 24): **none.** The target reports
+zero error-severity findings and zero unsupported methods at startup, at compatibility level
+`degraded`.
+
+**Measured demand — cPro-Bento once its scripts are actually driven** (Phase 24, after `onResize`,
+`onTitleChange`, `onPlay` and a tab click). Counts are call sites in the ClassicPro main-window script
+set; the whole engine's totals are larger. **Recorded, not implemented** — each would need a host seam
+of its own and none is behind a reported symptom except the first:
+
+| Method | Sites | What it costs |
+|---|---|---|
+| `popAtXY` | 6 | a script-built menu at a computed point: the tab strip's right-click menu, the drawer's "goto" menu. `popAtMouse` menus work |
+| `clientToScreenX` / `clientToScreenY` | 7 / 7 | the coordinates those menus are positioned with |
+| `parser_addCallback` / `parser_start` / `parser_destroy` | 5 / 4 / 4 | `XmlDoc` callback parsing — the optional `classicpro.xml` extras |
+| `enqueueFile` | 5 | the skin adding files to the queue |
+| `getTextWidth` | 4 | a script measuring a string itself rather than through `getAutoWidth` |
+| `playTrack` / `clear` | 3 / 3 | script-driven playlist control |
+| `getItemLabel` / `getAttributeName` | 3 / 3 | Guilist accessors — the skin's own list widgets draw empty |
+| `getItemFocused` / `setSubItem` | 2 / 2 | the same |
+| `getMonitorWidth` / `getMonitorHeight` | 2 / 2 | monitor bounds for placement |
+| `getComponentName` | 2 | naming a hosted component |
+| `getDecoderName` / `deleteByPos` | 1 / 1 | minor |
+
+Across the whole engine (every container, not just the main window) the list also carries the `fx_*`
+AnimatedLayer effects family, the `Winamp:Browser` events, `setClipboardText` (8) and `shutdown` (1).
 
 Phase 12 emptied the queue a second time, after `Wasabi:Frame` let the SUI's own scripts run for the
 first time: `additem`, `getnumchildren`, `getgroup`, `getcurrenttrackrating`, `oneqfreqchanged` (a

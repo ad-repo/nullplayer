@@ -118,7 +118,7 @@ struct WinampModernCompatibilityReport: Codable, Equatable {
         case .invalidScript, .unsupportedScriptCapability, .scriptBudgetExceeded:
             return .scripts
         case .unresolvedPathVariable, .includeCycle, .includeDepthExceeded, .xmlDepthExceeded,
-             .expandedNodeLimitExceeded, .malformedXML, .unknownComponent:
+             .expandedNodeLimitExceeded, .malformedXML, .unknownComponent, .unsupportedElement:
             return .other
         }
     }

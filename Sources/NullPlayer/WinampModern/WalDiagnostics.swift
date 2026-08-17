@@ -53,6 +53,10 @@ enum WalDiagnosticCode: String, Codable {
     /// A `windowholder`/`componentbucket`/`component` names a component NullPlayer has no surface
     /// for. The holder stays in the scene as an inert frame rather than binding to host behaviour.
     case unknownComponent
+    /// An element the renderer knows by name but cannot draw in the form the skin asked for — a
+    /// `<gradient mode>` other than `linear` is the measured case. It draws nothing rather than
+    /// guessing at a colour to paint over the skin's own artwork with.
+    case unsupportedElement
 }
 
 struct WalDiagnostic: Hashable, Codable, CustomStringConvertible {

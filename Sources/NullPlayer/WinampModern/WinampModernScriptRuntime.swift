@@ -89,10 +89,43 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// The EQ preamp, on the same MAKI −127…127 scale as a band.
     var equalizerPreampRequested: (() -> Int)?
     var equalizerPreampSetterRequested: ((Int) -> Void)?
+    /// Diagnostic tap on every handler that actually ran, with the failure that aborted it or `nil`.
+    ///
+    /// Nil in the app. The render harness installs one because "did this script's `onScriptLoaded`
+    /// run?" is otherwise unanswerable from outside: `hasBinding` reports what the *bytecode* declares,
+    /// which is why `WINAMP_MODERN_RENDER_XUI`'s `onscriptloaded=false` was mistaken for a dead script
+    /// in TASKS §15.6 — it says nothing about execution.
+    var dispatchObserver: ((_ event: String, _ program: MakiProgram, _ failure: WalFailure?) -> Void)?
+    /// One object's resolved rect and the box it resolved against, in skin pixels — supplied by the
+    /// window that renders the object's container, since only a scene knows where anything landed.
+    /// `nil` before any window is wired, and for an object outside the active layout.
+    var resolvedGeometryRequested: ((WasabiObject) -> (frame: CGRect, parent: CGRect)?)?
+    /// A script has finished an event that moved something, so resolved geometry may have changed and
+    /// `onResize` is owed to whatever moved. Called once per outermost event, never mid-event.
+    ///
+    /// Wasabi resizes synchronously and notifies as it goes, and skins lean on it hard: cPro-Bento's
+    /// "close side view" button collapses the playlist pane with `setPosition(0)` and then relies on
+    /// `area_right.onResize` to swap the close button for the **open** one — which ships `visible="0"`.
+    /// Without this, closing the playlist hid the only control that could bring it back.
+    var geometryDidSettle: (() -> Void)?
 
     private struct ScriptEventKey: Hashable {
         let target: MakiObjectReference.Kind
         let event: String
+        /// The programs a *scoped* dispatch was limited to; empty for a dispatch to all of them.
+        ///
+        /// Without this, cPro-Bento's tab strip could never come up. `CproTabs.m` builds its five tabs
+        /// with `System.newGroup("cpro.tab")` **from inside its own `System.onScriptLoaded`**, and each
+        /// new group declares `CproTabButton.maki`; `startScripts(addedBeneath:)` then dispatches
+        /// `onScriptLoaded` to just those new programs — a nested dispatch of the same event to the
+        /// same (System) target, which the guard below swallowed. So every tab button was created with
+        /// its script's `trigger`/`label`/`grid` variables never bound, which is the real reason
+        /// clicking a tab did nothing (TASKS §15.6 blamed the strip's own script, which does run).
+        ///
+        /// The subsets are disjoint by construction — `boundScriptPaths` binds each script path+owner
+        /// exactly once — so distinguishing them cannot reopen the ping-pong the guard exists for, and
+        /// `maximumRuntimeScriptStartDepth` bounds the nesting.
+        let scope: [ObjectIdentifier]
     }
     /// Events currently on the interpreter stack. A skin can wire two objects to update each other
     /// (MMD3's seek slider and its ghost both call `setPosition` from the other's `onSetPosition`),
@@ -122,6 +155,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Ceiling on total loaded programs. Runtime instantiation (`System.newGroup`) can add scripts,
     /// so this bounds a skin that instantiates groups in a loop.
     private static let maximumRuntimePrograms = 512
+    /// How deeply a runtime-instantiated group's `onScriptLoaded` may instantiate further groups.
+    /// ClassicPro nests two levels (the SUI builds the tab strip, which builds each tab).
+    private static let maximumRuntimeScriptStartDepth = 8
+    private var runtimeScriptStartDepth = 0
 
     /// Standard GUI events a script is allowed to invoke as a method on an object, with their argument
     /// counts. Kept explicit: an unknown arity would desynchronise the interpreter's stack.
@@ -143,7 +180,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // Winamp fires this whenever the level moves, and a skin with no volume slider relies on it
         // for the only feedback it has: Love is War Miku's `+`/`-` buttons show "Volume: 40%" on the
         // song ticker from this handler and clear it a moment later.
-        "onvolumechanged": 1
+        "onvolumechanged": 1,
+        // The Phase 24 additions. ClassicPro calls all of these as methods as well as receiving them:
+        // `beat.m`'s own `frameGroup.onResize(0, 0, w, h)` re-solves its geometry after a change it
+        // made itself, `tagviewer.m` does the same, and a script that reuses its `onSetVisible` or
+        // `onTitleChange` body is the same idiom `onSetPosition` already had.
+        "onresize": 4,
+        "onsetvisible": 1,
+        "onpause": 0,
+        "onresume": 0,
+        "ontitlechange": 1,
+        "onleftbuttondblclk": 2,
+        "onscriptunloading": 0
     ]
 
     /// Version-gate shim. ClassicPro's `WinampVersionCheck.maki` early-returns when the reported build
@@ -322,7 +370,62 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Load and start the scripts a runtime-instantiated subtree declares, so nested components come
     /// up exactly as they would have at load time. Bounded by `maximumRuntimePrograms` so a script
     /// cannot grow the program list without limit by instantiating groups in a loop.
+    /// Groups created by `System.newGroup` whose own scripts have not started yet.
+    ///
+    /// Wasabi instantiates a runtime group in two steps — `newGroup(id)` creates it, `init(parent)`
+    /// puts it where it belongs — and the scripts inside it have to start *after* the second, because
+    /// the first thing such a script does is look around from its own group (`getScriptGroup()`,
+    /// `getParent()`, `findObject`). Starting them at creation gave cPro-Bento's tab buttons the tab
+    /// strip's *container* as their parent instead of the strip, and their `setDispatcher` then
+    /// addressed an object nothing was listening on.
+    ///
+    /// A skin that never calls `init` (it is optional — Winamp Modern's window frames simply leave the
+    /// group where `newGroup` put it) is not left with dead scripts: whatever is still pending is
+    /// started when the outermost dispatch finishes.
+    private var pendingRuntimeGroups: [WasabiObject] = []
+
+    /// Start the scripts of a pending runtime group, if `object` is one (or contains one — a script may
+    /// `init` an ancestor of the group it created).
+    private func startPendingScripts(for object: WasabiObject) throws {
+        let matches = pendingRuntimeGroups.filter { $0 === object || Self.isDescendant($0, of: object) }
+        guard !matches.isEmpty else { return }
+        pendingRuntimeGroups.removeAll { pending in matches.contains { $0 === pending } }
+        for match in matches { try startScripts(addedBeneath: match) }
+    }
+
+    /// Everything still waiting, in creation order. Called once the outermost dispatch unwinds.
+    private func drainPendingScripts() {
+        while !pendingRuntimeGroups.isEmpty {
+            let next = pendingRuntimeGroups.removeFirst()
+            // A group's `onScriptLoaded` can create more groups; those join the queue behind it.
+            try? startScripts(addedBeneath: next)
+        }
+    }
+
+    private static func isDescendant(_ object: WasabiObject, of ancestor: WasabiObject) -> Bool {
+        var node = object.parent
+        while let current = node {
+            if current === ancestor { return true }
+            node = current.parent
+        }
+        return false
+    }
+
     private func startScripts(addedBeneath root: WasabiObject) throws {
+        // A group's `onScriptLoaded` may itself instantiate groups (ClassicPro's tab strip does exactly
+        // that, five times), so this is genuinely recursive. `maximumRuntimePrograms` bounds the total
+        // but not the native stack depth, which this does.
+        guard runtimeScriptStartDepth < Self.maximumRuntimeScriptStartDepth else {
+            loadedSkin.runtime.record(WalDiagnostic(.scriptBudgetExceeded,
+                                                    "Runtime group instantiation nested deeper than "
+                                                    + "\(Self.maximumRuntimeScriptStartDepth); the "
+                                                    + "scripts of '\(root.xmlID ?? root.typeName)' were "
+                                                    + "not started.",
+                                                    severity: .warning, location: root.source))
+            return
+        }
+        runtimeScriptStartDepth += 1
+        defer { runtimeScriptStartDepth -= 1 }
         var added: [MakiProgram] = []
         func collect(_ object: WasabiObject) throws {
             for binding in object.scriptBindings where !boundScriptPaths.contains(binding) {
@@ -352,6 +455,62 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         try dispatch(target: MakiObjectReference(.gui(object.stableID)), event: event, arguments: arguments)
     }
 
+    /// Whether anything a script did during the current event could have moved an object. Only the
+    /// mutations that can — geometry, visibility, parentage, splitter position — set it, so a skin whose
+    /// timer merely advances an animation frame (cPro's beat display, every 10 ms) costs nothing.
+    private var geometryMayHaveChanged = false
+    /// Guards the settle callback against the `onResize` dispatch it makes re-entering it.
+    private var isSettlingGeometry = false
+
+    private func noteGeometryChange() {
+        geometryMayHaveChanged = true
+        // A mutation made *outside* any event (the host, or a direct call) has no event to unwind, so
+        // it settles at once. Inside one it waits: a handler that moves five things in a row should
+        // produce one round of `onResize`, not five.
+        if eventsBeingDispatched.isEmpty { settleGeometryIfNeeded() }
+    }
+
+    /// `setXmlParam` keys that can move an object or take it out of the layout. Everything else a
+    /// script writes (an image swap, a tooltip, a colour) leaves every frame where it was.
+    private static let geometryKeys: Set<String> = [
+        "x", "y", "w", "h", "relatx", "relaty", "relatw", "relath",
+        "visible", "fitparent", "position", "sysregion"
+    ]
+
+    private func settleGeometryIfNeeded() {
+        guard geometryMayHaveChanged, !isSettlingGeometry, let geometryDidSettle else { return }
+        geometryMayHaveChanged = false
+        isSettlingGeometry = true
+        defer { isSettlingGeometry = false }
+        geometryDidSettle()
+    }
+
+    /// Report a resize to the scene, as Wasabi does: every object whose own box changed hears about
+    /// its **own** new geometry, in its own parent's coordinates.
+    ///
+    /// `previous` is the pre-change frame per object; pass `nil` to seed the whole scene, which is the
+    /// one dispatch that has to happen after `start()` — a script that only assigns state inside
+    /// `onResize` (ClassicPro's `beat.m` sets `showBeat`/`showPromo` nowhere else) has none of it until
+    /// the event has fired at least once, and the first `onPlay` then hides its display for good.
+    @discardableResult
+    func dispatchResize(targets: [(object: WasabiObject, frame: CGRect)],
+                        previous: [WasabiObjectID: CGRect]?) -> Int {
+        var dispatched = 0
+        for target in targets {
+            if let previous, let before = previous[target.object.stableID], before == target.frame {
+                continue
+            }
+            let frame = target.frame
+            let arguments: [MakiValue] = [.integer(Int32(clamping: Int(frame.minX))),
+                                          .integer(Int32(clamping: Int(frame.minY))),
+                                          .integer(Int32(clamping: Int(frame.width))),
+                                          .integer(Int32(clamping: Int(frame.height)))]
+            dispatched += (try? dispatch(object: target.object, event: "onresize",
+                                         arguments: arguments)) ?? 0
+        }
+        return dispatched
+    }
+
     func hasBinding(for object: WasabiObject, event: String? = nil) -> Bool {
         let target = MakiObjectReference(.gui(object.stableID))
         return programs.contains { program in
@@ -375,9 +534,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                           arguments: [MakiValue], in subset: [MakiProgram]? = nil) throws -> Int {
         guard !isTornDown else { return 0 }
         let eventName = event.lowercased()
-        let key = ScriptEventKey(target: target.kind, event: eventName)
+        let key = ScriptEventKey(target: target.kind, event: eventName,
+                                 scope: subset?.map(ObjectIdentifier.init) ?? [])
+        let isOutermost = eventsBeingDispatched.isEmpty
         guard eventsBeingDispatched.insert(key).inserted else { return 0 }
-        defer { eventsBeingDispatched.remove(key) }
+        defer {
+            eventsBeingDispatched.remove(key)
+            // Once the whole event has unwound, any runtime group still waiting for an `init` that
+            // never came gets its scripts started anyway (see `pendingRuntimeGroups`).
+            if isOutermost {
+                drainPendingScripts()
+                settleGeometryIfNeeded()
+            }
+        }
         var executed = 0
         for program in subset ?? programs {
             for binding in program.bindings where program.methods[binding.methodIndex].name == eventName {
@@ -394,7 +563,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                     try interpreter.execute(program: program, at: binding.instructionIndex,
                                             arguments: arguments)
                     executed += 1
+                    dispatchObserver?(eventName, program, nil)
                 } catch let failure as WalFailure {
+                    dispatchObserver?(eventName, program, failure)
                     // One script hitting an unimplemented capability must not take the whole skin
                     // down with it — the remaining scripts still run and the skin loads degraded.
                     // The interpreter's stack is local to `execute`, so an aborted event leaves no
@@ -537,6 +708,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "translate": .init(argumentCount: 1, returnKind: .string),
             "getprivateint": .init(argumentCount: 3, returnKind: .integer),
             "setprivateint": .init(argumentCount: 3, returnKind: .null),
+            // The string half of the same store. Unreachable until Phase 24 dispatched `onResize`:
+            // `CproTabs.m` reads its saved tab order out of it while laying the strip out, and the
+            // missing method aborted that handler — so the tabs never re-sized to fit.
+            "getprivatestring": .init(argumentCount: 3, returnKind: .string),
+            "setprivatestring": .init(argumentCount: 3, returnKind: .null),
             "getitem": .init(argumentCount: 1, returnKind: .object),
             "getitembyguid": .init(argumentCount: 1, returnKind: .object),
             "newitem": .init(argumentCount: 2, returnKind: .object),
@@ -592,6 +768,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "popatmouse": .init(argumentCount: 0, returnKind: .integer),
             "newgroup": .init(argumentCount: 1, returnKind: .object),
             "init": .init(argumentCount: 1, returnKind: .null),
+            // Paint order within the parent. ClassicPro raises a tab while it is being dragged along
+            // the strip, and the missing method aborted the whole drag handler.
+            "bringtofront": .init(argumentCount: 0, returnKind: .null),
+            "bringtoback": .init(argumentCount: 0, returnKind: .null),
             "messagebox": .init(argumentCount: 4, returnKind: .integer),
             "callme": .init(argumentCount: 1, returnKind: .null),
             // ClassicPro version gate (branch, not hard-block) + public config.
@@ -784,6 +964,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                                 section: arguments[0].stringValue,
                                                 key: arguments[1].stringValue)
             return .null
+        case "getprivatestring":
+            return .string(loadedSkin.configuration.string(section: arguments[0].stringValue,
+                                                           key: arguments[1].stringValue,
+                                                           default: arguments[2].stringValue))
+        case "setprivatestring":
+            loadedSkin.configuration.setString(arguments[2].stringValue,
+                                               section: arguments[0].stringValue,
+                                               key: arguments[1].stringValue)
+            return .null
         case "getitem":
             return dynamicValue(role: .configItem(section: arguments[0].stringValue))
         case "getitembyguid":
@@ -858,7 +1047,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             guard let owner = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:)),
                   let instantiate = loadedSkin.runtime.instantiateGroup else { return .null }
             let created = try instantiate(arguments[0].stringValue, owner)
-            try startScripts(addedBeneath: created)
+            // The subtree's scripts start on **attachment**, not here: `newGroup` is only the first half
+            // of Wasabi's two-step, and a script that runs before its group has been `init`'d into place
+            // reads the wrong parent. See `pendingRuntimeGroups`.
+            pendingRuntimeGroups.append(created)
             graphDidMutate?()
             return objectValue(created)
         case "messagebox": return .integer(0) // Sandboxed: skins cannot create modal host UI.
@@ -977,6 +1169,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getxmlparam": return .string(object.attributes[arguments[0].stringValue.lowercased()] ?? "")
         case "setxmlparam":
             _ = object.setAttribute(arguments[0].stringValue, value: arguments[1].stringValue)
+            if Self.geometryKeys.contains(arguments[0].stringValue.lowercased()) { noteGeometryChange() }
             graphDidMutate?()
             return .null
         case "settext":
@@ -1003,15 +1196,23 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                        CGSize(width: CGFloat(arguments[2].integerValue),
                                               height: CGFloat(arguments[3].integerValue)))
             }
+            noteGeometryChange()
             graphDidMutate?()
             return .null
+        // `onSetVisible` fires only on an actual change, as in Wasabi. ClassicPro's `beat.m` hangs its
+        // VU timer off `beatGroup.onSetVisible`, and `showGroup` hides both display groups before
+        // showing one — notifying unconditionally would stop and restart the timer on every refresh.
         case "show":
-            _ = object.setAttribute("visible", value: "1")
+            let shown = object.setAttribute("visible", value: "1")
+            if shown { noteGeometryChange() }
             graphDidMutate?()
+            if shown { _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(true)]) }
             return .null
         case "hide":
-            _ = object.setAttribute("visible", value: "0")
+            let hidden = object.setAttribute("visible", value: "0")
+            if hidden { noteGeometryChange() }
             graphDidMutate?()
+            if hidden { _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(false)]) }
             return .null
         case "isvisible": return .boolean(isVisible(object))
         case "setalpha":
@@ -1029,16 +1230,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(arguments[0].truthy)])
             return .null
         case "getactivated": return .boolean(object.attributes["activated"] == "1")
-        case "getleft", "getguix": return .integer(Int32(object.geometry.x))
-        case "gettop", "getguiy": return .integer(Int32(object.geometry.y))
-        case "getwidth", "getguiw": return .integer(Int32(object.geometry.width ?? 0))
-        case "getheight", "getguih": return .integer(Int32(object.geometry.height ?? 0))
+        // Where the object actually **is**, not what its markup says. See `resolvedFrame`.
+        case "getleft", "getguix":
+            return .integer(dimension(resolvedFrame(of: object)?.minX, declared: object.geometry.x))
+        case "gettop", "getguiy":
+            return .integer(dimension(resolvedFrame(of: object)?.minY, declared: object.geometry.y))
+        case "getwidth", "getguiw":
+            return .integer(dimension(resolvedFrame(of: object)?.width,
+                                      declared: object.geometry.width ?? 0))
+        case "getheight", "getguih":
+            return .integer(dimension(resolvedFrame(of: object)?.height,
+                                      declared: object.geometry.height ?? 0))
         case "getposition" where WasabiFrame.isFrame(object):
             // A splitter's position is its divider offset, not a slider value. ClassicPro reads it to
             // decide whether the side view is open (`mainFrame.getPosition()==0`).
             return .integer(Int32(clamping: Int(WasabiFrame.position(of: object))))
         case "setposition" where WasabiFrame.isFrame(object):
             guard WasabiFrame.setPosition(Double(arguments[0].integerValue), on: object) else { return .null }
+            noteGeometryChange()
             graphDidMutate?()
             _ = try dispatch(object: object, event: "onsetposition", arguments: [arguments[0]])
             return .null
@@ -1123,6 +1332,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .null
         case "isgoingtotarget": return .boolean(object.attributes["goingtotarget"] == "1")
         case "sendaction":
+            // `sendAction` is Wasabi's script-to-script channel, and the receiver hears it as its own
+            // `onAction(action, param, x, y, p1, p2, source)` — six arguments in, seven out, the last
+            // being the sender. Routing it only to the host's action handler (the previous behaviour)
+            // left every internal ClassicPro message unheard: the tab strip answers a click with
+            // `CproSUI.sendAction("show_tab", …)`, and with nothing dispatching that, clicking a tab
+            // reached the button's script and then stopped dead there.
+            //
+            // Delivered to the addressed object only, not down its subtree: every measured use names
+            // the exact group whose script declares the handler.
+            let source = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:))
+            _ = try dispatch(object: object, event: "onaction",
+                             arguments: Array(arguments.prefix(6)) + [objectValue(source)])
+            // The host action route is kept: a skin is also free to name one of NullPlayer's own
+            // actions here, and nothing that used to work should stop.
             actionRequested?(arguments[0].stringValue, arguments[1].stringValue)
             return .null
         case "triggeraction":
@@ -1183,7 +1406,38 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             if clip.apply(to: object) { graphDidMutate?() }
             return .null
         case "islayoutanimationsafe", "istransparencysafe": return .boolean(true)
-        case "init", "callme", "ondatachanged": return .null
+        // `init(parent)` — the second half of Wasabi's two-step runtime instantiation: `newGroup(id)`
+        // *creates* the group, `init(parent)` **puts it where the script wants it**. Treating it as a
+        // no-op is what made cPro-Bento's tab strip inert, and it is the whole of TASKS §15.6:
+        //
+        //   Tab tabI = newGroup("cpro.tab");   // lands under the script group, `Cpro.tabs`
+        //   tabI.init(tabHolder);              // belongs in `cprotabs.buttons`, the 4px-inset strip
+        //
+        // Left under `Cpro.tabs`, each tab's `getParent()` answered the wrong object, so
+        // `CproTabButton.m`'s `setDispatcher(getScriptGroup().getParent())` addressed `Cpro.tabs` while
+        // `CproTabs.m` receives on `cprotabs.buttons` — a click reached the button's own script and
+        // then went nowhere. It also left every pill 4px up and to the left of where the skin's own
+        // reference render puts it. (§15.6 blamed the strip's script never initializing; it does run.)
+        case "init":
+            if case .object(let reference) = arguments[0], case .gui(let parentID) = reference.kind,
+               let parent = loadedSkin.runtime.graph.object(withID: parentID), parent !== object.parent {
+                // `insertChild` detaches from the old parent and refuses a cycle, so a script cannot
+                // reparent an object into its own subtree.
+                try parent.appendChild(object)
+                noteGeometryChange()
+                graphDidMutate?()
+            }
+            // Attachment is also when the new subtree's own scripts start — see `pendingRuntimeGroups`.
+            try startPendingScripts(for: object)
+            return .null
+        // Paint order is sibling order (the renderer walks `children` front to back), so raising an
+        // object is moving it to the end of its parent's list.
+        case "bringtofront", "bringtoback":
+            guard let parent = object.parent, parent.children.count > 1 else { return .null }
+            try parent.insertChild(object, at: method == "bringtofront" ? parent.children.count : 0)
+            graphDidMutate?()
+            return .null
+        case "callme", "ondatachanged": return .null
         default:
             throw unsupported(method, program: program)
         }
@@ -1453,6 +1707,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return .object(MakiObjectReference(.dynamic(id)))
     }
 
+    /// An object's box in its **parent's** coordinates — the space Wasabi's `getGuiX`/`getGuiY` and
+    /// `getLeft`/`getTop` report in — or `nil` when no scene can place it.
+    ///
+    /// Reading the raw `x`/`y`/`w`/`h` attributes instead is only right for absolute geometry, and
+    /// Bento-style skins barely use any: cPro's tab strip is `w="-4" relatw="1"`, so `getWidth()`
+    /// answered **−4**, `CproTabs.m` concluded it had no room for its tabs, switched to short names and
+    /// squeezed every tab to the 20px floor. The declared value stays as the fallback for an object the
+    /// active scene does not contain (a hidden layout, or a runtime with no window wired at all).
+    private func resolvedFrame(of object: WasabiObject) -> CGRect? {
+        guard let geometry = resolvedGeometryRequested?(object) else { return nil }
+        return geometry.frame.offsetBy(dx: -geometry.parent.minX, dy: -geometry.parent.minY)
+    }
+
+    /// A resolved coordinate when the scene could supply one, and the markup's own value otherwise.
+    private func dimension(_ resolved: CGFloat?, declared: Double) -> Int32 {
+        Int32(clamping: Int(resolved.map(Double.init) ?? declared))
+    }
+
     private func objectValue(_ object: WasabiObject?) -> MakiValue {
         object.map { .object(MakiObjectReference(.gui($0.stableID))) } ?? .null
     }
@@ -1520,6 +1792,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     func teardown() {
         guard !isTornDown else { return }
+        // First, while the interpreter, the timers and the graph are all still alive: a script releases
+        // its own objects here (`beat.m` deletes its VU timer, `CproTabButton.m` stops and deletes the
+        // one it polls the button state with), and dispatched after teardown it would reach nothing.
+        //
+        // Not on the `deinit` path: the interpreter holds this runtime **weakly**, so by then the
+        // dispatcher is already gone and every handler would execute nothing anyway — and running skin
+        // bytecode from inside a deallocation is not something to attempt for a no-op.
+        if !isDeinitializing { _ = try? dispatchSystem(event: "onscriptunloading") }
         graphDidMutate = nil
         popupPresenter = nil
         layoutSwitchRequested = nil
@@ -1528,18 +1808,28 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         themeNamesRequested = nil
         activeThemeRequested = nil
         themeSwitchRequested = nil
+        dispatchObserver = nil
+        resolvedGeometryRequested = nil
+        geometryDidSettle = nil
         timers.teardown()
         interpreter.teardown()
         host.endVisualizationConsumption()
         programs.removeAll()
         popupCommands.removeAll()
+        pendingRuntimeGroups.removeAll()
         dynamicObjects.removeAll()
         activeLayoutByContainer.removeAll()
         metrics.teardown()
         isTornDown = true
     }
 
-    deinit { teardown() }
+    /// Set only while `deinit` is unwinding, so `teardown` knows not to run skin bytecode there.
+    private var isDeinitializing = false
+
+    deinit {
+        isDeinitializing = true
+        teardown()
+    }
 }
 
 private final class DummyMakiDispatcher: MakiMethodDispatching {

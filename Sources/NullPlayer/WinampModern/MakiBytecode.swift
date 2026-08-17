@@ -600,7 +600,22 @@ final class MakiInterpreter {
                 let name = try pop().value.stringValue
                 let owner = try pop().value
                 guard case .object(let reference) = owner else {
-                    throw failure(.invalidScript, "MAKI member '\(name)' was accessed on a non-object value.")
+                    // A member on a **null** object is tolerated exactly as a method call on one is
+                    // (see the null receiver a dozen lines below): the read gives the declared type's
+                    // default and the write goes nowhere. Skins rely on it — ClassicPro's tab strip
+                    // opens a click with `closeTab(lastActiveT)`, and on the very first click
+                    // `lastActiveT` is still NULL while `closeTab` reads `.ID` off it. Throwing took
+                    // the whole handler down with it, so no tab could ever be activated.
+                    //
+                    // Any *other* non-object owner still fails closed: MAKI's compiler cannot emit a
+                    // member access on an integer, so one appearing here means the stack is not what
+                    // this instruction thinks it is, and carrying on would build storage on a lie.
+                    guard case .null = owner else {
+                        throw failure(.invalidScript,
+                                      "MAKI member '\(name)' was accessed on a non-object value.")
+                    }
+                    try push(Self.detachedMember(kind: kind, classGUID: classGUID))
+                    break
                 }
                 try push(try member(name, on: reference, kind: kind, classGUID: classGUID))
             case 24, 112:
@@ -727,6 +742,23 @@ final class MakiInterpreter {
 
     /// Resolve (creating on first touch) the storage for `name` on `object`, typed by the member's
     /// declaration. Returned as an lvalue so reads and assignments both hit the same slot.
+    /// Storage for a member of a null object: a fresh variable belonging to nothing, so it costs no
+    /// budget and cannot be read back. See the `case 104` null-owner path.
+    private static func detachedMember(kind: MakiValueKind, classGUID: String?) -> MakiVariable {
+        MakiVariable(declaredKind: kind, classGUID: classGUID, value: defaultValue(of: kind))
+    }
+
+    private static func defaultValue(of kind: MakiValueKind) -> MakiValue {
+        switch kind {
+        case .integer: return .integer(0)
+        case .boolean: return .boolean(false)
+        case .float: return .float(0)
+        case .double: return .double(0)
+        case .string: return .string("")
+        case .null, .object: return .null
+        }
+    }
+
     private func member(_ name: String, on object: MakiObjectReference,
                         kind: MakiValueKind, classGUID: String? = nil) throws -> MakiVariable {
         let key = name.lowercased()
@@ -735,16 +767,8 @@ final class MakiInterpreter {
             throw WalFailure(WalDiagnostic(.scriptBudgetExceeded,
                                            "MAKI skin exceeds \(limits.maximumObjectMembers) object members."))
         }
-        let initial: MakiValue
-        switch kind {
-        case .integer: initial = .integer(0)
-        case .boolean: initial = .boolean(false)
-        case .float: initial = .float(0)
-        case .double: initial = .double(0)
-        case .string: initial = .string("")
-        case .null, .object: initial = .null
-        }
-        let variable = MakiVariable(declaredKind: kind, classGUID: classGUID, value: initial)
+        let variable = MakiVariable(declaredKind: kind, classGUID: classGUID,
+                                    value: Self.defaultValue(of: kind))
         objectMembers[object, default: [:]][key] = variable
         objectMemberCount += 1
         return variable

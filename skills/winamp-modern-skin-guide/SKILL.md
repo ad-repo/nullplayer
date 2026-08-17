@@ -523,7 +523,29 @@ Two ordering rules make or break this:
 
 `WasabiSkinRuntime.instantiateGroup` performs the expansion (set by `WasabiSkinInitializer`, so
 runtime growth shares the load-time VFS, limits, and object budget). Scripts declared inside the new
-subtree are parsed and started via `startScripts(addedBeneath:)`, bounded by `maximumRuntimePrograms`.
+subtree are parsed and started via `startScripts(addedBeneath:)`, bounded by `maximumRuntimePrograms`
+and by `maximumRuntimeScriptStartDepth` (a new subtree's `onScriptLoaded` may instantiate more groups;
+ClassicPro nests two levels — the SUI builds the tab strip, which builds each tab).
+
+**`newGroup` is only half of it.** Wasabi instantiates in two steps, and a skin that uses both needs
+both:
+
+```c
+Tab tabI = newGroup("cpro.tab");   // created under the *calling script's* group
+tabI.init(tabHolder);              // moved where it actually belongs
+```
+
+- `init(parent)` **reparents**. Treating it as a no-op left every cPro-Bento tab in the wrong parent,
+  so each tab button's `setDispatcher(getScriptGroup().getParent())` addressed an object nothing was
+  listening on — the tab strip had never worked in any version.
+- The new subtree's own scripts must start on **attachment**, not on creation: a script's first act is
+  to look around from its own group (`getScriptGroup()`, `getParent()`, `findObject`), and started
+  before `init` it sees the wrong parent. Groups wait in `pendingRuntimeGroups`; one that never gets an
+  `init` (Winamp Modern's frames simply leave theirs where `newGroup` put them) starts anyway once the
+  outermost dispatch unwinds.
+- That nested `onScriptLoaded` is dispatched to a **subset** of programs while the outer one is still
+  on the stack, so the re-entrancy guard is keyed by dispatch scope as well as by (target, event) —
+  otherwise the outer dispatch swallows it and every runtime-created control comes up unbound.
 
 #### Colour themes (`gammaset` / `gammagroup`)
 
@@ -672,6 +694,29 @@ view that owns that container. Without the id, a playlist script resizing itself
 The controller installs both **before `scripts.start()`** — a skin that resizes from `onScriptLoaded`
 does it during `start()`.
 
+#### Resize, and why a skin needs it
+
+Wasabi resizes synchronously and notifies as it goes, and skins carry real state in `onResize` — often
+state that is assigned **nowhere else**. Three rules, each earned:
+
+- **Seed it once after `scripts.start()`** (`view.scriptsDidStart()`), after `onScriptLoaded` and XUI
+  params but before the first `updatePlaybackState()`. ClassicPro's `beat.m` sets `showBeat`/`showPromo`
+  only in `onResize`, so without a seeding pass the first `onPlay` hid its display permanently.
+- **Fire it whenever a script's own mutation moves something,** not only on a canvas change. The
+  runtime flags geometry-affecting mutations (`setXmlParam` on a geometry/visibility key, `resize`,
+  `show`/`hide`, splitter `setPosition`, `init`) and calls `geometryDidSettle` once as the outermost
+  event unwinds — a handler that moves five things produces one round of `onResize`, and a timer that
+  only advances an animation frame produces none. cPro's "close side view" button collapses the pane
+  and relies on `area_right.onResize` to swap in its **open** button, which ships `visible="0"`; without
+  the settle, closing the playlist hid the only control that could reopen it.
+- **Hidden objects are still laid out.** `layoutNodes()` resolves the whole active layout including
+  invisible subtrees, and backs both `resizeTargets` and `resolvedGeometry`; drawing and hit testing
+  keep using `sceneNodes()`. A hidden pane with no geometry can never hear that it is wide again — a
+  one-way door.
+
+Each target hears its **own** parent-relative `(x, y, w, h)`, and only if its own box actually moved.
+A UI Size change dispatches nothing: it moves the drawing boundary, not the skin's canvas.
+
 #### Colours and hosted AppKit content
 
 `WinampModernThemeCoordinator` owns the one `WasabiColorThemeCatalog` per loaded skin; renderers and
@@ -815,7 +860,11 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_CLOCK=<seconds>` | pin the animation/ticker clock; render two values to prove motion |
 | `WINAMP_MODERN_RENDER_MINIMUM=1` | name the objects that set each layout's protective minimum |
 | `WINAMP_MODERN_RENDER_CLICKABLE=1` | objects the markup-only hit test rejects but a script hooks the mouse on |
-| `WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y` | drive a click (left **and** right) and report what it hit, its handler counts, the menu a right-click builds, the resulting volume, and a compatibility report taken *after* the click |
+| `WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y[;x,y…]` | drive a click (down, **double-click**, up, left-click, right-click) and report what it hit, its handler counts, **every attribute it changed anywhere in the graph**, the whole chain of handlers it set off, the menu a right-click builds, and a compatibility report taken *after*. Several points are driven **in order** — how you check that a second click undoes the first |
+| `WINAMP_MODERN_RENDER_CLICK_WATCH=<id>,<id>` | where those objects ended up after the click, changed or not — for "it opened, but in the wrong place" |
+| `WINAMP_MODERN_RENDER_SIZE=<W>x<H>` | resize the layout (clamped, as a drag is) before measuring, so a defect can be reproduced at the user's window size |
+| `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **`onresize` first** for any ClassicPro skin: much of its state is only ever assigned there |
+| `WINAMP_MODERN_RENDER_SCRIPTS=1` (or `=bindings`) | per program: owner, source, declared handlers, which events actually **ran**, and which failed with what. `=bindings` adds what every handler is bound to *right now* and each script group's ancestor chain |
 | `WINAMP_MODERN_RENDER_SETTLE=<seconds>` | pump the run loop before dumping, so timer-driven state has happened |
 
 Use the probe to answer "is it missing art, bad geometry, or a script that never ran" before changing
@@ -824,8 +873,19 @@ renderer code — `BITMAPS … missing=` distinguishes an unresolved resource fr
 **A dead control is usually a dead script, not a bad hit test.** `RENDER_CLICK` answers that in one
 run: it prints the object under the point, `bindings=`, and the handler count for each mouse event.
 `hits togglebutton#… bindings=false` with `onleftclick -> 0` means the script that should have hooked
-it never ran — cross-check with `RENDER_XUI`, where `onscriptloaded=false` on the owning `xuitag`
-instance is the tell. That is exactly how cPro-Bento's inert tab strip was pinned down.
+it never ran.
+
+> **Do not read `RENDER_XUI`'s `onscriptloaded=false` as "the script never ran."** It reports per-object
+> *bindings*, and on cPro-Bento it says `false` for **every** object in the skin, `layout id=normal`
+> included — whose scripts demonstrably run. An earlier phase pinned the inert tab strip on exactly
+> that misreading and chased the wrong thing for two phases; the real cause was `Group.init(parent)`
+> being a no-op. `RENDER_SCRIPTS` is the probe that observes execution, and `RENDER_CLICK`'s handler
+> chain is the one that shows where a message stops.
+
+**A control that responds but changes nothing is a chain that stops partway.** `RENDER_CLICK` prints
+the chain (`CproTabButton.onleftbuttonup -> CproTabs.onaction -> CentroSUI.onaction`) and every
+attribute the click moved. A chain that ends one hop early is a missing script-to-script route; a click
+that changes the right attributes but nothing on screen is a renderer gap.
 
 > **Gotcha:** the harness must install an `NSGraphicsContext` around `renderer.draw`. `drawText` ends
 > in `NSString.draw(in:withAttributes:)`, which renders into the *current* `NSGraphicsContext`, not
@@ -894,6 +954,12 @@ cPro-Bento is the wrong fixture for it.
 - Do not put platform rendering state into `WasabiObjectGraph`.
 - Do not broaden the release UI surface as a side effect of unrelated compatibility work.
 - Preserve `WalDiagnostic`s; do not replace them with renderer-specific string errors.
+- A script method that reports **geometry** (`getWidth`, `getGuiX`, …) must answer where the object
+  actually landed, not what its markup says. Bento-style skins are almost entirely relative geometry
+  (`w="-4" relatw="1"`), and an attribute read there is a negative number a skin will lay itself out
+  against.
+- Before concluding "the script never ran", check with a probe that observes **execution**. Per-object
+  binding state does not answer that question, and reading it as if it did cost two phases.
 - Add fixtures, never third-party assets. Every committed test fixture is synthetic and self-authored.
 
 ## Related

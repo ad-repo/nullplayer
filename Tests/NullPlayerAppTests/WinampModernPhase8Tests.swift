@@ -83,8 +83,30 @@ final class WinampModernPhase8Tests: XCTestCase {
         }
     }
 
-    /// A member access on a non-object fails closed with a typed diagnostic instead of corrupting
-    /// the stack or trapping.
+    /// A member on a **null** object is tolerated, exactly as a method call on one is: the read gives
+    /// the declared type's default and the write goes nowhere.
+    ///
+    /// Skins depend on it. ClassicPro's tab strip opens every click with `closeTab(lastActiveT)`, and
+    /// on the *first* click `lastActiveT` is still NULL while `closeTab` reads `.ID` off it — so
+    /// throwing here took the whole handler down and no tab in cPro-Bento could ever be activated
+    /// (Phase 24; TASKS §15.6 had blamed the tab strip's script never running, which it does).
+    func testMemberAccessOnANullObjectReadsTheTypedDefault() throws {
+        var code = Data()
+        code.append(pushVariable(6))            // a null object
+        code.append(pushVariable(1))
+        code.append(memberAccess(.integer))
+        code.append(assignToVariable(3))
+
+        let program = try MakiBytecodeParser().parse(
+            makeScript(code: code), source: WalSourceLocation(path: "/nullowner.maki"))
+        let interpreter = MakiInterpreter(dispatcher: NoOpDispatcher())
+        XCTAssertNoThrow(try interpreter.execute(program: program, at: 0))
+        XCTAssertEqual(program.variables[3].value.integerValue, 0,
+                       "the declared type's default, and no storage anywhere to read it back from")
+    }
+
+    /// A member access on a non-object that is **not** null still fails closed: MAKI's compiler cannot
+    /// emit one on an integer, so seeing it means the stack is not what the instruction thinks it is.
     func testMemberAccessOnNonObjectFailsClosed() throws {
         var code = Data()
         code.append(pushVariable(2))            // an integer, not an object
@@ -270,7 +292,7 @@ final class WinampModernPhase8Tests: XCTestCase {
         appendUInt16(0, to: &data)
         appendString("onscriptloaded", to: &data)
 
-        appendUInt32(6, to: &data)                                  // variables
+        appendUInt32(7, to: &data)                                  // variables
         appendVariable(typeOffset: 0, object: true, system: true, to: &data)     // v0
         appendVariable(typeOffset: MakiValueKind.string.rawValue, to: &data)     // v1
         appendVariable(typeOffset: MakiValueKind.integer.rawValue, initial: 7, to: &data) // v2
@@ -279,6 +301,9 @@ final class WinampModernPhase8Tests: XCTestCase {
         // v5: the double 2.55, as MAKI stores it — low mantissa half, then exponent + high half.
         appendVariable(typeOffset: MakiValueKind.double.rawValue, initial: 13107,
                        initial2: 16419, to: &data)
+        // v6: an object variable that is **null** — a script's own `Group`/`Tab` handle before anything
+        // has been assigned to it. Appended last so no existing index moves.
+        appendVariable(typeOffset: 0, object: true, to: &data)
 
         appendUInt32(2, to: &data)                                  // constants
         appendUInt32(1, to: &data)

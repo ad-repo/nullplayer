@@ -105,6 +105,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             wireContainerCallbacks(scripts: scripts)
             try scripts.start()
+            // Immediately after `start()` — so after `onScriptLoaded` and XUI param delivery, and
+            // before the first `updatePlaybackState()` can send `onPlay`: every scene tells its scripts
+            // their geometry once. A script whose state is only assigned in `onResize` has none of it
+            // until then (see `scriptsDidStart`).
+            view.scriptsDidStart()
+            auxiliaryContainers.forEach { $0.view.scriptsDidStart() }
             // After `start()`: the catalog is reconciled against the containers that actually opened,
             // and against the holders the skin's own scripts built while starting.
             makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
@@ -348,6 +354,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         scripts.layoutResizeRequested = { [weak self] container, size in
             self?.viewsByContainer[container]?.applyCanvasResize(size)
+        }
+        // A script moved something. Every container diffs its own scene and notifies what moved; a
+        // container nothing happened in dispatches nothing.
+        scripts.geometryDidSettle = { [weak self] in
+            self?.viewsByContainer.values.forEach { $0.dispatchResizeIfChanged() }
+        }
+        // Only a scene knows where an object landed, and an object belongs to exactly one container —
+        // so ask each container's renderer in turn and take the first that can place it.
+        scripts.resolvedGeometryRequested = { [weak self] object in
+            guard let self else { return nil }
+            for view in viewsByContainer.values where !view.isTornDown {
+                if let geometry = view.renderer.resolvedGeometry(of: object) { return geometry }
+            }
+            return nil
         }
     }
 
