@@ -200,6 +200,42 @@ final class WasabiResourceCache {
         return bitmap
     }
 
+    /// The glyph sheet behind a `<bitmapfont>`.
+    ///
+    /// Winamp accepts **either** form for `file=`, exactly as `loadMap` does: the stock Winamp Modern
+    /// skin names a previously declared `<bitmap>`, MMD3 names a path inside the skin
+    /// (`file="player/tickerfont2.png"`), which the loader has already resolved into `logicalFile`.
+    /// Resolving only the id form returned nil for MMD3 and therefore dropped *every* bitmap-font
+    /// string it draws — the song ticker, the time, KBPS, KHZ — while leaving no diagnostic behind,
+    /// because a font with no sheet simply draws nothing.
+    ///
+    /// The sheet is cached under its own key so it cannot collide with a `<bitmap>` of the same name,
+    /// and it carries the font's own `gammagroup`, or the colour theme would tint the skin's artwork
+    /// and leave its text untinted.
+    func fontSheet(for definition: WalResourceDefinition) -> WasabiBitmap? {
+        guard !isTornDown else { return nil }
+        if let declared = bitmap(identifier: definition.attributes["file"]) { return declared }
+        guard let path = definition.logicalFile else { return nil }
+        let key = "bitmapfont:" + path.folding(options: [.caseInsensitive],
+                                               locale: Locale(identifier: "en_US_POSIX"))
+        accessCounter &+= 1
+        if var cached = bitmaps[key] {
+            cached.access = accessCounter
+            bitmaps[key] = cached
+            return cached.bitmap
+        }
+        guard let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let decoded = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let image = themed(decoded, transform: themes.transform(group: definition.attributes["gammagroup"]))
+        let cost = decoded.width * decoded.height * 4
+        let sheet = WasabiBitmap(image: image, width: decoded.width, height: decoded.height, cost: cost)
+        bitmaps[key] = CachedBitmap(bitmap: sheet, access: accessCounter)
+        currentCost += cost
+        evictIfNeeded(protecting: key)
+        return sheet
+    }
+
     /// A font for a text object, or `nil` when nothing usable could be produced. See
     /// `WasabiTextMetrics.font(identifier:size:)` for why this is optional.
     func font(identifier: String?, size: CGFloat) -> NSFont? {
@@ -974,13 +1010,19 @@ final class WasabiSceneRenderer {
     private func drawBitmapText(_ text: String, definition: WalResourceDefinition, frame: CGRect,
                                 alignment: NSTextAlignment, ticker: WasabiObject?,
                                 context: CGContext) {
-        guard let sheet = resources.bitmap(identifier: definition.attributes["file"]) else { return }
+        guard let sheet = resources.fontSheet(for: definition) else { return }
         let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
         let charHeight = max(1, Int(Double(definition.attributes["charheight"] ?? "1") ?? 1))
         let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
         let advance = max(1, charWidth + spacing)
+        // Winamp's bitmap-font sheet is three rows of glyphs. The accented row used to be appended to
+        // the second one, which put it past column 32 — outside every real sheet, so those glyphs
+        // cropped out of bounds and drew nothing.
+        // The two trailing spaces are load-bearing: they map the space character onto a blank cell of
+        // the sheet's first row rather than onto its fallback, glyph (0, 0).
         let mapRows = [Array("abcdefghijklmnopqrstuvwxyz\"@  "),
-                       Array("0123456789….:()-'!_+\\/[]^&%,=$#\nâöä?*")]
+                       Array("0123456789….:()-'!_+\\/[]^&%,=$#"),
+                       Array("âöä?*")]
         var positions: [Character: (Int, Int)] = [:]
         for (row, characters) in mapRows.enumerated() {
             for (column, character) in characters.enumerated() { positions[character] = (column, row) }
@@ -1042,18 +1084,62 @@ final class WasabiSceneRenderer {
         drawImage(image, in: frame, context: context)
     }
 
+    /// `<vis mode>` — which visualization the skin wants in this box, and whether it wants one at all.
+    ///
+    /// The values are the ones a skin's own script switches between: MMD3's `ShowVISBg` sets 1 for its
+    /// oscilloscope display, 2 for its analyzer display, and **3 whenever its own animated display is
+    /// showing** — which is the shipped default (`mode="3"`), and which is why our bars were being
+    /// painted straight over the skin's artwork. `setMode` writes the same attribute.
+    private enum VisualizationMode {
+        case oscilloscope, analyzer, off
+
+        init(attribute: String?) {
+            switch attribute?.trimmingCharacters(in: .whitespaces) {
+            case "1": self = .oscilloscope
+            case "0", "3": self = .off
+            // A skin that declares no mode gets the analyzer, which is what a `<vis>` box is for.
+            default: self = .analyzer
+            }
+        }
+    }
+
     private func drawVisualization(_ object: WasabiObject, frame: CGRect, context: CGContext) {
         guard !host.spectrumLevels.isEmpty, frame.width > 0, frame.height > 0 else { return }
         let levels = host.spectrumLevels
         let count = min(64, levels.count)
-        let width = frame.width / CGFloat(count)
-        for index in 0..<count {
-            let level = CGFloat(max(0, min(1, levels[index])))
-            let colorName = object.attributes["colorband\(min(16, index + 1))"] ?? "255,255,255"
-            context.setFillColor(resolvedColor(colorName).cgColor)
-            context.fill(CGRect(x: frame.minX + CGFloat(index) * width,
-                                y: frame.maxY - level * frame.height,
-                                width: max(1, width - 1), height: level * frame.height))
+        guard count > 0 else { return }
+        func color(_ index: Int) -> CGColor {
+            resolvedColor(object.attributes["colorband\(min(16, index + 1))"] ?? "255,255,255").cgColor
+        }
+        switch VisualizationMode(attribute: object.attributes["mode"]) {
+        case .off:
+            return
+        case .analyzer:
+            let width = frame.width / CGFloat(count)
+            for index in 0..<count {
+                let level = CGFloat(max(0, min(1, levels[index])))
+                context.setFillColor(color(index))
+                context.fill(CGRect(x: frame.minX + CGFloat(index) * width,
+                                    y: frame.maxY - level * frame.height,
+                                    width: max(1, width - 1), height: level * frame.height))
+            }
+        case .oscilloscope:
+            // Drawn from the same band levels, mirrored about the centre line: the host publishes a
+            // spectrum, not raw PCM, so this is the shape of the signal rather than the waveform
+            // itself. It keeps a skin that asks for a scope from showing an analyzer instead.
+            let step = frame.width / CGFloat(max(1, count - 1))
+            context.saveGState()
+            context.setLineWidth(1)
+            context.setStrokeColor(color(0))
+            context.beginPath()
+            for index in 0..<count {
+                let level = CGFloat(max(0, min(1, levels[index])))
+                let point = CGPoint(x: frame.minX + CGFloat(index) * step,
+                                    y: frame.midY + (index % 2 == 0 ? -1 : 1) * level * frame.height / 2)
+                if index == 0 { context.move(to: point) } else { context.addLine(to: point) }
+            }
+            context.strokePath()
+            context.restoreGState()
         }
     }
 
@@ -1317,9 +1403,22 @@ final class WasabiSceneRenderer {
 
     private func isInteractive(_ object: WasabiObject) -> Bool {
         let type = object.typeName.lowercased()
-        return type == "button" || type == "togglebutton" || type == "nstatesbutton" || type == "slider" ||
-            object.attributes["action"] != nil || object.attributes["move"] == "1" ||
-            (type == "layer" && object.attributes["ghost"] != "1")
+        if type == "button" || type == "togglebutton" || type == "nstatesbutton" || type == "slider" {
+            return true
+        }
+        if object.attributes["action"] != nil { return true }
+        // A container has **no region of its own** in Wasabi — its children supply one. MMD3 declares
+        // `<group id="main.mmd3" move="1">` last in its layout, so it is topmost across the whole
+        // window; accepting a bare group for `move="1"` made it swallow every click that was not over
+        // one of its own children, which is what killed the drawer tabs and the colour-theme strip
+        // declared before it. A group that paints a background does have a region and keeps one.
+        // (Window dragging is unaffected: `shouldDragWindow` only ever accepts a `layer`.)
+        if type == "group" || type == "layout" { return object.attributes["background"] != nil }
+        if object.attributes["move"] == "1" { return true }
+        // An `animatedlayer` is a layer that moves. MMD3's rotary volume/bass/treble knobs are
+        // animated layers with their own `onLeftButtonDown` handlers, and leaving the type out here
+        // meant a click never reached them.
+        return (type == "layer" || type == "animatedlayer") && object.attributes["ghost"] != "1"
     }
 
     private func isRenderable(_ object: WasabiObject, bitmapID: String?) -> Bool {

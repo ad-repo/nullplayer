@@ -49,7 +49,18 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 - Group template expansion during object creation
 - Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
   and vertical), text, `clipchildren` parent clipping
-- Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups
+- Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups. A
+  `<bitmapfont file=…>` may name either a declared `<bitmap>` (Winamp Modern's form) or a path inside
+  the archive (MMD3's form); both resolve, and the glyph sheet carries the font's own `gammagroup`
+- `<text>` content: a script's `setAlternateText` overrides while set (`setText` clears it), then the
+  `display=` binding (`time`, `songname` → "Artist - Title", `songinfo` → the stream-info line a
+  `songinfo.maki` tokenises), then `text`/`default`, then the XML `alternatetext` as the
+  nothing-to-show placeholder. `getText()` answers with the same resolved string
+- `<vis mode>`: `1` = oscilloscope, `2` = spectrum analyzer, `0`/`3` = off (a skin uses "off" when it
+  fills the box with its own animated layer); an undeclared mode is the analyzer. `setMode` switches it
+- Hit testing follows Wasabi's region rule: a `group`/`layout` claims a point only where it paints a
+  `background` — a bare container declared over the whole window does not swallow clicks meant for
+  what is beneath it — and `animatedlayer` takes clicks like `layer` (MMD3's rotary knobs)
 - Colour themes: a `<gammagroup value="r,g,b">` is a per-channel **multiplier**, `(4096 + v) / 4096`
   (0 = unchanged, +4096 = doubled, −4096 = zeroed), applied to bitmaps and to `<color>` resources;
   `gray` is a mode (any non-zero desaturates). The default theme is the **first gammaset in the
@@ -93,6 +104,9 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 - `file="$solid"` / `file="$gradient"` predefined bitmaps are recognized but not resolved as files.
 - `embed_xui` is retained as metadata only — it is **not** an inheritance edge.
 - A splitter's `jump` (snap-to-detent) is parsed but not honoured — a drag is continuous.
+- `<vis mode="1">` (oscilloscope) is drawn from the same band levels as the analyzer, mirrored about
+  the centre line: the host publishes a spectrum, not raw PCM, so it is the shape of the signal rather
+  than the waveform itself. It is distinguishable from the analyzer, not faithful to Winamp's scope.
 - **A `xuitag` instance's own script may never initialize, leaving its controls inert.** Measured on
   cPro-Bento's tab strip: `WINAMP_MODERN_RENDER_XUI` reports `Cpro:Tabs … scripts=["CproTabs.maki"]
   onsetxuiparam=false onscriptloaded=false`, so the script never looks up its five
@@ -345,7 +359,11 @@ groupdefs); teardown completeness; live four-mode switching.
 archives, plus a manual GUI pass): Winamp Modern and cPro-Bento both render their frames and controls;
 sprite crop origin, upright orientation, layer stretching, tiling, and `fitparent` are pinned per
 pixel by `WinampModernRenderPixelTests`. Since Phase 11 cPro-Bento also renders its beat
-visualization, spectrum and stream-info readouts, with all engine scripts completing.
+visualization, spectrum and stream-info readouts, with all engine scripts completing. Since Phase 17
+MMD3 draws its bitmap-font text (song title, time, KBPS, KHZ), resolves its drawer tabs and rotary
+knobs to themselves under `WINAMP_MODERN_RENDER_CLICK`/`CLICKABLE`, and leaves its own animated
+display unobstructed; a 2.5 s timer-driven run confirms the ticker settling on the track title and the
+KBPS/KHZ fields filling from the skin's own `songinfo.maki`.
 
 **Open crash report (2026-08-16, not reproduced).** A live cPro-Bento run aborted in `drawText` with
 `-[__NSPlaceholderDictionary initWithObjects:forKeys:count:]: attempt to insert nil object` from

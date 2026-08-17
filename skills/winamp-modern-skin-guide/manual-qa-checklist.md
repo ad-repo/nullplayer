@@ -45,6 +45,14 @@ For each of the three fixtures:
 - [ ] cPro-Bento: the SUI expands to exactly **one** window, not a scattering of stubs
 - [ ] cPro-Bento: beat visualization, spectrum, and the kbps/kHz/stereo readouts are all alive, and
       the window frame has no holes in its edges (each was a Phase 11 symptom)
+- [ ] mmd3: the display shows the **song title** (artist and title, scrolling when long) and the
+      elapsed time, and the KBPS / KHZ fields fill in once playback starts — all four were blank
+      before Phase 17, because none of the skin's bitmap-font text was drawing at all
+- [ ] mmd3: the VIS / COLORTHEMES / EQ tabs on the right open and close their drawers, and the rotary
+      volume, bass and treble knobs turn under the mouse (Phase 17: a full-window group was swallowing
+      every click that was not over the transport)
+- [ ] mmd3: the animated display in the middle is **unobstructed** — no spectrum bars painted over it
+      in its animated modes; the drawer's analyzer and oscilloscope buttons still switch it
 - [ ] cPro-Bento: leave it open and **use** it for several minutes — clicking, opening drawers,
       switching colour themes, changing UI Size. A live run crashed in text drawing on 2026-08-16
       that no headless harness reproduces; if it recurs, record what you did immediately before.

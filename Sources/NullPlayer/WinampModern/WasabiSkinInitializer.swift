@@ -418,13 +418,13 @@ final class WasabiSkinInitializer {
             }
             if resourceTags.contains(kind) {
                 var logicalFile: String?
-                // Bitmap-font `file` values may name a previously declared bitmap rather
-                // than a VFS path (the stock Winamp Modern skin uses this form for every
-                // bitmap font). Keep that identifier in `attributes`; the renderer resolves
-                // it through the bounded resource registry. TrueType fonts and image-backed
-                // resources still resolve through the VFS here and fail closed when missing.
-                if kind != "bitmapfont",
-                   let rawFile = node.attribute("file"), !rawFile.isEmpty,
+                // Bitmap-font `file` values come in **both** forms and a skin picks one freely: the
+                // stock Winamp Modern skin names a previously declared bitmap, MMD3 names a path
+                // ("player/tickerfont2.png"). So a bitmap font resolves its path here like any other
+                // image and simply registers without one when that fails — the identifier stays in
+                // `attributes` and the renderer looks it up in the registry instead. Resolving only
+                // the identifier form dropped every bitmap-font string MMD3 draws.
+                if let rawFile = node.attribute("file"), !rawFile.isEmpty,
                    // Predefined generated bitmaps (`file="$solid"` / `"$gradient"`) are synthesized
                    // from their `color`/`w`/`h` attributes, not loaded from the VFS. Keep the marker
                    // in `attributes`; the renderer generates the pixels on demand.
@@ -432,21 +432,26 @@ final class WasabiSkinInitializer {
                     do {
                         let resolved = try resolveSkinResource(rawFile, source: node.location).logicalPath
                         logicalFile = resolved
-                        if (kind == "bitmap" || kind == "cursor"),
+                        if (kind == "bitmap" || kind == "cursor" || kind == "bitmapfont"),
                            validatedImages.insert(resolved).inserted {
                             try validateImage(at: resolved, source: node.location)
                         }
                     } catch let failure as WalFailure
-                        where (kind == "bitmap" || kind == "cursor")
+                        where (kind == "bitmap" || kind == "cursor" || kind == "bitmapfont")
                             && failure.diagnostics.allSatisfy({ $0.code == .resourceMissing }) {
                         // Real skins and the ClassicPro engine declare optional bitmaps whose image
                         // files aren't shipped; Winamp tolerates this and simply draws nothing.
                         // Register the resource without a file and record a warning rather than
                         // failing the whole load. Security failures (traversal/escape/variable/
                         // oversize/corrupt image) still throw above.
-                        registry.warn(WalDiagnostic(.resourceMissing,
-                            "Optional \(kind) resource '\(rawFile)' is missing; it will not render.",
-                            severity: .warning, location: node.location))
+                        // A bitmap font that does not resolve as a path is the *identifier* form, not
+                        // a missing file, so it is not worth a warning — the renderer resolves it
+                        // through the registry and only a genuinely unknown id draws nothing.
+                        if kind != "bitmapfont" {
+                            registry.warn(WalDiagnostic(.resourceMissing,
+                                "Optional \(kind) resource '\(rawFile)' is missing; it will not render.",
+                                severity: .warning, location: node.location))
+                        }
                     }
                 }
                 registry.register(WalResourceDefinition(

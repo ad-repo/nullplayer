@@ -200,6 +200,35 @@ Converting a Wasabi `y` to a bottom-left origin before `cropping(to:)` mirrors t
 the sheet's centreline, so every sprite is cut from the wrong row of the atlas. Sprite-sheet crops in
 `drawBitmapText` and `drawAnimated` index rows directly for the same reason.
 
+#### Hit testing: who owns a point
+
+`object(at:)` walks the scene in reverse (`sceneNodes()` is a pre-order DFS, so reversing puts every
+object ahead of its own parent and every later sibling's subtree ahead of an earlier one), then
+alpha-tests the node's bitmap. Two rules about *which* objects may claim a point:
+
+- **A container has no region of its own — its children supply one.** A `group` (or `layout`) is
+  claimable only where it paints a `background`. MMD3 declares `<group id="main.mmd3" move="1">`
+  **last** in its layout, covering the whole window, so accepting a bare group for `move="1"` made it
+  swallow every click that was not over one of its own children: the drawer tabs, the colour-theme
+  strip, and the EQ tabs (all declared *before* it) were completely dead while the play buttons
+  *inside* it worked, which is exactly what the bug report said. Window dragging does not go through
+  this — `shouldDragWindow` only ever accepts a `layer`.
+- **`animatedlayer` is clickable like `layer`.** MMD3's rotary volume/bass/treble knobs are animated
+  layers whose scripts hook `onLeftButtonDown`; leaving the type out of `isInteractive` meant no click
+  ever reached them.
+
+`WINAMP_MODERN_RENDER_CLICKABLE=1` is the check for both: it lists objects a script hooks the mouse on
+that the markup-only hit test rejects. It is not expected to be empty — several objects legitimately
+share a rect and only the topmost can win — but a control the user can see should never be in it.
+
+#### `<vis mode>` — the skin says whether it wants a visualization at all
+
+`1` = oscilloscope, `2` = spectrum analyzer, `0`/`3` = **off**; an undeclared mode is the analyzer.
+MMD3 ships `mode="3"` and its `ShowVISBg` switches between all three, because for six of its nine
+display styles the box is filled by the skin's *own* animated layer and the vis must be silent.
+Ignoring the mode painted our bars straight over the skin's artwork. `setMode` writes the same
+attribute, so honouring it in the renderer is the whole implementation.
+
 #### `<Wasabi:Frame>` — the splitter that builds its own children
 
 Most objects are declared where they appear. A frame is not: it **names** two groups and instantiates
@@ -238,6 +267,41 @@ scripts first.
 Two auto-sizing rules in the renderer, both only when the object declares no `w`: a group with
 `autowidthsource="<id>"` takes the width of the descendant it names, and a `<text>` takes its own
 content's width.
+
+#### A bitmap font's `file=` is an id **or** a path
+
+`<bitmapfont file="…">` is written both ways and a skin picks one freely: the stock Winamp Modern skin
+names a previously declared `<bitmap>`, MMD3 names a path inside the archive
+(`file="player/tickerfont2.png"`). The loader resolves the path form into `logicalFile` and simply
+registers without one when that fails, so the identifier form still resolves through the registry;
+`WasabiResourceCache.fontSheet(for:)` tries both, in that order, and applies the font's own
+`gammagroup`.
+
+> **Gotcha:** a font with no sheet draws *nothing at all* and records no diagnostic, so the failure
+> looks like "this skin has no text" rather than a missing resource. Supporting only the identifier
+> form silently removed every string MMD3 draws — song title, time, KBPS, KHZ, crossfade — while the
+> compatibility report stayed clean.
+
+The glyph map is Winamp's fixed three-row sheet layout. The two trailing spaces on row 0 are
+load-bearing: they map the space character onto a blank cell instead of onto the fallback glyph (0, 0).
+
+#### What a `<text>` shows
+
+Resolution order in `WasabiTextMetrics.content` — and `getText()` answers with the same string,
+because `songinfo.maki` reads a text object back out and tokenises it:
+
+1. a script's `setAlternateText`, while it is non-empty — an **override** (MMD3 puts its SEEK, VOLUME,
+   BASS and TREBLE readouts on the song ticker this way). `setText` clears it, which is how a skin
+   takes it back down a second later.
+2. the `display=` binding (below), else a `songticker`'s implicit track title, else `text`/`default`.
+3. the XML `alternatetext` attribute, when everything above is empty — a **placeholder**, not an
+   override. These are stored apart (`WasabiTextMetrics.scriptAlternateTextKey`) precisely because
+   they are different things: promoting the declared one to an override pinned MMD3's whole display
+   to its shipped placeholder, "updating songticker", for the entire session.
+
+`display=` values: `time`, `songname` → `trackDisplayTitle` ("Artist - Title", which is what Winamp's
+song name is), `songinfo` → `songInfoText` — the **stream info** line, not the artist/album. See
+[Track metadata](#track-metadata-the-skins-actually-read) for why the shape of that string matters.
 
 #### Layer fill modes
 
@@ -378,6 +442,9 @@ Skins do not call dedicated bitrate/sample-rate APIs. `songinfo.maki` lowercases
 words. The units must be **attached to the number** (`320kbps`, `44khz`) — a space between them and
 the fields stay empty. `WinampModernHost.songInfoText` builds this; `trackDisplayTitle` supplies the
 `"Artist - Title"` a song ticker shows (`trackTitle` alone drops the artist).
+
+A skin reads that string through a `<text display="songinfo">`, so that binding must carry
+`songInfoText` and not the artist/album, or its KBPS/KHZ fields stay empty however good the parse is.
 
 A `songticker` carries no `text`/`default` attribute — its content **is** the current track, and it
 scrolls by default. `ticker="bounce"` slides to the end and back; any other enabled value scrolls

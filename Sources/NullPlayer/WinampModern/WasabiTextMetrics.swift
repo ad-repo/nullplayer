@@ -83,13 +83,34 @@ final class WasabiTextMetrics {
         if let identifier = object.xmlID, identifier.caseInsensitiveCompare("PE_Info") == .orderedSame {
             return componentTextProvider?()?.infoLine ?? ""
         }
-        if let alternate = object.attributes["alternatetext"], !alternate.isEmpty { return alternate }
+        // A script's `setAlternateText` *overrides* the content for as long as it is set (MMD3 shows
+        // its SEEK/VOLUME/BASS/TREBLE readouts on the song ticker this way). The XML attribute of the
+        // same name is a different thing: a placeholder for "nothing to show". Treating the two as one
+        // value pinned MMD3's display to its shipped placeholder, "updating songticker", forever.
+        if let override = object.attributes[scriptAlternateTextKey], !override.isEmpty { return override }
+        let resolved = bound(object, host: host)
+        if resolved.isEmpty, let placeholder = object.attributes["alternatetext"], !placeholder.isEmpty {
+            return placeholder
+        }
+        return resolved
+    }
+
+    /// Where `setAlternateText` keeps its value — deliberately not the XML `alternatetext` attribute.
+    /// Not a Wasabi attribute name, so a skin cannot declare it.
+    static let scriptAlternateTextKey = "nullplayer.script.alternatetext"
+
+    private static func bound(_ object: WasabiObject, host: WinampModernHost) -> String {
         switch object.attributes["display"]?.lowercased() {
         case "time":
             let seconds = max(0, Int(host.currentTime))
             return String(format: "%d:%02d", seconds / 60, seconds % 60)
-        case "songname": return host.trackTitle
-        case "songinfo": return host.trackInfo
+        // Winamp's "song name" is the playlist's display title — "Artist - Title" — which is exactly
+        // what a skin puts in its main display, and what `songticker` shows.
+        case "songname": return host.trackDisplayTitle
+        // `songinfo` is the **stream info** line, not the artist/album: `songinfo.maki` reads this
+        // object's own text back and tokenises it looking for `kbps`, `khz` and the channel words,
+        // which is the only way MMD3's KBPS/KHZ fields are ever filled in.
+        case "songinfo": return host.songInfoText
         default:
             if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame {
                 return host.trackDisplayTitle

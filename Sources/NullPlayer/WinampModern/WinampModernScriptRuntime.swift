@@ -916,9 +916,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .null
         case "settext":
             _ = object.setAttribute("text", value: arguments[0].stringValue)
+            // `setText` is also how a skin takes an alternate text back down: MMD3's ticker timer
+            // fires `setText("")` a second after a `setAlternateText("VOLUME: 40%")` and expects the
+            // song title back.
+            _ = object.setAttribute(WasabiTextMetrics.scriptAlternateTextKey, value: "")
             graphDidMutate?()
             return .null
-        case "gettext": return .string(object.attributes["text"] ?? object.attributes["default"] ?? "")
+        // What the object *shows*, not just the literal it was declared with. MMD3's songinfo timer
+        // reads `getText()` off the `display="songinfo"` text and tokenises it for KBPS/KHZ; answering
+        // with the (empty) `default=` attribute left both fields blank forever.
+        case "gettext": return .string(WasabiTextMetrics.content(of: object, host: host))
         case "getautowidth":
             return .integer(autoWidth(of: object))
         case "resize":
@@ -1018,9 +1025,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .boolean(WasabiAnimation.state(of: object,
                                                   frameCount: animationFrameCount(of: object)).isPlaying)
         case "setalternatetext":
-            // A `songticker`'s alternate text temporarily replaces the track title (volume readouts,
-            // hints). An empty string restores the normal content.
-            _ = object.setAttribute("alternatetext", value: arguments[0].stringValue)
+            // A script's alternate text *replaces* what the object shows — MMD3 puts its SEEK, VOLUME,
+            // BASS and TREBLE readouts on the song ticker this way, then clears them a second later.
+            // Empty restores the normal content. It is written to its own key rather than over the
+            // XML `alternatetext`, which is a placeholder for "nothing to show" and must not be
+            // promoted into an override (that is what pinned MMD3's display to "updating songticker").
+            _ = object.setAttribute(WasabiTextMetrics.scriptAlternateTextKey,
+                                    value: arguments[0].stringValue)
             graphDidMutate?()
             return .null
         case "leftclick":
