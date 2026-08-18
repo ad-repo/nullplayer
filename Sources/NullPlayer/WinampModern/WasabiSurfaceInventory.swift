@@ -52,6 +52,15 @@ struct WinampModernSurfaceInventory {
     var synthesizableKinds: [WinampModernComponentKind] {
         guard arrangement == .separateWindows else { return [] }
         return Self.managedKinds.filter {
+            // The **equalizer** is never synthesized. A synthesized window's body is always a
+            // component holder we invented, and unlike the playlist's and the library's, the
+            // equalizer's hosted surface is a stand-in — eleven painted tracks with no on/off, auto,
+            // presets, labels or scale. Building it produced a window that only NullPlayer's own
+            // routing could reach, and worse, two routes that disagreed: the menu resolved through
+            // the catalog to the full classic EQ while a skin's `TOGGLE Eq` button found the
+            // synthesized container in `routeComponentToggle` and opened the stub instead. A skin
+            // that draws its own equalizer is matched as embedded or declared and never reaches here.
+            $0 != .equalizer &&
             !embeddedKinds.contains($0) && declaredContainers[$0] == nil && !ambiguousKinds.contains($0)
         }
     }

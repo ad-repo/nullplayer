@@ -123,7 +123,11 @@ Cross-mount climbs work, which is how cPro-Bento reaches its engine:
 Group semantics worth knowing:
 
 - `inherit_group` **is** the inheritance edge (depth limit 64, cycle-detected).
-- `embed_xui` is retained as metadata and is **not** an inheritance edge.
+- `embed_xui` is retained as metadata and is **not** an inheritance edge. It does two jobs: the
+  instance's children are created under the object it names, **and** that object *is* the XUI, so the
+  pointer events it receives are forwarded to the embedding group. Defix's `bento.tabbutton` embeds a
+  `mousetrap` button while the core script hooks `onLeftClick` on the group (`switch.ml`) — without
+  the forwarding every tab lit up under the pointer and switched nothing.
 - `xuitag` registers a custom XML tag name for group instantiation.
 - A duplicate definition does **not** replace the earlier one wholesale: every version is kept, and a
   `<group>` expands the version in force *where that group is written*. Winamp's parser is streaming,
@@ -152,6 +156,14 @@ Group semantics worth knowing:
     always wins.
 
 ### Retained graph and coordinates
+
+**`findObject` is the wide lookup, `getObject` the narrow one.** `getObject(id)` searches the
+receiver's own subtree; `findObject(id)` searches that subtree **first and then the rest of the
+container**, which is the whole reason a skin reaches for one name over the other. Defix's core
+script holds `sui.content` and asks it for `switch.ml`, a tab button in a *sibling* subtree: resolved
+from descendants alone, all five tab lookups came back null and the script bound its handlers to
+nothing, so the SUI never changed tabs. The nearest match still wins, so a skin with the same id in
+both places keeps getting its own.
 
 `WasabiObjectGraph` owns every node (including detached ones). IDs are monotonic and deterministic
 for a deterministic expanded document, which makes `snapshot()` the golden-test surface. XML `id`
@@ -184,9 +196,16 @@ and every descendant collapses into the top-left corner.
 
 #### The protective window minimum
 
+A `<group>` whose box the skin **declared** (its own `w`/`h`, or `fitparent`) clips its children,
+because a group is a window in Wasabi — Defix's cassette display is a 263×79 group holding a 117×117
+reel bitmap, and unclipped both reels spilled 53px below the cassette and painted over the song
+ticker beneath it. A group with **no** declared box does *not* clip: its rect is one the renderer
+inferred, and clipping children to a guess erases content that is really there. Across the 15
+measured skins the rule changes four rendered images and leaves 13 skins byte-identical.
+
 `layoutMinimumSize` is **not** just the layout's `minimum_w`/`minimum_h`. Those numbers are written
-for Winamp, where every group clips its children; we clip only on `clipchildren="1"`, so past a
-certain size a child that no longer fits paints over its siblings instead of being cut off. The
+for Winamp, where every group clips its children; we clip a declared group and inherit otherwise, so
+past a certain size a child that no longer fits can still paint over its siblings. The
 renderer therefore probes for the smallest size at which the scene still lays out the way its author
 drew it, and raises the declared floor to it (`computeProtectiveMinimumSize`). Every window's
 `contentMinSize`, `resize()`, and `clampRestoredFrame` go through the same number.
@@ -266,7 +285,14 @@ alpha-tests the node's bitmap. Two rules about *which* objects may claim a point
 - **`rectrgn="1"` *is* the object's region — its whole rect, artwork or not.** Skins use a bare layer
   with it as an invisible click target (Love is War Miku switches its visualization mode through
   `visual.trigger`, a layer with no image at all), and a hit test that insists on a bitmap can never
-  reach one.
+  reach one. It also **settles the alpha question**: `object(at:)` skips its bitmap alpha test for a
+  `rectrgn` object, because testing the artwork anyway contradicts the attribute. Defix's four
+  main-window buttons are `rectrgn="1"` icons drawn as outlines, and a click landing in a transparent
+  gap fell straight past the button onto the `ButtonBG` panel behind it — so its first and fourth
+  buttons (playlist and video) were completely dead while the second and third, denser under the same
+  point, worked. That reads as "two of my buttons are broken", not as a hit test disagreeing with a
+  declared region. Only objects that *have* a bitmap are affected; a bare `rectrgn` layer never had an
+  alpha test to skip.
 - **`animatedlayer` is clickable like `layer`.** MMD3's rotary volume/bass/treble knobs are animated
   layers whose scripts hook `onLeftButtonDown`; leaving the type out of `isInteractive` meant no click
   ever reached them.
@@ -403,6 +429,68 @@ because `songinfo.maki` reads a text object back out and tokenises it:
 `display=` values: `time`, `songname` → `trackDisplayTitle` ("Artist - Title", which is what Winamp's
 song name is), `songinfo` → `songInfoText` — the **stream info** line, not the artist/album. See
 [Track metadata](#track-metadata-the-skins-actually-read) for why the shape of that string matters.
+
+#### A `cfgattrib` control has no `action` — the binding *is* what it does
+
+`cfgattrib="{GUID};Name"` binds a control to a Winamp preference, and a skin both **writes** it from
+its configurator and **reacts** to it. Defix's settings window is nine of these, each a *pair* of
+togglebuttons over one rect: a `ghost="1"` one carrying `image`/`activeImage` that shows the state,
+and a bare `rectrgn="1"` one that takes the click. Neither carries an `action`, so `performAction`
+had nothing to run and every switch in that window was inert, while the indicator beside it painted
+its "off" artwork whatever the stored value was.
+
+Both halves are needed, and the second is the one that is easy to miss:
+
+- `WinampModernScriptRuntime.toggleConfigAttribute(of:)` flips the stored value **and dispatches
+  `onDataChanged`** to every dynamic object registered against the same attribute. A skin applies a
+  setting from that event, not by polling — writing the value silently moves the switch and changes
+  nothing on screen until the skin is reloaded. Turning off Defix's "Window control bar" is
+  observable precisely because the event reaches its script: `playlist.CotrolBAR` and the SUI tab
+  strip `grid.s2` hide, and `FRAMING_GROUP` re-lays out.
+- `configStateProvider` lets the renderer read the binding for a togglebutton's active state, so the
+  indicator follows the value. Every renderer shares the one runtime, so a switch and any control it
+  mirrors in another window always agree.
+
+> Not every attribute a skin registers appears in its own configurator. Defix's songticker mode
+> (`Disable`/`Modern`/`Classic Songticker Scrolling`) is registered with `newAttribute` for **Winamp's**
+> preferences dialog and appears nowhere in its Skin Settings window — so with no Winamp preferences
+> UI here, there is currently no way to reach it. The skin ships `Disable = 1`, which is why its song
+> ticker does not scroll.
+
+#### `TOGGLE`'s parameter is a component **or a container id**
+
+`action="TOGGLE"` addresses a component by short name or GUID (`Eq`,
+`guid:{45F3F7C1-…}`) *or* names one of the skin's **own containers**, and Winamp shows/hides whichever
+window that is. Resolving only through `WinampModernComponentRegistry.kind(for:)` left every
+container-addressed button inert, because that registry deliberately never matches a container id.
+
+Defix's `CONF` button is exactly one — `<button id="CONF" action="TOGGLE" param="Config">` — so its
+entire configurator was unreachable: the 31 changeable backgrounds, the nine display styles, and the
+songticker scrolling mode. That last one is why the symptom looked like a renderer bug rather than a
+routing one: the skin ships `Disable Songticker Scrolling = 1`, its own `onDataChanged` writes
+`ticker="off"`, and the only control that could turn it back on could not be opened. `TOGGLE` now
+falls through to `containerWindowToggleRequested`, matching an auxiliary container by id
+(case-insensitively) — so a skin button and the View menu still resolve through the same windows.
+
+> **Gotcha:** an auxiliary container's `default_visible="1"` is not honoured — every one is
+> `orderOut` at setup and placed on first show. Defix's `Config` declares it, so in Winamp its
+> settings window opens with the skin and here it does not. Deliberate for now (a settings window
+> opening at every launch is worse), but it is a real difference.
+
+#### `<AlbumArt>` needs a host that actually has the cover
+
+`WinampModernHost.albumArtwork` has a protocol-extension default of `nil`, and for a long time the
+production host never overrode it — so every `<AlbumArt>` in every `.wal` skin drew its
+`notfoundImage` forever, which reads as "this skin has no cover art support" rather than as a missing
+host property. `WinampModernAudioEngineHost` supplies it from `NowPlayingManager`, which already
+fetches art for every source (local tags, Plex, Subsonic, Jellyfin, Emby) to feed the system Now
+Playing panel — a skin's cover is that same image, not a second fetch.
+
+Two things this must get right: the `CGImage` is cached **per track id**, because `albumArtwork` is
+read inside `draw` and converting an `NSImage` there re-rasterises the art every repaint; and the
+cache is dropped on a track change, or the previous track's cover stays on screen over the new one's
+title. Art arrives asynchronously, so the window controller repaints on
+`NowPlayingManager.artworkDidLoadNotification` — with playback paused nothing else would.
 
 #### `alpha` belongs to the object, not to one kind of drawing
 
@@ -730,6 +818,21 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
 - **Winamp defines no equalizer component GUID.** An equalizer is recognized by its controls
   (`EQ_BAND`/`EQ_PREAMP`/`<eqvis>`) and a synthesized one uses `guid:eq`. `EQ_TOGGLE`/`EQ_AUTO` do not
   count as evidence — a button that opens the EQ is not an EQ.
+- **An equalizer is never synthesized** (`synthesizableKinds` excludes it). Synthesis always builds
+  the same body — a standard frame around a `<component>` holder *we* invented — and never wraps the
+  skin's own controls. For the playlist and the library that holder resolves to a complete NullPlayer
+  surface, so the window earns its place. The equalizer's hosted surface is a stand-in:
+  `drawEqualizerComponent` paints eleven tracks with 3px thumbs and nothing else — no on/off, no auto,
+  no presets, no band labels, no dB scale.
+  **Two routes reach an equalizer and they must agree.** The menu resolves through the catalog
+  (`routeWinampModernSurface`), while a skin's own `TOGGLE Eq` button goes through
+  `WinampModernMainView.routeComponentToggle`, which checks the *auxiliary containers* before falling
+  through to the classic window. Leaving the container synthesized but unrouted made those two
+  disagree: the menu opened the full classic EQ and the skin's button opened the stub. Not building it
+  is what keeps them consistent — both now land on the classic window, which has painted from the
+  skin's own palette since Phase 16. Defix and T800 are the measured cases (neither declares a single
+  EQ control); a skin that draws its own equalizer is matched as embedded or declared first and never
+  reaches synthesis.
 
 #### Container-scoped layout callbacks
 
@@ -912,7 +1015,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_SCRIPTS=1` (or `=bindings`) | per program: owner, source, declared handlers, which events actually **ran**, and which failed with what. `=bindings` adds what every handler is bound to *right now* and each script group's ancestor chain |
 | `WINAMP_MODERN_RENDER_DISASM=<method>` | the instructions around every call site of a method — how an unknown **arity** is settled, by counting the net pushes between the receiver and the call |
 | `WINAMP_MODERN_RENDER_DISASM=@<source>` | the **whole** listing for every program whose path matches: each handler's entry point, every instruction, constants and method names resolved. Variable values are read *after* the run, so a `vN=null` at a `findObject` is a lookup that failed. This is how Winamp Modern's titlebar layout was recovered — an arity fits in an 8-instruction window, a layout routine does not |
-| `WINAMP_MODERN_RENDER_SETTLE=<seconds>` | pump the run loop before dumping, so timer-driven state has happened |
+| `WINAMP_MODERN_RENDER_SETTLE=<seconds>` | pump the run loop before dumping, so timer-driven state has happened — and **between driven clicks**, because a skin that gates a transition on a timer (`if (anim.isRunning()) return; anim.start();`, Defix's tab switch) never releases the gate without one, and a working control measures as one that only responds the first time |
 
 
 Use the probe to answer "is it missing art, bad geometry, or a script that never ran" before changing

@@ -22,7 +22,7 @@ is the reference to compare against.
 | T800 | Phase 20–22 | per-layout groups, region-clipped volume, drag | — |
 | ZDL Reel-To-Reel | Phase 18 | sized from its background art | — |
 | Rika | Phase 22 | loads without its missing TTF; vis colours honoured | — |
-| Defix Hi-End 200 | Phase 25 | wood panel + framed windows, cassette display, laid-out SUI tabs | its own guilist library/browser widgets |
+| Defix Hi-End 200 | Phase 26 | wood panel + framed windows, cassette display, **live SUI tabs + embedded library**, clipped reels | its `<Browser>` explorer; layer FX; `newDynamicContainer` |
 
 ---
 
@@ -284,6 +284,12 @@ bitmaps. `main/normal` 406×355, 69 nodes.
 ### Working
 
 - **The wood panel and the framed windows** — see the trap below; this is the skin's whole look.
+- **The SUI body** — the tab strip switches between Media Library, Visualization and Explorer, and
+  the Media Library tab hosts NullPlayer's embedded library through the holder it declares. This was
+  read as a "guilist gap" for two phases on the strength of a blank dump; the body is a
+  `<windowholder>` on the media-library GUID, and the render harness cannot draw AppKit content, so
+  the dump is blank for a surface that works. Three separate defects kept the strip inert — see the
+  traps below.
 - **The display** — the audio-cassette visualizer (its shipped default, one of nine styles), the song
   ticker on the cassette label, the time readout, and the Shuffle / Repeat / Kbps / Extension
   readouts, one variant at a time.
@@ -293,9 +299,15 @@ bitmaps. `main/normal` 406×355, 69 nodes.
 
 ### Not implemented or knowingly wrong
 
-- **Its own guilist widgets** — the media-library tree, the file browser and the search results are
-  built from `guilist`/`Guitree` objects (engine-wide gap, same as cPro-Bento), so the SUI's body is
-  empty below the tabs.
+- **Its songticker never scrolls, and no UI here can change that.** The skin registers
+  `Disable`/`Modern`/`Classic Songticker Scrolling` with `newAttribute` for **Winamp's** preferences
+  dialog — they appear nowhere in its own Skin Settings window — and ships `Disable = 1`, which its
+  `onDataChanged` applies as `ticker="off"`. The engine handles all three values; there is simply no
+  way to reach the setting. Do not "fix" the ticker code for this.
+- **Its `<Browser>` explorer tab** — the Explorer tab's content is a `<Browser>` control (Winamp
+  embeds Internet Explorer and points it at a file path). The tab switches and its chrome draws; the
+  browser pane itself is empty, and hosting a real web view for untrusted skin content is outside the
+  sandbox this engine is built on.
 - **Layer FX** — the analog VU meter styles configure a per-pixel warp we accept and ignore, so those
   display styles draw undistorted artwork.
 - **`newDynamicContainer` returns the existing container**, so the skin's detachable visualizer and
@@ -320,6 +332,31 @@ bitmaps. `main/normal` 406×355, 69 nodes.
 - **`@HAVE_LIBRARY@` is a script param, not a path variable.** The core script reads
   `stringToInteger(getParam())` as "is there a media library?" and drops the Media Library tab when the
   answer is 0 — which the literal string is.
+- **Its four round buttons are `rectrgn="1"` outline icons, and two of them were dead.** The hit test
+  alpha-tested the artwork even for a declared rect region, so a click through a gap in the icon fell
+  onto the `ButtonBG` panel behind. `ConfBT1`/`ConfBT4` never responded; `ConfBT2`/`ConfBT3` did,
+  because their artwork is denser under the same point.
+- **Those four buttons are user-configurable, and none of them is hard-wired.** Each reads its own
+  `getPrivateString(getSkinName(), "MainBtnN", …)` and dispatches on the result — `"PL"` calls
+  `PLSBt.leftClick()`, `"EQ"` calls `EQSwitch.leftClick()`, `"ML"`/`"Video"` send `opentab` to
+  `sui.content`. `PLSBt` and `EQSwitch` are 0×0 image-less proxy buttons that exist only to carry an
+  `action`/`param` pair, so `leftClick()` must run the target's *action*, not just dispatch its
+  `onLeftClick`. The XML defaults are PL / EQ / ML / Video, but the script rewrites the images, so what
+  a button does is not what its markup says.
+- **`findObject` is the *wide* lookup.** The core script holds `sui.content` and asks it for
+  `switch.ml` — a tab button in `grid.s2`, a **sibling** subtree. Answered from descendants alone all
+  five tab lookups returned null, so the script bound its click handlers to nothing. `findObject`
+  searches the receiver's subtree first and then the rest of the container; `getObject` stays narrow.
+- **`embed_xui` says which object *is* the XUI.** `bento.tabbutton` embeds its `mousetrap` button and
+  the core script hooks `onLeftClick` on the **group** (`switch.ml`), so the child's pointer events
+  have to be carried up to the embedding group or the tab lights up and nothing else happens.
+- **The tab switch is gated on a timer**: `if (anim.isRunning()) return; anim.start();`. The app has a
+  run loop and the timer stops itself; the render harness does not, so without pumping the run loop
+  between driven clicks only the *first* tab click ever appears to work. That is a harness artifact —
+  do not chase it in the engine (`RENDER_CLICK` now pumps when `RENDER_SETTLE` is set).
+- **A group is a window and clips.** The cassette display is a 263×79 group holding a 117×117 reel
+  bitmap; unclipped, both reels spilled 53px below the cassette and painted over the song ticker,
+  leaving the title readable only in the gaps between them.
 - **One refused method costs the whole window.** Every early defect here was a handler aborting
   partway: `getExtension` took the main layout's display with it, `fx_setGridSize` the VU meter,
   `newDynamicContainer` → `setFontSize` → `navigateUrl` → `hasVideoSupport` the global script, each

@@ -69,9 +69,39 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     private var isConsumingVisualization = false
     var spectrumLevels: [Float] = []
 
+    /// The current track's cover, decoded once per track rather than per frame — `albumArtwork` is
+    /// read inside `draw`, so converting an `NSImage` there would re-rasterise the art every repaint.
+    private var artworkCache: (trackID: UUID, image: CGImage?)?
+    private var artworkObserver: NSObjectProtocol?
+
     init(engine: AudioEngine, consumerID: String = "winampModernMain") {
         self.engine = engine
         self.consumerID = consumerID
+        // `NowPlayingManager` already fetches cover art for every source (local tags, Plex, Subsonic,
+        // Jellyfin, Emby) to feed the system Now Playing panel. A skin's `<AlbumArt>` wants exactly
+        // that image, so this listens rather than fetching a second copy of it.
+        artworkObserver = NotificationCenter.default.addObserver(
+            forName: NowPlayingManager.artworkDidLoadNotification,
+            object: nil, queue: .main) { [weak self] _ in self?.artworkCache = nil }
+    }
+
+    /// The playing track's cover, or `nil` — which is what makes an `<AlbumArt>` fall back to the
+    /// `notfoundImage` the skin ships. Until this existed the protocol's default `nil` applied to
+    /// every `.wal` skin, so every `<AlbumArt>` in every skin permanently showed "no cover art".
+    ///
+    /// Keyed by track id: the cache has to be dropped when the track changes, or the previous
+    /// track's cover stays on screen over the new one's title.
+    var albumArtwork: CGImage? {
+        guard let trackID = engine.currentTrack?.id else { return nil }
+        if let artworkCache, artworkCache.trackID == trackID { return artworkCache.image }
+        let manager = NowPlayingManager.shared
+        // Only the art that belongs to *this* track. A load in flight for a track that has already
+        // changed would otherwise be shown against the wrong one.
+        let image = manager.currentTrackId == trackID
+            ? manager.currentArtwork?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            : nil
+        artworkCache = (trackID, image)
+        return image
     }
 
     var playbackState: PlaybackState { engine.state }
@@ -152,7 +182,10 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         spectrumLevels.removeAll(keepingCapacity: false)
     }
 
-    deinit { endVisualizationConsumption() }
+    deinit {
+        if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
+        endVisualizationConsumption()
+    }
 }
 
 final class MakiTimerService {

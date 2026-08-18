@@ -796,6 +796,16 @@ final class WasabiSkinInitializer {
                               createdCount: &createdCount,
                               documentOrder: documentOrder, enclosingOrder: nodeOrder)
             let embeddedParent = embeddedXUITag.flatMap { findObject(xmlID: $0, beneath: object) } ?? object
+            // `embed_xui` does not only say where the instance's children go — it says which object
+            // *is* the XUI, so the group answers for the embedded control's mouse events. Defix's
+            // `bento.tabbutton` embeds its `mousetrap` button and the core script hooks `onLeftClick`
+            // on the **group** (`switch.ml`); with nothing carrying the click across, the tab lit up
+            // under the pointer and the SUI body never changed. Recorded on the group so the runtime
+            // can find it from the child at dispatch time; `id` is not unique, but the pair
+            // (this group, that id) is what the lookup above already resolved.
+            if embeddedParent !== object, let tag = embeddedXUITag {
+                _ = object.setAttribute("nullplayer.embedxui", value: tag.lowercased())
+            }
             try createObjects(from: instanceChildren, parent: embeddedParent, graph: graph, types: types,
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                               definitionStack: nextDefinitionStack,

@@ -87,6 +87,9 @@ final class WinampModernSurfaceCoordinator {
                 return .declaredContainer(id: id)
             }
             if let id = synthesis.synthesizedContainers[kind], hostedContainerIDs.contains(id) {
+                // Never the equalizer: `synthesizableKinds` excludes it, because a synthesized
+                // window's body is a component holder we invented and the equalizer's hosted surface
+                // is only a stand-in. See `WasabiSurfaceInventory.synthesizableKinds`.
                 return .synthesizedContainer(id: id)
             }
             if let reason = synthesis.unavailable[kind] {

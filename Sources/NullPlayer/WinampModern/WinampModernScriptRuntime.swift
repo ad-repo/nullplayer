@@ -84,6 +84,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Cursor position in the *skin's own pixel space* — the same units as the x/y a mouse event hands
     /// a script, which rotary-knob scripts combine in a single expression.
     var mousePositionRequested: (() -> CGPoint)?
+    /// The same cursor position, but in the pixel space of the window that renders `object` — which is
+    /// a *different* window from the one `mousePositionRequested` answers for whenever the receiver
+    /// lives in an auxiliary container. `System.getMousePos*` has no receiver and cannot ask this;
+    /// `isMouseOverRect` does, and Defix's SUI tabs are in the SUI window while the mouse hook is
+    /// installed by the main view, so comparing against the main window's space put every tab's
+    /// hit somewhere else entirely. `nil` when no window renders the object (the headless harness).
+    var mousePositionInObjectSpaceRequested: ((WasabiObject) -> CGPoint?)?
     /// Whether the equalizer is on, for `System.getEQ()`.
     var equalizerEnabledRequested: (() -> Bool)?
     /// One EQ band, on MAKI's −127…127 scale (MMD3's bass/treble knobs read and write the bands).
@@ -480,7 +487,80 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     @discardableResult
     func dispatch(object: WasabiObject, event: String, arguments: [MakiValue] = []) throws -> Int {
-        try dispatch(target: MakiObjectReference(.gui(object.stableID)), event: event, arguments: arguments)
+        var handled = try dispatch(target: MakiObjectReference(.gui(object.stableID)),
+                                   event: event, arguments: arguments)
+        // A group that embeds a control (`embed_xui`) *is* that control as far as a script that holds
+        // the group is concerned, so the pointer events the child receives are the group's too. Only
+        // the mouse set is carried across: those are the events the embedding exists to express, and
+        // forwarding lifecycle or data events would fire a handler twice for one occurrence.
+        if Self.embeddedXUIForwardedEvents.contains(event) {
+            for owner in embeddingOwners(of: object) {
+                handled += try dispatch(target: MakiObjectReference(.gui(owner.stableID)),
+                                        event: event, arguments: arguments)
+            }
+        }
+        return handled
+    }
+
+    private static let embeddedXUIForwardedEvents: Set<String> = [
+        "onleftbuttondown", "onleftbuttonup", "onleftclick", "onleftbuttondblclk",
+        "onrightbuttondown", "onrightbuttonup", "onrightclick", "onenterarea", "onleavearea"
+    ]
+
+    /// The `{GUID};Name` pair a control is bound to, or `nil` when it is not config-bound.
+    static func configBinding(of object: WasabiObject) -> (section: String, key: String)? {
+        guard let attribute = object.attributes["cfgattrib"] else { return nil }
+        let parts = attribute.components(separatedBy: ";")
+        guard parts.count >= 2 else { return nil }
+        return (parts[0], parts[1...].joined(separator: ";"))
+    }
+
+    /// The current value of a `cfgattrib`-bound control, for the renderer's active-state decision.
+    func configValue(of object: WasabiObject) -> Bool {
+        guard let binding = Self.configBinding(of: object) else { return false }
+        return loadedSkin.configuration.integer(section: binding.section, key: binding.key, default: 0) != 0
+    }
+
+    /// Flip a `cfgattrib`-bound control and tell the skin, returning false when it is not bound.
+    ///
+    /// Winamp's own preferences own these values, and a skin both writes them from its configurator
+    /// and *reacts* to them. Defix's settings window is nine of these — each one a pair of
+    /// togglebuttons over the same rect, a `ghost="1"` one that shows the state and a bare
+    /// `rectrgn="1"` one that takes the click, both naming the same attribute. Neither carries an
+    /// `action`, so nothing in the view had anything to run and every switch was inert.
+    ///
+    /// The notification is the half that matters: a skin applies a setting from `onDataChanged` on
+    /// the `newAttribute` object it registered, not by polling. Writing the value silently would move
+    /// the switch and change nothing on screen until the skin was reloaded. Every dynamic object bound
+    /// to the same attribute is told, because each script registers its own.
+    @discardableResult
+    func toggleConfigAttribute(of object: WasabiObject) -> Bool {
+        guard let binding = Self.configBinding(of: object) else { return false }
+        let flipped = loadedSkin.configuration.integer(section: binding.section, key: binding.key,
+                                                       default: 0) != 0 ? "0" : "1"
+        loadedSkin.configuration.setString(flipped, section: binding.section, key: binding.key)
+        for (id, state) in dynamicObjects {
+            guard case .configAttribute(let section, let key) = state.role,
+                  section.caseInsensitiveCompare(binding.section) == .orderedSame,
+                  key.caseInsensitiveCompare(binding.key) == .orderedSame else { continue }
+            _ = try? dispatch(target: MakiObjectReference(.dynamic(id)), event: "ondatachanged",
+                              arguments: [])
+        }
+        graphDidMutate?()
+        return true
+    }
+
+    /// The groups that declared `embed_xui` naming this object — the ancestors that speak for it.
+    /// Nearly always none or one; the walk is up the parent chain, so it is bounded by tree depth.
+    private func embeddingOwners(of object: WasabiObject) -> [WasabiObject] {
+        guard let id = object.xmlID?.lowercased() else { return [] }
+        var owners: [WasabiObject] = []
+        var candidate = object.parent
+        while let current = candidate {
+            if current.attributes["nullplayer.embedxui"] == id { owners.append(current) }
+            candidate = current.parent
+        }
+        return owners
     }
 
     /// Whether anything a script did during the current event could have moved an object. Only the
@@ -727,6 +807,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // hands the script — the knob scripts mix the two in one expression.
             "getmouseposx": .init(argumentCount: 0, returnKind: .integer),
             "getmouseposy": .init(argumentCount: 0, returnKind: .integer),
+            // "is the pointer still on me?" — what a button asks in `onLeftButtonUp` to tell a click
+            // from a drag that left the control. Defix's every SUI tab does exactly that, so without
+            // it the handler aborted at the first tab and the whole tab strip was inert.
+            "ismouseoverrect": .init(argumentCount: 0, returnKind: .boolean),
             "atan": .init(argumentCount: 1, returnKind: .float),
             "geteq": .init(argumentCount: 0, returnKind: .integer),
             "geteqband": .init(argumentCount: 1, returnKind: .integer),
@@ -1250,8 +1334,21 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 $0.typeName.caseInsensitiveCompare("layout") == .orderedSame &&
                 $0.xmlID?.caseInsensitiveCompare(arguments[0].stringValue) == .orderedSame
             } ?? descendant(of: object, xmlID: arguments[0].stringValue))
-        case "getobject", "findobject":
+        case "getobject":
             return objectValue(descendant(of: object, xmlID: arguments[0].stringValue))
+        // `findObject` is the *wide* lookup and `getObject` the narrow one — Wasabi searches the
+        // receiver's own subtree first and then the rest of the window, which is the whole reason a
+        // skin reaches for one name over the other. Defix's core script holds `sui.content` and asks
+        // it for `switch.ml`, a tab button that lives in `grid.s2`, a **sibling** subtree: answered
+        // from descendants alone every one of the five tab lookups came back null, the script bound
+        // its click handlers to nothing, and the SUI body never switched tabs however well the
+        // buttons themselves lit up. The nearest match still wins, so a skin with the same id in
+        // both places keeps getting its own.
+        case "findobject":
+            let wanted = arguments[0].stringValue
+            if let near = descendant(of: object, xmlID: wanted) { return objectValue(near) }
+            guard let root = ancestor(of: object, type: "container") else { return .null }
+            return objectValue(descendant(of: root, xmlID: wanted))
         case "getcontainer": return objectValue(ancestor(of: object, type: "container"))
         case "getcurlayout":
             return objectValue(activeLayoutByContainer[object.stableID].flatMap(loadedSkin.runtime.graph.object(withID:)))
@@ -1386,6 +1483,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getheight", "getguih":
             return .integer(dimension(resolvedFrame(of: object)?.height,
                                       declared: object.geometry.height ?? 0))
+        // Both sides of this comparison must be in the *same* window's space, so the point comes from
+        // the window that renders this object rather than from the global mouse hook, and the rect is
+        // the object's resolved frame in that window (not the parent-relative one `getLeft` answers).
+        // With no window — the headless harness — the honest answer is "no", which still lets the
+        // handler run to the end instead of aborting it.
+        case "ismouseoverrect":
+            guard let point = mousePositionInObjectSpaceRequested?(object),
+                  let frame = resolvedGeometryRequested?(object)?.frame else { return .boolean(false) }
+            return .boolean(frame.contains(point))
         case "getposition" where WasabiFrame.isFrame(object):
             // A splitter's position is its divider offset, not a slider value. ClassicPro reads it to
             // decide whether the side view is open (`mainFrame.getPosition()==0`).
@@ -1979,6 +2085,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         themeSwitchRequested = nil
         dispatchObserver = nil
         resolvedGeometryRequested = nil
+        mousePositionInObjectSpaceRequested = nil
         geometryDidSettle = nil
         timers.teardown()
         interpreter.teardown()

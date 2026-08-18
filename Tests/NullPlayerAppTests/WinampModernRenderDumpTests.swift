@@ -387,9 +387,16 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         }
                         record(loaded.runtime.graph.roots)
                         let target = renderer.object(at: point)
+                        // There is no cursor here, and a button that asks `isMouseOverRect()` in its
+                        // `onLeftButtonUp` gets "no" and takes its drag-cancelled path — so the probe
+                        // would report a dead control that works perfectly under a real mouse. The
+                        // pointer is placed where the click is, which is where it is in the app.
+                        runtime.mousePositionInObjectSpaceRequested = { _ in point }
                         print("CLICK at \(point) hits "
                               + "\(target?.typeName ?? "-")#\(target?.xmlID ?? "-") "
-                              + "bindings=\(target.map { runtime.hasBinding(for: $0) } ?? false)")
+                              + "bindings=\(target.map { runtime.hasBinding(for: $0) } ?? false)"
+                              + (target.flatMap { renderer.frame(of: $0) }.map { " frame=\($0)" } ?? "")
+                              + (target?.attributes["image"].map { " image=\($0)" } ?? ""))
                         // Every handler the click reaches, in order — the only way to see where a
                         // chain of script-to-script messages stops (the D6 subject: a tab's
                         // `onLeftButtonUp` → `sendAction("show_tab")` → the SUI's `onAction`).
@@ -426,6 +433,23 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 print("CLICK   \(event) -> \(handled)")
                             }
                         }
+                        // A `cfgattrib`-bound control carries no `action`; the binding is what it
+                        // does, and the *view* is what performs it. Mirror that here so a settings
+                        // switch can be driven headlessly, and report the stored value either side.
+                        if let target, let binding = WinampModernScriptRuntime.configBinding(of: target) {
+                            let before = runtime.configValue(of: target)
+                            runtime.toggleConfigAttribute(of: target)
+                            print("CLICK cfgattrib \(binding.section);\(binding.key) "
+                                  + "\(before) -> \(runtime.configValue(of: target))")
+                        }
+                        // Skins gate a transition on a timer — Defix's tab switch is literally
+                        // `if (anim.isRunning()) return; anim.start();` — so with nothing pumping the
+                        // run loop the timer never fires, never stops, and every click after the first
+                        // returns at that guard. The app has a run loop; the harness has to borrow one,
+                        // or a working tab strip measures as a strip where only the first tab responds.
+                        if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
+                            RunLoop.current.run(until: Date().addingTimeInterval(settle))
+                        }
                         // What the click actually *changed* in the scene — the question a click probe
                         // exists to answer. A control that swaps two buttons or moves a splitter shows
                         // up here even when the node count is identical.
@@ -446,6 +470,24 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 print("CLICK watch \(object.typeName)#\(id) "
                                       + "frame=\(geometry.map { "\($0.frame)" } ?? "not laid out") "
                                       + "state=[\(Self.state(of: object))]")
+                            }
+                        }
+                        // Whether the click left the *bindings* where it found them. A handler that
+                        // runs and does nothing on every click after the first is usually a variable
+                        // the dispatch itself moved, and that is invisible in the state diff above.
+                        if env["WINAMP_MODERN_RENDER_SCRIPTS"] != nil {
+                            for program in runtime.programs {
+                                for binding in program.bindings
+                                where program.methods[binding.methodIndex].name == "onleftclick" {
+                                    let variable = program.variables[binding.variableIndex]
+                                    var bound = "null"
+                                    if case .object(let reference) = variable.value,
+                                       case .gui(let id) = reference.kind {
+                                        let object = loaded.runtime.graph.object(withID: id)
+                                        bound = "\(object?.xmlID ?? "-")"
+                                    }
+                                    print("CLICK bind onleftclick -> \(bound)")
+                                }
                             }
                         }
                         print("CLICK volume: \(host.volume)")

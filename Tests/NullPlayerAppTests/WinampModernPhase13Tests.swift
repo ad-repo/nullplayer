@@ -260,8 +260,9 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(inventory.arrangement, .separateWindows)
         XCTAssertEqual(inventory.declaredContainers[.playlist], "Pledit")
         XCTAssertTrue(inventory.embeddedKinds.isEmpty)
-        XCTAssertEqual(inventory.synthesizableKinds.sorted { $0.rawValue < $1.rawValue },
-                       [.equalizer, .library])
+        // The equalizer is never synthesized — its hosted surface is a stand-in, so a skin without
+        // one is routed to NullPlayer's complete classic EQ window instead.
+        XCTAssertEqual(inventory.synthesizableKinds.sorted { $0.rawValue < $1.rawValue }, [.library])
     }
 
     /// Reachability follows a standard frame's `content=` into the group it names, and on through
@@ -328,7 +329,8 @@ final class WinampModernPhase13Tests: XCTestCase {
         let loaded = try makeSkin(xml: Self.separateWindowSkin)
         let synthesis = loaded.surfaceSynthesis
         XCTAssertEqual(synthesis.synthesizedContainers[.library], "nullplayer.library")
-        XCTAssertEqual(synthesis.synthesizedContainers[.equalizer], "nullplayer.equalizer")
+        XCTAssertNil(synthesis.synthesizedContainers[.equalizer],
+                     "the equalizer is routed to the classic window rather than synthesized")
         XCTAssertTrue(synthesis.unavailable.isEmpty)
 
         let containers = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
@@ -366,7 +368,6 @@ final class WinampModernPhase13Tests: XCTestCase {
         """)
         XCTAssertTrue(loaded.surfaceSynthesis.synthesizedContainers.isEmpty)
         XCTAssertNotNil(loaded.surfaceSynthesis.unavailable[.library])
-        XCTAssertNotNil(loaded.surfaceSynthesis.unavailable[.equalizer])
         XCTAssertTrue(loaded.surfaceSynthesis.unavailable[.library]?.contains("standardframe") == true,
                       "the reason names the prerequisite that failed")
         XCTAssertFalse(WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
@@ -518,7 +519,12 @@ final class WinampModernPhase13Tests: XCTestCase {
             embeddedContainerID: nil)
         XCTAssertEqual(catalog.playlist, .declaredContainer(id: "Pledit"))
         XCTAssertEqual(catalog.library, .synthesizedContainer(id: "nullplayer.library"))
-        XCTAssertEqual(catalog.equalizer, .synthesizedContainer(id: "nullplayer.equalizer"))
+        // …except the equalizer. A synthesized window's body is a component holder we invented, and
+        // the equalizer's hosted surface is a stand-in with no on/off, auto, presets or labels —
+        // so a skin that declares no equalizer is better served by the complete classic window,
+        // which paints from the skin's own palette anyway.
+        XCTAssertFalse(catalog.equalizer.isSkinOwned,
+                       "a synthesized equalizer is NullPlayer's window, not the skin's")
 
         // A declared container whose window never opened is a fallback, not a phantom target.
         let unopened = WinampModernSurfaceCoordinator.makeCatalog(

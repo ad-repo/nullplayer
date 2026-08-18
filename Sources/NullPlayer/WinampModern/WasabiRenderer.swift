@@ -486,6 +486,9 @@ struct WasabiSceneNode {
 final class WasabiSceneRenderer {
     let loadedSkin: WinampModernLoadedSkin
     let host: WinampModernHost
+    /// Reads a `cfgattrib`-bound control's current value. Supplied by the script runtime, which owns
+    /// the configuration store; nil in a renderer built without one (the pixel tests).
+    var configStateProvider: ((WasabiObject) -> Bool)?
     let resources: WasabiResourceCache
     let themeCoordinator: WinampModernThemeCoordinator
     let themes: WasabiColorThemeCatalog
@@ -766,7 +769,15 @@ final class WasabiSceneRenderer {
             guard isVisible(object), object.attributes["ghost"] != "1" else { continue }
             if interactiveOnly && !isInteractive(object) { continue }
             if !interactiveOnly && !isRenderable(object, bitmapID: node.bitmapID) { continue }
-            if let bitmap = resources.bitmap(identifier: node.bitmapID) {
+            // `rectrgn="1"` *is* the region — the whole rect, artwork or not — so it also settles the
+            // alpha question, and testing the bitmap anyway contradicts the attribute. Defix's four
+            // main-window buttons are `rectrgn="1"` icons drawn as outlines with transparent gaps: a
+            // click through a gap fell past the button onto the `ButtonBG` panel behind it, so the
+            // first and fourth buttons were dead while the second and third (denser artwork under the
+            // same point) worked — which reads as "two of my buttons are broken", not as a hit test
+            // disagreeing with a declared region.
+            if object.attributes["rectrgn"] != "1",
+               let bitmap = resources.bitmap(identifier: node.bitmapID) {
                 let local = CGPoint(x: (point.x - node.frame.minX) / max(1, node.frame.width) * CGFloat(bitmap.width),
                                     y: (point.y - node.frame.minY) / max(1, node.frame.height) * CGFloat(bitmap.height))
                 guard bitmap.alpha(at: local) > 8 else { continue }
@@ -2017,6 +2028,11 @@ final class WasabiSceneRenderer {
             case "EQ_AUTO": active = componentHost?.equalizerSnapshot().auto ?? false
             default: break
             }
+            // A `cfgattrib` binding *is* the button's state — it is how a skin draws a preference it
+            // does not otherwise track. Defix pairs a `ghost="1"` indicator with a bare click target
+            // over the same rect, both naming the attribute, so without this every switch in its
+            // settings window painted its "off" artwork whatever the stored value was.
+            if let scripts = configStateProvider, scripts(object) { active = true }
             if active, let image = object.attributes["activeimage"] { return image }
         }
         return object.attributes["image"]
@@ -2070,7 +2086,25 @@ final class WasabiSceneRenderer {
 
     private func clipsChildren(_ object: WasabiObject) -> Bool {
         let value = object.attributes["clipchildren"]?.lowercased()
-        return value == "1" || value == "true"
+        if value == "1" || value == "true" { return true }
+        return isSizedGroup(object)
+    }
+
+    /// A `<group>` is a **window** in Wasabi, so its children are bounded by it whether or not the
+    /// skin says `clipchildren`. Defix's cassette display is a 263×79 group holding a 117×117 reel
+    /// bitmap: unclipped, the two reels spilled 53px past the bottom of the cassette and painted
+    /// straight over the song ticker below it, leaving the title visible only in the gaps between
+    /// them.
+    ///
+    /// Only a group whose box the skin actually **declared** clips. One that is sized from its
+    /// background bitmap, or that falls through to the renderer's default, has a rect we inferred —
+    /// and clipping children to a guess can erase content that is really there, which is a far worse
+    /// failure than the overhang it would prevent. `fitparent` counts as declared: it resolves to the
+    /// parent's box, so the clip it produces is the one the children already had.
+    private func isSizedGroup(_ object: WasabiObject) -> Bool {
+        guard object.typeName.caseInsensitiveCompare("group") == .orderedSame else { return false }
+        if object.attributes["fitparent"] == "1" { return true }
+        return object.geometry.width != nil && object.geometry.height != nil
     }
 
     /// Whether this object is one of the two panes of a `<Wasabi:Frame>`.

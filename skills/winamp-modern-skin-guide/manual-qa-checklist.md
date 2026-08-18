@@ -83,9 +83,21 @@ For each of the three fixtures:
 - [ ] Defix: the SUI's **Media Library / Visualization / Explorer** tabs sit side by side at readable
       widths, not stacked as narrow stubs at the left edge (Phase 25: a skin-level `<scripts>` block
       loads last, after the XUI params its layout maths reads)
-- [ ] Defix: **known-empty** — the SUI body below the tabs (its library tree, file browser and search
-      results are `guilist` widgets, the same engine gap as cPro-Bento's lists). Record anything else
-      that is empty
+- [ ] Defix: the SUI tab strip switches — Media Library shows the embedded library, Visualization the
+      vis component, Explorer its (empty) `<Browser>` pane. Switch back and forth several times: the
+      skin gates the transition on a timer, so a strip where only the *first* click works is a real
+      regression. Record anything else that is empty
+- [ ] Defix: the four round buttons under the display **all** respond (they are `rectrgn` outline
+      icons; a click through a gap used to fall past them onto the panel behind). What each one does
+      is configurable per profile, so check they act, not that they act on a particular surface
+- [ ] Defix: the round **CONF** button opens *Skin Settings*, and its switches actually move —
+      turning off "Window control bar" should visibly hide the playlist control bar and the SUI tab
+      strip. A switch that moves but changes nothing means the `onDataChanged` notification was lost
+- [ ] Any skin with an `<AlbumArt>` (Defix's playlist and its Album Art tab): the **playing track's
+      cover** appears, not the skin's "no cover art" placeholder, and it changes with the track
+- [ ] Windows ▸ Equalizer, on a skin that declares no EQ (Defix, T800): opens NullPlayer's full
+      classic EQ — on/off, auto, presets, labels — painted in the skin's palette, **and** the skin's
+      own EQ button opens the same window rather than a different one
 - [ ] Defix: work through its configurator — the 31 changeable backgrounds, the nine display styles
       (cassette, the VU meters, the oscilloscopes), the colour/ink options. None of this has ever been
       driven, headless or live; note which ones fail and how

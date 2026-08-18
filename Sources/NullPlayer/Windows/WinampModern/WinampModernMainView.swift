@@ -45,6 +45,9 @@ final class WinampModernMainView: NSView {
     var canvasSizeDidChange: ((CGSize) -> Void)?
     /// Returns true if the skin provides a separate native window for the kind and it was toggled.
     var componentWindowToggleRequested: ((WinampModernComponentKind) -> Bool)?
+    /// Show/hide one of the skin's *own* container windows by id, for a `TOGGLE` whose parameter
+    /// names a container rather than a component.
+    var containerWindowToggleRequested: ((String) -> Bool)?
     /// Ask the surface coordinator to toggle a surface — the same route the View menu takes, so a
     /// skin button and a menu item can never resolve differently. Returns false before the
     /// coordinator exists (during `scripts.start()`), where the older direct routing still applies.
@@ -189,9 +192,7 @@ final class WinampModernMainView: NSView {
         scripts.themeNamesRequested = { [weak renderer] in renderer?.themes.themeNames ?? [] }
         scripts.activeThemeRequested = { [weak renderer] in renderer?.themes.activeTheme ?? "Default" }
         scripts.mousePositionRequested = { [weak self] in
-            guard let self, let window else { return .zero }
-            let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
-            return self.skinPoint(self.convert(inWindow, from: nil))
+            self?.currentMousePositionInSkinPixels() ?? .zero
         }
         scripts.equalizerEnabledRequested = { [weak self] in
             self?.componentHost?.equalizerSnapshot().enabled ?? false
@@ -582,12 +583,21 @@ final class WinampModernMainView: NSView {
         renderer.teardown()
         canvasSizeDidChange = nil
         componentWindowToggleRequested = nil
+        containerWindowToggleRequested = nil
         surfaceToggleRequested = nil
         isTornDown = true
     }
 
     private func skinPoint(_ point: NSPoint) -> CGPoint {
         CGPoint(x: point.x / skinScale, y: (bounds.height - point.y) / skinScale)
+    }
+
+    /// Where the pointer is right now in *this* view's skin pixels, or `nil` when the view is not in a
+    /// window. Every container window answers for its own scene, which is what `isMouseOverRect` needs
+    /// from the window that actually renders the receiver.
+    func currentMousePositionInSkinPixels() -> CGPoint? {
+        guard let window else { return nil }
+        return skinPoint(convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil))
     }
 
     private func dispatch(object: WasabiObject, event: String, point: CGPoint) {
@@ -704,6 +714,12 @@ final class WinampModernMainView: NSView {
         let parameter = object.attributes["param"]
         performAction(action: action, parameter: parameter)
         if action == nil {
+            // A `cfgattrib`-bound control carries no `action`: the binding *is* what it does. Defix's
+            // whole settings window is built this way, so without it every switch in that window
+            // moved nothing.
+            if scripts.toggleConfigAttribute(of: object) {
+                WindowManager.shared.refreshWinampModernSurfaces()
+            }
             switch object.xmlID?.lowercased() {
             case "shuffle": host.shuffleEnabled.toggle()
             case "repeat": host.repeatEnabled.toggle()
@@ -731,7 +747,17 @@ final class WinampModernMainView: NSView {
         case "CLOSE":
             if let closeRequested { closeRequested() } else { window?.close() }
         case "TOGGLE":
-            if let kind = WinampModernComponentRegistry.kind(for: parameter) { routeComponentToggle(kind) }
+            // `TOGGLE`'s parameter is a component (`Eq`, a GUID) **or one of the skin's own container
+            // ids** — Winamp toggles whichever window that names. Resolving only components left
+            // every container-addressed button dead, and Defix's `CONF` button is exactly one
+            // (`action="TOGGLE" param="Config"`): the whole configurator — the 31 backgrounds, the
+            // nine display styles, the songticker scrolling mode — was unreachable, so a preference
+            // the skin ships switched off could never be switched on.
+            if let kind = WinampModernComponentRegistry.kind(for: parameter) {
+                routeComponentToggle(kind)
+            } else if let parameter, !parameter.isEmpty {
+                _ = containerWindowToggleRequested?(parameter)
+            }
         case "EQ_TOGGLE":
             // Winamp's `EQ_TOGGLE` turns the equalizer *on and off*. It is not a window command:
             // showing the equalizer is `TOGGLE guid:eq`, which routes through the surface coordinator.

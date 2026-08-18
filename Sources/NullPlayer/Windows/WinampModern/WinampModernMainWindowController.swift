@@ -1,6 +1,9 @@
 import AppKit
 
 final class WinampModernMainWindowController: NSWindowController, MainWindowProviding, NSWindowDelegate {
+
+    /// Repaints every `.wal` window when a track's cover finishes loading.
+    private var artworkObserver: NSObjectProtocol?
     private var loadedSkin: WinampModernLoadedSkin?
     private var skinView: WinampModernMainView?
     private var host: WinampModernAudioEngineHost?
@@ -34,6 +37,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                               styleMask: [.borderless], backing: .buffered, defer: false)
         self.init(window: window)
         setupWindow()
+        // Cover art arrives asynchronously and often *after* the scene has settled — with playback
+        // paused nothing else would repaint, so an `<AlbumArt>` would sit on its "no cover art"
+        // placeholder until something unrelated invalidated the window.
+        artworkObserver = NotificationCenter.default.addObserver(
+            forName: NowPlayingManager.artworkDidLoadNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                self?.skinView?.needsDisplay = true
+                self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+            }
         #if DEBUG
         if let localPath = UserDefaults.standard.string(forKey: "winampModernSkinPath"),
            !localPath.isEmpty {
@@ -76,6 +88,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
             renderer.componentHost = componentBridge
             let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+            // Every renderer asks the one runtime for a `cfgattrib` control's state, so a switch in
+            // the settings window and the control it mirrors in another window always agree.
+            renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge)
 
@@ -160,6 +175,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             guard let renderer = try? WasabiSceneRenderer(loadedSkin: loaded, host: host,
                                                           containerID: info.id) else { continue }
             renderer.componentHost = componentBridge
+            renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge, drivesScripts: false)
             view.skinScale = skinScale
@@ -241,6 +257,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         skinView?.surfaceToggleRequested = toggle
         auxiliaryContainers.forEach { $0.view.surfaceToggleRequested = toggle }
+        // `TOGGLE <container-id>`: the skin's own windows, addressed by name. Case-insensitive
+        // because a skin writes the id as it likes and its own container declaration is the match.
+        let toggleContainer: (String) -> Bool = { [weak self] id in
+            guard let self, let container = auxiliaryContainers.first(where: {
+                $0.containerID.caseInsensitiveCompare(id) == .orderedSame
+            }) else { return false }
+            setAuxiliaryWindow(id: container.containerID, visible: !container.window.isVisible)
+            return true
+        }
+        skinView?.containerWindowToggleRequested = toggleContainer
+        auxiliaryContainers.forEach { $0.view.containerWindowToggleRequested = toggleContainer }
     }
 
     /// Show the library in the skin's own window at launch, instead of waiting for the user to pick
@@ -426,6 +453,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             return nil
         }
+        // Same ownership question, answered for the cursor: the window that can place the object is
+        // the window whose pixel space its rect is in, so that is the one asked where the mouse is.
+        scripts.mousePositionInObjectSpaceRequested = { [weak self] object in
+            guard let self else { return nil }
+            for view in viewsByContainer.values where !view.isTornDown {
+                guard view.renderer.resolvedGeometry(of: object) != nil else { continue }
+                return view.currentMousePositionInSkinPixels()
+            }
+            return nil
+        }
     }
 
     @discardableResult
@@ -606,5 +643,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         loadedSkin = nil
     }
 
-    deinit { tearDownSkin() }
+    deinit {
+        if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
+        tearDownSkin()
+    }
 }

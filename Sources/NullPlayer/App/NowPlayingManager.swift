@@ -13,9 +13,12 @@ class NowPlayingManager {
 
     // MARK: - Properties
     
-    /// Current artwork being displayed (cached to avoid reloading)
-    private var currentArtwork: NSImage?
-    private var currentTrackId: UUID?
+    /// Current artwork being displayed (cached to avoid reloading). Readable so a surface that
+    /// appears *after* the load finished — a `.wal` skin's `<AlbumArt>`, which is created when the
+    /// skin loads, not when the track starts — can show the art without waiting for the next track
+    /// change to re-post `artworkDidLoadNotification`.
+    private(set) var currentArtwork: NSImage?
+    private(set) var currentTrackId: UUID?
 
     /// Track id whose artwork fetch already returned nil. Without this, a track whose
     /// artwork can't be loaded (e.g. Plex art unreachable) would re-hit the network on

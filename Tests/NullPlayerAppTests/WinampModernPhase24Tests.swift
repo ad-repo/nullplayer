@@ -66,9 +66,11 @@ final class WinampModernPhase24Tests: XCTestCase {
                        "but it is clipped to the pane, so nothing of it paints outside")
     }
 
-    /// The change is confined to frame panes: an ordinary group still lets its children overhang,
-    /// which skins depend on (a slider centres an oversized thumb sheet on its track).
-    func testAnOrdinaryGroupStillDoesNotClipItsChildren() throws {
+    /// A group whose box the skin **declared** is a window like a pane is, and bounds its children.
+    /// Defix's cassette display is the measured case: a 263×79 group holding a 117×117 reel bitmap,
+    /// which unclipped spilled 53px below the cassette and painted both reels over the song ticker
+    /// underneath, leaving the title readable only in the gaps between them.
+    func testADeclaredGroupClipsItsChildren() throws {
         let xml = """
         <WasabiXML>
           <container id="Main">
@@ -82,8 +84,29 @@ final class WinampModernPhase24Tests: XCTestCase {
         """
         let renderer = try makeRenderer(xml: xml)
         let overhang = try XCTUnwrap(node(in: renderer, xmlID: "overhang"))
+        XCTAssertEqual(overhang.clip, CGRect(x: 10, y: 50, width: 50, height: 10),
+                       "the child is bounded by the group's own declared box")
+    }
+
+    /// …but only a *declared* box. A group with no `w`/`h` of its own is sized by the renderer, and
+    /// clipping children to a rect we inferred can erase content that is really there — a much worse
+    /// failure than the overhang it would prevent.
+    func testAGroupWithNoDeclaredBoxStillDoesNotClip() throws {
+        let xml = """
+        <WasabiXML>
+          <container id="Main">
+            <layout id="normal" w="100" h="100">
+              <group id="holder" x="10" y="50">
+                <layer id="overhang" x="0" y="-20" w="50" h="30"/>
+              </group>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let renderer = try makeRenderer(xml: xml)
+        let overhang = try XCTUnwrap(node(in: renderer, xmlID: "overhang"))
         XCTAssertEqual(overhang.clip, CGRect(x: 0, y: 0, width: 100, height: 100),
-                       "an unclipped group passes the inherited clip straight through")
+                       "an inferred box passes the inherited clip straight through")
     }
 
     // MARK: - D2: `<grid>` nine-slice
