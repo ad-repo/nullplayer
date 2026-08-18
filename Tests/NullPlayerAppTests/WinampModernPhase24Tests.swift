@@ -109,6 +109,33 @@ final class WinampModernPhase24Tests: XCTestCase {
                        "an inferred box passes the inherited clip straight through")
     }
 
+    // MARK: - `rectrgn` owns the whole rect
+
+    func testRectrgnObjectHitsThroughATransparentBitmapPixel() throws {
+        let renderer = try makeAlphaHitTestRenderer()
+        let expected = try XCTUnwrap(renderer.loadedSkin.runtime.graph
+            .objects(xmlID: "rectrgn.button").first)
+
+        XCTAssertTrue(renderer.object(at: CGPoint(x: 5, y: 5)) === expected,
+                      "rectrgn declares the whole object rectangle as its hit region")
+    }
+
+    func testObjectWithoutRectrgnStillRejectsATransparentBitmapPixel() throws {
+        let renderer = try makeAlphaHitTestRenderer()
+
+        XCTAssertNil(renderer.object(at: CGPoint(x: 15, y: 5)),
+                     "irregular artwork without rectrgn must keep its alpha-shaped hit region")
+    }
+
+    func testBareRectrgnLayerWithoutABitmapStillHits() throws {
+        let renderer = try makeAlphaHitTestRenderer()
+        let expected = try XCTUnwrap(renderer.loadedSkin.runtime.graph
+            .objects(xmlID: "bare.rectrgn").first)
+
+        XCTAssertTrue(renderer.object(at: CGPoint(x: 25, y: 5)) === expected,
+                      "bitmap-less rectrgn layers remain valid invisible click targets")
+    }
+
     // MARK: - D2: `<grid>` nine-slice
 
     /// Nine parts: corners at their own size, edges stretched along one axis, `middle` filling the
@@ -602,6 +629,90 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertEqual(commands, ["close", "minimize"])
     }
 
+    /// A `TOGGLE` parameter first keeps the established component route, then falls through to a
+    /// skin container id. An unknown id is offered to that bounded lookup and changes nothing.
+    func testToggleRoutesComponentsThenFallsBackToAContainerID() throws {
+        let loaded = try load(xml: skin(size: 40, body: """
+            <button id="component" action="TOGGLE" param="Eq" x="0" y="0" w="10" h="10"/>
+            <button id="container" action="TOGGLE" param="cOnFiG" x="10" y="0" w="10" h="10"/>
+            <button id="unknown" action="TOGGLE" param="Missing" x="20" y="0" w="10" h="10"/>
+            """))
+        let host = Host()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
+        addTeardownBlock { renderer.teardown() }
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host)
+        addTeardownBlock { view.teardown() }
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: renderer.canvasSize),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = view
+        view.setFrameSize(renderer.canvasSize)
+
+        var componentToggles: [WinampModernComponentKind] = []
+        var containerAttempts: [String] = []
+        var handledContainers: [String] = []
+        view.surfaceToggleRequested = { componentToggles.append($0); return true }
+        view.containerWindowToggleRequested = { id in
+            containerAttempts.append(id)
+            guard let matched = WinampModernMainWindowController
+                .matchingContainerID(id, in: ["Config"]) else { return false }
+            handledContainers.append(matched)
+            return true
+        }
+
+        click(view, in: window, at: NSPoint(x: 5, y: 35))
+        XCTAssertEqual(componentToggles, [.equalizer], "component parameters keep their old route")
+        XCTAssertTrue(containerAttempts.isEmpty)
+
+        click(view, in: window, at: NSPoint(x: 15, y: 35))
+        XCTAssertEqual(handledContainers, ["Config"], "container ids match case-insensitively")
+
+        click(view, in: window, at: NSPoint(x: 25, y: 35))
+        XCTAssertEqual(containerAttempts, ["cOnFiG", "Missing"])
+        XCTAssertEqual(handledContainers, ["Config"], "an unknown id changes no window")
+        XCTAssertEqual(componentToggles, [.equalizer],
+                       "container and unknown parameters never enter the component route")
+    }
+
+    /// The renderer polls the same persisted binding the runtime flips. The key deliberately
+    /// contains a semicolon: only the first separator belongs to the `{GUID};Name` syntax.
+    func testCfgattribFlipSelectsTheRendererActiveImage() throws {
+        let xml = """
+        <WasabiXML>
+          <elements>
+            <bitmap id="off" file="off.png"/>
+            <bitmap id="on" file="on.png"/>
+          </elements>
+          <container id="Main">
+            <layout id="normal" w="8" h="8">
+              <togglebutton id="setting" image="off" activeImage="on"
+                            cfgattrib="{SYNTHETIC};Window;Control" fitparent="1"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let loaded = try load(files: [
+            ("skin.xml", Data(xml.utf8)),
+            ("off.png", try makeSolidPNG(size: 8, blue: 10)),
+            ("on.png", try makeSolidPNG(size: 8, blue: 200)),
+        ])
+        let host = Host()
+        let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { runtime.teardown() }
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
+        addTeardownBlock { renderer.teardown() }
+        renderer.configStateProvider = { runtime.configValue(of: $0) }
+        let setting = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "setting").first)
+
+        XCTAssertEqual(WinampModernScriptRuntime.configBinding(of: setting)?.key, "Window;Control")
+        XCTAssertEqual(pixel(try render(renderer: renderer, size: 8), x: 4, y: 4, width: 8)[2], 10)
+
+        XCTAssertTrue(runtime.toggleConfigAttribute(of: setting))
+        XCTAssertEqual(pixel(try render(renderer: renderer, size: 8), x: 4, y: 4, width: 8)[2], 200,
+                       "the same renderer must repaint with the active image after the flip")
+    }
+
     /// Press and release over the same point, as a real click arrives.
     private func click(_ view: NSView, in window: NSWindow, at point: NSPoint) {
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
@@ -692,6 +803,30 @@ final class WinampModernPhase24Tests: XCTestCase {
         return try render(loaded: loaded, size: 32)
     }
 
+    private func makeAlphaHitTestRenderer() throws -> WasabiSceneRenderer {
+        let xml = """
+        <WasabiXML>
+          <elements>
+            <bitmap id="transparent" file="transparent.png"/>
+          </elements>
+          <container id="Main">
+            <layout id="normal" w="30" h="10">
+              <button id="rectrgn.button" image="transparent" rectrgn="1"
+                      x="0" y="0" w="10" h="10"/>
+              <button id="alpha.button" image="transparent"
+                      x="10" y="0" w="10" h="10"/>
+              <layer id="bare.rectrgn" rectrgn="1" x="20" y="0" w="10" h="10"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let loaded = try load(files: [("skin.xml", Data(xml.utf8)),
+                                      ("transparent.png", try makeTransparentPNG(size: 2))])
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host(), clock: { 0 })
+        addTeardownBlock { renderer.teardown() }
+        return renderer
+    }
+
     /// Which grid part painted this pixel, from its blue channel; `-1` for unpainted.
     private func colour(_ pixels: [UInt8], x: Int, y: Int) -> Int {
         let sample = pixel(pixels, x: x, y: y, width: 32)
@@ -720,6 +855,10 @@ final class WinampModernPhase24Tests: XCTestCase {
     private func render(loaded: WinampModernLoadedSkin, size: Int, host: Host = Host()) throws -> [UInt8] {
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
         addTeardownBlock { renderer.teardown() }
+        return try render(renderer: renderer, size: size)
+    }
+
+    private func render(renderer: WasabiSceneRenderer, size: Int) throws -> [UInt8] {
         var pixels = [UInt8](repeating: 0, count: size * size * 4)
         try pixels.withUnsafeMutableBytes { bytes in
             let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: size, height: size,
@@ -782,6 +921,19 @@ final class WinampModernPhase24Tests: XCTestCase {
             return try XCTUnwrap(context.makeImage())
         }
         return try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+    }
+
+    private func makeTransparentPNG(size: Int) throws -> Data {
+        var pixels = [UInt8](repeating: 0, count: size * size * 4)
+        let image = try pixels.withUnsafeMutableBytes { bytes -> CGImage in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: size, height: size,
+                                                  bitsPerComponent: 8, bytesPerRow: size * 4,
+                                                  space: CGColorSpaceCreateDeviceRGB(),
+                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            return try XCTUnwrap(context.makeImage())
+        }
+        return try XCTUnwrap(NSBitmapImageRep(cgImage: image)
+            .representation(using: .png, properties: [:]))
     }
 
 }

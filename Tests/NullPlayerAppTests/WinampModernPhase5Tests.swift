@@ -172,6 +172,59 @@ final class WinampModernPhase5Tests: XCTestCase {
         XCTAssertEqual(bridge.playlistSnapshot().rows.count, 3)
     }
 
+    // MARK: - Phase 26 album artwork host
+
+    func testAlbumArtworkIsNilWithoutACurrentTrack() {
+        let engine = AudioEngine()
+        var snapshotReads = 0
+        let host = WinampModernAudioEngineHost(engine: engine) {
+            snapshotReads += 1
+            return (UUID(), NSImage(size: NSSize(width: 1, height: 1)))
+        }
+
+        XCTAssertNil(host.albumArtwork)
+        XCTAssertEqual(snapshotReads, 0, "no track means there is no artwork snapshot to consult")
+    }
+
+    func testAlbumArtworkRejectsArtworkForAStaleTrack() throws {
+        let engine = AudioEngine()
+        let track = Track(url: URL(string: "about:blank")!, title: "Current")
+        engine.setPlaylistTracks([track])
+        engine.selectTrackForDisplay(at: 0)
+        let staleArtwork = try makeArtwork(red: 255)
+        let host = WinampModernAudioEngineHost(engine: engine) {
+            (UUID(), staleArtwork)
+        }
+
+        XCTAssertNil(host.albumArtwork,
+                     "art still loading for the previous track must never appear over the current one")
+    }
+
+    func testAlbumArtworkIsCachedPerTrackAndRecomputedAfterATrackChange() throws {
+        let engine = AudioEngine()
+        let tracks = [Track(url: URL(string: "about:one")!, title: "One"),
+                      Track(url: URL(string: "about:two")!, title: "Two")]
+        engine.setPlaylistTracks(tracks)
+        let firstArtwork = try makeArtwork(red: 255)
+        let secondArtwork = try makeArtwork(red: 64)
+        var snapshotReads = 0
+        var snapshot = (trackID: Optional(tracks[0].id), image: Optional(firstArtwork))
+        let host = WinampModernAudioEngineHost(engine: engine) {
+            snapshotReads += 1
+            return snapshot
+        }
+
+        engine.selectTrackForDisplay(at: 0)
+        XCTAssertNotNil(host.albumArtwork)
+        XCTAssertNotNil(host.albumArtwork)
+        XCTAssertEqual(snapshotReads, 1, "repainting one track must reuse its converted CGImage")
+
+        snapshot = (tracks[1].id, secondArtwork)
+        engine.selectTrackForDisplay(at: 1)
+        XCTAssertNotNil(host.albumArtwork)
+        XCTAssertEqual(snapshotReads, 2, "a new track id invalidates the per-track cache")
+    }
+
     // MARK: - 5.5 / 5.6 Playlist hosting: hit-testing, scroll, rendering
 
     func testPlaylistRowHitTestingAndScroll() throws {
@@ -372,5 +425,17 @@ final class WinampModernPhase5Tests: XCTestCase {
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
         return rep.representation(using: .png, properties: [:])!
+    }
+
+    private func makeArtwork(red: UInt8) throws -> NSImage {
+        var pixel = [red, UInt8(0), UInt8(0), UInt8(255)]
+        let image = try pixel.withUnsafeMutableBytes { bytes -> CGImage in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 1, height: 1,
+                                                  bitsPerComponent: 8, bytesPerRow: 4,
+                                                  space: CGColorSpaceCreateDeviceRGB(),
+                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            return try XCTUnwrap(context.makeImage())
+        }
+        return NSImage(cgImage: image, size: NSSize(width: 1, height: 1))
     }
 }

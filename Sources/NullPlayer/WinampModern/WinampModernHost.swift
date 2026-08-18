@@ -64,8 +64,11 @@ extension WinampModernHost {
 }
 
 final class WinampModernAudioEngineHost: WinampModernHost {
+    typealias ArtworkSnapshot = (trackID: UUID?, image: NSImage?)
+
     private let engine: AudioEngine
     private let consumerID: String
+    private let artworkSnapshot: () -> ArtworkSnapshot
     private var isConsumingVisualization = false
     var spectrumLevels: [Float] = []
 
@@ -74,9 +77,14 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     private var artworkCache: (trackID: UUID, image: CGImage?)?
     private var artworkObserver: NSObjectProtocol?
 
-    init(engine: AudioEngine, consumerID: String = "winampModernMain") {
+    init(engine: AudioEngine, consumerID: String = "winampModernMain",
+         artworkSnapshot: @escaping () -> ArtworkSnapshot = {
+             let manager = NowPlayingManager.shared
+             return (manager.currentTrackId, manager.currentArtwork)
+         }) {
         self.engine = engine
         self.consumerID = consumerID
+        self.artworkSnapshot = artworkSnapshot
         // `NowPlayingManager` already fetches cover art for every source (local tags, Plex, Subsonic,
         // Jellyfin, Emby) to feed the system Now Playing panel. A skin's `<AlbumArt>` wants exactly
         // that image, so this listens rather than fetching a second copy of it.
@@ -94,11 +102,11 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     var albumArtwork: CGImage? {
         guard let trackID = engine.currentTrack?.id else { return nil }
         if let artworkCache, artworkCache.trackID == trackID { return artworkCache.image }
-        let manager = NowPlayingManager.shared
+        let snapshot = artworkSnapshot()
         // Only the art that belongs to *this* track. A load in flight for a track that has already
         // changed would otherwise be shown against the wrong one.
-        let image = manager.currentTrackId == trackID
-            ? manager.currentArtwork?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        let image = snapshot.trackID == trackID
+            ? snapshot.image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
             : nil
         artworkCache = (trackID, image)
         return image

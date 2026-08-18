@@ -260,14 +260,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // `TOGGLE <container-id>`: the skin's own windows, addressed by name. Case-insensitive
         // because a skin writes the id as it likes and its own container declaration is the match.
         let toggleContainer: (String) -> Bool = { [weak self] id in
-            guard let self, let container = auxiliaryContainers.first(where: {
-                $0.containerID.caseInsensitiveCompare(id) == .orderedSame
-            }) else { return false }
+            guard let self,
+                  let matchedID = Self.matchingContainerID(id,
+                                                           in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+            else { return false }
             setAuxiliaryWindow(id: container.containerID, visible: !container.window.isVisible)
             return true
         }
         skinView?.containerWindowToggleRequested = toggleContainer
         auxiliaryContainers.forEach { $0.view.containerWindowToggleRequested = toggleContainer }
+    }
+
+    static func matchingContainerID(_ requestedID: String, in containerIDs: [String]) -> String? {
+        containerIDs.first { $0.caseInsensitiveCompare(requestedID) == .orderedSame }
     }
 
     /// Show the library in the skin's own window at launch, instead of waiting for the user to pick
