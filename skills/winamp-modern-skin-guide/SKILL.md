@@ -1,6 +1,6 @@
 ---
 name: winamp-modern-skin-guide
-description: Winamp 5.x .wal skin engine — Wasabi XML/XUI renderer, MAKI bytecode VM, VFS mounts, component hosting, and the ClassicPro engine import. Use when working on the WinampModern subsystem, debugging a .wal skin that fails to load or renders wrong, or extending Wasabi/MAKI coverage.
+description: Winamp 5.x .wal skin engine — Wasabi XML/XUI renderer, MAKI bytecode VM, VFS mounts, component hosting, and the ClassicPro engine import. Use when working on the WinampModern subsystem, debugging a .wal skin that fails to load or renders wrong, or extending Wasabi/MAKI coverage, or triaging compatibility across many skins at once.
 ---
 
 # Winamp Modern (`.wal`) Skin Engine
@@ -976,6 +976,10 @@ years-since-1900 scale, and the `isInvalid` probe idiom were all pinned that way
 
 ## Debugging a skin
 
+(Debugging *one* skin is below. For work spanning many skins — ranking what to implement next,
+finding what a skin contains that we have never rendered — use
+[triage-playbook.md](triage-playbook.md) instead.)
+
 **Start with [skins.md](skins.md) if the report names a skin we have measured** — it records what
 already works, what is knowingly missing, and the traps that skin sets.
 
@@ -1116,6 +1120,11 @@ cPro-Bento is the wrong fixture for it.
 ## Related
 
 - [compatibility.md](compatibility.md) — supported/unsupported Wasabi + MAKI surface, limits, engine policy
+- `skills/wal-skin-report` — `/wal-skin-report <skin.wal>`: the single-skin instrument. Measures one
+  skin end to end and emits the structured report (capabilities, status matrix, unknowns, grade)
+- [triage-playbook.md](triage-playbook.md) — **corpus-scale triage**: how to measure many skins at once,
+  classify defects, rank missing capabilities by demand, and isolate one issue once it is ranked. Read
+  it before starting work that is not about a single named skin
 - [skins.md](skins.md) — **per-skin status**: what each measured fixture does today and what is still
   missing for it. Start here when a report names a skin, and update it when a phase closes on one
 - [manual-qa-checklist.md](manual-qa-checklist.md) — the GUI verification pass

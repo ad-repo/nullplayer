@@ -20,6 +20,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **audio-system**: Audio pipelines, EQ, spectrum analysis
 - **modern-skin-guide**: Modern skin engine and creation
 - **winamp-modern-skin-guide**: Winamp 5.x `.wal` skins — Wasabi XML/XUI renderer, MAKI bytecode VM, VFS mounts and sandbox, component hosting, ClassicPro engine import, supported/unsupported surface
+- **wal-skin-report**: `/wal-skin-report <skin.wal>` — structured single-skin compatibility report (capabilities, supported/unsupported, per-surface status, unknowns, grade). Symlinked into `.claude/skills/`
 - **user-guide**: Features, menus, keyboard shortcuts
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations
 - **sonos-casting**, **chromecast-casting**: Casting protocols and debugging
