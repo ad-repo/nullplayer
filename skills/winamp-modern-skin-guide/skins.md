@@ -8,6 +8,11 @@ in completely different ways while the compatibility report says the same thing 
 Nothing third-party is committed — every skin here is user-supplied. See
 [manual-qa-checklist.md](manual-qa-checklist.md) for how to run one.
 
+**How a section gets written.** Run `/wal-skin-report <skin.wal>` (`skills/wal-skin-report`) — it
+measures the skin in a fixed order and emits the full structured report; this file is the durable
+summary distilled from it, not a second measurement. The report is a snapshot and lives outside the
+repo; the trap list and the "knowingly missing" list belong here.
+
 **Keep this current.** When a phase closes on a skin, update its section: the phase it was fixed in,
 what came alive, and what is knowingly left. A skin's own `screenshot.png`, when the archive ships one,
 is the reference to compare against.

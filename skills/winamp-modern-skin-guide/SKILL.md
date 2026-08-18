@@ -14,6 +14,22 @@ NullPlayer's own code. No Winamp binary, plugin, or asset is bundled.
 [compatibility.md](compatibility.md) for the exact supported/unsupported surface before assuming any
 behavior works.
 
+### Pick your working mode first
+
+Coverage is demand-driven and the wild corpus is effectively unbounded, so the *unit of work* matters
+as much as the code. Three modes, three different entry points:
+
+| You are… | Start with | Not |
+|---|---|---|
+| Debugging one named skin | [skins.md](skins.md), then [Debugging a skin](#debugging-a-skin) below | reading this file top to bottom |
+| **Measuring** a skin — what does it contain, what works, how good is it? | **`/wal-skin-report <skin.wal>`** (`skills/wal-skin-report`) — fixed measurement order, structured report, A–F grade with a confidence axis | ad-hoc dumps whose findings evaporate |
+| Deciding what to implement next across many skins | [triage-playbook.md](triage-playbook.md) — corpus measurement, defect classes, the demand index | fixing whatever the last bug report named |
+
+The two habits those exist to break: **a skin is a test case, not a milestone** (batch work by
+capability, not by skin — one fix that unblocks 200 skins beats ten that unblock one), and **a skin's
+default state is not the skin** (Defix ships nine display styles; the cassette is one of them, and the
+animated VU meters behind the other eight have never been rendered here).
+
 ## Where things live
 
 All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code is in
@@ -1116,6 +1132,10 @@ cPro-Bento is the wrong fixture for it.
 - Before concluding "the script never ran", check with a probe that observes **execution**. Per-object
   binding state does not answer that question, and reading it as if it did cost two phases.
 - Add fixtures, never third-party assets. Every committed test fixture is synthetic and self-authored.
+- Measure with `/wal-skin-report` rather than by hand, and land what you learn: durable rules here or
+  in [compatibility.md](compatibility.md), per-skin state in [skins.md](skins.md), the report itself
+  outside the repo unless the user asks for it. An ad-hoc dump nobody wrote down gets re-derived, and
+  two phases have already been lost that way.
 
 ## Related
 
