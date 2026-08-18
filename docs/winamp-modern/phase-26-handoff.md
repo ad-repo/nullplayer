@@ -23,11 +23,18 @@ Read first:
 
 A live GUI session against `Defix Hi-END 200.WAL`, run from the user's own build. Every finding came
 from a bug report on screen, and the tests were deliberately deferred ("defer tests to after manual
-qa") — so this phase ships nine behaviour changes with two new assertions and four updated ones. That
-debt is real and planned, not forgotten.
+qa"). **That debt has since been paid**: the backfill landed in `1980f829`, covering all seven areas
+of the plan.
 
-699 tests (was 697). No new phase file: findings went where their subject lives, as Phase 23 set the
-precedent for.
+**721 tests** (was 697): nine behaviour changes, 22 new tests plus four updated assertions. No new
+phase file — findings went where their subject lives, as Phase 23 set the precedent for:
+`WinampModernPhase5Tests` (host/artwork), `WinampModernPhase8Tests` (script lookup and dispatch),
+`WinampModernPhase24Tests` (hit testing, routing, renderer state).
+
+Two seams were added to make that possible, both behaviour-preserving:
+`WinampModernAudioEngineHost` takes an injectable `artworkSnapshot` closure defaulting to
+`NowPlayingManager.shared`, and the container match is extracted as
+`WinampModernMainWindowController.matchingContainerID(_:in:)`.
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -58,19 +65,24 @@ only satisfies one produces a *worse* bug than the original: two controls that d
 ## 3. Where the risk is
 
 Three of these are engine-wide rules inferred from one skin, and they are invisible to the render
-sweep because hit testing, dispatch, and routing all produce identical PNGs:
+sweep because hit testing, dispatch, and routing all produce identical PNGs. All three are now pinned
+by tests, which is the only reason they are safe to build on:
 
-- **`findObject`** now searches the whole container. Every skin's script lookups changed shape.
-- **`embed_xui`** now forwards mouse events. Guarded to the mouse set, but the guard is untested.
-- **`rectrgn`** now skips the alpha test. Bounded to objects that have a bitmap.
+- **`findObject`** searches the whole container. Every skin's script lookups changed shape; the
+  nearest-match order and the container boundary are both asserted.
+- **`embed_xui`** forwards mouse events. The guard that stops a non-mouse event firing a handler twice
+  is asserted, as is the absence of runaway recursion.
+- **`rectrgn`** skips the alpha test. The complementary case — a *non*-`rectrgn` object still rejecting
+  a transparent pixel — is asserted too, which is the assertion that keeps irregular artwork honest.
 
-The rendering changes *are* covered by measurement: 15 skins rendered before and after with the clock
-pinned, 13 byte-identical. Do that sweep for any renderer change — and pin the clock, or animation
-noise makes every skin look changed (it did, on the first run).
+**The one thing still guarded only by hand** is the group-clipping *blast radius*. The rule itself has
+two branch tests, but the evidence that it disturbs no other skin is a manual sweep: 15 skins rendered
+before and after with the clock pinned, 13 byte-identical. Nothing in CI would catch a third skin
+regressing. Do that sweep for any renderer change — and pin the clock, or animation noise makes every
+skin look changed (it did, on the first run).
 
 ## 4. What is still open
 
-- The **test backfill** — see the plan. `findObject` first.
 - `<Browser>` (Defix's Explorer tab) draws nothing; an embedded web view for untrusted skin content is
   outside the sandbox. Currently a documented gap, not a decision anyone has made.
 - `valign` is ignored; `drawText` always vertically centres.
