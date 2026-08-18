@@ -27,7 +27,7 @@ is the reference to compare against.
 | T800 | Phase 20–22 | per-layout groups, region-clipped volume, drag | — |
 | ZDL Reel-To-Reel | Phase 18 | sized from its background art | — |
 | Rika | Phase 22 | loads without its missing TTF; vis colours honoured | — |
-| Defix Hi-End 200 | Phase 26 | wood panel + framed windows, cassette display, **live SUI tabs + embedded library**, clipped reels | its `<Browser>` explorer; layer FX; `newDynamicContainer` |
+| Defix Hi-End 200 | Phase 26 (measured 2026-08-18) | wood panel + framed windows, cassette display, **live SUI tabs + embedded library**, clipped reels | **7 of its 8 display styles (the analog VU meters) are unreachable**; `getVisBand` missing so no skin-drawn meter can move |
 
 ---
 
@@ -276,6 +276,12 @@ embedded (a second panel over the same box, swapped by `maineq.maki`). Compatibi
 whole three-window arrangement, not a reference render — good enough to settle *what the skin looks
 like* (wood-panelled player flanked by two speaker cabinets), not to measure against.
 
+**Reference (2026-08-18, from the user):** https://www.youtube.com/watch?v=nrqwCf3KxUw — a YouTube
+demo of this skin running in Winamp, and the only artifact that shows it in motion, and it settles two things nothing in the archive can. **The cassette
+reels do spin during playback**, and **everything the skin draws animates** — reels, VU needles, level
+bars and the speaker cones. So every "static" verdict on those objects is a real defect, not an
+undriven measurement. A skin's own thumbnail cannot answer this class of question.
+
 **Shape of the skin:** separate windows — `main` (406×355) plus `pledit`, `SUI` (its media
 library/browser/visualization window, 800×600), two `SPEAKER` cabinets, `Config` (an About page),
 `browserpro`, `searchresults` and `notifier`. The equalizer is synthesized. Almost everything the skin
@@ -315,6 +321,31 @@ bitmaps. `main/normal` 406×355, 69 nodes.
   sandbox this engine is built on.
 - **Layer FX** — the analog VU meter styles configure a per-pixel warp we accept and ignore, so those
   display styles draw undistorted artwork.
+- **Seven of its eight display styles cannot be selected at all.** The skin registers a *Visualizer*
+  attribute with `newAttribute` carrying eight values — `Audio cassette` (its shipped default),
+  `Left Right VU`, `BASS TRIPLE VU`, `Ovis 1`, `Ovis 2`, `McIntosh MC2KW Amplifier VU`, `P-402 VU`,
+  `Technics VU` — and binds **no control in the skin** to it, because in Winamp it appears in the
+  preferences dialog. All the artwork ships (`LAYOUT1/Vu2/` four needles + four scales,
+  `LAYOUT1/LVL/` Technics and RT level strips, `LAYOUT1/CAS/` 57 cassette bodies) and none of it has
+  ever been rendered here. Same mechanism as the songticker mode below; the two together are the
+  argument for a host-side surface over a skin's registered preferences.
+- **The cassette reels are script-driven plain `<layer>`s and they are confirmed to spin in Winamp**
+  (`CASROLL`/`CASROLR`, image `CasR`, inside `LAYOUT_1.CAS.grp`). Whether ours move under live
+  playback is still untested — the render harness has no audio and no component host, so it can never
+  answer this; drive it in the app.
+- **`getVisBand` is not implemented, so every meter this skin draws is dead by construction** — the
+  speaker cones (`animatedlayer#SpeakerVis`), the VU needles and the level bars all read it
+  (`SPEAKER.maki`, `VU_LAYOUT_1.maki`). Implementing it is a precondition for any of the styles above
+  being worth reaching.
+- **`isloading` is not implemented and `PLAYLIST_WINDOW.ontimer` aborts on it every tick**
+  (`RENDER_CLICK` chain: `… PLAYLIST_WINDOW.xml.ontimer!FAILED …`). One-line fix, and it is failing
+  continuously today.
+- **`setScale` is missing** — the configurator's seven window-scaling buttons (100–300%) are inert.
+- **The skin builds no `PopupMenu` of its own; every menu it has is a host action, and none is
+  implemented.** `trackmenu`/`trackinfo` (declared as `rightclickaction`/`dblclickaction` on the song
+  ticker — both *attributes* are also unsupported), `VIS_Menu`, `VIS_Cfg`, `VIS_Next`, `VIS_Prev`,
+  `PE_Add/Rem/Sel/Misc/List`, `ML_SendTo`. `colorthemes_switch` fails the same way, which leaves its
+  six colour themes (`*Default`, `Azure`, `McIntosh Lite`, `McIntosh`, `Technics`) unreachable.
 - **`newDynamicContainer` returns the existing container**, so the skin's detachable visualizer and
   second mini-browser share one window rather than opening a copy.
 
