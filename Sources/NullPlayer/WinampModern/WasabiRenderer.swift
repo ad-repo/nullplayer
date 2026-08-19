@@ -557,12 +557,15 @@ final class WasabiSceneRenderer {
         resources.invalidateTheme()
         paletteCache = nil
         warpSourceCache.removeAll()
+        warpedImageCache.removeAll()
+        clearPrescaledCache()
+        invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty(.appearance)
     }
 
     private var paletteCache: WasabiPalette?
     /// Rasterized sources for the Layer FX warp, keyed by image + size.
-    private var warpSourceCache: [WarpSourceKey: [UInt8]] = [:]
+    private var warpSourceCache: [WarpSourceKey: (source: CGImage, pixels: [UInt8])] = [:]
 
     /// The colours NullPlayer's own surfaces draw with inside this skin, resolved through the very
     /// same resource + gamma path the skin's own drawing uses.
@@ -590,6 +593,7 @@ final class WasabiSceneRenderer {
         }
         layout = next
         canvasSize = defaultSize(for: next)
+        invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
         return canvasSize
     }
@@ -733,11 +737,52 @@ final class WasabiSceneRenderer {
         let maximum = layoutMaximumSize
         canvasSize = CGSize(width: max(minimum.width, min(maximum.width, proposedSize.width)),
                             height: max(minimum.height, min(maximum.height, proposedSize.height)))
+        invalidateSceneCache()
+        warpedImageCache.removeAll()
+        // Every destination size in the pre-scaled cache is now a size nothing draws at.
+        clearPrescaledCache()
         loadedSkin.runtime.graph.markAllDirty(.geometry)
         return canvasSize
     }
 
-    func sceneNodes() -> [WasabiSceneNode] { sceneNodes(canvas: canvasSize) }
+    /// The painted scene, memoized against the graph's own mutation counter.
+    ///
+    /// The walk resolves every object's geometry from its parent's, and it ran again for *every*
+    /// caller — the draw, the animation-rect scan, the visualization-rect scan, every hit test — so a
+    /// scene that had not changed at all was re-solved several times a frame on the main thread. The
+    /// graph bumps `mutationGeneration` on any attribute write, which covers everything a script can
+    /// do to the scene (move, hide, reparent, retext) and everything a resize or a theme switch does
+    /// through `markAllDirty`; `invalidateSceneCache()` covers the few inputs that are *not* graph
+    /// state, chiefly the host's playback state feeding `resolvedBitmapID`.
+    func sceneNodes() -> [WasabiSceneNode] {
+        let generation = loadedSkin.runtime.graph.mutationGeneration
+        if let cache = sceneNodeCache, cache.generation == generation, cache.canvas == canvasSize {
+            return cache.nodes.map(withRefreshedBitmapID)
+        }
+        let nodes = sceneNodes(canvas: canvasSize)
+        sceneNodeCache = (generation, canvasSize, nodes)
+        return nodes
+    }
+
+    /// A node's *geometry* is a function of the graph; its **bitmap** is not. Play/pause artwork,
+    /// the shuffle and repeat lamps, the EQ on/auto buttons and every `cfgattrib`-bound switch are
+    /// resolved from the host and the configuration store, neither of which bumps the graph's
+    /// mutation counter — so a memoized node has its image re-resolved on the way out rather than
+    /// serving a stale one. Only the kinds that can vary pay for it.
+    private func withRefreshedBitmapID(_ node: WasabiSceneNode) -> WasabiSceneNode {
+        let type = node.object.typeName.lowercased()
+        guard type == "status" || type == "nstatesbutton" || type == "togglebutton"
+                || node.object.attributes["activeimage"] != nil else { return node }
+        let bitmapID = resolvedBitmapID(for: node.object, pressed: false, hovered: false)
+        guard bitmapID != node.bitmapID else { return node }
+        return WasabiSceneNode(object: node.object, frame: node.frame, clip: node.clip,
+                               bitmapID: bitmapID, parentFrame: node.parentFrame)
+    }
+
+    /// Drop the memoized scene. Needed only for the inputs the graph's own generation cannot see.
+    func invalidateSceneCache() { sceneNodeCache = nil }
+
+    private var sceneNodeCache: (generation: UInt64, canvas: CGSize, nodes: [WasabiSceneNode])?
 
     private func sceneNodes(canvas: CGSize) -> [WasabiSceneNode] {
         let rootRect = CGRect(origin: .zero, size: canvas)
@@ -952,6 +997,18 @@ final class WasabiSceneRenderer {
     func teardown() {
         themeCoordinator.removeObserver(self)
         resources.teardown()
+        sceneNodeCache = nil
+        warpSourceCache.removeAll()
+        warpedImageCache.removeAll()
+        clearPrescaledCache()
+    }
+
+    /// Drop the pre-scaled artwork. Called when the bitmaps behind it are replaced (a theme switch)
+    /// or when this renderer is going away.
+    func clearPrescaledCache() {
+        prescaledCache.removeAll()
+        prescaledPixelCost = 0
+        cropCache.removeAll()
     }
 
     /// Width an object takes from text rather than from a `w=`, in skin pixels — `nil` when it takes
@@ -1042,8 +1099,62 @@ final class WasabiSceneRenderer {
         context.translateBy(x: 0, y: rect.midY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -rect.midY)
-        context.draw(image, in: rect)
+        context.draw(prescaled(image, for: rect, in: context), in: rect)
         context.restoreGState()
+    }
+
+    /// The same artwork, already rasterized at the size this context will put it on screen.
+    ///
+    /// A `.wal` scene is laid out in skin pixels and drawn through a scaled CTM — ×2 on a Retina
+    /// display, more at a larger UI Size — so `CGContext.draw` resampled every bitmap in the window
+    /// with `.high` interpolation on *every frame*. That is the measured cost of a Defix frame:
+    /// 6.7 ms in unnamed layers, 3.7 ms in the layout's own background, all of it re-derived from
+    /// artwork that had not changed. Scaling once and keeping the result turns the per-frame draw
+    /// into a blit at the device resolution, and the pixels are identical — the same interpolation
+    /// runs, just not sixty times a second.
+    ///
+    /// Only a genuine rescale is cached: art already at its device size is drawn straight through,
+    /// so a skin at 1× on a non-Retina display pays nothing for this at all.
+    private func prescaled(_ image: CGImage, for rect: CGRect, in context: CGContext) -> CGImage {
+        let ctm = context.ctm
+        let width = Int((rect.width * abs(ctm.a)).rounded())
+        let height = Int((rect.height * abs(ctm.d)).rounded())
+        guard width > 0, height > 0, width * height <= Self.maximumPrescaledPixels,
+              width * height >= Self.minimumPrescaledPixels,
+              width != image.width || height != image.height else { return image }
+        let key = WarpSourceKey(image: ObjectIdentifier(image), width: width, height: height)
+        if let cached = prescaledCache[key] { return cached.image }
+        guard let scaled = Self.resized(image, width: width, height: height) else { return image }
+        // Bounded by pixel budget rather than by entry count: a skin's window backgrounds are the
+        // entries that matter and one of those is worth a hundred button faces.
+        prescaledPixelCost += width * height
+        if prescaledPixelCost > Self.maximumPrescaledCachePixels {
+            prescaledCache.removeAll()
+            prescaledPixelCost = width * height
+        }
+        prescaledCache[key] = (image, scaled)
+        return scaled
+    }
+
+    /// Largest single pre-scaled raster, in pixels (2048² — a full-window background at 4× UI Size).
+    private static let maximumPrescaledPixels = 4_194_304
+    /// Below this the resample is not worth an entry: a 32×32 button face costs microseconds, and the
+    /// backgrounds and panels this exists for are two orders of magnitude larger.
+    private static let minimumPrescaledPixels = 1_024
+    /// Total pre-scaled pixels held, ~32 MB at 4 bytes each.
+    private static let maximumPrescaledCachePixels = 8_388_608
+
+    private var prescaledCache: [WarpSourceKey: (source: CGImage, image: CGImage)] = [:]
+    private var prescaledPixelCost = 0
+
+    private static func resized(_ image: CGImage, width: Int, height: Int) -> CGImage? {
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
     }
 
     private func draw(_ node: WasabiSceneNode, in context: CGContext,
@@ -1390,7 +1501,7 @@ final class WasabiSceneRenderer {
                                       width: charWidth, height: charHeight)
                 if x + CGFloat(advance) >= frame.minX, x <= frame.maxX,
                    cropRect.maxY <= CGFloat(sheet.height), cropRect.maxX <= CGFloat(sheet.width),
-                   let glyph = sheet.image.cropping(to: cropRect) {
+                   let glyph = cropped(sheet.image, to: cropRect) {
                     drawImage(glyph, in: CGRect(x: x, y: frame.minY,
                                                 width: CGFloat(charWidth), height: CGFloat(charHeight)),
                               context: context)
@@ -1419,20 +1530,37 @@ final class WasabiSceneRenderer {
                             context: CGContext) -> Bool {
         let width = min(Self.maximumWarpExtent, max(1, Int(rect.width.rounded())))
         let height = min(Self.maximumWarpExtent, max(1, Int(rect.height.rounded())))
+        let key = WarpSourceKey(image: ObjectIdentifier(image), width: width, height: height)
+        // The resample is the expensive half of the warp and it depends on nothing but the source
+        // raster and the mesh. A repaint the *skin* did not ask for — the window invalidating a rect
+        // for its own reasons, a neighbouring object moving, a partial repaint being widened by
+        // AppKit — would otherwise re-run the whole pixel loop for a warp that has not moved a
+        // vertex since the last frame.
+        if let cached = warpedImageCache[key], cached.mesh == mesh {
+            drawImage(cached.image, in: rect, context: context)
+            return true
+        }
         guard let source = warpSourcePixels(image, width: width, height: height),
               let warpedPixels = mesh.resample(source: source, width: width, height: height),
               let warped = Self.image(fromPixels: warpedPixels, width: width, height: height)
         else { return false }
+        // Bounded for the same reason as `warpSourceCache`: one entry per FX layer, and a skin has a
+        // handful of them.
+        if warpedImageCache.count > 16 { warpedImageCache.removeAll() }
+        warpedImageCache[key] = (image, mesh, warped)
         drawImage(warped, in: rect, context: context)
         return true
     }
+
+    /// The last warped raster per FX layer, with the mesh it was built from.
+    private var warpedImageCache: [WarpSourceKey: (source: CGImage, mesh: WasabiLayerFXMesh, image: CGImage)] = [:]
 
     /// The layer's own image rasterized at the size it draws at, in top-left row order — the space
     /// the mesh's normalized coordinates are in. Cached: the source only changes when the layer's
     /// bitmap or its box does, while the mesh changes every frame a meter moves.
     private func warpSourcePixels(_ image: CGImage, width: Int, height: Int) -> [UInt8]? {
         let key = WarpSourceKey(image: ObjectIdentifier(image), width: width, height: height)
-        if let cached = warpSourceCache[key] { return cached }
+        if let cached = warpSourceCache[key] { return cached.pixels }
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let drawn = pixels.withUnsafeMutableBytes { bytes -> Bool in
             guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
@@ -1449,7 +1577,7 @@ final class WasabiSceneRenderer {
         // aged, because the only thing that invalidates an entry is the layer being redrawn at a
         // different size, which happens on resize and theme changes.
         if warpSourceCache.count > 16 { warpSourceCache.removeAll() }
-        warpSourceCache[key] = pixels
+        warpSourceCache[key] = (image, pixels)
         return pixels
     }
 
@@ -1491,7 +1619,38 @@ final class WasabiSceneRenderer {
         let crop = CGRect(x: column * frameWidth, y: row * frameHeight,
                           width: frameWidth, height: frameHeight)
         guard crop.maxY <= CGFloat(bitmap.height), crop.maxX <= CGFloat(bitmap.width) else { return nil }
-        return bitmap.image.cropping(to: crop)
+        return cropped(bitmap.image, to: crop)
+    }
+
+    /// One sub-rectangle of a sheet, **stably**. `CGImage.cropping(to:)` allocates a fresh image on
+    /// every call, so a glyph or an animation frame had a different object identity each frame — and
+    /// every cache downstream of it (the pre-scaled raster, the warp's source raster) is keyed by
+    /// exactly that identity. Without this, drawing an animated layer or a line of bitmap-font text
+    /// missed those caches on every frame *and* churned them, which is worse than not caching at all.
+    private func cropped(_ image: CGImage, to rect: CGRect) -> CGImage? {
+        let key = CropKey(image: ObjectIdentifier(image), x: Int(rect.minX), y: Int(rect.minY),
+                          width: Int(rect.width), height: Int(rect.height))
+        if let cached = cropCache[key] { return cached.crop }
+        guard let crop = image.cropping(to: rect) else { return nil }
+        // The source is held with the entry: an `ObjectIdentifier` is an address, and an address that
+        // has been freed can come back attached to a different image.
+        if cropCache.count > Self.maximumCachedCrops { cropCache.removeAll() }
+        cropCache[key] = (image, crop)
+        return crop
+    }
+
+    /// A bitmap font is one entry per glyph per sheet; an animation, one per frame. A few hundred
+    /// covers every skin measured and is a few hundred *references*, not pixels — a crop shares its
+    /// parent's backing store.
+    private static let maximumCachedCrops = 512
+    private var cropCache: [CropKey: (source: CGImage, crop: CGImage)] = [:]
+
+    private struct CropKey: Hashable {
+        let image: ObjectIdentifier
+        let x: Int
+        let y: Int
+        let width: Int
+        let height: Int
     }
 
     private func drawAnimated(_ bitmap: WasabiBitmap, object: WasabiObject,

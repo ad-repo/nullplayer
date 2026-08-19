@@ -322,7 +322,16 @@ By area:
   host-driven animation clock — the skins in the corpus drive their own timers and call `fx_update()`.
 
   A warp is a CPU resample on the paint path, so it is bounded: vertices per layer and warped surface
-  size both have ceilings, and the mesh is cached until `fx_update()` unless `fx_setRealtime(1)`.
+  size both have ceilings, and the mesh is cached until `fx_update()` unless `fx_setRealtime(1)`. The
+  warped raster is cached with the mesh that produced it, so a repaint the skin did not ask for (a
+  neighbouring object moving, AppKit widening a partial invalidation) does not re-run the pixel loop
+  for a warp that has not moved a vertex. Phase 29.
+
+  **The mesh is evaluated off the paint path.** Running the skin's callbacks per vertex through the
+  interpreter is main-thread work — MAKI is single-threaded and the graph is not thread-safe — but it
+  does not have to happen *inside* `NSView.draw`. The window's 30 Hz clock calls
+  `refreshLayerFXMeshes()` first and invalidates second, so the frame AppKit is composing is never
+  the one waiting for the VM. Phase 29.
 - **MAKI's math library** — `sqrt`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`,
   `log`, `log10`, `exp`, `abs`, all `System` methods. Phase 28. Domain errors answer 0 rather than a
   NaN that would travel into a coordinate. Missing `sqrt` alone kept Defix's needles frozen *after*
@@ -343,13 +352,44 @@ By area:
   `host.spectrumLevels`); it is **mono**, so both channels answer the same value — a stereo split
   would mean a second FFT for skins alone. Phase 27
 - **`System.getLeftVUMeter()` / `getRightVUMeter()`** — program level per channel as a vis byte
-  (0…255). **Not the spectrum**, and this is the distinction that matters: a VU meter reads
-  *amplitude* — RMS in dB against a noise floor, with attack/decay ballistics — so it is driven by the
-  same stereo level model the PeppyMeter window uses (`PeppyMeterLevelModel`, registered alongside the
-  spectrum consumer and released with it). Answering from the bar-display tap instead was wrong twice
-  over: that tap is mono, so both needles moved together, and its bands are already normalised so bars
-  fill their window, so ×255 sat at the ceiling and **every needle in every skin pinned** — visible on
-  Defix's four analog VU styles and on any other skin that draws a meter. Phase 27.5
+  (0…255), measured by `WinampModernLevelMeter` as **linear peak amplitude, unsmoothed**, off the
+  main thread. **Not the spectrum**, and not a perceptual value: the skin owns the curve and the
+  ballistics. Defix maps the byte through `73.813 · x^¼ − 100`, clamps at 0, and applies its own
+  attack and decay before it turns a needle, so the host's only job is to hand over the same
+  excursion Winamp does. Phase 27.5 → 28 → 29, and each step was a different way of getting the
+  *scale* wrong:
+  - Reading a peak band out of the bar-display tap (before 27.5) was wrong twice over — that tap is
+    mono, so both needles moved together, and its bands are already normalised so bars fill their
+    window, so ×255 sat at the ceiling and **every needle in every skin pinned**.
+  - Routing it through `PeppyMeterLevelModel` (27.5) wore PeppyMeter's calibration: dBFS over a
+    −42 dB floor with VU ballistics, i.e. the same signal compressed and smoothed twice before the
+    skin's own curve saw it. The two surfaces want different measurements of one tap, so the `.wal`
+    meter now owns its own (Phase 28).
+  - **RMS** (28) is an energy average, and Winamp's byte is an excursion. Music that peaks at full
+    scale measures 0.05–0.15 RMS; against Defix's own artwork that is the bottom sixth of the sweep
+    (0.1 → 34%, 0.3 → 60%, measured with `WINAMP_MODERN_RENDER_VU`), and a mean-square over a whole
+    buffer averages away exactly the transients a VU is watched for. **Peak** (29) puts loud material
+    at 0.5–1.0, which is the swing the artwork is cut for.
+  - **Peak over a whole tap buffer** (29) is nearly a *constant* on dense music — the buffer is
+    50–100 ms and something in it is always loud — so the needle then sat high and still. Winamp
+    measures a 576-sample vis block (~13 ms at 44.1 kHz), and that is where the dynamics are. Each
+    arriving buffer is split into blocks of that length and **played out one at a time as real time
+    passes** (29.5), so a skin polling every 17 ms sees successive blocks rather than the same number
+    five times over. It costs one buffer of latency, which is what a VU looks like anyway. The
+    cadence is taken from the interval between arrivals, because the buffer carries no duration of
+    its own and the decimated and streaming paths post different lengths.
+  - **Nothing ever said "silence"** (29.5). The tap simply stops posting when playback stops, pauses,
+    ends, or moves to a cast device, so the last value stuck and the needles hung wherever the music
+    left them. Running off the end of the played-out blocks *is* the silence signal: the last block
+    is held for 150 ms to ride out jitter between buffers, and after that the meter reads 0.
+
+  `WINAMP_MODERN_VU_LOG=1` prints the buffer's peak and RMS, the block spread within it, and the byte
+  the skin receives — the difference between the last two entries above is visible as `peak` (one
+  number for the buffer) against `blockRange` (the spread across it).
+
+  The tap is the shared stereo PCM notification, received with `queue: nil` and measured on the
+  posting thread; the main thread only reads the played-out block. Registering with `queue: .main`
+  delivers *synchronously* and blocks the real-time audio tap — see `PeppyMeterLevelModel`.
 - **`<AlbumArt>.isLoading()`** — whether the current track's cover is still being fetched, from
   `NowPlayingManager`'s real in-flight state; false for a track that already has its cover, for a
   cached miss, with nothing playing, and for any receiver that is not an `<AlbumArt>`. Skins poll it

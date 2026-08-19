@@ -881,7 +881,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     func layerFXMesh(for object: WasabiObject) -> WasabiLayerFXMesh? {
         guard !isTornDown, !isEvaluatingLayerFX else { return nil }
         guard let state = layerFXStates[object.stableID], state.enabled else { return nil }
-        if !state.realtime, !layerFXNeedsEvaluation.contains(object.stableID),
+        if !layerFXNeedsEvaluation.contains(object.stableID),
            let cached = layerFXMeshes[object.stableID] {
             return cached.isIdentity ? nil : cached
         }
@@ -889,6 +889,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         layerFXNeedsEvaluation.remove(object.stableID)
         layerFXMeshes[object.stableID] = mesh
         return mesh.isIdentity ? nil : mesh
+    }
+
+    /// Re-evaluate every warp whose skin has invalidated it, **off the paint path**.
+    ///
+    /// Evaluating a mesh runs the skin's `fx_onGetPixel*` callbacks once per grid vertex through the
+    /// MAKI interpreter — 49 vertices × 2 layers × 30 Hz for Defix — and doing that lazily from
+    /// `layerFXMesh(for:)` put all of it inside `NSView.draw`, between the frame the user is watching
+    /// and the next one. The window's animation clock calls this *before* it invalidates, so the paint
+    /// that follows finds a mesh already built and does nothing but resample.
+    ///
+    /// `fx_setRealtime(1)` means "re-run the callbacks every frame", and the frame clock is here, so a
+    /// realtime layer is marked stale on each pass rather than re-evaluated inside the draw.
+    func refreshLayerFXMeshes() {
+        guard !isTornDown, !isEvaluatingLayerFX else { return }
+        for (id, state) in layerFXStates where state.enabled {
+            if state.realtime { layerFXNeedsEvaluation.insert(id) }
+            guard layerFXNeedsEvaluation.contains(id),
+                  let object = loadedSkin.runtime.graph.object(withID: id) else { continue }
+            layerFXMeshes[id] = evaluateLayerFXMesh(for: object, state: state)
+            layerFXNeedsEvaluation.remove(id)
+        }
     }
 
     /// Every script bound to one layer's `fx_onGetPixelR`, with the answer each gives for one probe
@@ -917,6 +938,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// measure a frame that really does re-evaluate, as a moving meter's does.
     func invalidateLayerFXMesh(for object: WasabiObject) {
         layerFXNeedsEvaluation.insert(object.stableID)
+    }
+
+    /// Whether this layer's warp is still waiting to be evaluated — the state `refreshLayerFXMeshes`
+    /// exists to clear before the frame is painted rather than during it.
+    func layerFXMeshIsPending(for object: WasabiObject) -> Bool {
+        layerFXNeedsEvaluation.contains(object.stableID)
     }
 
     private func requestRepaint(for object: WasabiObject? = nil) {

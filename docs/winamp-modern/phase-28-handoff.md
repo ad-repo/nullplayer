@@ -1,5 +1,10 @@
 # Winamp Modern (`.wal`) — Phase 28 Handoff
 
+> **Superseded — read `docs/winamp-modern/phase-29-handoff.md` first.** Both open problems below
+> (§3 choppy, §4 weak) were root-caused and fixed in Phase 29, and so was the main-thread audit in
+> §0.5. This document is kept for the *diagnosis*: the harness probes in §2 are all still current,
+> and §3/§4 record how each symptom was narrowed down before it was fixed. Its numbers are not.
+
 **For:** the agent continuing **Layer FX** — the animation now runs, but it is *choppy*, and the VU
 meters still answer the music weakly
 

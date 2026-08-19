@@ -17,9 +17,7 @@ final class WinampModernMainView: NSView {
             guard skinScale != oldValue else { return }
             setFrameSize(scaledCanvasSize)
             for surface in librarySurfaces.values { surface.applySkinScale(skinScale) }
-            animatingRectsCache = nil
-            objectRectCache.removeAll()
-        visualizationRectsCache = nil
+            invalidateRectCaches()
             needsLayout = true
             needsDisplay = true
         }
@@ -109,13 +107,39 @@ final class WinampModernMainView: NSView {
         // Cheap first: this is reachable from a script mutation, which for a warped layer happens
         // 30 times a second, and the scene walk below is not something to do on that path.
         guard !isTornDown, animationTimer == nil else { return }
+        invalidateRectCaches()
+        guard !animatingRects().isEmpty else { return }
+        let timer = Timer(timeInterval: 1 / 30, repeats: true) { [weak self] _ in
+            self?.animationTick()
+        }
+        // `.common`, not the default mode: a timer scheduled on the default mode alone stops firing
+        // for as long as AppKit runs a tracking loop, so the reels froze while the window was dragged
+        // or a menu was open and lurched forward when it ended.
+        RunLoop.main.add(timer, forMode: .common)
+        animationTimer = timer
+    }
+
+    /// One frame of self-driven animation: build what moved *before* asking for the paint.
+    ///
+    /// Evaluating a Layer FX mesh runs the skin's callbacks per grid vertex through the MAKI
+    /// interpreter, and doing it lazily from the renderer put that work inside `draw`. Here it is
+    /// still the main thread — a MAKI callback has to be — but it is off the paint path, so the frame
+    /// AppKit is composing is not the one waiting for the interpreter.
+    private func animationTick() {
+        guard !isTornDown else { return }
+        scripts.refreshLayerFXMeshes()
+        repaintAnimatingObjects()
+    }
+
+    /// Drop every derived rect this view caches, and the renderer's memoized scene with them.
+    /// Called wherever the scene may have changed shape — a layout switch, a resize, a UI Size
+    /// change, a script mutating the graph.
+    private func invalidateRectCaches() {
         animatingRectsCache = nil
         objectRectCache.removeAll()
         visualizationRectsCache = nil
-        guard !animatingRects().isEmpty else { return }
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
-            self?.repaintAnimatingObjects()
-        }
+        timeRectsCache = nil
+        renderer.invalidateSceneCache()
     }
 
     /// The boxes of everything in this scene that moves on its own — animated layers, song tickers,
@@ -165,9 +189,7 @@ final class WinampModernMainView: NSView {
     @discardableResult
     func activateLayout(id: String) -> Bool {
         guard (try? renderer.activateLayout(id: id)) != nil else { return false }
-        animatingRectsCache = nil
-        objectRectCache.removeAll()
-        visualizationRectsCache = nil
+        invalidateRectCaches()
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
         // A different layout is a different scene, so nothing carries over: every object in it hears
@@ -179,9 +201,7 @@ final class WinampModernMainView: NSView {
 
     /// Resize this view's canvas (clamped by the active layout) and its window with it.
     func applyCanvasResize(_ proposed: CGSize) {
-        animatingRectsCache = nil
-        objectRectCache.removeAll()
-        visualizationRectsCache = nil
+        invalidateRectCaches()
         _ = renderer.resize(to: proposed)
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
@@ -257,9 +277,7 @@ final class WinampModernMainView: NSView {
             // A script can add or remove a component holder — cPro builds its Media Library holder
             // when that tab is first opened — so a graph change has to re-run surface reconciliation,
             // not just repaint. Without this the tab opens onto an empty hole.
-            self?.animatingRectsCache = nil
-            self?.objectRectCache.removeAll()
-            self?.visualizationRectsCache = nil
+            self?.invalidateRectCaches()
             self?.needsLayout = true
             self?.needsDisplay = true
             // A script can also turn Layer FX on outside load (switching Defix's display style does
@@ -624,6 +642,16 @@ final class WinampModernMainView: NSView {
         needsDisplay = true
     }
 
+    /// Ten times a second, for as long as a track plays.
+    ///
+    /// It used to end in `needsDisplay = true`, which is a **whole-window** repaint at the audio
+    /// engine's clock rate — 19.3 ms of Retina bitmap drawing, ten times a second, on the same main
+    /// thread the skin's 30 Hz animation is trying to use. That single line silently defeated every
+    /// targeted repaint Phase 28 added, and it is the measured cause of the choppy cassette: the
+    /// reels' own script was stepping evenly all along (`WINAMP_MODERN_RENDER_FX_SPIN`), the frames
+    /// were not arriving evenly. Only what a clock actually moves is invalidated now; anything a
+    /// *script* moves in response to `onPostedPosition` still comes back through
+    /// `objectRepaintRequested` and names its own rect.
     func updateTime(current: TimeInterval, duration: TimeInterval) {
         if duration > 0 {
             let posted = Int32(max(0, min(255, current / duration * 255)))
@@ -631,11 +659,51 @@ final class WinampModernMainView: NSView {
                 _ = try? scripts.dispatch(object: object, event: "onpostedposition", arguments: [.integer(posted)])
             }
         }
-        needsDisplay = true
+        let rects = timeDependentRects()
+        // An *empty* set means this scene has nothing the renderer draws from the clock, which is a
+        // real answer and not a classification failure: `display="time"`, a `seek` slider and a seek
+        // progress bar are the only things it draws from `host.currentTime`. A readout a *script*
+        // maintains (a bitmap-font clock filled with `setText`) repaints through `graphDidMutate`
+        // when the script writes it, which is the moment it actually changes.
+        guard rects.count <= 24 else {
+            needsDisplay = true
+            return
+        }
+        for rect in rects { setNeedsDisplay(rect) }
     }
+
+    /// The boxes of everything whose drawing follows the playback clock: an elapsed-time readout, a
+    /// seek slider's thumb, a seek progress bar. Cached with the other rect scans.
+    func timeDependentRects() -> [NSRect] {
+        if let timeRectsCache { return timeRectsCache }
+        let rects = renderer.sceneNodes().compactMap { node -> NSRect? in
+            let object = node.object
+            let type = object.typeName.lowercased()
+            let display = object.attributes["display"]?.lowercased()
+            let action = object.attributes["action"]?.lowercased()
+            let follows: Bool
+            switch type {
+            case "text", "songticker": follows = display == "time"
+            case "slider": follows = action == "seek"
+            // A `progressgrid` with no action of its own takes its value from the slider it is
+            // paired with, so it has to be treated as a possible seek bar.
+            case "progressgrid": follows = action == "seek" || action == nil
+            default: follows = false
+            }
+            guard follows else { return nil }
+            return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
+        }
+        timeRectsCache = rects
+        return rects
+    }
+
+    private var timeRectsCache: [NSRect]?
 
     func updatePlaybackState() {
         let state = host.playbackState
+        // Play/pause/stop artwork and the shuffle/repeat/EQ toggles are read from the *host*, not
+        // from the graph, so the renderer's memoized scene cannot see them change on its own.
+        renderer.invalidateSceneCache()
         if state != lastPlaybackState {
             // Winamp reports the *transition*, not the level, and a skin acts differently on each:
             // ClassicPro's `beat.m` restarts its VU timer with a fresh running maximum on `onPlay` but

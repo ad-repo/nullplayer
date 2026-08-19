@@ -508,6 +508,43 @@ cache is dropped on a track change, or the previous track's cover stays on scree
 title. Art arrives asynchronously, so the window controller repaints on
 `NowPlayingManager.artworkDidLoadNotification` — with playback paused nothing else would.
 
+#### The frame budget: what repaints, and what it costs
+
+A `.wal` scene is laid out in **skin pixels** and drawn through a scaled CTM — ×2 on Retina, more at
+a larger UI Size. Two consequences dominate everything else about how this window performs, and
+neither announces itself: a stutter, a lagging meter or a "heavy" UI is what you actually see.
+
+1. **Nothing may resample the same artwork twice.** `CGContext.draw` re-filtered every bitmap in the
+   window to the backing scale on *every frame*. Measured on Defix at 2×: 18.3 ms a frame, 6.7 of it
+   in unnamed layers and 3.7 in the layout's own background. `WasabiSceneRenderer` now keeps each
+   image pre-scaled at the size the context will put it on screen, so the per-frame draw is a blit —
+   3.5 ms, with pixels identical to before (the same `.high` resample, kept rather than repeated).
+   Crops are cached too: `CGImage.cropping(to:)` allocates a *fresh* image per call, so a bitmap-font
+   glyph or an animation frame had a new identity every frame and missed every cache keyed on it.
+2. **Only what moved may be invalidated.** A single `needsDisplay = true` on a periodic path silently
+   defeats every targeted repaint in the window. The one that caused Defix's choppy cassette was
+   `updateTime`, which runs at the audio engine's 10 Hz clock: three full-window repaints for every
+   ten frames of a 30 Hz animation, on the same thread. The rule is that a periodic update names its
+   own rects — `updateTime` the objects the renderer draws from `host.currentTime` (a
+   `display="time"` readout, a `seek` slider, a seek `progressgrid`), `updateSpectrum` the `<vis>`
+   and `<eqvis>` boxes, the animation clock the animating and FX rects. A readout a *script*
+   maintains is not in any of those sets and does not need to be: it repaints through
+   `graphDidMutate` when the script writes it, which is when it changes.
+
+Everything derived from the scene is cached and dropped together (`invalidateRectCaches`), and the
+renderer memoizes its scene walk against the graph's own `mutationGeneration`. A node's **geometry**
+is a function of the graph; its **bitmap** is not — play/pause artwork, the shuffle and repeat lamps,
+the EQ buttons and every `cfgattrib` switch are resolved from the host and the config store, so a
+memoized node has its image re-resolved on the way out.
+
+The main thread still carries what genuinely belongs to it: MAKI timer ticks and the interpreter (the
+VM and the graph are single-threaded by construction), and the warp's pixel loop inside `draw`
+(~1.9 ms for Defix's two 264×264 reels). Both are measured, bounded and, at 30 Hz, comfortably inside
+the frame. What is *not* allowed there is arithmetic that could have happened elsewhere:
+`WinampModernLevelMeter` and `PeppyMeterLevelModel` both measure on the audio-posting thread and hop
+two doubles, and the FX mesh is evaluated by the animation clock before it invalidates rather than by
+the paint that follows.
+
 #### `alpha` belongs to the object, not to one kind of drawing
 
 It is set once per scene node, before the type-specific draw, so text and bitmap fonts fade with
@@ -1040,10 +1077,11 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_FX_SPIN=<seconds>` | samples every warped layer's angle at 60 Hz, printing the wall-clock step between updates and how far it turned. This is how "the animation is rough" is split into *the script's cadence* and *our frame rate* — a smooth meter is a small, even step at an even interval |
 | `WINAMP_MODERN_RENDER_VU=<level>` | inject a program level per channel (0…1) for `getLeftVUMeter`/`getRightVUMeter`; `sweep` oscillates 0…1 at 0.5 Hz. The harness has no audio, so without it every meter reads silence and a needle's travel cannot be measured |
 | `WINAMP_MODERN_RENDER_CONFIG=<section>;<key>=<value>[\|…]` | write skin configuration **before** the scripts start — where the app reads it from, since the value is persisted. How a skin option that changes what is drawn (Defix's eight display styles) is selected without a GUI. Note it *stays* set for later runs, and a skin may keep its own private copy (Defix: `CurVuVis`) |
-| `WINAMP_MODERN_RENDER_TIME=<frames>` (+ `_SCALE=2`, `_CLIP=1`) | ms/frame for a full repaint. `_SCALE=2` is the number that matters — it is the Retina backing store the app actually pays for; `_CLIP=1` measures the same frame clipped to the warped layers' rects. Defix: 3.1 ms at 1×, **19.3 ms at 2×**, 6.9 ms clipped |
+| `WINAMP_MODERN_RENDER_TIME=<frames>` (+ `_SCALE=2`, `_CLIP=1`) | ms/frame for a full repaint. `_SCALE=2` is the number that matters — it is the Retina backing store the app actually pays for; `_CLIP=1` measures the same frame clipped to the warped layers' rects. Defix, after Phase 29's pre-scaled artwork cache: **3.5 ms at 2×** idle, 5.4 ms with both reels warping, 4.4 ms clipped (it was 19.3 / 6.9 when every bitmap was resampled to the backing scale on every frame) |
 | `WINAMP_MODERN_DRAW_PROFILE=1` | per-object draw cost, top 8 — which node costs the frame, without a sampling profiler |
 | `WINAMP_MODERN_FX_TRACE=1` | every `fx_*` call with its receiver: which layers a skin warps, and **when** it switches them on |
 | `WINAMP_MODERN_CALL_TRACE=1` | every MAKI method call with its arguments and result |
+| `WINAMP_MODERN_VU_LOG=1` | **live**, not headless: once a second, the arriving buffer's peak and RMS, the tap cadence, how many ~13 ms blocks it was split into, and the 0…255 byte range the skin receives across them. `peak` against `blockRange` is the whole diagnosis for "the meter doesn't follow peaks and valleys" — a wide block range with a flat needle is a skin-side ballistics question, a narrow one is a measurement question. `RENDER_VU` exercises only the half of the path *above* the meter |
 | `WINAMP_MODERN_MAKI_TRACE=<program>` | every bytecode instruction of the matching programs, with the top of the value stack. The last resort, and the only thing that finds a wrong *result* from a handler that does not fail — it is how an integer-truncating unary minus was found collapsing a needle's angle to two positions |
 | `WINAMP_MODERN_RENDER_SETTLE=<seconds>` | pump the run loop before dumping, so timer-driven state has happened — and **between driven clicks**, because a skin that gates a transition on a timer (`if (anim.isRunning()) return; anim.start();`, Defix's tab switch) never releases the gate without one, and a working control measures as one that only responds the first time |
 

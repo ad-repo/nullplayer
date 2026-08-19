@@ -27,7 +27,7 @@ is the reference to compare against.
 | T800 | Phase 20–22 | per-layout groups, region-clipped volume, drag | — |
 | ZDL Reel-To-Reel | Phase 18 | sized from its background art | — |
 | Rika | Phase 22 | loads without its missing TTF; vis colours honoured | — |
-| Defix Hi-End 200 | Phase 26–28 (measured 2026-08-19) | wood panel + framed windows, cassette display, **live SUI tabs + embedded library**; display styles and songticker modes selectable through **Skin Settings**; **all eight display styles animate** — needles and cassette reels through Layer FX, level strips through frame strips | motion quality: the cassette is choppy (frame budget) and the needles answer the music weakly (level scale) — `phase-28-handoff.md` |
+| Defix Hi-End 200 | Phase 26–29 (**confirmed live** 2026-08-19) | wood panel + framed windows, cassette display, **live SUI tabs + embedded library**; display styles and songticker modes selectable through **Skin Settings**; **all eight display styles animate smoothly** — needles and cassette reels through Layer FX, level strips through frame strips; frame cost 18.3 → 3.5 ms at Retina scale; VU fed block-played peak amplitude that falls to rest on silence | speaker-cone animation unverified live; `fx_setBgFx(1)` / `fx_onGetPixelA` accepted and inert — `phase-29-handoff.md` |
 
 ---
 
@@ -330,12 +330,28 @@ bitmaps. `main/normal` 406×355, 69 nodes.
   interpreter, left the needle with exactly two positions once it did move.
   Measured grids: reels 1×1 and 4×4, needles 6×6. Reels step 5°/8° every 33 ms; the needle updates
   every ~17 ms.
-- **Still rough, 2026-08-19** — the cassette animation is choppy and the VU needles answer the music
-  weakly. Neither is Layer FX: the first is the frame budget (this skin's main window costs 19.3 ms a
-  frame repainted whole at Retina scale, against 6.9 ms clipped to its meters), the second is the
-  level the host hands the skin, which Defix then maps through its own `73.813 · x^¼ − 100` curve and
-  its own ballistics. Open work and the measurements behind it:
-  `docs/winamp-modern/phase-28-handoff.md`.
+- **Motion quality — addressed in Phase 29 (2026-08-19).** The choppy cassette and the weak needles
+  were reported together but are two unrelated causes, and neither is Layer FX:
+  - *Choppy* was the **frame budget**. Two things were eating it. Every bitmap in the window was
+    re-filtered to the Retina backing scale on every frame (18.3 ms a frame at 2×; the artwork is now
+    kept pre-scaled, taking it to 3.5 ms idle and 5.4 ms with both reels warping), and `updateTime`
+    invalidated the *whole window* ten times a second at the audio engine's clock, which silently
+    defeated every targeted repaint around it. The reels' own script was stepping evenly the whole
+    time — `WINAMP_MODERN_RENDER_FX_SPIN` measured 5°/8° every 33 ms, perfectly regular — so the
+    script cadence was never the problem, only the frames carrying it.
+  - *Weak* was the **level scale**. The host was measuring RMS; Winamp's VU byte is a peak. Music
+    that peaks at full scale sits at 0.05–0.15 RMS, which against this skin's own artwork is the
+    bottom sixth of the sweep (measured with `WINAMP_MODERN_RENDER_VU`: 0.1 → 34%, 0.3 → 60%,
+    1.0 → 100%). `WinampModernLevelMeter` now measures peak amplitude, which puts loud material at
+    0.5–1.0 — the swing the needles are cut for. Live follow-up (2026-08-19): peak alone was
+    *better but still not responsive*, because a peak over a whole 50–100 ms tap buffer is nearly a
+    constant on this kind of material, and the needles never fell to rest when the music stopped —
+    the tap posts nothing at all when playback ends, so the last value stuck. The buffer is now split
+    into Winamp-sized ~13 ms blocks played out in step with the audio, and running past the end of
+    them is read as silence — confirmed live on the pass after.
+    `WINAMP_MODERN_VU_LOG=1` prints what the meter receives off real audio.
+
+  Measurements and what is still open: `docs/winamp-modern/phase-29-handoff.md`.
 - **Seven of its eight display styles were unreachable; Phase 27 made them selectable.** The skin
   registers a *Visualizer* item with `newAttribute` carrying eight values — `Audio cassette` (its
   shipped default), `Left Right VU`, `BASS TRIPLE VU`, `Ovis 1`, `Ovis 2`,
