@@ -325,6 +325,57 @@ they were wrong:
 deliberately *not* registered as a resource: its id is scoped to its gammaset, and registering it made
 each of MMD3's 83 themes "replace" the previous one's groups (1404 bogus duplicate-id warnings).
 
+##### The picker: `<ColorThemes:List>` and the `colorthemes_*` actions (Phase 32)
+
+The catalog is only half the feature. The screen a user picks a theme from is
+`<ColorThemes:List>` — an **unregistered XUI tag**, because in real Winamp the widget lives inside
+Winamp and only the tag appears in the `.wal`. Until Phase 32 it expanded to a leaf object with no
+bitmap, which `isRenderable` and `isInteractive` both rejected, so every colour-theme screen in every
+skin was an empty box that could not be clicked.
+
+- The renderer draws the rows (`drawColorThemeList`), from `themeNames` in catalog order, through the
+  same `drawSurfaceText` path the embedded playlist uses — the skin's list font, the skin's list
+  colours, the skin's active gamma. The **selected** row (`selectionBackground`/`selectionText`) and
+  the **applied** one (`currentText`) are drawn differently, as Winamp draws them: "the row I am
+  pointing at" and "the theme the window is wearing" are different facts.
+- Per-object state (`WasabiColorThemeListState`, keyed by `WasabiObjectID`) holds the selection and
+  the scroll, so a skin with a list in its player *and* in a standalone window — mmd3 has both — keeps
+  them independent. The first draw **seeds the selection to the applied theme and scrolls it into
+  view**; with 82 themes a list that always opened at row 0 could not answer "which one am I on?".
+- A single click selects; a **double-click** applies. The skin's own `Switch` button is what a single
+  click is waiting for.
+- **No scrollbar.** The renderer has no scrollbar support at all, so a `<Wasabi:Scrollbar>` a skin
+  places beside its list is inert and the wheel is the only way down the list. Scrolling the applied
+  theme into view is the mitigation; growing scrollbar support is a separate piece of work.
+
+The three host actions live in `WinampModernMainView.performAction`:
+
+| Action | What it does |
+|---|---|
+| `colorthemes_switch` | applies the selection of the list its `action_target` names |
+| `colorthemes_next` / `_previous` | steps the **applied** theme, wrapping, and drags every list's selection along |
+
+`action_target="<id>"` is resolved with Wasabi's **wide** semantics, the ones `findObject` uses: the
+button's own container subtree first, then the whole graph. The wide half is load-bearing — mmd3's
+`ctsbig` window names `main.colorthemes.list`, which lives in another container. A button whose target
+resolves to nothing falls back to the only list in the scene, and failing that to a **popup menu** of
+the theme names — which is what makes multipass's buttons (their `player.colorthemes` target is never
+instantiated) live. `action="TOGGLE"` with Winamp's Color-Themes preferences GUID
+`{53DE6284-7E88-4c62-9F93-22ED68E6A024}` opens that same popup.
+
+Skins that define themes and ship **no** picker at all (measured: Anexa, micro, T800, ZDL, Itemskin,
+Overdrive_2) are covered by the host **Color Themes** submenu in the Winamp Modern menu, which is the
+preferences dialog we do not otherwise have. It is gated on more than one theme.
+
+##### Artwork-less `<Wasabi:Button text="…">`
+
+A deliberate exception to the identifier-only rule for the seeded Wasabi standard-library shells. Three
+measured skins (CornerAmp, mmd3's `ctsbig`, Anexa) put a bare `<Wasabi:Button text="Switch">` under
+their theme list, and **no** `.wal` ships `wasabi.button.*` artwork because in real Winamp the standard
+library supplies it. The renderer draws a 1px border in `palette.listText` with the label centred, but
+only when the instance resolves *no* bitmap and carries a non-empty `text=` — a skin with its own
+button artwork never reaches the fallback.
+
 #### Animated layers are played as a range
 
 `animatedlayer` is a sprite sheet plus a play head, and scripts drive it as a range:

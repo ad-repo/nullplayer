@@ -14,7 +14,14 @@ final class WinampModernRenderDumpTests: XCTestCase {
 
     func testRendersEachContainerToPNG() throws {
         let env = ProcessInfo.processInfo.environment
-        guard let walPath = env["WINAMP_MODERN_WAL"], let dumpPath = env["WINAMP_MODERN_RENDER_DUMP"] else {
+        guard let walPath = env["WINAMP_MODERN_WAL"] else {
+            throw XCTSkip("Set WINAMP_MODERN_WAL and WINAMP_MODERN_RENDER_DUMP (and WINAMP_MODERN_ENGINE for cPro).")
+        }
+        // A probe-only run needs no PNGs. `WINAMP_MODERN_RENDER_THEMES` is asked of all sixteen
+        // installed skins in one loop, and requiring a dump directory for each of them buys nothing
+        // but sixteen directories of images nobody looks at.
+        guard let dumpPath = env["WINAMP_MODERN_RENDER_DUMP"] ?? (env["WINAMP_MODERN_RENDER_THEMES"] != nil
+                ? NSTemporaryDirectory() + "WinampModernRenderDump-\(UUID().uuidString)" : nil) else {
             throw XCTSkip("Set WINAMP_MODERN_WAL and WINAMP_MODERN_RENDER_DUMP (and WINAMP_MODERN_ENGINE for cPro).")
         }
         let dumpDirectory = URL(fileURLWithPath: dumpPath, isDirectory: true)
@@ -393,6 +400,45 @@ final class WinampModernRenderDumpTests: XCTestCase {
         try sidecar.write(to: dumpDirectory.appendingPathComponent("surfaces.txt"),
                           atomically: true, encoding: .utf8)
 
+        var printedThemeCatalog = false
+        // The scene walk only reaches what is *on screen*, and a colour-theme picker usually is not:
+        // multipass, winampmodern566 and Anexa all keep theirs in a drawer or a window that starts
+        // closed, so a scene-only probe reported "no picker" for three skins that ship a full one.
+        // This is the declarative half — every list and every `colorthemes_*` action in the graph,
+        // visible or not — and it is what the plan's per-skin table is re-derived from.
+        if env["WINAMP_MODERN_RENDER_THEMES"] != nil {
+            func container(of object: WasabiObject) -> String {
+                var ancestor: WasabiObject? = object
+                while let current = ancestor,
+                      current.typeName.caseInsensitiveCompare("container") != .orderedSame {
+                    ancestor = current.parent
+                }
+                return ancestor?.xmlID ?? "-"
+            }
+            func walkThemes(_ objects: [WasabiObject]) {
+                for object in objects {
+                    if WasabiSceneRenderer.isColorThemeList(object) {
+                        print("THEMES graph-list \(container(of: object)) #\(object.xmlID ?? "-") "
+                              + "visible=\(object.attributes["visible"] ?? "1")")
+                    }
+                    if let action = object.attributes["action"]?.lowercased(),
+                       action.hasPrefix("colorthemes_") {
+                        // What the target *is* matters as much as whether it resolves: a target that
+                        // is not a `<ColorThemes:List>` is a skin driving its picker some other way,
+                        // and that is a different feature (multipass names a group, not a list).
+                        let resolved = (object.attributes["action_target"].map {
+                            loaded.runtime.graph.objects(xmlID: $0)
+                        } ?? []).map { "\($0.typeName)#\($0.xmlID ?? "-")" }
+                        print("THEMES graph-action \(container(of: object)) \(action) "
+                              + "on=\(object.typeName)#\(object.xmlID ?? "-") "
+                              + "action_target=\(object.attributes["action_target"] ?? "-") "
+                              + "resolves=\(resolved.isEmpty ? "nothing" : resolved.joined(separator: ","))")
+                    }
+                    walkThemes(object.children)
+                }
+            }
+            walkThemes(loaded.runtime.graph.roots)
+        }
         for info in containers {
             // A fixed clock makes ticker/animation frames reproducible; set
             // WINAMP_MODERN_RENDER_CLOCK to a different value to capture a later frame.
@@ -665,6 +711,41 @@ final class WinampModernRenderDumpTests: XCTestCase {
                     print("HOLDERS \(info.id)/\(layoutID): "
                           + holders.map { "\($0.kind.rawValue)@\($0.object.xmlID ?? "-")\($0.frame)" }
                             .joined(separator: " "))
+                }
+                // WINAMP_MODERN_RENDER_THEMES=1 — the colour-theme picture for this skin, which is
+                // otherwise unmeasurable: a `.wal` is a compressed NSIS archive with no unpacked form,
+                // so `strings … | grep -i colorthemes` answers 0 for four skins that ship a full
+                // picker. It prints the catalog once, then every `<ColorThemes:List>` in the scene
+                // with its resolved frame, and every object carrying a `colorthemes_*` action with
+                // the target its `action_target` resolves to (Phase 32).
+                if env["WINAMP_MODERN_RENDER_THEMES"] != nil {
+                    if !printedThemeCatalog {
+                        printedThemeCatalog = true
+                        let names = renderer.colorThemeNames
+                        print("THEMES catalog: count=\(names.count) "
+                              + "active=\(loaded.themeCoordinator.catalog.activeTheme) "
+                              + "default=\(names.first ?? "-")")
+                        print("THEMES names: \(names.joined(separator: " | "))")
+                    }
+                    for entry in renderer.colorThemeLists() {
+                        print("THEMES list \(info.id)/\(layoutID) #\(entry.object.xmlID ?? "-") "
+                              + "frame=\(entry.frame) "
+                              + "rows=\(renderer.colorThemeNames.count) "
+                              + "visible=\(WasabiColorThemeListState.visibleRowCount(in: entry.frame)) "
+                              + "selected=\(renderer.selectedColorTheme(in: entry.object) ?? "-")")
+                    }
+                    for node in renderer.sceneNodes() {
+                        let action = (node.object.attributes["action"] ?? "").lowercased()
+                        guard action.hasPrefix("colorthemes_") else { continue }
+                        let target = renderer.actionTarget(of: node.object)
+                        let list = renderer.colorThemeList(forAction: node.object)
+                        print("THEMES action \(info.id)/\(layoutID) \(action) "
+                              + "on=\(node.object.typeName)#\(node.object.xmlID ?? "-") "
+                              + "text=\(node.object.attributes["text"] ?? "-") "
+                              + "action_target=\(node.object.attributes["action_target"] ?? "-") "
+                              + "resolves=\(target.map { "\($0.typeName)#\($0.xmlID ?? "-")" } ?? "nothing") "
+                              + "list=\(list?.xmlID ?? "none") frame=\(node.frame)")
+                    }
                 }
                 if env["WINAMP_MODERN_RENDER_BITMAPS"] != nil {
                     var missing: Set<String> = []

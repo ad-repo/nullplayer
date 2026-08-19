@@ -59,6 +59,10 @@ synthesized and nothing left to the classic fallback.
   menu under the tab — measured with `RENDER_CLICK`, which prints the point the menu is placed at
   (`CLICK menu at 10,130` for the first tab, whose own frame is `(10, 104, 35, 29)`). Phase 24.
 
+- **Colour themes** (Phase 32) — the engine's own `<ColorThemes:List id="colorthemes">` (in
+  `player-normal-group.xml` / `xui/CentroSUI/_v2/drawer.xml`) populates with the six themes, and the
+  drawer's switch / previous / next buttons all resolve it through `action_target`.
+
 ### Not implemented or knowingly wrong
 
 - **Guilist-backed widgets** — `getItemLabel`, `getItemFocused`, `setSubItem`, `getAttributeName`: the

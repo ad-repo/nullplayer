@@ -864,6 +864,30 @@ class ContextMenuBuilder {
                 winampModernMenu.addItem(NSMenuItem.separator())
             }
 
+            // The skin's colour themes (Phase 32). A secondary route where the skin ships its own
+            // picker, and the *only* route on the six measured skins that define themes and ship
+            // none — in Winamp those live in its preferences dialog. Gated on more than one theme:
+            // a skin with a single gammaset has nothing to choose between, and one with none at all
+            // reports an empty list.
+            let colorThemes = WindowManager.shared.winampModernColorThemes
+            if colorThemes.names.count > 1 {
+                let themesItem = NSMenuItem(title: "Color Themes", action: nil, keyEquivalent: "")
+                let themesMenu = NSMenu()
+                themesMenu.autoenablesItems = false
+                for name in colorThemes.names {
+                    let item = NSMenuItem(title: name,
+                                          action: #selector(MenuActions.selectWinampModernColorTheme(_:)),
+                                          keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = name
+                    if name.caseInsensitiveCompare(colorThemes.active) == .orderedSame { item.state = .on }
+                    themesMenu.addItem(item)
+                }
+                themesItem.submenu = themesMenu
+                winampModernMenu.addItem(themesItem)
+                winampModernMenu.addItem(NSMenuItem.separator())
+            }
+
             // Only when the loaded skin registered settings of its own: many skins register none,
             // and an empty window is worse than no entry point (Phase 27.3).
             if WindowManager.shared.hasWinampModernSkinSettings {
@@ -4205,6 +4229,11 @@ class MenuActions: NSObject {
     @objc func toggleWinampModernSkinWindow(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         WindowManager.shared.toggleWinampModernSkinWindow(id: id)
+    }
+
+    @objc func selectWinampModernColorTheme(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        WindowManager.shared.selectWinampModernColorTheme(name)
     }
 
     @objc func showWinampModernSkinSettings() {

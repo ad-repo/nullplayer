@@ -89,6 +89,7 @@ verbatim; it just lives in a reference file now.
 | `<ProgressGrid>` — the bar's *filled* part | [reference/rendering.md](reference/rendering.md) |
 | A skin's own right-click menus | [reference/rendering.md](reference/rendering.md) |
 | Colour themes (`gammaset` / `gammagroup`) | [reference/rendering.md](reference/rendering.md) |
+| Colour theme screen is empty / will not switch | [reference/rendering.md](reference/rendering.md) §*The picker* |
 | Animated layers are played as a range | [reference/rendering.md](reference/rendering.md) |
 | The frame budget: what repaints, and what it costs | [reference/performance.md](reference/performance.md) |
 | MAKI | [reference/scripting.md](reference/scripting.md) |
@@ -135,6 +136,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Container topology | `WinampModernContainerTopology.swift` |
 | Surface inventory + synthesis | `WasabiSurfaceInventory.swift`, `WasabiSurfaceSynthesizer.swift`, `WasabiStandardFrames.swift` |
 | Colour theme + palette | `WinampModernThemeCoordinator.swift`, `WasabiPalette.swift` |
+| Colour theme picker (`<ColorThemes:List>`) | `WasabiColorThemeList.swift`, `WasabiRenderer.swift` |
 | Style for NullPlayer-drawn surfaces | `WinampModernSurfaceStyle.swift` |
 | EQ action decoding | `WinampModernEQActions.swift` |
 | Diagnostics | `WalDiagnostics.swift` |

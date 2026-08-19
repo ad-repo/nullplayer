@@ -68,6 +68,15 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   `gray` is a mode (any non-zero desaturates). The default theme is the **first gammaset in the
   document**, and the theme list keeps document order. A `gammagroup` id is scoped to its gammaset,
   not to the global resource namespace.
+- `<ColorThemes:List>`: **supported** (Phase 32). Winamp's own colour-theme picker, an unregistered
+  XUI tag the renderer draws itself — the catalog's names in document order, the applied theme and the
+  selected row coloured apart, wheel-scrolled, single click to select and double click to apply. The
+  host actions `colorthemes_switch` / `_next` / `_previous` are implemented, including `action_target`
+  with `findObject`'s wide lookup; a button whose target resolves to nothing falls back to a popup of
+  the theme names, as does `TOGGLE` on the Color-Themes preferences GUID. **No scrollbar** — a
+  `<Wasabi:Scrollbar>` beside the list stays inert
+- A `<Wasabi:Button text="…">` that resolves no artwork is drawn as a bordered label (Phase 32). No
+  `.wal` ships `wasabi.button.*` art; it lives inside Winamp
 - **Hidden objects are still laid out.** They are not painted and take no clicks, but their geometry
   resolves, they receive `onResize`, and `getWidth()` answers for them — Wasabi lays a hidden window out
   too, and a skin that hides a pane can only bring it back from its own `onResize` seeing the pane grow

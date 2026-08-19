@@ -195,9 +195,32 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
 
 **Themes and sizing**
 
-- [ ] Switch colour theme (MMD3 has 83): main chrome, auxiliary windows, playlist, EQ, and the
+- [ ] Switch colour theme (MMD3 has 82): main chrome, auxiliary windows, playlist, EQ, and the
       library all recolour — **including** an already-open fallback window, which repaints from
       `.winampModernThemeDidChange` rather than being told directly
+
+**The colour-theme picker (Phase 32)**
+
+- [ ] **mmd3** — the in-player COLORTHEMES drawer lists all 82 themes and its `Switch` button applies
+      one; the standalone `ColorThemes` window (Skin Windows menu) does the same. The list opens
+      scrolled to the theme it is wearing, and the wheel scrolls it
+- [ ] **winampmodern566** — config drawer → Color Themes tab: the list populates, `Switch` / previous /
+      next all work
+- [ ] **corneramp_redux** — the `Color Themes` window populates; a double-click on a row applies it,
+      and `Switch` / `Pr…` / `Ne…` under it work
+- [ ] **multipass** — the drawer's switch / previous / next cycle its 58 themes. Switch has no list to
+      read (its target is never instantiated) so it opens the popup; the arrows step directly
+- [ ] **Defix** — the configurator's *Color Themes* list populates and `Switch to selected Color Theme`
+      recolours the skin
+- [ ] **cPro-Bento** — the engine's own colour-theme list populates and switches (needs
+      `WINAMP_MODERN_ENGINE`)
+- [ ] **Rika** — the `Color Themes` window lists all 10; it ships no Switch button, so a double-click
+      is the route
+- [ ] **Anexa / micro / T800 / ZDL** — no in-skin picker at all: the host **Color Themes** submenu
+      (Winamp Modern menu) lists their themes, checks the applied one, and switching recolours the
+      window
+- [ ] On any of them, with the playlist and library windows open: **one** switch recolours the player,
+      the playlist and the embedded library together, and the pick survives a relaunch
 - [ ] Resize every native `.wal` window; each obeys its **own** layout minimum
 - [ ] Exercise every UI Size level, including clicking inside the embedded library at 200%
 - [ ] Restore a session whose saved frame is below the layout minimum: the window clamps up and keeps

@@ -263,6 +263,23 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         skinSettingsController?.window?.makeKeyAndOrderFront(nil)
     }
 
+    // MARK: - Colour themes (Phase 32)
+
+    /// The colour themes the loaded skin defines, in Winamp's own order, with the applied one.
+    ///
+    /// Empty for a skin that declares no `<gammaset>` — the catalog still reports an active theme of
+    /// "Default" in that case, so the *names* are what the menu has to gate on, not the active one.
+    var colorThemes: (names: [String], active: String) {
+        guard let renderer = skinView?.renderer else { return ([], "") }
+        return (renderer.colorThemeNames, renderer.themes.activeTheme)
+    }
+
+    /// Apply one. Goes through the view so the skin's own lists follow the pick and every surface
+    /// repaints, exactly as a click on the skin's own picker does.
+    func selectColorTheme(_ name: String) {
+        skinView?.applyColorTheme(name)
+    }
+
     /// The loaded skin's live palette, for the surfaces NullPlayer draws in windows of its own
     /// (Phase 16). Nil before a skin loads and while the placeholder is showing, which is exactly
     /// when a fallback window should keep its own defaults rather than guess at a theme.

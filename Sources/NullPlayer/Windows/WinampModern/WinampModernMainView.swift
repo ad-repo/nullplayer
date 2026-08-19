@@ -571,6 +571,19 @@ final class WinampModernMainView: NSView {
                 return
             }
         }
+        // A colour-theme list: click a row to pick it out, double-click to apply it. Winamp-faithful —
+        // the skin's own `Switch` button is what a single click is *waiting* for — and the same code
+        // serves every window this view class backs, so mmd3's `ctsbig`, corneramp's `colorthemes`
+        // window and a drawer in the player are all one path.
+        if let list = renderer.colorThemeList(at: point),
+           let row = renderer.colorThemeListRow(at: point, in: list.object) {
+            renderer.selectColorThemeRow(row, in: list.object)
+            if event.clickCount >= 2, let name = renderer.selectedColorTheme(in: list.object) {
+                applyColorTheme(name)
+            }
+            needsDisplay = true
+            return
+        }
         guard let object = renderer.object(at: point) else { return }
         pressedObject = object
         dispatch(object: object, event: "onleftbuttondown", point: point)
@@ -673,12 +686,20 @@ final class WinampModernMainView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        let delta = event.deltaY > 0 ? -1 : (event.deltaY < 0 ? 1 : 0)
+        // The renderer has no scrollbar support, so the wheel is the *only* way down a colour-theme
+        // list — and mmd3's has 82 rows.
+        if let list = renderer.colorThemeList(at: point) {
+            guard delta != 0 else { return }
+            renderer.scrollColorThemeList(byRows: delta, in: list.object)
+            needsDisplay = true
+            return
+        }
         guard let holder = renderer.componentHolder(at: point), holder.kind == .playlist,
               let rowCount = componentHost?.playlistSnapshot().rows.count else {
             super.scrollWheel(with: event)
             return
         }
-        let delta = event.deltaY > 0 ? -1 : (event.deltaY < 0 ? 1 : 0)
         guard delta != 0 else { return }
         renderer.scrollPlaylist(byRows: delta, rowCount: rowCount, in: holder.frame)
         needsDisplay = true
@@ -978,7 +999,9 @@ final class WinampModernMainView: NSView {
     private func performAction(for object: WasabiObject) {
         let action = object.attributes["action"]
         let parameter = object.attributes["param"]
-        performAction(action: action, parameter: parameter)
+        // The object comes with the action now: `action_target=` is an attribute of the *button*, and
+        // it is the only thing that says which list a colour-theme switch acts on.
+        performAction(action: action, parameter: parameter, object: object)
         if action == nil {
             // A `cfgattrib`-bound control carries no `action`: the binding *is* what it does. Defix's
             // whole settings window is built this way, so without it every switch in that window
@@ -995,7 +1018,7 @@ final class WinampModernMainView: NSView {
         updatePlaybackState()
     }
 
-    private func performAction(action: String?, parameter: String?) {
+    private func performAction(action: String?, parameter: String?, object: WasabiObject? = nil) {
         switch action?.uppercased() {
         case "PLAY": host.play()
         case "PAUSE": host.pause()
@@ -1019,7 +1042,12 @@ final class WinampModernMainView: NSView {
             // (`action="TOGGLE" param="Config"`): the whole configurator — the 31 backgrounds, the
             // nine display styles, the songticker scrolling mode — was unreachable, so a preference
             // the skin ships switched off could never be switched on.
-            if let kind = WinampModernComponentRegistry.kind(for: parameter) {
+            // Winamp's preferences dialog, Colour Themes page. multipass's "open in preferences"
+            // button is `action="TOGGLE"` with this GUID as its parameter; we have no preferences
+            // dialog, and the popup below is the same list that dialog would show.
+            if parameter?.uppercased().contains(Self.colorThemePreferencesGUID) == true {
+                showColorThemeMenu()
+            } else if let kind = WinampModernComponentRegistry.kind(for: parameter) {
                 routeComponentToggle(kind)
             } else if let parameter, !parameter.isEmpty {
                 _ = containerWindowToggleRequested?(parameter)
@@ -1040,10 +1068,76 @@ final class WinampModernMainView: NSView {
             // A *button* carrying a band action (a reset, a nudge) has no position to read; the
             // slider path owns the values. Inert rather than wrong.
             break
+        // The three colour-theme host actions. `_switch` applies whatever its list has picked out;
+        // `_next`/`_previous` step the applied theme directly and drag the list's selection along, so
+        // a skin that ships only the arrows (multipass) still cycles its 58 themes.
+        case "COLORTHEMES_SWITCH":
+            if let object, let list = renderer.colorThemeList(forAction: object),
+               let name = renderer.selectedColorTheme(in: list) {
+                applyColorTheme(name)
+            } else {
+                // No list to read: Defix's switch button names none and its skin ships none, and
+                // multipass's names a group that is never instantiated. In Winamp both would land in
+                // the preferences dialog; the popup is that list.
+                showColorThemeMenu()
+            }
+        case "COLORTHEMES_NEXT": stepColorTheme(by: 1)
+        case "COLORTHEMES_PREVIOUS": stepColorTheme(by: -1)
         case "MENU":
             if parameter?.lowercased() == "presets" { showEqualizerPresetMenu() }
         default: break
         }
+    }
+
+    /// Winamp's preferences page for colour themes. A skin that opens it is asking for the same list
+    /// the popup below shows.
+    private static let colorThemePreferencesGUID = "53DE6284-7E88-4C62-9F93-22ED68E6A024"
+
+    /// Apply a theme and repaint.
+    ///
+    /// `activateTheme` answers `false` for a theme that is *already* applied, and the coordinator
+    /// broadcasts nothing in that case — so the repaint cannot be left to the broadcast, or clicking
+    /// the row you are already wearing would leave the list's selection unpainted.
+    func applyColorTheme(_ name: String) {
+        _ = renderer.activateTheme(name)
+        renderer.syncColorThemeLists()
+        WindowManager.shared.refreshWinampModernSurfaces()
+        needsDisplay = true
+    }
+
+    /// Step the applied theme, wrapping at both ends — the skin's own next/previous buttons.
+    private func stepColorTheme(by delta: Int) {
+        let names = renderer.colorThemeNames
+        guard !names.isEmpty else { return }
+        let current = renderer.activeColorThemeIndex ?? 0
+        let next = ((current + delta) % names.count + names.count) % names.count
+        applyColorTheme(names[next])
+    }
+
+    /// The host's own colour-theme list, as a popup.
+    ///
+    /// The route for every skin that defines themes and ships no list to pick them from: Defix's
+    /// `colorthemes_switch` button, multipass's unresolvable target, and the preferences GUID above.
+    /// The applied theme is checked, so the popup answers "which one am I wearing?" as well.
+    private func showColorThemeMenu() {
+        let names = renderer.colorThemeNames
+        guard names.count > 1, let event = NSApp.currentEvent else { return }
+        let menu = NSMenu(title: "Color Themes")
+        let active = renderer.themes.activeTheme
+        for name in names {
+            let item = NSMenuItem(title: name, action: #selector(applyColorThemeFromMenu(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = name
+            if name.caseInsensitiveCompare(active) == .orderedSame { item.state = .on }
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func applyColorThemeFromMenu(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        applyColorTheme(name)
     }
 
     /// The skin's own "presets" button. Winamp opens the equalizer preset list from it; we build the

@@ -892,6 +892,22 @@ class WindowManager {
         (mainWindowController as? WinampModernMainWindowController)?.toggleSkinWindow(id: id)
     }
 
+    /// The loaded `.wal` skin's colour themes and the applied one (Phase 32). Safe default in every
+    /// other mode, per the mode-guarding rule in CLAUDE.md.
+    ///
+    /// Four skins with themes — Itemskin, micro, T800, Overdrive_2 — ship no picker of any kind, and
+    /// Anexa and ZDL none either: in real Winamp those are picked from Winamp's own preferences
+    /// dialog, which is host UI we do not have. The menu built from this is that dialog.
+    var winampModernColorThemes: (names: [String], active: String) {
+        guard uiMode.controllerFamily == .winampModern else { return ([], "") }
+        return (mainWindowController as? WinampModernMainWindowController)?.colorThemes ?? ([], "")
+    }
+
+    func selectWinampModernColorTheme(_ name: String) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.selectColorTheme(name)
+    }
+
     /// Open the list of settings the skin registered but bound no control to.
     func showWinampModernSkinSettings() {
         guard uiMode.controllerFamily == .winampModern else { return }

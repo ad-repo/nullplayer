@@ -509,6 +509,10 @@ final class WasabiSceneRenderer {
     /// Weak so the retained graph never keeps the host (owned by the window controller) alive.
     weak var componentHost: WinampModernComponentHost?
     private var playlistScrollOffset = 0
+    /// Per-object `<ColorThemes:List>` state. Keyed by object because a skin may show the same list
+    /// in two places (mmd3 puts one in its player drawer and one in a standalone window) and each
+    /// keeps its own selection and scroll.
+    private var colorThemeListStates: [WasabiObjectID: WasabiColorThemeListState] = [:]
 
     var activeLayoutID: String { layout.xmlID ?? "normal" }
     var availableLayoutIDs: [String] {
@@ -994,6 +998,127 @@ final class WasabiSceneRenderer {
         playlistScrollOffset = max(0, min(maxOffset, playlistScrollOffset + delta))
     }
 
+    // MARK: - Colour theme list (Phase 32)
+
+    /// Whether an object is a `<ColorThemes:List>`. The tag is unregistered — Winamp supplies it, not
+    /// the skin — so it arrives as a leaf with this type name and nothing else.
+    static func isColorThemeList(_ object: WasabiObject) -> Bool {
+        object.typeName.caseInsensitiveCompare("colorthemes:list") == .orderedSame
+    }
+
+    /// Every colour-theme list in the active scene, with its resolved frame.
+    func colorThemeLists() -> [(object: WasabiObject, frame: CGRect)] {
+        sceneNodes().compactMap { node in
+            guard Self.isColorThemeList(node.object), isVisible(node.object) else { return nil }
+            return (node.object, node.frame)
+        }
+    }
+
+    /// The list under a point, topmost first.
+    func colorThemeList(at point: CGPoint) -> (object: WasabiObject, frame: CGRect)? {
+        colorThemeLists().reversed().first { $0.frame.contains(point) }
+    }
+
+    /// The theme names this list shows, in catalog (document) order — Winamp's own order.
+    var colorThemeNames: [String] { themes.themeNames }
+
+    /// Index of the applied theme in `colorThemeNames`, or nil when the skin declares none.
+    var activeColorThemeIndex: Int? {
+        colorThemeNames.firstIndex { $0.caseInsensitiveCompare(themes.activeTheme) == .orderedSame }
+    }
+
+    func colorThemeListRow(at point: CGPoint, in object: WasabiObject) -> Int? {
+        guard let frame = frame(of: object) else { return nil }
+        return state(ofColorThemeList: object, frame: frame)
+            .row(at: point, in: frame, rowCount: colorThemeNames.count)
+    }
+
+    func scrollColorThemeList(byRows delta: Int, in object: WasabiObject) {
+        guard let frame = frame(of: object) else { return }
+        var state = state(ofColorThemeList: object, frame: frame)
+        state.scroll(byRows: delta, rowCount: colorThemeNames.count, in: frame)
+        colorThemeListStates[object.stableID] = state
+    }
+
+    func selectColorThemeRow(_ index: Int, in object: WasabiObject) {
+        guard let frame = frame(of: object) else { return }
+        var state = state(ofColorThemeList: object, frame: frame)
+        state.select(index, rowCount: colorThemeNames.count, in: frame)
+        colorThemeListStates[object.stableID] = state
+    }
+
+    /// The name this list has picked out — what its `Switch` button applies.
+    func selectedColorTheme(in object: WasabiObject) -> String? {
+        guard let frame = frame(of: object) else { return nil }
+        let names = colorThemeNames
+        let index = state(ofColorThemeList: object, frame: frame).selectedIndex
+        return names.indices.contains(index) ? names[index] : nil
+    }
+
+    /// Put every list's selection back on the applied theme. Called after an activation that did not
+    /// come from a list (the skin's next/previous buttons, the host menu, a script), so no list is
+    /// left pointing at a theme the window is not wearing.
+    func syncColorThemeLists() {
+        guard let active = activeColorThemeIndex else { return }
+        let count = colorThemeNames.count
+        for entry in colorThemeLists() {
+            var state = state(ofColorThemeList: entry.object, frame: entry.frame)
+            state.follow(activeIndex: active, rowCount: count, in: entry.frame)
+            colorThemeListStates[entry.object.stableID] = state
+        }
+    }
+
+    /// What `action_target="<id>"` on a button names.
+    ///
+    /// Wasabi's own lookup semantics, the **wide** ones `findObject` uses: the button's own container
+    /// subtree first, then the whole graph. The wide half is load-bearing — multipass's theme list
+    /// lives in `player.normal.group.drawer.colorthemes.list`, a separate `nodock="1"` groupdef that
+    /// is not in the switch button's container at all — and the nearest match still wins, so a skin
+    /// with the same id in two windows keeps getting its own.
+    func actionTarget(of object: WasabiObject) -> WasabiObject? {
+        guard let wanted = object.attributes["action_target"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !wanted.isEmpty else { return nil }
+        var ancestor: WasabiObject? = object
+        while let current = ancestor,
+              current.typeName.caseInsensitiveCompare("container") != .orderedSame {
+            ancestor = current.parent
+        }
+        if let container = ancestor, let near = Self.descendant(of: container, xmlID: wanted) {
+            return near
+        }
+        return loadedSkin.runtime.graph.objects(xmlID: wanted).first
+    }
+
+    private static func descendant(of object: WasabiObject, xmlID: String) -> WasabiObject? {
+        for child in object.children {
+            if child.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame { return child }
+        }
+        for child in object.children {
+            if let found = descendant(of: child, xmlID: xmlID) { return found }
+        }
+        return nil
+    }
+
+    /// The list a colour-theme button acts on: the one its `action_target` names, else the only one
+    /// in the scene. A skin that puts its Switch button beside its list and names no target — mmd3's
+    /// standalone window — is the common case, and it has exactly one list to mean.
+    func colorThemeList(forAction object: WasabiObject) -> WasabiObject? {
+        if let target = actionTarget(of: object), Self.isColorThemeList(target) { return target }
+        let lists = colorThemeLists()
+        return lists.count == 1 ? lists[0].object : nil
+    }
+
+    /// This list's state, seeded on first use so it opens showing the applied theme rather than
+    /// row 0 — the difference between "which of these 83 am I wearing?" and a list that answers it.
+    private func state(ofColorThemeList object: WasabiObject, frame: CGRect) -> WasabiColorThemeListState {
+        var state = colorThemeListStates[object.stableID] ?? WasabiColorThemeListState()
+        if !state.isSeeded, let active = activeColorThemeIndex {
+            state.seed(activeIndex: active, rowCount: colorThemeNames.count, in: frame)
+            colorThemeListStates[object.stableID] = state
+        }
+        return state
+    }
+
     func teardown() {
         themeCoordinator.removeObserver(self)
         resources.teardown()
@@ -1194,6 +1319,8 @@ final class WasabiSceneRenderer {
             drawVisualization(object, frame: node.frame, context: context)
         } else if type == "eqvis" {
             drawEQVis(object, frame: node.frame, context: context)
+        } else if type == "colorthemes:list" {
+            drawColorThemeList(object, frame: node.frame, context: context)
         } else if type == "albumart" {
             if let artwork = host.albumArtwork {
                 drawImage(artwork, in: node.frame, context: context)
@@ -1220,6 +1347,9 @@ final class WasabiSceneRenderer {
             } else {
                 draw(bitmap, object: object, frame: node.frame, context: context)
             }
+        } else if Self.isTextButton(object) {
+            drawTextButton(object, frame: node.frame, context: context,
+                           pressed: pressed == object.stableID)
         }
         context.restoreGState()
     }
@@ -2163,6 +2293,93 @@ final class WasabiSceneRenderer {
         drawFlippedText(text, in: rect, font: font, color: color, alignment: alignment, context: context)
     }
 
+    /// Winamp's colour-theme picker: the skin's `<gammaset>` names, in document order.
+    ///
+    /// The rows are ours to draw — the widget lives inside Winamp, the skin ships only the tag — so
+    /// they follow the same route every NullPlayer-owned surface inside a `.wal` takes: the skin's
+    /// list colours, the skin's list font, the skin's active gamma. Two colours are deliberately
+    /// distinct: the **selected** row (what the `Switch` button would apply) and the **applied** one
+    /// (what the window is wearing). Winamp shows both at once and a picker that conflated them would
+    /// make "did my click do anything?" unanswerable.
+    ///
+    /// **No scrollbar.** The renderer has no scrollbar support at all, so a `<Wasabi:Scrollbar>` a
+    /// skin places beside its list stays inert and the wheel is the only way down an 83-row list.
+    /// Opening scrolled to the applied theme is the mitigation; see the rendering reference.
+    private func drawColorThemeList(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard frame.width > 1, frame.height > 1 else { return }
+        let palette = palette
+        // The caller has already drawn a declared `background=`. Only when the skin declared none do
+        // we paint one — first the conventional list background bitmap, then a flat fill.
+        if object.attributes["background"] == nil {
+            if let bitmap = resources.bitmap(identifier: "wasabi.list.background") {
+                drawTiled(bitmap, in: frame, tileX: true, tileY: true, context: context)
+            } else {
+                context.setFillColor(palette.contentBackground.cgColor)
+                context.fill(frame)
+            }
+        }
+        let names = colorThemeNames
+        guard !names.isEmpty else { return }
+        let state = state(ofColorThemeList: object, frame: frame)
+        let rowHeight = WasabiColorThemeListState.rowHeight
+        let visible = WasabiColorThemeListState.visibleRowCount(in: frame)
+        guard visible > 0 else { return }
+        let offset = WasabiColorThemeListState.clampedOffset(state.scrollOffset,
+                                                             rowCount: names.count, in: frame)
+        let active = activeColorThemeIndex
+        context.saveGState()
+        context.clip(to: frame)
+        for slot in 0..<visible {
+            let index = offset + slot
+            guard index < names.count else { break }
+            let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * rowHeight,
+                                 width: frame.width, height: rowHeight)
+            if index == state.selectedIndex {
+                context.setFillColor(palette.selectionBackground.cgColor)
+                context.fill(rowRect)
+            }
+            let color = index == active ? palette.currentText
+                : (index == state.selectedIndex ? palette.selectionText : palette.listText)
+            drawSurfaceText(names[index], in: rowRect.insetBy(dx: 3, dy: 1), color: color,
+                            alignment: .left, pointSize: 9, context: context)
+        }
+        context.restoreGState()
+    }
+
+    /// A `<Wasabi:Button>` that resolves no artwork but carries a label.
+    ///
+    /// Deliberate exception to the identifier-only-shell rule (`wasabiStandardLibraryGroups`), which
+    /// exists so we never invent artwork a skin did not ship. Three measured skins — CornerAmp, mmd3's
+    /// big colour-theme window and Anexa — put a bare `<Wasabi:Button text="Switch">` under their
+    /// theme list, and **no** `.wal` ships `wasabi.button.*` bitmaps because in real Winamp the
+    /// standard library supplies them. So the choice is a plain border with the skin's own list colour
+    /// or a screen whose only working control is an undiscoverable double-click. Contained by
+    /// construction: a skin with its own button artwork resolves a bitmap and never reaches here
+    /// (mmd3's in-player drawer and multipass both ship theirs).
+    static func isTextButton(_ object: WasabiObject) -> Bool {
+        guard object.typeName.caseInsensitiveCompare("wasabi:button") == .orderedSame else { return false }
+        return !(object.attributes["text"] ?? "").isEmpty
+    }
+
+    private func drawTextButton(_ object: WasabiObject, frame: CGRect, context: CGContext,
+                                pressed: Bool) {
+        guard frame.width > 2, frame.height > 2 else { return }
+        let color = palette.listText
+        context.saveGState()
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(1)
+        context.stroke(frame.insetBy(dx: 0.5, dy: 0.5))
+        if pressed {
+            context.setFillColor(color.withAlphaComponent(0.25).cgColor)
+            context.fill(frame.insetBy(dx: 1, dy: 1))
+        }
+        let label = object.attributes["text"] ?? ""
+        let inset = frame.insetBy(dx: 2, dy: max(0, (frame.height - 11) / 2))
+        drawSurfaceText(label, in: inset, color: color, alignment: .center, pointSize: 9,
+                        context: context)
+        context.restoreGState()
+    }
+
     private func drawPlaylistComponent(frame: CGRect, context: CGContext) {
         // Drawn by us, coloured by the skin: the list sits inside the skin's own frame, so its text
         // and selection follow the skin's colour resources and its active colour theme.
@@ -2311,6 +2528,14 @@ final class WasabiSceneRenderer {
             return true
         }
         if object.attributes["action"] != nil { return true }
+        // A colour-theme list owns no bitmap and carries no action — Winamp supplies the widget, the
+        // skin supplies only the tag — so without naming it here a click could never reach a row.
+        if Self.isColorThemeList(object) { return true }
+        // `<Wasabi:Button text="…">` with no artwork: the renderer draws the label and its border
+        // (see `drawTextButton`), so it has a region and has to be clickable. Every measured instance
+        // also carries an `action`, which the line above already accepts; this covers one that does
+        // not and is driven from a script instead.
+        if Self.isTextButton(object) { return true }
         // A container has **no region of its own** in Wasabi — its children supply one. MMD3 declares
         // `<group id="main.mmd3" move="1">` last in its layout, so it is topmost across the whole
         // window; accepting a bare group for `move="1"` made it swallow every click that was not over
@@ -2336,6 +2561,9 @@ final class WasabiSceneRenderer {
         // layer with it as an invisible click target (Love is War Miku switches its visualization mode
         // through `visual.trigger`), and a hit test that insists on a bitmap can never reach one.
         if object.attributes["rectrgn"] == "1" { return true }
+        // A colour-theme list and an artwork-less text button both paint a real surface of their own
+        // (rows; a bordered label), so both are opaque to hit testing without owning a bitmap.
+        if Self.isColorThemeList(object) || Self.isTextButton(object) { return true }
         return object.attributes["background"] != nil || bitmapID != nil ||
             object.typeName.caseInsensitiveCompare("text") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("songticker") == .orderedSame ||

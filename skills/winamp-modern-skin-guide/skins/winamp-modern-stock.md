@@ -46,6 +46,10 @@ routine first runs. Two things had to be true before it could:
 Measured after the fix: at 354px the left streak is 20–152, the title 152–202, the right streak
 203–309; at 500px they follow the title to 20–225 / 225–275 / 276–455.
 
+- **Colour themes** (Phase 32) — the config drawer's *Color Themes* tab lists all 44, and `Switch`,
+  previous and next all work. Its shade-layout arrows target a `<ColorThemes:Mgr>` rather than the
+  list; they step the applied theme directly, so they work without it.
+
 ### Not implemented or knowingly wrong
 
 - The 1px `window.titlebar.title.overlay` layer keeps its declared slot instead of being stretched over

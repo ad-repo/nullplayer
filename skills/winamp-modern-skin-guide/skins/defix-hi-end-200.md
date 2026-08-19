@@ -258,9 +258,13 @@ non-default display styles, which have no headless route in (below). **Grade B, 
 - **Most of its menus are host actions, and those are still unimplemented.** `trackmenu`/`trackinfo`
   (declared as `rightclickaction`/`dblclickaction` on the song ticker — both *attributes* are also
   unsupported), `VIS_Menu`, `VIS_Cfg`, `VIS_Next`, `VIS_Prev`, `PE_Add/Rem/Sel/Misc/List`,
-  `ML_SendTo`. `colorthemes_switch` fails the same way, which leaves its colour themes unreachable —
-  6 `<gammaset>` elements over 197 `<gammagroup>`s, but **5 distinct names** (`*Default` is declared
-  twice, then `Azure`, `McIntosh Lite`, `McIntosh`, `Technics`).
+  `ML_SendTo`. **`colorthemes_switch` works as of Phase 32** — and the skin turned out to ship a real
+  picker after all: a `<ColorThemes:List id="picker">` in its `Config` window, under the heading
+  "Color Themes", with a `Switch to selected Color Theme` button beneath it. It lists the skin's
+  **5 distinct names** (6 `<gammaset>` elements over 197 `<gammagroup>`s; `*Default` is declared
+  twice, then `Azure`, `McIntosh Lite`, `McIntosh`, `Technics`). The pre-Phase-32 claim that its
+  colour themes were *unreachable* was measured before any probe could see a picker — `RENDER_THEMES`
+  is that probe now.
 
   **This entry used to open "the skin builds no `PopupMenu` of its own", and that was wrong** — it
   builds four, one per round button (below). The claim came from the `RENDER_CLICK` probe reporting
