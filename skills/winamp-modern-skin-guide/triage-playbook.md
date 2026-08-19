@@ -115,6 +115,28 @@ step 3 answers.
 
 ---
 
+## 4b. What is open right now, ranked (2026-08-19)
+
+The full list with its evidence is `TASKS.md` §*Backlog — the open ends from Phases 10–33*, compiled
+by walking every unchecked item left after Phase 33, verifying each against the code, and closing what
+had already been fixed or answered. It is ordered by **bang for buck** — corpus impact ÷ effort. The
+head of it, so a reader of this file does not have to go looking:
+
+| # | Open item | Reach |
+|---|---|---|
+| B1 | A missing `<include>` fails the **whole skin** instead of warning | **2 of 17 skins do not load at all** (Itemskin, Overdrive_2) |
+| B2 | `dblclickaction=` / `rightclickaction=` read nowhere | `TRACKINFO` 6 skins, `TRACKMENU` 5 |
+| B3 | `PAN` (balance) has no case beside `SEEK`/`VOLUME` | 6 skins |
+| B4 | `valign` ignored — text is always vertically centred | every skin's text |
+| B5 | `VIS_*` / `PE_*` / `VID_*` / `CB_*` host actions inert | 75 button uses |
+| B6 | `default_visible="1"` not honoured on auxiliary containers | Defix's `Config` |
+| B7 | `onEqBandChanged` / `onEqPreampChanged` never dispatched | 5 skins' EQ readouts |
+| B10 | No CI cover for the render sweep (see §6 — still the biggest process gap) | all |
+
+The pattern worth noticing across B1–B6: each is a **single attribute or policy** that nothing reads,
+and each makes a *visible* control dead in several skins at once. That is what the demand index is
+for — one of these outranks any amount of work on a widget only one skin declares.
+
 ## 5. Dispositions
 
 Every triaged issue ends in exactly one of four states, recorded once:
@@ -137,7 +159,7 @@ in every batch forever, and an un-recorded "no" is re-litigated every time.
 ## 6. Regression safety at corpus scale
 
 The single biggest process gap today: the evidence that a renderer change disturbs no other skin is a
-**manual 15-skin before/after sweep**, and nothing in CI would catch a third skin regressing.
+**manual 17-skin before/after sweep**, and nothing in CI would catch a third skin regressing.
 
 Replace it with the corpus:
 
