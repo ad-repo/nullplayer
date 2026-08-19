@@ -529,6 +529,24 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         // Every handler the click reaches, in order — the only way to see where a
                         // chain of script-to-script messages stops (the D6 subject: a tab's
                         // `onLeftButtonUp` → `sendAction("show_tab")` → the SUI's `onAction`).
+                        // The host action a click ultimately asks for. A skin routes a visible button
+                        // to a hidden one and calls `leftClick()` on it (Defix's round PL/EQ buttons
+                        // reach `PLSBt`/`EQSwitch` that way), and the *view* is what performs the
+                        // resulting action — so with nothing wired here the probe reported "nothing
+                        // changed" for a button that works, and could not tell that apart from one
+                        // that asks for an action the view does not implement.
+                        runtime.actionRequested = { action, parameter in
+                            print("CLICK action: \(action.isEmpty ? "-" : action) param=\(parameter ?? "-")")
+                        }
+                        defer { runtime.actionRequested = nil }
+                        // The other half of "what did this click ask the host for": a skin that opens
+                        // one of its own windows does it with `getContainer(id).show()`, which is a
+                        // window request, not an action. There are no windows in the harness, so this
+                        // is the only place it can be seen.
+                        runtime.containerVisibilityRequested = { id, visible in
+                            print("CLICK window: \(id) visible=\(visible)")
+                        }
+                        defer { runtime.containerVisibilityRequested = nil }
                         var chain: [String] = []
                         runtime.dispatchObserver = { event, program, failure in
                             chain.append("\((program.source.path as NSString).lastPathComponent)."
@@ -542,14 +560,19 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             // `onleftbuttondblclk` is included because the view sends it (on
                             // `clickCount == 2`) between the down and the up, and skins put real
                             // commands on it — cPro cycles its beat animations from one.
+                            // `onrightbuttondown` is in the list because Wasabi's right button is a
+                            // pair and a skin picks either half: Defix hangs its four "what does this
+                            // button open" menus off the *down*, and while the probe drove only the up
+                            // it reported four dead buttons that the skin implements fully.
                             for event in ["onleftbuttondown", "onleftbuttondblclk", "onleftbuttonup",
-                                          "onleftclick", "onrightbuttonup"] {
+                                          "onleftclick", "onrightbuttondown", "onrightbuttonup",
+                                          "onrightclick"] {
                                 // The button events carry the click's x/y, exactly as the view sends
                                 // them: a handler that pops two arguments off an empty stack fails
                                 // with an underflow that belongs to the harness, not the skin.
-                                let arguments: [MakiValue] = event == "onleftclick" ? []
+                                let arguments: [MakiValue] = ["onleftclick", "onrightclick"].contains(event) ? []
                                     : [.integer(Int32(point.x)), .integer(Int32(point.y))]
-                                if event == "onrightbuttonup" {
+                                if event.hasPrefix("onright") {
                                     // No view here to show a menu, so record what the skin built.
                                     runtime.popupPresenter = { items, point in
                                         let where_ = point.map { " at \(Int($0.x)),\(Int($0.y))" } ?? ""

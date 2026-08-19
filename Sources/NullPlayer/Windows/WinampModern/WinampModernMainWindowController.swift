@@ -325,6 +325,19 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         skinView?.containerWindowToggleRequested = toggleContainer
         auxiliaryContainers.forEach { $0.view.containerWindowToggleRequested = toggleContainer }
+        // `getContainer("SUI").show()` — a skin opening one of its own windows from script rather
+        // than from markup. Defix's four round buttons reach their targets only this way, and the
+        // request is idempotent on purpose: the skin also calls `show()` from timers, and acting on
+        // one that asks for the state the window is already in would re-front it 30 times a second.
+        scripts.containerVisibilityRequested = { [weak self] id, visible in
+            guard let self,
+                  let matchedID = Self.matchingContainerID(id,
+                                                           in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID }),
+                  container.window.isVisible != visible
+            else { return }
+            setAuxiliaryWindow(id: matchedID, visible: visible)
+        }
     }
 
     static func matchingContainerID(_ requestedID: String, in containerIDs: [String]) -> String? {

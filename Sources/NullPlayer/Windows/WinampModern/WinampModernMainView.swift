@@ -29,6 +29,7 @@ final class WinampModernMainView: NSView {
     }
 
     private var pressedObject: WasabiObject?
+    private var rightPressedObject: WasabiObject?
     private var pressedEQHolder: WasabiObject?
     private var draggedDivider: WasabiObject?
     private var hoveredObject: WasabiObject?
@@ -637,10 +638,37 @@ final class WinampModernMainView: NSView {
         needsDisplay = true
     }
 
-    override func rightMouseUp(with event: NSEvent) {
+    /// Wasabi's right button is a *pair* of events, and a skin is free to use either. Defix puts its
+    /// whole "what does this button open" menu on `onRightButtonDown` — four handlers, one per round
+    /// PL/EQ/ML/VD button, each building Video / Playlist Editor / Media Library / Equalizer /
+    /// Visualization / Explorer window with `popAtMouse` and writing the pick to `MainBtn1..4`. The
+    /// view used to send only `onrightbuttonup`, so all four menus were unreachable while the skin,
+    /// the popup presenter and the script all worked. Nothing here decides *which* event a skin
+    /// listens on; both are sent, as Winamp sends them.
+    override func rightMouseDown(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
         guard let object = renderer.object(at: point) else { return }
+        rightPressedObject = object
+        dispatch(object: object, event: "onrightbuttondown", point: point)
+        needsDisplay = true
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        let releasedOver = renderer.object(at: point)
+        // The up goes to whatever the *down* claimed, mirroring the left button: `popAtMouse` runs
+        // its own tracking loop inside the down handler, so by the time the up arrives the pointer is
+        // wherever the user dismissed the menu, which is usually not over the button any more.
+        let object = rightPressedObject ?? releasedOver
+        rightPressedObject = nil
+        guard let object else { return }
         dispatch(object: object, event: "onrightbuttonup", point: point)
+        // `onRightClick` takes no arguments (a handler that pops two off an empty stack underflows),
+        // and like the left one only fires when press and release agree on the target.
+        if releasedOver === object {
+            _ = try? scripts.dispatch(object: object, event: "onrightclick")
+        }
+        needsDisplay = true
     }
 
     override func scrollWheel(with event: NSEvent) {

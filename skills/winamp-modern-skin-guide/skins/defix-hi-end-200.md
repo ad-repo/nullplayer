@@ -45,6 +45,27 @@ non-default display styles, which have no headless route in (below). **Grade B, 
 - **The SUI tab strip** — Media Library / Visualization / Explorer, each sized to its own label.
 - Transport, seek and volume with their scales, the playlist window with its own titlebar buttons,
   both speaker cabinets, the About page.
+- **The four round buttons and their assignment menu** (Phase 31, partial — see the open bugs at the
+  end of this section). `player.ButCd` holds `ConfBT1..4` at `(25|74|123|172, 231, 36, 40)`. Each is
+  *user-assignable*: right-clicking one pops the skin's own `PopupMenu` — `Video`, `Playlist Editor`,
+  `Media Library`, `Equalizer`, `Visualization`, `Explorer window` — and the pick is stored as
+  `MainBtn<N>` under the skin's `Winamp Defix` private-string section, which also selects the button's
+  artwork (`PLAYER.But.{pl,eq,ml,vd,vs,br}.norm`). Left-clicking then opens the assigned window.
+  Confirmed live 2026-08-19: the menu appears on all four, and the windows mostly open.
+
+  **The six assignments do not resolve alike, and that is the thing to know before touching this.**
+  Only two reach a host action at all:
+
+  | `MainBtn<N>` | What the left-click actually requests |
+  |---|---|
+  | `PL` | `PLSBt.leftClick()` → `TOGGLE guid:{45f3f7c1-…}` — a host action |
+  | `EQ` | `EQSwitch.leftClick()` → `TOGGLE Eq` — a host action |
+  | `ML` / `VS` / `BR` / `Video` | the skin's **own** `sendAction("opentab", …)` to `SUI/normal/sui.content`, answered by `skin.xml`'s `onAction` with `getContainer("SUI").show()` + `switchToLayout` |
+
+  `PLSBt` and `EQSwitch` are 0×0 invisible proxy buttons in the same group, carrying the real
+  `action`/`param` in markup; the visible button never carries one. So "the button does nothing" has
+  three possible causes here — the menu, the proxy hop, or the container show — and they are not the
+  same bug.
 
 ### Not implemented or knowingly wrong
 
@@ -234,14 +255,41 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   `Time remaining` and a registered `find Remaining` setting. A real dead control — and the
   `CLICKABLE` probe named it before the user did, which is the argument for running that probe.
 - **`setScale` is missing** — the configurator's seven window-scaling buttons (100–300%) are inert.
-- **The skin builds no `PopupMenu` of its own; every menu it has is a host action, and none is
-  implemented.** `trackmenu`/`trackinfo` (declared as `rightclickaction`/`dblclickaction` on the song
-  ticker — both *attributes* are also unsupported), `VIS_Menu`, `VIS_Cfg`, `VIS_Next`, `VIS_Prev`,
-  `PE_Add/Rem/Sel/Misc/List`, `ML_SendTo`. `colorthemes_switch` fails the same way, which leaves its
-  colour themes unreachable — 6 `<gammaset>` elements over 197 `<gammagroup>`s, but **5 distinct
-  names** (`*Default` is declared twice, then `Azure`, `McIntosh Lite`, `McIntosh`, `Technics`).
+- **Most of its menus are host actions, and those are still unimplemented.** `trackmenu`/`trackinfo`
+  (declared as `rightclickaction`/`dblclickaction` on the song ticker — both *attributes* are also
+  unsupported), `VIS_Menu`, `VIS_Cfg`, `VIS_Next`, `VIS_Prev`, `PE_Add/Rem/Sel/Misc/List`,
+  `ML_SendTo`. `colorthemes_switch` fails the same way, which leaves its colour themes unreachable —
+  6 `<gammaset>` elements over 197 `<gammagroup>`s, but **5 distinct names** (`*Default` is declared
+  twice, then `Azure`, `McIntosh Lite`, `McIntosh`, `Technics`).
+
+  **This entry used to open "the skin builds no `PopupMenu` of its own", and that was wrong** — it
+  builds four, one per round button (below). The claim came from the `RENDER_CLICK` probe reporting
+  no menu, and the probe was the thing at fault, not the skin. Do not read a probe's silence as a
+  statement about a skin until the probe has been shown to drive the event in question.
 - **`newDynamicContainer` returns the existing container**, so the skin's detachable visualizer and
   second mini-browser share one window rather than opening a copy.
+- **OPEN (Phase 31, to be returned to): the round buttons mis-target after a re-assignment.** Reported
+  live 2026-08-19, after the two fixes above landed. The menu opens and the windows mostly open, but
+  **picking an item shuffles the buttons around, and after the shuffle a button does not reliably open
+  what its artwork says it opens.** Not yet measured; what is known and what to check first:
+  - The script does not simply write the button you right-clicked. Each `onRightButtonDown` reads
+    *all four* `MainBtn1..4` values first, and after the pick walks the other three
+    (`if MainBtn2 == <picked> then setPrivateString(MainBtn2, <this button's old value>)`) — it is a
+    **swap**, deliberately, so no two buttons can hold the same target. The visible re-ordering is
+    therefore the skin working as designed; the defect is that what a button *targets* afterwards
+    disagrees with what it *draws*.
+  - The prime suspect is therefore the read-back path, not the menu: the artwork is set from the
+    values in the handler's local variables, while the next left-click re-reads `getPrivateString`.
+    If a swap writes one of those two and not the other, or writes them in an order that clobbers,
+    artwork and target part company exactly this way.
+  - **Measure it with `WINAMP_MODERN_RENDER_CLICK`, not by reading the disassembly.** Drive the
+    right-click, then the left-click, on the same point in one run and read the `CLICK action:` /
+    `CLICK window:` line — that is what the button resolves to, and it is now printed (below). Set
+    the starting assignment with `WINAMP_MODERN_RENDER_CONFIG="Winamp Defix;MainBtn1=ML"`.
+    Note the probe's popup presenter answers **0** ("picked nothing"), so a run that needs a *pick*
+    has to be given one — teach the presenter to return a chosen id before starting.
+  - Remember the config the probe writes persists, in the **test** domain
+    (`defaults delete com.apple.dt.xctest.tool`), not the app's.
 
 ### Traps this skin sets
 

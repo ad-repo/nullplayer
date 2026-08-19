@@ -88,6 +88,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     var layoutSwitchRequested: ((WasabiObjectID, String) -> Bool)?
     var layoutResizeRequested: ((WasabiObjectID, CGSize) -> Void)?
     var actionRequested: ((String, String?) -> Void)?
+    /// A script showing or hiding a **container** is asking for its *window*, not just for an
+    /// attribute on the graph. Defix's SUI is reachable only this way: its four round PL/EQ/ML/VD
+    /// buttons send the skin's own `opentab` action, and `skin.xml`'s `onAction` answers it with
+    /// `getContainer("SUI").show()` — there is no host action and no markup `TOGGLE` for the host to
+    /// see, so without this the attribute flipped and no window ever appeared. Fired on every call,
+    /// not only on a change, because the window can be closed while the attribute still says visible;
+    /// the host is the one that knows, and ignores a request that asks for the state it is already in.
+    var containerVisibilityRequested: ((String, Bool) -> Void)?
     var themeNamesRequested: (() -> [String])?
     var activeThemeRequested: (() -> String)?
     var themeSwitchRequested: ((String) -> Bool)?
@@ -577,6 +585,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             }
         }
         return handled
+    }
+
+    /// Route a `show()`/`hide()` on a top-level container to whoever owns that window. Anything else
+    /// — a group, a layer, a layout — is graph state and stops here.
+    private func requestWindow(for object: WasabiObject, visible: Bool) {
+        guard object.typeName.caseInsensitiveCompare("container") == .orderedSame,
+              let id = object.xmlID, !id.isEmpty else { return }
+        containerVisibilityRequested?(id, visible)
     }
 
     private static let embeddedXUIForwardedEvents: Set<String> = [
@@ -1947,12 +1963,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             if shown { noteGeometryChange() }
             notifyGraphDidMutate()
             if shown { _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(true)]) }
+            requestWindow(for: object, visible: true)
             return .null
         case "hide":
             let hidden = object.setAttribute("visible", value: "0")
             if hidden { noteGeometryChange() }
             notifyGraphDidMutate()
             if hidden { _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(false)]) }
+            requestWindow(for: object, visible: false)
             return .null
         case "isvisible": return .boolean(isVisible(object))
         case "setalpha":

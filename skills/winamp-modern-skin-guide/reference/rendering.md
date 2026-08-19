@@ -278,8 +278,36 @@ once, so no `.wal` skin could show a menu at all:
 - `addCommand`'s fourth argument is **disabled**, not "separator" — storing it in the separator slot
   turns every greyed-out row into a divider.
 
+**A fourth, found in Phase 31: the right button is a *pair* of events and a skin picks either half.**
+The view sent only `onRightButtonUp`. Defix hangs all four of its "what does this button open" menus
+off `onRightButtonDown`, so they were unreachable while the skin, the presenter and `popAtMouse` all
+worked perfectly. `WinampModernMainView` now sends `onrightbuttondown` on the press and
+`onrightbuttonup` + `onrightclick` on the release, and the release goes to whatever the *press*
+claimed — `popAtMouse` runs its own tracking loop, so by the time the up arrives the pointer is
+wherever the user dismissed the menu, usually not over the control any more.
+
 `WINAMP_MODERN_RENDER_CLICK` prints the menu a right-click builds, which is the fastest way to see
-whether the failure is the menu or what it does afterwards.
+whether the failure is the menu or what it does afterwards. **It drove only `onrightbuttonup` until
+Phase 31**, and so reported four dead buttons on a skin that implements them fully — the reason a
+skin file carried "builds no `PopupMenu` of its own" for several phases. A probe's silence is a
+statement about the probe until you have checked it drives the event.
+
+#### A skin opening its own windows
+
+Not every window request is a host action. A skin may open one of its own containers from script —
+`getContainer("SUI").show()` — with no `TOGGLE` and nothing else for the host to see; Defix's SUI is
+reachable *only* this way (its round buttons send the skin's own `sendAction("opentab", …)`, which
+`skin.xml`'s `onAction` answers with exactly that). `show`/`hide` on a top-level container therefore
+raises `WinampModernScriptRuntime.containerVisibilityRequested`, and
+`WinampModernMainWindowController` opens or orders out the matching auxiliary window.
+
+Two constraints on that path, both load-bearing:
+
+- **It is idempotent.** Skins call `show()` from timers; acting on a request for the state the window
+  is already in would re-front it 30 times a second. The controller compares against
+  `window.isVisible` and drops the rest.
+- **It is wired after `scripts.start()`** (in `makeSurfaceCoordinator`), so a `show()` from
+  `onScriptLoaded` cannot pop windows open at launch.
 
 #### Colour themes (`gammaset` / `gammagroup`)
 
