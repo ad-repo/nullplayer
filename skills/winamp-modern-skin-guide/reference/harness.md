@@ -100,7 +100,9 @@ that changes the right attributes but nothing on screen is a renderer gap.
 > is fine — Defix's `pledit` is `default_visible="1"` and prints exactly the same. The
 > `changed container#X visible=…` lines you *do* see come from a **script** writing a graph
 > attribute, which is a different mechanism; do not read one as evidence and the other as its
-> absence. A markup `TOGGLE` to a container id can only be judged in the app.
+> absence. A markup `TOGGLE` to a container id can only be judged in the app — and it does work
+> there: Defix's `CONF` button (`action="TOGGLE" param="Config"`) opens its Skin Settings window,
+> confirmed live 2026-08-19, while measuring as stone dead headlessly.
 
 > **A bare `RENDER_CLOCK` ladder is not a motion verdict for a skin whose FX is switched on from
 > playback.** Defix's six windows hash identical at t = 0 / 0.25 / 1 / 4 with `SETTLE=3`, and its

@@ -101,8 +101,20 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   `LAYOUT1/CAS/` 57 cassette bodies). **The eight are not registered into one section**: six are under
   `Visualizer [{E9C2D926-…-85E31755A4C4}]`, but `Ovis 1` and `Ovis 2` are under
   `{E9C2D926-…-85E31755A4CD}` — one hex digit apart, the skin's own typo, and the same catch-all
-  section that holds `12`, `31`, `find Remaining`, `Bg Chng` and `SCALING Chng`. Those two cannot
-  appear under "Visualizer" in Skin Settings however well the sheet works. They are now listed in **Winamp Modern → Skin Settings...**
+  section that holds `12`, `31`, `find Remaining`, `Bg Chng` and `SCALING Chng`. **Confirmed live
+  2026-08-19: `Ovis 1` and `Ovis 2` show under the raw GUID, not under Visualizer.** That is the
+  skin's own bug faithfully reproduced — do not "fix" it by re-homing them.
+- **All seven non-cassette styles are one group.** `player.display.VU2` is declared once and placed
+  once (`visible="0"`, 263×79) holding `SCALE`, `needleL`/`needleR`, `VUSDW` and the `LVLleft`/
+  `LVLright` frame strips; the script picks children and swaps `image` on them. The full disassembly
+  (`WINAMP_MODERN_RENDER_DISASM=@MAIN_LAYOUT_1.xml`) holds five distinct artwork blocks —
+  `needleimgDef`+`SCALE1DEFBT`, `needleimgDef`+`SCALE2DEFLR`, `NEEDLE1MC`+`SCALE3MC`,
+  `RT_Left`/`RT_Right`, and `Technics1_*` — so two of the eight names share a block with a variation.
+  **Which two is unsettled**; selecting `Ovis 1`/`Ovis 2` live and looking is the cheapest answer.
+- **`SCALENEON` and `needleimgNEON` are dead artwork.** Both bitmaps are declared
+  (`LAYOUT1/VU2/SCALENEON.PNG`, `NEONNeedle.PNG`) and **no script references either** — zero hits for
+  `NEON` in the full disassembly of `MAIN_LAYOUT_1.xml`. Nothing we do can show them; they are a
+  fifth needle style the author cut. They are now listed in **Winamp Modern → Skin Settings...**
   along with the songticker modes below and the rest of the 32 options this skin registers
   (`WINAMP_MODERN_RENDER_SETTINGS=1` prints them). Whether picking one actually changes the display
   is the live pass.
@@ -111,11 +123,28 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   speakers — in Winamp they live in Winamp's own Windows menu. **`Config` is the exception, and this
   file used to say otherwise:** `<button id="CONF" action="TOGGLE" param="Config" x="272" y="282"
   w="74" h="74" rectrgn="1"/>` is the round button at the bottom-right of the main window, and its
-  `param` is a **container id**. Whether it opens the window is untested — the render harness has no
-  live container-visibility model, so markup `TOGGLE param=<container id>` cannot be measured there
-  at all (see the trap below). Click it in the app. Whether
-  the cones (`animatedlayer#SpeakerVis`, fed by `getVisBand`) animate is the open live question; their
-  timer starts from `onSetVisible`, so nothing about them could be judged until the windows opened.
+  `param` is a **container id**, and **it works — confirmed live 2026-08-19.** Markup
+  `TOGGLE param=<container id>` opens the window. It cannot be measured headlessly at all (see the
+  trap below), so the harness is silent on it, not negative.
+- **The speaker cones do not animate, and the cabinets render very dark — confirmed live 2026-08-19.**
+  What is measured about it so far:
+  - `SPEAKER.maki` **is bound**, twice, one per cabinet (two programs whose handler set is exactly
+    `ondatachanged,onscriptloaded,onscriptunloading,onsetvisible,ontimer`, `failed=-`). Only
+    `onscriptloaded` has ever run headlessly; `onSetVisible` — which starts the `getVisBand` timer —
+    and `onTimer` have not. Do not go looking for an unbound script.
+  - `SpeakerVis` is `autoplay="0"`, 264×264, image `RT_Speaker` = `DATA/SpAnim.png`, 264×6600 —
+    **25 frames**, drawn *under* the `Rm_Speaker`/`Lm_Speaker` rim overlay (`SpRM.png` is a ring with
+    a transparent centre).
+  - **The harness renders the cabinet correctly**: wood panel, cone, tweeter — and its hash is
+    identical on a clean profile (`defaults delete com.apple.dt.xctest.tool`) and after driving
+    `onsetvisible`/`onplay`. So "very dark" is a live-only difference, and two obvious suspects are
+    already eliminated: it is **not** the colour theme (`*Default` applies `Global.Speaker`
+    `value="-800,0,0" gray="1"`, and the harness applies that too — the catalog defaults to the first
+    gammaset) and **not** the `BG` background preference (the harness resolves `BG1_*` with or without
+    a stored value).
+  - Phase 29's named blocker remains the leading explanation for the static cone: auxiliary
+    containers never install `graphDidMutate`/`repaintRequested` (`drivesScripts: false`), so a script
+    mutation in a speaker window repaints the *main* view instead (`phase-29-handoff.md` §4).
 - **The cassette reels are script-driven plain `<layer>`s and they are confirmed to spin in Winamp**
   (`CASROLL`/`CASROLR`, image `CasR`, inside `LAYOUT_1.CAS.grp`). Whether ours move under live
   playback is still untested — the render harness has no audio and no component host, so it can never
@@ -130,6 +159,12 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   report is still 0 unsupported methods — but **every** click on the four round buttons raises it.
   The textbook case of the queue-not-a-set rule: nothing sees it until something drives the event.
   What its result feeds is unknown; `WINAMP_MODERN_RENDER_DISASM=getcurrentindex` would say.
+- **Clicking the time readout does nothing, and it should toggle elapsed/remaining** (confirmed live
+  2026-08-19). `text#timer` is this skin's one `CLICKABLE` miss — `WINAMP_MODERN_RENDER_CLICKABLE=1`
+  reports `text#timer(292,26,96,31)`, an object a script hooks the mouse on that the markup hit test
+  rejects. The intent is unambiguous: `MAIN_LAYOUT_1_SCRIPT.maki` carries `Time elapsed`,
+  `Time remaining` and a registered `find Remaining` setting. A real dead control — and the
+  `CLICKABLE` probe named it before the user did, which is the argument for running that probe.
 - **`setScale` is missing** — the configurator's seven window-scaling buttons (100–300%) are inert.
 - **The skin builds no `PopupMenu` of its own; every menu it has is a host action, and none is
   implemented.** `trackmenu`/`trackinfo` (declared as `rightclickaction`/`dblclickaction` on the song
