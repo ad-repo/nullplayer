@@ -823,8 +823,8 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertFalse(WasabiTextMetrics.isHostBoundText(literal),
                        "a literal cannot change, so polling it would only produce false events")
 
-        // The first pass seeds the cache: nothing has changed from the skin's point of view yet.
-        WasabiTextMetrics.componentTextProvider = { .empty }
+        // Empty content announces nothing — there is no opening value to report yet.
+        WasabiTextMetrics.componentTextProvider = { nil }
         runtime.refreshBoundText()
 
         WasabiTextMetrics.componentTextProvider = {
@@ -835,6 +835,9 @@ final class WinampModernPhase13Tests: XCTestCase {
         runtime.refreshBoundText()
         XCTAssertEqual(WasabiTextMetrics.content(of: bound, host: TestHost()), "1 item/2:00",
                        "and the content the event carries is the status line itself")
+        XCTAssertEqual(runtime.lastDispatchedTextForTesting(bound), "1 item/2:00",
+                       "the *first* real value must fire: a queue populated before the first poll "
+                       + "never produces a later change, and seeding silently left it blank forever")
 
         // A second poll with the queue unchanged must be silent — the event means *changed*.
         let before = runtime.unsupportedMethodCalls.count

@@ -13,6 +13,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// re-opening a window the user has moved never yanks it back.
     private var placedAuxiliaryWindows: Set<String> = []
     private var isApplyingSkinSize = false
+    private var boundTextTimer: Timer?
 
     /// A separate visible container (the "separate windows" arrangement) rendered in its own native
     /// window with the shared script runtime + component host. cPro-Bento is a single-window SUI so
@@ -150,6 +151,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // and against the holders the skin's own scripts built while starting.
             makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
             revealEmbeddedLibraryAtStartup()
+            // The host-bound readouts get their opening value here — the queue is usually already
+            // populated by now — and a slow poll keeps them honest through playlist edits.
+            refreshBoundText()
+            startBoundTextPolling()
             #if DEBUG
             NSLog("WinampModern surfaces [%@]: %@", url.lastPathComponent,
                   surfaceCoordinator?.summary ?? "-")
@@ -682,6 +687,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// Defix's playlist box updates its `Items:`/`Time:` readouts from a subroutine whose only caller
     /// is `onTextChanged`, so without this the box never leaves its XML placeholders.
     private func refreshBoundText() { skinView?.scripts.refreshBoundText() }
+
+    /// A slow safety poll for the host-bound readouts.
+    ///
+    /// The event hooks above cover playback, but the playlist's own length and duration change on
+    /// edits we get no callback for — and the queue is usually populated *before* the first poll, so
+    /// without a beat of its own a skin can miss its opening value entirely. A handful of text objects
+    /// and a string compare each, once a second; the dispatch only happens when something actually
+    /// moved.
+    private func startBoundTextPolling() {
+        boundTextTimer?.invalidate()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.refreshBoundText() }
+        RunLoop.main.add(timer, forMode: .common)
+        boundTextTimer = timer
+    }
     func updateSpectrum(_ levels: [Float]) { skinView?.updateSpectrum(levels) }
     func skinDidChange() { skinView?.needsDisplay = true }
     func windowVisibilityDidChange() { skinView?.needsDisplay = true }
@@ -722,6 +741,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // would be listing a skin that no longer exists.
         skinSettingsController?.close()
         skinSettingsController = nil
+        boundTextTimer?.invalidate()
+        boundTextTimer = nil
         auxiliaryContainers.removeAll()
         placedAuxiliaryWindows.removeAll()
         viewsByContainer.removeAll()

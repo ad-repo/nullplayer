@@ -527,6 +527,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// rather than on every poll.
     private var lastDispatchedText: [WasabiObjectID: String] = [:]
 
+    /// Test seam: what was last announced for an object, or `nil` if nothing has been.
+    func lastDispatchedTextForTesting(_ object: WasabiObject) -> String? {
+        lastDispatchedText[object.stableID]
+    }
+
     /// Fire `onTextChanged(newtext)` on every text object whose host-bound content has changed.
     ///
     /// Winamp's `Text` object raises this whenever its content changes, and skins use it as the only
@@ -545,11 +550,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let content = WasabiTextMetrics.content(of: object, host: host)
             let identifier = object.stableID
             if let previous = lastDispatchedText[identifier], previous == content { continue }
-            let isFirstObservation = lastDispatchedText[identifier] == nil
+            // The **first** observation of real content fires too. Winamp raises the event when the
+            // text goes from nothing to something, and a skin whose readouts are written only from
+            // this handler has no other way to learn its opening value. Seeding silently instead —
+            // the first thing this code did — meant a queue that was already populated before the
+            // first poll never produced a change, so the event never fired at all and the readouts
+            // stayed blank for the whole session. Empty content still says nothing.
             lastDispatchedText[identifier] = content
-            // The first observation seeds the cache without firing: at that point the scene has not
-            // been drawn yet and nothing has "changed" from the skin's point of view.
-            guard !isFirstObservation else { continue }
+            guard !content.isEmpty else { continue }
             _ = try? dispatch(object: object, event: "ontextchanged", arguments: [.string(content)])
         }
     }
