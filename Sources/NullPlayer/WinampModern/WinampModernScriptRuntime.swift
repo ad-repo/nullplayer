@@ -591,7 +591,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             _ = try? dispatch(target: MakiObjectReference(.dynamic(id)), event: "ondatachanged",
                               arguments: [])
         }
-        graphDidMutate?()
+        notifyGraphDidMutate()
     }
 
     /// The registered settings that are actually *settings*, for a list a person reads.
@@ -831,7 +831,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             for child in object.children { walk(child, ancestorsVisible: selfVisible) }
         }
         walk(container, ancestorsVisible: true)
-        graphDidMutate?()
+        notifyGraphDidMutate()
     }
 
     private var containerVisibility: [WasabiObjectID: Bool] = [:]
@@ -951,6 +951,50 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         if let object, let objectRepaintRequested { objectRepaintRequested(object) }
         else if let repaintRequested { repaintRequested() }
         else { graphDidMutate?() }
+        notifyAuxiliaryViews(of: object)
+    }
+
+    /// Repaint sinks for the container windows that do **not** own the single-owner callbacks above.
+    ///
+    /// The main window owns `graphDidMutate`/`repaintRequested`/`objectRepaintRequested` because the
+    /// theme, action, mouse and EQ callbacks beside them genuinely admit one owner. Repainting does
+    /// not: a MAKI `Timer` is owned by the *runtime*, so a script in an auxiliary container ticks and
+    /// mutates its own objects perfectly well — and then nothing told that window to redraw. Defix's
+    /// playlist box writes its `Items:`/`Time:` readouts from `onTimer`, and its speaker cones step
+    /// `SpeakerVis` the same way; both updated the graph and neither ever reached a screen.
+    ///
+    /// Each sink decides for itself whether the object is in its own container, so a warped layer on
+    /// the main window does not drag every other window into its 30 Hz repaint.
+    private var auxiliaryRepaintSinks: [AuxiliaryRepaintSink] = []
+
+    private struct AuxiliaryRepaintSink {
+        weak var owner: AnyObject?
+        let repaint: (WasabiObject?) -> Void
+    }
+
+    /// Register a container window that renders this runtime's graph but does not drive it.
+    /// `repaint` is called with the object that changed, or `nil` for "something did".
+    func addAuxiliaryRepaintSink(owner: AnyObject, repaint: @escaping (WasabiObject?) -> Void) {
+        auxiliaryRepaintSinks.removeAll { $0.owner == nil || $0.owner === owner }
+        auxiliaryRepaintSinks.append(AuxiliaryRepaintSink(owner: owner, repaint: repaint))
+    }
+
+    func removeAuxiliaryRepaintSink(owner: AnyObject) {
+        auxiliaryRepaintSinks.removeAll { $0.owner == nil || $0.owner === owner }
+    }
+
+    /// A graph change: the owning window re-lays-out and repaints, every other container window
+    /// repaints. `settext`/`setxmlparam`/`show`/`hide` all land here, which is the path Defix's
+    /// playlist readouts take.
+    private func notifyGraphDidMutate() {
+        graphDidMutate?()
+        notifyAuxiliaryViews(of: nil)
+    }
+
+    private func notifyAuxiliaryViews(of object: WasabiObject?) {
+        guard !auxiliaryRepaintSinks.isEmpty else { return }
+        auxiliaryRepaintSinks.removeAll { $0.owner == nil }
+        for sink in auxiliaryRepaintSinks { sink.repaint(object) }
     }
 
     private func evaluateLayerFXMesh(for object: WasabiObject,
@@ -1679,7 +1723,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // of Wasabi's two-step, and a script that runs before its group has been `init`'d into place
             // reads the wrong parent. See `pendingRuntimeGroups`.
             pendingRuntimeGroups.append(created)
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return objectValue(created)
         case "messagebox": return .integer(0) // Sandboxed: skins cannot create modal host UI.
         // ClassicPro version gate + public config (see `reportedWinampBuild`).
@@ -1826,7 +1870,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             else { return .null }
             _ = object.setAttribute(key, value: value)
             if Self.geometryKeys.contains(key.lowercased()) { noteGeometryChange() }
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "settext":
             _ = object.setAttribute("text", value: arguments[0].stringValue)
@@ -1834,7 +1878,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // fires `setText("")` a second after a `setAlternateText("VOLUME: 40%")` and expects the
             // song title back.
             _ = object.setAttribute(WasabiTextMetrics.scriptAlternateTextKey, value: "")
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         // What the object *shows*, not just the literal it was declared with. MMD3's songinfo timer
         // reads `getText()` off the `display="songinfo"` text and tokenises it for KBPS/KHZ; answering
@@ -1853,7 +1897,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                               height: CGFloat(arguments[3].integerValue)))
             }
             noteGeometryChange()
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         // `onSetVisible` fires only on an actual change, as in Wasabi. ClassicPro's `beat.m` hangs its
         // VU timer off `beatGroup.onSetVisible`, and `showGroup` hides both display groups before
@@ -1861,28 +1905,28 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "show":
             let shown = object.setAttribute("visible", value: "1")
             if shown { noteGeometryChange() }
-            graphDidMutate?()
+            notifyGraphDidMutate()
             if shown { _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(true)]) }
             return .null
         case "hide":
             let hidden = object.setAttribute("visible", value: "0")
             if hidden { noteGeometryChange() }
-            graphDidMutate?()
+            notifyGraphDidMutate()
             if hidden { _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(false)]) }
             return .null
         case "isvisible": return .boolean(isVisible(object))
         case "setalpha":
             _ = object.setAttribute("alpha", value: String(max(0, min(255, arguments[0].integerValue))))
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "getalpha": return .integer(Int32(object.attributes["alpha"] ?? "255") ?? 255)
         case "setenabled":
             _ = object.setAttribute("enabled", value: arguments[0].truthy ? "1" : "0")
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "setactivated":
             _ = object.setAttribute("activated", value: arguments[0].truthy ? "1" : "0")
-            graphDidMutate?()
+            notifyGraphDidMutate()
             _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(arguments[0].truthy)])
             return .null
         case "getactivated": return .boolean(object.attributes["activated"] == "1")
@@ -1943,7 +1987,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "setposition" where WasabiFrame.isFrame(object):
             guard WasabiFrame.setPosition(Double(arguments[0].integerValue), on: object) else { return .null }
             noteGeometryChange()
-            graphDidMutate?()
+            notifyGraphDidMutate()
             _ = try dispatch(object: object, event: "onsetposition", arguments: [arguments[0]])
             return .null
         case "getposition": return .integer(Int32(object.attributes["value"] ?? object.attributes["position"] ?? "0") ?? 0)
@@ -1954,30 +1998,30 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let position = String(arguments[0].integerValue)
             guard object.attributes["value"] != position else { return .null }
             _ = object.setAttribute("value", value: position)
-            graphDidMutate?()
+            notifyGraphDidMutate()
             _ = try dispatch(object: object, event: "onsetposition", arguments: [arguments[0]])
             return .null
         case "setmode":
             _ = object.setAttribute("mode", value: arguments[0].stringValue)
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "play":
             // Stamp the clock so the frame is a pure function of elapsed time (`WasabiAnimation`),
             // which keeps the renderer and `isPlaying()` on exactly the same model.
             _ = object.setAttribute("animstart", value: String(WasabiAnimation.now()))
             _ = object.setAttribute("playing", value: "1")
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "pause", "stop":
             // Freeze where the animation actually is, not where it started.
             _ = object.setAttribute("frame", value: String(animationFrame(of: object)))
             _ = object.setAttribute("playing", value: "0")
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "gotoframe", "setframe":
             _ = object.setAttribute("frame", value: String(max(0, arguments[0].integerValue)))
             _ = object.setAttribute("playing", value: "0")
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "getcurframe": return .integer(Int32(animationFrame(of: object)))
         case "getlength": return .integer(Int32(clamping: animationFrameCount(of: object)))
@@ -1997,7 +2041,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // The same pixel height the XML attribute carries, so it goes through the one
             // `WasabiTextMetrics` conversion the renderer and `getAutoWidth()` share.
             _ = object.setAttribute("fontsize", value: String(arguments[0].integerValue))
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "setalternatetext":
             // A script's alternate text *replaces* what the object shows — MMD3 puts its SEEK, VOLUME,
@@ -2007,7 +2051,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // promoted into an override (that is what pinned MMD3's display to "updating songticker").
             _ = object.setAttribute(WasabiTextMetrics.scriptAlternateTextKey,
                                     value: arguments[0].stringValue)
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "leftclick":
             _ = try dispatch(object: object, event: "onleftclick")
@@ -2025,7 +2069,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 if let value = object.attributes[target] { _ = object.setAttribute(actual, value: value) }
             }
             _ = object.setAttribute("goingtotarget", value: "0")
-            graphDidMutate?()
+            notifyGraphDidMutate()
             _ = try dispatch(object: object, event: "ontargetreached")
             return .null
         case "reversetarget", "canceltarget":
@@ -2098,7 +2142,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             } else {
                 applied = WasabiRegionClip.clear(on: object)
             }
-            if applied { graphDidMutate?() }
+            if applied { notifyGraphDidMutate() }
             return .null
         case "setregionfrommap":
             // The short form: a map, a threshold and the reversed flag, with no `Region` in between.
@@ -2106,14 +2150,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                   case .dynamic(let mapID) = reference.kind,
                   let mapState = dynamicObjects[mapID],
                   case .map(let bitmapID, let source) = mapState.role else {
-                if WasabiRegionClip.clear(on: object) { graphDidMutate?() }
+                if WasabiRegionClip.clear(on: object) { notifyGraphDidMutate() }
                 return .null
             }
             let clip = WasabiRegionClip(mapID: bitmapID,
                                         mapPath: mapLogicalPath(bitmapID: bitmapID, source: source),
                                         threshold: Int(arguments[1].integerValue),
                                         reversed: arguments[2].truthy)
-            if clip.apply(to: object) { graphDidMutate?() }
+            if clip.apply(to: object) { notifyGraphDidMutate() }
             return .null
         case "islayoutanimationsafe", "istransparencysafe": return .boolean(true)
         // `init(parent)` — the second half of Wasabi's two-step runtime instantiation: `newGroup(id)`
@@ -2135,7 +2179,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 // reparent an object into its own subtree.
                 try parent.appendChild(object)
                 noteGeometryChange()
-                graphDidMutate?()
+                notifyGraphDidMutate()
             }
             // Attachment is also when the new subtree's own scripts start — see `pendingRuntimeGroups`.
             try startPendingScripts(for: object)
@@ -2145,7 +2189,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "bringtofront", "bringtoback":
             guard let parent = object.parent, parent.children.count > 1 else { return .null }
             try parent.insertChild(object, at: method == "bringtofront" ? parent.children.count : 0)
-            graphDidMutate?()
+            notifyGraphDidMutate()
             return .null
         case "callme", "ondatachanged": return .null
         default:

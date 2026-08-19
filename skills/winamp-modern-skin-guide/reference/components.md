@@ -210,6 +210,32 @@ script mutating the graph or switching layout sets `needsLayout`, because a scri
 reveal a holder. Each surface is told `prepareForUITeardown()` *before* its view leaves the hierarchy,
 so its in-flight tasks and timers do not outlive it.
 
+#### Repaint routes are per-window, and scripts are not
+
+`graphDidMutate`, `repaintRequested` and `objectRepaintRequested` are **single-owner** callbacks on the
+script runtime, and the main window owns them — correctly, since the theme, action, mouse and EQ
+callbacks beside them do admit only one owner.
+
+Repainting does not. A MAKI `Timer` belongs to the **runtime**, so `onTimer` fires for a script in any
+container; the script mutates its own objects; and if that container is an auxiliary window, nothing
+used to tell it to redraw. Two Defix symptoms that looked unrelated were this one gap: its playlist box
+writes `Items:`/`Time:` from `onTimer`, and its speaker cones step `SpeakerVis` the same way. Both
+updated the graph and neither ever reached a screen.
+
+Auxiliary views therefore register a **container-scoped repaint sink**:
+
+```swift
+scripts.addAuxiliaryRepaintSink(owner: self) { object in … }   // and remove it on teardown
+```
+
+The scoping is the view's job, and it matters: a warped layer on the main window fires the
+object-scoped path 30 times a second, and every other window must ignore it. `WinampModernMainView`
+walks the retained graph's parent chain to decide whether it owns the object — which also keeps
+"not laid out in my scene yet" (repaint) distinct from "belongs to another window" (do not).
+
+**When adding a window**: if it renders the shared graph but does not drive it, it needs this sink.
+A window with no repaint route shows its first frame and then silently freezes.
+
 ### Teardown order
 
 Synchronous and idempotent — every async producer must stop before its resources are released:

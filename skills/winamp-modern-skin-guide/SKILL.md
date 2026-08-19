@@ -46,6 +46,7 @@ concept; read the one your symptom points at, not all of them.
 | A script does nothing, wrong arity, unknown method, script-built UI missing | [reference/scripting.md](reference/scripting.md) |
 | Playlist / EQ / library / video surface missing, empty, or in the wrong window | [reference/components.md](reference/components.md) |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
+| An auxiliary window draws once then freezes; a script's `onTimer` changes nothing on screen | [reference/components.md](reference/components.md) |
 | Teardown crash, leak, or mode-switch breakage | [reference/components.md](reference/components.md) |
 | A ClassicPro (`.wal` + NSIS engine) skin misbehaves | [reference/classicpro.md](reference/classicpro.md) |
 | **How do I see what the engine is doing?** Probes, env vars, dumps | [reference/harness.md](reference/harness.md) |
@@ -100,6 +101,7 @@ verbatim; it just lives in a reference file now.
 | Container-scoped layout callbacks | [reference/components.md](reference/components.md) |
 | Resize, and why a skin needs it | [reference/components.md](reference/components.md) |
 | Colours and hosted AppKit content | [reference/components.md](reference/components.md) |
+| Repaint routes are per-window, and scripts are not | [reference/components.md](reference/components.md) |
 | Teardown order | [reference/components.md](reference/components.md) |
 | Mode integration | [reference/components.md](reference/components.md) |
 | ClassicPro engine | [reference/classicpro.md](reference/classicpro.md) |

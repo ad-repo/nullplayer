@@ -89,7 +89,7 @@ final class WinampModernMainView: NSView {
         setAccessibilityIdentifier("winampModernMainView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("Winamp Modern skin player")
-        if drivesScripts { wireScriptCallbacks() }
+        if drivesScripts { wireScriptCallbacks() } else { wireAuxiliaryRepaint() }
         // Every `.wal` window repaints on a colour-theme switch, whichever window triggered it, and
         // so does any AppKit content it hosts.
         renderer.themeCoordinator.addObserver(self) { [weak self] in
@@ -270,6 +270,43 @@ final class WinampModernMainView: NSView {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
         NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
         needsDisplay = true
+    }
+
+    /// An auxiliary container window renders the shared graph but must not clobber the single-owner
+    /// callbacks, so it takes repaints — and only repaints — through a sink of its own.
+    ///
+    /// Without this, a script that ticks in an auxiliary container updated the graph and nothing ever
+    /// redrew it: MAKI timers belong to the runtime, so `onTimer` fires wherever the object lives, but
+    /// every repaint route was owned by the main window. Defix's playlist box (`Items:`/`Time:`, both
+    /// written from `onTimer`) and its speaker cones (`SpeakerVis`, stepped the same way) are the two
+    /// measured cases.
+    private func wireAuxiliaryRepaint() {
+        scripts.addAuxiliaryRepaintSink(owner: self) { [weak self] object in
+            guard let self, !self.isTornDown else { return }
+            // Scoped: a warped layer on the *main* window fires this 30 times a second, and this
+            // window has no business repainting for it.
+            if let object {
+                guard self.owns(object) else { return }
+                self.setNeedsDisplay(for: object)
+                return
+            }
+            self.invalidateRectCaches()
+            self.needsLayout = true
+            self.needsDisplay = true
+            self.updateAnimationTimer()
+        }
+    }
+
+    /// Whether `object` is inside the container this view renders. Walks the retained graph's parent
+    /// chain, which is cheap and is the only thing that distinguishes "not laid out yet in my scene"
+    /// (repaint me) from "belongs to another window" (do not).
+    private func owns(_ object: WasabiObject) -> Bool {
+        var node: WasabiObject? = object
+        while let current = node {
+            if current === renderer.container { return true }
+            node = current.parent
+        }
+        return false
     }
 
     private func wireScriptCallbacks() {
@@ -780,7 +817,7 @@ final class WinampModernMainView: NSView {
         librarySurfaces.removeAll()
         // Auxiliary container views share the skin's single script runtime and host; only the
         // main (script-driving) view tears those down. Every view tears down its own renderer.
-        if drivesScripts { scripts.teardown() }
+        if drivesScripts { scripts.teardown() } else { scripts.removeAuxiliaryRepaintSink(owner: self) }
         renderer.teardown()
         canvasSizeDidChange = nil
         componentWindowToggleRequested = nil

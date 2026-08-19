@@ -753,6 +753,49 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertNotEqual(WasabiTextMetrics.content(of: unrelated, host: host), "1 item/1:30")
     }
 
+    /// A script that mutates an object in an **auxiliary** container must get that window repainted.
+    ///
+    /// MAKI timers belong to the runtime, so `onTimer` fires wherever the object lives — but every
+    /// repaint route used to be owned by the main window, so an auxiliary container updated the graph
+    /// and nothing redrew it. Defix's playlist box writes `Items:`/`Time:` from `onTimer`, and its
+    /// speaker cones step `SpeakerVis` the same way; both were invisible for this reason.
+    func testAuxiliaryContainersAreRepaintedWhenAScriptMutatesTheGraph() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <text id="auxText" x="0" y="0" w="120" h="12"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: TestHost())
+        addTeardownBlock { runtime.teardown() }
+        let object = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "auxText").first)
+        let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [],
+                                  bindings: [], instructions: [],
+                                  source: WalSourceLocation(path: "/Skins/Synthetic/t.maki"),
+                                  ownerID: nil, parameter: nil)
+
+        final class Owner {}
+        let owner = Owner()
+        var notifications = 0
+        var mainWindowRepaints = 0
+        runtime.graphDidMutate = { mainWindowRepaints += 1 }
+        runtime.addAuxiliaryRepaintSink(owner: owner) { _ in notifications += 1 }
+
+        _ = try runtime.invoke(method: "settext", on: MakiObjectReference(.gui(object.stableID)),
+                               arguments: [.string("Items: 3")], program: program)
+        XCTAssertEqual(notifications, 1, "an auxiliary window must be told the graph changed")
+        XCTAssertEqual(mainWindowRepaints, 1, "and the owning window still is, exactly once")
+
+        runtime.removeAuxiliaryRepaintSink(owner: owner)
+        _ = try runtime.invoke(method: "settext", on: MakiObjectReference(.gui(object.stableID)),
+                               arguments: [.string("Items: 4")], program: program)
+        XCTAssertEqual(notifications, 1, "a torn-down window stops being told")
+        XCTAssertEqual(mainWindowRepaints, 2)
+    }
+
     /// Item and duration formatting, including the singular and the hour rollover.
     func testPlaylistSnapshotSummarizesItsQueue() {
         func snapshot(_ durations: [TimeInterval]) -> WinampModernPlaylistSnapshot {

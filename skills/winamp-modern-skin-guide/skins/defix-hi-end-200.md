@@ -142,9 +142,15 @@ non-default display styles, which have no headless route in (below). **Grade B, 
     `value="-800,0,0" gray="1"`, and the harness applies that too — the catalog defaults to the first
     gammaset) and **not** the `BG` background preference (the harness resolves `BG1_*` with or without
     a stored value).
-  - Phase 29's named blocker remains the leading explanation for the static cone: auxiliary
-    containers never install `graphDidMutate`/`repaintRequested` (`drivesScripts: false`), so a script
-    mutation in a speaker window repaints the *main* view instead (`phase-29-handoff.md` §4).
+  - **Root cause found and fixed, 2026-08-19.** Phase 29 named it and it was right: auxiliary
+    container windows install **no repaint route at all** (`drivesScripts: false` skipped
+    `graphDidMutate`/`repaintRequested`/`objectRepaintRequested`, and those are single-owner). MAKI
+    timers belong to the *runtime*, so `SPEAKER.maki`'s `onTimer` fired and stepped `SpeakerVis`
+    perfectly well — the graph updated and no window was ever told to redraw. Auxiliary views now
+    register a container-scoped repaint sink
+    (`WinampModernScriptRuntime.addAuxiliaryRepaintSink`), so a mutation reaches the window that owns
+    the object without dragging every other window into the main window's 30 Hz Layer FX repaint.
+    **This is the same bug as the playlist box below** — one cause, two symptoms.
 - **The cassette reels are script-driven plain `<layer>`s and they are confirmed to spin in Winamp**
   (`CASROLL`/`CASROLR`, image `CasR`, inside `LAYOUT_1.CAS.grp`). Whether ours move under live
   playback is still untested — the render harness has no audio and no component host, so it can never
@@ -178,6 +184,10 @@ non-default display styles, which have no headless route in (below). **Grade B, 
     it, and that one line is the only place to change.
   - The script reads the feed in **`onTimer`**, not only in `onTextChanged` — which matters, because
     the engine never dispatches `onTextChanged` at all. Nothing depends on it here.
+  - **And none of it could ever have appeared**, because `pledit` is an auxiliary container and those
+    windows installed no repaint route (see the speaker cones above). The readouts were written into
+    the graph on every tick and never painted. Fixing the two method-level gaps without that one
+    would have changed nothing on screen — which is exactly what happened on the first attempt.
 - **`getcurrentindex` is on the playlist window's hover and click paths**, not its timer
   (`ontargetreached`, `onenterarea`, `onleftbuttondown`, `onrightbuttondown`, `onrightclick` — never
   `ontimer`, checked in the disassembly). So it does not block the readouts above, but it does abort
