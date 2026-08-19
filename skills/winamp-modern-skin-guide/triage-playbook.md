@@ -56,7 +56,9 @@ is to *drain A/C/D automatically* so human attention is spent exclusively on B.
 
 ## 2. What our current instruments can and cannot see
 
-Know the blind spots before trusting any batch output:
+Know the blind spots before trusting any batch output. **What each probe is and every environment
+variable it takes is documented once, in
+[reference/harness.md](reference/harness.md)** — this section is only about what they cannot see:
 
 | Instrument | Sees | Blind to |
 |---|---|---|

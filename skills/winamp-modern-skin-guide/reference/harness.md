@@ -6,9 +6,9 @@ Reference for the `winamp-modern-skin-guide` skill. **This is the canonical prob
 
 (Debugging *one* skin is below. For work spanning many skins — ranking what to implement next,
 finding what a skin contains that we have never rendered — use
-[triage-playbook.md](triage-playbook.md) instead.)
+[triage-playbook.md](../triage-playbook.md) instead.)
 
-**Start with [skins.md](skins.md) if the report names a skin we have measured** — it records what
+**Start with [skins.md](../skins.md) if the report names a skin we have measured** — it records what
 already works, what is knowingly missing, and the traps that skin sets.
 
 **Then the compatibility report.** `WinampModernLoadedSkin.compatibilityReport` (and

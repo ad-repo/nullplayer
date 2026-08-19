@@ -39,6 +39,10 @@ every command below.
 
 ## 1. Measure (in this order — each answers what the next assumes)
 
+Every `WINAMP_MODERN_*` variable below is documented once, in
+`skills/winamp-modern-skin-guide/reference/harness.md` — read it there if a step is unclear. What is
+here is the **order**, which is the part that matters: each step answers what the next assumes.
+
 Set once:
 
 ```sh

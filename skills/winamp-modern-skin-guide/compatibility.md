@@ -544,31 +544,12 @@ theme), but not painted with the skin's own list bitmaps, scrollbars, or EQ thum
 
 ### Where a surface lives
 
-Every request for the playlist, equalizer, or library — a menu item, a skin button's
-`TOGGLE guid:…`, a restored session — resolves through one catalog, in one order:
-
-1. **Embedded** — the skin already shows it inside a window it owns. Revealing it dispatches
-   `System.onGetCancelComponent(guid, true)`, Wasabi's own "this component wants to be visible"
-   contract, *and* applies `windowholder autoopen="1"` by un-hiding the ancestors between that holder
-   and its layout. (ClassicPro switches tabs from that event but only `if (active_tab != 0)`, and at
-   startup its `active_tab` is already 0 — so the holder half of the contract is what actually opens
-   the Media Library tab.) An embedded surface owns no `NSWindow` and never enters docking,
-   compact-mode snapshots, or frame persistence. **An embedded library is revealed once at launch**
-   (`revealEmbeddedLibraryAtStartup`, right after the catalog is reconciled) — cPro-Bento opens on its
-   Media Library tab, and without this that tab is an empty pane until the user picks Windows →
-   Library Browser. Only for `isEmbedded(.library)`, so a skin with its own library window opens
-   nothing at launch.
-2. **Declared container** — the skin ships a window for it (`<container id="Pledit" component="guid:…">`).
-3. **Synthesized container** — the skin ships none, so one is built *before initialization* from the
-   skin's own `<Wasabi:StandardFrame:…>` around a `<component>` of that kind. Only in the
-   separate-window arrangement, and only when a frame qualifies: a skin-declared groupdef with a
-   frame script that can instantiate its `content=` group. The built-in `wasabi.*` shells do not
-   qualify — synthesis reads the *document's* groupdefs, so a seeded shell is never a candidate.
-4. **Classic fallback** — NullPlayer's own window, with a diagnostic naming the prerequisite that
-   failed. "Classic" is the *controller*, not the look: since Phase 16 these windows are drawn flat
-   from the loaded skin's `WasabiPalette` (via `WinampModernSurfaceStyle`) rather than with `.wsz`
-   sprites, the 5×6 bitmap font, and the selected classic skin's list colours. Geometry is unchanged
-   — same title-bar height, borders, and button boxes — so only the pixels differ.
+Every request for the playlist, equalizer, or library — a menu item, a skin button's `TOGGLE guid:…`,
+a restored session — resolves through one catalog, in one order: **embedded → declared container →
+synthesized container → classic fallback**. The full resolution order, the Wasabi reveal contract, and
+the synthesis prerequisites live in
+[reference/components.md](reference/components.md#where-a-surface-lives). What is measured per skin is
+the table below.
 
 Measured, for the four reference skins:
 

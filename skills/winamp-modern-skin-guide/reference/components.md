@@ -85,6 +85,26 @@ Two things about the embedded case that are easy to get wrong:
   holder and its layout.
 - An embedded surface owns **no `NSWindow`** and must never reach docking, compact-mode snapshots, or
   frame persistence.
+- **An embedded library is revealed once at launch** (`revealEmbeddedLibraryAtStartup`, right after the
+  catalog is reconciled) — cPro-Bento opens on its Media Library tab, and without this that tab is an
+  empty pane until the user picks Windows → Library Browser. Only for `isEmbedded(.library)`, so a skin
+  with its own library window opens nothing at launch.
+
+The four steps in full, since every request — a menu item, a skin button's `TOGGLE guid:…`, a restored
+session — resolves through this one catalog in this one order:
+
+1. **Embedded** — the skin already shows it inside a window it owns (above).
+2. **Declared container** — the skin ships a window for it
+   (`<container id="Pledit" component="guid:…">`).
+3. **Synthesized container** — the skin ships none, so one is built *before initialization* from the
+   skin's own `<Wasabi:StandardFrame:…>` around a `<component>` of that kind. Only in the
+   separate-window arrangement, and only when a frame qualifies (see below).
+4. **Classic fallback** — NullPlayer's own window, **with a diagnostic naming the prerequisite that
+   failed**. Geometry is unchanged from the classic windows — same title-bar height, borders, and
+   button boxes — so only the pixels differ.
+
+Which skin lands on which step is measured per skin: see the routing table in
+[compatibility.md](../compatibility.md#hosted-components).
 
 #### Synthesizing a missing window
 
