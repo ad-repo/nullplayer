@@ -22,6 +22,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let view: WinampModernMainView
         let kind: WinampModernComponentKind?
         let containerID: String
+        /// The skin's own `name=` for this container, and whether it belongs in the host's window
+        /// menu (Phase 27.7). A skin declares windows it binds no button to — Defix's two speaker
+        /// cabinets and its configurator — and in Winamp those are opened from *Winamp's* Windows
+        /// menu. Without the equivalent here they exist, render, and cannot be reached at all.
+        let displayName: String
+        let isListedInWindowMenu: Bool
     }
 
     /// Every container this controller hosts, main included, addressed the way a script addresses it.
@@ -91,6 +97,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // Every renderer asks the one runtime for a `cfgattrib` control's state, so a switch in
             // the settings window and the control it mirrors in another window always agree.
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
+            renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge)
 
@@ -134,6 +141,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // until then (see `scriptsDidStart`).
             view.scriptsDidStart()
             auxiliaryContainers.forEach { $0.view.scriptsDidStart() }
+            // The player's window is on screen from here; the auxiliary ones were ordered out at
+            // creation and say so when they open. A skin that starts its animation from
+            // `onSetVisible` (Defix's cassette reels) needs to be told.
+            view.setSceneVisible(true)
+            auxiliaryContainers.forEach { $0.view.setSceneVisible($0.window.isVisible) }
             // After `start()`: the catalog is reconciled against the containers that actually opened,
             // and against the holders the skin's own scripts built while starting.
             makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
@@ -176,6 +188,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                                                           containerID: info.id) else { continue }
             renderer.componentHost = componentBridge
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
+            renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge, drivesScripts: false)
             view.skinScale = skinScale
@@ -199,14 +212,37 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             // The container's own `component=` GUID, not its id — `Pledit` and `MLibrary` only look
             // like their kinds by convention (`WinampModernContainerTopology.kind(of:)`).
-            auxiliaryContainers.append(AuxiliaryContainer(window: auxWindow, view: view,
-                                                          kind: info.kind, containerID: info.id))
+            auxiliaryContainers.append(AuxiliaryContainer(
+                window: auxWindow, view: view, kind: info.kind, containerID: info.id,
+                displayName: WinampModernContainerTopology.displayName(of: info),
+                isListedInWindowMenu: WinampModernContainerTopology.isListedInWindowMenu(info)))
             viewsByContainer[view.containerID] = view
         }
     }
 
     /// Surface routing for this skin: menus, skin buttons, and restoration all resolve through it.
     private(set) var surfaceCoordinator: WinampModernSurfaceCoordinator?
+
+    // MARK: - Skin settings (Phase 27.3)
+
+    private var skinSettingsController: WinampModernSkinSettingsWindowController?
+
+    /// What the loaded skin registered with `newAttribute` and a person can actually set. Empty when
+    /// no skin is loaded or the skin registered nothing — which is what keeps the menu entry out of a
+    /// skin that has no settings.
+    var registeredSkinSettings: [WinampModernScriptRuntime.RegisteredSetting] {
+        skinView?.scripts.presentableSettings ?? []
+    }
+
+    func showSkinSettings() {
+        guard let scripts = skinView?.scripts, !scripts.presentableSettings.isEmpty else { return }
+        if skinSettingsController == nil {
+            skinSettingsController = WinampModernSkinSettingsWindowController(runtime: scripts)
+        }
+        skinSettingsController?.refreshValues()
+        skinSettingsController?.showWindow(nil)
+        skinSettingsController?.window?.makeKeyAndOrderFront(nil)
+    }
 
     /// The loaded skin's live palette, for the surfaces NullPlayer draws in windows of its own
     /// (Phase 16). Nil before a skin loads and while the placeholder is showing, which is exactly
@@ -383,6 +419,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         } else {
             container.window.orderOut(nil)
         }
+        container.view.setSceneVisible(visible)
     }
 
     /// Close / Minimize as Winamp means them, wired to every window this skin owns.
@@ -481,6 +518,37 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             place(container)
             container.window.orderFront(nil)
         }
+        container.view.setSceneVisible(container.window.isVisible)
+        return true
+    }
+
+    /// The windows this skin declares that only the host can open: named, not `nomenu`, and not one
+    /// of the surfaces the catalog already routes. Empty for a single-window SUI.
+    var skinWindows: [(id: String, name: String, isVisible: Bool)] {
+        // The catalog's own containers are excluded here rather than in the markup rule: whether a
+        // container is *routed* is a runtime fact (Defix's `pledit` carries no component GUID and is
+        // recognized from the declarative inventory), and the catalog is the only thing that knows it.
+        let routed = surfaceCoordinator?.catalog.routedContainerIDs ?? []
+        return auxiliaryContainers
+            .filter { $0.isListedInWindowMenu && !routed.contains($0.containerID.lowercased()) }
+            .map { ($0.containerID, $0.displayName, $0.window.isVisible) }
+    }
+
+    /// Show or hide one of them. Deliberately *not* routed through `WinampModernSurfaceCoordinator`:
+    /// that catalog resolves a playback surface (playlist/EQ/library/video) across embedded, declared
+    /// and classic-fallback homes, and these containers are none of those — they are skin windows with
+    /// no NullPlayer surface behind them.
+    @discardableResult
+    func toggleSkinWindow(id: String) -> Bool {
+        guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return false }
+        if container.window.isVisible {
+            container.window.orderOut(nil)
+        } else {
+            container.view.needsDisplay = true
+            place(container)
+            container.window.orderFront(nil)
+        }
+        container.view.setSceneVisible(container.window.isVisible)
         return true
     }
 
@@ -633,6 +701,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             container.window.orderOut(nil)
             container.window.contentView = nil
         }
+        // The settings list belongs to the runtime that is about to go away; a window left open
+        // would be listing a skin that no longer exists.
+        skinSettingsController?.close()
+        skinSettingsController = nil
         auxiliaryContainers.removeAll()
         placedAuxiliaryWindows.removeAll()
         viewsByContainer.removeAll()

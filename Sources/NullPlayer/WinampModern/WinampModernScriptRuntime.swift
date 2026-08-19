@@ -66,6 +66,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private static let maximumRecordedScriptFailures = 512
 
     var graphDidMutate: (() -> Void)?
+    /// A repaint, and nothing more — no re-layout, no surface reconciliation. Layer FX drives this
+    /// 30 times a second per warped layer, and `graphDidMutate` is far too heavy for that path (it
+    /// re-runs component-holder reconciliation, since a script may have built one). Falls back to
+    /// `graphDidMutate` when a window has not supplied it.
+    var repaintRequested: (() -> Void)?
+    /// The same, for a repaint that is confined to **one object's rect**. A warped meter changes a
+    /// few hundred pixels 30 times a second, and repainting the whole window for it costs three
+    /// times as much per frame as repainting what moved (measured on Defix at Retina scale: 19.3 ms
+    /// against 6.9 ms), which is the difference between a smooth reel and a rough one.
+    var objectRepaintRequested: ((WasabiObject) -> Void)?
     /// Show a script-built popup menu and answer the command the user picked, or 0. The runtime
     /// resolves the submenu tree before calling, so the presenter only builds UI.
     ///
@@ -142,6 +152,33 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// which is a bounded ping-pong in Winamp but unbounded native recursion here — and native
     /// recursion is not something the interpreter's own call-depth budget can see.
     private var eventsBeingDispatched: Set<ScriptEventKey> = []
+
+    /// One setting a skin registered with `ConfigItem.newAttribute`, in registration order.
+    ///
+    /// In Winamp these appear in the *preferences dialog*, not in the skin, so a skin that registers
+    /// them and binds no control of its own — Defix registers eight display styles and three
+    /// songticker modes that way — leaves them unreachable here unless the host lists them. The
+    /// value is not carried on the struct: it lives in the skin's own namespaced configuration and
+    /// is read on demand, so a skin that changes it from a script cannot leave this stale.
+    struct RegisteredSetting: Equatable {
+        /// The storage section — the item's GUID when it declared one, else its name. The same key
+        /// `cfgattrib="{GUID};Name"` addresses, so a control the skin *does* bind and this list are
+        /// two views of one value.
+        let section: String
+        /// What the skin called the item ("Visualizer", "Playlist"), for grouping.
+        let sectionName: String
+        let name: String
+        let defaultValue: String
+    }
+
+    /// Every setting the loaded skin registered, in registration order, de-duplicated by
+    /// section+name. Bounded: registration happens from script, so a skin that registers in a loop
+    /// must not grow this without limit.
+    private(set) var registeredSettings: [RegisteredSetting] = []
+    private static let maximumRegisteredSettings = 512
+    /// Display names for the sections above, learned from `Config.newItem(name, guid)`. `getItem`
+    /// and `getItemByGuid` do not name anything new — they address an item that already exists.
+    private var configItemNames: [String: String] = [:]
 
     private var nextPopupID: UInt64 = 1
     private var popupCommands: [UInt64: [PopupEntry]] = [:]
@@ -538,16 +575,57 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         guard let binding = Self.configBinding(of: object) else { return false }
         let flipped = loadedSkin.configuration.integer(section: binding.section, key: binding.key,
                                                        default: 0) != 0 ? "0" : "1"
-        loadedSkin.configuration.setString(flipped, section: binding.section, key: binding.key)
+        setConfigAttribute(section: binding.section, key: binding.key, value: flipped)
+        return true
+    }
+
+    /// Write one configuration attribute and tell the skin — the single write route, shared by a
+    /// `cfgattrib` control the skin drew itself and by the host's own settings list (Phase 27.3).
+    /// A second route would let the two disagree about whether the skin was notified.
+    func setConfigAttribute(section: String, key: String, value: String) {
+        loadedSkin.configuration.setString(value, section: section, key: key)
         for (id, state) in dynamicObjects {
-            guard case .configAttribute(let section, let key) = state.role,
-                  section.caseInsensitiveCompare(binding.section) == .orderedSame,
-                  key.caseInsensitiveCompare(binding.key) == .orderedSame else { continue }
+            guard case .configAttribute(let attributeSection, let attributeKey) = state.role,
+                  attributeSection.caseInsensitiveCompare(section) == .orderedSame,
+                  attributeKey.caseInsensitiveCompare(key) == .orderedSame else { continue }
             _ = try? dispatch(target: MakiObjectReference(.dynamic(id)), event: "ondatachanged",
                               arguments: [])
         }
         graphDidMutate?()
-        return true
+    }
+
+    /// The registered settings that are actually *settings*, for a list a person reads.
+    ///
+    /// Winamp's config is a tree: a skin's root item registers one attribute per **child item**,
+    /// whose value is that child's GUID (Defix: `Appearance = {F1036C9C-…}`). Measured against
+    /// Defix, 6 of its 38 registrations are those structural links. They are navigation, not
+    /// options, so they stay out of the list while `registeredSettings` keeps the raw measurement.
+    var presentableSettings: [RegisteredSetting] {
+        registeredSettings.filter { !Self.namesAnItem(configAttributeValue($0)) }
+    }
+
+    private static func namesAnItem(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("{") && trimmed.hasSuffix("}")
+    }
+
+    /// The current value of a registered setting, straight from the skin's own configuration.
+    func configAttributeValue(_ setting: RegisteredSetting) -> String {
+        loadedSkin.configuration.string(section: setting.section, key: setting.name,
+                                        default: setting.defaultValue)
+    }
+
+    private func recordRegisteredSetting(section: String, name: String, defaultValue: String) {
+        guard !name.isEmpty, registeredSettings.count < Self.maximumRegisteredSettings else { return }
+        // Every script that needs a setting registers it again — Defix's eight scripts each register
+        // the same eleven — so the same attribute arrives many times over one load.
+        guard !registeredSettings.contains(where: {
+            $0.section.caseInsensitiveCompare(section) == .orderedSame &&
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }) else { return }
+        registeredSettings.append(RegisteredSetting(section: section,
+                                                    sectionName: configItemNames[section] ?? section,
+                                                    name: name, defaultValue: defaultValue))
     }
 
     /// The groups that declared `embed_xui` naming this object — the ancestors that speak for it.
@@ -598,7 +676,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     }
 
     private func settleGeometryIfNeeded() {
-        guard geometryMayHaveChanged, !isSettlingGeometry, let geometryDidSettle else { return }
+        // Never mid-draw: a Layer FX callback runs inside a repaint, and settling geometry from there
+        // would re-solve the scene while it is being painted.
+        guard geometryMayHaveChanged, !isSettlingGeometry, !isEvaluatingLayerFX,
+              let geometryDidSettle else { return }
         geometryMayHaveChanged = false
         isSettlingGeometry = true
         defer { isSettlingGeometry = false }
@@ -650,8 +731,29 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         try dispatch(target: MakiObjectReference(.system), event: event, arguments: [], in: programs)
     }
 
+    /// Call a handler for its **answer** rather than for its effect, returning `nil` when the object
+    /// has no such handler bound (or when the one it has aborted).
+    ///
+    /// Only the *first* matching handler runs: this is a question with one answer, unlike an event,
+    /// which every listener hears. Layer FX is the only caller — see `layerFXMesh(for:)`.
+    func call(object: WasabiObject, event: String, arguments: [MakiValue]) -> MakiValue? {
+        var answer: MakiValue?
+        _ = try? dispatch(target: MakiObjectReference(.gui(object.stableID)), event: event,
+                          arguments: arguments, answer: &answer)
+        return answer
+    }
+
+    @discardableResult
     private func dispatch(target: MakiObjectReference, event: String,
                           arguments: [MakiValue], in subset: [MakiProgram]? = nil) throws -> Int {
+        var ignored: MakiValue?
+        return try dispatch(target: target, event: event, arguments: arguments, in: subset,
+                            answer: &ignored, stoppingAtFirstAnswer: false)
+    }
+
+    private func dispatch(target: MakiObjectReference, event: String, arguments: [MakiValue],
+                          in subset: [MakiProgram]? = nil,
+                          answer: inout MakiValue?, stoppingAtFirstAnswer: Bool = true) throws -> Int {
         guard !isTornDown else { return 0 }
         let eventName = event.lowercased()
         let key = ScriptEventKey(target: target.kind, event: eventName,
@@ -680,10 +782,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 }
                 guard matches else { continue }
                 do {
-                    try interpreter.execute(program: program, at: binding.instructionIndex,
-                                            arguments: arguments)
+                    let result = try interpreter.execute(program: program, at: binding.instructionIndex,
+                                                         arguments: arguments)
                     executed += 1
                     dispatchObserver?(eventName, program, nil)
+                    if stoppingAtFirstAnswer {
+                        answer = result
+                        return executed
+                    }
                 } catch let failure as WalFailure {
                     dispatchObserver?(eventName, program, failure)
                     // One script hitting an unimplemented capability must not take the whole skin
@@ -697,6 +803,223 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             }
         }
         return executed
+    }
+
+    /// Tell a container's scene it has been shown (or ordered out), as Wasabi does when a window
+    /// appears — every visible object that listens hears `onSetVisible`, once per actual change.
+    ///
+    /// Winamp fires this for the objects a window brings on screen, and skins hang their whole
+    /// animation on it: **Defix's cassette reels are switched on from exactly this handler**
+    /// (`onSetVisible(1)` → `fx_setEnabled(1)` on `CASROLL`/`CASROLR` plus `Timer.start()`), and its
+    /// speaker cabinets start their `getVisBand` timer the same way. Showing a native window with
+    /// `orderFront` never touches the graph, so before this nothing in the scene was ever told, and
+    /// the reels and cones stood still with nothing failing.
+    ///
+    /// Bounded by the object's own state: an object inside a hidden group is not on screen, so it is
+    /// not told it is, and a container told the same thing twice dispatches once.
+    func notifyContainerVisibility(containerID: WasabiObjectID, visible: Bool) {
+        guard !isTornDown else { return }
+        guard let container = loadedSkin.runtime.graph.object(withID: containerID) else { return }
+        guard containerVisibility[containerID] != visible else { return }
+        containerVisibility[containerID] = visible
+        func walk(_ object: WasabiObject, ancestorsVisible: Bool) {
+            let selfVisible = ancestorsVisible && isVisible(object)
+            if selfVisible || !visible {
+                _ = try? dispatch(object: object, event: "onsetvisible",
+                                  arguments: [.boolean(visible)])
+            }
+            for child in object.children { walk(child, ancestorsVisible: selfVisible) }
+        }
+        walk(container, ancestorsVisible: true)
+        graphDidMutate?()
+    }
+
+    private var containerVisibility: [WasabiObjectID: Bool] = [:]
+
+    // MARK: - Layer FX
+
+    /// Per-layer FX configuration, written by the `fx_set*` methods.
+    private var layerFXStates: [WasabiObjectID: WasabiLayerFXState] = [:]
+    /// The last evaluated mesh per layer, reused until the skin calls `fx_update()` (or always
+    /// re-evaluated when it asked for `fx_setRealtime(1)`).
+    private var layerFXMeshes: [WasabiObjectID: WasabiLayerFXMesh] = [:]
+    private var layerFXNeedsEvaluation: Set<WasabiObjectID> = []
+    /// While a mesh is being evaluated, the callbacks run *inside a repaint*. A script that touched
+    /// the graph from one would ask for another repaint and settle geometry mid-draw, so both are
+    /// suppressed for the duration and the pending repaint is the one already in flight.
+    private var isEvaluatingLayerFX = false
+
+    /// Total vertices one layer may ask the interpreter to evaluate per mesh. `fx_setGridSize` takes
+    /// script variables, so a skin can name any grid at all; this is what keeps a bad number off the
+    /// UI thread. 65×65 covers every measured grid with room to spare (Defix asks for 1×1 on its
+    /// cassette reels).
+    private static let maximumLayerFXVertices = 65 * 65
+
+    /// `WINAMP_MODERN_FX_TRACE=1` prints every `fx_*` call with its receiver — how "which layers does
+    /// this skin warp, and when does it switch them on?" is answered without a debugger.
+    private static let tracesLayerFX = ProcessInfo.processInfo.environment["WINAMP_MODERN_FX_TRACE"] != nil
+
+    /// The FX configuration a layer's script has set, or `nil` when it has never called one.
+    func layerFXState(of object: WasabiObject) -> WasabiLayerFXState? { layerFXStates[object.stableID] }
+
+    /// Whether any layer in this skin currently has FX switched on — the signal a window uses to
+    /// decide it needs the 30 Hz repaint clock.
+    var hasEnabledLayerFX: Bool { layerFXStates.values.contains { $0.enabled } }
+
+    /// Every layer with FX switched on, for the render harness (`WINAMP_MODERN_RENDER_FX=1`). The
+    /// warp itself can only be seen under playback, but *which* layers are warped, how they are
+    /// configured and how far the mesh moves are all answerable headlessly.
+    var enabledLayerFXObjects: [WasabiObject] {
+        layerFXStates.compactMap { id, state in
+            guard state.enabled else { return nil }
+            return loadedSkin.runtime.graph.object(withID: id)
+        }
+    }
+
+    /// The warp for one layer, or `nil` when the layer has no enabled FX (the overwhelming majority —
+    /// this is checked for every object in every frame, so the miss has to be a dictionary lookup).
+    func layerFXMesh(for object: WasabiObject) -> WasabiLayerFXMesh? {
+        guard !isTornDown, !isEvaluatingLayerFX else { return nil }
+        guard let state = layerFXStates[object.stableID], state.enabled else { return nil }
+        if !state.realtime, !layerFXNeedsEvaluation.contains(object.stableID),
+           let cached = layerFXMeshes[object.stableID] {
+            return cached.isIdentity ? nil : cached
+        }
+        let mesh = evaluateLayerFXMesh(for: object, state: state)
+        layerFXNeedsEvaluation.remove(object.stableID)
+        layerFXMeshes[object.stableID] = mesh
+        return mesh.isIdentity ? nil : mesh
+    }
+
+    /// Every script bound to one layer's `fx_onGetPixelR`, with the answer each gives for one probe
+    /// point — the harness probe behind "*which* script drives this layer's warp?". A layer can be
+    /// configured by one script and animated by another (Defix's needles are), and only the first
+    /// bound handler answers.
+    func layerFXAnswerBreakdown(for object: WasabiObject, event: String = "fx_ongetpixelr",
+                                arguments: [MakiValue] = [.double(0), .double(1), .double(1), .double(0.5)])
+    -> [(program: String, answer: Double)] {
+        var results: [(String, Double)] = []
+        for program in programs {
+            guard program.bindings.contains(where: {
+                program.methods[$0.methodIndex].name == event.lowercased()
+            }) else { continue }
+            var answer: MakiValue?
+            _ = try? dispatch(target: MakiObjectReference(.gui(object.stableID)), event: event,
+                              arguments: arguments, in: [program], answer: &answer)
+            guard let answer else { continue }
+            let name = (program.source.path as NSString).lastPathComponent
+            results.append(("\(name)[\(program.parameter ?? "-")]", answer.doubleValue))
+        }
+        return results
+    }
+
+    /// Force the next `layerFXMesh(for:)` to re-run the skin's callbacks. The harness uses it to
+    /// measure a frame that really does re-evaluate, as a moving meter's does.
+    func invalidateLayerFXMesh(for object: WasabiObject) {
+        layerFXNeedsEvaluation.insert(object.stableID)
+    }
+
+    private func requestRepaint(for object: WasabiObject? = nil) {
+        guard !isEvaluatingLayerFX else { return }
+        if let object, let objectRepaintRequested { objectRepaintRequested(object) }
+        else if let repaintRequested { repaintRequested() }
+        else { graphDidMutate?() }
+    }
+
+    private func evaluateLayerFXMesh(for object: WasabiObject,
+                                     state: WasabiLayerFXState) -> WasabiLayerFXMesh {
+        var columns = state.vertexColumns
+        var rows = state.vertexRows
+        while columns * rows > Self.maximumLayerFXVertices {
+            columns = max(2, columns / 2)
+            rows = max(2, rows / 2)
+        }
+        // Which callbacks this layer actually implements, resolved once rather than per vertex: a
+        // skin supplies only the coordinate it wants changed and leaves the other one alone.
+        let events = state.rect ? ("fx_ongetpixelx", "fx_ongetpixely")
+                                : ("fx_ongetpixelr", "fx_ongetpixeld")
+        let hasFirst = hasBinding(for: object, event: events.0)
+        let hasSecond = hasBinding(for: object, event: events.1)
+        var sources = [CGPoint](repeating: .zero, count: columns * rows)
+        isEvaluatingLayerFX = true
+        defer { isEvaluatingLayerFX = false }
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let x = CGFloat(column) / CGFloat(columns - 1)
+                let y = CGFloat(row) / CGFloat(rows - 1)
+                let angle = WasabiLayerFXCoordinates.angle(x: x, y: y)
+                let distance = WasabiLayerFXCoordinates.distance(x: x, y: y)
+                let arguments: [MakiValue] = [.double(Double(angle)), .double(Double(distance)),
+                                              .double(Double(x)), .double(Double(y))]
+                func answer(_ event: String, _ fallback: CGFloat) -> CGFloat {
+                    guard let value = call(object: object, event: event, arguments: arguments) else {
+                        return fallback
+                    }
+                    let result = CGFloat(value.doubleValue)
+                    return result.isFinite ? result : fallback
+                }
+                let first = hasFirst ? answer(events.0, state.rect ? x : angle) : (state.rect ? x : angle)
+                if Self.tracesLayerFX, row == 0, column == 0 {
+                    print(String(format: "FX-TRACE mesh %@ in=%.4f out=%.4f",
+                                 object.xmlID ?? "-", Double(state.rect ? x : angle), Double(first)))
+                }
+                let second = hasSecond ? answer(events.1, state.rect ? y : distance) : (state.rect ? y : distance)
+                sources[row * columns + column] = state.rect
+                    ? CGPoint(x: first, y: second)
+                    : WasabiLayerFXCoordinates.point(angle: first, distance: second)
+            }
+        }
+        return WasabiLayerFXMesh(columns: columns, rows: rows, sources: sources,
+                                 wrap: state.wrap, bilinear: state.bilinear)
+    }
+
+    /// One `fx_*` call. Every setter writes state and, where it changes what is drawn, invalidates the
+    /// layer's mesh and asks for a repaint; the getters answer from the same state.
+    private func invokeLayerFX(method: String, object: WasabiObject,
+                               arguments: [MakiValue]) -> MakiValue {
+        var state = layerFXStates[object.stableID] ?? WasabiLayerFXState()
+        let flag = arguments.first?.truthy ?? false
+        if Self.tracesLayerFX {
+            print("FX-TRACE \(method) on \(object.typeName)#\(object.xmlID ?? "-") "
+                  + "args=\(arguments.map(\.stringValue))")
+        }
+        switch method {
+        case "fx_setenabled": state.enabled = flag
+        case "fx_setwrap": state.wrap = flag
+        case "fx_setrect": state.rect = flag
+        case "fx_setbgfx": state.backgroundFX = flag
+        case "fx_setclear": state.clear = flag
+        case "fx_setrealtime": state.realtime = flag
+        case "fx_setlocalized": state.localized = flag
+        case "fx_setbilinear": state.bilinear = flag
+        case "fx_setalphamode": state.alphaMode = flag
+        case "fx_setspeed": state.speedMilliseconds = arguments.first?.integerValue ?? 0
+        case "fx_setgridsize":
+            state.gridX = max(1, Int(arguments.first?.integerValue ?? 1))
+            state.gridY = max(1, Int(arguments.count > 1 ? arguments[1].integerValue : 1))
+        case "fx_getenabled": return .boolean(state.enabled)
+        case "fx_getwrap": return .boolean(state.wrap)
+        case "fx_getrect": return .boolean(state.rect)
+        case "fx_getbgfx": return .boolean(state.backgroundFX)
+        case "fx_getclear": return .boolean(state.clear)
+        case "fx_getrealtime": return .boolean(state.realtime)
+        case "fx_getlocalized": return .boolean(state.localized)
+        case "fx_getbilinear": return .boolean(state.bilinear)
+        case "fx_getalphamode": return .boolean(state.alphaMode)
+        case "fx_getspeed": return .integer(state.speedMilliseconds)
+        case "fx_update", "fx_restart":
+            // The skin has changed whatever its callbacks read (a needle's angle) and is telling the
+            // host to re-run them. This is the repaint that moves the meter.
+            layerFXStates[object.stableID] = state
+            layerFXNeedsEvaluation.insert(object.stableID)
+            requestRepaint(for: object)
+            return .null
+        default: return .null
+        }
+        layerFXStates[object.stableID] = state
+        layerFXNeedsEvaluation.insert(object.stableID)
+        requestRepaint(for: object)
+        return .null
     }
 
     func signature(for method: String, classGUID: String?) -> MakiMethodSignature? {
@@ -769,14 +1092,23 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "setfontsize": .init(argumentCount: 1, returnKind: .null),
             "leftclick": .init(argumentCount: 0, returnKind: .null),
             // Layer FX: Winamp warps a layer through a grid whose per-pixel source is supplied by the
-            // skin's own `fx_onGetPixel*` callbacks. We draw the layer undistorted, so these setters
-            // are accepted and inert — the alternative is not "no effect" but no display at all, since
-            // a method we refuse aborts the whole event. Defix configures its analog VU meter with
-            // eight of them in one `onScriptLoaded`, so refusing them left the main window's display
-            // area permanently empty. Arities are read off the call sites, not assumed
+            // skin's own `fx_onGetPixel*` callbacks — implemented in Phase 28 (`invokeLayerFX`,
+            // `layerFXMesh(for:)`). Arities are read off the call sites, not assumed
             // (`WINAMP_MODERN_RENDER_DISASM=fx_setgridsize`): every setter takes one argument except
             // `fx_setGridSize(w, h)`, and `fx_update()` takes none.
             "fx_setenabled": .init(argumentCount: 1, returnKind: .null),
+            "fx_setalphamode": .init(argumentCount: 1, returnKind: .null),
+            "fx_restart": .init(argumentCount: 0, returnKind: .null),
+            "fx_getenabled": .init(argumentCount: 0, returnKind: .boolean),
+            "fx_getwrap": .init(argumentCount: 0, returnKind: .boolean),
+            "fx_getrect": .init(argumentCount: 0, returnKind: .boolean),
+            "fx_getbgfx": .init(argumentCount: 0, returnKind: .boolean),
+            "fx_getclear": .init(argumentCount: 0, returnKind: .boolean),
+            "fx_getrealtime": .init(argumentCount: 0, returnKind: .boolean),
+            "fx_getlocalized": .init(argumentCount: 0, returnKind: .boolean),
+            "fx_getbilinear": .init(argumentCount: 0, returnKind: .boolean),
+            "fx_getalphamode": .init(argumentCount: 0, returnKind: .boolean),
+            "fx_getspeed": .init(argumentCount: 0, returnKind: .integer),
             "fx_setwrap": .init(argumentCount: 1, returnKind: .null),
             "fx_setrect": .init(argumentCount: 1, returnKind: .null),
             "fx_setbgfx": .init(argumentCount: 1, returnKind: .null),
@@ -831,6 +1163,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "triggeraction": .init(argumentCount: 2, returnKind: .null),
             "getleftvumeter": .init(argumentCount: 0, returnKind: .integer),
             "getrightvumeter": .init(argumentCount: 0, returnKind: .integer),
+            // `extern Int System.getVisBand(int channel, int band); // 0,1 / 0..75` (std.mi). Every
+            // meter a skin draws itself reads this — Defix's speaker cones, VU needles and level
+            // bars all poll it from a timer — so without it those layers never move at all.
+            "getvisband": .init(argumentCount: 2, returnKind: .integer),
+            // `extern AlbumArtLayer.isLoading()`. Defix's playlist window polls it every tick, and
+            // the miss aborted that whole `ontimer` handler continuously.
+            "isloading": .init(argumentCount: 0, returnKind: .boolean),
             "getvolume": .init(argumentCount: 0, returnKind: .integer),
             "setvolume": .init(argumentCount: 1, returnKind: .null),
             "seekto": .init(argumentCount: 1, returnKind: .null),
@@ -848,6 +1187,22 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "float": .init(argumentCount: 1, returnKind: .float),
             "string": .init(argumentCount: 1, returnKind: .string),
             "boolean": .init(argumentCount: 1, returnKind: .boolean),
+            // MAKI's math library, all `System` methods. Measured demand, not a shopping list:
+            // Defix's VU needle computes its ballistics with `sqrt` and its rotation with `sin`/`cos`,
+            // and the *whole* `onTimer` aborted on the first `sqrt` — which is why the needle styles
+            // stood still even with Layer FX implemented.
+            "sqrt": .init(argumentCount: 1, returnKind: .double),
+            "pow": .init(argumentCount: 2, returnKind: .double),
+            "sin": .init(argumentCount: 1, returnKind: .double),
+            "cos": .init(argumentCount: 1, returnKind: .double),
+            "tan": .init(argumentCount: 1, returnKind: .double),
+            "asin": .init(argumentCount: 1, returnKind: .double),
+            "acos": .init(argumentCount: 1, returnKind: .double),
+            "atan2": .init(argumentCount: 2, returnKind: .double),
+            "log": .init(argumentCount: 1, returnKind: .double),
+            "log10": .init(argumentCount: 1, returnKind: .double),
+            "exp": .init(argumentCount: 1, returnKind: .double),
+            "abs": .init(argumentCount: 1, returnKind: .double),
             "strlen": .init(argumentCount: 1, returnKind: .integer),
             "strlower": .init(argumentCount: 1, returnKind: .string),
             "strsearch": .init(argumentCount: 2, returnKind: .integer),
@@ -1007,6 +1362,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     func invoke(method: String, on reference: MakiObjectReference, arguments: [MakiValue],
                 program: MakiProgram) throws -> MakiValue {
         let method = method.lowercased()
+        if Self.tracesEveryCall {
+            let result = try invokeTraced(method: method, on: reference, arguments: arguments, program: program)
+            print("CALL-TRACE \(method)(\(arguments.map(\.stringValue).joined(separator: ","))) -> \(result.stringValue)")
+            return result
+        }
+        return try invokeTraced(method: method, on: reference, arguments: arguments, program: program)
+    }
+
+    static let tracesEveryCall = ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil
+
+    private func invokeTraced(method: String, on reference: MakiObjectReference, arguments: [MakiValue],
+                              program: MakiProgram) throws -> MakiValue {
         switch reference.kind {
         case .system:
             return try invokeSystem(method: method, arguments: arguments, program: program)
@@ -1076,8 +1443,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let tokens = arguments[0].stringValue.components(separatedBy: arguments[1].stringValue)
             let index = Int(arguments[2].integerValue)
             return .string(tokens.indices.contains(index) ? tokens[index] : "")
-        case "getleftvumeter": return .integer(vuValue(left: true))
-        case "getrightvumeter": return .integer(vuValue(left: false))
+        case "getleftvumeter", "getrightvumeter":
+            let value = vuValue(left: method == "getleftvumeter")
+            if Self.tracesLayerFX { print("FX-TRACE \(method) -> \(value)") }
+            return .integer(value)
+        case "getvisband":
+            return .integer(visBand(channel: arguments[0].integerValue, band: arguments[1].integerValue))
         case "getvolume": return .integer(Int32((host.volume * 255).rounded()))
         case "setvolume":
             let level = max(0, min(255, arguments[0].integerValue))
@@ -1163,8 +1534,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // `loadattribs.maki` and `playlistmenu.maki` reach every attribute they need this way.
             return dynamicValue(role: .configItem(section: arguments[0].stringValue))
         case "newitem":
-            return dynamicValue(role: .configItem(section: arguments[1].stringValue.isEmpty
-                                                   ? arguments[0].stringValue : arguments[1].stringValue))
+            let name = arguments[0].stringValue
+            let section = arguments[1].stringValue.isEmpty ? name : arguments[1].stringValue
+            // The item's own name is the only human-readable label its attributes ever get: the
+            // attribute names are the values ("Audio cassette"), the item is the setting
+            // ("Visualizer"). Losing it would leave a settings list grouped by raw GUID.
+            if !name.isEmpty, configItemNames[section] == nil,
+               configItemNames.count < Self.maximumRegisteredSettings {
+                configItemNames[section] = name
+            }
+            return dynamicValue(role: .configItem(section: section))
         // A skin's trace output. Deliberately dropped rather than logged: it is per-frame in some
         // skins, and nothing in NullPlayer consumes it.
         case "debugstring": return .null
@@ -1179,6 +1558,28 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getmouseposx": return .integer(Int32(clamping: Int((mousePositionRequested?().x ?? 0).rounded())))
         case "getmouseposy": return .integer(Int32(clamping: Int((mousePositionRequested?().y ?? 0).rounded())))
         case "atan": return .float(atan(arguments[0].doubleValue))
+        // The rest of MAKI's math library. Every result is guarded against a domain error: a script
+        // that asks for `sqrt(-1)` gets 0 rather than a NaN that would then travel into a coordinate
+        // and take a whole layer off screen.
+        case "sqrt", "pow", "sin", "cos", "tan", "asin", "acos", "atan2", "log", "log10", "exp", "abs":
+            let x = arguments[0].doubleValue
+            let y = arguments.count > 1 ? arguments[1].doubleValue : 0
+            let result: Double
+            switch method {
+            case "sqrt": result = x < 0 ? 0 : sqrt(x)
+            case "pow": result = pow(x, y)
+            case "sin": result = sin(x)
+            case "cos": result = cos(x)
+            case "tan": result = tan(x)
+            case "asin": result = asin(min(1, max(-1, x)))
+            case "acos": result = acos(min(1, max(-1, x)))
+            case "atan2": result = atan2(x, y)
+            case "log": result = x > 0 ? log(x) : 0
+            case "log10": result = x > 0 ? log10(x) : 0
+            case "exp": result = exp(x)
+            default: result = abs(x)
+            }
+            return .double(result.isFinite ? result : 0)
         case "geteq": return .integer((equalizerEnabledRequested?() ?? false) ? 1 : 0)
         case "geteqband":
             return .integer(Int32(clamping: equalizerBandRequested?(Int(arguments[0].integerValue)) ?? 0))
@@ -1492,6 +1893,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             guard let point = mousePositionInObjectSpaceRequested?(object),
                   let frame = resolvedGeometryRequested?(object)?.frame else { return .boolean(false) }
             return .boolean(frame.contains(point))
+        // `AlbumArtLayer.isLoading()`. Only an `<AlbumArt>` has a fetch to wait on; any other
+        // receiver is honestly not loading anything.
+        case "isloading":
+            // The XUI form (`<Wasabi:AlbumArt>`) keeps its namespace prefix in the element name.
+            let type = object.typeName.lowercased().components(separatedBy: ":").last ?? ""
+            guard type == "albumart" else { return .boolean(false) }
+            return .boolean(host.isArtworkLoading)
         case "getposition" where WasabiFrame.isFrame(object):
             // A splitter's position is its divider offset, not a slider value. ClassicPro reads it to
             // decide whether the side view is open (`mainFrame.getPosition()==0`).
@@ -1637,11 +2045,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // Denied for the same reason — a skin script does not get to drive the network — but
             // denied *quietly*, because refusing the method aborts the handler that called it.
             return .null
-        case "fx_setenabled", "fx_setwrap", "fx_setrect", "fx_setbgfx", "fx_setclear",
-             "fx_setrealtime", "fx_setlocalized", "fx_setbilinear", "fx_setspeed",
-             "fx_setgridsize", "fx_update":
-            // Configuration for a per-pixel layer warp we do not run. See `signature(for:)`.
-            return .null
+        case let name where name.hasPrefix("fx_"):
+            // The layer warp itself: `invokeLayerFX` writes the configuration and `fx_update()` is
+            // what re-runs the skin's callbacks. See `WasabiLayerFX.swift` for the model.
+            return invokeLayerFX(method: name, object: object, arguments: arguments)
         case "setregion":
             // The renderer draws from the graph and nothing else, so a region is stamped onto the
             // object and the scene redrawn — the same route `play`/`gotoFrame` take. A region that
@@ -1924,6 +2331,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 let existing = loadedSkin.configuration.string(section: section, key: key,
                                                                  default: defaultValue)
                 loadedSkin.configuration.setString(existing, section: section, key: key)
+                recordRegisteredSetting(section: section, name: key, defaultValue: defaultValue)
             }
             return dynamicValue(role: .configAttribute(section: section, key: key))
         case "getdata":
@@ -2009,11 +2417,41 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return candidate == reference
     }
 
-    private func vuValue(left: Bool) -> Int32 {
+    /// Winamp's fixed band scale: `getVisBand`'s band argument is documented `0..75` in `std.mi`,
+    /// so a skin indexes in that scale whatever the host's analyser actually produces.
+    static let visBandCount = 76
+
+    /// `System.getVisBand(channel, band)` — one band of the spectrum as a vis byte (0…255, the same
+    /// unit `getLeftVUMeter` answers in, which is what a skin's meter artwork is cut for).
+    ///
+    /// The source is the existing spectrum tap every other visualization window already consumes
+    /// (`AudioEngine` → `updateSpectrum` → `host.spectrumLevels`); no second analysis path is added.
+    /// That tap is **mono**, so both channels answer the same value — a stereo split would mean a
+    /// second FFT for skins alone. The tap's own band count is an audio-side detail, so the request
+    /// is resampled into Winamp's 0…75 scale rather than indexed directly: getting the scale wrong
+    /// reads as "the meters twitch" rather than as a bug.
+    private func visBand(channel: Int32, band: Int32) -> Int32 {
+        _ = channel
         let levels = host.spectrumLevels
         guard !levels.isEmpty else { return 0 }
-        let range = left ? levels.prefix((levels.count + 1) / 2) : levels.suffix(levels.count / 2)
-        return Int32(max(0, min(255, (range.max() ?? 0) * 255)))
+        let requested = max(0, min(Self.visBandCount - 1, Int(band)))
+        let index = levels.count == Self.visBandCount
+            ? requested
+            : min(levels.count - 1, requested * levels.count / Self.visBandCount)
+        return Int32(max(0, min(255, (levels[index] * 255).rounded())))
+    }
+
+    /// `System.getLeftVUMeter()` / `getRightVUMeter()` — program level per channel as a vis byte
+    /// (0…255), which is the unit analog VU artwork is cut for.
+    ///
+    /// The source is the host's **RMS level model**, not the spectrum. Reading a peak band out of the
+    /// bar-display tap and calling it a channel was wrong twice over — that tap is mono, so both
+    /// channels answered the same number, and its bands are already normalised so bars fill their
+    /// window, so ×255 sat at the ceiling and every needle in every skin pinned.
+    private func vuValue(left: Bool) -> Int32 {
+        let level = left ? host.vuLevels.left : host.vuLevels.right
+        guard level.isFinite else { return 0 }
+        return Int32(max(0, min(255, (level * 255).rounded())))
     }
 
     /// `isInvalid()` — the object did not come up. For a *null* receiver that is answered in the

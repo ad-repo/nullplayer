@@ -27,7 +27,7 @@ is the reference to compare against.
 | T800 | Phase 20–22 | per-layout groups, region-clipped volume, drag | — |
 | ZDL Reel-To-Reel | Phase 18 | sized from its background art | — |
 | Rika | Phase 22 | loads without its missing TTF; vis colours honoured | — |
-| Defix Hi-End 200 | Phase 26 (measured 2026-08-18) | wood panel + framed windows, cassette display, **live SUI tabs + embedded library**, clipped reels | **7 of its 8 display styles (the analog VU meters) are unreachable**; `getVisBand` missing so no skin-drawn meter can move |
+| Defix Hi-End 200 | Phase 26–28 (measured 2026-08-19) | wood panel + framed windows, cassette display, **live SUI tabs + embedded library**; display styles and songticker modes selectable through **Skin Settings**; **all eight display styles animate** — needles and cassette reels through Layer FX, level strips through frame strips | motion quality: the cassette is choppy (frame budget) and the needles answer the music weakly (level scale) — `phase-28-handoff.md` |
 
 ---
 
@@ -319,27 +319,48 @@ bitmaps. `main/normal` 406×355, 69 nodes.
   embeds Internet Explorer and points it at a file path). The tab switches and its chrome draws; the
   browser pane itself is empty, and hosting a real web view for untrusted skin content is outside the
   sandbox this engine is built on.
-- **Layer FX** — the analog VU meter styles configure a per-pixel warp we accept and ignore, so those
-  display styles draw undistorted artwork.
-- **Seven of its eight display styles cannot be selected at all.** The skin registers a *Visualizer*
-  attribute with `newAttribute` carrying eight values — `Audio cassette` (its shipped default),
-  `Left Right VU`, `BASS TRIPLE VU`, `Ovis 1`, `Ovis 2`, `McIntosh MC2KW Amplifier VU`, `P-402 VU`,
-  `Technics VU` — and binds **no control in the skin** to it, because in Winamp it appears in the
-  preferences dialog. All the artwork ships (`LAYOUT1/Vu2/` four needles + four scales,
-  `LAYOUT1/LVL/` Technics and RT level strips, `LAYOUT1/CAS/` 57 cassette bodies) and none of it has
-  ever been rendered here. Same mechanism as the songticker mode below; the two together are the
-  argument for a host-side surface over a skin's registered preferences.
+- **Layer FX — all eight display styles animate as of Phase 28** (live runs: 2026-08-18 *P-402 VU and
+  Technics VU work, all others are frozen* → 2026-08-19 *they are all working*). The two that always
+  worked are `<animatedlayer>` frame strips (`LAYOUT1/LVL/`) driven by `gotoFrame`; every other one is
+  a **rotation** through `fx_onGetPixelR` — the four needle styles (`LAYOUT1/Vu2/`) and the cassette
+  reels (`CASROLL`/`CASROLR`). Three separate defects had to be fixed before any of them moved, and
+  each hid the next: the warp was never run; `onSetVisible` was never dispatched when a window was
+  shown, which is what switches the reels' FX on and starts their timer; and the needles' `onTimer`
+  aborted every tick on the unimplemented `sqrt`. A fourth, an integer-truncating unary minus in the
+  interpreter, left the needle with exactly two positions once it did move.
+  Measured grids: reels 1×1 and 4×4, needles 6×6. Reels step 5°/8° every 33 ms; the needle updates
+  every ~17 ms.
+- **Still rough, 2026-08-19** — the cassette animation is choppy and the VU needles answer the music
+  weakly. Neither is Layer FX: the first is the frame budget (this skin's main window costs 19.3 ms a
+  frame repainted whole at Retina scale, against 6.9 ms clipped to its meters), the second is the
+  level the host hands the skin, which Defix then maps through its own `73.813 · x^¼ − 100` curve and
+  its own ballistics. Open work and the measurements behind it:
+  `docs/winamp-modern/phase-28-handoff.md`.
+- **Seven of its eight display styles were unreachable; Phase 27 made them selectable.** The skin
+  registers a *Visualizer* item with `newAttribute` carrying eight values — `Audio cassette` (its
+  shipped default), `Left Right VU`, `BASS TRIPLE VU`, `Ovis 1`, `Ovis 2`,
+  `McIntosh MC2KW Amplifier VU`, `P-402 VU`, `Technics VU` — and binds **no control in the skin** to
+  any of them, because in Winamp they appear in the preferences dialog. All the artwork ships
+  (`LAYOUT1/Vu2/` four needles + four scales, `LAYOUT1/LVL/` Technics and RT level strips,
+  `LAYOUT1/CAS/` 57 cassette bodies). They are now listed in **Winamp Modern → Skin Settings...**
+  along with the songticker modes below and the rest of the 32 options this skin registers
+  (`WINAMP_MODERN_RENDER_SETTINGS=1` prints them). Whether picking one actually changes the display
+  is the live pass.
+- **Its two speaker cabinets and its configurator are opened from the host's Skin Windows menu**
+  (Phase 27). The skin declares `SPEAKER 1`, `SPEAKER 2` and `Config name="Skin Settings"` and binds
+  no button in the skin to any of them — in Winamp they live in Winamp's own Windows menu. Whether
+  the cones (`animatedlayer#SpeakerVis`, fed by `getVisBand`) animate is the open live question; their
+  timer starts from `onSetVisible`, so nothing about them could be judged until the windows opened.
 - **The cassette reels are script-driven plain `<layer>`s and they are confirmed to spin in Winamp**
   (`CASROLL`/`CASROLR`, image `CasR`, inside `LAYOUT_1.CAS.grp`). Whether ours move under live
   playback is still untested — the render harness has no audio and no component host, so it can never
   answer this; drive it in the app.
-- **`getVisBand` is not implemented, so every meter this skin draws is dead by construction** — the
-  speaker cones (`animatedlayer#SpeakerVis`), the VU needles and the level bars all read it
-  (`SPEAKER.maki`, `VU_LAYOUT_1.maki`). Implementing it is a precondition for any of the styles above
-  being worth reaching.
-- **`isloading` is not implemented and `PLAYLIST_WINDOW.ontimer` aborts on it every tick**
-  (`RENDER_CLICK` chain: `… PLAYLIST_WINDOW.xml.ontimer!FAILED …`). One-line fix, and it is failing
-  continuously today.
+- **`getVisBand` — implemented in Phase 27**, so the meters this skin draws have a number to move
+  to at last: the speaker cones (`animatedlayer#SpeakerVis`), the VU needles and the level bars all
+  read it (`SPEAKER.maki`, `VU_LAYOUT_1.maki`). It answers from the shared mono spectrum tap, in
+  vis bytes; the harness cannot see it move (no audio), so watch it under playback in the app.
+- **`isloading` — implemented in Phase 27** on `<AlbumArt>`, from the host's real artwork-fetch
+  state. `PLAYLIST_WINDOW.ontimer` had been aborting on the miss every tick.
 - **`setScale` is missing** — the configurator's seven window-scaling buttons (100–300%) are inert.
 - **The skin builds no `PopupMenu` of its own; every menu it has is a host action, and none is
   implemented.** `trackmenu`/`trackinfo` (declared as `rightclickaction`/`dblclickaction` on the song

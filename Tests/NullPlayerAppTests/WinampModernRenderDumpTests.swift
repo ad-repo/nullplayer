@@ -54,10 +54,100 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 }
             }
         }
+        // WINAMP_MODERN_RENDER_CONFIG=<section>;<key>=<value>[|…] writes skin configuration before
+        // the scripts start, which is where the app reads it from: the value is persisted, so a skin
+        // option the user picked in an earlier session (Defix's eight display styles) is already set
+        // when `onScriptLoaded` runs. Note it *stays* set for later runs of the harness, exactly as
+        // it does for the app.
+        if let spec = env["WINAMP_MODERN_RENDER_CONFIG"] {
+            for entry in spec.split(separator: "|") {
+                let parts = entry.split(separator: ";", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { continue }
+                let assignment = parts[1].split(separator: "=", maxSplits: 1).map(String.init)
+                guard assignment.count == 2 else { continue }
+                loaded.configuration.setString(assignment[1], section: parts[0], key: assignment[0])
+                print("CONFIG set [\(parts[0])] \(assignment[0]) = \(assignment[1])")
+            }
+        }
+
         try runtime.start()
 
         if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
             RunLoop.current.run(until: Date().addingTimeInterval(settle))
+        }
+
+        // WINAMP_MODERN_RENDER_SETTINGS lists what the skin registered with `newAttribute` — the
+        // options Winamp shows in its preferences dialog and a skin often binds no control to. It is
+        // the only way to see, without a GUI, what the host's Skin Settings window will offer
+        // (Phase 27.3).
+        if env["WINAMP_MODERN_RENDER_SETTINGS"] != nil {
+            for setting in runtime.registeredSettings {
+                print("SETTING \(setting.sectionName) [\(setting.section)] "
+                      + "\(setting.name) = \(runtime.configAttributeValue(setting)) "
+                      + "(default \(setting.defaultValue))")
+            }
+        }
+
+        // What the app does once a container's window is on screen: a `.wal` skin starts and stops
+        // its animation from `onSetVisible` (Defix's cassette reels turn their Layer FX on there), so
+        // without this nothing in the skin is warped at all. Before any `RENDER_CONFIG` write, since
+        // a style switched *while the window is up* is what the app does.
+        if env["WINAMP_MODERN_RENDER_FX"] != nil {
+            for container in loaded.runtime.graph.roots
+            where container.typeName.caseInsensitiveCompare("container") == .orderedSame {
+                let isMain = container.xmlID?.caseInsensitiveCompare("main") == .orderedSame
+                runtime.notifyContainerVisibility(containerID: container.stableID, visible: isMain)
+            }
+        }
+
+        // WINAMP_MODERN_RENDER_FX lists the Layer FX layers (Phase 28): which layers the skin warps,
+        // how they are configured, and where the evaluated mesh samples its corners from. A mesh that
+        // is not the identity is a layer that is actually moving; the harness has no audio, so the
+        // *amount* is whatever the skin computes at silence.
+        if env["WINAMP_MODERN_RENDER_FX"] != nil {
+            // `=play` tells the skin a track started. A meter's FX is switched on from playback in
+            // every measured skin (a cassette's reels do not spin while stopped), so the layers are
+            // not warped at all until the skin has heard `onPlay`.
+            if env["WINAMP_MODERN_RENDER_FX"] == "play" {
+                _ = try? runtime.dispatchSystem(event: "onplay")
+                RunLoop.current.run(until: Date().addingTimeInterval(1))
+            }
+            // WINAMP_MODERN_RENDER_FX_SPIN=<seconds> samples every warped layer's angle at 60 Hz for
+            // that long, printing the wall-clock step between updates and how far the layer turned in
+            // it. This is the measurement behind "the animation is rough": a smooth meter is a small,
+            // even step at an even interval, and both halves are visible here without a window.
+            if let seconds = env["WINAMP_MODERN_RENDER_FX_SPIN"].flatMap(Double.init) {
+                let objects = runtime.enabledLayerFXObjects.sorted { ($0.xmlID ?? "") < ($1.xmlID ?? "") }
+                var last: [String: (time: TimeInterval, angle: Double)] = [:]
+                let start = Date()
+                while Date().timeIntervalSince(start) < seconds {
+                    RunLoop.current.run(until: Date().addingTimeInterval(1.0 / 60))
+                    let now = Date().timeIntervalSince(start)
+                    for object in objects {
+                        let id = object.xmlID ?? "-"
+                        guard let angle = runtime.layerFXAnswerBreakdown(for: object).first?.answer else { continue }
+                        guard let previous = last[id] else { last[id] = (now, angle); continue }
+                        guard abs(angle - previous.angle) > 1e-9 else { continue }
+                        print(String(format: "FX-SPIN %@ dt=%.1fms d(angle)=%+.4f rad", id,
+                                     (now - previous.time) * 1000, angle - previous.angle))
+                        last[id] = (now, angle)
+                    }
+                }
+            }
+            for object in runtime.enabledLayerFXObjects.sorted(by: { ($0.xmlID ?? "") < ($1.xmlID ?? "") }) {
+                let state = runtime.layerFXState(of: object)
+                let mesh = runtime.layerFXMesh(for: object)
+                let corners = mesh.map { $0.sources.prefix(4).map { point in
+                    String(format: "(%.3f,%.3f)", point.x, point.y) }.joined(separator: " ") } ?? "-"
+                let breakdown = runtime.layerFXAnswerBreakdown(for: object)
+                    .map { String(format: "%@=%.4f", $0.program, $0.answer) }.joined(separator: " ")
+                print("FX-BINDINGS \(object.xmlID ?? "-") \(breakdown)")
+                print("FX \(object.typeName)#\(object.xmlID ?? "-") "
+                      + "grid=\(state?.gridX ?? 0)x\(state?.gridY ?? 0) "
+                      + "rect=\(state?.rect == true) wrap=\(state?.wrap == true) "
+                      + "bilinear=\(state?.bilinear == true) realtime=\(state?.realtime == true) "
+                      + "mesh=\(mesh == nil ? "identity" : "\(mesh!.columns)x\(mesh!.rows)") \(corners)")
+            }
         }
 
         if env["WINAMP_MODERN_RENDER_XUI"] != nil {
@@ -253,6 +343,12 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
         }
         print("RENDER-DUMP catalog: \(catalog.summaryLine)")
+        // Which containers the host's Skin Windows menu offers — the only way to open a window a skin
+        // declares, names, and binds no button to (Phase 27.7). Printed after the catalog because a
+        // container the catalog routes is deliberately not listed twice.
+        let routed = catalog.routedContainerIDs
+        print("RENDER-DUMP skin windows: "
+              + "\(containers.filter { WinampModernContainerTopology.isListedInWindowMenu($0) && !routed.contains($0.id.lowercased()) }.map(WinampModernContainerTopology.displayName))")
 
         // Written beside the PNGs so a dump can be read without the console scrollback.
         let sidecar = [
@@ -279,6 +375,8 @@ final class WinampModernRenderDumpTests: XCTestCase {
             // does — without it `getWidth()` on a relatively-sized object answers its raw attribute
             // and the skin lays itself out against a negative number.
             runtime.resolvedGeometryRequested = { object in renderer.resolvedGeometry(of: object) }
+            // Layer FX, as the app wires it — so a warped layer is warped in the dumped PNG too.
+            renderer.layerFXProvider = { [weak runtime] in runtime?.layerFXMesh(for: $0) }
             // And the same settle the window layer drives, so a script that collapses a pane sees the
             // `onResize` it is waiting on — cPro's side-view buttons swap from it.
             var lastFrames: [WasabiObjectID: CGRect] = [:]
@@ -539,6 +637,53 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 let previous = NSGraphicsContext.current
                 NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
                 renderer.draw(in: context)
+                // WINAMP_MODERN_RENDER_TIME=<frames> repaints the whole scene that many times and
+                // reports the per-frame cost — the measurement behind "does this skin hold 30 Hz?",
+                // and the one Layer FX needs, since a warp is a CPU resample on the paint path. Each
+                // pass re-evaluates every FX mesh, as a moving meter does.
+                if let frames = env["WINAMP_MODERN_RENDER_TIME"].flatMap(Int.init), frames > 0 {
+                    // WINAMP_MODERN_RENDER_TIME_SCALE=2 measures the *backing-store* cost the app
+                    // actually pays on a Retina display, where every draw is at twice the linear size.
+                    let scale = env["WINAMP_MODERN_RENDER_TIME_SCALE"].flatMap(Double.init) ?? 1
+                    let scaled = CGContext(data: nil, width: Int(size.width * scale),
+                                           height: Int(size.height * scale),
+                                           bitsPerComponent: 8, bytesPerRow: 0,
+                                           space: CGColorSpaceCreateDeviceRGB(),
+                                           bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                    let target = scale == 1 ? context : (scaled ?? context)
+                    if scale != 1 { target.scaleBy(x: scale, y: scale) }
+                    // WINAMP_MODERN_RENDER_TIME_CLIP=1 measures the same frame clipped to the union
+                    // of the warped layers' own rects — what a targeted `setNeedsDisplay(rect)` would
+                    // cost, against repainting the whole window for a meter that moved.
+                    var clip: CGRect?
+                    if env["WINAMP_MODERN_RENDER_TIME_CLIP"] != nil {
+                        for object in runtime.enabledLayerFXObjects {
+                            guard let frame = renderer.resolvedGeometry(of: object)?.frame else { continue }
+                            clip = clip.map { $0.union(frame) } ?? frame
+                        }
+                    }
+                    let start = Date()
+                    for _ in 0..<frames {
+                        for object in runtime.enabledLayerFXObjects { runtime.invalidateLayerFXMesh(for: object) }
+                        if let clip {
+                            target.saveGState()
+                            target.clip(to: CGRect(x: clip.minX, y: size.height - clip.maxY,
+                                                   width: clip.width, height: clip.height))
+                            renderer.draw(in: target)
+                            target.restoreGState()
+                        } else {
+                            renderer.draw(in: target)
+                        }
+                    }
+                    let milliseconds = Date().timeIntervalSince(start) * 1000 / Double(frames)
+                    for (name, total) in WasabiSceneRenderer.drawProfile.sorted(by: { $0.value > $1.value }).prefix(8) {
+                        print(String(format: "DRAW-PROFILE %@ %.2f ms/frame", name, total * 1000 / Double(frames)))
+                    }
+                    WasabiSceneRenderer.drawProfile.removeAll()
+                    print(String(format: "RENDER-TIME %@/%@: %.2f ms/frame over %d frames "
+                                 + "(%d FX layers)", info.id, layoutID, milliseconds, frames,
+                                 runtime.enabledLayerFXObjects.count))
+                }
                 NSGraphicsContext.current = previous
                 guard let image = context.makeImage() else { continue }
                 let url = dumpDirectory.appendingPathComponent("\(info.id)-\(layoutID).png")
@@ -636,6 +781,22 @@ final class WinampModernRenderDumpTests: XCTestCase {
         var sampleRateHz = 44_100
         var channelCount = 2
         var spectrumLevels: [Float] = (0..<64).map { Float(($0 % 16)) / 16 }
+        /// WINAMP_MODERN_RENDER_VU=<left>[,<right>] injects a program level per channel (0…1), the
+        /// unit `getLeftVUMeter`/`getRightVUMeter` answer in. It is what makes a meter *deflect*
+        /// headlessly — the harness has no audio, so without it every VU reads silence.
+        var vuLevels: (left: Double, right: Double) {
+            let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_RENDER_VU"] ?? ""
+            // `sweep` oscillates 0…1 at 0.5 Hz, which is what makes a *meter* measurable headlessly:
+            // a needle at a fixed level tells you nothing about how it follows one.
+            if spec == "sweep" {
+                let phase = ProcessInfo.processInfo.systemUptime * 0.5
+                let level = 0.5 - 0.5 * cos(phase * 2 * .pi)
+                return (level, level)
+            }
+            let values = spec.split(separator: ",").compactMap { Double($0) }
+            guard let left = values.first else { return (0, 0) }
+            return (left, values.count > 1 ? values[1] : left)
+        }
 
         func play() {}
         func pause() {}

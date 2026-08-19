@@ -869,6 +869,35 @@ class WindowManager {
         return WinampModernSurfaceStyle(palette: palette)
     }
 
+    /// Whether the loaded `.wal` skin registered any settings of its own (Phase 27.3). Safe default
+    /// in every other mode, per the mode-guarding rule in CLAUDE.md — the menu asks this before it
+    /// offers an entry point, so a skin that registers nothing shows no menu item at all.
+    var hasWinampModernSkinSettings: Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return !((mainWindowController as? WinampModernMainWindowController)?
+            .registeredSkinSettings.isEmpty ?? true)
+    }
+
+    /// The `.wal` skin's own extra windows — the ones it declares, names, and binds no button to
+    /// (Defix's two speaker cabinets and its configurator). Safe default in every other mode.
+    var winampModernSkinWindows: [(id: String, name: String, isVisible: Bool)] {
+        guard uiMode.controllerFamily == .winampModern else { return [] }
+        return (mainWindowController as? WinampModernMainWindowController)?.skinWindows ?? []
+    }
+
+    /// Show or hide one of them. In Winamp these live in its own Windows menu; without this they
+    /// render and are unreachable.
+    func toggleWinampModernSkinWindow(id: String) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.toggleSkinWindow(id: id)
+    }
+
+    /// Open the list of settings the skin registered but bound no control to.
+    func showWinampModernSkinSettings() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.showSkinSettings()
+    }
+
     @discardableResult
     private func routeWinampModernSurface(_ kind: WinampModernComponentKind, toggle: Bool,
                                           restoredFrame: NSRect? = nil) -> Bool {

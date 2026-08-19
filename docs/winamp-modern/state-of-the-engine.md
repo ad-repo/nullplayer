@@ -129,7 +129,7 @@ reference oracle). Its entire native surface is three shell methods, none on the
 |---|---|---|
 | cPro-Bento + ClassicPro | Phase 24 | Full SUI: live tab strip, playlist queue, embedded real library browser, beat vis, script-built menus. Gap: guilist widgets |
 | Winamp Modern (stock) | Phase 24 | Frame, runtime-built body, playlist + library, EQ drawer, centred title + streaks |
-| Defix Hi-End 200 | Phase 26 | Wood panel + framed windows, cassette display, live SUI tabs, embedded library, working configurator + cover art. Gaps: `<Browser>`, layer FX, `newDynamicContainer` |
+| Defix Hi-End 200 | Phase 27 | Wood panel + framed windows, cassette display, live SUI tabs, embedded library, working configurator + cover art, its registered display styles reachable via Skin Settings, meters fed by `getVisBand` + the stereo level model. Gaps: **layer FX — six of its eight display styles are frozen because every rotating meter needs it**, `<Browser>`, `newDynamicContainer` |
 | mmd3 | Phase 17 | Bitmap text, rotary knobs, drawers, own animated display. Gap: `wasabi.*`-backed widgets draw empty |
 | Love is War Miku | Phase 23 | Renders and drives correctly. Gaps: `fliph`; oscilloscope is a mirrored spectrum |
 | CornerAmp Redux | Phase 13 | Frame, titles, playlist + EQ; library window synthesized |
@@ -235,6 +235,10 @@ the trademark question and item 2 above are the ones worth ten minutes of a real
 4. Never work down a static list of unsupported methods — re-measure after every change.
 5. Do the 15-skin render sweep (clock pinned) for any renderer change until that sweep is automated.
 
-**The highest-value next work**, in order: automate the multi-skin render sweep in CI; close the
-provenance spot-check; drive the untested integration surfaces (casting, docking, Compact Mode) from a
-`.wal` skin; fuzz `NSISArchive`/`LZMA1Decoder`.
+**The highest-value next work**, in order: **finish Layer FX** — the callback-driven layer warp that
+rotates VU needles and cassette reels is implemented and confirmed moving live (Phase 28), but the
+motion is choppy and the meters answer the music weakly. Both remaining problems are *host* problems,
+not skin ones: main-thread work on the paint path and the level scale handed to a skin
+(`docs/winamp-modern/phase-28-handoff.md`); then automate the multi-skin render
+sweep in CI; close the provenance spot-check; drive the untested integration surfaces (casting,
+docking, Compact Mode) from a `.wal` skin; fuzz `NSISArchive`/`LZMA1Decoder`.

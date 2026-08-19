@@ -28,6 +28,11 @@ class NowPlayingManager {
 
     /// Task for loading artwork asynchronously
     private var artworkLoadTask: Task<Void, Never>?
+
+    /// Whether an artwork fetch is in flight. A `.wal` skin's `<AlbumArt>` polls
+    /// `AlbumArtLayer.isLoading()` from its own timer to show a spinner while the cover arrives, so
+    /// this has to be the real state of the one fetch this app runs, not a constant.
+    var isLoadingArtwork: Bool { artworkLoadTask != nil }
     
     // MARK: - Initialization
     

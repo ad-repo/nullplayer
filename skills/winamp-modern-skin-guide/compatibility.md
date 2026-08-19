@@ -296,14 +296,65 @@ By area:
   (`newDynamicContainer("browserpro").getLayout(…).findObject(…)`). A skin that wants two copies of one
   window gets one. Phase 25
 - **`<object>.setFontSize(px)`** — writes the same pixel height the XML attribute carries. Phase 25
-- **Layer FX** (`fx_setEnabled`, `fx_setWrap`, `fx_setRect`, `fx_setBgFx`, `fx_setClear`,
-  `fx_setRealtime`, `fx_setLocalized`, `fx_setBilinear`, `fx_setSpeed`, `fx_setGridSize(w, h)`,
-  `fx_update`) — **accepted and inert**. Winamp warps a layer through a grid whose per-pixel source is
-  the skin's own `fx_onGetPixel*` callbacks; we draw the layer undistorted. Refusing them is not "no
-  effect" but no display at all — Defix configures its analog VU meter with eight of them in one
-  `onScriptLoaded`. Phase 25
+- **Layer FX** (`fx_setEnabled/Wrap/Rect/BgFx/Clear/Realtime/Localized/Bilinear/AlphaMode/Speed`,
+  `fx_setGridSize(w, h)`, `fx_update`, `fx_restart`, and the `fx_get*` readbacks) — **implemented**,
+  Phase 28. A skin's rotating parts are not sprite strips: an analog VU needle or a spinning cassette
+  reel is one still image warped through the skin's own callbacks, so before this they were silently
+  **frozen** (nothing failed, and the compatibility report stayed clean while most of a skin's meters
+  stood still).
+
+  How it works here: the layer is covered by a grid of `fx_setGridSize` **cells**; the skin's callback
+  is evaluated once per grid **vertex** per frame into a source-coordinate mesh, and every destination
+  pixel takes its source from the bilinear interpolation of the four vertices around it. A rotation is
+  affine in x/y, so even a 1×1 grid (Defix's cassette reels) reproduces one exactly.
+  `WasabiLayerFX.swift` owns the model and the resampler; `WinampModernScriptRuntime.layerFXMesh`
+  evaluates; `WasabiSceneRenderer.layerFXProvider` draws.
+
+  **`fx_onGetPixelR` answers with the source *angle* and `fx_onGetPixelD` with the source *distance*
+  (R for rotation, D for distance)** — the opposite of how the parameter names in `std.mi` read.
+  Measured from Defix's needle and cassette scripts, which return `argument0 + rotation` where the
+  rotation is degrees ÷ 57.295 (= 180/π); a radius answer would slide a needle along its own length
+  instead of sweeping it. Coordinates are normalized 0…1, top-left origin, centre (0.5, 0.5), angle
+  growing clockwise.
+
+  Not implemented, and not yet asked for by anything measured: `fx_onGetPixelA` (per-vertex alpha),
+  `fx_setBgFx(1)` (warping the backdrop rather than the layer's own image), and `fx_setSpeed` as a
+  host-driven animation clock — the skins in the corpus drive their own timers and call `fx_update()`.
+
+  A warp is a CPU resample on the paint path, so it is bounded: vertices per layer and warped surface
+  size both have ceilings, and the mesh is cached until `fx_update()` unless `fx_setRealtime(1)`.
+- **MAKI's math library** — `sqrt`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`,
+  `log`, `log10`, `exp`, `abs`, all `System` methods. Phase 28. Domain errors answer 0 rather than a
+  NaN that would travel into a coordinate. Missing `sqrt` alone kept Defix's needles frozen *after*
+  Layer FX worked: its `onTimer` aborted on the first call, every tick, and the abort is invisible
+  unless you look at `WINAMP_MODERN_RENDER_SCRIPTS=1`'s `failed=` column
+- **`onSetVisible` when a window is shown** — Phase 28. A `.wal` skin starts and stops its animation
+  from this handler (Defix's cassette reels switch their Layer FX on there; its speaker cabinets start
+  their `getVisBand` timer there), and showing a native window with `orderFront` never touches the
+  Wasabi graph. Every visible object in the container's subtree is told, once per actual change
+  (`notifyContainerVisibility(containerID:visible:)`)
 - **`<object>.navigateUrl(url)`** — the `<browser>` form of `System.navigateUrl`. Denied like it, but
   **quietly**: refusing the method would abort the handler that called it. Phase 25
+- **`System.getVisBand(channel, band)`** — one spectrum band as a vis byte (0…255), the unit
+  `getLeftVUMeter`/`getRightVUMeter` already answer in and the one meter artwork is cut for. `std.mi`
+  documents the band range as **0…75**, so a request is resampled into whatever band count the host's
+  analyser produces (75 today) rather than indexed straight into it. The source is the one spectrum
+  tap every other visualization window consumes (`AudioEngine` → `updateSpectrum` →
+  `host.spectrumLevels`); it is **mono**, so both channels answer the same value — a stereo split
+  would mean a second FFT for skins alone. Phase 27
+- **`System.getLeftVUMeter()` / `getRightVUMeter()`** — program level per channel as a vis byte
+  (0…255). **Not the spectrum**, and this is the distinction that matters: a VU meter reads
+  *amplitude* — RMS in dB against a noise floor, with attack/decay ballistics — so it is driven by the
+  same stereo level model the PeppyMeter window uses (`PeppyMeterLevelModel`, registered alongside the
+  spectrum consumer and released with it). Answering from the bar-display tap instead was wrong twice
+  over: that tap is mono, so both needles moved together, and its bands are already normalised so bars
+  fill their window, so ×255 sat at the ceiling and **every needle in every skin pinned** — visible on
+  Defix's four analog VU styles and on any other skin that draws a meter. Phase 27.5
+- **`<AlbumArt>.isLoading()`** — whether the current track's cover is still being fetched, from
+  `NowPlayingManager`'s real in-flight state; false for a track that already has its cover, for a
+  cached miss, with nothing playing, and for any receiver that is not an `<AlbumArt>`. Skins poll it
+  from a timer (Defix's playlist window aborted its `ontimer` on the miss every single tick), so a
+  stub answering "yes" would be a spinner that never stops. Phase 27
 - **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
 
 **Events dispatched to scripts.** Occurrence counts are call sites across the ClassicPro engine's
@@ -397,8 +448,9 @@ opens under its tab, measured with `RENDER_CLICK`, which prints the point the me
 | `getComponentName` | 2 | naming a hosted component |
 | `getDecoderName` / `deleteByPos` | 1 / 1 | minor |
 
-Across the whole engine (every container, not just the main window) the list also carries the `fx_*`
-AnimatedLayer effects family, the `Winamp:Browser` events, `setClipboardText` (8) and `shutdown` (1).
+Across the whole engine (every container, not just the main window) the list also carries the
+`Winamp:Browser` events, `setClipboardText` (8) and `shutdown` (1). The `fx_*` family was on this list
+until Phase 28 implemented it.
 
 Phase 12 emptied the queue a second time, after `Wasabi:Frame` let the SUI's own scripts run for the
 first time: `additem`, `getnumchildren`, `getgroup`, `getcurrenttrackrating`, `oneqfreqchanged` (a
@@ -497,6 +549,62 @@ an equalizer.
 The skin-specific ADD / REM / SEL / MISC button menus are **inert**. They open Winamp's own nested
 popup menus over playlist-manager operations NullPlayer has no equivalent for; the buttons draw and
 respond to hover, and clicking one does nothing.
+
+### Skin Windows — the windows a skin declares but binds no button to
+
+The same shape of gap as Skin Settings, and reported the same way (*"there is no way to open the
+speaker windows"*). A `.wal` skin can declare a container, name it, and bind nothing to it, because in
+Winamp it appears in **Winamp's Windows menu**. Defix declares `SPEAKER 1`, `SPEAKER 2` and its
+configurator that way; all three were built, rendered and ordered out, with no route to show them.
+
+**Winamp Modern → Skin Windows** is that menu. What it lists is decided by the skin's own markup:
+
+- a container is offered when it carries `name=` and does **not** carry `nomenu="1"` — the attribute
+  Winamp itself uses. Defix marks its `browserpro`, `notifier` and two `searchresults` popups
+  `nomenu="1"`; its `SUI` and `VISCON` carry no name because its own buttons reach them
+- the main player is never listed, and neither is a container the **surface catalog** already routes
+  (`WinampModernSurfaceCatalog.routedContainerIDs`) — the playlist/EQ/library have their own menu
+  items, and a second entry would be a second route to one window. Container *kind* is not enough to
+  spot those: Defix's `pledit` declares no `component=` GUID and is recognized from the declarative
+  inventory
+- it is deliberately **not** routed through `WinampModernSurfaceCoordinator`: that resolves a playback
+  surface across embedded / declared / classic homes, and these are skin windows with no NullPlayer
+  surface behind them
+
+Measured: Defix → `SPEAKER 1`, `SPEAKER 2`, `Skin Settings`; mmd3 → `ColorThemes`; cPro-Bento →
+`Widgets Manager`; CornerAmp Redux → `Color Themes`; T800 → `Quadhelix Home`; stock Winamp Modern →
+none. The harness prints the list as `RENDER-DUMP skin windows:`. Phase 27.
+
+**Still missing:** `default_visible="1"` on an auxiliary container is not honoured, so a skin that
+expects one of these open at load (Defix's configurator) starts with it closed.
+
+### Skin Settings — the options a skin registers but binds nothing to
+
+A Winamp 5.x skin registers its own options with `Config.newItem(name, guid)` +
+`ConfigItem.newAttribute(value, default)` and expects **Winamp's preferences dialog** to list them.
+A skin that binds no control of its own to an attribute therefore leaves it unreachable in a host
+that has no such dialog. Defix Hi-End 200 registers 38 attributes that way, including its eight
+display styles (`Audio cassette` and seven analog VU meters, all of whose artwork ships) and its
+three songticker modes.
+
+**Winamp Modern → Skin Settings...** is that missing dialog:
+
+- **Generic.** It lists exactly what the loaded skin registered, in registration order, grouped by
+  the item that owns it. No skin is named anywhere in it.
+- **Value shape decides the control.** A `0`/`1` value draws as a checkbox; anything else as a text
+  field, because the skin's meaning for it is unknowable from here. Winamp's config is a tree, and a
+  root item registers one attribute per **child item** whose value is that child's GUID (6 of Defix's
+  38); those are navigation, not options, and stay out of the list.
+- **One write route.** Changes go through `WinampModernScriptRuntime.setConfigAttribute`, the same
+  path a `cfgattrib` control the skin drew itself uses, so the skin applies the change from its own
+  `onDataChanged` exactly as it would in Winamp — and a switch in this window and the control that
+  mirrors it in the skin cannot disagree.
+- **Empty state.** A skin that registers nothing shows **no menu entry**, rather than an empty window.
+- Palette-themed through `WinampModernSurfaceStyle` like every other NullPlayer-drawn surface, and
+  torn down with the skin it belongs to.
+
+The headless probe is `WINAMP_MODERN_RENDER_SETTINGS=1` on the render-dump harness, which prints
+every registered attribute with its current and default value. Phase 27.
 
 ## ClassicPro engine policy
 

@@ -842,6 +842,39 @@ class ContextMenuBuilder {
             importItem.target = MenuActions.shared
             winampModernMenu.addItem(importItem)
 
+            // The skin's own extra windows (Phase 27.7). A `.wal` skin declares windows it binds no
+            // button to and expects Winamp's Windows menu to open — Defix's two speaker cabinets and
+            // its configurator are declared, render correctly, and were unreachable without this.
+            let skinWindows = WindowManager.shared.winampModernSkinWindows
+            if !skinWindows.isEmpty {
+                let windowsItem = NSMenuItem(title: "Skin Windows", action: nil, keyEquivalent: "")
+                let windowsMenu = NSMenu()
+                windowsMenu.autoenablesItems = false
+                for skinWindow in skinWindows {
+                    let item = NSMenuItem(title: skinWindow.name,
+                                          action: #selector(MenuActions.toggleWinampModernSkinWindow(_:)),
+                                          keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = skinWindow.id
+                    if skinWindow.isVisible { item.state = .on }
+                    windowsMenu.addItem(item)
+                }
+                windowsItem.submenu = windowsMenu
+                winampModernMenu.addItem(windowsItem)
+                winampModernMenu.addItem(NSMenuItem.separator())
+            }
+
+            // Only when the loaded skin registered settings of its own: many skins register none,
+            // and an empty window is worse than no entry point (Phase 27.3).
+            if WindowManager.shared.hasWinampModernSkinSettings {
+                let settingsItem = NSMenuItem(title: "Skin Settings...",
+                                              action: #selector(MenuActions.showWinampModernSkinSettings),
+                                              keyEquivalent: "")
+                settingsItem.target = MenuActions.shared
+                winampModernMenu.addItem(settingsItem)
+                winampModernMenu.addItem(NSMenuItem.separator())
+            }
+
             let engineInstalled = ClassicProEngineStore.shared.isInstalled
             let engineItem = NSMenuItem(
                 title: engineInstalled ? "Reimport ClassicPro Engine..." : "Import ClassicPro Engine...",
@@ -4167,6 +4200,15 @@ class MenuActions: NSObject {
             alert.alertStyle = .warning
             alert.runModal()
         }
+    }
+
+    @objc func toggleWinampModernSkinWindow(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        WindowManager.shared.toggleWinampModernSkinWindow(id: id)
+    }
+
+    @objc func showWinampModernSkinSettings() {
+        WindowManager.shared.showWinampModernSkinSettings()
     }
 
     @objc func importClassicProEngineFromFile() {

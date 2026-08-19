@@ -489,6 +489,13 @@ extension MakiMethodDispatching {
 }
 
 final class MakiInterpreter {
+    /// `WINAMP_MODERN_MAKI_TRACE=<substring>` prints every instruction of the programs whose XUI
+    /// parameter or source path contains the substring, with the top of the value stack — the only
+    /// way to see *what a handler computes* when its inputs come from the host and its output is a
+    /// single number (Phase 28: which term zeroed a needle's rotation).
+    static let traceFilter = ProcessInfo.processInfo.environment["WINAMP_MODERN_MAKI_TRACE"]?.lowercased()
+    static var traceBudget = Int(ProcessInfo.processInfo.environment["WINAMP_MODERN_MAKI_TRACE_LIMIT"] ?? "4000") ?? 4000
+
     let limits: MakiExecutionLimits
     weak var dispatcher: MakiMethodDispatching?
 
@@ -507,8 +514,18 @@ final class MakiInterpreter {
         self.limits = limits
     }
 
-    func execute(program: MakiProgram, at start: Int, arguments: [MakiValue] = []) throws {
-        guard !isTornDown, let dispatcher else { return }
+    /// Run one handler and answer with **what it returned**.
+    ///
+    /// Every event before Phase 28 was a notification, so the value a handler left behind was thrown
+    /// away. Layer FX is the first host→script call whose return value is the entire point
+    /// (`fx_onGetPixelR` answers with the coordinate to sample from), so the value on top of the
+    /// stack when the program returns is carried back out. MAKI's compiler emits `push <value>; ret`
+    /// for `return <value>;`, and a handler that returns nothing leaves whatever the last statement
+    /// pushed — so the value is only meaningful for a handler declared to return one, and every
+    /// existing caller still ignores it.
+    @discardableResult
+    func execute(program: MakiProgram, at start: Int, arguments: [MakiValue] = []) throws -> MakiValue {
+        guard !isTornDown, let dispatcher else { return .null }
         var stack = arguments.reversed().map(MakiVariable.temporary)
         var callStack: [Int] = []
         var instructionPointer = start
@@ -555,6 +572,14 @@ final class MakiInterpreter {
 
             let instruction = program.instructions[instructionPointer]
             var next = instructionPointer + 1
+            if let needle = Self.traceFilter, Self.traceBudget > 0,
+               (program.parameter ?? "").lowercased().contains(needle)
+                || program.source.path.lowercased().contains(needle) {
+                Self.traceBudget -= 1
+                print("MAKI \(instructionPointer): op\(instruction.opcode) "
+                      + "top=\(stack.last.map { $0.value.stringValue } ?? "-") "
+                      + "under=\(stack.count > 1 ? stack[stack.count - 2].value.stringValue : "-")")
+            }
             switch instruction.opcode {
             case 1:
                 try push(program.variables[try argument(instruction, variable: true)])
@@ -651,7 +676,7 @@ final class MakiInterpreter {
             case 33:
                 guard let returnAddress = callStack.popLast() else {
                     lastInstructionCount = instructionCount
-                    return
+                    return stack.last?.value ?? .null
                 }
                 next = returnAddress
             case 40:
@@ -704,7 +729,18 @@ final class MakiInterpreter {
             case 74:
                 try push(.temporary(.boolean(!(try pop().value.truthy))))
             case 76:
-                try push(.temporary(.integer(-(try pop().value.integerValue))))
+                // Unary minus keeps the operand's type. Negating through `integerValue` truncated
+                // every fractional value to 0: Defix's VU needle computes its angle as
+                // `range * -(level / 127) + range`, so `-(0.29)` became `-0` and the needle had
+                // exactly two positions — full rest below the divisor and full deflection above it.
+                switch try pop().value {
+                case .integer(let value): try push(.temporary(.integer(0 &- value)))
+                case .boolean(let value): try push(.temporary(.integer(value ? -1 : 0)))
+                case .float(let value): try push(.temporary(.float(-value)))
+                case .double(let value): try push(.temporary(.double(-value)))
+                case .string(let value): try push(.temporary(.integer(-(Int32(value) ?? 0))))
+                case .null, .object: try push(.temporary(.integer(0)))
+                }
             case 80, 81:
                 let rhs = try pop().value
                 let lhs = try pop().value
@@ -731,6 +767,7 @@ final class MakiInterpreter {
             instructionPointer = next
         }
         lastInstructionCount = instructionCount
+        return stack.last?.value ?? .null
     }
 
     func teardown() {

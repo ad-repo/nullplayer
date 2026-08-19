@@ -83,6 +83,30 @@ enum WinampModernContainerTopology {
     /// Marks a container appended by `WasabiSurfaceSynthesizer` rather than declared by the skin.
     static let synthesizedAttribute = "nullplayer_synthesized"
 
+    /// Whether this container belongs in the host's window menu — the list Winamp puts in its own
+    /// Windows menu, and the **only** way to open a window a skin declares but binds no button to.
+    ///
+    /// The rule is the skin's own markup, not a heuristic: a container is listed when it carries a
+    /// `name` and does not carry `nomenu="1"`. Defix says exactly this — `Config name="Skin Settings"`,
+    /// `SPEAKER 1`, `SPEAKER 2` and `Playlist Editor` are named and menu-visible, while its
+    /// `browserpro`, `notifier` and two `searchresults` popups all declare `nomenu="1"`, and its `SUI`
+    /// and `VISCON` carry no name at all because the skin's own buttons reach them.
+    ///
+    /// The main player is excluded (it is never closed from a list), and so is any container the
+    /// surface catalog already routes — the playlist, equalizer and library have their own menu
+    /// items, and a second entry here would be a second route to one window, which the catalog exists
+    /// to prevent.
+    static func isListedInWindowMenu(_ info: WinampModernContainerInfo) -> Bool {
+        guard !info.isMainPlayer, !info.isSynthesized, info.kind == nil else { return false }
+        guard let name = info.object.attributes["name"], !name.isEmpty else { return false }
+        return info.object.attributes["nomenu"] != "1"
+    }
+
+    /// The container's own display name, which is what the menu shows.
+    static func displayName(of info: WinampModernContainerInfo) -> String {
+        info.object.attributes["name"] ?? info.id
+    }
+
     /// A container declares the surface it *is* with `component="guid:…"` — mmd3's
     /// `<container id="Pledit" component="guid:{45F3F7C1-…}">`. The id is not evidence: `Pledit`,
     /// `MLibrary`, and `eq` only look like their kinds by convention, and reading them as such would

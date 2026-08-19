@@ -17,6 +17,9 @@ final class WinampModernMainView: NSView {
             guard skinScale != oldValue else { return }
             setFrameSize(scaledCanvasSize)
             for surface in librarySurfaces.values { surface.applySkinScale(skinScale) }
+            animatingRectsCache = nil
+            objectRectCache.removeAll()
+        visualizationRectsCache = nil
             needsLayout = true
             needsDisplay = true
         }
@@ -94,18 +97,67 @@ final class WinampModernMainView: NSView {
         renderer.themeCoordinator.addObserver(self) { [weak self] in
             self?.themeDidChange()
         }
-        if renderer.sceneNodes().contains(where: {
-            let type = $0.object.typeName.lowercased()
-            if ["animatedlayer", "songticker"].contains(type) { return true }
-            // A plain `text` that opts into ticker scrolling also needs the redraw clock.
-            let ticker = ($0.object.attributes["ticker"] ?? "0").lowercased()
-            return type == "text" && !["0", "off", "false", "no"].contains(ticker)
-        }) {
-            animationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
-                self?.needsDisplay = true
-            }
+        updateAnimationTimer()
+    }
+
+    /// Run the 30 Hz repaint clock when this scene has anything that moves on its own.
+    ///
+    /// Re-evaluated rather than decided once: a **Layer FX** layer only becomes one when its script
+    /// turns FX on, which happens in `onScriptLoaded` — after this view is built — and a skin may
+    /// turn it on later still (Defix's display styles are switched from its settings window).
+    func updateAnimationTimer() {
+        // Cheap first: this is reachable from a script mutation, which for a warped layer happens
+        // 30 times a second, and the scene walk below is not something to do on that path.
+        guard !isTornDown, animationTimer == nil else { return }
+        animatingRectsCache = nil
+        objectRectCache.removeAll()
+        visualizationRectsCache = nil
+        guard !animatingRects().isEmpty else { return }
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
+            self?.repaintAnimatingObjects()
         }
     }
+
+    /// The boxes of everything in this scene that moves on its own — animated layers, song tickers,
+    /// ticker text, and any layer whose script has switched Layer FX on.
+    ///
+    /// Repainting *these* rather than the whole window is what keeps an animation smooth: Defix's
+    /// player costs 19.3 ms a frame repainted whole at Retina scale and 6.9 ms clipped to its meters,
+    /// and a 33 ms animation step cannot survive the first number. Cached because the scene walk is
+    /// not free and the boxes only move when the scene itself does.
+    private func animatingRects() -> [NSRect] {
+        if let animatingRectsCache { return animatingRectsCache }
+        let rects = renderer.sceneNodes().compactMap { node -> NSRect? in
+            let object = node.object
+            let type = object.typeName.lowercased()
+            var animates = ["animatedlayer", "songticker"].contains(type)
+            if !animates, type == "text" {
+                // A plain `text` that opts into ticker scrolling also needs the redraw clock.
+                let ticker = (object.attributes["ticker"] ?? "0").lowercased()
+                animates = !["0", "off", "false", "no"].contains(ticker)
+            }
+            if !animates { animates = scripts.layerFXState(of: object)?.enabled == true }
+            guard animates else { return nil }
+            return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
+        }
+        animatingRectsCache = rects
+        return rects
+    }
+
+    private func repaintAnimatingObjects() {
+        guard !isTornDown else { return }
+        let rects = animatingRects()
+        // A scene with a great many moving parts is cheaper to repaint in one pass than to invalidate
+        // piece by piece.
+        guard !rects.isEmpty, rects.count <= 24 else {
+            needsDisplay = true
+            return
+        }
+        for rect in rects { setNeedsDisplay(rect) }
+    }
+
+    /// Dropped whenever the scene itself may have changed shape.
+    private var animatingRectsCache: [NSRect]?
 
     /// Switch this view's container to one of its own layouts. Returns false when the container has
     /// no such layout, so a script's `switchToLayout` on a container we do not host is a no-op rather
@@ -113,6 +165,9 @@ final class WinampModernMainView: NSView {
     @discardableResult
     func activateLayout(id: String) -> Bool {
         guard (try? renderer.activateLayout(id: id)) != nil else { return false }
+        animatingRectsCache = nil
+        objectRectCache.removeAll()
+        visualizationRectsCache = nil
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
         // A different layout is a different scene, so nothing carries over: every object in it hears
@@ -124,6 +179,9 @@ final class WinampModernMainView: NSView {
 
     /// Resize this view's canvas (clamped by the active layout) and its window with it.
     func applyCanvasResize(_ proposed: CGSize) {
+        animatingRectsCache = nil
+        objectRectCache.removeAll()
+        visualizationRectsCache = nil
         _ = renderer.resize(to: proposed)
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
@@ -142,8 +200,24 @@ final class WinampModernMainView: NSView {
     ///
     /// Not gated on `drivesScripts`: a resize is addressed to a *container*, not to the runtime's
     /// single-owner callbacks, so every container window seeds its own scene (Phase 13.3).
+    /// Tell this container's scripts that its window came on screen, or left it.
+    ///
+    /// A `.wal` skin starts and stops its animation from `onSetVisible` — Defix's cassette reels turn
+    /// their Layer FX on there, and its speaker cabinets start their timer there — so a window shown
+    /// with `orderFront` alone (an AppKit call the graph never hears about) leaves the scene frozen.
+    func setSceneVisible(_ visible: Bool) {
+        scripts.notifyContainerVisibility(containerID: containerID, visible: visible)
+        if visible {
+            updateAnimationTimer()
+            needsDisplay = true
+        }
+    }
+
     func scriptsDidStart() {
         dispatchResize(seeding: true)
+        // A skin turns Layer FX on from `onScriptLoaded`, so only now can this scene know whether it
+        // has a warped layer to keep repainting.
+        updateAnimationTimer()
     }
 
     /// Tell whatever moved that it moved, after a change this view did not itself cause — a script
@@ -183,9 +257,19 @@ final class WinampModernMainView: NSView {
             // A script can add or remove a component holder — cPro builds its Media Library holder
             // when that tab is first opened — so a graph change has to re-run surface reconciliation,
             // not just repaint. Without this the tab opens onto an empty hole.
+            self?.animatingRectsCache = nil
+            self?.objectRectCache.removeAll()
+            self?.visualizationRectsCache = nil
             self?.needsLayout = true
             self?.needsDisplay = true
+            // A script can also turn Layer FX on outside load (switching Defix's display style does
+            // exactly that), and the warp needs the repaint clock from that moment on.
+            self?.updateAnimationTimer()
         }
+        // The light path a warped layer takes 30 times a second: repaint, nothing else.
+        scripts.repaintRequested = { [weak self] in self?.needsDisplay = true }
+        // Lighter still when the runtime can name what moved — only that rect is repainted.
+        scripts.objectRepaintRequested = { [weak self] object in self?.setNeedsDisplay(for: object) }
         scripts.actionRequested = { [weak self] action, parameter in
             self?.performAction(action: action, parameter: parameter)
         }
@@ -301,9 +385,35 @@ final class WinampModernMainView: NSView {
         layoutHostedSubviews()
     }
 
+    /// Invalidate just one skin object's box (plus a pixel of slop for resampling at the edges).
+    ///
+    /// Falls back to the whole view when this scene does not contain the object — it belongs to
+    /// another container's window, and only that window's view can place it.
+    private func setNeedsDisplay(for object: WasabiObject) {
+        guard !isTornDown else { return }
+        // Cached: this runs on the animation path (per warped layer, per script tick), and resolving
+        // geometry walks the scene.
+        if let cached = objectRectCache[ObjectIdentifier(object)] {
+            setNeedsDisplay(cached)
+            return
+        }
+        guard let frame = renderer.resolvedGeometry(of: object)?.frame else {
+            needsDisplay = true
+            return
+        }
+        let rect = viewRect(fromSkin: frame).insetBy(dx: -2, dy: -2)
+        objectRectCache[ObjectIdentifier(object)] = rect
+        setNeedsDisplay(rect)
+    }
+
+    /// Per-object view rects for the targeted-repaint path, dropped with `animatingRectsCache`.
+    private var objectRectCache: [ObjectIdentifier: NSRect] = [:]
+
     override func draw(_ dirtyRect: NSRect) {
         guard !isTornDown, let context = NSGraphicsContext.current?.cgContext else { return }
-        context.clear(bounds)
+        // Only what is being repainted is cleared: a partial repaint (a meter that moved) must not
+        // blank the rest of the window it is not going to draw again.
+        context.clear(dirtyRect)
         context.saveGState()
         if skinScale != 1 { context.scaleBy(x: skinScale, y: skinScale) }
         renderer.draw(in: context, pressed: pressedObject?.stableID,
@@ -561,8 +671,31 @@ final class WinampModernMainView: NSView {
         // Delivering levels without invalidating left the analyzer repainting only by luck: cPro-Bento
         // has animated layers and therefore a 30 Hz redraw timer, so its bars moved, but a skin whose
         // scene holds nothing animated would never repaint its `<vis>` from a spectrum update at all.
-        needsDisplay = true
+        //
+        // Only the visualization boxes, though. This arrives at the audio tap's rate, and repainting
+        // the whole window for it costs Defix 19.3 ms a frame at Retina scale — on the same main
+        // thread the skin's own animation is trying to use.
+        let rects = visualizationRects()
+        guard !rects.isEmpty else { return }
+        guard rects.count <= 24 else {
+            needsDisplay = true
+            return
+        }
+        for rect in rects { setNeedsDisplay(rect) }
     }
+
+    /// The boxes of every `<vis>`/`<eqvis>` in this scene, cached with the other animation rects.
+    private func visualizationRects() -> [NSRect] {
+        if let visualizationRectsCache { return visualizationRectsCache }
+        let rects = renderer.sceneNodes().compactMap { node -> NSRect? in
+            guard ["vis", "eqvis"].contains(node.object.typeName.lowercased()) else { return nil }
+            return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
+        }
+        visualizationRectsCache = rects
+        return rects
+    }
+
+    private var visualizationRectsCache: [NSRect]?
 
     func teardown() {
         guard !isTornDown else { return }

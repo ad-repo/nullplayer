@@ -484,11 +484,19 @@ struct WasabiSceneNode {
 }
 
 final class WasabiSceneRenderer {
+    /// `WINAMP_MODERN_DRAW_PROFILE=1` accumulates per-object draw time, so "which node costs the
+    /// frame?" is answerable from the harness rather than from a sampling profiler.
+    static let profilesDrawing = ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAW_PROFILE"] != nil
+    static var drawProfile: [String: TimeInterval] = [:]
+
     let loadedSkin: WinampModernLoadedSkin
     let host: WinampModernHost
     /// Reads a `cfgattrib`-bound control's current value. Supplied by the script runtime, which owns
     /// the configuration store; nil in a renderer built without one (the pixel tests).
     var configStateProvider: ((WasabiObject) -> Bool)?
+    /// The Layer FX warp for one object, or nil when it has none. Supplied by the script runtime,
+    /// which owns the FX state and runs the skin's `fx_onGetPixel*` callbacks (Phase 28).
+    var layerFXProvider: ((WasabiObject) -> WasabiLayerFXMesh?)?
     let resources: WasabiResourceCache
     let themeCoordinator: WinampModernThemeCoordinator
     let themes: WasabiColorThemeCatalog
@@ -548,10 +556,13 @@ final class WasabiSceneRenderer {
     func themeDidChange() {
         resources.invalidateTheme()
         paletteCache = nil
+        warpSourceCache.removeAll()
         loadedSkin.runtime.graph.markAllDirty(.appearance)
     }
 
     private var paletteCache: WasabiPalette?
+    /// Rasterized sources for the Layer FX warp, keyed by image + size.
+    private var warpSourceCache: [WarpSourceKey: [UInt8]] = [:]
 
     /// The colours NullPlayer's own surfaces draw with inside this skin, resolved through the very
     /// same resource + gamma path the skin's own drawing uses.
@@ -756,8 +767,17 @@ final class WasabiSceneRenderer {
         context.translateBy(x: 0, y: canvasSize.height)
         context.scaleBy(x: 1, y: -1)
         context.interpolationQuality = .high
-        for node in sceneNodes() {
-            draw(node, in: context, pressed: pressed, hovered: hovered)
+        if Self.profilesDrawing {
+            for node in sceneNodes() {
+                let start = Date()
+                draw(node, in: context, pressed: pressed, hovered: hovered)
+                let key = "\(node.object.typeName.lowercased())#\(node.object.xmlID ?? "-")"
+                Self.drawProfile[key, default: 0] += Date().timeIntervalSince(start)
+            }
+        } else {
+            for node in sceneNodes() {
+                draw(node, in: context, pressed: pressed, hovered: hovered)
+            }
         }
         context.restoreGState()
         loadedSkin.runtime.markFirstPaintComplete()
@@ -1077,7 +1097,14 @@ final class WasabiSceneRenderer {
                                                   pressed: pressed == object.stableID,
                                                   hovered: hovered == object.stableID),
                   let bitmap = resources.bitmap(identifier: imageID) {
-            if type == "animatedlayer" {
+            // Layer FX first: the warp replaces the layer's own draw, and it applies to an animated
+            // layer's current frame exactly as it does to a plain one (Defix's cassette reels are
+            // rotated single images; its needles are too).
+            if let mesh = layerFXProvider?(object),
+               let image = layerImage(bitmap, object: object, type: type),
+               drawWarped(image, in: node.frame, mesh: mesh, context: context) {
+                // drawn
+            } else if type == "animatedlayer" {
                 drawAnimated(bitmap, object: object, frame: node.frame, context: context)
             } else {
                 draw(bitmap, object: object, frame: node.frame, context: context)
@@ -1374,8 +1401,84 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
-    private func drawAnimated(_ bitmap: WasabiBitmap, object: WasabiObject,
-                              frame: CGRect, context: CGContext) {
+    /// Largest warped surface, per axis. A warp is a CPU resample of the whole layer, so the work is
+    /// its area; every FX layer measured in the corpus is a few hundred pixels square (Defix's
+    /// needles are 264×264), and this is the ceiling that keeps a skin asking for a full-window warp
+    /// off the frame budget.
+    private static let maximumWarpExtent = 1_024
+
+    /// Draw `image` warped by `mesh`, filling `rect`. Returns false when the warp could not be built,
+    /// so the caller can fall back to the layer's ordinary draw rather than paint nothing.
+    ///
+    /// The mesh gives the source coordinate at each grid **vertex**; every destination pixel takes
+    /// its source from the bilinear interpolation of the four vertices around it. A rotation is
+    /// affine in x/y, so a 1×1 grid — Defix's cassette reels — reproduces one exactly, and a warp
+    /// that is not affine gets as much fidelity as the grid the skin asked for.
+    @discardableResult
+    private func drawWarped(_ image: CGImage, in rect: CGRect, mesh: WasabiLayerFXMesh,
+                            context: CGContext) -> Bool {
+        let width = min(Self.maximumWarpExtent, max(1, Int(rect.width.rounded())))
+        let height = min(Self.maximumWarpExtent, max(1, Int(rect.height.rounded())))
+        guard let source = warpSourcePixels(image, width: width, height: height),
+              let warpedPixels = mesh.resample(source: source, width: width, height: height),
+              let warped = Self.image(fromPixels: warpedPixels, width: width, height: height)
+        else { return false }
+        drawImage(warped, in: rect, context: context)
+        return true
+    }
+
+    /// The layer's own image rasterized at the size it draws at, in top-left row order — the space
+    /// the mesh's normalized coordinates are in. Cached: the source only changes when the layer's
+    /// bitmap or its box does, while the mesh changes every frame a meter moves.
+    private func warpSourcePixels(_ image: CGImage, width: Int, height: Int) -> [UInt8]? {
+        let key = WarpSourceKey(image: ObjectIdentifier(image), width: width, height: height)
+        if let cached = warpSourceCache[key] { return cached }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = pixels.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+        // Bounded: a handful of FX layers per skin, and one entry each. Cleared wholesale rather than
+        // aged, because the only thing that invalidates an entry is the layer being redrawn at a
+        // different size, which happens on resize and theme changes.
+        if warpSourceCache.count > 16 { warpSourceCache.removeAll() }
+        warpSourceCache[key] = pixels
+        return pixels
+    }
+
+    private struct WarpSourceKey: Hashable {
+        let image: ObjectIdentifier
+        let width: Int
+        let height: Int
+    }
+
+    private static func image(fromPixels pixels: [UInt8], width: Int, height: Int) -> CGImage? {
+        var pixels = pixels
+        return pixels.withUnsafeMutableBytes { bytes -> CGImage? in
+            guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return nil }
+            return context.makeImage()
+        }
+    }
+
+    /// The single image a bitmap layer paints right now: an animated layer's current frame, or the
+    /// whole bitmap for a plain one. Shared with the Layer FX path, which warps exactly that image.
+    private func layerImage(_ bitmap: WasabiBitmap, object: WasabiObject, type: String) -> CGImage? {
+        guard type == "animatedlayer" else { return bitmap.image }
+        return animatedFrameImage(bitmap, object: object)
+    }
+
+    private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
         let frameWidth = max(1, Int(Double(object.attributes["framewidth"] ?? object.attributes["w"] ?? "") ?? Double(bitmap.width)))
         let frameHeight = max(1, Int(Double(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Double(bitmap.height)))
         let columns = max(1, bitmap.width / frameWidth)
@@ -1387,8 +1490,13 @@ final class WasabiSceneRenderer {
         let row = frameIndex / columns
         let crop = CGRect(x: column * frameWidth, y: row * frameHeight,
                           width: frameWidth, height: frameHeight)
-        guard crop.maxY <= CGFloat(bitmap.height), crop.maxX <= CGFloat(bitmap.width),
-              let image = bitmap.image.cropping(to: crop) else { return }
+        guard crop.maxY <= CGFloat(bitmap.height), crop.maxX <= CGFloat(bitmap.width) else { return nil }
+        return bitmap.image.cropping(to: crop)
+    }
+
+    private func drawAnimated(_ bitmap: WasabiBitmap, object: WasabiObject,
+                              frame: CGRect, context: CGContext) {
+        guard let image = animatedFrameImage(bitmap, object: object) else { return }
         drawImage(image, in: frame, context: context)
     }
 

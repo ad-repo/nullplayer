@@ -225,6 +225,35 @@ final class WinampModernPhase5Tests: XCTestCase {
         XCTAssertEqual(snapshotReads, 2, "a new track id invalidates the per-track cache")
     }
 
+    /// Phase 27: `AlbumArtLayer.isLoading()`. A skin polls this from a timer, so a permanent "yes"
+    /// is a spinner that never stops — it is true only while a fetch is genuinely in flight for a
+    /// track that has no cover yet.
+    func testArtworkIsLoadingOnlyWhileAFetchIsInFlightForAnUncoveredTrack() throws {
+        let engine = AudioEngine()
+        var loading = true
+        var snapshot: (trackID: UUID?, image: NSImage?) = (nil, nil)
+        let host = WinampModernAudioEngineHost(engine: engine, artworkLoading: { loading }) { snapshot }
+
+        XCTAssertFalse(host.isArtworkLoading, "nothing is playing, so there is nothing to load")
+
+        let track = Track(url: URL(string: "about:blank")!, title: "Current")
+        engine.setPlaylistTracks([track])
+        engine.selectTrackForDisplay(at: 0)
+        XCTAssertTrue(host.isArtworkLoading)
+
+        // The cover arriving is exactly what `artworkDidLoadNotification` announces, and what drops
+        // the host's per-track cache — without it the nil this track cached would outlive the fetch.
+        snapshot = (track.id, try makeArtwork(red: 255))
+        NotificationCenter.default.post(name: NowPlayingManager.artworkDidLoadNotification, object: nil)
+        let delivered = expectation(description: "artwork cache invalidated on the main queue")
+        DispatchQueue.main.async { delivered.fulfill() }
+        wait(for: [delivered], timeout: 2)
+        XCTAssertFalse(host.isArtworkLoading, "the cover arrived; the wait is over")
+
+        loading = false
+        XCTAssertFalse(host.isArtworkLoading)
+    }
+
     // MARK: - 5.5 / 5.6 Playlist hosting: hit-testing, scroll, rendering
 
     func testPlaylistRowHitTestingAndScroll() throws {

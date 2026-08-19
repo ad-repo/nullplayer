@@ -18,6 +18,17 @@ protocol WinampModernHost: AnyObject {
     var sampleRateHz: Int { get }
     var channelCount: Int { get }
     var albumArtwork: CGImage? { get }
+    /// Whether the cover for the current track is still being fetched — what an `<AlbumArt>` asks
+    /// with `isLoading()`. Answered truthfully rather than stubbed: a skin that polls it from a
+    /// timer treats a permanent "yes" as a spinner that never stops.
+    var isArtworkLoading: Bool { get }
+    /// Program level per channel, 0…1, for `getLeftVUMeter`/`getRightVUMeter`.
+    ///
+    /// **Not the spectrum.** A VU meter reads amplitude — RMS in dB against a noise floor, with
+    /// attack/decay ballistics — and the spectrum tap is a *display* signal: mono, and normalised so
+    /// bars fill their window. Reading a peak band out of it and calling it a channel pinned every
+    /// needle in every skin that draws one (Defix's four analog VU styles, mmd3's knobs).
+    var vuLevels: (left: Double, right: Double) { get }
     var spectrumLevels: [Float] { get set }
 
     func play()
@@ -39,6 +50,8 @@ protocol WinampModernHost: AnyObject {
 
 extension WinampModernHost {
     var albumArtwork: CGImage? { nil }
+    var isArtworkLoading: Bool { false }
+    var vuLevels: (left: Double, right: Double) { (0, 0) }
     var trackDisplayTitle: String { trackTitle }
     var bitrateKbps: Int { 0 }
     var sampleRateHz: Int { 0 }
@@ -69,15 +82,27 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     private let engine: AudioEngine
     private let consumerID: String
     private let artworkSnapshot: () -> ArtworkSnapshot
+    private let artworkLoading: () -> Bool
     private var isConsumingVisualization = false
     var spectrumLevels: [Float] = []
+
+    /// Stereo program level, driven by the same RMS + ballistics model the PeppyMeter window uses so
+    /// a needle behaves identically wherever it is drawn. Registered alongside the spectrum consumer
+    /// and released with it, so the stereo tap is idle when no `.wal` skin is loaded.
+    /// The `.wal` VU tap. Its own meter, on Winamp's linear scale — not PeppyMeter's, whose model
+    /// measures the same audio for artwork calibrated differently (`WinampModernLevelMeter`).
+    private lazy var levelMeter = WinampModernLevelMeter(consumerId: consumerID + ".vu")
+    var vuLevels: (left: Double, right: Double) { levelMeter.levels }
 
     /// The current track's cover, decoded once per track rather than per frame — `albumArtwork` is
     /// read inside `draw`, so converting an `NSImage` there would re-rasterise the art every repaint.
     private var artworkCache: (trackID: UUID, image: CGImage?)?
     private var artworkObserver: NSObjectProtocol?
 
+    // `artworkSnapshot` stays the *last* parameter: the existing call sites pass it as a trailing
+    // closure, which binds to the last function-typed parameter.
     init(engine: AudioEngine, consumerID: String = "winampModernMain",
+         artworkLoading: @escaping () -> Bool = { NowPlayingManager.shared.isLoadingArtwork },
          artworkSnapshot: @escaping () -> ArtworkSnapshot = {
              let manager = NowPlayingManager.shared
              return (manager.currentTrackId, manager.currentArtwork)
@@ -85,6 +110,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         self.engine = engine
         self.consumerID = consumerID
         self.artworkSnapshot = artworkSnapshot
+        self.artworkLoading = artworkLoading
         // `NowPlayingManager` already fetches cover art for every source (local tags, Plex, Subsonic,
         // Jellyfin, Emby) to feed the system Now Playing panel. A skin's `<AlbumArt>` wants exactly
         // that image, so this listens rather than fetching a second copy of it.
@@ -110,6 +136,13 @@ final class WinampModernAudioEngineHost: WinampModernHost {
             : nil
         artworkCache = (trackID, image)
         return image
+    }
+
+    /// True only while a fetch is actually in flight *and* this track has no cover yet — a cached
+    /// cover is not "loading", and with nothing playing there is nothing to load.
+    var isArtworkLoading: Bool {
+        guard engine.currentTrack != nil, albumArtwork == nil else { return false }
+        return artworkLoading()
     }
 
     var playbackState: PlaybackState { engine.state }
@@ -181,12 +214,14 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         guard !isConsumingVisualization else { return }
         isConsumingVisualization = true
         engine.addSpectrumConsumer(consumerID)
+        levelMeter.start()
     }
 
     func endVisualizationConsumption() {
         guard isConsumingVisualization else { return }
         isConsumingVisualization = false
         engine.removeSpectrumConsumer(consumerID)
+        levelMeter.stop()
         spectrumLevels.removeAll(keepingCapacity: false)
     }
 
