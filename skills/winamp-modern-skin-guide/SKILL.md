@@ -139,7 +139,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Surface routing | `Windows/WinampModern/WinampModernSurfaceCoordinator.swift` |
 | Embedded library surface | `Windows/WinampModern/WinampModernLibrarySurfaceView.swift` |
 
-Design records and per-phase handoffs: `docs/winamp-modern/`.
+Design records and per-phase handoffs: `docs/winamp-modern/` — see its `INDEX.md`.
 
 ## The pipeline
 
@@ -225,6 +225,7 @@ network. `messagebox` is denied; `navigateurl` is a no-op.
   index. Each measured skin's detail is `skins/<skin>.md`. Start here when a report names a skin, and
   update the skin's file when a phase closes on one
 - [manual-qa-checklist.md](manual-qa-checklist.md) — the GUI verification pass
-- `docs/winamp-modern/` — decision records and per-phase handoffs
+- `docs/winamp-modern/INDEX.md` — decision records and per-phase handoffs, one line each. The
+  historical record; where it and this skill disagree, this skill is right
 - `docs/legal/winamp_modern_provenance.md` — clean-room provenance record
 - `skills/modern-skin-guide` — NullPlayer's *own* modern skin system, which is unrelated to this one

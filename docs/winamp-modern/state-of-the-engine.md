@@ -7,8 +7,10 @@
 
 This is the orientation document; `skills/winamp-modern-skin-guide/triage-playbook.md` is the process
 for working the long tail beyond the nine measured skins. The durable technical reference is
-`skills/winamp-modern-skin-guide/` (SKILL.md, compatibility.md, skins.md, manual-qa-checklist.md);
-the per-phase records are in `docs/winamp-modern/`. Where this file and a skill disagree, the skill
+`skills/winamp-modern-skin-guide/` — SKILL.md is a router over `reference/` topic files, alongside
+compatibility.md, skins.md → `skins/<skin>.md`, and manual-qa-checklist.md. The per-phase records are
+in `docs/winamp-modern/`; [INDEX.md](INDEX.md) lists them and resolves any pointer they make into the
+skill. Where this file and a skill disagree, the skill
 wins.
 
 ---
@@ -125,15 +127,11 @@ reference oracle). Its entire native surface is three shell methods, none on the
 
 ### Per-skin state (the honest scoreboard)
 
-| Skin | Last worked | State |
-|---|---|---|
-| cPro-Bento + ClassicPro | Phase 24 | Full SUI: live tab strip, playlist queue, embedded real library browser, beat vis, script-built menus. Gap: guilist widgets |
-| Winamp Modern (stock) | Phase 24 | Frame, runtime-built body, playlist + library, EQ drawer, centred title + streaks |
-| Defix Hi-End 200 | Phase 27 | Wood panel + framed windows, cassette display, live SUI tabs, embedded library, working configurator + cover art, its registered display styles reachable via Skin Settings, meters fed by `getVisBand` + the stereo level model. Gaps: **layer FX — six of its eight display styles are frozen because every rotating meter needs it**, `<Browser>`, `newDynamicContainer` |
-| mmd3 | Phase 17 | Bitmap text, rotary knobs, drawers, own animated display. Gap: `wasabi.*`-backed widgets draw empty |
-| Love is War Miku | Phase 23 | Renders and drives correctly. Gaps: `fliph`; oscilloscope is a mirrored spectrum |
-| CornerAmp Redux | Phase 13 | Frame, titles, playlist + EQ; library window synthesized |
-| T800 / ZDL Reel-To-Reel / Rika | Phases 18–22 | Load and render correctly |
+**Not here.** Per-skin state is measured, and it drifts — the scoreboard that used to sit in this
+section was stale within two phases (it recorded six of Defix's eight display styles as frozen for
+want of Layer FX, which Phase 29 shipped). It has one home:
+`skills/winamp-modern-skin-guide/skins.md` for the status table and the skin → file index, and
+`skins/<skin>.md` for each measured skin's detail and traps.
 
 ---
 
@@ -229,7 +227,7 @@ the trademark question and item 2 above are the ones worth ten minutes of a real
 
 1. Read `skills/winamp-modern-skin-guide/SKILL.md` end to end. It is long because each paragraph is a
    bug that cost a phase.
-2. Check `skins.md` before touching anything a skin report names.
+2. Check `skins.md` → `skins/<skin>.md` before touching anything a skin report names.
 3. Look at pixels, not test results: 490+ green tests once coexisted with a vertical flip and a wrong
    crop origin, because nothing ever rendered a frame.
 4. Never work down a static list of unsupported methods — re-measure after every change.
