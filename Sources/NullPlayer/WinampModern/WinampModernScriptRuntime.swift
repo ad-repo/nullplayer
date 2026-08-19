@@ -1201,6 +1201,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "setvolume": .init(argumentCount: 1, returnKind: .null),
             "seekto": .init(argumentCount: 1, returnKind: .null),
             "getplayitemlength": .init(argumentCount: 0, returnKind: .integer),
+            "getplaylistlength": .init(argumentCount: 0, returnKind: .integer),
             "integertostring": .init(argumentCount: 1, returnKind: .string),
             "integertotime": .init(argumentCount: 1, returnKind: .string),
             "floattostring": .init(argumentCount: 2, returnKind: .string),
@@ -1491,6 +1492,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             host.seek(to: TimeInterval(arguments[0].integerValue))
             return .null
         case "getplayitemlength": return .integer(Int32(clamping: Int64(host.duration)))
+        // The number of tracks in the queue, from the same snapshot `PE_Info` is built from, so a
+        // skin that shows both cannot disagree with itself. Defix's playlist box reads it directly
+        // (`Items: ` + `integerToString(getPlaylistLength())`) rather than parsing the status line —
+        // and because the call sat *before* its `a3` write, the missing method aborted the whole
+        // `onTimer` and took the readout with it.
+        case "getplaylistlength":
+            let count = WasabiTextMetrics.componentTextProvider?()?.trackCount ?? 0
+            return .integer(Int32(clamping: Int64(count)))
         case "getposition":
             // Same unit as `getPlayItemLength` and `seekTo` — seconds. The engine's scripts only ever
             // use the two together as a ratio (`SC-ProgressGrid` scales its grid by

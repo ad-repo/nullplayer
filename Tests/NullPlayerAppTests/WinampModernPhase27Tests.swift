@@ -291,6 +291,38 @@ final class WinampModernPhase27Tests: XCTestCase {
                            program: program).integerValue
     }
 
+    // MARK: - `System.getPlaylistLength()`
+
+    /// Defix's playlist box writes its track count as `"Items: " + integerToString(getPlaylistLength())`
+    /// — it does *not* parse that number out of `PE_Info`. The call sat before the write, so the
+    /// missing method aborted the whole `onTimer` handler and the readout never appeared at all.
+    /// It answers from the same snapshot `PE_Info` is built from, so a skin showing both agrees with
+    /// itself.
+    func testGetPlaylistLengthAnswersFromThePlaylistSnapshot() throws {
+        let (runtime, _, program) = try makeRuntime()
+
+        WasabiTextMetrics.componentTextProvider = nil
+        XCTAssertEqual(try playlistLength(runtime, program), 0, "no component means an empty queue")
+
+        WasabiTextMetrics.componentTextProvider = {
+            WinampModernPlaylistSnapshot(
+                rows: (0..<3).map { WinampModernPlaylistRow(title: "t\($0)", secondary: "",
+                                                            duration: 60, isCurrent: $0 == 0) },
+                currentIndex: 0, selectedIndex: 0)
+        }
+        addTeardownBlock { WasabiTextMetrics.componentTextProvider = nil }
+        XCTAssertEqual(try playlistLength(runtime, program), 3)
+        XCTAssertTrue(runtime.unsupportedMethodCalls.isEmpty,
+                      "the method must be implemented, not merely declared — a refused call takes "
+                      + "the rest of the handler with it")
+    }
+
+    private func playlistLength(_ runtime: WinampModernScriptRuntime,
+                                _ program: MakiProgram) throws -> Int32 {
+        try runtime.invoke(method: "getPlaylistLength", on: MakiObjectReference(.system),
+                           arguments: [], program: program).integerValue
+    }
+
     private func makeRuntime() throws -> (WinampModernScriptRuntime, TestHost, MakiProgram) {
         let loaded = try makeSkin(xml: """
         <WasabiXML>

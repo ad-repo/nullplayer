@@ -707,7 +707,7 @@ final class WinampModernPhase13Tests: XCTestCase {
                 currentIndex: 0, selectedIndex: 1)
         }
         addTeardownBlock { WasabiTextMetrics.componentTextProvider = nil }
-        XCTAssertEqual(WasabiTextMetrics.content(of: info, host: host), "2 items, 2:00")
+        XCTAssertEqual(WasabiTextMetrics.content(of: info, host: host), "2 items/2:00")
 
         // The measurement a script gets is of that same string.
         let metrics = loaded.runtime.resources
@@ -715,6 +715,42 @@ final class WinampModernPhase13Tests: XCTestCase {
         let width = WasabiTextMetrics(loadedSkin: loaded)
             .width(of: info, text: WasabiTextMetrics.content(of: info, host: host))
         XCTAssertGreaterThan(width, 0)
+    }
+
+    /// A skin claims the status line with **`display="PE_Info"`**, not with `id="PE_Info"` — the
+    /// stock Winamp Modern skin does exactly that (`<text id="PLTime" display="PE_Info"/>`), and so
+    /// does Defix, whose hidden `<text id="info.input" display="PE_Info" w="0" h="0" visible="0"/>`
+    /// is the feed its playlist box parses. Matching on the id alone left both reading empty.
+    func testPlaylistStatusLineIsClaimedByDisplayAttributeAsWellAsID() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <text id="info.input" display="PE_Info" x="0" y="0" w="0" h="0" visible="0"/>
+              <text id="PE_Info" x="0" y="20" w="120" h="12"/>
+              <text id="other" display="songname" x="0" y="40" w="120" h="12"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let host = TestHost()
+        WasabiTextMetrics.componentTextProvider = {
+            WinampModernPlaylistSnapshot(
+                rows: [WinampModernPlaylistRow(title: "A", secondary: "", duration: 90, isCurrent: true)],
+                currentIndex: 0, selectedIndex: 0)
+        }
+        addTeardownBlock { WasabiTextMetrics.componentTextProvider = nil }
+
+        let byDisplay = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "info.input").first)
+        let byID = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "PE_Info").first)
+        XCTAssertEqual(WasabiTextMetrics.content(of: byDisplay, host: host), "1 item/1:30",
+                       "display=\"PE_Info\" is the form the stock skin uses and must be honoured")
+        XCTAssertEqual(WasabiTextMetrics.content(of: byID, host: host), "1 item/1:30",
+                       "the id form keeps working")
+
+        // A different `display=` must not be captured by the status line.
+        let unrelated = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "other").first)
+        XCTAssertNotEqual(WasabiTextMetrics.content(of: unrelated, host: host), "1 item/1:30")
     }
 
     /// Item and duration formatting, including the singular and the hour rollover.
@@ -726,8 +762,8 @@ final class WinampModernPhase13Tests: XCTestCase {
                 currentIndex: -1, selectedIndex: -1)
         }
         XCTAssertEqual(WinampModernPlaylistSnapshot.empty.infoLine, "0 items")
-        XCTAssertEqual(snapshot([61]).infoLine, "1 item, 1:01")
-        XCTAssertEqual(snapshot([3600, 61]).infoLine, "2 items, 1:01:01")
+        XCTAssertEqual(snapshot([61]).infoLine, "1 item/1:01")
+        XCTAssertEqual(snapshot([3600, 61]).infoLine, "2 items/1:01:01")
         XCTAssertEqual(snapshot([0, 0]).trackCount, 2)
         XCTAssertEqual(snapshot([10, 20]).totalDuration, 30)
     }

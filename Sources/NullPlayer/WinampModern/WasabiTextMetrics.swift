@@ -153,10 +153,24 @@ final class WasabiTextMetrics {
     /// The window controller installs this; unset, a `PE_Info` simply reads empty.
     static var componentTextProvider: (() -> WinampModernPlaylistSnapshot?)?
 
+    /// Whether this object is the skin's playlist status line, by **either** of the two forms skins
+    /// use: `id="PE_Info"` or `display="PE_Info"`. Both are live in the measured corpus.
+    static func isPlaylistStatusLine(_ object: WasabiObject) -> Bool {
+        if let identifier = object.xmlID, identifier.caseInsensitiveCompare("PE_Info") == .orderedSame {
+            return true
+        }
+        return object.attributes["display"]?.caseInsensitiveCompare("PE_Info") == .orderedSame
+    }
+
     /// What a text object currently shows. `display=` binds it to a playback value; a `songticker`
     /// carries no text of its own and always shows the current track.
     static func content(of object: WasabiObject, host: WinampModernHost) -> String {
-        if let identifier = object.xmlID, identifier.caseInsensitiveCompare("PE_Info") == .orderedSame {
+        // The status line is claimed **either** by `id="PE_Info"` (mmd3) **or** by
+        // `display="PE_Info"` (Defix, whose `<text id="info.input" display="PE_Info" w="0" h="0"
+        // visible="0"/>` is a hidden feed its script parses into the playlist box's track count and
+        // total time). Matching only the id left Defix's script reading an empty string, so
+        // `onTextChanged` never fired and both readouts sat on their XML placeholder, "-".
+        if isPlaylistStatusLine(object) {
             return componentTextProvider?()?.infoLine ?? ""
         }
         // A script's `setAlternateText` *overrides* the content for as long as it is set (MMD3 shows

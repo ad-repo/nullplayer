@@ -159,6 +159,29 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   report is still 0 unsupported methods — but **every** click on the four round buttons raises it.
   The textbook case of the queue-not-a-set rule: nothing sees it until something drives the event.
   What its result feeds is unknown; `WINAMP_MODERN_RENDER_DISASM=getcurrentindex` would say.
+- **The playlist box's readouts were blank — two separate causes, both fixed 2026-08-19.** The user
+  reported it as "the playlist window shows art but not the track information", and noticed that
+  enabling *Two infoboxes in the playlist* makes the second box show it. That second box is a
+  different group (`playlist.component.FileInfo`, off by default); the *first* box
+  (`playlist.component.PlaylistInfo`) is the **playlist** box, and it is the one that was broken:
+  - **`a3` — "Items: N"** comes from `System.getPlaylistLength()`, **not** from `PE_Info`. The method
+    was unimplemented, and the call sits *before* the write, so it aborted the whole `onTimer` and
+    the readout never appeared. Implemented, answering from the same snapshot `PE_Info` uses.
+  - **`a1` — "Time: …"** comes from `getToken(info.input.getText(), "/", 1)`, where `info.input` is
+    `<text id="info.input" display="PE_Info" w="0" h="0" visible="0"/>` — a hidden feed. The engine
+    matched the status line on **`id="PE_Info"` only**, so this read empty. It now matches
+    `display="PE_Info"` too, which is the form the **stock Winamp Modern skin also uses**
+    (`<text id="PLTime" display="PE_Info"/>`) — so its playlist time had been silently blank as well.
+  - **The `/` in the info line is inferred, not verified.** Defix takes token 1 of a `/` split, so the
+    separator has to be `/`; `WinampModernPlaylistSnapshot.infoLine` now emits `N items/h:mm:ss`
+    instead of `N items, h:mm:ss`. A capture of Winamp's own playlist showing that field would settle
+    it, and that one line is the only place to change.
+  - The script reads the feed in **`onTimer`**, not only in `onTextChanged` — which matters, because
+    the engine never dispatches `onTextChanged` at all. Nothing depends on it here.
+- **`getcurrentindex` is on the playlist window's hover and click paths**, not its timer
+  (`ontargetreached`, `onenterarea`, `onleftbuttondown`, `onrightbuttondown`, `onrightclick` — never
+  `ontimer`, checked in the disassembly). So it does not block the readouts above, but it does abort
+  those handlers; with `RENDER_SETTLE=2` it takes the whole skin's report to `unsupported`.
 - **Clicking the time readout does nothing, and it should toggle elapsed/remaining** (confirmed live
   2026-08-19). `text#timer` is this skin's one `CLICKABLE` miss — `WINAMP_MODERN_RENDER_CLICKABLE=1`
   reports `text#timer(292,26,96,31)`, an object a script hooks the mouse on that the markup hit test

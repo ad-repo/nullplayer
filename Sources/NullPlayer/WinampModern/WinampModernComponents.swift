@@ -137,7 +137,15 @@ struct WinampModernPlaylistSnapshot: Equatable {
         self.totalDuration = totalDuration ?? rows.reduce(0) { $0 + $1.duration }
     }
 
-    /// What a skin's `PE_Info` text shows: "N items, h:mm:ss" — Winamp's playlist status line.
+    /// What a skin's `PE_Info` text shows: "N items/h:mm:ss" — Winamp's playlist status line.
+    ///
+    /// **The `/` separator is inferred, not verified against Winamp.** Defix parses this string with
+    /// `getToken(text, "/", 1)` and writes the result as its playlist box's `Time:` readout, so the
+    /// second token has to be the duration; with the ", " this used to use, that readout came out
+    /// empty. The stock Winamp Modern skin displays the whole string in a 55px `PLTime` field, which
+    /// fits either form and so does not settle it. What would settle it: a screenshot or capture of
+    /// Winamp's own playlist showing that field. If it turns out to differ, this line is the only
+    /// place to change.
     var infoLine: String {
         let items = trackCount == 1 ? "1 item" : "\(trackCount) items"
         guard totalDuration > 0 else { return items }
@@ -146,7 +154,7 @@ struct WinampModernPlaylistSnapshot: Equatable {
         let length = hours > 0
             ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
             : String(format: "%d:%02d", minutes, remainder)
-        return "\(items), \(length)"
+        return "\(items)/\(length)"
     }
 
     static let empty = WinampModernPlaylistSnapshot(rows: [], currentIndex: -1, selectedIndex: -1)
