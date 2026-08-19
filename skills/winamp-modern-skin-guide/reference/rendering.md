@@ -359,13 +359,27 @@ The three host actions live in `WinampModernMainView.performAction`:
 button's own container subtree first, then the whole graph. The wide half is load-bearing — mmd3's
 `ctsbig` window names `main.colorthemes.list`, which lives in another container. A button whose target
 resolves to nothing falls back to the only list in the scene, and failing that to a **popup menu** of
-the theme names — which is what makes multipass's buttons (their `player.colorthemes` target is never
-instantiated) live. `action="TOGGLE"` with Winamp's Color-Themes preferences GUID
+the theme names. (multipass was the worked example of that fallback until Phase 33; it is not one. Its
+`player.colorthemes` lives in a groupdef that only `System.newGroupAsLayout` instantiates, and that
+method was refused — so the target was missing for a reason the skin had nothing to do with. It
+resolves now, and the buttons act on a real 58-row list.) `action="TOGGLE"` with Winamp's Color-Themes preferences GUID
 `{53DE6284-7E88-4c62-9F93-22ED68E6A024}` opens that same popup.
 
 Skins that define themes and ship **no** picker at all (measured: Anexa, micro, T800, ZDL, Itemskin,
 Overdrive_2) are covered by the host **Color Themes** submenu in the Winamp Modern menu, which is the
 preferences dialog we do not otherwise have. It is gated on more than one theme.
+
+##### An `<animatedlayer>` is one frame, not one sheet
+
+Its `image` is a **strip** and `framewidth`/`frameheight` say how it is cut, so a layer that declares
+no `w`/`h` of its own is one *frame* big. Taking the sheet made multipass's seek bar a 139×364 box
+where the skin drew a 139×13 one — one frame stretched over twenty-eight frames' worth of height, then
+clipped by the enclosing display group to a transparent sliver, so the skin's only seek indicator was
+invisible while the script driving it worked perfectly.
+
+Its **region** is the union of its frames: a point is clickable if *any* frame paints there. Testing
+only the frame on screen is wrong for the commonest use of the type — a fill animation is transparent
+ahead of the playhead, which is precisely where a seek click lands. Phase 33.
 
 ##### Artwork-less `<Wasabi:Button text="…">`
 

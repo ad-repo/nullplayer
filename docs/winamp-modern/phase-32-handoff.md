@@ -59,10 +59,16 @@ Three corrections to the plan's table, all of them the probe's:
   "Color Themes" heading with a `Switch to selected Color Theme` button. The long-standing "its colour
   themes are unreachable" note in `skins/defix-hi-end-200.md` was written before any probe could see
   one. It is now deleted, and the window renders correctly headlessly.
-- **multipass ships no list at all.** Its three buttons carry markup actions (`colorthemes_switch` /
-  `_previous` / `_next`) whose `action_target="player.colorthemes"` resolves to **nothing** — the group
-  is never instantiated. Prev/next work regardless (they step the applied theme); switch takes the
-  popup route.
+- ~~**multipass ships no list at all.**~~ **Superseded by Phase 33 — this was our bug, not a skin
+  trait.** multipass declares `<ColorThemes:List id="player.colorthemes">`
+  (`xml/player-normal.xml:262-263`) inside a groupdef whose only instantiation site is
+  `System.newGroupAsLayout`, a method the runtime refused — which aborted `System.onScriptLoaded`
+  outright and with it the skin's entire startup. Measured after the fix: 58 themes / **1** list / 3
+  actions, all three resolving to `player.colorthemes`.
+
+  Why a graph-walking probe still missed it: the object is created **at runtime by a script**, so it
+  is in neither the loaded document nor the graph the walk sees. Walking the graph *and* the scene is
+  not sufficient for anything a skin builds itself — recorded in `reference/harness.md`.
 - **Anexa ships no picker** — 11 themes, no list, no action. It belongs with micro, T800 and ZDL in the
   host-menu group, not with the skins that have their own screen.
 

@@ -77,6 +77,29 @@ By area:
   subtree's own scripts start on that attachment, not on creation — a script's first act is to look
   around from its own group, so starting it before `init` gives it the wrong parent. A group that is
   never `init`'d still starts, once the outermost dispatch unwinds. Phase 24
+- **`System.newGroupAsLayout(id)`** — Winamp gives the groupdef its own borderless floating layout,
+  owned by the layout its `owner="<container>,<layout>"` attribute names. Ours is an **overlay child of
+  that owner layout**, appended last, keeping a `group` type — and the coordinates say that is the
+  right answer rather than a compromise: multipass positions the result with
+  `resize(layout.getLeft() + 54, layout.getTop() + 217, 164, 78)`, our root layout answers 0 for both
+  (window-local), and (54, 217) is exactly where the author's own commented-out `<group x="9" y="62"/>`
+  inside drawer.bottom (45, 155) would have put it — confirmed by `RENDER_CLICK_WATCH`. It must **not**
+  be typed `layout`: `resize` on a layout is a *window* resize. No `owner=` falls back to the calling
+  script's own layout; a caller with no layout above it (a `skin.xml`-level script) answers null.
+  Phase 33 — this one method's absence aborted multipass's entire startup
+- **`ToggleButton.setActivatedNoCallback(bool)`** — `setActivated` without the `onToggle` it would
+  otherwise send. A skin uses it to follow state it is already reacting to; the plain setter there
+  re-enters its own notification. Phase 33
+- **`GuiObject.getClassName()`** — the object's Wasabi class (`layer`, `button`, `togglebutton`,
+  `slider`…). multipass's style switcher walks one list of mixed objects and branches on
+  `strUpper(getClassName())` to decide which artwork attributes to swap. Phase 33
+- **`Container.close()`** — the `hide()` route: a container is a window, anything else stops in the
+  graph. Phase 33
+- **`System.isAppActive()`** — answered honestly (`NSApp.isActive`; `true` with no application, i.e.
+  the harness), unlike its `isMinimized`/`isKeyDown` neighbours. Skins *gate work* on it: multipass's
+  drawer Focus Mode returns early from its 100 ms timer while the app is inactive, so a hardcoded
+  `false` would have stopped the drawers permanently. Phase 33
+- **`System.strUpper(s)`** — beside `strLower`. Phase 33
 - **Paint order**: `bringToFront` / `bringToBack` — sibling order within the parent. Phase 24
 - **Per-skin string config**: `getPrivateString` / `setPrivateString`, beside the integer pair.
   Phase 24 — `CproTabs.m` stores its tab order here
@@ -244,8 +267,10 @@ By area:
 | `onLeftButtonDblClk` | yes (Phase 24) | `mouseDown` with `clickCount == 2` |
 | mouse down/up/click/move, `onEnterArea`/`onLeaveArea`, `onRightButtonUp` | yes | with the click's x/y |
 | `onVolumeChanged` | yes | `setVolume`, and any change made outside the skin |
-| `onPostedPosition`, `onSetPosition`, `onTargetReached`, `onToggle`, `onAction`, `onEqFreqChanged`, `onGetCancelComponent` | yes | — |
-| `onKeyDown` (4) | **no** | needs a first-responder seam; no reported symptom behind it |
+| `onPostedPosition`, `onSetPosition`, `onTargetReached`, `onAction`, `onEqFreqChanged`, `onGetCancelComponent` | yes | — |
+| `onToggle` | yes | from `setActivated` **and, since Phase 33, from a user click**: a togglebutton flips its own `activated` and then notifies, as in Wasabi. Until then the only sender was a script talking to itself, so a togglebutton a person clicked was inert however completely the skin implemented it — multipass's bottom drawer opens from this event and from nothing else. `setActivatedNoCallback` is the deliberate silent write. A `cfgattrib`-bound control is excluded: the stored preference *is* its state, and it has `onDataChanged` as its route |
+| `onKeyDown` (4) | **no** | needs a first-responder seam. Measured demand beyond ClassicPro: multipass, Defix, Rika, T800, winampmodern566 (Phase 33 corpus scan) — still no reported symptom behind it |
+| `onEqBandChanged` / `onEqPreampChanged` | **no** | the EQ change has no script-facing notification yet. Measured demand: multipass, mmd3, Rika, winampmodern566, Overdrive_2 — each drives its own EQ readout (multipass's `ledfillbar` bars) from it, so those bars follow the skin's own slider drags but not a change made anywhere else. Owed work, recorded in Phase 33 |
 | `onDock` / `onUndock` (3 / 3) | **no** | no docked-state model for `.wal` windows |
 | `onShowLayout` / `onHideLayout` (2 / 2) | **no** | shade↔normal transitions |
 | `onMouseWheelUp` / `Down` (2 / 2) | **no** | the wheel is consumed by the embedded playlist |
@@ -255,6 +280,14 @@ By area:
 it (`slidercb.onSetPosition(slidercb.getPosition())`). Only events with a known arity are callable —
 see `dispatchableEventArity` — because the stack cannot be unwound without one. This works for
 **system** events too (`System.onEqFreqChanged(freqmode)` in ClassicPro's `eq.m`).
+
+**Arithmetic.** `+`, `−`, `*` keep an Int result an Int; **`/` is always real division**, and the
+narrowing happens on the **store** into a declared variable (opcodes 48 and 3), which is where MAKI's
+own type system puts it. This is not a detail: every skin writes percentages as `value / 255 * 100`
+over two Ints — multipass's seek readout and its `seekTo(length * (pos / 255))`, ClassicPro's
+`integerToString(newvol / 255 * 100) + "%"` — and read as integer division *every one of them is
+zero*. The symptoms were a seek bar that always sought to 0:00 and a cPro-Bento that reported
+`Volume: 0%` at every level. Phase 33.
 
 **Robustness rules** (each earned from a real skin, and each keeping one skin defect from taking down
 a whole script):

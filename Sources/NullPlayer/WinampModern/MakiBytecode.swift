@@ -514,6 +514,22 @@ final class MakiInterpreter {
         self.limits = limits
     }
 
+    /// What a value becomes when it is stored into a variable of a declared type.
+    ///
+    /// MAKI's variables are typed and its arithmetic is not: an expression is evaluated in whatever
+    /// the operands and the operator produce, and the **store** is where it is narrowed. Division is
+    /// the case that makes this visible (`Int i = 7 / 2` is 3, `Float f = 7 / 2` is 3.5), and getting
+    /// it wrong at the store instead sends a fractional value on into string building and array
+    /// indices. Only numeric narrowing happens here: nothing else is reinterpreted, so a string, an
+    /// object or a null is stored as it is and the declared kind is ignored.
+    static func coerced(_ value: MakiValue, to kind: MakiValueKind) -> MakiValue {
+        switch (kind, value) {
+        case (.integer, .float), (.integer, .double): return .integer(value.integerValue)
+        case (.boolean, .float), (.boolean, .double), (.boolean, .integer): return .boolean(value.truthy)
+        default: return value
+        }
+    }
+
     /// Run one handler and answer with **what it returned**.
     ///
     /// Every event before Phase 28 was a notification, so the value a handler left behind was thrown
@@ -586,7 +602,8 @@ final class MakiInterpreter {
             case 2:
                 _ = try pop()
             case 3:
-                program.variables[try argument(instruction, variable: true)].value = try pop().value
+                let target = program.variables[try argument(instruction, variable: true)]
+                target.value = Self.coerced(try pop().value, to: target.declaredKind)
             case 8, 9:
                 let rhs = try pop().value
                 let lhs = try pop().value
@@ -684,7 +701,7 @@ final class MakiInterpreter {
             case 48:
                 let source = try pop()
                 let destination = try pop()
-                destination.value = source.value
+                destination.value = Self.coerced(source.value, to: destination.declaredKind)
                 try push(source)
             case 56, 57, 58, 59:
                 let value = try pop()
@@ -708,7 +725,15 @@ final class MakiInterpreter {
                     case 66: result = numericResult(lhs, rhs, operation: *)
                     case 67:
                         guard rhs.doubleValue != 0 else { throw failure(.invalidScript, "MAKI division by zero.") }
-                        result = numericResult(lhs, rhs, operation: /)
+                        // Division is the one operator that is **always** real, whatever the operands
+                        // are. MAKI is statically typed and its compiler emits no cast: multipass's
+                        // seek bar is `Float pct = mapValue / 255 * 100;` over two Ints, and the
+                        // `seekTo(length * (pos / 255))` beside it is the same shape — read as integer
+                        // division both are 0, so clicking the seek bar always sought to 0:00 and its
+                        // "SEEK TO:" readout always said 0:00. Truncation still happens, but where the
+                        // language puts it: on the **store** into a declared Int (see opcode 48/3),
+                        // and on any Int the value is passed to.
+                        result = .double(lhs.doubleValue / rhs.doubleValue)
                     default:
                         guard rhs.integerValue != 0 else { throw failure(.invalidScript, "MAKI modulo by zero.") }
                         result = .integer(lhs.integerValue % rhs.integerValue)

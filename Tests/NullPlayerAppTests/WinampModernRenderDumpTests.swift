@@ -631,6 +631,13 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 print("CLICK   \(event) -> \(handled)")
                             }
                         }
+                        // A togglebutton's own state change is the view's job too, and a skin can put
+                        // its whole drawer behind the `onToggle` that follows it. Mirrored here for
+                        // the same reason the `cfgattrib` step below is.
+                        if let target, runtime.toggleActivation(of: target) {
+                            print("CLICK toggled \(target.xmlID ?? "-") "
+                                  + "activated=\(target.attributes["activated"] ?? "0")")
+                        }
                         // A `cfgattrib`-bound control carries no `action`; the binding is what it
                         // does, and the *view* is what performs it. Mirror that here so a settings
                         // switch can be driven headlessly, and report the stored value either side.

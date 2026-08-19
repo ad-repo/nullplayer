@@ -570,8 +570,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
     }
 
+    /// Test seam, off by default: the GUI events the runtime sent, in order. The difference between
+    /// `setActivated` and `setActivatedNoCallback` is *whether the event went out at all*, and with no
+    /// script bound to `onToggle` there is nothing else in the graph that can show it. Off in the app
+    /// because timers dispatch continuously and this would grow without bound.
+    var recordsDispatchedEventsForTesting = false
+    private(set) var dispatchedEventsForTesting: [(object: String, event: String)] = []
+
     @discardableResult
     func dispatch(object: WasabiObject, event: String, arguments: [MakiValue] = []) throws -> Int {
+        if recordsDispatchedEventsForTesting {
+            dispatchedEventsForTesting.append((object.xmlID ?? object.typeName, event.lowercased()))
+        }
         var handled = try dispatch(target: MakiObjectReference(.gui(object.stableID)),
                                    event: event, arguments: arguments)
         // A group that embeds a control (`embed_xui`) *is* that control as far as a script that holds
@@ -632,6 +642,32 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         let flipped = loadedSkin.configuration.integer(section: binding.section, key: binding.key,
                                                        default: 0) != 0 ? "0" : "1"
         setConfigAttribute(section: binding.section, key: binding.key, value: flipped)
+        return true
+    }
+
+    /// Flip a togglebutton the way a *click* does, and tell the skin — returning false for anything
+    /// that is not a plain togglebutton.
+    ///
+    /// Wasabi's togglebutton owns its own state: pressing it flips `activated` and then calls
+    /// `onToggle(activated)`. Ours only ever changed from `setActivated`, which is a script talking
+    /// to itself, so a togglebutton a person clicked was inert however completely the skin
+    /// implemented it. Multipass's bottom drawer opens from `buttonDrawerBottomToggle.onToggle` and
+    /// from nothing else — the button was hit, its bindings were live, and every handler count was
+    /// zero.
+    ///
+    /// A `cfgattrib`-bound control is deliberately excluded: for those the stored preference *is* the
+    /// state (`configValue`), they already have `toggleConfigAttribute` as their route, and flipping a
+    /// second copy of the state here would let `getActivated()` disagree with the value the skin reads.
+    @discardableResult
+    func toggleActivation(of object: WasabiObject) -> Bool {
+        guard object.typeName.caseInsensitiveCompare("togglebutton") == .orderedSame,
+              Self.configBinding(of: object) == nil else { return false }
+        let activated = object.attributes["activated"] != "1"
+        _ = object.setAttribute("activated", value: activated ? "1" : "0")
+        notifyGraphDidMutate()
+        // The state is flipped *before* the notification, because that is what the handler reads:
+        // multipass's `onToggle` asks the button `getActivated()` rather than trusting its argument.
+        _ = try? dispatch(object: object, event: "ontoggle", arguments: [.boolean(activated)])
         return true
     }
 
@@ -1181,7 +1217,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getalpha": .init(argumentCount: 0, returnKind: .integer),
             "setenabled": .init(argumentCount: 1, returnKind: .null),
             "setactivated": .init(argumentCount: 1, returnKind: .null),
+            // The same write **without** the `onToggle` it would otherwise provoke. A skin uses it to
+            // follow state it is already reacting to: multipass's `configAttribute_eqVisible`
+            // handler moves the drawer's toggle to match the attribute it just observed, and
+            // `setActivated` there would re-enter `toggleDrawer` from inside its own notification.
+            "setactivatednocallback": .init(argumentCount: 1, returnKind: .null),
             "getactivated": .init(argumentCount: 0, returnKind: .boolean),
+            // The object's Wasabi class, which a script branches on to treat a heterogeneous set of
+            // objects uniformly: multipass's `initStyle` walks its whole element list and swaps
+            // `image=` on a LAYER, `image=`/`downImage=`/`hoverImage=` on a BUTTON, and the thumb
+            // ids on a SLIDER — one loop over every skinnable thing the Style menu touches.
+            "getclassname": .init(argumentCount: 0, returnKind: .string),
+            // Closing a container is hiding its window: `.wal` windows are ours, and nothing in the
+            // engine owns a destroyed-container lifecycle. Multipass's notifier closes itself.
+            "close": .init(argumentCount: 0, returnKind: .null),
             "getleft": .init(argumentCount: 0, returnKind: .integer),
             "gettop": .init(argumentCount: 0, returnKind: .integer),
             "getwidth": .init(argumentCount: 0, returnKind: .integer),
@@ -1333,6 +1382,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "abs": .init(argumentCount: 1, returnKind: .double),
             "strlen": .init(argumentCount: 1, returnKind: .integer),
             "strlower": .init(argumentCount: 1, returnKind: .string),
+            "strupper": .init(argumentCount: 1, returnKind: .string),
             "strsearch": .init(argumentCount: 2, returnKind: .integer),
             "strleft": .init(argumentCount: 2, returnKind: .string),
             "strright": .init(argumentCount: 2, returnKind: .string),
@@ -1399,6 +1449,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "isvideofullscreen": .init(argumentCount: 0, returnKind: .boolean),
             "iskeydown": .init(argumentCount: 1, returnKind: .boolean),
             "isminimized": .init(argumentCount: 0, returnKind: .boolean),
+            // Answered honestly, unlike its neighbours: a skin *gates work* on it. Multipass's drawer
+            // "Focus Mode" returns early from its 100 ms timer whenever the app is inactive, so a
+            // hardcoded `false` would not just mis-report — it would stop the drawers from ever
+            // opening again once that option was turned on.
+            "isappactive": .init(argumentCount: 0, returnKind: .boolean),
             "isdesktopalphaavailable": .init(argumentCount: 0, returnKind: .boolean),
             "istransparencyavailable": .init(argumentCount: 0, returnKind: .boolean),
             "istransparencysafe": .init(argumentCount: 0, returnKind: .boolean),
@@ -1417,6 +1472,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "popatmouse": .init(argumentCount: 0, returnKind: .integer),
             "popatxy": .init(argumentCount: 2, returnKind: .integer),
             "newgroup": .init(argumentCount: 1, returnKind: .object),
+            "newgroupaslayout": .init(argumentCount: 1, returnKind: .object),
             "init": .init(argumentCount: 1, returnKind: .null),
             // Paint order within the parent. ClassicPro raises a tab while it is being dragged along
             // the strip, and the missing method aborted the whole drag handler.
@@ -1623,6 +1679,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "boolean": return .boolean(arguments[0].truthy)
         case "strlen": return .integer(Int32(clamping: arguments[0].stringValue.count))
         case "strlower": return .string(arguments[0].stringValue.lowercased())
+        case "strupper": return .string(arguments[0].stringValue.uppercased())
         case "strsearch":
             let range = arguments[0].stringValue.range(of: arguments[1].stringValue)
             return .integer(range.map { Int32(arguments[0].stringValue.distance(from: arguments[0].stringValue.startIndex, to: $0.lowerBound)) } ?? -1)
@@ -1758,6 +1815,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getsonginfotext": return .string(host.songInfoText)
         case "isvideo", "isvideofullscreen", "iskeydown", "isminimized", "isnamedwindowvisible":
             return .boolean(false)
+        // Not in the group above on purpose — see the signature. Under the headless harness there is
+        // no `NSApplication` at all, and "the app the skin is running in is in front" is then the
+        // honest answer: the alternative reports every probe run as a background app and takes the
+        // focus-gated half of a skin's behaviour out of measurement.
+        case "isappactive": return .boolean(NSApp?.isActive ?? true)
         case "isdesktopalphaavailable", "istransparencyavailable", "istransparencysafe", "islayoutanimationsafe":
             return .boolean(true)
         // No video *component*: a `.wal` video holder gets the neutral backing every unhosted kind
@@ -1781,6 +1843,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             pendingRuntimeGroups.append(created)
             notifyGraphDidMutate()
             return objectValue(created)
+        // The same instantiation, but for a groupdef that declares itself a floating window
+        // (`owner="main,normal"` + `nodock="1"`): Winamp gives it a borderless layout of its own,
+        // owned by that layout. We make it an **overlay child of the owner layout** instead, and the
+        // coordinate maths says that is the right answer rather than a compromise — multipass
+        // positions the result with `resize(layoutMainNormal.getLeft() + 54, …getTop() + 217, …)`,
+        // and `getLeft()`/`getTop()` on a root layout answer 0 here (window-local; see the
+        // `clientToScreenX` note), so it lands at (54, 217) — exactly where the author's own
+        // commented-out `<group … x="9" y="62"/>` inside drawer.bottom (45,155) → colorthemes (0,0)
+        // would have put it.
+        //
+        // The created object keeps its **group** type. Typing it `layout` would send the `resize`
+        // above through `layoutResizeRequested` and resize the *window* to 164×78.
+        case "newgroupaslayout":
+            guard let instantiate = loadedSkin.runtime.instantiateGroup,
+                  let parent = ownerLayout(forGroupDefinition: arguments[0].stringValue, program: program)
+            else { return .null }
+            // Appended last, so it draws over the drawer background it sits on rather than under it.
+            let floated = try instantiate(arguments[0].stringValue, parent)
+            pendingRuntimeGroups.append(floated)
+            notifyGraphDidMutate()
+            return objectValue(floated)
         case "messagebox": return .integer(0) // Sandboxed: skins cannot create modal host UI.
         // ClassicPro version gate + public config (see `reportedWinampBuild`).
         case "getbuildnumber": return .integer(Self.reportedWinampBuild)
@@ -1987,7 +2070,22 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             notifyGraphDidMutate()
             _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(arguments[0].truthy)])
             return .null
+        case "setactivatednocallback":
+            _ = object.setAttribute("activated", value: arguments[0].truthy ? "1" : "0")
+            notifyGraphDidMutate()
+            return .null
         case "getactivated": return .boolean(object.attributes["activated"] == "1")
+        // The graph type, which is the XML tag the object was declared with (`layer`, `button`,
+        // `togglebutton`, `slider`, …) — what a script comparing `strUpper(getClassName())` against
+        // "LAYER" is asking for.
+        case "getclassname": return .string(object.typeName)
+        // A container closing itself is that window going away; anything else has no window and the
+        // request stops in the graph, exactly as `hide()` does.
+        case "close":
+            _ = object.setAttribute("visible", value: "0")
+            notifyGraphDidMutate()
+            requestWindow(for: object, visible: false)
+            return .null
         // Client ↔ screen conversion, relative to the receiver's **parent** client area — the space
         // `getLeft()`/`getTop()` already answer in, which is what every measured call site converts:
         // `b.clientToScreenX(b.getLeft())`, receiver and coordinate the same object. Reading it as the
@@ -2495,6 +2593,33 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             if let value = classicProFileMethod(method, arguments: arguments) { return value }
             throw unsupported(method, program: program)
         }
+    }
+
+    /// Which layout a `newGroupAsLayout` group hangs off: the one its groupdef names in
+    /// `owner="<container>,<layout>"`, falling back to the calling script's own ancestor layout when
+    /// there is no `owner=` or it names something this skin did not instantiate.
+    ///
+    /// The fallback matters because the caller is often not under a layout at all — multipass's
+    /// `system.maki` is a `skin.xml`-level script whose owner is the `<scripts>` element — in which
+    /// case there is nothing to parent to and the call answers null rather than misplacing the group.
+    private func ownerLayout(forGroupDefinition identifier: String, program: MakiProgram) -> WasabiObject? {
+        let owner = (try? loadedSkin.runtime.types.resolved(identifier: identifier))?
+            .defaultAttributes["owner"] ?? ""
+        let parts = owner.components(separatedBy: ",").map {
+            $0.trimmingCharacters(in: .whitespaces)
+        }.filter { !$0.isEmpty }
+        if let containerID = parts.first, let container = findRoot(type: "container", xmlID: containerID) {
+            let layouts = container.children.filter {
+                $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
+            }
+            // `owner="main"` with no layout half means the container's first layout.
+            if parts.count < 2 { if let first = layouts.first { return first } }
+            if let named = layouts.first(where: { $0.xmlID?.caseInsensitiveCompare(parts[1]) == .orderedSame }) {
+                return named
+            }
+        }
+        guard let caller = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:)) else { return nil }
+        return ancestor(of: caller, type: "layout")
     }
 
     private func findRoot(type: String, xmlID: String) -> WasabiObject? {

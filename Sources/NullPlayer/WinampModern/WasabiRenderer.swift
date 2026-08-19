@@ -847,9 +847,21 @@ final class WasabiSceneRenderer {
             // disagreeing with a declared region.
             if object.attributes["rectrgn"] != "1",
                let bitmap = resources.bitmap(identifier: node.bitmapID) {
-                let local = CGPoint(x: (point.x - node.frame.minX) / max(1, node.frame.width) * CGFloat(bitmap.width),
-                                    y: (point.y - node.frame.minY) / max(1, node.frame.height) * CGFloat(bitmap.height))
-                guard bitmap.alpha(at: local) > 8 else { continue }
+                // An animated layer's artwork is a *strip*, and mapping the point across the whole
+                // sheet would sample whichever frame happened to line up with that row. Its region is
+                // the union of its frames instead — a point is clickable if **any** frame paints
+                // there. That is both stable (a click does not depend on which frame is showing) and
+                // what a fill animation needs: multipass's seek bar is empty ahead of the playhead, so
+                // testing the current frame alone would make the whole point of a seek bar — clicking
+                // *forward* — unreachable.
+                if object.typeName.caseInsensitiveCompare("animatedlayer") == .orderedSame {
+                    guard animationUnionAlpha(bitmap, object: object, node: node, point: point) > 8
+                    else { continue }
+                } else {
+                    let local = CGPoint(x: (point.x - node.frame.minX) / max(1, node.frame.width) * CGFloat(bitmap.width),
+                                        y: (point.y - node.frame.minY) / max(1, node.frame.height) * CGFloat(bitmap.height))
+                    guard bitmap.alpha(at: local) > 8 else { continue }
+                }
             }
             return object
         }
@@ -1167,6 +1179,16 @@ final class WasabiSceneRenderer {
         var intrinsic = resources.bitmap(identifier: bitmapID).map {
             WasabiSize(width: Double($0.width), height: Double($0.height))
         } ?? .zero
+        // An animated layer that states no size of its own is one **frame** tall, not one sheet tall:
+        // its bitmap is a strip of N frames and `framewidth`/`frameheight` say how it is cut. Taking
+        // the sheet made multipass's seek bar a 139×364 box where the skin drew a 139×13 one — one
+        // frame stretched over twenty-eight frames' worth of height, then clipped by the display group
+        // to a transparent sliver, so the skin's only seek indicator was invisible while the script
+        // behind it worked perfectly.
+        if object.typeName.caseInsensitiveCompare("animatedlayer") == .orderedSame {
+            if let width = Double(object.attributes["framewidth"] ?? ""), width > 0 { intrinsic.width = width }
+            if let height = Double(object.attributes["frameheight"] ?? ""), height > 0 { intrinsic.height = height }
+        }
         // `autowidthsource="<id>"` sizes a group to the text of the named descendant. ClassicPro's
         // menu bar is five such groups: without this each is 0 wide and its label, a `relatw="1"`
         // child, has nowhere to draw — the whole File/Play/Options/View/Help strip disappears.
@@ -1736,12 +1758,36 @@ final class WasabiSceneRenderer {
         return animatedFrameImage(bitmap, object: object)
     }
 
-    private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
+    /// How an animated layer's sheet is cut into frames: one frame's size, how many there are, and how
+    /// many sit side by side. Shared by the frame the layer draws and the region it can be clicked on.
+    private func animationGrid(_ bitmap: WasabiBitmap,
+                               object: WasabiObject) -> (width: Int, height: Int, count: Int, columns: Int) {
         let frameWidth = max(1, Int(Double(object.attributes["framewidth"] ?? object.attributes["w"] ?? "") ?? Double(bitmap.width)))
         let frameHeight = max(1, Int(Double(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Double(bitmap.height)))
         let columns = max(1, bitmap.width / frameWidth)
         let rows = max(1, bitmap.height / frameHeight)
         let count = max(1, Int(Double(object.attributes["frames"] ?? "") ?? Double(columns * rows)))
+        return (frameWidth, frameHeight, count, columns)
+    }
+
+    /// The most opaque any frame is at `point` — the layer's region, see the call site in `object(at:)`.
+    private func animationUnionAlpha(_ bitmap: WasabiBitmap, object: WasabiObject,
+                                     node: WasabiSceneNode, point: CGPoint) -> Int {
+        let grid = animationGrid(bitmap, object: object)
+        let x = (point.x - node.frame.minX) / max(1, node.frame.width) * CGFloat(grid.width)
+        let y = (point.y - node.frame.minY) / max(1, node.frame.height) * CGFloat(grid.height)
+        var strongest = 0
+        for index in 0..<grid.count {
+            let origin = CGPoint(x: CGFloat((index % grid.columns) * grid.width),
+                                 y: CGFloat((index / grid.columns) * grid.height))
+            strongest = max(strongest, Int(bitmap.alpha(at: CGPoint(x: origin.x + x, y: origin.y + y))))
+            if strongest > 8 { break }
+        }
+        return strongest
+    }
+
+    private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
+        let (frameWidth, frameHeight, count, columns) = animationGrid(bitmap, object: object)
         let frameIndex = max(0, min(count - 1, WasabiAnimation.state(of: object, frameCount: count,
                                                                      clock: clock()).frame))
         let column = frameIndex % columns

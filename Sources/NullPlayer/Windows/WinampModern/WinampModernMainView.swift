@@ -997,6 +997,10 @@ final class WinampModernMainView: NSView {
     }
 
     private func performAction(for object: WasabiObject) {
+        // A togglebutton flips itself first, then tells the skin — the whole of some skins' UI hangs
+        // off that notification (multipass's bottom drawer opens from `onToggle` and nowhere else).
+        // It runs alongside whatever `action=` the button also carries, as it does in Wasabi.
+        if scripts.toggleActivation(of: object) { needsDisplay = true }
         let action = object.attributes["action"]
         let parameter = object.attributes["param"]
         // The object comes with the action now: `action_target=` is an attribute of the *button*, and
@@ -1085,8 +1089,49 @@ final class WinampModernMainView: NSView {
         case "COLORTHEMES_PREVIOUS": stepColorTheme(by: -1)
         case "MENU":
             if parameter?.lowercased() == "presets" { showEqualizerPresetMenu() }
+            // A bare `MENU` is the main menu, same as the button below.
+            else if Self.opensMainMenu(action: action, parameter: parameter) { showMainMenu(from: object) }
+        // Winamp's **main menu** — the "≡" at the top-left of a skin's title bar (`SYSMENU`) and the
+        // same menu on a window's control button (`CONTROLMENU`). Measured demand: SYSMENU in
+        // multipass, CornerAmp Redux, Overdrive_2, winampmodern566 and ZDL; CONTROLMENU in multipass,
+        // mmd3, Overdrive_2 and ZDL — and every one of them was dead, which reads as "the button in
+        // the corner does nothing" because that is exactly what it did.
+        //
+        // Winamp's menu there is Play file / Preferences / Skins / Exit and the window list.
+        // NullPlayer's own context menu is that menu — the one every other window in the app shows on
+        // right-click — so the button opens it rather than a second, thinner imitation.
+        case "SYSMENU", "CONTROLMENU":
+            showMainMenu(from: object)
+        // (`opensMainMenu` is the same decision, spelled once, for a test that cannot open a menu.)
         default: break
         }
+    }
+
+    /// Whether this markup action asks for the host's main menu. Internal so the routing can be
+    /// tested: presenting a menu runs AppKit's own tracking loop, which a headless test cannot enter.
+    static func opensMainMenu(action: String?, parameter: String?) -> Bool {
+        switch action?.uppercased() {
+        case "SYSMENU", "CONTROLMENU": return true
+        case "MENU": return parameter?.isEmpty != false
+        default: return false
+        }
+    }
+
+    /// The host's context menu, dropped under the button that asked for it (the mouse if that button
+    /// has no resolved frame — a script can raise this from anywhere).
+    private func showMainMenu(from object: WasabiObject?) {
+        let menu = ContextMenuBuilder.buildMenu()
+        guard menu.numberOfItems > 0 else { return }
+        let location: NSPoint
+        if let frame = object.flatMap({ renderer.frame(of: $0) }) {
+            location = NSPoint(x: frame.minX * skinScale,
+                               y: bounds.height - frame.maxY * skinScale)
+        } else if let window {
+            location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        } else {
+            location = .zero
+        }
+        menu.popUp(positioning: nil, at: location, in: self)
     }
 
     /// Winamp's preferences page for colour themes. A skin that opens it is asking for the same list

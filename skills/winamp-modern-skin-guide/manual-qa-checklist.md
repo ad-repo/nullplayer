@@ -208,8 +208,10 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
       next all work
 - [ ] **corneramp_redux** — the `Color Themes` window populates; a double-click on a row applies it,
       and `Switch` / `Pr…` / `Ne…` under it work
-- [ ] **multipass** — the drawer's switch / previous / next cycle its 58 themes. Switch has no list to
-      read (its target is never instantiated) so it opens the popup; the arrows step directly
+- [x] **multipass** (confirmed live 2026-08-19) — hover the player, click the left drawer's toggle,
+      then the drawer's **Color Themes** page: a populated 58-row list sits at (54, 217) — not the empty placeholder — and
+      switch / previous / next act on it (Phase 33; before that the list was never instantiated and
+      Switch fell through to the popup menu)
 - [ ] **Defix** — the configurator's *Color Themes* list populates and `Switch to selected Color Theme`
       recolours the skin
 - [ ] **cPro-Bento** — the engine's own colour-theme list populates and switches (needs

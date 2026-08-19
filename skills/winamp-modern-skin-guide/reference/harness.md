@@ -41,6 +41,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_MINIMUM=1` | name the objects that set each layout's protective minimum |
 | `WINAMP_MODERN_RENDER_CLICKABLE=1` | objects the markup-only hit test rejects but a script hooks the mouse on |
 | `WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y[;x,y…]` | drive a click and report what it hit, its handler counts, **every attribute it changed anywhere in the graph**, the whole chain of handlers it set off, the menu a right-click builds, and a compatibility report taken *after*. Several points are driven **in order** — how you check that a second click undoes the first. Seven events, in the order the view sends them: `onleftbuttondown`, `onleftbuttondblclk`, `onleftbuttonup`, `onleftclick`, **`onrightbuttondown`**, `onrightbuttonup`, **`onrightclick`**. It also prints **`CLICK action:`** — the host action the click ends in — and **`CLICK window:`** — a container the skin asked to show or hide. Those last three lines are Phase 31 additions, and each of them was a defect the probe could not see: a skin that hangs its menu off the right-button *down*, a button that reaches its target through an invisible proxy's `leftClick()`, and a skin that opens its own window with `getContainer(id).show()` rather than an action. **The popup presenter here answers 0** ("the user picked nothing"), so a run that needs a menu *pick* must be given one |
+| `CLICK toggled <id> activated=<0\|1>` (printed, not a variable) | the click flipped a togglebutton and sent it `onToggle`, mirroring what the view does. Phase 33 — a skin can hang a whole drawer off that event, and while the probe drove only the seven mouse events it reported a working toggle as seven zero counts |
 | `WINAMP_MODERN_RENDER_CLICK_WATCH=<id>,<id>` | where those objects ended up after the click, changed or not — for "it opened, but in the wrong place" |
 | `WINAMP_MODERN_RENDER_SIZE=<W>x<H>` | resize the layout (clamped, as a drag is) before measuring, so a defect can be reproduced at the user's window size. It resizes the *canvas* only — the app dispatches `onResize` on a real drag, so pair it with `RENDER_EVENTS=onresize` (applied after the resize) or a script-driven layout stays at its old width |
 | `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **`onresize` first** for any ClassicPro skin: much of its state is only ever assigned there |
@@ -117,6 +118,16 @@ Love is War Miku's whole opening animation (the display panel sliding to `y=84`,
 load-time compatibility report is **clean** for anything a click reaches — a handler that fails on a
 missing method records nothing until something drives the event, which is why `RENDER_CLICK` prints its
 own report afterwards.
+
+> **An object a script creates is invisible to every walk — the graph one included.** The Phase 32
+> theme probe walked the whole graph precisely so a picker inside a closed drawer would still be
+> counted, and it *still* reported "multipass ships no `<ColorThemes:List>`". The list is real
+> (`xml/player-normal.xml:262`); it lives in a groupdef whose only instantiation site is a
+> `System.newGroupAsLayout` call, and that call was being refused. Nothing in the document, the graph
+> or the scene showed it, because it had never been built. Two rules follow: read a "the skin does not
+> ship X" verdict against `RENDER_SCRIPTS` **first** — a skin whose startup aborted ships nothing it
+> would have built; and a `SETTLE`d run after a click sees more of a skin than any static walk does
+> (multipass goes from 54 graph nodes to 118 when its drawer opens).
 
 **The dump only ever renders a skin's *initial* state.** A defect a script mutation introduces later
 (a font swapped at runtime, an object shown after a click) is invisible to it. `WinampModernCrashRepro`
@@ -230,6 +241,40 @@ no change at all and read as "wrong fix". Re-measure after each one instead of r
 it against. Defix's speaker cabinet turned out to render **correctly** — the cone is black because the
 art is black — which retired "very dark" as a defect and left the real question (does it move?) in
 focus.
+
+### The order that made Phase 33 cheap
+
+multipass went from "a static picture, nothing works" to a `full`-compatibility skin in one session.
+Not because the bugs were easy — there were seven, in four different layers — but because of the
+order they were found in. Reuse it.
+
+1. **Read the skin's own `.m` sources when the archive ships them.** multipass ships all fourteen.
+   The whole diagnosis is `system.m`'s eleven-initialiser `onScriptLoaded` and line 72 of
+   `drawers.m`; disassembly would have taken an afternoon to reach the same sentence. Check for
+   `scripts/*.m` before `RENDER_DISASM`.
+2. **`RENDER_SCRIPTS` first, always.** One `failed=… does not support method 'x'` line explained
+   every symptom in the report at once. A skin whose startup aborted does not *have* features to
+   debug, and any conclusion about what it "ships" drawn before that line is checked is worthless
+   (Phase 32 recorded a real widget as absent for exactly this reason).
+3. **Fix the abort, then re-measure before touching anything else.** Six of the seven faults only
+   became *visible* after the one above them was gone: the abort hid the dead togglebutton, which hid
+   the invisible seek bar, which hid its unclickable region, which hid the VM's integer division.
+   Peeling in order costs one measurement each; guessing at the stack costs a rewrite.
+4. **Ask what *kind* of object the skin built a control from before concluding it has none.**
+   "There's no seek bar" — there is; it is an `<animatedlayer>` plus a `Map`, not a `<slider>`, and
+   nothing that greps for `slider` will ever find it.
+5. **Corroborate a VM-semantics decision in a second, unrelated codebase.** "Is MAKI's `/` integer
+   division?" was settled by finding `integerToString(newvol / 255 * 100) + "%"` in ClassicPro's
+   engine — a different author, the same idiom, and under integer division both are `0%`. One skin is
+   an anecdote; two independent ones are the language's semantics.
+6. **A one-skin fix is a claim about every skin: run the sweep.** The division fix turned out to
+   repair cPro-Bento's `Volume: 0%`, MMD3's volume bar and two skins' slider fills. The same sweep is
+   what proves a change *didn't* break the other sixteen — and note that one skin (Anexa's shade)
+   renders differently run-to-run on an unchanged build, so diff the sweep against itself before
+   reading a difference as a regression.
+7. **Corpus-scan the attribute, not the button.** "This button does nothing" was `action="SYSMENU"`;
+   grepping the 17 installed skins for `action="…"` found nine dead buttons across five skins and
+   listed exactly what is still inert. One grep turns a bug report into a coverage decision.
 
 ### A blind instrument reads as a working feature
 

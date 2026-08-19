@@ -216,6 +216,21 @@ network. `messagebox` is denied; `navigateurl` is a no-op.
   vis bytes on a logarithmic sweep; a linear magnitude × 255 has now been found twice (`getLeftVUMeter`
   Phase 29, `getVisBand` Phase 30) and is still open in the `<vis>` analyzer. The test is to histogram
   the frames a meter actually uses: a healthy one spreads, a mis-scaled one piles on its rest frame.
+- **Check `RENDER_SCRIPTS` for a failed handler before believing anything about what a skin contains.**
+  Dispatch is fail-closed: one unimplemented method abandons the *whole handler*, and skins put their
+  entire startup in one. multipass's eleven initialisers all sat behind statement eight of the first
+  one, so the skin was a static picture and every feature "missing" — including a widget a graph-walking
+  probe then recorded as absent, because a script had never run to create it. A skin whose startup
+  aborted has no features to debug (Phase 33; the *whole* method is in `reference/harness.md` §*The
+  order that made Phase 33 cheap*).
+- **Read the skin's own `scripts/*.m` when the archive ships them** — several do, and it turns an
+  afternoon of disassembly into a five-minute read.
+- **Ask what kind of object a control is before concluding the skin has none.** multipass's seek bar
+  is an `<animatedlayer>` plus a `Map`, not a `<slider>`.
+- **Corpus-scan the attribute, not the button.** One `action="…"` grep across the installed skins
+  turned "this button does nothing" into nine dead buttons in five skins plus a list of what is still
+  inert — a coverage decision rather than a one-off fix. Then run the render sweep, which is what
+  proves the fix reached other skins *and* broke none.
 - **When a probe reports nothing, check the probe can see the thing at all.** Three harness blind
   spots each made a real defect look absent (see *A blind instrument reads as a working feature*).
 - Add fixtures, never third-party assets. Every committed test fixture is synthetic and self-authored.

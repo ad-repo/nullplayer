@@ -18,8 +18,9 @@ it was fixed in, what came alive, and what is knowingly left. A skin's own `scre
 is the reference to compare against.
 
 **Colour themes, measured (Phase 32, `WINAMP_MODERN_RENDER_THEMES=1`).** Themes / `<ColorThemes:List>`
-objects in the graph / `colorthemes_*` actions: mmd3 82/4/4 · multipass 58/0/3 (its `player.colorthemes`
-target is never instantiated, so its buttons take the popup route) · winampmodern566 44/1/5 ·
+objects in the graph / `colorthemes_*` actions: mmd3 82/4/4 · multipass 58/1/3 (**corrected in Phase 33** — the
+Phase 32 measurement read 58/0/3 and concluded the skin ships no list; it ships one, in a groupdef
+only `System.newGroupAsLayout` instantiates, and that method was refused) · winampmodern566 44/1/5 ·
 micro 24/0/0 · Anexa 11/0/0 · Rika 10/1/0 · cPro-Bento 6/1/3 · Defix 5/1/1 · CornerAmp 5/1/3 ·
 T800 2/0/0 · ZDL 1/0/0 · Love is War Miku, Sony Walkman, Nokia 5220 0/0/0. **Itemskin and Overdrive_2
 do not load at all** (`resourceMissing`: `xml/eq.xml`, `xml/pledit-elements.xml`) — a separate defect,
@@ -35,6 +36,7 @@ not a colour-theme one.
 | T800 | Phase 32 | per-layout groups, region-clipped volume, drag; its 2 colour themes from the host **Color Themes** menu | ships no picker of its own (as in Winamp) |
 | ZDL Reel-To-Reel | Phase 18 | sized from its background art | — |
 | Rika | Phase 32 | loads without its missing TTF; vis colours honoured; its `Color Themes` window lists all 10 and a double-click applies | no Switch button in the skin — double-click is the only in-skin route |
+| multipass 1.4 | Phase 33 | **the whole skin**: one refused method aborted `System.onScriptLoaded`, so drawers, seek, time, sliders, notifier, shade, behaviors and style never initialised. All of it now runs; the hover drawers animate, the bottom drawer opens from its toggle, and the 58-theme picker instantiates at (54, 217); its seek bar draws, takes a click across its whole width and seeks; its `≡` main-menu button opens the host menu. **Confirmed live** 2026-08-19 | `TRACKINFO`/`TRACKMENU` on the song title and `PAN` are inert (engine-wide); the `.wal`'s own Preferences route (`TOGGLE {53DE6284…}`) has no host window |
 | Defix Hi-End 200 | Phase 26–31 (**confirmed live** 2026-08-19; measured `/wal-skin-report` 2026-08-19 — **B**, confidence medium) | wood panel + framed windows, cassette display, **live SUI tabs + embedded library**; display styles and songticker modes selectable through **Skin Settings**; **the four round buttons' right-click assignment menu** (Phase 31); **all eight display styles animate smoothly** — needles and cassette reels through Layer FX, level strips through frame strips; frame cost 18.3 → 3.5 ms at Retina scale; VU fed block-played peak amplitude that falls to rest on silence | round buttons re-assign but mis-target after the swap (Phase 31, open); speaker cones static **and cabinets very dark** (live 2026-08-19); time readout click dead; `getcurrentindex` unimplemented (surfaces on interaction, not at load); 13 inert host-action menus; `fx_setBgFx(1)` / `fx_onGetPixelA` accepted and inert — `phase-29-handoff.md` |
 
 ---
@@ -49,8 +51,9 @@ One file per measured skin. A pointer that says "read `skins.md` for skin X" res
 | Winamp Modern (stock 5.x) | [skins/winamp-modern-stock.md](skins/winamp-modern-stock.md) |
 | Love is War Miku | [skins/love-is-war-miku.md](skins/love-is-war-miku.md) |
 | Defix Hi-End 200 | [skins/defix-hi-end-200.md](skins/defix-hi-end-200.md) |
+| multipass 1.4 | [skins/multipass.md](skins/multipass.md) |
 
-The other five skins in the table above are rows only, and stay rows until one is measured with
+The other skins in the table above are rows only, and stay rows until one is measured with
 `/wal-skin-report`. When that happens, add `skins/<skin>.md` and a row here.
 
 ### Trap index

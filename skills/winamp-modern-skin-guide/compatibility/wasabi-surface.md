@@ -21,7 +21,15 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   layer; `move="0"` opts a piece out (a layer whose own script owns the press)
 - Button actions: `PLAY` / `PAUSE` / `STOP` / `PREV` / `NEXT` / `EJECT` / `SEEK` / `SWITCH` /
   `TOGGLE guid:…` / `EQ_TOGGLE` / `EQ_AUTO` / `EQ_BAND` / `EQ_PREAMP` / `MENU presets` /
-  `MINIMIZE` / `CLOSE`
+  `MINIMIZE` / `CLOSE` / `VOLUME` / `COLORTHEMES_SWITCH` / `_NEXT` / `_PREVIOUS` /
+  **`SYSMENU` / `CONTROLMENU` / bare `MENU`** (Phase 33 — the "≡" main-menu button at the top-left of
+  a skin's title bar; it opens NullPlayer's own context menu, which is what Winamp's menu there is.
+  Measured: `SYSMENU` in multipass, CornerAmp, Overdrive_2, winampmodern566, ZDL; `CONTROLMENU` in
+  multipass, mmd3, Overdrive_2, ZDL — every one of them inert until then)
+- Button actions still **inert**, measured across the 17 installed skins: `TRACKINFO` (6 skins) and
+  `TRACKMENU` (5) — both usually reached through `dblclickaction=`/`rightclickaction=` on a `<text>`,
+  a mechanism of its own; `PAN` (6, the balance slider); the playlist, video and visualization command
+  families `PE_*`, `VID_*`, `VIS_*`, `CB_*`
 - Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
   and vertical), text, `clipchildren` parent clipping
 - Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups. A
