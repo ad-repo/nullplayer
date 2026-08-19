@@ -156,6 +156,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             refreshBoundText()
             startBoundTextPolling()
             #if DEBUG
+            // `WINAMP_MODERN_SHOW_WINDOWS=SPEAKER1,SPEAKER2` opens skin windows at launch, the way
+            // the user does from the Skin Windows menu. The counterpart of the harness's
+            // `WINAMP_MODERN_RENDER_SHOW`: a defect confined to a window that ships
+            // `default_visible="0"` cannot be reproduced from a cold launch without it.
+            if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_SHOW_WINDOWS"] {
+                for name in spec.split(separator: ",") {
+                    let id = name.trimmingCharacters(in: .whitespaces)
+                    guard !id.isEmpty else { continue }
+                    NSLog("WinampModern: opening skin window %@ (debug hook)", id)
+                    _ = toggleSkinWindow(id: id)
+                }
+            }
+            #endif
+            #if DEBUG
             NSLog("WinampModern surfaces [%@]: %@", url.lastPathComponent,
                   surfaceCoordinator?.summary ?? "-")
             #endif
