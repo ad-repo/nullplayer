@@ -1,0 +1,144 @@
+# Winamp Modern (`.wal`) — Wasabi XML / XUI surface
+
+Part of [compatibility.md](../compatibility.md). What the markup layer supports and what it does not.
+
+## Wasabi XML / XUI
+
+**Supported**
+
+- Multiple document roots and raw ampersands (real skins contain both) — but tags must balance
+- `groupdef` with `inherit_group` inheritance; `xuitag` custom tag registration
+- `instanceid` on a group instance **renames the expanded object**: it answers to the instance id
+  instead of the groupdef's id, which is the only way a skin can address one of several instantiations
+  of one definition — from `sendparams group="…"` and from a script's `findObject`. Winamp Modern's
+  titlebar instantiates `wasabi.titlebar.streak` twice this way (Phase 24)
+- Group template expansion during object creation, resolved **in document order**: an id defined
+  twice serves each `<group>` the version written above it, the way Winamp's streaming parser does
+  (T800 gives `player.main.cms` one body for its full player and another for its shade layout).
+  A reference with no document position of its own — `System.newGroup`, a synthesized node — takes
+  the newest version, and one written before every definition of its id takes the first
+- Window dragging from the layout background, from a bare `move="1"` group, and from an `action`-less
+  layer; `move="0"` opts a piece out (a layer whose own script owns the press)
+- Button actions: `PLAY` / `PAUSE` / `STOP` / `PREV` / `NEXT` / `EJECT` / `SEEK` / `SWITCH` /
+  `TOGGLE guid:…` / `EQ_TOGGLE` / `EQ_AUTO` / `EQ_BAND` / `EQ_PREAMP` / `MENU presets` /
+  `MINIMIZE` / `CLOSE`
+- Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
+  and vertical), text, `clipchildren` parent clipping
+- Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups. A
+  `<bitmapfont file=…>` may name either a declared `<bitmap>` (Winamp Modern's form) or a path inside
+  the archive (MMD3's form); both resolve, and the glyph sheet carries the font's own `gammagroup`
+- `<text>` content: a script's `setAlternateText` overrides while set (`setText` clears it), then the
+  `display=` binding (`time`, `songname` → "Artist - Title", `songinfo` → the stream-info line a
+  `songinfo.maki` tokenises), then `text`/`default`, then the XML `alternatetext` as the
+  nothing-to-show placeholder. `getText()` answers with the same resolved string
+- `<vis mode>`: `1` = **spectrum analyzer**, `2` = **oscilloscope**, `0`/`3` = off (a skin uses "off"
+  when it fills the box with its own animated layer); an undeclared mode is the analyzer. `setMode`
+  switches it. A skin's menu script is the proof of the pairing (`bandwidth` + `setMode(1)` vs
+  `oscstyle` + `setMode(2)`)
+- `<grid>`: nine-slice chrome — `topleft top topright left middle right bottomleft bottom
+  bottomright`, corners at their art's natural size, edges stretched (or tiled with `tile="1"`) along
+  one axis, `middle` filling the centre, all at the object's `alpha`. Every part is optional, and a
+  grid that declares a single row or column is a **three-slice** whose one row/column takes the whole
+  extent (cPro's tab pills carry only `top*`; the ClassicPro seek track only `left/middle/right`).
+  Edges that together exceed the box shrink rather than overlap. Phase 24
+- `<rect>`: a flat fill (`filled="1"`) or a 1px outline, in the resolved `color` at the object's
+  `alpha`, with the object's own `gammagroup` applied. Phase 24
+- `<gradient mode="linear">`: normalized `gradient_x1/y1/x2/y2` across the object's own rect and
+  `points="0.0=R,G,B,A;1.0=R,G,B,A"`, per-stop alpha preserved, multiplied by the object's `alpha` and
+  passed through its `gammagroup`. This is the exact form ClassicPro ships (a fade mask over a
+  reflection). Any other `mode`, or fewer than two parseable stops, draws **nothing** and records a
+  bounded diagnostic rather than inventing a colour. Phase 24
+- A colour reference resolves from a `<color value="r,g,b">` **or** from a generated solid bitmap
+  (`<bitmap file="$solid" color="r,g,b">`) — a skin may declare the same id as both, and the bitmap can
+  win the registry. Phase 24
+- `<ProgressGrid>`: `left`/`middle`/`right` over the filled span, growing from `orientation`'s edge,
+  valued from the sibling `<slider>` that carries the `action`. Skins pair the two and make the thumb
+  invisible (a 1×1 pixel), so the grid is the only position indicator they draw
+- `<text>` metrics: `fontsize` is a **pixel height** (em ≈ 0.8 ×), `font=` resolves a declared
+  `<truetypefont>`, an archive path, **or** an installed family name, `bold`/`italic` are honoured, the
+  string is centred in its box, and `forcefixed`/`timecolonwidth` give fixed-pitch cells
+- Script-built menus: `PopupMenu` with `addCommand`/`addSeparator`/`addSubMenu`/`checkCommand`/
+  `popAtMouse`/`popAtXY`, shown as a real `NSMenu` at the mouse or at a computed point; both block and
+  answer the picked id
+- Hit testing follows Wasabi's region rule: a `group`/`layout` claims a point only where it paints a
+  `background` — a bare container declared over the whole window does not swallow clicks meant for
+  what is beneath it — and `animatedlayer` takes clicks like `layer` (MMD3's rotary knobs)
+- Colour themes: a `<gammagroup value="r,g,b">` is a per-channel **multiplier**, `(4096 + v) / 4096`
+  (0 = unchanged, +4096 = doubled, −4096 = zeroed), applied to bitmaps and to `<color>` resources;
+  `gray` is a mode (any non-zero desaturates). The default theme is the **first gammaset in the
+  document**, and the theme list keeps document order. A `gammagroup` id is scoped to its gammaset,
+  not to the global resource namespace.
+- **Hidden objects are still laid out.** They are not painted and take no clicks, but their geometry
+  resolves, they receive `onResize`, and `getWidth()` answers for them — Wasabi lays a hidden window out
+  too, and a skin that hides a pane can only bring it back from its own `onResize` seeing the pane grow
+  (cPro-Bento's side view). Phase 24
+- An object whose frame is **entirely outside its parent** is culled with its subtree — skins park
+  objects off-layout to hide them, and their art must not leak into the window
+- Animated, N-state, ticker, album-art, and visualization elements
+- Layout/shade switching, resize constraints, alpha-shaped window regions
+- Namespaced per-skin configuration persistence
+- Aliases and meta-commands
+- `<Wasabi:Frame>` / `<frame>` splitters: the frame instantiates the groups named by
+  `left`/`right` (vertical divider) or `top`/`bottom` (horizontal) and lays them out either side of
+  an 8px divider placed `width`/`height` pixels from the `from` edge. On a frame,
+  `getPosition`/`setPosition` are that offset. The divider is **draggable**: its grab strip takes the
+  resize cursor and a drag rewrites `position`, bounded by `minwidth`/`maxwidth` (which skins spell
+  that way for both orientations, and which are measured from the far edge when negative —
+  ClassicPro's `maxwidth="-224"` means "always leave 224px for the other pane")
+- Auto-sizing from text: a group with `autowidthsource="<id>"` takes the width of the descendant it
+  names, and a `<text>` with no `w` takes its own content's width. `getAutoWidth()` measures with the
+  object's real font (bitmap-font pitch or Core Text) plus `leftpadding`/`rightpadding`, so a skin
+  that sizes its own boxes from that number gets boxes that fit
+- `alpha` is honoured for **every** object, not only bitmap-backed ones: it is set once per node
+  before the type-specific drawing, so a `<text alpha="0">` is invisible. Skins stack readouts in one
+  slot and show one at a time by moving their alphas (Defix's Kbps / KHz / Channels), so text that
+  ignores it prints every variant on top of the others. Phase 25
+- A `<script param="…">` carries Winamp's macros, not a path: `@HAVE_LIBRARY@` expands to `1` (we host
+  a library surface). A skin reads it with `getParam()` and lays itself out from the answer — Defix
+  drops the Media Library tab out of its SUI tab strip when told there is none. An unrecognized macro
+  is passed through unchanged. Phase 25
+- `windowholder hold="guid:…"` component embedding and `componentbucket` discovery
+- The curated predefined `wasabi.*` standard-library base groups (`registerWasabiStandardLibrary`),
+  including a clean-room text-only `Wasabi:TitleBar` that draws the window's own name
+
+**Not supported / degraded**
+
+- **`wasabi.*` shells are structure-free, so a widget that has no body of its own draws nothing.**
+  What is missing is the standard library's *structure*, not the pixels: the skins ship the standard
+  artwork themselves under the conventional ids (mmd3 declares 174 `wasabi.*` bitmaps, Winamp Modern
+  114, CornerAmp 22), but the groupdef bodies that compose them live inside Winamp. Measured across
+  the four reference skins the live footprint is small — cPro-Bento references no `wasabi.*` group at
+  all (the ClassicPro engine supplies real definitions) and Winamp Modern declares its own; what falls
+  to a shell is `wasabi.panel` (CornerAmp ×4, mmd3 ×1 — all inside `modal`/`static` frames, which
+  synthesis never selects), `wasabi.objectframe.group` (mmd3 ×1), and `wasabi.titlebar`. Unresolved
+  conventional *tags* — `<Wasabi:Button>` (CornerAmp, mmd3 colour-theme dialogs) and `<Wasabi:TabSheet>`
+  (mmd3's winshade sidecar) — become inert nodes the same way.
+- A base group outside the curated set warns and is dropped.
+- A missing **optional** bitmap or cursor is a warning, not an error (Winamp-compatible).
+- `file="$solid"` / `file="$gradient"` predefined bitmaps generate no **pixels**, so a layer that
+  names one draws nothing. Their `color` is read where one is used as a colour resource (above), which
+  is how skins mostly use them.
+- `embed_xui` is retained as metadata only — it is **not** an inheritance edge.
+- A splitter's `jump` (snap-to-detent) is parsed but not honoured — a drag is continuous.
+- **`<vis>` attributes read: `mode`, `bandwidth` (`thin` narrows the bars, `wide` is the solid row),
+  the band/oscilloscope colours and `alpha`. Ignored: `peaks`, `peakfalloff`, `falloff`, `coloring`,
+  `oscstyle`, `fliph` — a skin's visualization menu sets all of them (Love is War Miku's does), so those
+  menu items appear to do nothing.**
+- `<vis mode="2">` (oscilloscope) is drawn from the same band levels as the analyzer, mirrored about
+  the centre line: the host publishes a spectrum, not raw PCM, so it is the shape of the signal rather
+  than the waveform itself. It is distinguishable from the analyzer, not faithful to Winamp's scope.
+- Auxiliary container windows render and take input but do **not** drive per-container MAKI layout
+  switching; the main window owns the scripted scene. (cPro-Bento is single-window, so this is
+  invisible there.)
+- Pixel-exact fidelity against real Winamp has never been verified for any target.
+
+**Skin-script corrections.** The engine runs a skin's scripts and draws what they compute; it does not
+second-guess them. There is exactly **one** exception, in `WasabiSkinQuirks`: ClassicPro's promo art
+double-centres itself, so it jumped sideways whenever a double-click swapped it in for the beat
+visualization. The bar for a second entry is in that file's doc comment — the correct placement must be
+derivable from the skin's own numbers, exact at every size, and a provable no-op wherever the skin
+already lands correctly.
+
+Duplicate resource/group/XUI definitions **replace** earlier ones and warn — this is intentional
+override behavior, not an error.
+

@@ -49,7 +49,9 @@ concept; read the one your symptom points at, not all of them.
 | Teardown crash, leak, or mode-switch breakage | [reference/components.md](reference/components.md) |
 | A ClassicPro (`.wal` + NSIS engine) skin misbehaves | [reference/classicpro.md](reference/classicpro.md) |
 | **How do I see what the engine is doing?** Probes, env vars, dumps | [reference/harness.md](reference/harness.md) |
-| What is supported at all? Method/element tables, limits, policy | [compatibility.md](compatibility.md) |
+| What Wasabi markup is supported at all? | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
+| Is this MAKI method implemented? What events fire? | [compatibility/maki-surface.md](compatibility/maki-surface.md) |
+| Limits, engine policy, verification status | [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md) |
 | What does *this named skin* do today? | [skins.md](skins.md) → `skins/<skin>.md` |
 | Measuring one skin end to end | `/wal-skin-report <skin.wal>` |
 | Choosing what to implement next across many skins | [triage-playbook.md](triage-playbook.md) |
@@ -173,7 +175,7 @@ The skin is **untrusted input**. Three rules hold everywhere and must not be rel
    `WalVirtualFileSystem`. Never hand a skin an `NSURL` into the real filesystem.
 2. **Everything is bounded.** Archive entries, uncompressed bytes, compression ratio, XML depth, node
    count, include depth, image dimensions, font size, script size, instruction count, call depth,
-   allocation, stack values, active timers. See [compatibility.md](compatibility.md#limits) for values.
+   allocation, stack values, active timers. See [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md#limits) for values.
 3. **Failures are typed, never traps.** Malformed input produces a `WalFailure` carrying
    `WalDiagnostic`s with a `WalSourceLocation` (`logical-path:line:column`). A Swift trap or a hang on
    skin input is a bug — the fuzz tests in `WinampModernPhase7Tests` exist to catch exactly that.
@@ -215,7 +217,8 @@ network. `messagebox` is denied; `navigateurl` is a no-op.
 ## Related
 
 - `reference/` — the split-out detail; see the routing table above
-- [compatibility.md](compatibility.md) — supported/unsupported Wasabi + MAKI surface, limits, engine policy
+- [compatibility.md](compatibility.md) — the supported/unsupported surface: archive rules and hosted
+  components inline, with `compatibility/` holding the Wasabi, MAKI, and limits/policy tables
 - `skills/wal-skin-report` — `/wal-skin-report <skin.wal>`: the single-skin instrument. Measures one
   skin end to end and emits the structured report (capabilities, status matrix, unknowns, grade)
 - [triage-playbook.md](triage-playbook.md) — **corpus-scale triage**: how to measure many skins at once,
