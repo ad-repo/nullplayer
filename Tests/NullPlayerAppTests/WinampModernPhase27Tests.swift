@@ -4,7 +4,7 @@ import ZIPFoundation
 
 /// Phase 27 — the two script methods every skin-drawn meter depends on.
 ///
-/// Measured from Defix Hi-End 200 (`skills/winamp-modern-skin-guide/skins.md`): `getVisBand` was
+/// Measured from Defix Hi-End 200 (`skills/winamp-modern-skin-guide/skins/defix-hi-end-200.md`): `getVisBand` was
 /// missing, so its speaker cones, VU needles and level bars were dead by construction — no artwork
 /// problem, the scripts simply never got a number. `isLoading` was missing on `<AlbumArt>`, which
 /// aborted the playlist window's `ontimer` on every single tick.

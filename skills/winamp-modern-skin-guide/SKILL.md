@@ -20,7 +20,7 @@ as much as the code. Three modes, three different entry points:
 
 | You are… | Start with | Not |
 |---|---|---|
-| Debugging one named skin | [skins.md](skins.md), then [reference/harness.md](reference/harness.md) | reading this file top to bottom |
+| Debugging one named skin | [skins.md](skins.md) → `skins/<skin>.md`, then [reference/harness.md](reference/harness.md) | reading this file top to bottom |
 | **Measuring** a skin — what does it contain, what works, how good is it? | **`/wal-skin-report <skin.wal>`** (`skills/wal-skin-report`) — fixed measurement order, structured report, A–F grade with a confidence axis | ad-hoc dumps whose findings evaporate |
 | Deciding what to implement next across many skins | [triage-playbook.md](triage-playbook.md) — corpus measurement, defect classes, the demand index | fixing whatever the last bug report named |
 
@@ -221,8 +221,9 @@ network. `messagebox` is denied; `navigateurl` is a no-op.
 - [triage-playbook.md](triage-playbook.md) — **corpus-scale triage**: how to measure many skins at once,
   classify defects, rank missing capabilities by demand, and isolate one issue once it is ranked. Read
   it before starting work that is not about a single named skin
-- [skins.md](skins.md) — **per-skin status**: what each measured fixture does today and what is still
-  missing for it. Start here when a report names a skin, and update it when a phase closes on one
+- [skins.md](skins.md) — **per-skin index**: the status table, the skin → file map, and the trap
+  index. Each measured skin's detail is `skins/<skin>.md`. Start here when a report names a skin, and
+  update the skin's file when a phase closes on one
 - [manual-qa-checklist.md](manual-qa-checklist.md) — the GUI verification pass
 - `docs/winamp-modern/` — decision records and per-phase handoffs
 - `docs/legal/winamp_modern_provenance.md` — clean-room provenance record

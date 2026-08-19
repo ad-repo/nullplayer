@@ -29,7 +29,7 @@ comparable between machines without redistributing anything.
 Three tiers, and they earn different amounts of attention:
 
 - **Gold (~10–15)** — the ones we have fixed and understand. Pinned in the regression sweep by render
-  hash. Today: the nine in [skins.md](skins.md). Each Gold skin also gets a **reference
+  hash. Today: the nine in `skills/winamp-modern-skin-guide/skins.md`. Each Gold skin also gets a **reference
   capture** recorded once — the author's own `screenshot.png` if the archive ships a usable one, plus
   any demo video or skin-site gallery page. The archive can tell you what a skin *contains*; only an
   external reference tells you what it is *supposed to look like*, and that is the only ground truth
@@ -152,7 +152,7 @@ Both sweeps above explore **one** state: the skin as it comes up. That is not th
 analog VU meters — plus 31 background materials, all selected from its own configurator, all behind a
 `TOGGLE` that was itself unreachable until Phase 26. A motion sweep of the default state renders the
 cassette, reports it animating, and says nothing at all about the eight other displays. The engine's
-own record of this is one line in `skins.md` ("the analog VU meter styles configure a per-pixel warp we
+own record of this is one line in `skins/defix-hi-end-200.md` ("the analog VU meter styles configure a per-pixel warp we
 accept and ignore"); nothing has ever rendered one.
 
 So enumerate the states, and get them from the skin itself:

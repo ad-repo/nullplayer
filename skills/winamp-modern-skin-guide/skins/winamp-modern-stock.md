@@ -1,0 +1,63 @@
+## Winamp Modern (`winampmodern566.wal`) — the stock 5.x skin
+
+*Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
+
+**Shape of the skin:** separate windows — `main` (354×280) plus declared `Pledit`, `MLibrary`,
+`Video`, `AVS`, `winamp.albumart` and `notifier` containers. The main window is **hollow XML**: the
+whole client area is built at runtime by `standardframe.maki` from its `content=` XUI param.
+
+### Working
+
+- The frame, the script-built body, the playlist and library windows (Phase 13).
+- **The config drawer** — the `CONFIG` button at the bottom right slides it open, revealing the
+  equalizer (preamp + 10 bands with the dB scale, ON / AUTO / PRESETS), the crossfade controls, and the
+  EQ / Options / Color Themes tab strip. Phase 24; it had never opened in any version.
+- **The titlebar** — title centred on the window with a decorative streak flanking it either side, at
+  every width. Phase 24, and the last of this skin's error-severity findings: the skin now loads at
+  `degraded`, not `unsupported`.
+
+### The titlebar streaks: laid out by the script, not by the markup
+
+Worth knowing because it looked for two phases like a *rendering* problem. `titlebar.maki` lays out
+all three pieces in one routine — called from `onResize`, `onTextChanged` and `onSetXuiParam` — and
+every position is derived from the centred title:
+
+```
+titleX  = layout.clientToScreenX((layoutW − title.getAutoWidth()) / 2)   // → window-client space
+titleX  = titlebargroup.screenToClientX(titleX) − titlebargroup.getLeft() // → group-local
+title.x = titleX                       streakLeft.x  = padTitleLeft
+streakLeft.w  = titleX − padTitleLeft  streakRight.x = titleX + titleW + 1
+streakRight.w = −(titleX + titleW + padTitleRight + 2), relatw="1"
+```
+
+The markup's `x="0" w="95"` / `x="155" relatw="1"` values are only what the streaks wear until that
+routine first runs. Two things had to be true before it could:
+
+- **`clientToScreenX`/`screenToClientX` must exist** — they abort the handler otherwise — **and must
+  convert relative to the receiver's parent**. Here both objects hang off the layout, so the round trip
+  returns the input and the script's own `− getLeft()` is the group correction. See
+  `compatibility.md`; the reading is pinned by ClassicPro's call sites, not by this one.
+- **`instanceid` must name the instance.** Both streaks are instantiations of one `wasabi.titlebar.streak`
+  groupdef and are told apart *only* by `instanceid`. While that was ignored, the script's
+  `findObject("wasabi.titlebar.streak.left")` returned null for both, so the streaks kept their declared
+  slot while the title centred itself — landing underneath them, reading "WI…". That was the whole of
+  the symptom this skin was documented with, and it was never about the streak *geometry*.
+
+Measured after the fix: at 354px the left streak is 20–152, the title 152–202, the right streak
+203–309; at 500px they follow the title to 20–225 / 225–275 / 276–455.
+
+### Not implemented or knowingly wrong
+
+- The 1px `window.titlebar.title.overlay` layer keeps its declared slot instead of being stretched over
+  the title. The script resolves it with `title.findObject("window.titlebar.title.overlay")` — a lookup
+  *inside* the title object it just resolved, which finds nothing. Matching Winamp here would mean
+  inventing lookup semantics for a 1px decorative sliver; measured and left alone.
+- Its EQ drawer's crossfade and EQ buttons shift 14px once `onResize` runs — the layout its own script
+  computes, and invisible until the drawer is opened.
+
+### Role in the implementation
+
+**Compatibility expansion.** Renders: window chrome, menubar, display (timer, song ticker,
+bitrate/sample rate, spectrum), transport, sliders. Normal (354×280) and shade (354×25) switch
+through script dispatch; resize clamps; theme switching restores. Client area is built at runtime
+from the frame's `content=` param

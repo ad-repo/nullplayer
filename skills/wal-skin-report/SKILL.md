@@ -11,9 +11,14 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 Measure **one** skin end to end and emit the report in §4. This is the single-skin instrument; the
 corpus-scale process it feeds is `skills/winamp-modern-skin-guide/triage-playbook.md`.
 
-Read first if you have not this session: `skills/winamp-modern-skin-guide/SKILL.md` (how the engine
-works) and `skins.md` in the same directory (whether this skin is already measured — **if it has a
-section there, start from it and update it at the end**).
+Read first if you have not this session — two targeted reads, not the whole guide:
+
+- `skills/winamp-modern-skin-guide/reference/harness.md` — what every probe below is and does.
+- `skills/winamp-modern-skin-guide/skins/<skin>.md`, if this skin already has one (the index is
+  `skins.md` beside it). **If it does, start from it and update it at the end.**
+
+`skills/winamp-modern-skin-guide/SKILL.md` is a router with a symptom → file table; read the one
+reference file a finding points at, rather than the guide top to bottom.
 
 ## 0. Resolve the input
 
@@ -119,7 +124,7 @@ Fill every section. An empty section is a finding — write "not measured" and w
 
 - **File:** `<filename>` · <bytes> B · SHA-256 `<hash>`
 - **Measured:** <date> · harness `<git rev>` · engine: <none | ClassicPro x.y>
-- **Prior status:** <skins.md section, or "first measurement">
+- **Prior status:** <`skins/<skin>.md`, or "first measurement">
 - **Grade: <A–F> (confidence: high | medium | low)**
 
 ## 1. Identity
@@ -173,7 +178,7 @@ Each as: the question · why it is open · **what evidence would settle it** (a 
 the author's screenshot, a user answer). This section is the point of the report — do not compress it.
 
 ## 11. Follow-ups
-Proposed `skins.md` row/section. Capability requests for the demand index, each with this skin as a
+Proposed `skins/<skin>.md` content plus its `skins.md` row. Capability requests for the demand index, each with this skin as a
 test case. Anything that belongs in `TASKS.md`.
 ```
 
@@ -196,10 +201,11 @@ looks perfect at rest and is dead under the mouse is **not** an A. If the archiv
 
 ## 6. Close the loop
 
-1. Update this skin's section in `skills/winamp-modern-skin-guide/skins.md` (state, what came alive,
-   what is knowingly left, and any trap it sets) — that file is the durable memory, the report is the
-   snapshot.
-2. Anything that generalises beyond this skin belongs in `SKILL.md` or `compatibility.md`, not in the
-   report.
+1. Update `skills/winamp-modern-skin-guide/skins/<skin>.md` (state, what came alive, what is knowingly
+   left, and any trap it sets) — that file is the durable memory, the report is the snapshot. If the
+   skin has no file yet, create it and add its row to the index and trap index in `skins.md`.
+2. Anything that generalises beyond this skin belongs in the `reference/` file that owns the concept
+   (probes → `reference/harness.md`, drawing → `reference/rendering.md`, …) or in `compatibility.md`,
+   not in the report. `SKILL.md` gains a row only if a whole new *category* appeared.
 3. Hand the user the report path and the grade line, and list the §10 questions that only they can
    answer.

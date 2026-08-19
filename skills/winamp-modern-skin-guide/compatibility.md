@@ -10,13 +10,10 @@ than guessing.
 
 ## Reference targets
 
-Three skins drove the implementation, in increasing order of demand:
-
-| Target | Role | State |
-|--------|------|-------|
-| **CornerAmp_Redux** | first vertical slice | loads, scripts, renders its 246×228 alpha-shaped layout, button input routed |
-| **Winamp Modern** | compatibility expansion | **renders**: window chrome, menubar, display (timer, song ticker, bitrate/sample rate, spectrum), transport, sliders. Normal (354×280) and shade (354×25) switch through script dispatch; resize clamps; theme switching restores. Client area is built at runtime from the frame's `content=` param |
-| **cPro-Bento** + ClassicPro engine | north-star | full 40-file include graph expands, graph builds, scripts bind and run, topology yields exactly one SUI window; **renders** its frame, titlebar, menu bar, display, transport, sliders, and — since the `Wasabi:Frame` splitter builds them — the SUI's tab strip, playlist pane and album-art area. Since Phase 13 the Media Library tab hosts the **real library browser** and the playlist pane draws the live queue; all three surfaces resolve inside the skin with no classic window |
+Three skins drove the implementation, in increasing order of demand: **CornerAmp_Redux** (first
+vertical slice), **Winamp Modern** (compatibility expansion), and **cPro-Bento** + the ClassicPro
+engine (north-star). What each one does today lives in [skins.md](skins.md#reference-targets) and the
+per-skin files it indexes — one home for measured state, because that is the part that drifts.
 
 None of these ship with NullPlayer. All fixture-based tests are opt-in behind `WINAMP_MODERN_WAL` /
 `WINAMP_MODERN_ENGINE`; everything committed is synthetic and self-authored.

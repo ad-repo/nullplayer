@@ -94,7 +94,7 @@ The corpus tells you *what* to fix; this is how you find *why*, and the order ma
 probe is cheap only if the previous one has narrowed the space. Never change renderer code before
 step 3 answers.
 
-1. **[skins.md](skins.md)** — is this a known trap for this skin? Two phases have already been lost to
+1. **[skins.md](skins.md) → `skins/<skin>.md`** — is this a known trap for this skin? Two phases have already been lost to
    re-deriving one.
 2. **Report after driving** (`RENDER_CLICK`'s post-report, not the load-time one) — is it a missing
    method? If yes, it is Class A, stop, add it to the demand cluster, do **not** hand-fix it here.
