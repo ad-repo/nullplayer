@@ -10,7 +10,7 @@ window that is. Resolving only through `WinampModernComponentRegistry.kind(for:)
 container-addressed button inert, because that registry deliberately never matches a container id.
 
 Defix's `CONF` button is exactly one — `<button id="CONF" action="TOGGLE" param="Config">` — so its
-entire configurator was unreachable: the 31 changeable backgrounds, the nine display styles, and the
+entire configurator was unreachable: the 31 changeable backgrounds, the eight display styles, and the
 songticker scrolling mode. That last one is why the symptom looked like a renderer bug rather than a
 routing one: the skin ships `Disable Songticker Scrolling = 1`, its own `onDataChanged` writes
 `ticker="off"`, and the only control that could turn it back on could not be opened. `TOGGLE` now

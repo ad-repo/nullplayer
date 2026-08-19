@@ -98,7 +98,7 @@ For each of the three fixtures:
 - [ ] Windows ▸ Equalizer, on a skin that declares no EQ (Defix, T800): opens NullPlayer's full
       classic EQ — on/off, auto, presets, labels — painted in the skin's palette, **and** the skin's
       own EQ button opens the same window rather than a different one
-- [ ] Defix: work through its configurator — the 31 changeable backgrounds, the nine display styles
+- [ ] Defix: work through its configurator — the 31 changeable backgrounds, the eight display styles
       (cassette, the VU meters, the oscilloscopes), the colour/ink options. None of this has ever been
       driven, headless or live; note which ones fail and how
 - [ ] Capture a reference screenshot per fixture into `docs/winamp-modern/screenshots/`

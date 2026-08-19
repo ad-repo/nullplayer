@@ -26,7 +26,7 @@ as much as the code. Three modes, three different entry points:
 
 The two habits those exist to break: **a skin is a test case, not a milestone** (batch work by
 capability, not by skin — one fix that unblocks 200 skins beats ten that unblock one), and **a skin's
-default state is not the skin** (Defix ships nine display styles; the cassette is one of them, and the
+default state is not the skin** (Defix ships eight display styles; the cassette is one of them, and the
 animated VU meters behind the other eight have never been rendered here).
 
 ## Routing: which file answers this?

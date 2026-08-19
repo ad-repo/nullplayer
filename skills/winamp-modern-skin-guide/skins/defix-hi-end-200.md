@@ -14,13 +14,21 @@ undriven measurement. A skin's own thumbnail cannot answer this class of questio
 
 **Shape of the skin:** separate windows — `main` (406×355) plus `pledit`, `SUI` (its media
 library/browser/visualization window, 800×600), two `SPEAKER` cabinets, `Config` (an About page),
-`browserpro`, `searchresults` and `notifier`. The equalizer is synthesized. Almost everything the skin
-draws is script-driven: a global `<scripts>` block in `skin.xml` (`CORE_SCRIPT.maki`, 47 KB) plus a
+`browserpro`, `searchresults` and `notifier`. **The equalizer is the classic fallback, not a
+synthesized window** — the catalog says so in as many words (`equalizer=classic(the skin declares no
+equalizer surface)`), because this skin declares no equalizer surface *and* no `EQ_BAND`/`EQ_PREAMP`/
+`<eqvis>` control for one to be recognised from, so nothing qualifies for synthesis. Its `EQSwitch`
+proxy carries `action="TOGGLE" param="Eq"`, an id nothing in the skin declares.
+
+Almost everything the skin draws is script-driven: a global `<scripts>` block in `skin.xml` (`CORE_SCRIPT.maki`, 47 KB) plus a
 55 KB main-layout script.
 
-**Measured status** — `WINAMP_MODERN_RENDER_DUMP`, 2026-08-17 (Phase 25): `degraded`, **0 errors and
-0 unsupported methods at startup**; the remaining findings are duplicate ids and optional missing
-bitmaps. `main/normal` 406×355, 69 nodes.
+**Measured status** — `WINAMP_MODERN_RENDER_DUMP`, 2026-08-19 (`/wal-skin-report`, harness
+`c1373bb5`, SHA-256 `fac516d2…3bc78e`): `degraded`, **0 errors and 0 unsupported methods at startup**;
+the remaining findings are duplicate ids and optional missing bitmaps. `main/normal` 406×355, 69 nodes,
+35 bitmaps resolved and none missing. **All 50 script programs ran with `failed=-`.** Coverage
+**271/432 declared objects ever rendered (~63%)** — the unexplored set is dominated by the seven
+non-default display styles, which have no headless route in (below). **Grade B, confidence medium.**
 
 ### Working
 
@@ -31,7 +39,7 @@ bitmaps. `main/normal` 406×355, 69 nodes.
   `<windowholder>` on the media-library GUID, and the render harness cannot draw AppKit content, so
   the dump is blank for a surface that works. Three separate defects kept the strip inert — see the
   traps below.
-- **The display** — the audio-cassette visualizer (its shipped default, one of nine styles), the song
+- **The display** — the audio-cassette visualizer (its shipped default, one of eight styles), the song
   ticker on the cassette label, the time readout, and the Shuffle / Repeat / Kbps / Extension
   readouts, one variant at a time.
 - **The SUI tab strip** — Media Library / Visualization / Explorer, each sized to its own label.
@@ -85,16 +93,27 @@ bitmaps. `main/normal` 406×355, 69 nodes.
 - **Seven of its eight display styles were unreachable; Phase 27 made them selectable.** The skin
   registers a *Visualizer* item with `newAttribute` carrying eight values — `Audio cassette` (its
   shipped default), `Left Right VU`, `BASS TRIPLE VU`, `Ovis 1`, `Ovis 2`,
-  `McIntosh MC2KW Amplifier VU`, `P-402 VU`, `Technics VU` — and binds **no control in the skin** to
+  `McIntosh MC2KW Amplifier VU`, `P-402 VU`, `Technics VU` — **eight, not nine**: they sit contiguous
+  in `MAIN_LAYOUT_1_SCRIPT.maki`'s string table with sequential index bytes, and `LAYOUT1/Vu2/` ships
+  exactly four needles and four scales. It binds **no control in the skin** to
   any of them, because in Winamp they appear in the preferences dialog. All the artwork ships
   (`LAYOUT1/Vu2/` four needles + four scales, `LAYOUT1/LVL/` Technics and RT level strips,
-  `LAYOUT1/CAS/` 57 cassette bodies). They are now listed in **Winamp Modern → Skin Settings...**
+  `LAYOUT1/CAS/` 57 cassette bodies). **The eight are not registered into one section**: six are under
+  `Visualizer [{E9C2D926-…-85E31755A4C4}]`, but `Ovis 1` and `Ovis 2` are under
+  `{E9C2D926-…-85E31755A4CD}` — one hex digit apart, the skin's own typo, and the same catch-all
+  section that holds `12`, `31`, `find Remaining`, `Bg Chng` and `SCALING Chng`. Those two cannot
+  appear under "Visualizer" in Skin Settings however well the sheet works. They are now listed in **Winamp Modern → Skin Settings...**
   along with the songticker modes below and the rest of the 32 options this skin registers
   (`WINAMP_MODERN_RENDER_SETTINGS=1` prints them). Whether picking one actually changes the display
   is the live pass.
-- **Its two speaker cabinets and its configurator are opened from the host's Skin Windows menu**
-  (Phase 27). The skin declares `SPEAKER 1`, `SPEAKER 2` and `Config name="Skin Settings"` and binds
-  no button in the skin to any of them — in Winamp they live in Winamp's own Windows menu. Whether
+- **Its two speaker cabinets are opened from the host's Skin Windows menu** (Phase 27). The skin
+  declares `SPEAKER 1`, `SPEAKER 2` and `Config name="Skin Settings"` and binds no button to the two
+  speakers — in Winamp they live in Winamp's own Windows menu. **`Config` is the exception, and this
+  file used to say otherwise:** `<button id="CONF" action="TOGGLE" param="Config" x="272" y="282"
+  w="74" h="74" rectrgn="1"/>` is the round button at the bottom-right of the main window, and its
+  `param` is a **container id**. Whether it opens the window is untested — the render harness has no
+  live container-visibility model, so markup `TOGGLE param=<container id>` cannot be measured there
+  at all (see the trap below). Click it in the app. Whether
   the cones (`animatedlayer#SpeakerVis`, fed by `getVisBand`) animate is the open live question; their
   timer starts from `onSetVisible`, so nothing about them could be judged until the windows opened.
 - **The cassette reels are script-driven plain `<layer>`s and they are confirmed to spin in Winamp**
@@ -107,12 +126,17 @@ bitmaps. `main/normal` 406×355, 69 nodes.
   vis bytes; the harness cannot see it move (no audio), so watch it under playback in the app.
 - **`isloading` — implemented in Phase 27** on `<AlbumArt>`, from the host's real artwork-fetch
   state. `PLAYLIST_WINDOW.ontimer` had been aborting on the miss every tick.
+- **`getcurrentindex` is missing** (measured 2026-08-19). It does not appear at load — the startup
+  report is still 0 unsupported methods — but **every** click on the four round buttons raises it.
+  The textbook case of the queue-not-a-set rule: nothing sees it until something drives the event.
+  What its result feeds is unknown; `WINAMP_MODERN_RENDER_DISASM=getcurrentindex` would say.
 - **`setScale` is missing** — the configurator's seven window-scaling buttons (100–300%) are inert.
 - **The skin builds no `PopupMenu` of its own; every menu it has is a host action, and none is
   implemented.** `trackmenu`/`trackinfo` (declared as `rightclickaction`/`dblclickaction` on the song
   ticker — both *attributes* are also unsupported), `VIS_Menu`, `VIS_Cfg`, `VIS_Next`, `VIS_Prev`,
   `PE_Add/Rem/Sel/Misc/List`, `ML_SendTo`. `colorthemes_switch` fails the same way, which leaves its
-  six colour themes (`*Default`, `Azure`, `McIntosh Lite`, `McIntosh`, `Technics`) unreachable.
+  colour themes unreachable — 6 `<gammaset>` elements over 197 `<gammagroup>`s, but **5 distinct
+  names** (`*Default` is declared twice, then `Azure`, `McIntosh Lite`, `McIntosh`, `Technics`).
 - **`newDynamicContainer` returns the existing container**, so the skin's detachable visualizer and
   second mini-browser share one window rather than opening a copy.
 
@@ -160,6 +184,16 @@ bitmaps. `main/normal` 406×355, 69 nodes.
 - **A group is a window and clips.** The cassette display is a 263×79 group holding a 117×117 reel
   bitmap; unclipped, both reels spilled 53px below the cassette and painted over the song ticker,
   leaving the title readable only in the gaps between them.
+- **`CLICK_WATCH`'s `frame=not laid out` is a harness artifact, not a dead surface.** `CONF` looks
+  exactly like a dead control headlessly — `bindings=false`, `onleftclick -> 0`, and
+  `watch container#Config frame=not laid out state=[]` on two consecutive clicks. Watch `pledit`, a
+  container that is `default_visible="1"` and demonstrably works, and it prints the same thing. The
+  `container#SUI visible=0 -> 1` changes the four round buttons *do* produce come from the script
+  writing a graph attribute, which is a different mechanism from markup `TOGGLE` routing. Do not read
+  the first as evidence and the second as its absence.
+- **A bare clock ladder says nothing about this skin's motion.** All six windows hash identical at
+  t = 0 / 0.25 / 1 / 4 with `SETTLE=3`, because Layer FX is switched on *from playback*.
+  `WINAMP_MODERN_RENDER_FX=play` is what shows the reels warping (grid 4×4, mesh 5×5, non-identity).
 - **One refused method costs the whole window.** Every early defect here was a handler aborting
   partway: `getExtension` took the main layout's display with it, `fx_setGridSize` the VU meter,
   `newDynamicContainer` → `setFontSize` → `navigateUrl` → `hasVideoSupport` the global script, each

@@ -93,6 +93,20 @@ that changes the right attributes but nothing on screen is a renderer gap.
 > the `CGContext` it was handed. Without it every TrueType/system-font string is silently dropped from
 > the dump while the real app (always inside `NSView.draw`) shows them — the harness lies to you.
 
+> **`CLICK_WATCH`'s `frame=not laid out` is a harness artifact, not a dead surface.** The harness
+> renders each container standalone and keeps no live container-visibility model, so a markup
+> `TOGGLE param=<container id>` has nothing to move headlessly: the watched container reads
+> `frame=not laid out state=[]` however well the button works. Check it against a container you know
+> is fine — Defix's `pledit` is `default_visible="1"` and prints exactly the same. The
+> `changed container#X visible=…` lines you *do* see come from a **script** writing a graph
+> attribute, which is a different mechanism; do not read one as evidence and the other as its
+> absence. A markup `TOGGLE` to a container id can only be judged in the app.
+
+> **A bare `RENDER_CLOCK` ladder is not a motion verdict for a skin whose FX is switched on from
+> playback.** Defix's six windows hash identical at t = 0 / 0.25 / 1 / 4 with `SETTLE=3`, and its
+> reels are nonetheless warping — the FX is switched on from `onPlay`, which the ladder never sends.
+> Pair the ladder with `RENDER_FX=play`, and read a flat ladder as "nothing time-driven **at rest**".
+
 `RENDER_SETTLE` is usually the difference between a dump that means something and one that does not:
 Love is War Miku's whole opening animation (the display panel sliding to `y=84`, the character to
 `x=129`) runs on a 300ms timer, so without it the dump shows a scene the user never sees. And the
