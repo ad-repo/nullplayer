@@ -1,8 +1,8 @@
 # Winamp Modern (`.wal`) — State of the Work
 
-- **Date:** 2026-08-18
+- **Date:** 2026-08-19
 - **Branch:** `feat/winamp-modern` (72 commits ahead of `main`; ~31.5k insertions across 139 files)
-- **Phases completed:** 0A/0B, then 2–26
+- **Phases completed:** 0A/0B, then 2–29
 - **Audience:** anyone picking this up, reviewing it, or deciding whether it ships
 
 This is the orientation document; `skills/winamp-modern-skin-guide/triage-playbook.md` is the process
@@ -36,7 +36,8 @@ Concretely that meant writing, from scratch, in Swift:
 
 **Size:** ~10.5k lines of engine (`Sources/NullPlayer/WinampModern/`), ~1.9k lines of window/controller
 code (`Sources/NullPlayer/Windows/WinampModern/`), ~8.9k lines of tests (291 test functions across 25
-files). Suite total at Phase 26: **721 tests**, all green.
+files). Suite total at Phase 26: **721 tests**, all green (the counts in this paragraph are a
+Phase 26 snapshot and have not been re-measured since).
 
 ---
 
@@ -75,7 +76,9 @@ clips its children only when the skin **declared** its box.
 Draws sprites, stretched and tiled layers, nine-slice `<grid>`, bitmap fonts and TrueType text (with
 Winamp's pixel-height-to-point-size ratio, `forcefixed`, ticker motion), animated layers, `ProgressGrid`,
 `<vis>` in the three declared modes, region clipping from map bitmaps, colour themes (`gammaset`/
-`gammagroup`), per-object alpha, and hit testing including `rectrgn` and `move=` policy.
+`gammagroup`), per-object alpha, **callback-driven Layer FX** (the mesh warp that turns VU needles and
+cassette reels), and hit testing including `rectrgn` and `move=` policy. Artwork is cached pre-scaled
+to the backing store and repaints name the rects that changed — a Defix frame costs 3.5 ms at 2×.
 
 `WinampModernRenderPixelTests` pins crop origin, orientation, tiling and `fitparent` per pixel — but
 the evidence that a renderer change doesn't disturb *other* skins is still a **manual 15-skin
@@ -85,8 +88,10 @@ single biggest process gap in the subsystem.
 Known rendering gaps: Winamp Modern's config/EQ drawer area (`player.main` and `player.normal.drawer`
 overlap at y≈17), body-less `wasabi.*` shells (`wasabi.panel`, `wasabi.objectframe.group`), `valign`
 (text always vertically centres), `<Browser>` (Defix's Explorer tab draws nothing — an embedded web
-view for untrusted skin content is outside the sandbox and no one has decided to build it), and layer
-FX (`fx_*` accepted and inert).
+view for untrusted skin content is outside the sandbox and no one has decided to build it), and the
+corners of Layer FX nothing measured has asked for — `fx_setBgFx(1)` (warping the backdrop),
+`fx_onGetPixelA` (alpha) and `fx_onFrame`/`fx_setSpeed` as a host-driven clock are accepted and inert.
+The warp itself works (Phase 28–29).
 
 ### MAKI VM — **Working, demand-driven by design**
 
@@ -145,6 +150,10 @@ want of Layer FX, which Phase 29 shipped). It has one home:
 - **One open crash report** (2026-08-16, cPro-Bento, `drawText` → `NSString.size(withAttributes:)` with
   a nil attribute). The text boundary is hardened; neither the dump harness nor `WinampModernCrashRepro`
   reproduces it with or without the hardening reverted. **Treat the fix as plausible, not proven.**
+- **Defix's speaker cones.** They get their `onSetVisible` so the `getVisBand` timer starts, but
+  whether they actually animate has never been seen. Auxiliary containers do not install their own
+  repaint hooks — a mutation in a speaker window repaints the *main* view — which is the likeliest
+  reason they would still look dead (`docs/winamp-modern/phase-29-handoff.md` §4).
 - Playlist ADD/REM/SEL/MISC skin menus are inert; auxiliary `default_visible="1"` is not honoured.
 
 **Overall maturity: experimental but genuinely functional.** Nine real third-party skins load, render,
@@ -225,18 +234,27 @@ the trademark question and item 2 above are the ones worth ten minutes of a real
 
 ## 5. If you're picking this up next
 
-1. Read `skills/winamp-modern-skin-guide/SKILL.md` end to end. It is long because each paragraph is a
-   bug that cost a phase.
+1. Read `skills/winamp-modern-skin-guide/SKILL.md` — it is a short router: the pipeline, the security
+   model, and a symptom → file table over `reference/`. Follow it to the one topic file your problem
+   points at and read *that* end to end. Each paragraph in there is a bug that cost a phase.
 2. Check `skins.md` → `skins/<skin>.md` before touching anything a skin report names.
 3. Look at pixels, not test results: 490+ green tests once coexisted with a vertical flip and a wrong
    crop origin, because nothing ever rendered a frame.
 4. Never work down a static list of unsupported methods — re-measure after every change.
 5. Do the 15-skin render sweep (clock pinned) for any renderer change until that sweep is automated.
 
-**The highest-value next work**, in order: **finish Layer FX** — the callback-driven layer warp that
-rotates VU needles and cassette reels is implemented and confirmed moving live (Phase 28), but the
-motion is choppy and the meters answer the music weakly. Both remaining problems are *host* problems,
-not skin ones: main-thread work on the paint path and the level scale handed to a skin
-(`docs/winamp-modern/phase-28-handoff.md`); then automate the multi-skin render
-sweep in CI; close the provenance spot-check; drive the untested integration surfaces (casting,
-docking, Compact Mode) from a `.wal` skin; fuzz `NSISArchive`/`LZMA1Decoder`.
+**Layer FX is done.** Phase 28 made every Defix display style move; Phase 29 closed the two
+complaints about *how* it moved, and both were host problems rather than skin ones — a pre-scaled
+artwork cache and named repaint rects took the frame from 18.3 to 3.5 ms at Retina scale, and the
+level meter now measures **peak** amplitude (Winamp's VU byte) instead of RMS, played out per block
+and falling to rest on silence. All of it confirmed live by the user on 2026-08-19.
+See `docs/winamp-modern/phase-29-handoff.md`.
+
+**The highest-value next work**, in order: **per-object repaint rects** — `graphDidMutate` is still a
+full-window repaint on any script mutation, and the graph already records which objects were
+invalidated (`consumeInvalidations()`); this is the last thing on the paint path that scales with what
+the skin does rather than with what changed. Then: give auxiliary containers their own repaint hooks
+(a speaker window's mutations currently repaint the *main* view, the likeliest reason Defix's cones
+still look dead, and they remain unverified); automate the multi-skin render sweep in CI; close the
+provenance spot-check; drive the untested integration surfaces (casting, docking, Compact Mode) from a
+`.wal` skin; fuzz `NSISArchive`/`LZMA1Decoder`.
