@@ -52,6 +52,8 @@ concept; read the one your symptom points at, not all of them.
 | A ClassicPro (`.wal` + NSIS engine) skin misbehaves | [reference/classicpro.md](reference/classicpro.md) |
 | **How do I see what the engine is doing?** Probes, env vars, dumps | [reference/harness.md](reference/harness.md) |
 | A GUI-only report, and no probe reproduces it | [reference/harness.md](reference/harness.md) — *Debugging a live defect* |
+| **A whole skin is dead / "none of it works"** — start at the abort, not the symptom | [reference/harness.md](reference/harness.md) — *The order that made Phase 33 cheap* |
+| **What should I work on next?** | `docs/winamp-modern/open-items.md` — the ranked backlog (every phase is closed) |
 | A meter/needle/cone runs but barely moves | [reference/harness.md](reference/harness.md) — histogram the frames it uses |
 | What Wasabi markup is supported at all? | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
 | Is this MAKI method implemented? What events fire? | [compatibility/maki-surface.md](compatibility/maki-surface.md) |
@@ -110,7 +112,10 @@ verbatim; it just lives in a reference file now.
 | Teardown order | [reference/components.md](reference/components.md) |
 | Mode integration | [reference/components.md](reference/components.md) |
 | ClassicPro engine | [reference/classicpro.md](reference/classicpro.md) |
+| An `<animatedlayer>` is one frame, not one sheet | [reference/rendering.md](reference/rendering.md) |
 | Debugging a skin | [reference/harness.md](reference/harness.md) |
+| The order that made Phase 33 cheap | [reference/harness.md](reference/harness.md) |
+| What is open right now, ranked | [triage-playbook.md](triage-playbook.md) §4b → `docs/winamp-modern/open-items.md` |
 
 ## Where things live
 

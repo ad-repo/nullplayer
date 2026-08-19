@@ -54,9 +54,15 @@ available lesson in how to debug this subsystem.
 | [28](phase-28-handoff.md) | 2026-08-19 | Layer FX, MAKI math library, unary-minus fix, targeted repaints. **Superseded by 29** | `WasabiLayerFX`, `MakiBytecode`, `WinampModernScriptRuntime` |
 | [29](phase-29-handoff.md) | 2026-08-19 | Frame budget, repaint discipline, the VU scale — all confirmed live | `WasabiRenderer`, `WinampModernScriptRuntime`, `WinampModernMainView` |
 | [30](phase-30-handoff.md) | 2026-08-19 | The documentation split; `PE_Info` by `display=`, `getPlaylistLength`, `onTextChanged`, auxiliary-window repaint routes, `getVisBand` on a dB scale | `WasabiTextMetrics`, `WinampModernScriptRuntime`, `WinampModernMainView`, `WinampModernMainWindowController` |
+| [31](phase-31-handoff.md) | 2026-08-19 | Two input-layer gaps from one Defix report: `onRightButtonDown` undispatched, and a skin opening its own window from script | `WinampModernMainView`, `WinampModernScriptRuntime` |
+| [32](phase-32-handoff.md) | 2026-08-19 | Colour themes: `<ColorThemes:List>`, the three host actions, the host menu for skins with no picker. **§2's multipass bullet is superseded by 33** | `WasabiColorThemeList`, `WasabiSceneRenderer`, `ContextMenuBuilder` |
+| [33](phase-33-handoff.md) | 2026-08-19 | multipass: one refused method aborting a whole skin's startup, plus the togglebutton click, animated-layer sizing/region, MAKI division, and the main-menu button | `WinampModernScriptRuntime`, `WasabiRenderer`, `MakiBytecode`, `WinampModernMainView` |
 
 ## Not a phase handoff
 
+- [open-items.md](open-items.md) — **everything still open, ranked by bang for buck.** Compiled after
+  Phase 33 from every unchecked item left across the phase history. Start here when you are deciding
+  what to do next; `TASKS.md` is a local, gitignored mirror of it.
 - [state-of-the-engine.md](state-of-the-engine.md) — orientation for someone arriving cold: what was
   built, component-by-component status, **what is not verified**, and the reverse-engineering /
   provenance analysis.

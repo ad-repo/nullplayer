@@ -262,7 +262,7 @@ Ranked next steps:
 - [ ] **Docs**: `compatibility.md` (Layer FX + the math library as supported surface),
       `skins.md` (Defix: all eight styles animate; what is still rough), `SKILL.md` (the probes in
       §2), CHANGELOG under **Unreleased** — no version bump
-- [ ] `TASKS.md` §28 checkboxes are still unticked even where the work landed
+- [x] `TASKS.md` §28 checkboxes are still unticked even where the work landed — **done in the Phase 33 sweep** (2026-08-19), which closed every phase's checkboxes and moved what was genuinely open into `open-items.md`
 - [ ] Auxiliary windows never install `graphDidMutate`/`repaintRequested` (`drivesScripts: false`),
       so a script mutation in a speaker window repaints the *main* view instead. Related: the speaker
       cones now get their `onSetVisible`, but whether they animate is **unverified**

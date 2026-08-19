@@ -1,12 +1,15 @@
 # Winamp Modern (`.wal`) — State of the Work
 
 - **Date:** 2026-08-19
-- **Branch:** `feat/winamp-modern` (72 commits ahead of `main`; ~31.5k insertions across 139 files)
-- **Phases completed:** 0A/0B, then 2–30
+- **Branch:** `feat/winamp-modern` (~69 commits ahead of `main`)
+- **Phases completed:** 0A/0B, then 2–33 — **all closed.** What is still open is one ranked list:
+  [open-items.md](open-items.md)
 - **Audience:** anyone picking this up, reviewing it, or deciding whether it ships
 
 This is the orientation document; `skills/winamp-modern-skin-guide/triage-playbook.md` is the process
-for working the long tail beyond the nine measured skins. The durable technical reference is
+for working the long tail beyond the measured skins (17 are installed locally; two of them —
+`Itemskin.wal`, `Overdrive_2.wal` — still fail to load outright, which is the top item in
+[open-items.md](open-items.md)). The durable technical reference is
 `skills/winamp-modern-skin-guide/` — SKILL.md is a router over `reference/` topic files, alongside
 compatibility.md, skins.md → `skins/<skin>.md`, and manual-qa-checklist.md. The per-phase records are
 in `docs/winamp-modern/`; [INDEX.md](INDEX.md) lists them and resolves any pointer they make into the
@@ -34,7 +37,7 @@ Concretely that meant writing, from scratch, in Swift:
 | Component hosting | Playlist / EQ / library resolved as embedded, declared, synthesized, or classic-fallback surfaces |
 | ClassicPro import | From-scratch LZMA1 decoder + NSIS-2 reader so a user-supplied plugin installer can be unpacked internally |
 
-**Size:** ~10.5k lines of engine (`Sources/NullPlayer/WinampModern/`), ~1.9k lines of window/controller
+**Size** (Phase 26 snapshot; the suite is **785 tests** as of Phase 33): ~10.5k lines of engine (`Sources/NullPlayer/WinampModern/`), ~1.9k lines of window/controller
 code (`Sources/NullPlayer/Windows/WinampModern/`), ~8.9k lines of tests (291 test functions across 25
 files). Suite total at Phase 26: **721 tests**, all green (the counts in this paragraph are a
 Phase 26 snapshot and have not been re-measured since).
@@ -81,7 +84,7 @@ cassette reels), and hit testing including `rectrgn` and `move=` policy. Artwork
 to the backing store and repaints name the rects that changed — a Defix frame costs 3.5 ms at 2×.
 
 `WinampModernRenderPixelTests` pins crop origin, orientation, tiling and `fitparent` per pixel — but
-the evidence that a renderer change doesn't disturb *other* skins is still a **manual 15-skin
+the evidence that a renderer change doesn't disturb *other* skins is still a **manual 17-skin
 before/after sweep with the clock pinned**. Nothing in CI catches a third skin regressing. That is the
 single biggest process gap in the subsystem.
 
@@ -241,7 +244,11 @@ the trademark question and item 2 above are the ones worth ten minutes of a real
 3. Look at pixels, not test results: 490+ green tests once coexisted with a vertical flip and a wrong
    crop origin, because nothing ever rendered a frame.
 4. Never work down a static list of unsupported methods — re-measure after every change.
-5. Do the 15-skin render sweep (clock pinned) for any renderer change until that sweep is automated.
+5. Do the 17-skin render sweep (clock pinned) for any renderer change until that sweep is automated —
+   and diff it against *itself* first: one skin (Anexa's shade layout) renders differently run-to-run
+   on an unchanged build, so a raw difference is not automatically a regression.
+6. **Take work from [open-items.md](open-items.md), top down.** It is the compiled, ranked backlog;
+   the prose below it in this section is history and may name work that has since been done.
 
 **Layer FX is done.** Phase 28 made every Defix display style move; Phase 29 closed the two
 complaints about *how* it moved, and both were host problems rather than skin ones — a pre-scaled
@@ -254,13 +261,17 @@ See `docs/winamp-modern/phase-29-handoff.md`.
 its handoff carries the open list and the debugging method that found them
 (`docs/winamp-modern/phase-30-handoff.md`).
 
-**The highest-value next work**, in order: **the `<vis>` analyzer's linear scale** — the third
-instance of "a linear magnitude handed to artwork cut for a logarithmic sweep", after the VU meter
-(Phase 29) and `getVisBand` (Phase 30); then **per-object repaint rects** — `graphDidMutate` is still a
-full-window repaint on any script mutation, and the graph already records which objects were
-invalidated (`consumeInvalidations()`); this is the last thing on the paint path that scales with what
-the skin does rather than with what changed. Then: give auxiliary containers their own repaint hooks
-(a speaker window's mutations currently repaint the *main* view, the likeliest reason Defix's cones
-still look dead, and they remain unverified); automate the multi-skin render sweep in CI; close the
-provenance spot-check; drive the untested integration surfaces (casting, docking, Compact Mode) from a
-`.wal` skin; fuzz `NSISArchive`/`LZMA1Decoder`.
+**The highest-value next work is now [open-items.md](open-items.md)**, which supersedes the paragraph
+that used to sit here — that one was written at Phase 30, and several of its items (the Layer FX
+follow-ups, the auxiliary-window repaint hooks, `getVisBand`'s scale) have since landed. Two things
+from it survive in that file's ranking: **the `<vis>` analyzer's linear scale** (B13 — the third
+instance of "a linear magnitude handed to artwork cut for a logarithmic sweep", after the VU meter in
+Phase 29 and `getVisBand` in Phase 30) and **automating the multi-skin render sweep** (B10).
+
+Three more remain true and are deliberately *not* in that file, because they are engine-wide or
+process work rather than skin-facing compatibility: **per-object repaint rects** — `graphDidMutate` is
+still a full-window repaint on any script mutation, and the graph already records which objects were
+invalidated (`consumeInvalidations()`), making this the last thing on the paint path that scales with
+what the skin does rather than with what changed; **closing the provenance spot-check**; and driving
+the untested integration surfaces (casting, docking, Compact Mode) from a `.wal` skin, plus fuzzing
+`NSISArchive`/`LZMA1Decoder`.
