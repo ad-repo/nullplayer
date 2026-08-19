@@ -658,13 +658,30 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         resizeWindow(to: size, reason: "placeholder")
     }
 
-    func updateTrackInfo(_ track: Track?) { skinView?.updateTrackInfo() }
+    func updateTrackInfo(_ track: Track?) {
+        skinView?.updateTrackInfo()
+        refreshBoundText()
+    }
     func updateVideoTrackInfo(title: String, artworkTrack: Track?) { skinView?.updateTrackInfo() }
     func clearVideoTrackInfo() { skinView?.updateTrackInfo() }
     func updateTime(current: TimeInterval, duration: TimeInterval) {
         skinView?.updateTime(current: current, duration: duration)
+        // The queue's own length and duration can change while the clock is the only thing ticking
+        // (the user edits the playlist mid-track), and this is the cheapest regular beat that sees it.
+        refreshBoundText()
     }
-    func updatePlaybackState() { skinView?.updatePlaybackState() }
+    func updatePlaybackState() {
+        skinView?.updatePlaybackState()
+        refreshBoundText()
+    }
+
+    /// Poll the host-bound text objects and raise `onTextChanged` on the ones that moved.
+    ///
+    /// Driven from the host-state hooks rather than from a timer of its own, because that is exactly
+    /// when a bound readout can change: the queue was edited, the track changed, the clock ticked.
+    /// Defix's playlist box updates its `Items:`/`Time:` readouts from a subroutine whose only caller
+    /// is `onTextChanged`, so without this the box never leaves its XML placeholders.
+    private func refreshBoundText() { skinView?.scripts.refreshBoundText() }
     func updateSpectrum(_ levels: [Float]) { skinView?.updateSpectrum(levels) }
     func skinDidChange() { skinView?.needsDisplay = true }
     func windowVisibilityDidChange() { skinView?.needsDisplay = true }

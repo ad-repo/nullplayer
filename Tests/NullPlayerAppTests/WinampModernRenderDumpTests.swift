@@ -74,6 +74,19 @@ final class WinampModernRenderDumpTests: XCTestCase {
 
         if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
             RunLoop.current.run(until: Date().addingTimeInterval(settle))
+            // The harness has no component host, so `PE_Info` reads empty and a skin that drives its
+            // readouts from `onTextChanged` can never be seen to do it. Seed the cache empty, then
+            // stand a synthetic queue up behind it — the same "it changed" the app produces when the
+            // playlist is edited, which is the only thing that raises the event.
+            runtime.refreshBoundText()
+            WasabiTextMetrics.componentTextProvider = {
+                WinampModernPlaylistSnapshot(
+                    rows: (0..<3).map { WinampModernPlaylistRow(title: "t\($0)", secondary: "",
+                                                                duration: 120, isCurrent: $0 == 0) },
+                    currentIndex: 0, selectedIndex: 0)
+            }
+            runtime.refreshBoundText()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
 
         // WINAMP_MODERN_RENDER_SETTINGS lists what the skin registered with `newAttribute` — the

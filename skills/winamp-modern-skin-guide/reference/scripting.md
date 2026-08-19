@@ -161,3 +161,23 @@ scrolls by default. `ticker="bounce"` slides to the end and back; any other enab
 continuously and is drawn twice with a gap so it never blanks between cycles. Both the TrueType and
 bitmap-font paths share `tickerMotion(for:overflow:textWidth:)`.
 
+#### `onTextChanged` is how a skin learns a host readout moved
+
+Winamp's `Text` raises `onTextChanged(newtext)` whenever its content changes, and skins use it as the
+*only* signal that a host-supplied value is worth re-reading. A skin may put no logic in `onTimer` at
+all and still update constantly.
+
+`WinampModernScriptRuntime.refreshBoundText()` polls the objects whose content comes from the host — a
+`display=` binding, a `songticker`, the playlist status line — and raises the event on the ones that
+moved. The window controller drives it from its host-state hooks (track change, playback state, the
+clock tick), which is exactly when a bound readout can change. Literals are deliberately excluded: a
+`<text text="Add">` cannot change, and firing for one would be a lie.
+
+The first observation seeds the cache without firing, so a skin is not told its readouts "changed"
+before it has drawn once.
+
+**Why this matters more than it looks:** Defix's playlist box writes its `Items:` and `Time:` readouts
+from a subroutine whose only caller is `onTextChanged`. Reading the disassembly carelessly makes it
+look like `onTimer` work — the two handlers are adjacent, and `op25` is a **call** into the shared
+block, not a jump within one handler. Undispatched, the whole readout was unreachable code.
+

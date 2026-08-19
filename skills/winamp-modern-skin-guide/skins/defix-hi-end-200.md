@@ -182,12 +182,19 @@ non-default display styles, which have no headless route in (below). **Grade B, 
     separator has to be `/`; `WinampModernPlaylistSnapshot.infoLine` now emits `N items/h:mm:ss`
     instead of `N items, h:mm:ss`. A capture of Winamp's own playlist showing that field would settle
     it, and that one line is the only place to change.
-  - The script reads the feed in **`onTimer`**, not only in `onTextChanged` — which matters, because
-    the engine never dispatches `onTextChanged` at all. Nothing depends on it here.
-  - **And none of it could ever have appeared**, because `pledit` is an auxiliary container and those
-    windows installed no repaint route (see the speaker cones above). The readouts were written into
-    the graph on every tick and never painted. Fixing the two method-level gaps without that one
-    would have changed nothing on screen — which is exactly what happened on the first attempt.
+  - **`onTextChanged` was the missing piece, and it took three attempts to see it.** The subroutine
+    that writes both readouts (instructions 3165–3241) has exactly **one** caller: `onTextChanged`
+    calls it (`op25` is a call, not a jump). The `onTimer` sitting beside it only stops a spinner and
+    returns at 3164. The engine never dispatched `onTextChanged` at all, so the subroutine was
+    unreachable and the two method-level fixes above changed nothing on screen.
+    `WinampModernScriptRuntime.refreshBoundText()` now polls host-bound text (a `display=` binding, a
+    songticker, the status line — never a literal, which cannot change) and raises
+    `onTextChanged(newtext)` on the ones that moved, driven from the controller's host-state hooks.
+    **Verified on the real skin**: `a3` → `Items: 3`, `a1` → `Time: 6:00`.
+  - **And it still could not have appeared**, because `pledit` is an auxiliary container and those
+    windows installed no repaint route (see the speaker cones above), so even a correct write was
+    never painted. Four separate faults stacked on one readout — the binding, the missing method, the
+    undispatched event, and the missing repaint — and any one of them alone kept it blank.
 - **`getcurrentindex` is on the playlist window's hover and click paths**, not its timer
   (`ontargetreached`, `onenterarea`, `onleftbuttondown`, `onrightbuttondown`, `onrightclick` — never
   `ontimer`, checked in the disassembly). So it does not block the readouts above, but it does abort

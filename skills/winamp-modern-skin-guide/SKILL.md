@@ -44,6 +44,7 @@ concept; read the one your symptom points at, not all of them.
 | Animation frozen, needle/reel not turning, layer stuck on one frame | [reference/rendering.md](reference/rendering.md) |
 | Slow, stuttering, CPU high, repaint storm | [reference/performance.md](reference/performance.md) |
 | A script does nothing, wrong arity, unknown method, script-built UI missing | [reference/scripting.md](reference/scripting.md) |
+| A host-fed readout never updates (`onTextChanged`) | [reference/scripting.md](reference/scripting.md) |
 | Playlist / EQ / library / video surface missing, empty, or in the wrong window | [reference/components.md](reference/components.md) |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
 | An auxiliary window draws once then freezes; a script's `onTimer` changes nothing on screen | [reference/components.md](reference/components.md) |
@@ -93,6 +94,7 @@ verbatim; it just lives in a reference file now.
 | Rotary controls: `Map` | [reference/scripting.md](reference/scripting.md) |
 | Asking a skin what it actually shipped | [reference/scripting.md](reference/scripting.md) |
 | Track metadata the skins actually read | [reference/scripting.md](reference/scripting.md) |
+| `onTextChanged` is how a skin learns a host readout moved | [reference/scripting.md](reference/scripting.md) |
 | `TOGGLE`'s parameter is a component **or a container id** | [reference/components.md](reference/components.md) |
 | Component hosting | [reference/components.md](reference/components.md) |
 | The window layer these views sit in | [reference/components.md](reference/components.md) |

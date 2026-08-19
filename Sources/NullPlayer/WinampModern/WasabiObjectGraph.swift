@@ -165,6 +165,11 @@ final class WasabiObjectGraph {
 
     func object(withID id: WasabiObjectID) -> WasabiObject? { objectsByID[id] }
 
+    /// Every retained object. Unordered on purpose: the one caller that needs the whole graph is the
+    /// bound-text poll behind `onTextChanged`, which runs on the playback tick and must not pay for a
+    /// sort. Prefer a targeted lookup everywhere else.
+    var allObjectsUnordered: Dictionary<WasabiObjectID, WasabiObject>.Values { objectsByID.values }
+
     func objects(xmlID: String) -> [WasabiObject] {
         let folded = Self.fold(xmlID)
         return objectsByID.values.filter { object in

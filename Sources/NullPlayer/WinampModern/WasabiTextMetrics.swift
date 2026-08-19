@@ -153,6 +153,15 @@ final class WasabiTextMetrics {
     /// The window controller installs this; unset, a `PE_Info` simply reads empty.
     static var componentTextProvider: (() -> WinampModernPlaylistSnapshot?)?
 
+    /// Whether this object's content comes from the **host** rather than from its own markup — a
+    /// `display=` binding, a songticker, or the playlist status line. Only these can change without a
+    /// script touching them, so only these are worth polling for `onTextChanged`.
+    static func isHostBoundText(_ object: WasabiObject) -> Bool {
+        if isPlaylistStatusLine(object) { return true }
+        if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame { return true }
+        return !(object.attributes["display"] ?? "").isEmpty
+    }
+
     /// Whether this object is the skin's playlist status line, by **either** of the two forms skins
     /// use: `id="PE_Info"` or `display="PE_Info"`. Both are live in the measured corpus.
     static func isPlaylistStatusLine(_ object: WasabiObject) -> Bool {

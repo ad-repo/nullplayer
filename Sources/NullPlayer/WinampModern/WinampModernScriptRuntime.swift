@@ -238,6 +238,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "onresume": 0,
         "ontitlechange": 1,
         "onleftbuttondblclk": 2,
+        "ontextchanged": 1,
         "onscriptunloading": 0
     ]
 
@@ -520,6 +521,37 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     @discardableResult
     func dispatchSystem(event: String, arguments: [MakiValue] = []) throws -> Int {
         try dispatch(target: MakiObjectReference(.system), event: event, arguments: arguments)
+    }
+
+    /// Last content dispatched for each host-bound text object, so `onTextChanged` fires on a *change*
+    /// rather than on every poll.
+    private var lastDispatchedText: [WasabiObjectID: String] = [:]
+
+    /// Fire `onTextChanged(newtext)` on every text object whose host-bound content has changed.
+    ///
+    /// Winamp's `Text` object raises this whenever its content changes, and skins use it as the only
+    /// signal that a host-supplied readout is worth re-reading. Defix's playlist box is the measured
+    /// case: its `Items:`/`Time:` readouts are written by a subroutine whose **only** caller is
+    /// `onTextChanged` — the `onTimer` beside it just stops a spinner. Never dispatching the event
+    /// left that subroutine unreachable, so the box stayed on its XML placeholders no matter what the
+    /// status line said.
+    ///
+    /// Bound text only: a `<text text="Add">` is a literal and cannot change, and re-dispatching for
+    /// one would be a lie. Cheap enough to poll — the measured corpus declares a handful of bound
+    /// text objects per skin, not hundreds.
+    func refreshBoundText() {
+        for object in loadedSkin.runtime.graph.allObjectsUnordered
+        where WasabiTextMetrics.isHostBoundText(object) {
+            let content = WasabiTextMetrics.content(of: object, host: host)
+            let identifier = object.stableID
+            if let previous = lastDispatchedText[identifier], previous == content { continue }
+            let isFirstObservation = lastDispatchedText[identifier] == nil
+            lastDispatchedText[identifier] = content
+            // The first observation seeds the cache without firing: at that point the scene has not
+            // been drawn yet and nothing has "changed" from the skin's point of view.
+            guard !isFirstObservation else { continue }
+            _ = try? dispatch(object: object, event: "ontextchanged", arguments: [.string(content)])
+        }
     }
 
     @discardableResult

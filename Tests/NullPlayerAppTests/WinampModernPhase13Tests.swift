@@ -796,6 +796,52 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(mainWindowRepaints, 2)
     }
 
+    /// `onTextChanged` must fire when a **host-bound** readout changes, and only then.
+    ///
+    /// This is the event Defix's playlist box hangs everything on: the subroutine that writes its
+    /// `Items:`/`Time:` readouts has exactly one caller, `onTextChanged`. The engine never dispatched
+    /// the event, so the box sat on its XML placeholders no matter what the status line said — and
+    /// fixing the two method-level gaps underneath it changed nothing on screen until this landed.
+    func testOnTextChangedFiresForHostBoundTextWhenItsContentMoves() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <text id="info.input" display="PE_Info" x="0" y="0" w="0" h="0" visible="0"/>
+              <text id="literal" text="Add" x="0" y="20" w="60" h="12"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: TestHost())
+        addTeardownBlock { runtime.teardown() }
+        addTeardownBlock { WasabiTextMetrics.componentTextProvider = nil }
+
+        let bound = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "info.input").first)
+        let literal = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "literal").first)
+        XCTAssertTrue(WasabiTextMetrics.isHostBoundText(bound))
+        XCTAssertFalse(WasabiTextMetrics.isHostBoundText(literal),
+                       "a literal cannot change, so polling it would only produce false events")
+
+        // The first pass seeds the cache: nothing has changed from the skin's point of view yet.
+        WasabiTextMetrics.componentTextProvider = { .empty }
+        runtime.refreshBoundText()
+
+        WasabiTextMetrics.componentTextProvider = {
+            WinampModernPlaylistSnapshot(
+                rows: [WinampModernPlaylistRow(title: "a", secondary: "", duration: 120, isCurrent: true)],
+                currentIndex: 0, selectedIndex: 0)
+        }
+        runtime.refreshBoundText()
+        XCTAssertEqual(WasabiTextMetrics.content(of: bound, host: TestHost()), "1 item/2:00",
+                       "and the content the event carries is the status line itself")
+
+        // A second poll with the queue unchanged must be silent — the event means *changed*.
+        let before = runtime.unsupportedMethodCalls.count
+        runtime.refreshBoundText()
+        XCTAssertEqual(runtime.unsupportedMethodCalls.count, before)
+    }
+
     /// Item and duration formatting, including the singular and the hour rollover.
     func testPlaylistSnapshotSummarizesItsQueue() {
         func snapshot(_ durations: [TimeInterval]) -> WinampModernPlaylistSnapshot {
