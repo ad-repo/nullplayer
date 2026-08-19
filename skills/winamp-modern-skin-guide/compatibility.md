@@ -57,6 +57,13 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 
 | Component | State |
 |-----------|-------|
+**The playlist status line is claimed by `display="PE_Info"`, not by `id="PE_Info"`.** Both work, but
+the attribute form is what real skins use — the stock Winamp Modern skin
+(`<text id="PLTime" display="PE_Info"/>`) and Defix (a hidden `<text id="info.input" display="PE_Info"
+w="0" h="0" visible="0"/>` its script parses) both do. Matching on the id alone left both blank.
+Its content is `N items/h:mm:ss`; the `/` is load-bearing — Defix reads the duration as
+`getToken(text, "/", 1)`.
+
 | Playlist | Embedded and bound to `AudioEngine` — rows, now-playing marker, selection, bounded scroll, click/double-click/wheel, Delete/Forward-Delete removal while focused, `PE_Info` status line. Drawn in the skin's palette and list font |
 | EQ | Embedded classic 10-band + preamp, enabled/auto, presets, `<eqvis>`, bound to `AudioEngine`; gains persist across mode switches |
 | Library | **The real browser, embedded** in the skin's holder — servers, tabs, search, CoverFlow, history, linking. Falls back to a window of its own only when the skin offers no home for it; either way it is drawn in the skin's palette, not with classic `.wsz` artwork |

@@ -164,6 +164,13 @@ By area:
   their `getVisBand` timer there), and showing a native window with `orderFront` never touches the
   Wasabi graph. Every visible object in the container's subtree is told, once per actual change
   (`notifyContainerVisibility(containerID:visible:)`)
+- **`System.getPlaylistLength()`** — the number of tracks in the queue, answered from the same
+  snapshot `PE_Info` is built from so a skin showing both cannot disagree with itself. Phase 30
+- **`onTextChanged(newtext)` on host-bound text** — raised when the content of a `display=`-bound
+  text, a songticker, or the playlist status line **changes**, including the first time it becomes
+  non-empty. Literals never raise it. This is the only signal some skins take that a host readout is
+  worth re-reading: Defix writes its playlist `Items:`/`Time:` from a subroutine whose sole caller is
+  this handler. Polled from the window controller's host-state hooks plus a 1 Hz beat. Phase 30
 - **`<object>.navigateUrl(url)`** — the `<browser>` form of `System.navigateUrl`. Denied like it, but
   **quietly**: refusing the method would abort the handler that called it. Phase 25
 - **`System.getVisBand(channel, band)`** — one spectrum band as a vis byte (0…255), the unit
@@ -172,7 +179,10 @@ By area:
   analyser produces (75 today) rather than indexed straight into it. The source is the one spectrum
   tap every other visualization window consumes (`AudioEngine` → `updateSpectrum` →
   `host.spectrumLevels`); it is **mono**, so both channels answer the same value — a stereo split
-  would mean a second FFT for skins alone. Phase 27
+  would mean a second FFT for skins alone. Phase 27. **On a decibel scale since Phase 30**: the tap's
+  linear magnitude scaled by 255 put ordinary music at the very bottom of the range (measured on
+  Defix: mean 4, max 39 out of 255, its 25-frame cone on frame 0 for 96.5% of a track), so the
+  magnitude is mapped through `20·log10` over a 60 dB window. Same material after: mean 139, max 232
 - **`System.getLeftVUMeter()` / `getRightVUMeter()`** — program level per channel as a vis byte
   (0…255), measured by `WinampModernLevelMeter` as **linear peak amplitude, unsmoothed**, off the
   main thread. **Not the spectrum**, and not a perceptual value: the skin owns the curve and the

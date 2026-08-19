@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-19
 - **Branch:** `feat/winamp-modern` (72 commits ahead of `main`; ~31.5k insertions across 139 files)
-- **Phases completed:** 0A/0B, then 2–29
+- **Phases completed:** 0A/0B, then 2–30
 - **Audience:** anyone picking this up, reviewing it, or deciding whether it ships
 
 This is the orientation document; `skills/winamp-modern-skin-guide/triage-playbook.md` is the process
@@ -250,7 +250,13 @@ level meter now measures **peak** amplitude (Winamp's VU byte) instead of RMS, p
 and falling to rest on silence. All of it confirmed live by the user on 2026-08-19.
 See `docs/winamp-modern/phase-29-handoff.md`.
 
-**The highest-value next work**, in order: **per-object repaint rects** — `graphDidMutate` is still a
+**Phase 30** split the documentation and fixed four GUI-only defects in Defix's auxiliary windows;
+its handoff carries the open list and the debugging method that found them
+(`docs/winamp-modern/phase-30-handoff.md`).
+
+**The highest-value next work**, in order: **the `<vis>` analyzer's linear scale** — the third
+instance of "a linear magnitude handed to artwork cut for a logarithmic sweep", after the VU meter
+(Phase 29) and `getVisBand` (Phase 30); then **per-object repaint rects** — `graphDidMutate` is still a
 full-window repaint on any script mutation, and the graph already records which objects were
 invalidated (`consumeInvalidations()`); this is the last thing on the paint path that scales with what
 the skin does rather than with what changed. Then: give auxiliary containers their own repaint hooks

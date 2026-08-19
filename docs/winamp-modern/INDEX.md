@@ -27,6 +27,10 @@ The maps are not duplicated here — one home per fact applies to the migration 
 Numbering has gaps: phases 1, 9, 14–15, 18–22, 24–25 shipped without their own handoff document (their
 outcome is recorded in the skill and in the git history).
 
+**Start with [phase-30-handoff.md](phase-30-handoff.md)** if you are picking this up cold: it carries
+the current open list, and its §2 (three wrong hypotheses and what killed each) is the cheapest
+available lesson in how to debug this subsystem.
+
 | Phase | Date | What it changed | Key files |
 |---|---|---|---|
 | [0A](phase-0a-decision-record.md) | 2026-08-15 | The legal, provenance, and security gate that had to clear before any loader existed. Decisions locked by the product owner | `docs/legal/winamp_modern_provenance.md` |
@@ -49,6 +53,7 @@ outcome is recorded in the skill and in the git history).
 | [27](phase-27-handoff.md) | 2026-08-18 | Skin Settings sheet, `getVisBand`, `isLoading`, VU level scale | `WinampModernScriptRuntime`, `MakiBytecode`, `WasabiRenderer` |
 | [28](phase-28-handoff.md) | 2026-08-19 | Layer FX, MAKI math library, unary-minus fix, targeted repaints. **Superseded by 29** | `WasabiLayerFX`, `MakiBytecode`, `WinampModernScriptRuntime` |
 | [29](phase-29-handoff.md) | 2026-08-19 | Frame budget, repaint discipline, the VU scale — all confirmed live | `WasabiRenderer`, `WinampModernScriptRuntime`, `WinampModernMainView` |
+| [30](phase-30-handoff.md) | 2026-08-19 | The documentation split; `PE_Info` by `display=`, `getPlaylistLength`, `onTextChanged`, auxiliary-window repaint routes, `getVisBand` on a dB scale | `WasabiTextMetrics`, `WinampModernScriptRuntime`, `WinampModernMainView`, `WinampModernMainWindowController` |
 
 ## Not a phase handoff
 

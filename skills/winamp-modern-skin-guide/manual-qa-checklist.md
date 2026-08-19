@@ -98,6 +98,11 @@ For each of the three fixtures:
 - [ ] Windows ▸ Equalizer, on a skin that declares no EQ (Defix, T800): opens NullPlayer's full
       classic EQ — on/off, auto, presets, labels — painted in the skin's palette, **and** the skin's
       own EQ button opens the same window rather than a different one
+- [ ] Defix: open **Winamp Modern → Skin Windows → SPEAKER 1 / 2** during playback — the cabinets draw
+      (wood, cone, tweeter) and the cone tracks the music. Its animation is *subtle by design*: check
+      the frames it uses, not your eyes (`reference/harness.md`, *Debugging a live defect*)
+- [ ] Defix: the playlist window's info box shows **`Items: N`** and **`Time: h:mm:ss`**, and both
+      follow a playlist edit. Blank readouts here have had four separate causes
 - [ ] Defix: work through its configurator — the 31 changeable backgrounds, the eight display styles
       (cassette, the VU meters, the oscilloscopes), the colour/ink options. None of this has ever been
       driven, headless or live; note which ones fail and how

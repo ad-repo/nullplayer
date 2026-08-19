@@ -164,3 +164,81 @@ WINAMP_MODERN_ENGINE=/path/ClassicPro_2.01.exe \
 Each phase expects a specific fixture — Phase 4 asserts Winamp Modern's 354×280 geometry, so
 cPro-Bento is the wrong fixture for it.
 
+---
+
+## Debugging a live defect: what this subsystem taught the hard way
+
+A GUI-only report ("the playlist shows no data", "the speakers don't animate") cost **three wrong
+mechanisms in a row** before instrumentation settled it in one run. The rules below are the cheap
+version of that afternoon.
+
+### Instrument before you reason
+
+Reading the skin's disassembly and the engine source and *deducing* the mechanism was wrong three
+times. `WINAMP_MODERN_CALL_TRACE=1` on the running app answered it every time, in one launch:
+
+```sh
+WINAMP_MODERN_SHOW_WINDOWS=SPEAKER1,SPEAKER2 WINAMP_MODERN_CALL_TRACE=1 \
+  ./.build/debug/NullPlayer -uiMode winampModern -winampModernSkinPath "/abs/Skin.wal" > /tmp/x.log 2>&1
+```
+
+Then count, don't read: `grep -c 'CALL-TRACE getvisband' /tmp/x.log`, and histogram the results. A
+method being *called* proves nothing; what it *returns* is the finding.
+
+### The measurement that finds scale bugs
+
+**Histogram the frames a meter actually uses against the frames it has.** A healthy meter spreads;
+a broken one piles on one:
+
+```sh
+grep -oE 'CALL-TRACE gotoframe\([0-9]+\)' /tmp/x.log | grep -oE '[0-9]+' | sort -n | uniq -c
+```
+
+Defix's cone: **frame 0 for 96.5% of a track**, out of 25 frames. That is a *scale* bug, not a dead
+script — the script was running perfectly and being handed numbers at the bottom of its range. Two
+have now been found this way (`getLeftVUMeter`, Phase 29; `getVisBand`, Phase 30), and one is still
+open: the `<vis>` analyzer reads the raw levels directly as a fraction of height, so a full-scale
+band draws at ~15%.
+
+**Any host number handed to skin artwork must be in the unit the artwork is cut for.** Winamp's meter
+values are vis bytes on a logarithmic sweep; a linear magnitude × 255 is the recurring mistake.
+
+### When a fix changes nothing on screen, look for the *next* fault
+
+Defix's playlist readouts had **four** independent faults stacked on them: the `display="PE_Info"`
+binding, an unimplemented `getPlaylistLength`, an undispatched `onTextChanged`, and auxiliary windows
+having no repaint route. Any one of them alone kept the box blank, so the first two fixes looked like
+no change at all and read as "wrong fix". Re-measure after each one instead of reverting it.
+
+### Reading MAKI disassembly without fooling yourself
+
+- **`op25` is a call, `op33` a return.** A block sitting after a handler's `op33` is often a
+  *subroutine*, entered from somewhere else entirely. Defix's playlist readouts live in one whose only
+  caller is `onTextChanged`; read carelessly it looks like `onTimer` work, and the `onTimer` beside it
+  merely stops a spinner.
+- **Attributing an instruction to "the last `--- handler ---` above it" is wrong** for shared
+  subroutines. Find the callers: `grep -oE '[0-9]+: op[0-9]+ -> <target>'`.
+- **`strings` on a `.maki` hides method names**, because the constant pool stores a trailing index
+  byte: `gotoFrame` appears as `gotoFrame)`. An anchored `^gotoFrame$` finds nothing and invites the
+  conclusion that the script cannot animate at all. Grep loosely.
+
+### Look at the running app
+
+`screencapture -x -R<x>,<y>,<w>,<h> out.png` against the window bounds from System Events settles a
+"it looks wrong" report in seconds, and the skin's own `screenshot.png` is the reference to compare
+it against. Defix's speaker cabinet turned out to render **correctly** — the cone is black because the
+art is black — which retired "very dark" as a defect and left the real question (does it move?) in
+focus.
+
+### A blind instrument reads as a working feature
+
+Three of this subsystem's probes were silently blind, and each one made a real defect look absent:
+
+| Blind spot | Symptom it produced | Fixed by |
+|---|---|---|
+| Could not open a `default_visible="0"` window | Speaker cones unmeasurable; `onSetVisible` never fired | `RENDER_SHOW` |
+| Injected spectrum was a **constant** ramp | Cones identical at every level, so "dead" | `RENDER_VU` now scales it |
+| No component host, so `PE_Info` never *changed* | `onTextChanged` could never be observed | harness stands a synthetic queue |
+
+When a probe says "nothing is happening", check that the probe can see the thing happening at all.
+

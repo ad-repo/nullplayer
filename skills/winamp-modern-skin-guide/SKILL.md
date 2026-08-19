@@ -51,6 +51,8 @@ concept; read the one your symptom points at, not all of them.
 | Teardown crash, leak, or mode-switch breakage | [reference/components.md](reference/components.md) |
 | A ClassicPro (`.wal` + NSIS engine) skin misbehaves | [reference/classicpro.md](reference/classicpro.md) |
 | **How do I see what the engine is doing?** Probes, env vars, dumps | [reference/harness.md](reference/harness.md) |
+| A GUI-only report, and no probe reproduces it | [reference/harness.md](reference/harness.md) — *Debugging a live defect* |
+| A meter/needle/cone runs but barely moves | [reference/harness.md](reference/harness.md) — histogram the frames it uses |
 | What Wasabi markup is supported at all? | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
 | Is this MAKI method implemented? What events fire? | [compatibility/maki-surface.md](compatibility/maki-surface.md) |
 | Limits, engine policy, verification status | [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md) |
@@ -202,6 +204,18 @@ network. `messagebox` is denied; `navigateurl` is a no-op.
   against.
 - Before concluding "the script never ran", check with a probe that observes **execution**. Per-object
   binding state does not answer that question, and reading it as if it did cost two phases.
+- **Instrument before you reason.** Deducing a mechanism from the skin's bytecode and the engine
+  source produced three wrong answers in a row on one defect; `WINAMP_MODERN_CALL_TRACE=1` on the
+  running app settled it in a single launch. Count what a method *returns*, not whether it is called.
+- **When a fix changes nothing on screen, look for the next fault before reverting it.** One Defix
+  readout had four independent faults stacked on it, so the first two correct fixes looked like no
+  change at all.
+- **A number handed to skin artwork must be in the unit that artwork is cut for.** Winamp's meters are
+  vis bytes on a logarithmic sweep; a linear magnitude × 255 has now been found twice (`getLeftVUMeter`
+  Phase 29, `getVisBand` Phase 30) and is still open in the `<vis>` analyzer. The test is to histogram
+  the frames a meter actually uses: a healthy one spreads, a mis-scaled one piles on its rest frame.
+- **When a probe reports nothing, check the probe can see the thing at all.** Three harness blind
+  spots each made a real defect look absent (see *A blind instrument reads as a working feature*).
 - Add fixtures, never third-party assets. Every committed test fixture is synthetic and self-authored.
 - Measure with `/wal-skin-report` rather than by hand, and land what you learn: durable rules in the
   `reference/` file that owns the concept or in [compatibility.md](compatibility.md), per-skin state in
