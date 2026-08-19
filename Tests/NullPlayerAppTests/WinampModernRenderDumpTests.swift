@@ -105,11 +105,29 @@ final class WinampModernRenderDumpTests: XCTestCase {
         // its animation from `onSetVisible` (Defix's cassette reels turn their Layer FX on there), so
         // without this nothing in the skin is warped at all. Before any `RENDER_CONFIG` write, since
         // a style switched *while the window is up* is what the app does.
-        if env["WINAMP_MODERN_RENDER_FX"] != nil {
+        // `WINAMP_MODERN_RENDER_SHOW=<container>[,<container>]` opens auxiliary windows the way the
+        // user does from the Skin Windows menu. Without it the harness can only ever see the windows
+        // a skin opens by default, and a defect confined to one that starts hidden — Defix's speaker
+        // cabinets, whose `getVisBand` timer starts from `onSetVisible` — is invisible to every probe.
+        let shownContainers = Set((env["WINAMP_MODERN_RENDER_SHOW"] ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty })
+        if env["WINAMP_MODERN_RENDER_FX"] != nil || !shownContainers.isEmpty {
             for container in loaded.runtime.graph.roots
             where container.typeName.caseInsensitiveCompare("container") == .orderedSame {
-                let isMain = container.xmlID?.caseInsensitiveCompare("main") == .orderedSame
-                runtime.notifyContainerVisibility(containerID: container.stableID, visible: isMain)
+                let identifier = container.xmlID ?? ""
+                let isMain = identifier.caseInsensitiveCompare("main") == .orderedSame
+                let isShown = shownContainers.contains(identifier.lowercased())
+                runtime.notifyContainerVisibility(containerID: container.stableID,
+                                                  visible: isMain || isShown)
+                if isShown { print("SHOW \(identifier)") }
+            }
+            // A window that has just opened has not ticked yet: the timer `onSetVisible` starts is
+            // the whole point of opening it, so settle *again* after the show or every probe below
+            // measures the scene one frame after launch.
+            if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init), !shownContainers.isEmpty {
+                RunLoop.current.run(until: Date().addingTimeInterval(settle))
             }
         }
 
@@ -793,7 +811,20 @@ final class WinampModernRenderDumpTests: XCTestCase {
         var bitrateKbps = 320
         var sampleRateHz = 44_100
         var channelCount = 2
-        var spectrumLevels: [Float] = (0..<64).map { Float(($0 % 16)) / 16 }
+        /// A static ramp by default. Scaled by `WINAMP_MODERN_RENDER_VU` when that is set, because
+        /// `getVisBand` — not `getLeftVUMeter` — is what the skin-drawn meters that read the
+        /// *spectrum* use (Defix's speaker cones), and a constant spectrum pins them to one frame
+        /// however well they work. Without this the cones measure as dead at every level.
+        var spectrumLevels: [Float] {
+            get {
+                let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_RENDER_VU"]
+                guard let spec, !spec.isEmpty else { return storedSpectrumLevels }
+                let scale = Float(vuLevels.left)
+                return storedSpectrumLevels.map { min(1, $0 * scale + scale * 0.5) }
+            }
+            set { storedSpectrumLevels = newValue }
+        }
+        private var storedSpectrumLevels: [Float] = (0..<64).map { Float(($0 % 16)) / 16 }
         /// WINAMP_MODERN_RENDER_VU=<left>[,<right>] injects a program level per channel (0…1), the
         /// unit `getLeftVUMeter`/`getRightVUMeter` answer in. It is what makes a meter *deflect*
         /// headlessly — the harness has no audio, so without it every VU reads silence.

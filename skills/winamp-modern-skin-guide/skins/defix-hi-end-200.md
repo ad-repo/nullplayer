@@ -142,6 +142,14 @@ non-default display styles, which have no headless route in (below). **Grade B, 
     `value="-800,0,0" gray="1"`, and the harness applies that too — the catalog defaults to the first
     gammaset) and **not** the `BG` background preference (the harness resolves `BG1_*` with or without
     a stored value).
+  - **Measured working in the harness, 2026-08-19** (needs a live confirmation): with
+    `WINAMP_MODERN_RENDER_SHOW=SPEAKER1` the cabinet's script runs
+    `onscriptloaded,onsetvisible,ontimer` with `failed=-`, and the rendered cone **changes with the
+    level** — three distinct hashes at `RENDER_VU=0.0 / 0.5 / 1.0`. Two instrument gaps hid this
+    completely: the harness could not *open* a `default_visible="0"` window (so `onSetVisible` never
+    fired and the timer never started), and its injected spectrum was a **constant** ramp, which pins
+    a `getVisBand`-driven meter to one frame however well it works. Both are fixed in
+    `reference/harness.md`.
   - **Root cause found and fixed, 2026-08-19.** Phase 29 named it and it was right: auxiliary
     container windows install **no repaint route at all** (`drivesScripts: false` skipped
     `graphDidMutate`/`repaintRequested`/`objectRepaintRequested`, and those are single-owner). MAKI
