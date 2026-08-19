@@ -48,8 +48,11 @@ final class WinampModernPhase27Tests: XCTestCase {
         XCTAssertEqual(try visBand(runtime, program, band: 0), 0)
         host.spectrumLevels[0] = 1
         XCTAssertEqual(try visBand(runtime, program, band: 0), 255)
+        // Half **magnitude** is not half a vis byte: the scale is decibels, so 0.5 is −6 dB and sits
+        // near the top of the sweep. This assertion used to read 128 and encoded the linear mapping
+        // that left Defix's cones on their rest frame for 96.5% of a track.
         host.spectrumLevels[0] = 0.5
-        XCTAssertEqual(try visBand(runtime, program, band: 0), 128)
+        XCTAssertEqual(try visBand(runtime, program, band: 0), 229)
         XCTAssertEqual(try visBand(runtime, program, band: 1), 0,
                        "each band answers for itself")
     }
@@ -289,6 +292,32 @@ final class WinampModernPhase27Tests: XCTestCase {
         try runtime.invoke(method: "getVisBand", on: MakiObjectReference(.system),
                            arguments: [.integer(channel), .integer(band)],
                            program: program).integerValue
+    }
+
+    /// `getVisBand` is a **decibel** scale, because a linear one leaves the artwork unused.
+    ///
+    /// Measured on Defix's speaker cones over real playback with `WINAMP_MODERN_CALL_TRACE=1`:
+    /// `getVisBand(0,0)` ran min 0 / max 39 / mean 4 / p50 1 out of 255, and the 25-frame cone spent
+    /// 96.5% of the track on frame 0. That is the "the speakers don't animate and they're dark"
+    /// report — frame 0 is the cone at rest.
+    func testVisBandUsesADecibelScaleSoOrdinaryMusicMovesTheArtwork() {
+        XCTAssertEqual(WinampModernScriptRuntime.visByte(forMagnitude: 0), 0, "silence is silence")
+        XCTAssertEqual(WinampModernScriptRuntime.visByte(forMagnitude: 1), 255, "full scale is full")
+
+        // The measured working range of real material, which used to occupy the bottom sixth.
+        let quiet = WinampModernScriptRuntime.visByte(forMagnitude: 0.0157)   // the measured mean
+        let loud = WinampModernScriptRuntime.visByte(forMagnitude: 0.153)     // the measured peak
+        XCTAssertGreaterThan(quiet, 64, "the mean of real music must not sit near the rest position")
+        XCTAssertGreaterThan(loud, 160)
+        XCTAssertLessThan(loud, 255, "and a peak short of full scale must not clip")
+        XCTAssertGreaterThan(loud - quiet, 60,
+                             "the span between mean and peak is the travel the frames are cut for")
+
+        // Monotonic, and anything below the floor rests.
+        XCTAssertLessThan(WinampModernScriptRuntime.visByte(forMagnitude: 0.0001),
+                          WinampModernScriptRuntime.visByte(forMagnitude: 0.01))
+        XCTAssertEqual(WinampModernScriptRuntime.visByte(forMagnitude: 0.0005), 0,
+                       "below -60 dB is the rest position, not a permanent offset")
     }
 
     // MARK: - `System.getPlaylistLength()`

@@ -2558,7 +2558,32 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         let index = levels.count == Self.visBandCount
             ? requested
             : min(levels.count - 1, requested * levels.count / Self.visBandCount)
-        return Int32(max(0, min(255, (levels[index] * 255).rounded())))
+        return Self.visByte(forMagnitude: levels[index])
+    }
+
+    /// A linear FFT magnitude as Winamp's vis byte, on a **decibel** scale.
+    ///
+    /// The same mistake Phase 29 found in the VU meter, in the other tap. `levels[…]` is a linear
+    /// magnitude, and scaling it by 255 puts ordinary music at the very bottom of a range the skin's
+    /// artwork spans: measured on Defix's speaker cones over real playback, `getVisBand(0,0)` ran
+    /// **min 0, max 39, mean 4, p50 1** out of 255. The cone has 25 frames and spent **96.5%** of the
+    /// track on frame 0 — which reads as "the speakers don't animate, and they're dark", because
+    /// frame 0 is the cone at rest.
+    ///
+    /// Hearing is logarithmic and so is Winamp's meter artwork, so the magnitude is mapped through
+    /// `20·log10` over a 60 dB window: −60 dB and below is 0, full scale is 255. That puts the same
+    /// measured material across roughly a third to three-quarters of the sweep, which is the travel
+    /// the frames are cut for.
+    ///
+    /// `WINAMP_MODERN_CALL_TRACE=1` and watching `getvisband` against `gotoframe` is how this was
+    /// found and is how to check it again: a healthy meter uses a spread of frames, not one.
+    static func visByte(forMagnitude magnitude: Float) -> Int32 {
+        guard magnitude > 0 else { return 0 }
+        let floorDecibels: Double = -60
+        let decibels = 20 * log10(Double(min(1, magnitude)))
+        guard decibels > floorDecibels else { return 0 }
+        let fraction = (decibels - floorDecibels) / -floorDecibels
+        return Int32(max(0, min(255, (fraction * 255).rounded())))
     }
 
     /// `System.getLeftVUMeter()` / `getRightVUMeter()` — program level per channel as a vis byte

@@ -142,6 +142,26 @@ non-default display styles, which have no headless route in (below). **Grade B, 
     `value="-800,0,0" gray="1"`, and the harness applies that too — the catalog defaults to the first
     gammaset) and **not** the `BG` background preference (the harness resolves `BG1_*` with or without
     a stored value).
+  - **`getVisBand` was on a linear scale, and that is why they looked dead (fixed 2026-08-19).**
+    Measured live with `WINAMP_MODERN_CALL_TRACE=1` while a track played: `getVisBand(0,0)` ran
+    **min 0, max 39, mean 4, p50 1** out of 255, and the 25-frame cone spent **96.5%** of the track on
+    frame 0 — its rest position, which also reads as "dark". The same mistake Phase 29 found in the VU
+    meter, in the other tap: a linear FFT magnitude scaled by 255, where the artwork is cut for a
+    logarithmic sweep. `visByte(forMagnitude:)` now maps through `20·log10` over a 60 dB window. Same
+    skin, same track, after: **mean 139, max 232, frames 10–15**.
+  - **But the animation is still nearly invisible, and that is the artwork.** The 25 frames of
+    `DATA/SpAnim.png` differ from the rest frame by a **mean of 0.2–0.4% brightness and at most 5.5%**
+    (measured per pixel). On a near-black cone that is imperceptible. The engine now feeds the meter
+    correctly and there is very little to see; do not go looking for a further engine defect here
+    without an external reference showing the cone visibly moving in Winamp.
+  - **The cabinet renders correctly** — captured from the running app and compared against the skin's
+    own `screenshot.png`: wood panel, detailed cone, tweeter, port. The cone is black because the art
+    is black. "Very dark" is the artwork, not a gamma or background fault; the colour theme and the
+    `BG` preference were both eliminated by measurement.
+  - **`setScale` appears in `SPEAKER.maki` but is never called at runtime** (0 calls in a full live
+    trace) — it is on the configurator's scaling path, not the cone's. A strict `strings` match also
+    hides `gotoFrame` here, because method names in the table carry a trailing index byte
+    (`gotoFrame)`); grep loosely or you will conclude the script cannot animate at all.
   - **Measured working in the harness, 2026-08-19** (needs a live confirmation): with
     `WINAMP_MODERN_RENDER_SHOW=SPEAKER1` the cabinet's script runs
     `onscriptloaded,onsetvisible,ontimer` with `failed=-`, and the rendered cone **changes with the
