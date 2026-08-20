@@ -403,6 +403,15 @@ final class WinampModernMainView: NSView {
         needsDisplay = true
     }
 
+    /// Scroll the drawn playlist so a row is on screen — `PlEdit.showTrack(n)`. A no-op in a window
+    /// whose skin embeds no playlist holder, which is most of them: the script still runs.
+    func revealPlaylistRow(_ row: Int) {
+        guard let host = componentHost,
+              let holder = renderer.componentHolders().first(where: { $0.kind == .playlist }) else { return }
+        renderer.revealPlaylistRow(row, rowCount: host.playlistSnapshot().rows.count, in: holder.frame)
+        needsDisplay = true
+    }
+
     /// Keep the scroll offset inside the list after a removal or a queue replacement, so a deleted
     /// tail does not leave the view scrolled past the end.
     func clampPlaylistScroll() {
@@ -540,6 +549,31 @@ final class WinampModernMainView: NSView {
         hoveredObject = nil
         needsDisplay = true
     }
+
+    #if DEBUG
+    /// Drive a left click at a skin point without a mouse — the app-side counterpart of the
+    /// harness's `WINAMP_MODERN_RENDER_CLICK`, reached through `WINAMP_MODERN_DEBUG_CLICK`.
+    ///
+    /// The harness renders containers standalone and owns no windows, so a defect that lives in the
+    /// *window* layer is invisible to it: Defix's playlist button measured as one clean toggle in
+    /// `RENDER_CLICK` while opening and shutting the window on every press in the app. This replays
+    /// exactly what `mouseUp` does, so the window layer is in the picture. Pair it with
+    /// `WINAMP_MODERN_CALL_TRACE=1`, which is what turns the click into a readable chain.
+    func debugClick(atSkinPoint point: CGPoint) {
+        guard let object = renderer.object(at: point) else {
+            NSLog("WinampModern debug click: nothing at %@", "\(point)")
+            return
+        }
+        NSLog("WinampModern debug click: %@#%@", object.typeName, object.xmlID ?? "-")
+        pressedObject = object
+        dispatch(object: object, event: "onleftbuttondown", point: point)
+        dispatch(object: object, event: "onleftbuttonup", point: point)
+        _ = try? scripts.dispatch(object: object, event: "onleftclick")
+        performAction(for: object)
+        pressedObject = nil
+        needsDisplay = true
+    }
+    #endif
 
     override func mouseDown(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))

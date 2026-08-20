@@ -218,10 +218,34 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   vis bytes; the harness cannot see it move (no audio), so watch it under playback in the app.
 - **`isloading` — implemented in Phase 27** on `<AlbumArt>`, from the host's real artwork-fetch
   state. `PLAYLIST_WINDOW.ontimer` had been aborting on the miss every tick.
-- **`getcurrentindex` is missing** (measured 2026-08-19). It does not appear at load — the startup
-  report is still 0 unsupported methods — but **every** click on the four round buttons raises it.
-  The textbook case of the queue-not-a-set rule: nothing sees it until something drives the event.
-  What its result feeds is unknown; `WINAMP_MODERN_RENDER_DISASM=getcurrentindex` would say.
+- **`getcurrentindex` — closed in Phase 42 (B8), and the cause was not the method.** It reads the
+  playlist through `PlEdit`, the host-owned global `std.mi` declares beside `System`. The compiler
+  marks *both* with the variable record's `system` flag and the parser read that as "this **is** the
+  System object", so every `PlEdit.getCurrentIndex()` arrived as a call on System and failed there as
+  an unknown System method — which is exactly why it surfaced on interaction and not at load.
+  `PlEdit` is now bound by class GUID and the whole API answers (`getNumTracks`, `getTitle`,
+  `getLength`, `getFileName`, `getMetaData`, `playTrack`, `removeTrack`, `showTrack`, `moveTo`,
+  `clear`, `showCurrentlyPlayingTrack`). Confirmed live 2026-08-20: `getNumTracks() -> 24`,
+  `getMetaData(i,"album")` answering per row. What it feeds: the playlist window's album-art lookup
+  and its context menu's Move/Remove selected commands.
+- **The round buttons opened and shut their window in one click — fixed in Phase 42.** Reported live
+  2026-08-20 ("the playlist opens and immediately closes when you use the main button; if it's open
+  it also won't close"). `MAIN_LAYOUT_1` declares **`ConfBT2.onLeftClick()` twice**, byte for byte,
+  and the engine ran both — so the button's assigned action (a *toggle*) fired twice and the two
+  cancelled. Winamp keeps one handler per (object, event); `MakiProgram.dispatchBindings` now does
+  too. Only the playlist showed it because that is what this user's `MainBtn2` is assigned to; any
+  round button assigned to a toggling target would have done the same.
+  **The harness could not see this** — it owns no windows, so the doubled toggle printed as one clean
+  `CLICK action:`. It was found with `WINAMP_MODERN_DEBUG_CLICK` in the running app.
+- **The `ML` round button does not open the media library until some other window has been opened
+  once — open, reported live 2026-08-20.** After that it works every time. The button's branch is
+  `getContainer("SUI").getLayout("normal").findObject("sui.content").sendAction("opentab", "ML", …)`,
+  and the SUI's `onAction` handler answers with `isVisible() -> 1` followed by
+  `getContainer("sui").hide()` — it believes the tab it was asked for is already showing, so it
+  closes instead of opening. The `isVisible()` receiver is *not* the container (no
+  `containerVisibilityQuery` is consulted), so it is reading a graph `visible` attribute on a tab page
+  that nothing has initialised yet; opening any window first is what runs the initialisation. Same
+  family as the Phase 31 "round buttons re-assign but mis-target after the swap" item.
 - **The playlist box's readouts were blank — two separate causes, both fixed 2026-08-19.** The user
   reported it as "the playlist window shows art but not the track information", and noticed that
   enabling *Two infoboxes in the playlist* makes the second box show it. That second box is a

@@ -53,6 +53,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_FX_SPIN=<seconds>` | samples every warped layer's angle at 60 Hz, printing the wall-clock step between updates and how far it turned. This is how "the animation is rough" is split into *the script's cadence* and *our frame rate* — a smooth meter is a small, even step at an even interval |
 | `WINAMP_MODERN_RENDER_SHOW=<container>[,<container>]` | open auxiliary windows the way the user does from **Skin Windows**, dispatching `onSetVisible` to them and settling again afterwards. Without it the harness only ever sees the windows a skin opens by default, so a defect confined to one that ships `default_visible="0"` — Defix's speaker cabinets, whose `getVisBand` timer *starts* from `onSetVisible` — is invisible to every other probe. **A `default_visible="1"` window is opened without it** (Phase 40), because the app opens it too: the line reads `SHOW <id> (default_visible)`, and a container the app refuses to auto-open prints `DEFAULT-VISIBLE <id> suppressed: <reason>` instead. The settle applies to both |
 | `WINAMP_MODERN_RENDER_EQ=<band>=<value>[,…]` | drive an equalizer change from **outside** the skin — the route a preset, the menu bar or the classic equalizer window takes — and print the handlers it reaches (`EQ handler onEqBandChanged -> ledfillbar.xml`), the values driven, and every `EQ_BAND`/`EQ_PREAMP` slider's resulting 0…255 position. `band` is 0…9 or `preamp`, `value` is MAKI's −127…127; bare `1` sweeps every band. Without it the harness installs no equalizer at all, so `getEqBand` answers 0 and the events never fire. Phase 41's addition, and the only headless way to see a readout that follows the *event* rather than the drag |
+| `WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>]` | stand a synthetic queue up behind the component seam **before** the scripts start — the only way a skin's `PlEdit` API can be observed headlessly, since the dump harness sets no component host and every script that walks the queue otherwise takes its empty branch. It also fills the drawn playlist panel, which has always come out as an empty box for exactly that reason. Prints `PLAYLIST before:` / `PLAYLIST after:` so an edit a script made (`removeTrack`, `moveTo`, `clear`) is visible, and `PLAYLIST reveal row=<n>` for a `showTrack`. Pair with `WINAMP_MODERN_CALL_TRACE=1` to see each call and its result. Phase 42's addition |
 | `WINAMP_MODERN_RENDER_VU=<level>` | inject a program level per channel (0…1) for `getLeftVUMeter`/`getRightVUMeter`; `sweep` oscillates 0…1 at 0.5 Hz. The harness has no audio, so without it every meter reads silence and a needle's travel cannot be measured. It also **scales the injected spectrum**, because meters that read `getVisBand` rather than the VU (Defix's speaker cones) sit on one frame against the harness's otherwise-constant ramp and measure as dead at every level |
 | `WINAMP_MODERN_RENDER_CONFIG=<section>;<key>=<value>[\|…]` | write skin configuration **before** the scripts start — where the app reads it from, since the value is persisted. How a skin option that changes what is drawn (Defix's eight display styles) is selected without a GUI. Note it *stays* set for later runs, and a skin may keep its own private copy (Defix: `CurVuVis`) |
 | `WINAMP_MODERN_RENDER_TIME=<frames>` (+ `_SCALE=2`, `_CLIP=1`) | ms/frame for a full repaint. `_SCALE=2` is the number that matters — it is the Retina backing store the app actually pays for; `_CLIP=1` measures the same frame clipped to the warped layers' rects. Defix, after Phase 29's pre-scaled artwork cache: **3.5 ms at 2×** idle, 5.4 ms with both reels warping, 4.4 ms clipped (it was 19.3 / 6.9 when every bitmap was resampled to the backing scale on every frame) |
@@ -146,6 +147,23 @@ reproduce — extend it rather than starting over.
 `WinampModernRenderPixelTests` is the synthetic guard for all of the above: a banded atlas whose crop
 origin, upright orientation, tiling, and `fitparent` sizing are asserted per pixel. When you touch
 `WasabiSceneRenderer`, verify a fix *fails* without the change before trusting it.
+
+### Driving a click in the *running app*
+
+`WINAMP_MODERN_DEBUG_CLICK=<x>,<y>[;<x>,<y>…]` (DEBUG builds) clicks skin points a few seconds after
+launch, two seconds apart, replaying exactly what `mouseUp` does. It exists because
+`RENDER_CLICK` **has no windows**: a defect that lives in the window layer measures as clean there.
+Defix's playlist button was the case — one tidy `CLICK action:` line in the harness, and a window
+that opened and shut again on every press in the app. Pair it with `WINAMP_MODERN_CALL_TRACE=1`,
+which turns the click into a readable chain:
+
+```sh
+WINAMP_MODERN_DEBUG_CLICK="92,251;92,251" WINAMP_MODERN_CALL_TRACE=1 \
+  ./.build/debug/NullPlayer -uiMode winampModern -winampModernSkinPath "/abs/Skin.wal" > /tmp/x.log 2>&1
+```
+
+Coordinates are **skin pixels** in the main window's active layout — take them from
+`RENDER_PROBE`'s `frame=` for the object you want.
 
 Load a developer archive directly (DEBUG builds):
 
@@ -285,6 +303,8 @@ Three of this subsystem's probes were silently blind, and each one made a real d
 | Could not open a `default_visible="0"` window | Speaker cones unmeasurable; `onSetVisible` never fired | `RENDER_SHOW` |
 | Injected spectrum was a **constant** ramp | Cones identical at every level, so "dead" | `RENDER_VU` now scales it |
 | No component host, so `PE_Info` never *changed* | `onTextChanged` could never be observed | harness stands a synthetic queue |
+| Empty queue, so every `PlEdit` walk took its empty branch | The playlist API looked exercised and reached nothing | `RENDER_PLAYLIST` |
+| No windows, so a doubled window **toggle** cancels invisibly | Defix's playlist button measured as one clean action while flashing open/shut in the app | `WINAMP_MODERN_DEBUG_CLICK` in the app |
 
 When a probe says "nothing is happening", check that the probe can see the thing happening at all.
 

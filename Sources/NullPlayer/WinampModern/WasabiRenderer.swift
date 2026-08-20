@@ -509,6 +509,8 @@ final class WasabiSceneRenderer {
     /// Weak so the retained graph never keeps the host (owned by the window controller) alive.
     weak var componentHost: WinampModernComponentHost?
     private var playlistScrollOffset = 0
+    /// The scroll position `revealPlaylistRow` computes, for the tests that assert the arithmetic.
+    var playlistScrollOffsetForTesting: Int { playlistScrollOffset }
     /// Per-object `<ColorThemes:List>` state. Keyed by object because a skin may show the same list
     /// in two places (mmd3 puts one in its player drawer and one in a standalone window) and each
     /// keeps its own selection and scroll.
@@ -1008,6 +1010,19 @@ final class WasabiSceneRenderer {
     func scrollPlaylist(byRows delta: Int, rowCount: Int, in frame: CGRect) {
         let maxOffset = max(0, rowCount - playlistVisibleRowCount(in: frame))
         playlistScrollOffset = max(0, min(maxOffset, playlistScrollOffset + delta))
+    }
+
+    /// Scroll the least that brings a row on screen — what `PlEdit.showTrack(n)` and
+    /// `showCurrentlyPlayingTrack()` mean. A row already visible does not move the list, so a skin
+    /// that calls this from a timer does not fight the user's own scrolling.
+    func revealPlaylistRow(_ row: Int, rowCount: Int, in frame: CGRect) {
+        let visible = playlistVisibleRowCount(in: frame)
+        guard visible > 0, rowCount > 0, row >= 0, row < rowCount else { return }
+        let maxOffset = max(0, rowCount - visible)
+        var offset = max(0, min(maxOffset, playlistScrollOffset))
+        if row < offset { offset = row }
+        if row >= offset + visible { offset = row - visible + 1 }
+        playlistScrollOffset = max(0, min(maxOffset, offset))
     }
 
     // MARK: - Colour theme list (Phase 32)

@@ -205,6 +205,75 @@ from a subroutine whose only caller is `onTextChanged`. Reading the disassembly 
 look like `onTimer` work — the two handlers are adjacent, and `op25` is a **call** into the shared
 block, not a jump within one handler. Undispatched, the whole readout was unreachable code.
 
+#### One handler per (object, event)
+
+`MakiProgram.dispatchBindings` keeps the **last** binding a program declares for a given
+(variable, event) pair; `bindings` keeps them all, for the harness. Winamp registers a script's
+handlers into a per-object event map, so a second declaration of the same pair replaces the first —
+and a compiled skin can carry the duplicate. Defix's `MAIN_LAYOUT_1` declares `ConfBT2.onLeftClick()`
+**twice**, byte for byte, both bodies ending in that round button's assigned target.
+
+Running both fired the button's whole action twice per click, and because the action is a *toggle*
+the two cancelled: the playlist window flashed open and shut on every press, and an open one refused
+to close. **The render harness could not see it** — it owns no windows, so the doubled toggle
+measured as one clean `CLICK action:` line. It was found by driving the click in the running app with
+`WINAMP_MODERN_DEBUG_CLICK` + `WINAMP_MODERN_CALL_TRACE`.
+
+#### `PlEdit` — the playlist-editor API
+
+`std.mi` declares **`PlEdit`** as a host-owned global exactly as it declares `System`, and skins call a
+dozen methods on it: the queue's length and current entry, an entry's title/length/filename/metadata,
+and the edits behind a playlist context menu.
+
+**The gap was not the methods — it was which variable is `System`.** The compiler marks *every*
+host-owned global with the variable record's `system` flag, and `MakiBytecodeParser` read that flag as
+"this **is** the System object". So every `PlEdit.getCurrentIndex()` in the corpus arrived as a call
+**on System**, and failed there as an unknown System method. That is why Defix's `getcurrentindex` gap
+surfaced on interaction and not at load, and it is why implementing the methods alone would have
+changed nothing. The parser now carves out the classes the runtime binds itself
+(`MakiClassGUID.runtimeBound`) and `WinampModernScriptRuntime.seedHostSingletons` binds them by class;
+a system-flagged global of any *other* class keeps the System object it always had, so nothing that
+worked before became a null receiver.
+
+**The API is keyed on `PlEdit`'s class GUID, not registered by name.** Half of these names belong to
+other classes — `getLength` is an `animatedlayer`'s **frame count** (no arguments, an integer;
+ClassicPro's `beat.m` reads it 28 times), `getTitle` a container's caption, `clear` a list's.
+Registering `PlEdit`'s `getLength(track)` by name would have re-declared the animated one with the
+wrong arity and desynchronised the interpreter's stack in skins that have nothing to do with
+playlists.
+
+| Method | Arity | Answers |
+|---|---|---|
+| `getCurrentIndex()` / `getNumTracks()` | 0 | the playing row (0-based, −1 for none) and the queue length |
+| `getTitle(t)` | 1 | the entry's display title — the same string the drawn list shows |
+| `getLength(t)` | 1 | **a string**, `m:ss`, and **empty** when unknown — ClassicPro tests it against `""` before bracketing it |
+| `getFileName(t)` | 1 | the entry's path (or URL for a stream) |
+| `getMetaData(t, field)` | 2 | `title` / `artist` / `album` / `filename` / `length`, empty otherwise |
+| `playTrack(t)` / `removeTrack(t)` / `showTrack(t)` | 1 | play, remove, scroll-to |
+| `moveTo(from, to)` | 2 | reorder — **two** arguments, see below |
+| `showCurrentlyPlayingTrack()` / `clear()` | 0 | scroll to the playing row; empty the queue |
+
+`System.getPlaylistIndex()` (0 args) is a *System* method, not `PlEdit`'s, and **six of the seventeen
+skins** ask for it — the most demanded unimplemented method in the corpus. Winamp's own notifier shows
+it as `getPlaylistIndex() + 1 + " of " + getPlaylistLength()`, which pins both the base and the
+pairing. `showCurrentlyPlayingEntry()` (0 args) is the same request made of the playlist **widget**;
+Itemskin and micro reach it through `findObject`, so it is a GUI method with a receiver.
+
+**`moveTo` is why the arities are measured and not ported.** It reads like a one-argument "scroll to"
+and is `moveTo(from, to)`: Defix's *Move selected to top* passes a literal `0` for the first selected
+row and then a running counter, its *to bottom* passes `getNumTracks() - 1`. Count the net pushes
+between the receiver and the call — the compiler emits the receiver first, then one push per argument
+in **reverse**, so `arguments[0]` is the first declared argument.
+
+**What is deliberately left out.** `PlEdit.enqueueFile(path)` (cPro-Bento) and `System.playFile(path)`
+(T800) take a **filesystem path from the skin**, which is a sandbox policy question rather than an
+arity one, so they stay out of `signature(for:)` and their demand keeps being recorded. `clear()` is
+implemented and they are not, which would be a hazard if anything reached both — cPro-Bento's
+`extendedbuttons.m` is the only caller and it early-returns on `ClassicProFile.findFiles`'s bounded
+`-1` long before the `clear()`.
+
+Drive it headlessly with `WINAMP_MODERN_RENDER_PLAYLIST` — see [harness.md](harness.md).
+
 #### The equalizer tells the skin it moved
 
 `onEqBandChanged(band, value)` and `onEqPreampChanged(value)` are the EQ's `onVolumeChanged`: Winamp

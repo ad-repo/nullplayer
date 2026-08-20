@@ -77,6 +77,32 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
         }
 
+        // WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>] stands a synthetic queue up behind the
+        // component seam **before** the scripts start, which is the only way a `.wal` skin's
+        // playlist-editor API can be observed headlessly: the dump harness sets no component host, so
+        // `PlEdit` reads an empty queue and every script that walks it takes its empty branch. With
+        // it, `PlEdit.getNumTracks`/`getTitle`/`getMetaData` answer, the drawn playlist panel is no
+        // longer blank, and a script's `removeTrack`/`moveTo`/`clear` is visible in the "after" line
+        // printed below (Phase 42). Pair it with `WINAMP_MODERN_CALL_TRACE=1` to see each call.
+        var playlistHost: RenderComponentHost?
+        if let spec = env["WINAMP_MODERN_RENDER_PLAYLIST"] {
+            var count = 8
+            var current = 0
+            for entry in spec.split(separator: ",") {
+                let text = entry.trimmingCharacters(in: .whitespaces)
+                if let value = Int(text) { count = value }
+                else if text.lowercased().hasPrefix("current="), let value = Int(text.dropFirst(8)) {
+                    current = value
+                }
+            }
+            let host = RenderComponentHost(count: max(0, count), current: current)
+            playlistHost = host
+            runtime.componentHost = host
+            WasabiTextMetrics.componentTextProvider = { [weak host] in host?.playlistSnapshot() }
+            runtime.playlistRevealRowRequested = { print("PLAYLIST reveal row=\($0)") }
+            print("PLAYLIST before: \(host.describe())")
+        }
+
         try runtime.start()
 
         if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
@@ -86,11 +112,13 @@ final class WinampModernRenderDumpTests: XCTestCase {
             // stand a synthetic queue up behind it — the same "it changed" the app produces when the
             // playlist is edited, which is the only thing that raises the event.
             runtime.refreshBoundText()
-            WasabiTextMetrics.componentTextProvider = {
-                WinampModernPlaylistSnapshot(
-                    rows: (0..<3).map { WinampModernPlaylistRow(title: "t\($0)", secondary: "",
-                                                                duration: 120, isCurrent: $0 == 0) },
-                    currentIndex: 0, selectedIndex: 0)
+            if playlistHost == nil {
+                WasabiTextMetrics.componentTextProvider = {
+                    WinampModernPlaylistSnapshot(
+                        rows: (0..<3).map { WinampModernPlaylistRow(title: "t\($0)", secondary: "",
+                                                                    duration: 120, isCurrent: $0 == 0) },
+                        currentIndex: 0, selectedIndex: 0)
+                }
             }
             runtime.refreshBoundText()
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
@@ -304,11 +332,12 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         case .gui(let id):
                             let object = loaded.runtime.graph.object(withID: id)
                             bound = "\(object?.typeName ?? "?")#\(object?.xmlID ?? "-")"
+                        case .playlistEditor: bound = "PlEdit"
                         case .popupMenu: bound = "PopupMenu"
                         case .dynamic: bound = "dynamic"
                         }
                     }
-                    print("SCRIPT   bind \(event) -> \(bound)"
+                    print("SCRIPT   bind \(event) v\(binding.variableIndex) -> \(bound)"
                           + (variable.isClass ? " (class, \(variable.classMembers.count) members)" : ""))
                 }
                 // ClassicPro addresses other scripts by walking `getParent()` a fixed number of times
@@ -525,6 +554,9 @@ final class WinampModernRenderDumpTests: XCTestCase {
             runtime.resolvedGeometryRequested = { object in renderer.resolvedGeometry(of: object) }
             // Layer FX, as the app wires it — so a warped layer is warped in the dumped PNG too.
             renderer.layerFXProvider = { [weak runtime] in runtime?.layerFXMesh(for: $0) }
+            // The same synthetic queue the scripts see, so the drawn playlist panel is no longer the
+            // empty box the harness has always produced (§2's documented blind spot).
+            renderer.componentHost = playlistHost
             // And the same settle the window layer drives, so a script that collapses a pane sees the
             // `onResize` it is waiting on — cPro's side-view buttons swap from it.
             var lastFrames: [WasabiObjectID: CGRect] = [:]
@@ -937,6 +969,13 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
             renderer.teardown()
         }
+
+        // What the skin's scripts did to the queue. A `removeTrack`, `moveTo` or `clear` is invisible
+        // in the dump — the drawn panel is one frame taken before the click that triggers it — so the
+        // queue is printed again here and diffed by eye against the "before" line.
+        if let playlistHost {
+            print("PLAYLIST after: \(playlistHost.describe())")
+        }
     }
 
     /// Drive one named event at its real target with its real arguments.
@@ -1009,6 +1048,97 @@ final class WinampModernRenderDumpTests: XCTestCase {
         case .string(let v): return "\"\(v)\""
         case .object: return "object"
         }
+    }
+
+    /// A synthetic playlist/equalizer host for the harness, so the component seam answers something.
+    /// Writes land in this array rather than in an `AudioEngine`, which is the point: a probe run can
+    /// drive a skin's *Remove selected* without a player.
+    private final class RenderComponentHost: WinampModernComponentHost {
+        private struct Row { var title: String; var artist: String; var album: String; var path: String }
+        private var rows: [Row]
+        private var current: Int
+        private var selection: Set<Int> = []
+        private var anchor = -1
+        private var bands = Array(repeating: Float(0), count: 10)
+        private var preamp: Float = 0
+
+        init(count: Int, current: Int) {
+            rows = (0..<count).map {
+                Row(title: "Track \($0 + 1)", artist: "Artist \($0 + 1)",
+                    album: "Album \($0 % 3 + 1)", path: "/tmp/harness/track\($0 + 1).mp3")
+            }
+            self.current = rows.indices.contains(current) ? current : (rows.isEmpty ? -1 : 0)
+        }
+
+        func describe() -> String {
+            "current=\(current) rows=[" + rows.map(\.title).joined(separator: ", ") + "]"
+        }
+
+        func playlistSnapshot() -> WinampModernPlaylistSnapshot {
+            WinampModernPlaylistSnapshot(
+                rows: rows.enumerated().map { index, row in
+                    WinampModernPlaylistRow(title: row.title, secondary: row.artist,
+                                            duration: TimeInterval(120 + index),
+                                            isCurrent: index == current,
+                                            artist: row.artist, album: row.album, filePath: row.path)
+                },
+                currentIndex: current, selectedIndex: anchor, selectedRows: selection)
+        }
+
+        func playlistSelect(row: Int) {
+            guard rows.indices.contains(row) else { return }
+            anchor = row
+            selection = [row]
+        }
+
+        func playlistSetSelection(_ rows: Set<Int>) {
+            selection = rows.filter { self.rows.indices.contains($0) }
+            anchor = selection.min() ?? -1
+        }
+
+        func playlistPlay(row: Int) {
+            guard rows.indices.contains(row) else { return }
+            current = row
+        }
+
+        func playlistRemove(row: Int) {
+            guard rows.indices.contains(row) else { return }
+            rows.remove(at: row)
+            if current == row { current = rows.isEmpty ? -1 : min(row, rows.count - 1) }
+            else if current > row { current -= 1 }
+        }
+
+        func playlistMove(row: Int, to destination: Int) {
+            guard rows.indices.contains(row), rows.indices.contains(destination), row != destination else { return }
+            let moved = rows.remove(at: row)
+            rows.insert(moved, at: destination)
+            if current == row { current = destination }
+            else if row < current && destination >= current { current -= 1 }
+            else if row > current && destination <= current { current += 1 }
+        }
+
+        func playlistClear() {
+            rows.removeAll()
+            current = -1
+            anchor = -1
+            selection = []
+        }
+
+        func equalizerSnapshot() -> WinampModernEQSnapshot {
+            WinampModernEQSnapshot(bandGainsDB: bands, preampDB: preamp, enabled: true,
+                                   auto: false, presetNames: [])
+        }
+
+        func equalizerSetBandGainDB(_ band: Int, gainDB: Float) {
+            guard bands.indices.contains(band) else { return }
+            bands[band] = gainDB
+        }
+
+        func equalizerSetPreampDB(_ gainDB: Float) { preamp = gainDB }
+        func equalizerSetEnabled(_ enabled: Bool) {}
+        func equalizerSetAuto(_ enabled: Bool) {}
+        func equalizerApplyPreset(named name: String) {}
+        func toggleClassicWindow(for kind: WinampModernComponentKind) {}
     }
 
     private final class RenderHost: WinampModernHost {

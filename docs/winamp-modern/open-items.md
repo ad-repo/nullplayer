@@ -214,11 +214,49 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       XML parameter is 1-based). 9 new unit tests.
       Residue: the drawn LED bars themselves are a GUI check — the app was confirmed to load and run
       multipass with the poll live, but "drag the classic EQ, watch the skin's bars follow" is manual QA
-- [ ] **B8. The playlist-editor script API** (`getCurrentIndex`, `getNumTracks`, `playTrack`,
-      `removeTrack`, `showTrack`, `getMetaData`, …). Defix's known `getcurrentindex` gap is one of
+- [x] **B8. The playlist-editor script API** (`getCurrentIndex`, `getNumTracks`, `playTrack`,
+      `removeTrack`, `showTrack`, `getMetaData`, …) — ~~Defix's known `getcurrentindex` gap is one of
       these; it surfaces on interaction rather than at load, which is why it reads as an intermittent
-      defect. Confirm the arities against the MAKI method tables (`RENDER_DISASM`) before implementing
-      — a wrong arity desynchronises the interpreter's stack
+      defect~~ — **closed in Phase 42.** Five parts:
+      1. **The cause was not the methods.** `std.mi` declares `PlEdit` as a host-owned global exactly
+         as it declares `System`, and the compiler marks **both** with the variable record's `system`
+         flag. `MakiBytecodeParser` read that flag as "this *is* the System object", so every
+         `PlEdit.getCurrentIndex()` in the corpus arrived as a call **on System** and failed there as
+         an unknown System method — which is why it surfaced on interaction and not at load, and why
+         implementing the methods alone would have changed nothing. The parser now carves out the
+         classes the runtime binds itself (`MakiClassGUID.runtimeBound`); a system-flagged global of
+         any *other* class keeps the System object it always had, so nothing that worked before became
+         a null receiver.
+      2. **The arities, measured** off the corpus's own call sites, not ported from a header:
+         `getCurrentIndex`/`getNumTracks`/`showCurrentlyPlayingTrack`/`clear` 0,
+         `getTitle`/`getLength`/`getFileName`/`playTrack`/`removeTrack`/`showTrack` 1,
+         `getMetaData(track, field)` and **`moveTo(from, to)`** 2. `moveTo` is the one that pays for
+         the measurement — it reads like a one-argument "scroll to", and Defix's *Move selected to
+         top* proves the second argument by passing a literal 0 and then a running counter.
+         `getLength` returns a **string** (`m:ss`, empty when unknown): ClassicPro tests it against
+         `""` before bracketing it.
+      3. **Keyed on `PlEdit`'s class GUID, not registered by name.** Half these names belong to other
+         classes — `getLength` is an `animatedlayer`'s frame count, which ClassicPro's `beat.m` reads
+         28 times. Registering by name would have re-declared that one with the wrong arity.
+      4. **`System.getPlaylistIndex()`** (6 of 17 skins — the most demanded unimplemented method in the
+         corpus) and the widget's own `showCurrentlyPlayingEntry()` (Itemskin, micro).
+      5. **A duplicate-handler bug found while verifying it, and fixed.** Defix's `MAIN_LAYOUT_1`
+         declares `ConfBT2.onLeftClick()` **twice**, byte for byte; the engine ran both, so that round
+         button's assigned action — a *toggle* — fired twice and the two cancelled. Reported live:
+         "the playlist opens and immediately closes when you use the main button; if it's open it also
+         won't close." Winamp keeps one handler per (object, event) and `MakiProgram.dispatchBindings`
+         now does too. **The render harness structurally could not see this** (no windows, so a doubled
+         toggle prints as one clean action); it was found by driving the click in the running app with
+         the new `WINAMP_MODERN_DEBUG_CLICK` hook.
+      Verified live on Defix 2026-08-20 (`getNumTracks() -> 24`, per-row `getMetaData`, one toggle per
+      click) and in the harness with a new probe, `WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>]`,
+      which stands a synthetic queue behind the component seam before the scripts start — the only way
+      the API can be exercised headlessly, and it fills the drawn playlist panel that has always come
+      out blank. 18 new unit tests; the 17-skin sweep is unchanged.
+      Residue: `PlEdit.enqueueFile(path)` (cPro-Bento) and `System.playFile(path)` (T800) are left out
+      — path ingest is a sandbox policy decision, not an arity question, and their demand keeps being
+      recorded. Filed as B21. Defix's `ML` round button not opening the library until another window
+      has been opened once is a separate, still-open defect — filed as B22
 - [ ] **B9. `onKeyDown` (5 skins:** multipass, Defix, Rika, T800, winampmodern566**).** Needs a
       first-responder seam in the view and a keycode mapping. No reported symptom yet, which is why it
       sits below the rest of Tier 2 despite the skin count
@@ -267,6 +305,24 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       Phase 39) become implementable, because a hosted surface finally has a native size to scale
       from — nothing in our video window reads `presentationSize` today. Numbered B20 but sits in
       Tier 2 by size; it is the largest single piece of "the skin draws it, we don't fill it" left
+
+- [ ] **B21. `enqueueFile` / `playFile` — skin-supplied path ingest.** `PlEdit.enqueueFile(path)`
+      (cPro-Bento) and `System.playFile(path)` (T800) hand the host a filesystem path the *skin*
+      chose. Deliberately left out of B8: it is a sandbox policy decision (what may a script add to
+      the queue, and from where), not an arity question. Note `clear()` **is** implemented and these
+      are not — safe today only because cPro-Bento's one caller early-returns on
+      `ClassicProFile.findFiles`'s bounded `-1` long before its `PlEdit.clear()`. Decide the policy
+      before implementing either, and check that pairing again
+- [ ] **B22. Defix's `ML` round button needs another window opened first.** Reported live 2026-08-20:
+      the media library will not open from the button until some other window has been opened once,
+      after which it works every time. The branch is
+      `getContainer("SUI").getLayout("normal").findObject("sui.content").sendAction("opentab","ML")`,
+      and the SUI's `onAction` answers `isVisible() -> 1` then `getContainer("sui").hide()` — it
+      believes the tab it was asked for is already showing. The `isVisible()` receiver is **not** the
+      container (no `containerVisibilityQuery` is consulted), so it is reading a graph `visible`
+      attribute on a tab page nothing has initialised yet. Same family as the Phase 31 "round buttons
+      re-assign but mis-target after the swap" item; drive it with `WINAMP_MODERN_DEBUG_CLICK` +
+      `WINAMP_MODERN_CALL_TRACE`
 
 ## Tier 3 — narrow, latent, or a decision rather than code
 

@@ -122,6 +122,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// The EQ preamp, on the same MAKI −127…127 scale as a band.
     var equalizerPreampRequested: (() -> Int)?
     var equalizerPreampSetterRequested: ((Int) -> Void)?
+    /// The playlist the `PlEdit` singleton addresses. Weak: the window controller owns the bridge,
+    /// and a skin reload tears the runtime down first. `nil` in the headless harness, where every
+    /// read falls back to `WasabiTextMetrics.componentTextProvider` and every write is a no-op.
+    weak var componentHost: WinampModernComponentHost?
+    /// `PlEdit.showTrack(n)` and `showCurrentlyPlayingTrack()` — scroll the drawn playlist so a row
+    /// is on screen. The scroll offset lives in the renderer, which the runtime does not own, so the
+    /// window supplies this the way it supplies the equalizer's setters.
+    var playlistRevealRowRequested: ((Int) -> Void)?
     /// Diagnostic tap on every handler that actually ran, with the failure that aborted it or `nil`.
     ///
     /// Nil in the app. The render harness installs one because "did this script's `onScriptLoaded`
@@ -296,6 +304,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 parseFailures.append(contentsOf: failure.diagnostics)
             }
         }
+        parsedPrograms.forEach(Self.seedHostSingletons)
         self.programs = parsedPrograms
         self.boundScriptPaths = Set(loadedSkin.runtime.scriptBindings)
         self.scriptFailures = Array(parseFailures.prefix(Self.maximumRecordedScriptFailures))
@@ -553,6 +562,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
         try collect(root)
         guard !added.isEmpty else { return }
+        added.forEach(Self.seedHostSingletons)
         programs.append(contentsOf: added)
         try dispatchSystem(event: "onscriptloaded", to: added)
         deliverXUIParams(forSubtreeOf: root)
@@ -975,7 +985,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
         var executed = 0
         for program in subset ?? programs {
-            for binding in program.bindings where program.methods[binding.methodIndex].name == eventName {
+            for binding in program.dispatchBindings
+            where program.methods[binding.methodIndex].name == eventName {
                 let variable = program.variables[binding.variableIndex]
                 var matches = object(variable.value, equals: target)
                 if variable.isClass {
@@ -1297,10 +1308,44 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return .null
     }
 
+    /// The playlist-editor API, **keyed by `PlEdit`'s class** rather than registered globally.
+    ///
+    /// Half of these names belong to other classes too — `getLength` is an `animatedlayer`'s frame
+    /// count (ClassicPro's `beat.m` reads it 28 times), `getTitle` a container's caption, `clear` a
+    /// list's. Registering them by name would claim every one of those call sites with the wrong
+    /// arity *and* hide their demand from the compatibility report, so the whole set is gated on the
+    /// receiver's class.
+    ///
+    /// Every arity here was counted off the corpus's own call sites (`RENDER_DISASM`), not ported
+    /// from a reference header: the compiler emits the receiver, then one push per argument in
+    /// reverse, so the net pushes between the two settle it. `moveTo` is the one that pays for the
+    /// measurement — it reads like a one-argument "scroll to" and is `moveTo(from, to)`, which
+    /// Defix's *Move selected to top* proves by passing a literal 0 and then a running counter.
+    private static let playlistEditorSignatures: [String: MakiMethodSignature] = [
+        "getcurrentindex": .init(argumentCount: 0, returnKind: .integer),
+        "getnumtracks": .init(argumentCount: 0, returnKind: .integer),
+        "gettitle": .init(argumentCount: 1, returnKind: .string),
+        "getlength": .init(argumentCount: 1, returnKind: .string),
+        "getfilename": .init(argumentCount: 1, returnKind: .string),
+        "getmetadata": .init(argumentCount: 2, returnKind: .string),
+        "playtrack": .init(argumentCount: 1, returnKind: .null),
+        "removetrack": .init(argumentCount: 1, returnKind: .null),
+        "showtrack": .init(argumentCount: 1, returnKind: .null),
+        "moveto": .init(argumentCount: 2, returnKind: .null),
+        "showcurrentlyplayingtrack": .init(argumentCount: 0, returnKind: .null),
+        "clear": .init(argumentCount: 0, returnKind: .null),
+    ]
+
     func signature(for method: String, classGUID: String?) -> MakiMethodSignature? {
         if method.caseInsensitiveCompare("getcontainer") == .orderedSame,
            classGUID.map(Self.canonicalGUID) == "60906d4e482e537e94cc04b072568861" {
             return .init(argumentCount: 0, returnKind: .object)
+        }
+        // A program compiled without a class table (the pre-5.0 MAKI layout) carries no GUID here, so
+        // it does not reach this. None of the measured corpus's PlEdit callers are in that form.
+        if classGUID.map(Self.canonicalGUID) == MakiClassGUID.playlistEditor,
+           let signature = Self.playlistEditorSignatures[method.lowercased()] {
+            return signature
         }
         let signatures: [String: MakiMethodSignature] = [
             "getcontainer": .init(argumentCount: 1, returnKind: .object),
@@ -1321,6 +1366,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "settext": .init(argumentCount: 1, returnKind: .null),
             "gettext": .init(argumentCount: 0, returnKind: .string),
             "getautowidth": .init(argumentCount: 0, returnKind: .integer),
+            // The playlist *widget's* own "scroll to the playing entry", as against `PlEdit`'s
+            // `showCurrentlyPlayingTrack`. Itemskin and micro reach it through `findObject` on their
+            // playlist object, so it is a GUI method with a receiver, not a System one. Unique in the
+            // corpus, so it needs no class gate.
+            "showcurrentlyplayingentry": .init(argumentCount: 0, returnKind: .null),
             "resize": .init(argumentCount: 4, returnKind: .null),
             "show": .init(argumentCount: 0, returnKind: .null),
             "hide": .init(argumentCount: 0, returnKind: .null),
@@ -1464,6 +1514,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "seekto": .init(argumentCount: 1, returnKind: .null),
             "getplayitemlength": .init(argumentCount: 0, returnKind: .integer),
             "getplaylistlength": .init(argumentCount: 0, returnKind: .integer),
+            "getplaylistindex": .init(argumentCount: 0, returnKind: .integer),
             "integertostring": .init(argumentCount: 1, returnKind: .string),
             "integertotime": .init(argumentCount: 1, returnKind: .string),
             "floattostring": .init(argumentCount: 2, returnKind: .string),
@@ -1674,6 +1725,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         switch reference.kind {
         case .system:
             return try invokeSystem(method: method, arguments: arguments, program: program)
+        case .playlistEditor:
+            return invokePlaylistEditor(method: method, arguments: arguments)
         case .gui(let objectID):
             guard let object = loadedSkin.runtime.graph.object(withID: objectID) else { return .null }
             return try invokeGUI(method: method, object: object, arguments: arguments, program: program)
@@ -1699,7 +1752,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             dynamicObjects.removeValue(forKey: id)
         case .popupMenu(let id):
             popupCommands.removeValue(forKey: id)
-        case .system, .gui:
+        case .system, .playlistEditor, .gui:
             break // Not script-owned; a skin cannot delete the graph out from under the renderer.
         }
     }
@@ -1767,8 +1820,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // and because the call sat *before* its `a3` write, the missing method aborted the whole
         // `onTimer` and took the readout with it.
         case "getplaylistlength":
-            let count = WasabiTextMetrics.componentTextProvider?()?.trackCount ?? 0
-            return .integer(Int32(clamping: Int64(count)))
+            return .integer(Int32(clamping: Int64(playlistSnapshot.trackCount)))
+        // The 0-based position of the playing entry — six of the seventeen skins ask for it, the most
+        // demanded unimplemented method in the corpus. Winamp's own notifier shows it as
+        // `getPlaylistIndex() + 1 + " of " + getPlaylistLength()`, which pins both the base and the
+        // pairing. `-1` when nothing is playing, as `currentIndex` already means.
+        case "getplaylistindex":
+            return .integer(Int32(clamping: Int64(playlistSnapshot.currentIndex)))
         case "getposition":
             // Same unit as `getPlayItemLength` and `seekTo` — seconds. The engine's scripts only ever
             // use the two together as a ratio (`SC-ProgressGrid` scales its grid by
@@ -2058,8 +2116,81 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
     }
 
+    // MARK: - PlEdit (the playlist editor)
+
+    /// What every playlist read answers from. The component host is the live queue; the text
+    /// provider is the same snapshot under the headless harness, so a probe run and the app agree.
+    private var playlistSnapshot: WinampModernPlaylistSnapshot {
+        componentHost?.playlistSnapshot() ?? WasabiTextMetrics.componentTextProvider?() ?? .empty
+    }
+
+    /// `PlEdit`, Winamp's playlist-editor singleton. Every index here is **0-based** and absolute in
+    /// the queue; an out-of-range one answers empty or does nothing rather than failing, because a
+    /// skin polls this from a timer while the queue is being edited underneath it.
+    private func invokePlaylistEditor(method: String, arguments: [MakiValue]) -> MakiValue {
+        let snapshot = playlistSnapshot
+        func row(_ index: Int) -> WinampModernPlaylistRow? {
+            snapshot.rows.indices.contains(index) ? snapshot.rows[index] : nil
+        }
+        switch method {
+        case "getcurrentindex": return .integer(Int32(clamping: Int64(snapshot.currentIndex)))
+        case "getnumtracks": return .integer(Int32(clamping: Int64(snapshot.trackCount)))
+        // The entry's display title — the same string the skin's own playlist draws, so a script that
+        // builds a menu from it (ClassicPro's Quick Playlist) cannot disagree with the list beside it.
+        case "gettitle": return .string(row(Int(arguments[0].integerValue))?.title ?? "")
+        // A *string*, not a number: ClassicPro tests it against `""` before appending it in brackets,
+        // and writes it straight into a text object. An unknown duration is empty, which is exactly
+        // the case that test exists for.
+        case "getlength":
+            guard let entry = row(Int(arguments[0].integerValue)), entry.duration > 0 else { return .string("") }
+            let seconds = Int(entry.duration)
+            return .string(String(format: "%d:%02d", seconds / 60, seconds % 60))
+        case "getfilename": return .string(row(Int(arguments[0].integerValue))?.filePath ?? "")
+        case "getmetadata":
+            guard let entry = row(Int(arguments[0].integerValue)) else { return .string("") }
+            switch arguments[1].stringValue.lowercased() {
+            case "title": return .string(entry.title)
+            case "artist": return .string(entry.artist)
+            case "album": return .string(entry.album)
+            case "filename": return .string(entry.filePath)
+            case "length": return .string(entry.duration > 0 ? String(Int(entry.duration)) : "")
+            default: return .string("")
+            }
+        case "playtrack":
+            componentHost?.playlistPlay(row: Int(arguments[0].integerValue))
+            return .null
+        case "removetrack":
+            componentHost?.playlistRemove(row: Int(arguments[0].integerValue))
+            return .null
+        case "moveto":
+            componentHost?.playlistMove(row: Int(arguments[0].integerValue),
+                                        to: Int(arguments[1].integerValue))
+            return .null
+        case "clear":
+            componentHost?.playlistClear()
+            return .null
+        case "showtrack":
+            playlistRevealRowRequested?(Int(arguments[0].integerValue))
+            return .null
+        case "showcurrentlyplayingtrack":
+            guard snapshot.currentIndex >= 0 else { return .null }
+            playlistRevealRowRequested?(snapshot.currentIndex)
+            return .null
+        default:
+            // Unreachable while `playlistEditorSignatures` and this switch stay in step; recorded
+            // rather than silently null so a name added to one and not the other is visible.
+            unsupportedMethodCalls[method, default: 0] += 1
+            return .null
+        }
+    }
+
     private func invokeGUI(method: String, object: WasabiObject, arguments: [MakiValue],
                            program: MakiProgram) throws -> MakiValue {
+        if method == "showcurrentlyplayingentry" {
+            let index = playlistSnapshot.currentIndex
+            if index >= 0 { playlistRevealRowRequested?(index) }
+            return .null
+        }
         if Self.dispatchableEventArity[method] != nil {
             _ = try dispatch(object: object, event: method, arguments: arguments)
             // No handler can answer through this path (the interpreter's return value belongs to the
@@ -2906,21 +3037,29 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return .null
     }
 
+    /// Bind the host-provided singletons a program declares but never assigns.
+    ///
+    /// `std.mi` declares `PlEdit` the same way it declares `System`: a global object the host owns
+    /// and the script simply calls methods on. The compiler marks *both* with the variable record's
+    /// `system` flag, and the parser used to read that flag as "this is the System object" — so every
+    /// `PlEdit.getCurrentIndex()` in the corpus arrived as a call **on System**, and failed there as
+    /// an unknown System method. The flag now only seeds the variable whose class is System's, and
+    /// each other host singleton is bound here, by class.
+    ///
+    /// A variable declared with `PlEdit`'s class can only ever hold the one playlist editor, so it is
+    /// bound unconditionally — which also corrects the parser's older guess for any archive that
+    /// predates the class check there.
+    private static func seedHostSingletons(in program: MakiProgram) {
+        for variable in program.variables
+        where variable.declaredKind == .object
+            && variable.classGUID.map(canonicalGUID) == MakiClassGUID.playlistEditor {
+            variable.value = .object(MakiObjectReference(.playlistEditor))
+        }
+    }
+
     /// Compiled MAKI stores class IDs as four little-endian 32-bit words.
     /// Normalize them to the compact string form used by std.mi.
-    private static func canonicalGUID(_ raw: String) -> String {
-        guard raw.count == 32 else { return raw.lowercased() }
-        let bytes = stride(from: 0, to: raw.count, by: 2).map { offset -> String in
-            let start = raw.index(raw.startIndex, offsetBy: offset)
-            let end = raw.index(start, offsetBy: 2)
-            return String(raw[start..<end])
-        }
-        var ordered: [String] = []
-        for start in stride(from: 0, to: 16, by: 4) {
-            ordered.append(contentsOf: bytes[start..<(start + 4)].reversed())
-        }
-        return ordered.joined().lowercased()
-    }
+    private static func canonicalGUID(_ raw: String) -> String { MakiClassGUID.canonical(raw) }
 
     private func unsupported(_ method: String, program: MakiProgram) -> WalFailure {
         unsupportedMethodCalls[method.lowercased(), default: 0] += 1

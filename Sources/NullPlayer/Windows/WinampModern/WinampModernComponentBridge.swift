@@ -36,7 +36,10 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
                 title: track.title,
                 secondary: [track.artist, track.album].compactMap { $0 }.joined(separator: " — "),
                 duration: track.duration ?? 0,
-                isCurrent: index == engine.currentIndex
+                isCurrent: index == engine.currentIndex,
+                artist: track.artist ?? "",
+                album: track.album ?? "",
+                filePath: track.url.isFileURL ? track.url.path : track.url.absoluteString
             )
         }
         return WinampModernPlaylistSnapshot(rows: rows,
@@ -73,6 +76,26 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         guard row >= 0, row < engine.playlist.count else { return }
         selectedRow = row
         engine.playTrack(at: row)
+    }
+
+    /// `PlEdit.moveTo(from, to)`. Both indices name rows in the queue as it stands, and the engine
+    /// carries `currentIndex` across the move, so the playing track keeps playing wherever it lands.
+    func playlistMove(row: Int, to destination: Int) {
+        let count = engine.playlist.count
+        guard row >= 0, row < count, destination >= 0, destination < count, row != destination else { return }
+        engine.moveTrack(from: row, to: destination)
+        // The anchor follows the row it was on, so a script that moves a selection and then reads it
+        // back is not left pointing at whatever slid into the vacated slot.
+        if selectedRow == row {
+            selectedRow = destination
+            selectedRows = [destination]
+        }
+    }
+
+    func playlistClear() {
+        engine.clearPlaylist()
+        selectedRow = -1
+        selectedRows = []
     }
 
     func playlistRemove(row: Int) {

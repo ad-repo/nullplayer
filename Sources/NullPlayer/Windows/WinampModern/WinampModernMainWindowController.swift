@@ -167,6 +167,23 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             refreshBoundText()
             startBoundTextPolling()
             #if DEBUG
+            // `WINAMP_MODERN_DEBUG_CLICK=x,y[;x,y…]` drives clicks at skin points a few seconds after
+            // launch — the only way to reproduce a click-path defect that lives in the *window* layer,
+            // which the render harness does not have. See `WinampModernMainView.debugClick`.
+            if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_CLICK"] {
+                let points = spec.split(separator: ";").compactMap { entry -> CGPoint? in
+                    let parts = entry.split(separator: ",").compactMap { Double($0) }
+                    return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
+                }
+                for (index, point) in points.enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3 + Double(index) * 2) { [weak self] in
+                        NSLog("WinampModern debug click %d at %@", index + 1, "\(point)")
+                        self?.skinView?.debugClick(atSkinPoint: point)
+                    }
+                }
+            }
+            #endif
+            #if DEBUG
             // `WINAMP_MODERN_SHOW_WINDOWS=SPEAKER1,SPEAKER2` opens skin windows at launch, the way
             // the user does from the Skin Windows menu. The counterpart of the harness's
             // `WINAMP_MODERN_RENDER_SHOW`: a defect confined to a window that ships
@@ -645,6 +662,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// One installation of the two container-addressed callbacks, owned by the controller rather than
     /// by whichever view was created last.
     private func wireContainerCallbacks(scripts: WinampModernScriptRuntime) {
+        // `PlEdit` is a host singleton, not part of the skin's graph, so the runtime needs the same
+        // bridge the renderer draws the playlist from — otherwise the two disagree about the queue.
+        scripts.componentHost = componentBridge
+        // `showTrack` reaches whichever container actually embeds the playlist: a skin that puts it
+        // in its own `pledit` window is the common case, and the main view holds no holder for it.
+        scripts.playlistRevealRowRequested = { [weak self] row in
+            self?.viewsByContainer.values.forEach { $0.revealPlaylistRow(row) }
+        }
         scripts.layoutSwitchRequested = { [weak self] container, layoutID in
             guard let view = self?.viewsByContainer[container] else { return false }
             let switched = view.activateLayout(id: layoutID)

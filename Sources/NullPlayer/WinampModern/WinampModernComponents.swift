@@ -116,6 +116,26 @@ struct WinampModernPlaylistRow: Equatable {
     let secondary: String
     let duration: TimeInterval
     let isCurrent: Bool
+    /// The three fields `PlEdit.getMetaData(track, field)` is asked for, kept per row rather than
+    /// derived from `secondary`: the display string joins artist and album with an em dash, and a
+    /// script that asks for one of them must not be handed both.
+    let artist: String
+    let album: String
+    /// What `PlEdit.getFileName(track)` answers. Defix reads it off the current entry to derive the
+    /// folder its album art lives in — the same exposure `getPlayItemMetaDataString("filename")`
+    /// already carries, and read-only: nothing in the seam opens a path a script hands back.
+    let filePath: String
+
+    init(title: String, secondary: String, duration: TimeInterval, isCurrent: Bool,
+         artist: String = "", album: String = "", filePath: String = "") {
+        self.title = title
+        self.secondary = secondary
+        self.duration = duration
+        self.isCurrent = isCurrent
+        self.artist = artist
+        self.album = album
+        self.filePath = filePath
+    }
 }
 
 struct WinampModernPlaylistSnapshot: Equatable {
@@ -195,6 +215,11 @@ protocol WinampModernComponentHost: AnyObject {
     func playlistSetSelection(_ rows: Set<Int>)
     /// Remove a whole selection at once — `PE_REM`'s Remove Selected and Crop Selection.
     func playlistRemoveRows(_ rows: Set<Int>)
+    /// `PlEdit.moveTo(from, to)` — the playlist context menu's Move selected to top / to bottom /
+    /// after current. Both are absolute row numbers in the queue as it stands before the move.
+    func playlistMove(row: Int, to destination: Int)
+    /// `PlEdit.clear()` — empty the queue.
+    func playlistClear()
 
     // Equalizer (classic10)
     func equalizerSnapshot() -> WinampModernEQSnapshot
@@ -220,6 +245,10 @@ extension WinampModernComponentHost {
     func playlistRemoveRows(_ rows: Set<Int>) {
         for row in WinampModernPlaylistSelection.removalOrder(rows) { playlistRemove(row: row) }
     }
+    /// A host with no reordering of its own leaves the queue alone rather than approximating the
+    /// move with a remove and an insert, which would lose the track.
+    func playlistMove(row: Int, to destination: Int) {}
+    func playlistClear() { playlistRemoveRows(Set(0..<playlistSnapshot().rows.count)) }
 }
 
 /// A live library browser embedded in a `.wal` skin's holder.

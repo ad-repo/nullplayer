@@ -20,9 +20,43 @@ enum MakiValueKind: UInt8 {
     case object = 7
 }
 
+/// The class GUIDs the host itself answers for, in the normalized form the compiled tables reduce to.
+///
+/// Compiled MAKI stores a class id as four little-endian 32-bit words; `canonical` reverses each of
+/// them so two spellings of the same class compare equal. It lives here rather than in the runtime
+/// because the *parser* needs it too: which global is `System` is a class question.
+enum MakiClassGUID {
+    /// Winamp's `PlEdit`, the playlist-editor singleton — `{345BEEBC-0229-4921-90BE-6CB6A49A79D9}`.
+    static let playlistEditor = "345beebc49210229b66cbe90d9799aa4"
+
+    /// Host singletons the **runtime** binds by class, and which the parser must therefore leave
+    /// alone. Deliberately a carve-out rather than an allow-list of one: a system-flagged global of
+    /// any other class keeps the System object it has always been given, so nothing that worked
+    /// before this became a null receiver.
+    static let runtimeBound: Set<String> = [playlistEditor]
+
+    static func canonical(_ raw: String) -> String {
+        guard raw.count == 32 else { return raw.lowercased() }
+        let bytes = stride(from: 0, to: raw.count, by: 2).map { offset -> String in
+            let start = raw.index(raw.startIndex, offsetBy: offset)
+            let end = raw.index(start, offsetBy: 2)
+            return String(raw[start..<end])
+        }
+        var ordered: [String] = []
+        for start in stride(from: 0, to: 16, by: 4) {
+            ordered.append(contentsOf: bytes[start..<(start + 4)].reversed())
+        }
+        return ordered.joined().lowercased()
+    }
+}
+
 final class MakiObjectReference: Hashable {
     enum Kind: Hashable {
         case system
+        /// Winamp's `PlEdit` — the playlist-editor singleton `std.mi` declares as a global object,
+        /// addressed by class GUID rather than by anything in the skin's graph. Seeded into every
+        /// program's `PlEdit` variable at parse time, exactly as `System` is seeded into variable 0.
+        case playlistEditor
         case gui(WasabiObjectID)
         case popupMenu(UInt64)
         case dynamic(UInt64)
@@ -158,6 +192,16 @@ final class MakiProgram {
     let methods: [MakiMethod]
     let variables: [MakiVariable]
     let bindings: [MakiBinding]
+    /// The bindings an event dispatch actually runs: **one handler per (object, event)**, the last
+    /// one the program declares.
+    ///
+    /// Winamp registers a script's handlers into a per-object event map, so declaring the same pair
+    /// twice leaves one entry. A compiled skin can carry the duplicate: Defix's `MAIN_LAYOUT_1`
+    /// declares `ConfBT2.onLeftClick()` **twice**, byte for byte, both bodies reading `MainBtn2` and
+    /// both ending in the round button's assigned target. Running both fired that whole action twice
+    /// per click, and because the action is a *toggle* the two cancelled — the user saw the playlist
+    /// window flash open and shut again, and saw an open one refuse to close.
+    let dispatchBindings: [MakiBinding]
     let instructions: [MakiInstruction]
     let source: WalSourceLocation
     let ownerID: WasabiObjectID?
@@ -171,6 +215,16 @@ final class MakiProgram {
         self.methods = methods
         self.variables = variables
         self.bindings = bindings
+        var lastByPair: [String: Int] = [:]
+        for (offset, binding) in bindings.enumerated() where methods.indices.contains(binding.methodIndex) {
+            lastByPair["\(binding.variableIndex)/\(methods[binding.methodIndex].name)"] = offset
+        }
+        self.dispatchBindings = bindings.enumerated()
+            .filter { offset, binding in
+                guard methods.indices.contains(binding.methodIndex) else { return true }
+                return lastByPair["\(binding.variableIndex)/\(methods[binding.methodIndex].name)"] == offset
+            }
+            .map(\.element)
         self.instructions = instructions
         self.source = source
         self.ownerID = ownerID
@@ -364,8 +418,17 @@ struct MakiBytecodeParser {
                     guard typeOffset < classes.count || classes.isEmpty else {
                         throw ParseError("MAKI object references an unknown class.")
                     }
-                    let initial: MakiValue = system ? .object(MakiObjectReference(.system)) : .null
                     let guid = typeOffset < classes.count ? classes[typeOffset] : nil
+                    // The `system` flag means "the host owns this global", not "this *is* System".
+                    // `std.mi` declares several such singletons — `PlEdit` among them — and seeding
+                    // all of them with the System object made every `PlEdit.getCurrentIndex()` a call
+                    // on System, which then failed there as an unknown System method. That is why the
+                    // playlist API read as an intermittent defect: nothing surfaced until a click.
+                    // The singletons the runtime binds by class are carved out here (see
+                    // `seedHostSingletons`); every other one keeps the System object it always had.
+                    let isSystemObject = system
+                        && !(guid.map { MakiClassGUID.runtimeBound.contains(MakiClassGUID.canonical($0)) } ?? false)
+                    let initial: MakiValue = isSystemObject ? .object(MakiObjectReference(.system)) : .null
                     variables.append(MakiVariable(declaredKind: .object, classGUID: guid,
                                                   isGlobal: global, isSystem: system, value: initial))
                 } else {
