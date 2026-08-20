@@ -257,9 +257,47 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       — path ingest is a sandbox policy decision, not an arity question, and their demand keeps being
       recorded. Filed as B21. Defix's `ML` round button not opening the library until another window
       has been opened once is a separate, still-open defect — filed as B22
-- [ ] **B9. `onKeyDown` (5 skins:** multipass, Defix, Rika, T800, winampmodern566**).** Needs a
-      first-responder seam in the view and a keycode mapping. No reported symptom yet, which is why it
-      sits below the rest of Tier 2 despite the skin count
+- [x] **B9. `onKeyDown`** — ~~5 skins: multipass, Defix, Rika, T800, winampmodern566; needs a
+      first-responder seam in the view and a keycode mapping~~ — **closed in Phase 43.** Five parts:
+      1. **It is a string, not a keycode.** Winamp hands `System.onKeyDown` its own accelerator
+         *name* — `"alt+g"`, `"ctrl+w"`, `"esc"` — and every handler in the corpus opens with one
+         string store and compares it against a **lowercase** literal
+         (`RENDER_DISASM=@<xml>` on all three that bind one). Two of the three compare without
+         normalising first — winampmodern566's `strKey == "alt+a"`, Defix's `strKey == "esc"`; only
+         multipass runs `strLower` — so an `"Alt+G"` would miss every one of them. There was never a
+         keycode mapping to write. `WinampModernKeyAccelerator` builds the string: macOS modifiers map
+         literally in the order `ctrl+alt+shift+`, which is not cosmetic — winampmodern566 reads the
+         prefix positionally (`strLeft(strKey, 4) == "ctrl"`).
+      2. **The seam was not first responder — it was `canBecomeKey`.** A borderless `NSWindow` is
+         refused the keyboard by AppKit, so `NSView.keyDown` was never called however willingly the
+         view took focus. `WinampModernSkinWindow` overrides it, exactly as `BorderlessWindow` already
+         does for the modern-skin windows; the view then accepts first responder unconditionally and
+         treats `keyDown` as a *fall-through* — the playlist's Delete first (still gated on a clicked
+         row), then the skin, then `super`, so menu equivalents keep working (⌘Q verified live).
+      3. **`complete;` is the consumption signal.** MAKI's opcode 40 is not control flow — the compiler
+         emits it before the handler's own return — so the interpreter counts it and `dispatchKeyDown`
+         reports whether the count moved. A handler that ran and matched no branch never reaches one
+         and the key falls through; Defix's `esc` handler carries none at all, which is why "the
+         handler ran" and "the key was swallowed" are two different measurements.
+      4. **`isActive()`, implemented because the corpus gates on it.** A System event reaches every
+         program whatever window is focused (Winamp does it that way too), so winampmodern566's
+         playlist asks whether *its* window has the keyboard before acting on `ctrl+w`. It walks up to
+         the object's container and asks the host; unimplemented before this, and fail-closed dispatch
+         aborted the whole handler on it. Defix calls it too.
+      5. **The corpus count was three, not five.** Rika and T800 ship Winamp's stock
+         `playlisteditor.maki`, whose `onKeyDown` is the **edit control's**
+         (`editcontrol.onKeyDown(Int vkcode)` — a GUI receiver and an integer, a different event), and
+         neither skin loads that program at all, because their playlist windows are ours. Both measure
+         `handlers=0`.
+      Verified live 2026-08-20 with a real Option-G keystroke on multipass (its EQ drawer opens and
+      closes) and on winampmodern566 (`alt+g`, `ctrl+w` shading the focused window, `alt+a`), and in
+      the harness with a new probe, `WINAMP_MODERN_RENDER_KEY=<accel>[,<accel>]`, plus
+      `WINAMP_MODERN_DEBUG_KEY` for the running app. 12 new unit tests; the 18-skin render sweep is
+      pixel-identical.
+      Residue: `onAccelerator(a, b, c)` — the menu-hotkey channel, three string arguments — is a
+      separate event and is still not dispatched (winampmodern566's playlist and library declare one).
+      A skin cannot register a shortcut with the host either; only keys arriving at a skin window are
+      offered
 - [ ] **B10. Golden-image regression cover for the render sweep.** The evidence that a rendering
       change does not disturb the other sixteen skins is a **manual** 17-skin sweep — nothing in CI
       catches a third skin regressing, and every rendering phase pays that cost again by hand (this

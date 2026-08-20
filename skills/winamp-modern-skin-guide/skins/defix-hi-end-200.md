@@ -155,6 +155,12 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   configurator with its nine switches and seven scaling buttons and the playlist editor with its
   queue. Closing either one is remembered, per skin, so a configurator you dismiss does not come back
   at the next launch. Defix's `notifier` declares `default_visible="0"` and is unaffected.
+- **`esc` reaches its playlist search line** (Phase 43). `PLAYLIST_WINDOW.xml` binds
+  `System.onKeyDown(String)` and compares the accelerator against `"esc"`; when the search line is
+  visible it calls the subroutine that closes it, and otherwise returns. The handler carries **no
+  `complete;`**, so the key is never consumed and always falls through to the app — a useful shape to
+  remember: "the handler ran" and "the key was swallowed" are two different measurements
+  (`WINAMP_MODERN_RENDER_KEY=esc` prints `handlers=1 consumed=0`).
 - **The speaker cones do not animate, and the cabinets render very dark — confirmed live 2026-08-19.**
   What is measured about it so far:
   - `SPEAKER.maki` **is bound**, twice, one per cabinet (two programs whose handler set is exactly

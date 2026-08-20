@@ -376,10 +376,16 @@ final class WinampModernMainView: NSView {
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// Only claim the keyboard once the user has actually clicked a playlist row. A `.wal` window is
-    /// borderless chrome the user drags by; taking first responder unconditionally would swallow
-    /// Delete (and the app's other key equivalents) for the whole window.
-    override var acceptsFirstResponder: Bool { playlistHasFocus }
+    /// Claim the keyboard for the window, so a skin's own `System.onKeyDown` handlers can be reached
+    /// at all — until Phase 43 this answered `playlistHasFocus`, and a `.wal` window that had never
+    /// had a playlist row clicked was never first responder, so no key ever arrived here.
+    ///
+    /// Safe to take unconditionally because `keyDown` below is a *fall-through*: menu equivalents go
+    /// through `performKeyEquivalent` before any of this, and anything neither the playlist nor a
+    /// script consumes is handed straight back to the responder chain, which is exactly where it went
+    /// when the view refused focus. Delete stays gated on `playlistHasFocus` — the queue must not be
+    /// edited from the player chrome.
+    override var acceptsFirstResponder: Bool { true }
     private var playlistHasFocus = false
 
     override func resignFirstResponder() -> Bool {
@@ -387,20 +393,33 @@ final class WinampModernMainView: NSView {
         return true
     }
 
-    /// Delete / Forward Delete remove the selected playlist row — but only while the playlist surface
-    /// in this window owns focus, so the key never reaches the queue from the player chrome.
+    /// The keyboard, in the order the two claims on it were added.
+    ///
+    /// 1. Delete / Forward Delete remove the selected playlist row — but only while the playlist
+    ///    surface in this window owns focus, so the key never reaches the queue from the chrome.
+    /// 2. Everything else is offered to the skin as `System.onKeyDown("<accelerator>")`. Five skins
+    ///    in the corpus handle it — multipass and winampmodern566 toggle their EQ drawer on `alt+g`,
+    ///    winampmodern566 also shades its playlist on `ctrl+w` and its album-art window on `alt+a`,
+    ///    Defix closes its playlist search line on `esc`. A handler that reached its `complete;`
+    ///    consumed the key; anything else falls through to the responder chain unchanged.
     override func keyDown(with event: NSEvent) {
         let deleteKeys: Set<UInt16> = [51, 117]   // Delete, Forward Delete
-        guard playlistHasFocus, deleteKeys.contains(event.keyCode),
-              let host = componentHost else {
-            super.keyDown(with: event)
+        if playlistHasFocus, deleteKeys.contains(event.keyCode), let host = componentHost {
+            let snapshot = host.playlistSnapshot()
+            guard snapshot.selectedIndex >= 0, snapshot.selectedIndex < snapshot.rows.count else { return }
+            host.playlistRemove(row: snapshot.selectedIndex)
+            clampPlaylistScroll()
+            needsDisplay = true
             return
         }
-        let snapshot = host.playlistSnapshot()
-        guard snapshot.selectedIndex >= 0, snapshot.selectedIndex < snapshot.rows.count else { return }
-        host.playlistRemove(row: snapshot.selectedIndex)
-        clampPlaylistScroll()
-        needsDisplay = true
+        if let accelerator = WinampModernKeyAccelerator.accelerator(for: event),
+           scripts.dispatchKeyDown(accelerator) {
+            // A handler may have moved a config attribute, a layout or a window; the same repaint the
+            // click path takes after a script runs.
+            needsDisplay = true
+            return
+        }
+        super.keyDown(with: event)
     }
 
     /// Scroll the drawn playlist so a row is on screen — `PlEdit.showTrack(n)`. A no-op in a window

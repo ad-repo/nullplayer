@@ -1,5 +1,15 @@
 import AppKit
 
+/// A `.wal` skin's window. Borderless, and therefore refused the keyboard by AppKit's default
+/// `canBecomeKey` — which is why a skin's `System.onKeyDown` handler could never be reached at all
+/// until Phase 43: the key press went to no window and `NSView.keyDown` was never called, however
+/// willingly the view took first responder. The same override the modern-skin windows already carry
+/// (`BorderlessWindow`), kept local because these windows own none of that class's edge-resize model.
+final class WinampModernSkinWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 final class WinampModernMainWindowController: NSWindowController, MainWindowProviding, NSWindowDelegate {
 
     /// Repaints every `.wal` window when a track's cover finishes loading.
@@ -48,8 +58,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     convenience init() {
         let defaultSize = NSSize(width: 275, height: 116)
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: defaultSize),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: defaultSize),
+                                            styleMask: [.borderless], backing: .buffered, defer: false)
         self.init(window: window)
         setupWindow()
         // Cover art arrives asynchronously and often *after* the scene has settled — with playback
@@ -184,6 +194,25 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             #endif
             #if DEBUG
+            // `WINAMP_MODERN_DEBUG_KEY=alt+g[;ctrl+w…]` presses accelerators at the skin a few seconds
+            // after launch — the keyboard counterpart of `DEBUG_CLICK`, and the only way to see a key
+            // handler act on a *window* (winampmodern566's `ctrl+w` shades its playlist; the harness
+            // owns no windows and cannot show that at all).
+            if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_KEY"] {
+                let keys = spec.split(separator: ";").map {
+                    $0.trimmingCharacters(in: .whitespaces).lowercased()
+                }.filter { !$0.isEmpty }
+                for (index, key) in keys.enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3 + Double(index) * 2) { [weak self] in
+                        let consumed = self?.skinView?.scripts.dispatchKeyDown(key) ?? false
+                        NSLog("WinampModern debug key %@ consumed=%@", key, consumed ? "1" : "0")
+                        self?.skinView?.needsDisplay = true
+                        self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+                    }
+                }
+            }
+            #endif
+            #if DEBUG
             // `WINAMP_MODERN_SHOW_WINDOWS=SPEAKER1,SPEAKER2` opens skin windows at launch, the way
             // the user does from the Skin Windows menu. The counterpart of the harness's
             // `WINAMP_MODERN_RENDER_SHOW`: a defect confined to a window that ships
@@ -243,7 +272,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge, drivesScripts: false)
             view.skinScale = skinScale
-            let auxWindow = NSWindow(contentRect: NSRect(origin: .zero, size: view.scaledCanvasSize),
+            let auxWindow = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: view.scaledCanvasSize),
                                      styleMask: [.borderless, .resizable, .miniaturizable],
                                      backing: .buffered, defer: false)
             auxWindow.isReleasedWhenClosed = false
@@ -413,6 +442,23 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                   let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
             else { return nil }
             return container.window.isVisible
+        }
+        // `isActive()` — which of this skin's windows has the keyboard. A System event reaches every
+        // program whatever window is focused, so a skin that hangs an accelerator off one window
+        // (winampmodern566's `ctrl+w` shades its *playlist*) gates the handler on this rather than on
+        // the host routing by focus. The main container is included: it is not an auxiliary and would
+        // otherwise read inactive from its own window.
+        scripts.containerActiveQuery = { [weak self] id in
+            guard let self else { return nil }
+            if let view = skinView, let mainID = view.renderer.container.xmlID,
+               mainID.caseInsensitiveCompare(id) == .orderedSame {
+                return view.window?.isKeyWindow ?? false
+            }
+            guard let matchedID = Self.matchingContainerID(id,
+                                                           in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+            else { return nil }
+            return container.window.isKeyWindow
         }
     }
 

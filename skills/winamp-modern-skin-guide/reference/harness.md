@@ -54,6 +54,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_SHOW=<container>[,<container>]` | open auxiliary windows the way the user does from **Skin Windows**, dispatching `onSetVisible` to them and settling again afterwards. Without it the harness only ever sees the windows a skin opens by default, so a defect confined to one that ships `default_visible="0"` — Defix's speaker cabinets, whose `getVisBand` timer *starts* from `onSetVisible` — is invisible to every other probe. **A `default_visible="1"` window is opened without it** (Phase 40), because the app opens it too: the line reads `SHOW <id> (default_visible)`, and a container the app refuses to auto-open prints `DEFAULT-VISIBLE <id> suppressed: <reason>` instead. The settle applies to both |
 | `WINAMP_MODERN_RENDER_EQ=<band>=<value>[,…]` | drive an equalizer change from **outside** the skin — the route a preset, the menu bar or the classic equalizer window takes — and print the handlers it reaches (`EQ handler onEqBandChanged -> ledfillbar.xml`), the values driven, and every `EQ_BAND`/`EQ_PREAMP` slider's resulting 0…255 position. `band` is 0…9 or `preamp`, `value` is MAKI's −127…127; bare `1` sweeps every band. Without it the harness installs no equalizer at all, so `getEqBand` answers 0 and the events never fire. Phase 41's addition, and the only headless way to see a readout that follows the *event* rather than the drag |
 | `WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>]` | stand a synthetic queue up behind the component seam **before** the scripts start — the only way a skin's `PlEdit` API can be observed headlessly, since the dump harness sets no component host and every script that walks the queue otherwise takes its empty branch. It also fills the drawn playlist panel, which has always come out as an empty box for exactly that reason. Prints `PLAYLIST before:` / `PLAYLIST after:` so an edit a script made (`removeTrack`, `moveTo`, `clear`) is visible, and `PLAYLIST reveal row=<n>` for a `showTrack`. Pair with `WINAMP_MODERN_CALL_TRACE=1` to see each call and its result. Phase 42's addition |
+| `WINAMP_MODERN_RENDER_KEY=<accelerator>[,<accelerator>]` | press keys at the skin the way the window does — `System.onKeyDown("alt+g")` — and print the handlers each one reached (`KEY handler alt+g -> skin.xml`) plus `KEY <accel>: handlers=<n> consumed=<0/1>`, where `consumed` is whether any handler ran MAKI's `complete;` (what tells the view to swallow the key). Accelerators are Winamp's own lowercase strings: `alt+g`, `ctrl+w`, `esc`. Without it the harness has no keyboard at all and every `onKeyDown` in the corpus measures as an unreached handler. Note the harness answers `isActive()` **true** for every object (no windows, so no focus), where the app answers per window — a `ctrl+w` that measures `consumed=1` here is still gated by focus in the app. Phase 43's addition |
 | `WINAMP_MODERN_RENDER_VU=<level>` | inject a program level per channel (0…1) for `getLeftVUMeter`/`getRightVUMeter`; `sweep` oscillates 0…1 at 0.5 Hz. The harness has no audio, so without it every meter reads silence and a needle's travel cannot be measured. It also **scales the injected spectrum**, because meters that read `getVisBand` rather than the VU (Defix's speaker cones) sit on one frame against the harness's otherwise-constant ramp and measure as dead at every level |
 | `WINAMP_MODERN_RENDER_CONFIG=<section>;<key>=<value>[\|…]` | write skin configuration **before** the scripts start — where the app reads it from, since the value is persisted. How a skin option that changes what is drawn (Defix's eight display styles) is selected without a GUI. Note it *stays* set for later runs, and a skin may keep its own private copy (Defix: `CurVuVis`) |
 | `WINAMP_MODERN_RENDER_TIME=<frames>` (+ `_SCALE=2`, `_CLIP=1`) | ms/frame for a full repaint. `_SCALE=2` is the number that matters — it is the Retina backing store the app actually pays for; `_CLIP=1` measures the same frame clipped to the warped layers' rects. Defix, after Phase 29's pre-scaled artwork cache: **3.5 ms at 2×** idle, 5.4 ms with both reels warping, 4.4 ms clipped (it was 19.3 / 6.9 when every bitmap was resampled to the backing scale on every frame) |
@@ -164,6 +165,29 @@ WINAMP_MODERN_DEBUG_CLICK="92,251;92,251" WINAMP_MODERN_CALL_TRACE=1 \
 
 Coordinates are **skin pixels** in the main window's active layout — take them from
 `RENDER_PROBE`'s `frame=` for the object you want.
+
+### Driving a key in the *running app*
+
+`WINAMP_MODERN_DEBUG_KEY=alt+g[;ctrl+w…]` (DEBUG builds) presses accelerators a few seconds after
+launch, two seconds apart, and logs `WinampModern debug key <accel> consumed=<0/1>`. The keyboard
+counterpart of `DEBUG_CLICK`, and the only way to see a key handler act on a **window** —
+winampmodern566's `ctrl+w` shades one, and the harness owns no windows. It dispatches from the
+controller rather than from a focused view, so `isActive()` answers for whichever window is actually
+key: `ctrl+w` reads `consumed=0` while the main window has focus, which is the gate working, not a
+failure.
+
+To exercise the *real* path (`NSEvent` → accelerator → responder chain), activate the app and post a
+keystroke:
+
+```sh
+osascript -e 'tell application "System Events" to set frontmost of (first process whose unix id is (do shell script "pgrep -x NullPlayer") as integer) to true'
+osascript -e 'tell application "System Events" to keystroke "g" using {option down}'
+```
+
+> **`print` is block-buffered when stdout is a file, `NSLog` is not.** A run redirected with
+> `> log 2>&1` interleaves them out of order and can end with the last few hundred `CALL-TRACE`
+> lines missing entirely — which reads exactly like "the handler never ran". Judge a live key run by
+> what it *did* (a `resizeWindow` line, a window that moved), or flush before you read.
 
 Load a developer archive directly (DEBUG builds):
 

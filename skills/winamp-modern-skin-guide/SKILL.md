@@ -46,6 +46,7 @@ concept; read the one your symptom points at, not all of them.
 | A script does nothing, wrong arity, unknown method, script-built UI missing | [reference/scripting.md](reference/scripting.md) |
 | A host-fed readout never updates (`onTextChanged`) | [reference/scripting.md](reference/scripting.md) |
 | An EQ readout follows the skin's own slider but not a preset, the menu bar or another window | [reference/scripting.md](reference/scripting.md) — *The equalizer tells the skin it moved* |
+| A keyboard shortcut the skin declares does nothing (`onKeyDown`, `alt+g`, `ctrl+w`) | [reference/scripting.md](reference/scripting.md) — *The keyboard is a string, and a borderless window has to ask for it* |
 | A slider drags but nothing happens, or its readout never appears | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the action families, and `onSetPosition` on a drag |
 | Playlist / EQ / library / video surface missing, empty, or in the wrong window | [reference/components.md](reference/components.md) |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
@@ -106,6 +107,7 @@ verbatim; it just lives in a reference file now.
 | Track metadata the skins actually read | [reference/scripting.md](reference/scripting.md) |
 | `onTextChanged` is how a skin learns a host readout moved | [reference/scripting.md](reference/scripting.md) |
 | The equalizer tells the skin it moved | [reference/scripting.md](reference/scripting.md) |
+| The keyboard is a string, and a borderless window has to ask for it | [reference/scripting.md](reference/scripting.md) |
 | `TOGGLE`'s parameter is a component **or a container id** | [reference/components.md](reference/components.md) |
 | `default_visible="1"` — the windows a skin opens with itself | [reference/components.md](reference/components.md) |
 | Component hosting | [reference/components.md](reference/components.md) |
@@ -158,6 +160,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Import + storage | `WinampModernSkinImporter.swift` |
 | ClassicPro engine import | `ClassicProEngine.swift`, `NSISArchive.swift`, `LZMA1Decoder.swift` |
 | Window controller / view | `Windows/WinampModern/WinampModernMainWindowController.swift`, `…MainView.swift` |
+| Keyboard accelerator names | `WinampModernKeyAccelerator.swift` |
 | `AudioEngine` component bridge | `Windows/WinampModern/WinampModernComponentBridge.swift` |
 | Surface routing | `Windows/WinampModern/WinampModernSurfaceCoordinator.swift` |
 | Embedded library surface | `Windows/WinampModern/WinampModernLibrarySurfaceView.swift` |

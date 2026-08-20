@@ -301,3 +301,35 @@ Two things the corpus pins down and a reimplementation must not guess:
   from the host; this is the script's view of it catching up.
 
 Drive it headlessly with `WINAMP_MODERN_RENDER_EQ` — see [harness.md](harness.md).
+
+#### The keyboard is a string, and a borderless window has to ask for it
+
+`System.onKeyDown` hands the script **one string** — Winamp's own accelerator name, `"alt+g"`,
+`"ctrl+w"`, `"esc"` — not a virtual keycode. Every handler in the corpus compares it against a
+**lowercase** literal, and two of the three compare without normalising first (winampmodern566's
+`strKey == "alt+a"`, Defix's `strKey == "esc"`; only multipass runs it through `strLower` first), so
+an `"Alt+G"` would miss all of them. `WinampModernKeyAccelerator` builds the string; macOS modifiers
+map literally, in the order `ctrl+alt+shift+`, because winampmodern566 reads the prefix positionally
+(`strLeft(strKey, 4) == "ctrl"`).
+
+**Command is deliberately not folded onto `ctrl`.** ⌘W closes a window on this platform and ⌘A selects
+all; letting a skin's `ctrl+w` shadow the app's own menu equivalents is a capability no skin asked for,
+so a ⌘-carrying event produces no accelerator at all.
+
+**`complete;` is the consumption signal.** MAKI's opcode 40 is not control flow — the compiler emits it
+before the handler's own return — so the interpreter just counts it, and `dispatchKeyDown` reports
+whether the count moved. A handler that ran and matched none of its branches never reaches one, and
+the key falls through to the responder chain. Defix's `esc` handler has no `complete;` at all.
+
+> **A borderless `NSWindow` is refused the keyboard.** `canBecomeKey` defaults to false without a
+> title bar, so `NSView.keyDown` is never called however willingly the view takes first responder —
+> which is the whole reason this event was unreachable, not the dispatch. `WinampModernSkinWindow`
+> overrides it, exactly as `BorderlessWindow` already does for the modern-skin windows. The view then
+> accepts first responder unconditionally and treats `keyDown` as a *fall-through*: the playlist's
+> Delete first (still gated on a clicked row), then the skin, then `super`.
+
+A skin that means *one* window gates its handler on `isActive()` — the event reaches every program in
+the skin whatever window is focused, as in Winamp. See [compatibility/maki-surface.md](../compatibility/maki-surface.md).
+
+Drive it with `WINAMP_MODERN_RENDER_KEY` (harness) or `WINAMP_MODERN_DEBUG_KEY` (the app) — see
+[harness.md](harness.md).

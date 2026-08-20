@@ -64,12 +64,16 @@ A **seventh** gap only became visible once the abort was gone: nothing in the en
   engine syncs every `EQ_BAND`/`EQ_PREAMP` slider's position before dispatching. 14 `ledfillbar`
   programs answer each event (`WINAMP_MODERN_RENDER_EQ=3=100,preamp=-64`).
 
+- **`Alt+G` opens and closes the EQ drawer** (Phase 43, confirmed live 2026-08-20). `behaviors.m`'s
+  `System.onKeyDown(String strKey)` lowercases the accelerator, compares it against `"alt+g"`, flips
+  `configAttribute_eqVisible` and runs `complete;` — the skin's only keyboard shortcut, and the whole
+  drawer animation follows from the attribute's `onDataChanged`.
+
 ### Not implemented / knowingly wrong
 
 - **The Color Themes drawer's fourth button** (`action="TOGGLE" param="{53DE6284-…}"`, "Open Color
   Theme List in Preferences") routes to the host popup menu — there is no Winamp preferences dialog to
   open. The in-drawer list is the real route and it works.
-- **`onKeyDown` is not dispatched** (engine-wide); the skin declares a handler for it.
 - Its display reads at the right height as of Phase 38: 13 `valign="top"` texts on a bitmap-font
   sheet (`player.bitmapfont.display.*`) — song name, action info, time, playlist rows. That path was
   pinned to the box's top edge, so those were already right by accident and everything else on a

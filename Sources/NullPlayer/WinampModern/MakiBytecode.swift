@@ -625,6 +625,16 @@ final class MakiInterpreter {
     private(set) var lastInstructionCount = 0
     private(set) var isTornDown = false
 
+    /// How many times a handler has executed MAKI's `complete;` (opcode 40) since this interpreter
+    /// was made.
+    ///
+    /// `complete;` is how a script says "I have dealt with this event"; every `onKeyDown` in the
+    /// corpus ends its matching branch with one and falls straight out otherwise. It is *not* control
+    /// flow — the compiler emits it before the handler's own return, so it stays a no-op here and only
+    /// records that it happened. A counter rather than a flag because a handler may dispatch a further
+    /// event while it runs: a caller reads the count either side of `execute` and compares.
+    private(set) var completionCount = 0
+
     /// Backing store for MAKI `Member` declarations (`Member int CProWidget.custombg;`), which attach
     /// named, typed storage to an object at runtime rather than to a compiled variable slot. Opcode
     /// 104 resolves one of these to an lvalue, so the entry must persist across events — assignment
@@ -820,7 +830,7 @@ final class MakiInterpreter {
                 }
                 next = returnAddress
             case 40:
-                break
+                completionCount &+= 1
             case 48:
                 let source = try pop()
                 let destination = try pop()

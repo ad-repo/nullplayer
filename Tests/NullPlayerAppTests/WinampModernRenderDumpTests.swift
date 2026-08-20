@@ -176,6 +176,31 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
         }
 
+        // WINAMP_MODERN_RENDER_KEY=<accelerator>[,<accelerator>] presses keys at the skin the way the
+        // window does — `System.onKeyDown("alt+g")` — and reports the handlers each one reached, in
+        // order, plus whether any of them ran MAKI's `complete;` (which is what tells the view to
+        // swallow the key). Accelerators are Winamp's own lowercase strings: `alt+g`, `ctrl+w`, `esc`.
+        // Without it there is no keyboard in the harness at all and every `onKeyDown` in the corpus
+        // measures as an unreached handler (Phase 43).
+        if let spec = env["WINAMP_MODERN_RENDER_KEY"] {
+            for entry in spec.split(separator: ",") {
+                let accelerator = entry.trimmingCharacters(in: .whitespaces).lowercased()
+                guard !accelerator.isEmpty else { continue }
+                let previousObserver = runtime.dispatchObserver
+                var reached = 0
+                runtime.dispatchObserver = { event, program, failure in
+                    guard event == "onkeydown" else { return }
+                    reached += 1
+                    print("KEY handler \(accelerator) -> \((program.source.path as NSString).lastPathComponent)"
+                          + (failure == nil ? "" : " !FAILED: "
+                             + failure!.diagnostics.map(\.message).joined(separator: "; ")))
+                }
+                let consumed = runtime.dispatchKeyDown(accelerator)
+                runtime.dispatchObserver = previousObserver
+                print("KEY \(accelerator): handlers=\(reached) consumed=\(consumed ? 1 : 0)")
+            }
+        }
+
         // WINAMP_MODERN_RENDER_SETTINGS lists what the skin registered with `newAttribute` — the
         // options Winamp shows in its preferences dialog and a skin often binds no control to. It is
         // the only way to see, without a GUI, what the host's Skin Settings window will offer

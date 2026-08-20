@@ -103,6 +103,14 @@ By area:
   host never writes when a window is opened from the Windows menu or closed from its own titlebar —
   read off the attribute the toggle inverts after the first manual close. `isVisible()` answers from
   the same place, for the same reason. Phase 34
+- **`GuiObject.isActive()`** — "does my window have the keyboard?", answered by walking up to the
+  object's **container** and asking the host whether that window is key. The gate a skin puts in front
+  of a key handler: `onKeyDown` reaches every program in the skin whatever window is focused, so
+  winampmodern566's playlist asks it (of its content group *and* of that container's `shade` layout —
+  both resolve to the same window, which is the only thing that can be focused) before acting on
+  `ctrl+w`. With no host to ask — the headless harness — every object reads active, so a probe can
+  still drive a handler that gates on it. Unimplemented before Phase 43, and fail-closed dispatch
+  meant it aborted the whole handler
 - **`System.isAppActive()`** — answered honestly (`NSApp.isActive`; `true` with no application, i.e.
   the harness), unlike its `isMinimized`/`isKeyDown` neighbours. Skins *gate work* on it: multipass's
   drawer Focus Mode returns early from its 100 ms timer while the app is inactive, so a hardcoded
@@ -277,7 +285,7 @@ By area:
 | `onVolumeChanged` | yes | `setVolume`, and any change made outside the skin |
 | `onPostedPosition`, `onSetPosition`, `onTargetReached`, `onAction`, `onEqFreqChanged`, `onGetCancelComponent` | yes | — |
 | `onToggle` | yes | from `setActivated` **and, since Phase 33, from a user click**: a togglebutton flips its own `activated` and then notifies, as in Wasabi. Until then the only sender was a script talking to itself, so a togglebutton a person clicked was inert however completely the skin implemented it — multipass's bottom drawer opens from this event and from nothing else. `setActivatedNoCallback` is the deliberate silent write. A `cfgattrib`-bound control is excluded: the stored preference *is* its state, and it has `onDataChanged` as its route |
-| `onKeyDown` (4) | **no** | needs a first-responder seam. Measured demand beyond ClassicPro: multipass, Defix, Rika, T800, winampmodern566 (Phase 33 corpus scan) — still no reported symptom behind it |
+| `onKeyDown(key)` | yes (Phase 43) | a **System** event carrying Winamp's own accelerator **string** — `"alt+g"`, `"ctrl+w"`, `"esc"` — not a virtual keycode, and **lowercase**: two of the three handlers compare without normalising first. Reaches every program whatever window is focused, as in Winamp, which is why a skin that means one window gates on `isActive()`. macOS modifiers map literally (Control→`ctrl`, Option→`alt`, Shift→`shift`, in that order); **Command is not folded onto `ctrl`**, so a ⌘ event is no accelerator at all and the app's menu equivalents keep working. A handler that reaches MAKI's `complete;` consumes the key; anything else falls back to the responder chain. Three of the 17 skins bind one: multipass and winampmodern566 toggle their EQ drawer on `alt+g`, winampmodern566 also shades its playlist on `ctrl+w` and its album-art window on `alt+a`, Defix closes its playlist search line on `esc`. Rika and T800 ship Winamp's stock `playlisteditor.maki`, whose `onKeyDown(Int vkcode)` is the **edit control's** — a GUI receiver and an integer, a different event — and neither loads that program. Drive it with `WINAMP_MODERN_RENDER_KEY` (harness) or `WINAMP_MODERN_DEBUG_KEY` (the app) |
 | `onEqBandChanged(band, value)` / `onEqPreampChanged(value)` | yes (Phase 41) | whoever moved the equalizer: the skin's own slider, `System.setEqBand`/`setEqPreamp`, a preset, `EQ_AUTO`, the menu bar, the classic equalizer window, a restored session. One funnel (`refreshEqualizerState()`), dispatching only what changed, driven from every playback-state hook and a 1 Hz safety poll; the first observation announces, so a readout written only from this handler learns its opening value. `band` is 0-based (the XML `param=` is 1-based); `value` is MAKI's −127…127, the scale `getEqBand` answers in — Rika slices a region map at `128 - value`. Every `EQ_BAND`/`EQ_PREAMP` slider's position is synced **before** the events go out, because multipass's eleven `ledfillbar` bars ignore both arguments and re-read their `parentslider` |
 | `onDock` / `onUndock` (3 / 3) | **no** | no docked-state model for `.wal` windows |
 | `onShowLayout` / `onHideLayout` (2 / 2) | **no** | shade↔normal transitions |

@@ -128,6 +128,12 @@ For each of the three fixtures:
       Itemskin's EQ windows, mmd3's and Ujola Cat's drawers, multipass, winampmodern566's EQ drawer,
       ZDL's advanced EQ). In multipass and Ujola Cat the song ticker also reads out the position
       while you drag it
+- [ ] **The skin's own keyboard shortcuts** (Phase 43) — click the skin window so it has focus, then:
+      **Alt+G** opens and closes the EQ drawer in multipass and winampmodern566; in winampmodern566
+      **Ctrl+W** shades the *focused* window and leaves the others alone (try it on the main window,
+      then on the playlist), and **Alt+A** toggles the album-art window. Also check the app's own
+      equivalents still work while a skin window is focused — **⌘Q** quits, **⌘W** is not swallowed by
+      the skin's `ctrl+w`
 - [ ] Repeat and shuffle toggles reflect and change real state
 - [ ] Ticker/marquee and elapsed-time text update during playback
 - [ ] **Text sits inside its slot, not floating in it** — Nokia 5220's KBPS/Mono/volume/time readouts

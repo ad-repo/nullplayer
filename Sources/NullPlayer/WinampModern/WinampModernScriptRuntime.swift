@@ -101,6 +101,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// shown and hidden by routes that never write the attribute — so a script that asks drifts out
     /// of step with the screen without it. `nil` (no host, as in the harness) reads the attribute.
     var containerVisibilityQuery: ((String) -> Bool?)?
+    /// Which container's window has the keyboard, for `isActive()`. `nil` (the headless harness, or
+    /// an id no window backs) reads as inactive for every container **except** when nothing has
+    /// answered at all — see `isActive(_:)`.
+    var containerActiveQuery: ((String) -> Bool?)?
     var themeNamesRequested: (() -> [String])?
     var activeThemeRequested: (() -> String)?
     var themeSwitchRequested: ((String) -> Bool)?
@@ -266,6 +270,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "ontitlechange": 1,
         "onleftbuttondblclk": 2,
         "ontextchanged": 1,
+        // The keyboard. Winamp hands `onKeyDown` **one string** — `"alt+g"`, `"ctrl+w"`, `"esc"` —
+        // not a virtual keycode, and every handler in the corpus opens with a single string store
+        // (multipass `system.maki`, Defix `PLAYLIST_WINDOW.xml`, winampmodern566's display, playlist
+        // and album-art programs). It is in this table because it is dispatchable, not because a
+        // script calls it: none in the corpus does, but the arity has to be declared for the
+        // dispatch either way.
+        "onkeydown": 1,
         "onscriptunloading": 0
     ]
 
@@ -588,6 +599,25 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Test seam: what was last announced for an object, or `nil` if nothing has been.
     func lastDispatchedTextForTesting(_ object: WasabiObject) -> String? {
         lastDispatchedText[object.stableID]
+    }
+
+    /// Hand the skin a key press as `System.onKeyDown(<accelerator>)`, and say whether it took it.
+    ///
+    /// The accelerator is Winamp's own string (`WinampModernKeyAccelerator` builds it): the corpus's
+    /// handlers compare it against a lowercase literal and nothing else. Dispatch is to **System**,
+    /// so it reaches every program in the skin whatever window is focused — which is how Winamp does
+    /// it, and why the two handlers that must not fire from the wrong window gate themselves on
+    /// `isActive()` rather than expecting the host to route by focus.
+    ///
+    /// The answer is `complete;` — MAKI's "I dealt with this" — counted across the whole dispatch, so
+    /// the view knows whether to swallow the key or pass it on to the responder chain. A handler that
+    /// ran but matched none of its branches never reaches its `complete;` and the key falls through,
+    /// which is the behaviour a skin with one accelerator and a live app around it needs.
+    @discardableResult
+    func dispatchKeyDown(_ accelerator: String) -> Bool {
+        let before = interpreter.completionCount
+        _ = try? dispatchSystem(event: "onkeydown", arguments: [.string(accelerator)])
+        return interpreter.completionCount != before
     }
 
     /// Fire `onTextChanged(newtext)` on every text object whose host-bound content has changed.
@@ -1376,6 +1406,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "hide": .init(argumentCount: 0, returnKind: .null),
             "toggle": .init(argumentCount: 0, returnKind: .null),
             "isvisible": .init(argumentCount: 0, returnKind: .boolean),
+            // "does my window have the keyboard?" — the gate a skin puts in front of a key handler
+            // so one window's accelerator does not fire while another is focused. A System event
+            // reaches every program in the skin, so without this winampmodern566's `ctrl+w` would
+            // shade its playlist window from anywhere.
+            "isactive": .init(argumentCount: 0, returnKind: .boolean),
             "setalpha": .init(argumentCount: 1, returnKind: .null),
             "getalpha": .init(argumentCount: 0, returnKind: .integer),
             "setenabled": .init(argumentCount: 1, returnKind: .null),
@@ -2300,6 +2335,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // button), so an attribute-read toggle inverts after the first manual close.
         case "toggle": return try setVisible(object, !effectiveVisibility(of: object))
         case "isvisible": return .boolean(effectiveVisibility(of: object))
+        case "isactive": return .boolean(isActive(object))
         case "setalpha":
             _ = object.setAttribute("alpha", value: String(max(0, min(255, arguments[0].integerValue))))
             notifyGraphDidMutate()
@@ -3024,6 +3060,30 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return hosted
         }
         return isVisible(object)
+    }
+
+    /// Active *as the window server sees it*: the container this object belongs to owns the
+    /// keyboard.
+    ///
+    /// Winamp answers this per object, and winampmodern566's playlist asks it of two different ones —
+    /// the content group and that container's `shade` layout — before it will act on `ctrl+w`. Both
+    /// live in the same window, and the window is the only thing that can actually be focused, so
+    /// walking up to the container and asking the host once answers both terms correctly.
+    ///
+    /// With no host installed (the headless harness) there is no focus to report and every object
+    /// reads active, so a probe can still drive a handler that gates on it. In the app the host
+    /// always answers.
+    private func isActive(_ object: WasabiObject) -> Bool {
+        guard let query = containerActiveQuery else { return true }
+        var node: WasabiObject? = object
+        while let current = node {
+            if current.typeName.caseInsensitiveCompare("container") == .orderedSame,
+               let id = current.xmlID, !id.isEmpty {
+                return query(id) ?? false
+            }
+            node = current.parent
+        }
+        return false
     }
 
     private func isVisible(_ object: WasabiObject) -> Bool {

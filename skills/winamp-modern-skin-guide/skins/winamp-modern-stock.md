@@ -67,6 +67,14 @@ Measured after the fix: at 354px the left streak is 20–152, the title 152–20
   follows a preset, the menu bar, the classic equalizer window and a restored session as well as its
   own sliders.
 
+- **Its keyboard shortcuts answer** (Phase 43). Five programs bind `System.onKeyDown`, and it is the
+  only skin in the corpus whose handlers gate on `isActive()` — a System event reaches every program
+  whatever window is focused, so `pledit-normal.xml`'s `Ctrl+W` asks whether *its* window has the
+  keyboard before switching that container between `shade` and `normal`. `alt+g` toggles the EQ
+  drawer's config attribute (from `player-normal-group.xml`, the same shortcut multipass uses),
+  `alt+a` the album-art window (`albumart.xml`). Its `onAccelerator(a, b, c)` — the menu-hotkey
+  channel, three string arguments — is a separate event and is still not dispatched.
+
 ### Not implemented or knowingly wrong
 
 - The 1px `window.titlebar.title.overlay` layer keeps its declared slot instead of being stretched over
