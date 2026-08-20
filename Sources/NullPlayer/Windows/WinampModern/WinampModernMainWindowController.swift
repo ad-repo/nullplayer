@@ -355,6 +355,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             else { return }
             setAuxiliaryWindow(id: matchedID, visible: visible)
         }
+        // And the read side: `getContainer(id).toggle()` / `.isVisible()` must be answered by the
+        // window, not by the graph attribute — `setAuxiliaryWindow` and the close button both move a
+        // window without writing it.
+        scripts.containerVisibilityQuery = { [weak self] id in
+            guard let self,
+                  let matchedID = Self.matchingContainerID(id,
+                                                           in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+            else { return nil }
+            return container.window.isVisible
+        }
     }
 
     static func matchingContainerID(_ requestedID: String, in containerIDs: [String]) -> String? {
@@ -482,8 +493,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         skinView?.closeRequested = { NSApplication.shared.terminate(nil) }
         skinView?.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
         for container in auxiliaryContainers {
-            container.view.closeRequested = { [weak auxWindow = container.window] in
-                auxWindow?.orderOut(nil)
+            // Through `setAuxiliaryWindow`, not `orderOut` directly: closing a window is a scene
+            // becoming invisible, and the skin is listening. Ujola Cat's console buttons light up
+            // from their window's layout `onSetVisible`, so a close that bypassed the scene left the
+            // button lit with nothing on screen.
+            container.view.closeRequested = { [weak self, id = container.containerID] in
+                self?.setAuxiliaryWindow(id: id, visible: false)
             }
             container.view.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
         }

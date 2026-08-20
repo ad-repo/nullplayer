@@ -68,6 +68,24 @@ object the hit test returned:
 that the markup-only hit test rejects. It is not expected to be empty — several objects legitimately
 share a rect and only the topmost can win — but a control the user can see should never be in it.
 
+#### `sysregion` is signed, and a **negative** one means "do not paint" (Phase 34)
+
+A layer can contribute its bitmap to the **window region** instead of to the picture. The attribute
+is a signed combining mode, and only the sign matters to the renderer: a negative value is
+*region only*. The bitmap behind such a layer is a silhouette, not artwork — Ujola Cat's
+`window-regions.png` is a magenta-and-white mask — and painting it puts a coloured slab across the
+window. `standardframe.xml` is where this bites: its `wasabi.frame.layout` carries five
+`sysregion="-2"` layers and is inherited by every `Wasabi:StandardFrame:*` flavour, so the mask landed
+on the playlist window, on the synthesized library window, and on anything else framed the same way —
+reported as "layered full backgrounds in different colours" and "multiple top menubars".
+
+`sysregion="-2"` appears in **11 of the 18 installed skins** (winampmodern566 alone uses it 24
+times), so this is a corpus-wide rule, not one skin's quirk. Absent, `0`, a positive value (Ujola's
+own console art is `sysregion="1"` over real bitmaps) and the non-numeric forms skins write (`"AND"`,
+which Anexa uses 15 times) all paint exactly as before. The region itself is still not *applied* —
+the windows are rectangular — so what changes is only that the mask stops being drawn: the corners of
+winampmodern566's framed windows go from opaque black to transparent.
+
 #### `<vis mode>` — the skin says whether it wants a visualization at all
 
 `1` = **spectrum analyzer**, `2` = **oscilloscope**, `0`/`3` = **off**; an undeclared mode is the
@@ -84,6 +102,34 @@ attribute, so honouring it in the renderer is the whole implementation.
 
 A `<vis ghost="1">` takes **no** clicks — Love is War Miku puts an invisible `<layer rectrgn="1">`
 beside it as the click target instead, so the menu is reached through that, not the box.
+
+#### What the analyzer actually draws (Phase 34)
+
+Three rules, all of them measured on Ujola Cat, all of them engine-wide:
+
+- **Vis colours take the object's `gammagroup`.** `colorband1`…`16`, `colorallbands`, `colorbandpeak`
+  and `colorosc1`…`5` are usually inline `r,g,b` triples, and the named-resource path
+  (`resolvedColor`) leaves an inline triple untinted — so an analyzer stays its declared colour while
+  the skin recolours around it. Resolve them through `objectColor(_:gammaGroup:)`, which hands a named
+  `<color>` back to `resolvedColor` so a themed colour is never tinted twice. Ujola Cat declares all
+  22 of its vis colours inline under `gammagroup="Energy"`, and its author's one request was to go and
+  play with the skin's colour themes. **`<eqvis>` is deliberately left out**: that skin's own comment
+  reads *"note: eqvis doesn't support gammagroup; known bug"* and works around it with white — which
+  is Winamp's behaviour, so matching it is correct.
+- **Bar height is a decibel, not a magnitude.** `host.spectrumLevels` is a linear FFT magnitude, and
+  scaling it straight to the box puts ordinary music along the floor. Map it through
+  `WinampModernScriptRuntime.visByte(forMagnitude:)` — 20·log10 over a 60 dB window — the same
+  function `getVisBand` and the VU meters answer in, so the drawn analyzer and a skin's scripted
+  meters can never disagree about the same audio. (Phase 29 fixed the VU meter, Phase 30 `getVisBand`;
+  the drawn analyzer was the third and last site.)
+- **`bandwidth` picks the band *count*.** `wide` is 19 bands, `thin` up to 75, each collapsed from the
+  tap by max-per-bucket and clamped so a bar is at least 1px wide. It used to pick only the bar
+  *thickness* while the bars stayed one per FFT bin, so every skin drew the same 64 hairlines — and
+  silently dropped the top 11 of the tap's 75 bands. Bars are laid out on **whole pixels**: at a
+  fractional slot the 1px gap antialiases into a smear and a `wide` row reads as one solid block.
+
+`colorbandpeak` is the falling cap over each bar, held at the running max and decayed a fixed amount
+per draw, and painted in the band's own colour when the skin declares no peak colour.
 
 #### `<Wasabi:Frame>` — the splitter that builds its own children
 
@@ -308,6 +354,15 @@ Two constraints on that path, both load-bearing:
   `window.isVisible` and drops the rest.
 - **It is wired after `scripts.start()`** (in `makeSurfaceCoordinator`), so a `show()` from
   `onScriptLoaded` cannot pop windows open at launch.
+
+`Container.toggle()` is the same route with the direction read back first, and the direction must come
+from the **window**, never from the graph's `visible` attribute (`containerVisibilityQuery`, the read
+half of the pair). A window's visibility changes by four routes that never write that attribute — a
+markup `TOGGLE`, the Windows menu, this call, and the window's own close button — so an
+attribute-read toggle inverts after the first manual close. For the same reason the aux window's close
+button goes through `setAuxiliaryWindow` rather than calling `orderOut` itself: closing a window is a
+scene becoming invisible, and a skin that lights its console button from that window's layout
+`onSetVisible` (Ujola Cat) was left with a lit button and nothing on screen.
 
 #### Colour themes (`gammaset` / `gammagroup`)
 

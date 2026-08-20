@@ -479,22 +479,38 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertFalse(host.spectrumLevels.isEmpty)
     }
 
-    /// `bandwidth="thin"` is a comb of narrow bars; `wide` is the solid row of blocks. Both come from
-    /// the same band levels, so the difference is bar thickness.
-    func testThinBandwidthDrawsNarrowerBarsThanWide() throws {
-        func paintedColumns(_ bandwidth: String) throws -> Int {
-            let loaded = try load(xml: skin(size: 32, body: """
-                <vis id="vis" x="0" y="0" w="32" h="8" bandwidth="\(bandwidth)" colorallbands="255,0,0"/>
+    /// `bandwidth` picks Winamp's band **count**: `thin` is the full comb of narrow bars, `wide` the
+    /// familiar row of fat blocks.
+    ///
+    /// Phase 34: it used to pick only the bar *thickness* while the bars stayed one per FFT bin, so
+    /// every skin drew the same 64 hairlines whichever it asked for — and silently dropped the top
+    /// bands of the host's 75-band tap.
+    func testBandwidthPicksTheBandCount() throws {
+        func bars(_ bandwidth: String) throws -> (count: Int, widest: Int) {
+            let size = 150
+            let loaded = try load(xml: skin(size: size, body: """
+                <vis id="vis" x="0" y="0" w="150" h="8" bandwidth="\(bandwidth)" colorallbands="255,0,0"/>
                 """))
             let host = Host()
-            host.spectrumLevels = Array(repeating: 1, count: 8)
-            let pixels = try render(loaded: loaded, size: 32, host: host)
-            return (0..<32).filter { pixel(pixels, x: $0, y: 4, width: 32)[3] > 0 }.count
+            host.spectrumLevels = Array(repeating: 1, count: 75)
+            let pixels = try render(loaded: loaded, size: size, host: host)
+            // Runs of painted columns: one run per bar, since each bar leaves a 1px gap.
+            var count = 0, widest = 0, run = 0
+            for x in 0..<size {
+                if pixel(pixels, x: x, y: 4, width: size)[3] > 0 {
+                    run += 1
+                } else if run > 0 {
+                    count += 1; widest = max(widest, run); run = 0
+                }
+            }
+            if run > 0 { count += 1; widest = max(widest, run) }
+            return (count, widest)
         }
-        let thin = try paintedColumns("thin")
-        let wide = try paintedColumns("wide")
-        XCTAssertLessThan(thin, wide, "thin bars leave more of the box unpainted")
-        XCTAssertGreaterThan(thin, 0, "but they are still drawn")
+        let thin = try bars("thin")
+        let wide = try bars("wide")
+        XCTAssertGreaterThan(thin.count, wide.count, "thin packs more bands into the same box")
+        XCTAssertLessThan(thin.widest, wide.widest, "and each of them is narrower")
+        XCTAssertGreaterThan(wide.count, 1, "but wide is a row of bars, not one block")
     }
 
     // MARK: - D8: the titlebar lays its own streaks out

@@ -96,6 +96,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// not only on a change, because the window can be closed while the attribute still says visible;
     /// the host is the one that knows, and ignores a request that asks for the state it is already in.
     var containerVisibilityRequested: ((String, Bool) -> Void)?
+    /// The other half of the pair: what the container's window state *is*, asked of the host, for
+    /// `toggle()` and `isVisible()`. The graph's `visible` attribute cannot answer it — the window is
+    /// shown and hidden by routes that never write the attribute — so a script that asks drifts out
+    /// of step with the screen without it. `nil` (no host, as in the harness) reads the attribute.
+    var containerVisibilityQuery: ((String) -> Bool?)?
     var themeNamesRequested: (() -> [String])?
     var activeThemeRequested: (() -> String)?
     var themeSwitchRequested: ((String) -> Bool)?
@@ -1212,6 +1217,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "resize": .init(argumentCount: 4, returnKind: .null),
             "show": .init(argumentCount: 0, returnKind: .null),
             "hide": .init(argumentCount: 0, returnKind: .null),
+            "toggle": .init(argumentCount: 0, returnKind: .null),
             "isvisible": .init(argumentCount: 0, returnKind: .boolean),
             "setalpha": .init(argumentCount: 1, returnKind: .null),
             "getalpha": .init(argumentCount: 0, returnKind: .integer),
@@ -2041,21 +2047,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // `onSetVisible` fires only on an actual change, as in Wasabi. ClassicPro's `beat.m` hangs its
         // VU timer off `beatGroup.onSetVisible`, and `showGroup` hides both display groups before
         // showing one — notifying unconditionally would stop and restart the timer on every refresh.
-        case "show":
-            let shown = object.setAttribute("visible", value: "1")
-            if shown { noteGeometryChange() }
-            notifyGraphDidMutate()
-            if shown { _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(true)]) }
-            requestWindow(for: object, visible: true)
-            return .null
-        case "hide":
-            let hidden = object.setAttribute("visible", value: "0")
-            if hidden { noteGeometryChange() }
-            notifyGraphDidMutate()
-            if hidden { _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(false)]) }
-            requestWindow(for: object, visible: false)
-            return .null
-        case "isvisible": return .boolean(isVisible(object))
+        case "show": return try setVisible(object, true)
+        case "hide": return try setVisible(object, false)
+        // `toggle()` is `show`/`hide` with the direction read back first, and the direction has to
+        // come from the **host's** window state rather than from the graph. Ujola Cat's two console
+        // buttons carry no `action` at all — `getContainer("colorthemes").toggle()` is their entire
+        // behaviour — and a window's visibility changes by four routes that never write the graph's
+        // `visible` attribute (the Windows menu, a markup `TOGGLE`, this call, the window's own close
+        // button), so an attribute-read toggle inverts after the first manual close.
+        case "toggle": return try setVisible(object, !effectiveVisibility(of: object))
+        case "isvisible": return .boolean(effectiveVisibility(of: object))
         case "setalpha":
             _ = object.setAttribute("alpha", value: String(max(0, min(255, arguments[0].integerValue))))
             notifyGraphDidMutate()
@@ -2755,6 +2756,31 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // Generated bitmaps (`file="$solid"`) carry no file and are perfectly valid.
         if definition.attributes["file"]?.hasPrefix("$") == true { return false }
         return definition.logicalFile == nil
+    }
+
+    /// `show` / `hide` / `toggle`, in one place: the attribute, the notification, and the host
+    /// request a container needs, in the order Wasabi does them.
+    private func setVisible(_ object: WasabiObject, _ visible: Bool) throws -> MakiValue {
+        let changed = object.setAttribute("visible", value: visible ? "1" : "0")
+        if changed { noteGeometryChange() }
+        notifyGraphDidMutate()
+        if changed {
+            _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(visible)])
+        }
+        requestWindow(for: object, visible: visible)
+        return .null
+    }
+
+    /// Visible *as the user sees it*. For a container that is its window's state, which only the host
+    /// knows; for anything else the graph attribute is the whole truth. `nil` from the host — the
+    /// headless harness, or an id no window backs — falls back to the attribute.
+    private func effectiveVisibility(of object: WasabiObject) -> Bool {
+        if object.typeName.caseInsensitiveCompare("container") == .orderedSame,
+           let id = object.xmlID, !id.isEmpty,
+           let hosted = containerVisibilityQuery?(id) {
+            return hosted
+        }
+        return isVisible(object)
     }
 
     private func isVisible(_ object: WasabiObject) -> Bool {

@@ -1308,6 +1308,7 @@ final class WasabiSceneRenderer {
                       pressed: WasabiObjectID?, hovered: WasabiObjectID?) {
         let object = node.object
         let type = object.typeName.lowercased()
+        guard !Self.isRegionOnly(object, type: type) else { return }
         context.saveGState()
         context.clip(to: node.clip)
         applyRegionClip(of: object, frame: node.frame, context: context)
@@ -1392,6 +1393,26 @@ final class WasabiSceneRenderer {
         context.interpolationQuality = .none
         context.clip(to: rect, mask: mask)
         context.interpolationQuality = quality
+    }
+
+    /// A layer that contributes its bitmap to the **window region** and nothing else.
+    ///
+    /// `sysregion` is a signed combining mode, and a **negative** value means "region only, do not
+    /// paint". The bitmap behind such a layer is a silhouette mask, not artwork: Ujola Cat's
+    /// `standardframe.xml` — inherited by every `Wasabi:StandardFrame:*`, so by the playlist window
+    /// and by the library window the synthesizer builds — carries five of them over
+    /// `window-regions.png`, a magenta-and-white mask. Painted as ordinary layers they put a magenta
+    /// slab across the full width at the top and white slabs along the bottom, on top of the real
+    /// title strips: "layered full backgrounds in different colours" and "multiple top menubars".
+    ///
+    /// Only the sign matters. `0`, a positive value (Ujola's own console art is `sysregion="1"` on
+    /// real bitmaps) and the non-numeric forms a skin writes (`"AND"`, which Anexa uses 15 times)
+    /// all paint exactly as before. `sysregion="-2"` appears in 11 of the 18 installed skins.
+    static func isRegionOnly(_ object: WasabiObject, type: String) -> Bool {
+        guard type == "layer" || type == "animatedlayer",
+              let raw = object.attributes["sysregion"], let value = Int(raw.trimmingCharacters(in: .whitespaces))
+        else { return false }
+        return value < 0
     }
 
     /// An object's `alpha` as a 0…1 fraction. An absent or unparsable value is opaque.
@@ -1861,23 +1882,59 @@ final class WasabiSceneRenderer {
         }
     }
 
+    /// How many bars the analyzer draws, per `bandwidth`. Winamp's analyzer is a row of **bands**,
+    /// not of FFT bins: `wide` is the familiar handful of fat blocks, `thin` the full comb.
+    private static let wideAnalyzerBands = 19
+    private static let thinAnalyzerBands = 75
+
+    /// Per-`<vis>` falling peak caps, keyed by object, in bar fractions. Decayed once per draw.
+    private var analyzerPeaks: [WasabiObjectID: [CGFloat]] = [:]
+    /// How far a peak cap falls per frame. At the scene's redraw rate this is roughly the drop
+    /// Winamp's own caps have — fast enough to follow a track, slow enough to read as a cap.
+    private static let analyzerPeakDecay: CGFloat = 0.015
+
     private func drawVisualization(_ object: WasabiObject, frame: CGRect, context: CGContext) {
         guard !host.spectrumLevels.isEmpty, frame.width > 0, frame.height > 0 else { return }
         let levels = host.spectrumLevels
-        let count = min(64, levels.count)
-        guard count > 0 else { return }
         // A skin colours its analyzer per band (`colorband1`…`colorband16`) **or** in one stroke with
         // `colorallbands`, and its oscilloscope with `colorosc1`…`colorosc5`. Reading only the
         // per-band form and defaulting to white painted Rika's spectrum as bright white bars across
         // the butterfly it sits on: that skin asks for `colorallbands="0,0,0"` at `alpha="50"`, a
         // dark shading over its own art.
+        //
+        // Through `objectColor`, not `resolvedColor`: these are inline `r,g,b` triples, and the
+        // named-resource path leaves an inline triple untinted. Ujola Cat declares all 22 of its vis
+        // colours inline under `gammagroup="Energy"`, so its analyzer stayed lime green through all
+        // 38 of the skin's colour themes while everything around it recoloured. A named `<color>`
+        // carries its own group and `objectColor` hands it back to `resolvedColor`, so nothing is
+        // tinted twice.
+        let gammaGroup = object.attributes["gammagroup"]
         func color(_ index: Int) -> CGColor {
-            resolvedColor(object.attributes["colorband\(min(16, index + 1))"]
-                          ?? object.attributes["colorallbands"] ?? "255,255,255").cgColor
+            objectColor(object.attributes["colorband\(min(16, index + 1))"]
+                        ?? object.attributes["colorallbands"] ?? "255,255,255",
+                        gammaGroup: gammaGroup).cgColor
         }
         func oscilloscopeColor(_ index: Int) -> CGColor {
-            resolvedColor(object.attributes["colorosc\(min(5, index + 1))"]
-                          ?? object.attributes["colorallbands"] ?? "255,255,255").cgColor
+            objectColor(object.attributes["colorosc\(min(5, index + 1))"]
+                        ?? object.attributes["colorallbands"] ?? "255,255,255",
+                        gammaGroup: gammaGroup).cgColor
+        }
+        // `bandwidth` picks the band *count*, which is what it means — it used to pick only the bar
+        // thickness while the bars stayed one-per-FFT-bin, so every skin drew 64 hairlines (and
+        // silently dropped the top 11 of the tap's 75 bands).
+        let isThin = object.attributes["bandwidth"]?.lowercased() == "thin"
+        let count = max(1, min(isThin ? Self.thinAnalyzerBands : Self.wideAnalyzerBands,
+                               min(levels.count, Int(frame.width))))
+        // One band, as the fraction of the box its bar fills: the loudest bin in the bucket, on the
+        // **decibel** scale `getVisBand` and the VU meters already answer in (Phases 29–30). The tap
+        // is linear, and drawn linearly ordinary music sits in the bottom of the box.
+        func bandFraction(_ index: Int) -> CGFloat {
+            let start = index * levels.count / count
+            let end = min(levels.count, max(start + 1, (index + 1) * levels.count / count))
+            var peak: Float = 0
+            for bin in start..<end { peak = max(peak, levels[bin]) }
+            let byte = WinampModernScriptRuntime.visByte(forMagnitude: peak)
+            return max(0, min(1, CGFloat(byte) / 255))
         }
         // The `<vis>`'s own `alpha`, which only bitmap drawing honoured. Rika's 50 is half the point
         // of the effect.
@@ -1888,20 +1945,37 @@ final class WasabiSceneRenderer {
         case .off:
             return
         case .analyzer:
-            let width = frame.width / CGFloat(count)
-            // `bandwidth` is Winamp's band count (`thin` packs many narrow bars into the box, `wide`
-            // draws few fat ones). The host publishes a fixed band count, so it lands here as bar
-            // thickness: the visible difference is a thin comb versus a solid row of blocks, which is
-            // what a skin's own visualization menu is switching between.
-            let barWidth = object.attributes["bandwidth"]?.lowercased() == "thin"
-                ? max(1, (width - 1) / 2) : max(1, width - 1)
-            for index in 0..<count {
-                let level = CGFloat(max(0, min(1, levels[index])))
-                context.setFillColor(color(index))
-                context.fill(CGRect(x: frame.minX + CGFloat(index) * width,
-                                    y: frame.maxY - level * frame.height,
-                                    width: barWidth, height: level * frame.height))
+            // Bars are laid out on whole pixels. A fractional slot antialiases the 1px gap between
+            // bars into a smear, and a `wide` row then reads as one solid block rather than as
+            // Winamp's separated bars.
+            let slot = frame.width / CGFloat(count)
+            func columns(_ index: Int) -> (x: CGFloat, width: CGFloat) {
+                let start = (CGFloat(index) * slot).rounded(.down)
+                let end = (CGFloat(index + 1) * slot).rounded(.down)
+                return (frame.minX + start, max(1, end - start - 1))
             }
+            // The falling caps `colorbandpeak` is for. Held at the running max and decayed a fixed
+            // amount per draw; a skin that declares no peak colour gets the band's own, which is what
+            // Winamp does with an analyzer whose caps are the same colour as its bars.
+            var peaks = analyzerPeaks[object.stableID] ?? []
+            if peaks.count != count { peaks = Array(repeating: 0, count: count) }
+            let peakColor = object.attributes["colorbandpeak"].map {
+                objectColor($0, gammaGroup: gammaGroup).cgColor
+            }
+            for index in 0..<count {
+                let level = bandFraction(index)
+                peaks[index] = max(level, peaks[index] - Self.analyzerPeakDecay)
+                context.setFillColor(color(index))
+                let (x, barWidth) = columns(index)
+                context.fill(CGRect(x: x, y: frame.maxY - level * frame.height,
+                                    width: barWidth, height: level * frame.height))
+                guard peaks[index] > level else { continue }
+                let capHeight: CGFloat = frame.height >= 16 ? 2 : 1
+                let capY = min(frame.maxY - capHeight, frame.maxY - peaks[index] * frame.height)
+                context.setFillColor(peakColor ?? color(index))
+                context.fill(CGRect(x: x, y: capY, width: barWidth, height: capHeight))
+            }
+            analyzerPeaks[object.stableID] = peaks
         case .oscilloscope:
             // Drawn from the same band levels, mirrored about the centre line: the host publishes a
             // spectrum, not raw PCM, so this is the shape of the signal rather than the waveform
@@ -1912,7 +1986,7 @@ final class WasabiSceneRenderer {
             context.setStrokeColor(oscilloscopeColor(0))
             context.beginPath()
             for index in 0..<count {
-                let level = CGFloat(max(0, min(1, levels[index])))
+                let level = bandFraction(index)
                 let point = CGPoint(x: frame.minX + CGFloat(index) * step,
                                     y: frame.midY + (index % 2 == 0 ? -1 : 1) * level * frame.height / 2)
                 if index == 0 { context.move(to: point) } else { context.addLine(to: point) }
@@ -2502,7 +2576,8 @@ final class WasabiSceneRenderer {
         let width = frame.width / CGFloat(count)
         context.setFillColor(NSColor(red: 0.3, green: 0.9, blue: 0.4, alpha: 1).cgColor)
         for index in 0..<count {
-            let level = CGFloat(max(0, min(1, levels[index])))
+            // Same decibel scale as the `<vis>` analyzer: the two read the same tap.
+            let level = CGFloat(WinampModernScriptRuntime.visByte(forMagnitude: levels[index])) / 255
             context.fill(CGRect(x: frame.minX + CGFloat(index) * width,
                                 y: frame.maxY - level * frame.height,
                                 width: max(1, width - 1), height: level * frame.height))

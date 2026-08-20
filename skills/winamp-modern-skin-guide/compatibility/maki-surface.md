@@ -13,7 +13,7 @@ By area:
 
 - **Playback host**: playback state, current time, duration, volume, shuffle/repeat, title/info,
   spectrum levels, transport (play/pause/stop/prev/next), seek, file-open
-- **GUI mutation**: `setxmlparam`, `resize`, `show`, `hide` (each invalidates the view). An
+- **GUI mutation**: `setxmlparam`, `resize`, `show`, `hide`, `toggle` (each invalidates the view). An
   image-valued param (`image`, `bitmap`, `background`, the button/slider state images) is a **load**:
   an id the skin never registered — the empty string included — leaves the object wearing the artwork
   it already had, as a failed load does in Winamp. Defix names its background art from a preference it
@@ -95,6 +95,13 @@ By area:
   `strUpper(getClassName())` to decide which artwork attributes to swap. Phase 33
 - **`Container.close()`** — the `hide()` route: a container is a window, anything else stops in the
   graph. Phase 33
+- **`Container.toggle()`** — `show`/`hide` with the direction read back first. Ujola Cat's Color
+  Themes and cat buttons carry no `action` at all: `getContainer("colorthemes").toggle()` is the whole
+  handler, and a fail-closed refusal took both buttons with it. The direction comes from the **host's
+  window state** (`containerVisibilityQuery`), not from the graph's `visible` attribute, which the
+  host never writes when a window is opened from the Windows menu or closed from its own titlebar —
+  read off the attribute the toggle inverts after the first manual close. `isVisible()` answers from
+  the same place, for the same reason. Phase 34
 - **`System.isAppActive()`** — answered honestly (`NSApp.isActive`; `true` with no application, i.e.
   the harness), unlike its `isMinimized`/`isKeyDown` neighbours. Skins *gate work* on it: multipass's
   drawer Focus Mode returns early from its 100 ms timer while the app is inactive, so a hardcoded

@@ -83,11 +83,13 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
 
 ## Tier 3 — narrow, latent, or a decision rather than code
 
-- [ ] **B13. The `<vis>` analyzer's scale.** It reads raw levels as a fraction of height, so a
-      full-scale band draws at ~15%. Two sibling bugs of this shape have already been found and fixed
-      (`getLeftVUMeter` Phase 29, `getVisBand` Phase 30 — both now on their own curve). Same test:
-      histogram what the artwork actually uses against what it has. Includes checking the other
-      level-reading skins (mmd3's knobs) for the same over-read
+- [x] **B13. The `<vis>` analyzer's scale.** ~~It reads raw levels as a fraction of height~~ —
+      **closed in Phase 34**: the analyzer is on `visByte(forMagnitude:)`, the same dB curve
+      `getLeftVUMeter` (Phase 29) and `getVisBand` (Phase 30) answer in, so the drawn bars and a
+      skin's scripted meters cannot disagree about the same audio. `bandwidth` now picks Winamp's band
+      *count* (19 wide / 75 thin) instead of only the bar thickness, and `colorbandpeak` caps are
+      drawn. **Still open, split out as B13b:** the other level-reading skins (mmd3's knobs) have not
+      been checked for the same over-read
 - [ ] **B14. `<Wasabi:TabSheet>`** (mmd3's winshade sidecar) — a real widget, not a shell, so it needs
       a body rather than a synthesis rule. One measured skin
 - [ ] **B15. `wasabi.panel` / `wasabi.objectframe.group` bodies.** Every measured use is inside a
