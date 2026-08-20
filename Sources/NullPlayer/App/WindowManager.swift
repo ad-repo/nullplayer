@@ -2648,6 +2648,26 @@ class WindowManager {
     func toggleProjectMFullscreen() {
         projectMWindowController?.toggleFullscreen()
     }
+
+    /// Step the visualization window's preset. A `.wal` skin's `VIS_NEXT`/`VIS_PREV` buttons are
+    /// Winamp's "next/previous visualization"; with the visualization window up, its presets are
+    /// what those buttons are pointing at.
+    func stepProjectMPreset(by delta: Int) {
+        guard let controller = projectMWindowController else { return }
+        if delta >= 0 {
+            controller.nextPreset(hardCut: false)
+        } else {
+            controller.previousPreset(hardCut: false)
+        }
+    }
+
+    /// Show the visualization window and put it fullscreen — Winamp's `VIS_FS`, which starts the
+    /// visualization if it is not already running.
+    func showProjectMFullscreen() {
+        if !isProjectMVisible { showProjectM() }
+        guard !isProjectMFullscreen else { return }
+        toggleProjectMFullscreen()
+    }
     
     /// Whether the debug console window is visible
     var isDebugWindowVisible: Bool {

@@ -43,9 +43,29 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   moves the skin's slider and two stacked balance sliders cannot show different positions.
   `WinampModernPanAction` owns both directions of the −1…+1 ↔ 0…1 conversion. Balance is deliberately
   not persisted, so the slider starts centred each launch
-- Button actions still **inert**, measured across the 17 installed skins: the playlist, video and
-  visualization command families `PE_*`, `VID_*`, `VIS_*`, `CB_*`; `WA5:Prefs` (winampmodern566 — a
-  Winamp preferences page, and there is no dialog to open)
+- **`VIS_*` / `PE_*` / `VID_*`** (Phase 39) — the host-action families a skin puts on a toolbar
+  button. Measured: **108 declarations in 11 of the 17 skins** (`VIS_*` 27 in 5, `PE_*` 39 in 7,
+  `VID_*` 28 in 5, `CB_*` 14 in 4). Decoded in one place, `WinampModernHostAction`:
+  - `VIS_NEXT` / `VIS_PREV` step **the visualization the user is looking at**: the visualization
+    window's presets when it is open, otherwise the mode of the skin's own `<vis>` boxes (analyzer →
+    oscilloscope → off, Winamp's order), written to every `<vis>` in the graph so the skin's other
+    layouts do not disagree. `VIS_MENU` is that mode list plus the host's **Visualizations** menu;
+    `VIS_CFG` is the options *of* the current one (the visualization window's own live menu, else the
+    analyzer's `bandwidth`); `VIS_FS` opens the visualization window fullscreen
+  - `PE_ADD` / `PE_REM` / `PE_SEL` / `PE_MISC` / `PE_LIST` are Winamp's five playlist menus, against
+    the shared `AudioEngine` — the same calls the classic playlist window's buttons make.
+    `PE_LISTOFLISTS` opens the same menu as `PE_LIST`. `PE_SEL`/`PE_REM` need a **multi-row
+    selection**, so the host seam gained `playlistSetSelection` / `playlistRemoveRows` and the
+    snapshot a `selectedRows` set; `selectedIndex` is still the anchor a click and the Delete key
+    mean, and both default in the protocol extension so a host without a selection model still works
+  - `VID_FS` and `VID_MISC` drive the video window: fullscreen, and **its own context menu** (audio
+    and subtitle tracks included), popped under the skin's button. Both are inert with no video
+    window, because there is nothing to make fullscreen
+- Button actions **accepted and inert**, each recorded once in the skin's diagnostics with its reason
+  (Phase 39): `VID_1X`/`VID_2X` (NullPlayer's video window has no native-size sizing to scale from),
+  `VID_TV` (no internet-TV source), `CB_NEXT`/`CB_PREV`/`CB_NEXTPAGE`/`CB_PREVPAGE` (a
+  `componentbucket` here holds no icons to scroll); `WA5:Prefs` (winampmodern566 — a Winamp
+  preferences page, and there is no dialog to open)
 - Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
   and vertical), text, `clipchildren` parent clipping
 - Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups. A

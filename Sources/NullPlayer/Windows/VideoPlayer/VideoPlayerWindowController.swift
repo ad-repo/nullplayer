@@ -1632,6 +1632,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     @objc func toggleFullScreen(_ sender: Any?) {
         window?.toggleFullScreen(sender)
     }
+
+    /// The video view's own context menu — play/pause, skip, audio and subtitle tracks, settings.
+    ///
+    /// Exposed so a `.wal` skin's `VID_MISC` button opens the same menu the video window offers on
+    /// right-click rather than a second, thinner imitation of it. Its items target the video view, so
+    /// it works wherever it is popped up.
+    var contextMenu: NSMenu? { videoPlayerView?.menu }
     
     /// Handle Escape key via standard macOS cancel operation
     @objc func cancel(_ sender: Any?) {

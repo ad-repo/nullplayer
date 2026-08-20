@@ -261,8 +261,10 @@ non-default display styles, which have no headless route in (below). **Grade B, 
 - **Most of its menus are host actions, and those are still unimplemented.** `trackmenu`/`trackinfo`
   on the song ticker **work as of Phase 36** — the ticker (`Songticker`, 17,115 261×23 in
   `main/normal`) is hit-tested for its `rightclickaction`/`dblclickaction` and both commands are
-  implemented. Still inert: `VIS_Menu`, `VIS_Cfg`, `VIS_Next`, `VIS_Prev`, `PE_Add/Rem/Sel/Misc/List`,
-  `ML_SendTo`. **`colorthemes_switch` works as of Phase 32** — and the skin turned out to ship a real
+  implemented. Its bottom bar's `VIS_Menu` / `VIS_Cfg` / `VIS_Next` / `VIS_Prev` and
+  `PE_Add/Rem/Sel/Misc/List` **work as of Phase 39** — and this skin declares no `<vis>` of its own,
+  so its Previous/Next/Presets/Options row is aimed at NullPlayer's visualization window, which is
+  what those four buttons drive. Still inert: `ML_SendTo`. **`colorthemes_switch` works as of Phase 32** — and the skin turned out to ship a real
   picker after all: a `<ColorThemes:List id="picker">` in its `Config` window, under the heading
   "Color Themes", with a `Switch to selected Color Theme` button beneath it. It lists the skin's
   **5 distinct names** (6 `<gammaset>` elements over 197 `<gammagroup>`s; `*Default` is declared

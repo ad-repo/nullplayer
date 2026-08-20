@@ -48,6 +48,7 @@ concept; read the one your symptom points at, not all of them.
 | A slider drags but nothing happens, or its readout never appears | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the action families, and `onSetPosition` on a drag |
 | Playlist / EQ / library / video surface missing, empty, or in the wrong window | [reference/components.md](reference/components.md) |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
+| A toolbar button on a playlist/visualization/video window does nothing (`PE_*`, `VIS_*`, `VID_*`, `CB_*`) | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the host-action families, and the three that are inert on purpose |
 | An auxiliary window draws once then freezes; a script's `onTimer` changes nothing on screen | [reference/components.md](reference/components.md) |
 | Teardown crash, leak, or mode-switch breakage | [reference/components.md](reference/components.md) |
 | A ClassicPro (`.wal` + NSIS engine) skin misbehaves | [reference/classicpro.md](reference/classicpro.md) |

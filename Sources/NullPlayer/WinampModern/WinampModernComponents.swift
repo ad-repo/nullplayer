@@ -122,6 +122,10 @@ struct WinampModernPlaylistSnapshot: Equatable {
     var rows: [WinampModernPlaylistRow]
     var currentIndex: Int
     var selectedIndex: Int
+    /// Every selected row, which `PE_SEL`'s Select All / Invert and `PE_REM`'s Crop work on.
+    /// `selectedIndex` stays the *anchor* — the row the user last clicked — because that is what a
+    /// click, the Delete key and a script's `getCurrentIndex` mean by "the selection".
+    var selectedRows: Set<Int>
     /// Total queue length, which is `rows.count` today but is the number `PE_Info` shows and must
     /// stay meaningful if the row list is ever windowed.
     var trackCount: Int
@@ -129,10 +133,12 @@ struct WinampModernPlaylistSnapshot: Equatable {
     var totalDuration: TimeInterval
 
     init(rows: [WinampModernPlaylistRow], currentIndex: Int, selectedIndex: Int,
+         selectedRows: Set<Int>? = nil,
          trackCount: Int? = nil, totalDuration: TimeInterval? = nil) {
         self.rows = rows
         self.currentIndex = currentIndex
         self.selectedIndex = selectedIndex
+        self.selectedRows = selectedRows ?? (selectedIndex >= 0 ? [selectedIndex] : [])
         self.trackCount = trackCount ?? rows.count
         self.totalDuration = totalDuration ?? rows.reduce(0) { $0 + $1.duration }
     }
@@ -156,6 +162,9 @@ struct WinampModernPlaylistSnapshot: Equatable {
             : String(format: "%d:%02d", minutes, remainder)
         return "\(items)/\(length)"
     }
+
+    /// Whether a row draws selected: the anchor, or anything a multi-row selection command picked.
+    func isSelected(_ index: Int) -> Bool { index == selectedIndex || selectedRows.contains(index) }
 
     static let empty = WinampModernPlaylistSnapshot(rows: [], currentIndex: -1, selectedIndex: -1)
 }
@@ -182,6 +191,10 @@ protocol WinampModernComponentHost: AnyObject {
     func playlistSelect(row: Int)
     func playlistPlay(row: Int)
     func playlistRemove(row: Int)
+    /// Replace the whole selection — `PE_SEL`'s Select All / Select None / Invert Selection.
+    func playlistSetSelection(_ rows: Set<Int>)
+    /// Remove a whole selection at once — `PE_REM`'s Remove Selected and Crop Selection.
+    func playlistRemoveRows(_ rows: Set<Int>)
 
     // Equalizer (classic10)
     func equalizerSnapshot() -> WinampModernEQSnapshot
@@ -201,6 +214,12 @@ protocol WinampModernComponentHost: AnyObject {
 
 extension WinampModernComponentHost {
     func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
+    /// A host with no selection model of its own keeps the single anchor it already had.
+    func playlistSetSelection(_ rows: Set<Int>) { playlistSelect(row: rows.min() ?? -1) }
+    /// Highest row first, so each removal cannot shift the rows still to come.
+    func playlistRemoveRows(_ rows: Set<Int>) {
+        for row in WinampModernPlaylistSelection.removalOrder(rows) { playlistRemove(row: row) }
+    }
 }
 
 /// A live library browser embedded in a `.wal` skin's holder.

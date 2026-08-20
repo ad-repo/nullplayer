@@ -11,6 +11,9 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     private let engine: AudioEngine
     private let eqLayout = EQConfiguration.classic10
     private var selectedRow = -1
+    /// The multi-row selection `PE_SEL`/`PE_REM` work on. `selectedRow` is its anchor — a plain click
+    /// collapses both to one row, which is what every other list in the app does.
+    private var selectedRows: Set<Int> = []
 
     /// The `.wal` window's current UI Size, read live so a scale change needs no re-creation.
     var skinScaleProvider: (() -> CGFloat)?
@@ -38,12 +41,32 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         }
         return WinampModernPlaylistSnapshot(rows: rows,
                                             currentIndex: engine.currentIndex,
-                                            selectedIndex: selectedRow < rows.count ? selectedRow : -1)
+                                            selectedIndex: selectedRow < rows.count ? selectedRow : -1,
+                                            selectedRows: selectedRows.filter { $0 < rows.count })
     }
 
     func playlistSelect(row: Int) {
         guard row >= 0, row < engine.playlist.count else { return }
         selectedRow = row
+        selectedRows = [row]
+    }
+
+    func playlistSetSelection(_ rows: Set<Int>) {
+        let valid = rows.filter { $0 >= 0 && $0 < engine.playlist.count }
+        selectedRows = valid
+        // The anchor follows the selection: emptied by Select None, and pinned to the first row of
+        // whatever Select All or Invert just produced, so Delete and the skin's own readouts have a
+        // row to name.
+        selectedRow = valid.min() ?? -1
+    }
+
+    func playlistRemoveRows(_ rows: Set<Int>) {
+        let valid = Set(rows.filter { $0 >= 0 && $0 < engine.playlist.count })
+        guard !valid.isEmpty else { return }
+        let count = engine.playlist.count
+        for row in WinampModernPlaylistSelection.removalOrder(valid) { engine.removeTrack(at: row) }
+        selectedRow = WinampModernPlaylistSelection.selectionAfterRemoval(of: valid, count: count)
+        selectedRows = selectedRow >= 0 ? [selectedRow] : []
     }
 
     func playlistPlay(row: Int) {
@@ -56,6 +79,7 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         guard row >= 0, row < engine.playlist.count else { return }
         engine.removeTrack(at: row)
         if selectedRow >= engine.playlist.count { selectedRow = engine.playlist.count - 1 }
+        selectedRows = selectedRow >= 0 ? [selectedRow] : []
     }
 
     // MARK: - Equalizer (classic10)

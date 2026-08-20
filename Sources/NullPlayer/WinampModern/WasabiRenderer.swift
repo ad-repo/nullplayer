@@ -1883,17 +1883,50 @@ final class WasabiSceneRenderer {
     /// MMD3's `ShowVISBg` switches between all three and ships `mode="3"`, its own animated display,
     /// which is why an unrecognized mode must stay silent rather than paint over the skin's artwork.
     /// `setMode` writes the same attribute.
-    private enum VisualizationMode {
-        case oscilloscope, analyzer, off
+    /// The mode itself lives in `WasabiVisualizationMode` (`WinampModernHostActions.swift`), because
+    /// `VIS_NEXT`/`VIS_PREV`/`VIS_MENU` write the same attribute this reads — the drawing and the
+    /// host actions must not hold two ideas of what `mode="2"` means.
 
-        init(attribute: String?) {
-            switch attribute?.trimmingCharacters(in: .whitespaces) {
-            case "2": self = .oscilloscope
-            case "0", "3": self = .off
-            // A skin that declares no mode gets the analyzer, which is what a `<vis>` box is for.
-            default: self = .analyzer
-            }
+    // MARK: - The skin's own `<vis>` boxes, as the host actions see them
+
+    /// Every `<vis>` in the skin's graph — not only the ones in the active layout.
+    ///
+    /// Whole graph on purpose: a skin draws its visualization in several layouts (normal, shade,
+    /// and MMD3's drawer), and `VIS_NEXT` in one of them must not leave the others showing the mode
+    /// the user just stepped away from.
+    func visualizationObjects() -> [WasabiObject] {
+        loadedSkin.runtime.graph.allObjectsUnordered.filter {
+            $0.typeName.caseInsensitiveCompare("vis") == .orderedSame
         }
+    }
+
+    /// What the skin's visualization is showing, or `nil` when the skin declares no `<vis>` at all
+    /// (Defix, whose VIS buttons are a toolbar over the host's own visualization window).
+    var visualizationMode: WasabiVisualizationMode? {
+        guard let object = visualizationObjects().first else { return nil }
+        return WasabiVisualizationMode(attribute: object.attributes["mode"])
+    }
+
+    /// `wide` (Winamp's fat blocks) or `thin` (the full comb), the analyzer's only real option.
+    var analyzerBandwidthIsThin: Bool {
+        visualizationObjects().first?.attributes["bandwidth"]?.lowercased() == "thin"
+    }
+
+    @discardableResult
+    func setVisualizationMode(_ mode: WasabiVisualizationMode) -> Bool {
+        setVisualizationAttribute("mode", value: mode.attributeValue)
+    }
+
+    /// Write one attribute across every `<vis>`, reporting whether anything actually moved so the
+    /// caller can skip the repaint.
+    @discardableResult
+    func setVisualizationAttribute(_ name: String, value: String) -> Bool {
+        var changed = false
+        for object in visualizationObjects() where object.setAttribute(name, value: value) {
+            changed = true
+        }
+        if changed { invalidateSceneCache() }
+        return changed
     }
 
     /// How many bars the analyzer draws, per `bandwidth`. Winamp's analyzer is a row of **bands**,
@@ -1955,7 +1988,7 @@ final class WasabiSceneRenderer {
         context.saveGState()
         defer { context.restoreGState() }
         context.setAlpha(Self.alphaFraction(of: object))
-        switch VisualizationMode(attribute: object.attributes["mode"]) {
+        switch WasabiVisualizationMode(attribute: object.attributes["mode"]) {
         case .off:
             return
         case .analyzer:
@@ -2540,12 +2573,13 @@ final class WasabiSceneRenderer {
             let row = snapshot.rows[index]
             let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * playlistRowHeight,
                                  width: frame.width, height: playlistRowHeight)
-            if index == snapshot.selectedIndex {
+            let selected = snapshot.isSelected(index)
+            if selected {
                 context.setFillColor(palette.selectionBackground.cgColor)
                 context.fill(rowRect)
             }
             let color = row.isCurrent ? palette.currentText
-                : (index == snapshot.selectedIndex ? palette.selectionText : palette.listText)
+                : (selected ? palette.selectionText : palette.listText)
             let label = "\(index + 1). \(row.title)"
             drawSurfaceText(label, in: rowRect.insetBy(dx: 3, dy: 1), color: color,
                             alignment: .left, pointSize: font.pointSize, context: context)

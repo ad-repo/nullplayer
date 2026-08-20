@@ -111,10 +111,43 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       Residue: `<Wasabi:Text>` (3 declarations, Anexa) is a XUI type we do not draw as text at all,
       so its `valign` is moot until that type renders; `valign` on a `<layer>` (mmd3, ZDL) is inert
       here as in Wasabi
-- [ ] **B5. The `VIS_*` / `PE_*` / `VID_*` / `CB_*` host actions.** `VIS_MENU`/`_NEXT`/`_PREV`/`_CFG`
+- [x] **B5. The `VIS_*` / `PE_*` / `VID_*` / `CB_*` host actions.** ~~`VIS_MENU`/`_NEXT`/`_PREV`/`_CFG`
       (16 uses), `PE_ADD`/`_REM`/`_SEL`/`_MISC`/`_LIST` (33), `VID_FS`/`_TV`/`_MISC` (14),
-      `CB_NEXT`/`_PREV` (12). Each is a few lines against machinery NullPlayer already has, and each
-      is a button a user can press. Do them as one batch and re-run the click probe per skin
+      `CB_NEXT`/`_PREV` (12)~~ — **closed in Phase 39.** The corpus scan puts the demand higher than
+      recorded: **108 declarations in 11 of the 17 skins** (`VIS_*` 27 in 5, `PE_*` 39 in 7, `VID_*`
+      28 in 5 — the count had missed `VID_1X`/`VID_2X` entirely — and `CB_*` 14 in 4). Decoded in one
+      place (`WinampModernHostAction`), so what we answer and what we do not is a list rather than a
+      scattering of `case` labels. Four parts:
+      1. **`VIS_*`** — `VIS_NEXT`/`VIS_PREV` step *the visualization the user is looking at*: the
+         visualization window's presets when it is open (which is what Defix's Previous/Next pair
+         beside a Presets button is asking for), otherwise the mode of the skin's own `<vis>` boxes,
+         analyzer → oscilloscope → off, written to **every** `<vis>` in the graph so a skin's other
+         layouts are not left on the mode the user just stepped away from. `VIS_MENU` is that list
+         plus the host's Visualizations menu; `VIS_CFG` the options of the current one; `VIS_FS`
+         opens the visualization window fullscreen.
+      2. **`PE_*`** — Winamp's five playlist menus, against the shared `AudioEngine`: the same calls
+         the classic playlist window's ADD/REM/SEL/MISC/LIST buttons make. `PE_LISTOFLISTS` is the
+         same menu as `PE_LIST`.
+      3. **A multi-row selection**, which `PE_SEL`'s Select All / Invert and `PE_REM`'s Crop need and
+         the embedded playlist did not have: `playlistSetSelection` / `playlistRemoveRows` on the host
+         seam, `selectedRows` on the snapshot (defaulted from the anchor, so every existing caller
+         and test is unchanged), and the renderer highlights all of them. `selectedIndex` is still the
+         anchor a click, the Delete key and a script mean by "the selection".
+      4. **`VID_FS` / `VID_MISC`** — the video window's fullscreen and **its own context menu** (audio
+         and subtitle pickers included), popped under the skin's button. Both inert with no video
+         window: there is nothing to make fullscreen, and an empty one is a black rectangle.
+      Three families are **accepted and inert with a recorded reason** rather than approximated:
+      `VID_1X`/`VID_2X` (nothing in our video window reads a native size to scale from),
+      `VID_TV` (no internet-TV source) and `CB_*` (a `componentbucket` here holds no icons to
+      scroll) — each records itself once in the skin's diagnostics, so the demand shows up in a
+      compatibility report instead of reading as a dead button of unknown cause.
+      Verified with the click probe, which gained a **`CLICK markup action:`** line for exactly this:
+      a plain toolbar button has no script, so its seven handler counts are all zero and its `action=`
+      *is* its whole behaviour — the probe could not see it at all. micro's five playlist buttons,
+      Love is War Miku's four VIS and five VID buttons now report the family that answers them
+      (`host=playlistAdd`, `host=inert(no internet TV source in NullPlayer)`, …). 17 new unit tests.
+      Residue: presenting an `NSMenu` runs AppKit's own tracking loop, so the menus themselves are
+      covered by their commands' tests and not headlessly, the same boundary Phase 36 drew
 - [ ] **B6. `default_visible="1"` on an auxiliary container.** Defix's `Config` window opens *with*
       the skin in Winamp; here it is only reachable. The attribute is parsed nowhere — the window
       controller has the seam already (it can force a container visible for the harness)

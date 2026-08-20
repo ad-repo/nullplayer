@@ -4,7 +4,7 @@ final class WinampModernMainView: NSView {
     let renderer: WasabiSceneRenderer
     let scripts: WinampModernScriptRuntime
     let host: WinampModernHost
-    private weak var componentHost: WinampModernComponentHost?
+    weak var componentHost: WinampModernComponentHost?
     /// Live library surfaces by holder id. Typed, so each one can be told about a palette change, a
     /// UI Size change, and its own teardown (Phase 13.8).
     private var librarySurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
@@ -1160,7 +1160,15 @@ final class WinampModernMainView: NSView {
         case "TRACKMENU":
             showTrackMenu(from: object)
         // (`opensMainMenu` is the same decision, spelled once, for a test that cannot open a menu.)
-        default: break
+        //
+        // Winamp's four host-action families — the visualization, the playlist editor, the video
+        // window and the component bucket — are decoded and routed in
+        // `WinampModernHostActionMenus.swift` (backlog B5): 108 declarations across 11 of the 17
+        // measured skins, each of them a button whose click used to end here.
+        default:
+            if let action, let hostAction = WinampModernHostAction(action: action) {
+                performHostAction(hostAction, object: object)
+            }
         }
     }
 
@@ -1185,7 +1193,7 @@ final class WinampModernMainView: NSView {
     ///
     /// `atMouse` is what a right-click menu wants — Winamp pops it where the click was, and a
     /// song-title ticker is wide enough that its top-left corner is nowhere near the pointer.
-    private func popUpMenu(_ menu: NSMenu, from object: WasabiObject?, atMouse: Bool = false) {
+    func popUpMenu(_ menu: NSMenu, from object: WasabiObject?, atMouse: Bool = false) {
         guard menu.numberOfItems > 0 else { return }
         let location: NSPoint
         if let frame = object.flatMap({ renderer.frame(of: $0) }), !atMouse {

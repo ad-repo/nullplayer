@@ -1,6 +1,6 @@
 # Winamp Modern (`.wal`) — State of the Work
 
-- **Date:** 2026-08-19
+- **Date:** 2026-08-20
 - **Branch:** `feat/winamp-modern` (~69 commits ahead of `main`)
 - **Phases completed:** 0A/0B, then 2–33 — **all closed.** What is still open is one ranked list:
   [open-items.md](open-items.md)
@@ -157,7 +157,10 @@ want of Layer FX, which Phase 29 shipped). It has one home:
   whether they actually animate has never been seen. Auxiliary containers do not install their own
   repaint hooks — a mutation in a speaker window repaints the *main* view — which is the likeliest
   reason they would still look dead (`docs/winamp-modern/phase-29-handoff.md` §4).
-- Playlist ADD/REM/SEL/MISC skin menus are inert; auxiliary `default_visible="1"` is not honoured.
+- Auxiliary `default_visible="1"` is not honoured. (The playlist ADD/REM/SEL/MISC/LIST menus, and the
+  visualization and video toolbars beside them, are **implemented as of Phase 39** — 108 button
+  declarations across 11 of the 17 skins; `VID_1X`/`2X`, `VID_TV` and `CB_*` are accepted and inert
+  with a recorded reason.)
 
 **Overall maturity: experimental but genuinely functional.** Nine real third-party skins load, render,
 script, and respond to input; the two most demanding ones (cPro-Bento with its plugin engine, and the

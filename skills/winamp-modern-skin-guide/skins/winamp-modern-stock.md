@@ -15,6 +15,10 @@ whole client area is built at runtime by `standardframe.maki` from its `content=
 - **The titlebar** — title centred on the window with a decorative streak flanking it either side, at
   every width. Phase 24, and the last of this skin's error-severity findings: the skin now loads at
   `degraded`, not `unsupported`.
+- **Its host-action toolbars** (Phase 39) — 22 declarations, the widest demand in the corpus: the
+  playlist window's ADD / REM / SEL / MISC / LIST (and its `PE_LISTOFLISTS`, which opens the same
+  menu), the visualization window's Fullscreen / Prev / Next / Menu, and the video window's
+  Fullscreen / Options.
 
 ### The titlebar streaks: laid out by the script, not by the markup
 
@@ -58,6 +62,10 @@ Measured after the fix: at 354px the left streak is 20–152, the title 152–20
   inventing lookup semantics for a 1px decorative sliver; measured and left alone.
 - Its EQ drawer's crossfade and EQ buttons shift 14px once `onResize` runs — the layout its own script
   computes, and invisible until the drawer is opened.
+- The config drawer's `cb_nextpage`/`cb_prevpage` scroll arrows, and the video window's `VID_1X` /
+  `VID_2X` / `VID_TV`, are accepted and inert with a recorded reason (Phase 39): its
+  `<componentbucket>` holds no icons here, and our video window has neither native-size sizing nor an
+  internet-TV source.
 
 ### Role in the implementation
 

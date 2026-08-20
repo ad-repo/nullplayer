@@ -943,7 +943,9 @@ class ContextMenuBuilder {
         return visItem
     }
 
-    private static func buildVisualizationsMenu() -> NSMenu {
+    /// Internal, not private: a `.wal` skin's `VIS_MENU` button carries this same menu, so the two
+    /// routes to the visualization cannot drift apart.
+    static func buildVisualizationsMenu() -> NSMenu {
         let visMenu = NSMenu()
         visMenu.autoenablesItems = false
         

@@ -41,6 +41,11 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
   GUID), its layout's `minimumSize`/`maximumSize`, and whether NullPlayer synthesized it.
 - `WinampModernComponentHost` is the sandboxed seam supplying app-side content per kind;
   `WinampModernComponentBridge` implements it over `AudioEngine` and owns the embedded library.
+- The embedded playlist carries **two** selections since Phase 39: `selectedIndex`, the *anchor* a
+  click and the Delete key mean, and `selectedRows`, the set `PE_SEL`'s Select All / Invert and
+  `PE_REM`'s Crop work on (`playlistSetSelection` / `playlistRemoveRows`). A click collapses both to
+  one row. Both new calls have protocol defaults over the single-row ones, so a host without a
+  selection model of its own — every test fake — still conforms.
 
 There is **one** script runtime and **one** component host per loaded skin, shared by the main window
 and every auxiliary container window. Only the main view (`drivesScripts: true`) owns the *global*

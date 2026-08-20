@@ -638,6 +638,26 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             print("CLICK toggled \(target.xmlID ?? "-") "
                                   + "activated=\(target.attributes["activated"] ?? "0")")
                         }
+                        // The object's **own** `action=`, decoded the way the view decodes it.
+                        // Every line above reports what the *scripts* did with a click; a plain
+                        // toolbar button has no script at all — its whole behaviour is this one
+                        // attribute, performed by the view — so the probe reported seven zero counts
+                        // and no action for a button that works. It also names the host-action family
+                        // the action falls into, which is what makes "is this button answered?"
+                        // (Phase 39's question, across 108 declarations) a one-run check.
+                        if let target, let raw = target.attributes["action"], !raw.isEmpty {
+                            let resolved = WasabiClickAction.split(action: raw,
+                                                                   parameter: target.attributes["param"])
+                            let family = WinampModernHostAction(action: resolved.action)
+                            let routing: String
+                            switch family {
+                            case .none: routing = ""
+                            case .inert(_, let reason)?: routing = " host=inert(\(reason))"
+                            case .some(let action): routing = " host=\(action)"
+                            }
+                            print("CLICK markup action: \(resolved.action) "
+                                  + "param=\(resolved.parameter ?? "-")" + routing)
+                        }
                         // The other two action attributes: a command on the second click or the
                         // right button. The view performs these, so like the toggle above they are
                         // mirrored rather than dispatched — a titlebar mousetrap's `SWITCH;shade`

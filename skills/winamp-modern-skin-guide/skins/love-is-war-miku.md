@@ -35,6 +35,11 @@ embedded (a second panel over the same box, swapped by `maineq.maki`). Compatibi
   artwork. `bandwidth`, `peaks`, `peakfalloff`, `falloff` and `coloring` all arrive from its script.
 - **Transport, PL/EQ/ML/VD buttons, shuffle, repeat, minimize, close**, the EQ panel swap, and the
   `notifier` windows.
+- **The visualization and video windows' toolbars** (Phase 39): `VIS_FS`/`_PREV`/`_NEXT`/`_MENU` at
+  the bottom of the `avs` container and `VID_FS`/`VID_MISC` in the `video` one. The VIS arrows step
+  the visualization window's presets when it is up and this skin's own `<vis>` mode otherwise; the
+  video Options button opens the video window's own menu. Twelve of this skin's buttons; five of them
+  were the whole toolbar of a window.
 
 ### Not implemented / knowingly wrong
 
@@ -50,6 +55,8 @@ embedded (a second panel over the same box, swapped by `maineq.maki`). Compatibi
   preferences window itself has never been driven in a GUI session.
 - The `avs` container maps to the visualization component and shows a bounded neutral backing, not an
   AVS engine — there is no AVS.
+- **`VID_1X` / `VID_2X` / `VID_TV`** are accepted and inert, each recording its reason once (Phase
+  39): our video window has no native-size sizing to scale from, and there is no internet-TV source.
 
 ### Traps this skin sets
 
