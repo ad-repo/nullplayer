@@ -194,11 +194,41 @@ moved. The window controller drives it from its host-state hooks (track change, 
 clock tick), which is exactly when a bound readout can change. Literals are deliberately excluded: a
 `<text text="Add">` cannot change, and firing for one would be a lie.
 
-The first observation seeds the cache without firing, so a skin is not told its readouts "changed"
-before it has drawn once.
+The **first observation of real content fires too**. Winamp raises the event when a readout goes from
+nothing to something, and a skin whose readouts are written only from this handler has no other way to
+learn its opening value — seeding silently (the first thing this code did) meant a queue that was
+already populated before the first poll never produced a change, so the readouts stayed blank for the
+whole session. Empty content still says nothing.
 
 **Why this matters more than it looks:** Defix's playlist box writes its `Items:` and `Time:` readouts
 from a subroutine whose only caller is `onTextChanged`. Reading the disassembly carelessly makes it
 look like `onTimer` work — the two handlers are adjacent, and `op25` is a **call** into the shared
 block, not a jump within one handler. Undispatched, the whole readout was unreachable code.
 
+#### The equalizer tells the skin it moved
+
+`onEqBandChanged(band, value)` and `onEqPreampChanged(value)` are the EQ's `onVolumeChanged`: Winamp
+raises them whenever the equalizer moves, **whoever** moved it. Five of the 17 skins handle them
+(multipass, mmd3, Rika, winampmodern566, Overdrive_2) and each drives its own EQ readout from nowhere
+else, so before Phase 41 those readouts followed the skin's own drag and no other route.
+
+`WinampModernScriptRuntime.refreshEqualizerState()` is the single funnel and it dispatches **only what
+changed**. Everything comes through it — the skin's slider drag, `System.setEqBand`/`setEqPreamp`
+(which announce themselves as `setVolume` does), the skin's preset menu, `EQ_AUTO`, every
+playback-state hook, and a 1 Hz safety poll beside `refreshBoundText`. The poll is what catches the
+routes nothing calls back on: a preset applied from the menu bar, the classic equalizer window's
+sliders, a restored session. As with `onTextChanged`, the first observation announces rather than
+seeding silently.
+
+Two things the corpus pins down and a reimplementation must not guess:
+
+- **The value is MAKI's −127…127**, the scale `getEqBand` answers in — Rika slices a region map at
+  `128 - value` and would read off the end of the image on any other. `band` is **0-based**; the XML
+  `param=` on an `EQ_BAND` control is **1-based** (`WinampModernEQAction` owns that conversion, and it
+  is the reason all three of the renderer, the view and the script bridge decode through one place).
+- **Some skins never read the arguments.** multipass's eleven `ledfillbar` bars re-read their
+  `parentslider`'s position from the handler instead, so every `EQ_BAND`/`EQ_PREAMP` slider's 0…255
+  position is synced from the host *before* the events go out. The renderer has always drawn the thumb
+  from the host; this is the script's view of it catching up.
+
+Drive it headlessly with `WINAMP_MODERN_RENDER_EQ` — see [harness.md](harness.md).

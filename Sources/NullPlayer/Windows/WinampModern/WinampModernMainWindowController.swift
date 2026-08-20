@@ -858,6 +858,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// is `onTextChanged`, so without this the box never leaves its XML placeholders.
     private func refreshBoundText() { skinView?.scripts.refreshBoundText() }
 
+    /// Poll the equalizer and raise `onEqBandChanged`/`onEqPreampChanged` for whatever moved.
+    ///
+    /// On the same beat as the bound text and for the same reason: nothing calls back when a preset
+    /// is applied, when the classic EQ window's slider moves, or when a saved session is restored, and
+    /// a skin's EQ readout is written from those events and nowhere else. Eleven integer compares.
+    private func refreshEqualizerState() { skinView?.scripts.refreshEqualizerState() }
+
     /// A slow safety poll for the host-bound readouts.
     ///
     /// The event hooks above cover playback, but the playlist's own length and duration change on
@@ -867,7 +874,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// moved.
     private func startBoundTextPolling() {
         boundTextTimer?.invalidate()
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.refreshBoundText() }
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            self?.refreshBoundText()
+            self?.refreshEqualizerState()
+        }
         RunLoop.main.add(timer, forMode: .common)
         boundTextTimer = timer
     }

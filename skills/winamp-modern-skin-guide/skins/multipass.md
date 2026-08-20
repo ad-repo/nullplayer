@@ -58,14 +58,17 @@ A **seventh** gap only became visible once the abort was gone: nothing in the en
   opens NullPlayer's context menu. Phase 33 — it was inert, along with the `CONTROLMENU` version its
   Carbon style and its playlist window use.
 
+- The drawer's eleven `ledfillbar` EQ bars follow **every** EQ change as of Phase 41 — a preset, the
+  menu bar, the classic equalizer window, a restored session — not just the skin's own slider drags.
+  They ignore the event's arguments and re-read their `parentslider`'s position, which is why the
+  engine syncs every `EQ_BAND`/`EQ_PREAMP` slider's position before dispatching. 14 `ledfillbar`
+  programs answer each event (`WINAMP_MODERN_RENDER_EQ=3=100,preamp=-64`).
+
 ### Not implemented / knowingly wrong
 
 - **The Color Themes drawer's fourth button** (`action="TOGGLE" param="{53DE6284-…}"`, "Open Color
   Theme List in Preferences") routes to the host popup menu — there is no Winamp preferences dialog to
   open. The in-drawer list is the real route and it works.
-- **`onEqBandChanged` / `onEqPreampChanged` are not dispatched** (engine-wide). The drawer's eleven
-  `ledfillbar` EQ bars follow the skin's own slider drags but not an EQ change made from the menu bar
-  or another window.
 - **`onKeyDown` is not dispatched** (engine-wide); the skin declares a handler for it.
 - Its display reads at the right height as of Phase 38: 13 `valign="top"` texts on a bitmap-font
   sheet (`player.bitmapfont.display.*`) — song name, action info, time, playlist rows. That path was

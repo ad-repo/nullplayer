@@ -45,6 +45,7 @@ concept; read the one your symptom points at, not all of them.
 | Slow, stuttering, CPU high, repaint storm | [reference/performance.md](reference/performance.md) |
 | A script does nothing, wrong arity, unknown method, script-built UI missing | [reference/scripting.md](reference/scripting.md) |
 | A host-fed readout never updates (`onTextChanged`) | [reference/scripting.md](reference/scripting.md) |
+| An EQ readout follows the skin's own slider but not a preset, the menu bar or another window | [reference/scripting.md](reference/scripting.md) — *The equalizer tells the skin it moved* |
 | A slider drags but nothing happens, or its readout never appears | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the action families, and `onSetPosition` on a drag |
 | Playlist / EQ / library / video surface missing, empty, or in the wrong window | [reference/components.md](reference/components.md) |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
@@ -104,6 +105,7 @@ verbatim; it just lives in a reference file now.
 | Asking a skin what it actually shipped | [reference/scripting.md](reference/scripting.md) |
 | Track metadata the skins actually read | [reference/scripting.md](reference/scripting.md) |
 | `onTextChanged` is how a skin learns a host readout moved | [reference/scripting.md](reference/scripting.md) |
+| The equalizer tells the skin it moved | [reference/scripting.md](reference/scripting.md) |
 | `TOGGLE`'s parameter is a component **or a container id** | [reference/components.md](reference/components.md) |
 | `default_visible="1"` — the windows a skin opens with itself | [reference/components.md](reference/components.md) |
 | Component hosting | [reference/components.md](reference/components.md) |

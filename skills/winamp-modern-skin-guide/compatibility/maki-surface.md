@@ -60,7 +60,8 @@ By area:
   and asking that layer whether it is invalid
 - **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **skin pixels**, the same units as a mouse event's
   x/y), `getEQ`, `getEqBand`/`setEqBand` and `getEqPreamp`/`setEqPreamp` (MAKI's −127…127 scale ↔ the
-  engine's ±12 dB), `atan`
+  engine's ±12 dB), `atan`. Both setters **announce the change** (`onEqBandChanged` /
+  `onEqPreampChanged`, Phase 41) exactly as `setVolume` does
 - **`List`**: `addItem`, `enumItem`, `getNumItems`, `removeItem`, `removeAll`, `findItem` (objects
   match by identity, other values by string form); bounded at 4096 items.
   **`BitList`**: `setSize`, `getSize`, `setItem`, `getItem` — same backing store, holding flags
@@ -277,11 +278,11 @@ By area:
 | `onPostedPosition`, `onSetPosition`, `onTargetReached`, `onAction`, `onEqFreqChanged`, `onGetCancelComponent` | yes | — |
 | `onToggle` | yes | from `setActivated` **and, since Phase 33, from a user click**: a togglebutton flips its own `activated` and then notifies, as in Wasabi. Until then the only sender was a script talking to itself, so a togglebutton a person clicked was inert however completely the skin implemented it — multipass's bottom drawer opens from this event and from nothing else. `setActivatedNoCallback` is the deliberate silent write. A `cfgattrib`-bound control is excluded: the stored preference *is* its state, and it has `onDataChanged` as its route |
 | `onKeyDown` (4) | **no** | needs a first-responder seam. Measured demand beyond ClassicPro: multipass, Defix, Rika, T800, winampmodern566 (Phase 33 corpus scan) — still no reported symptom behind it |
-| `onEqBandChanged` / `onEqPreampChanged` | **no** | the EQ change has no script-facing notification yet. Measured demand: multipass, mmd3, Rika, winampmodern566, Overdrive_2 — each drives its own EQ readout (multipass's `ledfillbar` bars) from it, so those bars follow the skin's own slider drags but not a change made anywhere else. Owed work, recorded in Phase 33 |
+| `onEqBandChanged(band, value)` / `onEqPreampChanged(value)` | yes (Phase 41) | whoever moved the equalizer: the skin's own slider, `System.setEqBand`/`setEqPreamp`, a preset, `EQ_AUTO`, the menu bar, the classic equalizer window, a restored session. One funnel (`refreshEqualizerState()`), dispatching only what changed, driven from every playback-state hook and a 1 Hz safety poll; the first observation announces, so a readout written only from this handler learns its opening value. `band` is 0-based (the XML `param=` is 1-based); `value` is MAKI's −127…127, the scale `getEqBand` answers in — Rika slices a region map at `128 - value`. Every `EQ_BAND`/`EQ_PREAMP` slider's position is synced **before** the events go out, because multipass's eleven `ledfillbar` bars ignore both arguments and re-read their `parentslider` |
 | `onDock` / `onUndock` (3 / 3) | **no** | no docked-state model for `.wal` windows |
 | `onShowLayout` / `onHideLayout` (2 / 2) | **no** | shade↔normal transitions |
 | `onMouseWheelUp` / `Down` (2 / 2) | **no** | the wheel is consumed by the embedded playlist |
-| `onCreateLayout`, `onTextChanged`, `onNotify`, `onOpenUrl` (1–2 each) | **no** | minor |
+| `onCreateLayout`, `onNotify`, `onOpenUrl` (1–2 each) | **no** | minor. `onTextChanged` *is* dispatched — see the bullet above this table |
 
 **Script events callable as methods.** A script may invoke one of its own handlers directly to reuse
 it (`slidercb.onSetPosition(slidercb.getPosition())`). Only events with a known arity are callable —

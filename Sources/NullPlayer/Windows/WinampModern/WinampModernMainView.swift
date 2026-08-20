@@ -823,6 +823,9 @@ final class WinampModernMainView: NSView {
             lastPostedVolume = postedVolume
             _ = try? scripts.dispatchSystem(event: "onvolumechanged", arguments: [.integer(postedVolume)])
         }
+        // An equalizer change made outside the skin — a preset, the menu bar, the classic EQ window,
+        // a restored session — reaches the scripts on the same beat, and only when it moved.
+        scripts.refreshEqualizerState()
         for object in renderer.loadedSkin.runtime.graph.objects(xmlID: "HiddenVolume") {
             _ = try? scripts.dispatch(object: object, event: "onpostedposition",
                                       arguments: [.integer(postedVolume)])
@@ -995,6 +998,9 @@ final class WinampModernMainView: NSView {
            let componentHost {
             // ±12 dB through the host, which is the same value the thumb is drawn from.
             eq.apply(normalized: normalized, to: componentHost)
+            // …and the skin hears its own equalizer move, as it does in Winamp. Before `notePosition`
+            // below, so the drag's own position is the last thing written to this slider.
+            scripts.refreshEqualizerState()
         } else if WinampModernPanAction.matches(action: object.attributes["action"]) {
             // The balance slider. The engine's unit is −1…+1 and the slider's is 0…1; both
             // conversions live in `WinampModernPanAction` so the thumb cannot disagree with the drag.
@@ -1115,6 +1121,8 @@ final class WinampModernMainView: NSView {
         case "EQ_AUTO":
             if let componentHost {
                 componentHost.equalizerSetAuto(!componentHost.equalizerSnapshot().auto)
+                // Switching auto-EQ on applies the track's genre preset, which moves every band.
+                scripts.refreshEqualizerState()
                 needsDisplay = true
             }
         case "EQ_PREAMP", "EQ_BAND":
@@ -1342,6 +1350,8 @@ final class WinampModernMainView: NSView {
     @objc private func applyEqualizerPreset(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         componentHost?.equalizerApplyPreset(named: name)
+        // A preset moves ten bands and the preamp at once; the skin hears every one of them.
+        scripts.refreshEqualizerState()
         WindowManager.shared.refreshWinampModernSurfaces()
         needsDisplay = true
     }

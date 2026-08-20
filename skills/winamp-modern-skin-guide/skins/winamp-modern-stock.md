@@ -62,6 +62,11 @@ Measured after the fix: at 354px the left streak is 20–152, the title 152–20
   reading at all; stacking every window under the player put the album art two windows down from where
   it belongs.
 
+- **Its EQ drawer follows the equalizer** (Phase 41) — `configdrawer.xml` handles both
+  `onEqBandChanged` and `onEqPreampChanged`, and they are dispatched now, so the drawer's display
+  follows a preset, the menu bar, the classic equalizer window and a restored session as well as its
+  own sliders.
+
 ### Not implemented or knowingly wrong
 
 - The 1px `window.titlebar.title.overlay` layer keeps its declared slot instead of being stretched over

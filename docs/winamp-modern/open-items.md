@@ -183,11 +183,37 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
 
 ## Tier 2 — real work, several skins each
 
-- [ ] **B7. Dispatch `onEqBandChanged` / `onEqPreampChanged` (5 skins:** multipass, mmd3, Rika,
-      winampmodern566, Overdrive_2**).** Their EQ readouts — multipass's eleven `ledfillbar` bars —
+- [x] **B7. Dispatch `onEqBandChanged` / `onEqPreampChanged` (5 skins:** multipass, mmd3, Rika,
+      winampmodern566, Overdrive_2**).** ~~Their EQ readouts — multipass's eleven `ledfillbar` bars —
       follow the skin's own drags but not a change made from the menu bar, a preset, or another
-      window. Needs a host→script notification on the EQ path, which is the same shape as
-      `onVolumeChanged`
+      window~~ — **closed in Phase 41.** Four parts:
+      1. **The arities, measured** (`RENDER_DISASM=@<xml>` on all five): `onEqBandChanged(band, value)`
+         opens with two argument stores in every one of them, `onEqPreampChanged(value)` with one. Both
+         are registered in `dispatchableEventArity`, so a script may also *call* its own handler to
+         reuse it, as MMD3 already does with `onSetPosition`.
+      2. **The value scale, measured too.** Rika slices a region map at `128 - value`
+         (`loadFromMap` → `setRegion`), which pins it to MAKI's −127…127 — the same scale `getEqBand`
+         has answered in since Phase 21, so a skin's readout and its own query cannot disagree.
+      3. **One funnel, `WinampModernScriptRuntime.refreshEqualizerState()`**, dispatching only what
+         actually moved. Every route goes through it: the skin's own slider drag, `System.setEqBand` /
+         `setEqPreamp` (which announce themselves exactly as `setVolume` does), the skin's preset menu,
+         `EQ_AUTO`, every playback-state hook, and a 1 Hz safety poll beside `refreshBoundText` — which
+         is what catches the routes that call back nowhere: a preset, the menu bar, the classic
+         equalizer window, a restored session. Eleven integer compares, and silent when nothing moved.
+         The first observation *does* announce, because a skin whose readout is written from this
+         handler has no other way to learn its opening value (the rule `onTextChanged` already follows).
+      4. **The sliders a skin reads instead of the event.** multipass's eleven `ledfillbar` bars ignore
+         both arguments and re-read their `parentslider`'s position, so every `EQ_BAND`/`EQ_PREAMP`
+         slider's 0…255 position is synced from the host **before** the events go out. The renderer has
+         always drawn the thumb from the host; this is the *script's* view of it catching up.
+      Verified in the harness with a new probe, `WINAMP_MODERN_RENDER_EQ=<band>=<value>[,…]`, which
+      drives an equalizer change from outside the skin and prints the handlers it reached: all five
+      skins answer (multipass 14 `ledfillbar` programs per event, mmd3 `skin.xml` — band only, it
+      handles no preamp event — Rika `eq.xml`, winampmodern566 `configdrawer.xml`, Overdrive_2
+      `scripts.xml`), and the driven band lands on the right slider (band 3 → `param="4"`, since the
+      XML parameter is 1-based). 9 new unit tests.
+      Residue: the drawn LED bars themselves are a GUI check — the app was confirmed to load and run
+      multipass with the poll live, but "drag the classic EQ, watch the skin's bars follow" is manual QA
 - [ ] **B8. The playlist-editor script API** (`getCurrentIndex`, `getNumTracks`, `playTrack`,
       `removeTrack`, `showTrack`, `getMetaData`, …). Defix's known `getcurrentindex` gap is one of
       these; it surfaces on interaction rather than at load, which is why it reads as an intermittent

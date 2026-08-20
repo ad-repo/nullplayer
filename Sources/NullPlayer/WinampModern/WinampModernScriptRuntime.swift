@@ -241,6 +241,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // for the only feedback it has: Love is War Miku's `+`/`-` buttons show "Volume: 40%" on the
         // song ticker from this handler and clear it a moment later.
         "onvolumechanged": 1,
+        // The equalizer's two, on the same footing: Winamp raises them whenever a band or the preamp
+        // moves, whoever moved it. Arities read off the five skins that handle them (multipass, mmd3,
+        // Rika, winampmodern566, Overdrive_2) — every one of them opens `onEqBandChanged` with two
+        // stores and `onEqPreampChanged` with one.
+        "oneqbandchanged": 2,
+        "oneqpreampchanged": 1,
         // The Phase 24 additions. ClassicPro calls all of these as methods as well as receiving them:
         // `beat.m`'s own `frameGroup.onResize(0, 0, w, h)` re-solves its geometry after a change it
         // made itself, `tagviewer.m` does the same, and a script that reuses its `onSetVisible` or
@@ -554,8 +560,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     @discardableResult
     func dispatchSystem(event: String, arguments: [MakiValue] = []) throws -> Int {
-        try dispatch(target: MakiObjectReference(.system), event: event, arguments: arguments)
+        if recordsDispatchedEventsForTesting {
+            dispatchedSystemEventsForTesting.append((event.lowercased(), arguments))
+        }
+        return try dispatch(target: MakiObjectReference(.system), event: event, arguments: arguments)
     }
+
+    /// Test seam, off with the one above: the *system* events the runtime sent, with their arguments.
+    /// A system event goes to whichever programs bind it, so unlike an object dispatch there is no
+    /// receiver to assert against — the arguments are the whole observable.
+    private(set) var dispatchedSystemEventsForTesting: [(event: String, arguments: [MakiValue])] = []
 
     /// Last content dispatched for each host-bound text object, so `onTextChanged` fires on a *change*
     /// rather than on every poll.
@@ -594,6 +608,78 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             guard !content.isEmpty else { continue }
             _ = try? dispatch(object: object, event: "ontextchanged", arguments: [.string(content)])
         }
+    }
+
+    /// Last equalizer values announced to the scripts, on MAKI's −127…127 scale. `nil` before the
+    /// first observation, which is what makes the opening state an announcement rather than silence.
+    private var lastDispatchedEQBands: [Int]?
+    private var lastDispatchedEQPreamp: Int?
+
+    /// Test seam: what the scripts were last told the equalizer was.
+    var lastDispatchedEqualizerForTesting: (bands: [Int]?, preamp: Int?) {
+        (lastDispatchedEQBands, lastDispatchedEQPreamp)
+    }
+
+    /// Raise `onEqBandChanged(band, value)` / `onEqPreampChanged(value)` for whatever moved, and put
+    /// the skin's own EQ sliders on the new value first.
+    ///
+    /// Winamp raises these whenever the equalizer moves, *whoever* moved it — a preset, the menu bar,
+    /// another window, the skin's own slider — and a skin's readout is written from nowhere else.
+    /// multipass's eleven `ledfillbar` bars are the measured case: each one re-reads its
+    /// `parentslider`'s position from this handler, which is why the slider positions are synced
+    /// **before** the events go out. Rika and winampmodern566 use the value itself (Rika slices a
+    /// region map at `128 - value`), so it must be the same −127…127 scale `getEqBand` answers in.
+    ///
+    /// One funnel for every route, and it dispatches only on an actual change: `System.setEqBand`
+    /// comes through here too, so a skin that sets a band from its own handler cannot be told about
+    /// its own write twice, and a poll costs eleven integer compares.
+    func refreshEqualizerState() {
+        guard !isTornDown else { return }
+        guard let bandValue = equalizerBandRequested else { return }
+        let bands = (0..<WinampModernEQAction.bandCount).map { bandValue($0) }
+        let preamp = equalizerPreampRequested?() ?? 0
+        let previousBands = lastDispatchedEQBands
+        let previousPreamp = lastDispatchedEQPreamp
+        guard previousBands != bands || previousPreamp != preamp else { return }
+        lastDispatchedEQBands = bands
+        lastDispatchedEQPreamp = preamp
+        var movedSlider = false
+        if previousPreamp != preamp {
+            movedSlider = syncEqualizerSliders(for: .preamp, value: preamp) || movedSlider
+        }
+        for (index, value) in bands.enumerated() where previousBands?.indices.contains(index) != true
+            || previousBands?[index] != value {
+            movedSlider = syncEqualizerSliders(for: .band(index), value: value) || movedSlider
+        }
+        if movedSlider { notifyGraphDidMutate() }
+        if previousPreamp != preamp {
+            _ = try? dispatchSystem(event: "oneqpreampchanged",
+                                    arguments: [.integer(Int32(clamping: preamp))])
+        }
+        for (index, value) in bands.enumerated() where previousBands?.indices.contains(index) != true
+            || previousBands?[index] != value {
+            _ = try? dispatchSystem(event: "oneqbandchanged",
+                                    arguments: [.integer(Int32(index)), .integer(Int32(clamping: value))])
+        }
+    }
+
+    /// Write the 0…255 position of every slider bound to `action`, so a script that reads the slider
+    /// rather than the event (multipass's fillbars) sees the change too. The renderer already draws
+    /// an EQ slider's thumb from the host, so this is the *script's* view of it catching up.
+    /// Returns whether anything moved.
+    private func syncEqualizerSliders(for action: WinampModernEQAction, value: Int) -> Bool {
+        // −127…127 → 0…255, through the same ±12 dB midpoint the renderer and the drag use.
+        let position = String(Int32(((Double(max(-127, min(127, value))) + 127) / 254 * 255).rounded()))
+        var moved = false
+        for object in loadedSkin.runtime.graph.allObjectsUnordered
+        where object.typeName.caseInsensitiveCompare("slider") == .orderedSame {
+            guard WinampModernEQAction.decode(action: object.attributes["action"],
+                                              parameter: object.attributes["param"]) == action else { continue }
+            guard object.attributes["value"] != position else { continue }
+            _ = object.setAttribute("value", value: position)
+            moved = true
+        }
+        return moved
     }
 
     /// Test seam, off by default: the GUI events the runtime sent, in order. The difference between
@@ -1805,6 +1891,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .integer(Int32(clamping: equalizerBandRequested?(Int(arguments[0].integerValue)) ?? 0))
         case "seteqband":
             equalizerBandSetterRequested?(Int(arguments[0].integerValue), Int(arguments[1].integerValue))
+            // The change is what a skin listens for, exactly as `setVolume` announces itself. The
+            // funnel dispatches only on a real change, so a handler that writes the band it was just
+            // told about stops there rather than recursing.
+            refreshEqualizerState()
             return .null
         // The preamp is the band before band 0, on the same −127…127 scale. Rika's `eq.xml` reads it
         // while wiring its own equalizer window, and the miss aborted that whole script.
@@ -1812,6 +1902,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .integer(Int32(clamping: equalizerPreampRequested?() ?? 0))
         case "seteqpreamp":
             equalizerPreampSetterRequested?(Int(arguments[0].integerValue))
+            refreshEqualizerState()
             return .null
         case "getruntimeversion": return .integer(5)
         case "getskinname": return .string(preferenceNamespace)

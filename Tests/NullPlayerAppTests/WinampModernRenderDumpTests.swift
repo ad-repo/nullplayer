@@ -96,6 +96,58 @@ final class WinampModernRenderDumpTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
 
+        // WINAMP_MODERN_RENDER_EQ=<band>=<value>[,…] drives an equalizer change from *outside* the
+        // skin — the route the app takes when a preset, the menu bar or the classic equalizer window
+        // moves it — and reports the handlers it reached. `band` is 0…9 or `preamp`; `value` is
+        // MAKI's −127…127. Bare `1` sweeps every band. Without it the harness installs no equalizer at
+        // all, so `System.getEqBand` answers 0 and the events never fire (Phase 41).
+        if let spec = env["WINAMP_MODERN_RENDER_EQ"] {
+            var bands = Array(repeating: 0, count: WinampModernEQAction.bandCount)
+            var preamp = 0
+            runtime.equalizerBandRequested = { bands.indices.contains($0) ? bands[$0] : 0 }
+            runtime.equalizerBandSetterRequested = { band, value in
+                guard bands.indices.contains(band) else { return }
+                bands[band] = value
+            }
+            runtime.equalizerPreampRequested = { preamp }
+            runtime.equalizerPreampSetterRequested = { preamp = $0 }
+            // Seed silently: the opening state is announced once, and what this probe is asking about
+            // is the *change* the skin is told about afterwards.
+            runtime.refreshEqualizerState()
+            if spec.trimmingCharacters(in: .whitespaces) == "1" {
+                for index in bands.indices { bands[index] = index % 2 == 0 ? 96 : -96 }
+                preamp = 48
+            } else {
+                for entry in spec.split(separator: ",") {
+                    let parts = entry.split(separator: "=", maxSplits: 1).map {
+                        $0.trimmingCharacters(in: .whitespaces)
+                    }
+                    guard parts.count == 2, let value = Int(parts[1]) else { continue }
+                    if parts[0].lowercased() == "preamp" { preamp = value }
+                    else if let band = Int(parts[0]), bands.indices.contains(band) { bands[band] = value }
+                }
+            }
+            let previousObserver = runtime.dispatchObserver
+            runtime.dispatchObserver = { event, program, failure in
+                guard event == "oneqbandchanged" || event == "oneqpreampchanged" else { return }
+                print("EQ handler \(event) -> \((program.source.path as NSString).lastPathComponent)"
+                      + (failure == nil ? "" : " !FAILED: "
+                         + failure!.diagnostics.map(\.message).joined(separator: "; ")))
+            }
+            runtime.refreshEqualizerState()
+            runtime.dispatchObserver = previousObserver
+            print("EQ drove preamp=\(preamp) bands=\(bands)")
+            // What a skin reads *instead* of the event: multipass's fillbars re-read their slider.
+            for object in loaded.runtime.graph.allObjectsUnordered
+            where object.typeName.caseInsensitiveCompare("slider") == .orderedSame
+                && WinampModernEQAction.decode(action: object.attributes["action"],
+                                               parameter: object.attributes["param"]) != nil {
+                print("EQ slider \(object.xmlID ?? "-") action=\(object.attributes["action"] ?? "-")"
+                      + " param=\(object.attributes["param"] ?? "-")"
+                      + " position=\(object.attributes["value"] ?? "-")")
+            }
+        }
+
         // WINAMP_MODERN_RENDER_SETTINGS lists what the skin registered with `newAttribute` — the
         // options Winamp shows in its preferences dialog and a skin often binds no control to. It is
         // the only way to see, without a GUI, what the host's Skin Settings window will offer

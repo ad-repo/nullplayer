@@ -131,10 +131,11 @@ head of it, so a reader of this file does not have to go looking:
 | ~~B4~~ | ~~`valign` ignored — text is always vertically centred~~ — **closed in Phase 38**: decoded for both draw paths, and the bitmap-font path (which was pinned to the box's top edge) centres by default | ~~every skin's text~~ — the scan found **63 uses in 9 skins**, 54 of them `top` |
 | ~~B5~~ | ~~`VIS_*` / `PE_*` / `VID_*` / `CB_*` host actions inert~~ — **closed in Phase 39**: the five visualization, five playlist and two video commands implemented; `VID_1X`/`2X`, `VID_TV` and `CB_*` accepted and inert with a recorded reason | ~~75 button uses~~ — the scan found **108 uses in 11 skins** |
 | ~~B6~~ | ~~`default_visible="1"` not honoured on auxiliary containers~~ — **closed in Phase 40**: honoured as a *default* the user's own choice overrides, placed by `default_x`/`default_y`, with a notifier and an empty `<browser>` frame suppressed and recorded | ~~Defix's `Config`~~ — the scan found **10 containers in 8 of the 17 skins** |
-| B7 | `onEqBandChanged` / `onEqPreampChanged` never dispatched | 5 skins' EQ readouts |
+| ~~B7~~ | ~~`onEqBandChanged` / `onEqPreampChanged` never dispatched~~ — **closed in Phase 41**: one funnel that dispatches only what moved, on every route including a 1 Hz poll for the ones nothing calls back on, with the skins' own EQ sliders synced first | ~~5 skins' EQ readouts~~ — all five answer under `RENDER_EQ` |
+| B8 | The playlist-editor script API (`getCurrentIndex`, `getNumTracks`, `playTrack`, …) | Defix's known gap, and every skin that drives its own list |
 | B10 | No CI cover for the render sweep (see §6 — still the biggest process gap) | all |
 
-The pattern worth noticing across B1–B6: each is a **single attribute or policy** that nothing reads,
+The pattern worth noticing across B1–B7: each is a **single attribute or policy** that nothing reads,
 and each makes a *visible* control dead in several skins at once. That is what the demand index is
 for — one of these outranks any amount of work on a widget only one skin declares.
 
