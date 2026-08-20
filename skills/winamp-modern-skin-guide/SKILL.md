@@ -45,6 +45,7 @@ concept; read the one your symptom points at, not all of them.
 | Slow, stuttering, CPU high, repaint storm | [reference/performance.md](reference/performance.md) |
 | A script does nothing, wrong arity, unknown method, script-built UI missing | [reference/scripting.md](reference/scripting.md) |
 | A host-fed readout never updates (`onTextChanged`) | [reference/scripting.md](reference/scripting.md) |
+| A slider drags but nothing happens, or its readout never appears | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the action families, and `onSetPosition` on a drag |
 | Playlist / EQ / library / video surface missing, empty, or in the wrong window | [reference/components.md](reference/components.md) |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
 | An auxiliary window draws once then freezes; a script's `onTimer` changes nothing on screen | [reference/components.md](reference/components.md) |
@@ -145,6 +146,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Colour theme picker (`<ColorThemes:List>`) | `WasabiColorThemeList.swift`, `WasabiRenderer.swift` |
 | Style for NullPlayer-drawn surfaces | `WinampModernSurfaceStyle.swift` |
 | EQ action decoding | `WinampModernEQActions.swift` |
+| Balance (`PAN`) unit conversion | `WinampModernPanAction.swift` |
 | Diagnostics | `WalDiagnostics.swift` |
 | Compatibility report | `WinampModernCompatibilityReport.swift` |
 | Complete loader | `WinampModernSkinLoader.swift` |

@@ -27,7 +27,9 @@ the right tab opens volume/balance and four window buttons.
   (`scripts/equalizer.m`).
 - **Right drawer** — volume and balance sliders; dragging either **hijacks the song ticker** to read
   `Volume: 72%` / `Balance: 30% Left` for 750 ms (`scripts/playerConsoleRight.m`) — plus the Color
-  Themes, cat, playlist and library buttons.
+  Themes, cat, playlist and library buttons. Both halves of that arrived in Phase 37: `PAN` drives
+  the engine's balance, and a drag dispatches `onSetPosition`, which is the event the ticker takeover
+  hangs off.
 - **The Color Themes and cat buttons** (Phase 34). They carry no `action` at all: their entire
   behaviour is `getContainer("colorthemes").toggle()` / `getContainer("ujolaCat").toggle()`, and
   `Container.toggle()` was unimplemented, so a fail-closed dispatch abandoned the one-statement

@@ -37,9 +37,15 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   attributes. `TRACKINFO` opens a File Info **sheet** for the playing track (never a modal run loop:
   the action is script-reachable); `TRACKMENU` opens a track menu — File Info / Copy Title / Reveal in
   Finder — at the pointer. Distinct from `SYSMENU`, which is the host's main menu
-- Button actions still **inert**, measured across the 17 installed skins: `PAN` (6, the balance
-  slider); the playlist, video and visualization command families `PE_*`, `VID_*`, `VIS_*`, `CB_*`;
-  `WA5:Prefs` (winampmodern566 — a Winamp preferences page, and there is no dialog to open)
+- **`PAN`** (Phase 37) — the balance slider, 8 declarations in 7 of the 17 skins (multipass ships a
+  real slider and a ghosted LED twin over the same rect). The drag writes `AudioEngine`'s balance and
+  the thumb is **drawn from it**, not from the object's `value=`, so a balance changed anywhere else
+  moves the skin's slider and two stacked balance sliders cannot show different positions.
+  `WinampModernPanAction` owns both directions of the −1…+1 ↔ 0…1 conversion. Balance is deliberately
+  not persisted, so the slider starts centred each launch
+- Button actions still **inert**, measured across the 17 installed skins: the playlist, video and
+  visualization command families `PE_*`, `VID_*`, `VIS_*`, `CB_*`; `WA5:Prefs` (winampmodern566 — a
+  Winamp preferences page, and there is no dialog to open)
 - Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
   and vertical), text, `clipchildren` parent clipping
 - Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups. A

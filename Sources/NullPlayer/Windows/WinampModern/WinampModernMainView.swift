@@ -995,15 +995,33 @@ final class WinampModernMainView: NSView {
            let componentHost {
             // ±12 dB through the host, which is the same value the thumb is drawn from.
             eq.apply(normalized: normalized, to: componentHost)
-            needsDisplay = true
-            return
+        } else if WinampModernPanAction.matches(action: object.attributes["action"]) {
+            // The balance slider. The engine's unit is −1…+1 and the slider's is 0…1; both
+            // conversions live in `WinampModernPanAction` so the thumb cannot disagree with the drag.
+            host.balance = WinampModernPanAction.balance(normalized: normalized)
+        } else {
+            switch object.attributes["action"]?.lowercased() {
+            case "seek": host.seek(to: host.duration * normalized)
+            case "volume": host.volume = normalized
+            default: break
+            }
         }
-        switch object.attributes["action"]?.lowercased() {
-        case "seek": host.seek(to: host.duration * normalized)
-        case "volume": host.volume = normalized
-        default: _ = object.setAttribute("value", value: String(Int(normalized * 255)))
-        }
+        // Wasabi moves the object's own position on a drag and tells the skin about it, whatever the
+        // slider drives. Skins hang their only feedback off that: multipass's balance and crossfade
+        // sliders print "Balance: Left +40%" on the song ticker from `onSetPosition` and nowhere else.
+        notePosition(normalized, on: object)
         needsDisplay = true
+    }
+
+    /// Record a slider's 0…255 position and dispatch `onSetPosition` — but only when the integer
+    /// position actually moved, which is what Wasabi does and what keeps a pair of sliders that write
+    /// each other's position from their own handler out of an endless round trip.
+    private func notePosition(_ normalized: CGFloat, on object: WasabiObject) {
+        let position = Int32((normalized * 255).rounded())
+        guard object.attributes["value"] != String(position) else { return }
+        _ = object.setAttribute("value", value: String(position))
+        _ = try? scripts.dispatch(object: object, event: "onsetposition",
+                                  arguments: [.integer(position)])
     }
 
     private func performAction(for object: WasabiObject) {

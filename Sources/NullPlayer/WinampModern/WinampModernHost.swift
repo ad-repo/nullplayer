@@ -6,6 +6,11 @@ protocol WinampModernHost: AnyObject {
     var currentTime: TimeInterval { get }
     var duration: TimeInterval { get }
     var volume: Double { get set }
+    /// Stereo balance, −1 hard left … 0 centre … +1 hard right — what a skin's `action="PAN"` slider
+    /// drives. Winamp's own unit is the slider's 0…255 position with 127/128 at the centre; the
+    /// conversion lives at the two edges (the drag and the thumb) so the host stays in the engine's
+    /// unit.
+    var balance: Double { get set }
     var shuffleEnabled: Bool { get set }
     var repeatEnabled: Bool { get set }
     var trackTitle: String { get }
@@ -50,6 +55,12 @@ protocol WinampModernHost: AnyObject {
 
 extension WinampModernHost {
     var albumArtwork: CGImage? { nil }
+    // A host with no mixer to pan (the render harness, a test double) reads centred and swallows the
+    // write, the same way `vuLevels` reads silence — a `PAN` slider still draws, at its centre.
+    var balance: Double {
+        get { 0 }
+        set {}
+    }
     var isArtworkLoading: Bool { false }
     var vuLevels: (left: Double, right: Double) { (0, 0) }
     var trackDisplayTitle: String { trackTitle }
@@ -151,6 +162,10 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     var volume: Double {
         get { Double(engine.volume) }
         set { engine.volume = Float(max(0, min(1, newValue))) }
+    }
+    var balance: Double {
+        get { Double(engine.balance) }
+        set { engine.balance = Float(max(-1, min(1, newValue))) }
     }
     var shuffleEnabled: Bool {
         get { engine.shuffleEnabled }

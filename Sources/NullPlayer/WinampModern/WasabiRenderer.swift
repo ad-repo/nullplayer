@@ -2034,6 +2034,11 @@ final class WasabiSceneRenderer {
             normalized = CGFloat(host.volume)
         } else if action == "seek", host.duration > 0 {
             normalized = CGFloat(host.currentTime / host.duration)
+        } else if WinampModernPanAction.matches(action: action) {
+            // Read back from the host, not from the drag, so a balance changed anywhere else moves
+            // the skin's thumb — and so a skin that draws two balance sliders (multipass ships a real
+            // one and a ghosted LED twin over it) cannot show two different positions.
+            normalized = WinampModernPanAction.normalized(balance: host.balance)
         } else if let eq = WinampModernEQAction.decode(action: object.attributes["action"],
                                                        parameter: object.attributes["param"]),
                   let snapshot = componentHost?.equalizerSnapshot() {

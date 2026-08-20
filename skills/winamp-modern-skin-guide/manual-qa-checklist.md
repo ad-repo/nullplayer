@@ -124,6 +124,10 @@ For each of the three fixtures:
       disabled for a stream
 - [ ] Seek slider scrubs, and the position display tracks it
 - [ ] Volume slider changes output level and is clamped at both ends
+- [ ] **Balance slider** pans the audio and is centred when the skin opens (corneramp's and
+      Itemskin's EQ windows, mmd3's and Ujola Cat's drawers, multipass, winampmodern566's EQ drawer,
+      ZDL's advanced EQ). In multipass and Ujola Cat the song ticker also reads out the position
+      while you drag it
 - [ ] Repeat and shuffle toggles reflect and change real state
 - [ ] Ticker/marquee and elapsed-time text update during playback
 

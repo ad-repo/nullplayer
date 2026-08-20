@@ -311,7 +311,10 @@ a whole script):
   library's own `sendMessage`/`onMessage` pair rides on, so without it every internal script-to-script
   message in a skin was silently dropped. Phase 24
 - `setPosition` fires `onSetPosition` **only on a change**. Skins pair two sliders that write each
-  other's position from that handler.
+  other's position from that handler. A **user drag** goes through the same rule (Phase 37): the view
+  writes the dragged slider's 0…255 `value=` and dispatches `onSetPosition` with it, so a skin whose
+  only feedback is that handler — multipass prints "Balance: Left +40%" on its song ticker from it —
+  works under the mouse and not only under a script.
 - Event dispatch is **re-entrancy guarded** per (object, event): the interpreter's own call-depth
   budget cannot see native recursion through dispatch, and an unguarded pair overflowed the stack.
 

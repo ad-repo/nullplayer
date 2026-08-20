@@ -69,9 +69,24 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       Verified with `RENDER_CLICK`, which now prints `CLICK dblclickaction:` / `CLICK rightclickaction:`
       for the object it hits. Residue: winampmodern566's `dblclickaction="WA5:Prefs" dblclickparam="42"`
       is decoded and inert — it addresses a Winamp preferences page we have no dialog for
-- [ ] **B3. `PAN` — the balance slider (6 skins).** `updateSlider` already handles `SEEK` and
-      `VOLUME`; this is the third case, against `AudioEngine`'s balance. Near-trivial, and it is a
-      control the user can see doing nothing
+- [x] **B3. `PAN` — the balance slider.** ~~`updateSlider` already handles `SEEK` and `VOLUME`; this
+      is the third case, against `AudioEngine`'s balance~~ — **closed in Phase 37.** The corpus scan
+      puts it at **8 declarations in 7 of the 17 skins** (multipass ships two — a real slider and a
+      ghosted LED twin over the same rect), all horizontal, none declaring `low`/`high`. Three parts:
+      1. **The drag** — `WinampModernPanAction` converts between the engine's −1…+1 balance and the
+         slider's 0…1 position, and both edges go through it, so the thumb and the drag cannot
+         disagree about where the centre is.
+      2. **The thumb** — the renderer values a `PAN` slider from `host.balance`, not from its own
+         `value=`, which is what makes a balance changed anywhere else move the skin's slider (and
+         what keeps multipass's two stacked balance sliders showing the same position). Before this
+         every balance slider in the corpus drew its thumb pinned at hard left.
+      3. **`onSetPosition` on a drag** — Wasabi moves the object's own 0…255 position when the user
+         drags it and tells the skin; nothing in the view did either, for *any* slider. Skins hang
+         their only feedback off that handler: multipass prints "Balance: Left +40%" on its song
+         ticker from it and nowhere else. Only an actual change notifies, as in Wasabi — skins pair
+         sliders that write each other's position from their own handler.
+      Residue: `AudioEngine.balance` is deliberately not persisted, so a skin's balance slider starts
+      centred on each launch, as the rest of the app does
 - [ ] **B4. `valign` in `drawText`.** Text is always vertically centred. Defix's songticker asks for
       `valign="top"`, its cassette labels for `center`. Cheap, and text placement is visible in every
       skin — worth a sweep afterwards
