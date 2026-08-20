@@ -62,7 +62,8 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
     and subtitle tracks included), popped under the skin's button. Both are inert with no video
     window, because there is nothing to make fullscreen
 - Button actions **accepted and inert**, each recorded once in the skin's diagnostics with its reason
-  (Phase 39): `VID_1X`/`VID_2X` (NullPlayer's video window has no native-size sizing to scale from),
+  (Phase 39): `VID_1X`/`VID_2X` (NullPlayer's video window has no native-size sizing to scale from —
+  backlog **B20**, hosting the player in the skin's own video window, is what would give it one),
   `VID_TV` (no internet-TV source), `CB_NEXT`/`CB_PREV`/`CB_NEXTPAGE`/`CB_PREVPAGE` (a
   `componentbucket` here holds no icons to scroll); `WA5:Prefs` (winampmodern566 — a Winamp
   preferences page, and there is no dialog to open)

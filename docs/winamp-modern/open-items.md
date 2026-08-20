@@ -181,6 +181,37 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       multi-click run
 - [ ] **B12. `setScale`** — the configurator's seven 100–300% window-scaling buttons are inert.
       Decide first whether it drives our own UI Size or a skin-local scale; the two must not fight
+- [ ] **B20. Host the video player in the skin's own video window.** Five of the 17 skins (Love is
+      War Miku, Itemskin, multipass, Ujola Cat, winampmodern566) declare a full `<container
+      id="video">` — chrome, a `ledstatusbar`, and the 28 `VID_*` buttons B5 answered — and it is
+      **decoration over an empty box**. Play a video from the library in this mode and NullPlayer's
+      own `VideoPlayerWindowController` opens somewhere else on screen; the skin's window stays shut
+      and is never told. This is the same gap `.library` had before Phase 13.8, and the fix has the
+      same shape:
+      1. **The seam** — `makeVideoSurface()` on `WinampModernComponentHost`, returning a typed handle
+         (view, palette, scale, teardown) exactly as `makeLibrarySurface()` does, with the bridge
+         owning it so it survives a layout switch that removes and re-adds the holder's subview.
+      2. **The drawing and the input** — `<component param="{F0816D7B-…}">` resolves to `.video`
+         today and gets a flat neutral fill (`WasabiSceneRenderer.drawComponent`), while clicks over
+         the holder are swallowed (`WinampModernMainView.mouseDown`, `case .library, .visualization,
+         .video, .other: return`). Both need the `.library` treatment: a live AppKit subview placed
+         at the holder's frame by `reconcileHostedSurfaces`, and the holder's own input left to it.
+      3. **The routing** — `WindowManager.showVideoPlayer(url:title:)` / `playMovie` / `playEpisode`
+         have **no mode branch at all**; compare `showPlaylist`, which asks the skin first through
+         `routeWinampModernSurface`. They need the same first question, and
+         `WinampModernSurfaceCoordinator`'s catalog needs a real `.video` target instead of falling
+         through its `default:` to `.classicFallback` — which is also why
+         `WindowManager.showClassicSurfaceForWinampModern` ignores `.video` today.
+      4. **Lifetime** — the video window is currently *mode-independent* and deliberately preserved
+         across `reloadUI` (see CLAUDE.md). A surface hosted inside a `.wal` window is not: it has to
+         be torn down before its view leaves the hierarchy, and playback has to survive (or be
+         explicitly abandoned at) a live skin or mode switch. Decide that before writing the seam.
+      5. **Casting** — `showVideoPlayer` returns *early* when a cast device is active and opens
+         nothing locally. A skin surface must not resurrect a local window in that case.
+      Payoff beyond the five skins: `VID_1X` / `VID_2X` (12 declarations, accepted and inert since
+      Phase 39) become implementable, because a hosted surface finally has a native size to scale
+      from — nothing in our video window reads `presentationSize` today. Numbered B20 but sits in
+      Tier 2 by size; it is the largest single piece of "the skin draws it, we don't fill it" left
 
 ## Tier 3 — narrow, latent, or a decision rather than code
 
