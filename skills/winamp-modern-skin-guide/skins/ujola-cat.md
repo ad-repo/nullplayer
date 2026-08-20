@@ -52,6 +52,11 @@ the right tab opens volume/balance and four window buttons.
 - Double-clicking the song ticker is `trackinfo`; the scrubber seeks; shuffle / repeat / crossfade are
   the three round buttons under it.
 
+- **The cat and the playlist editor open with the skin** (Phase 40). `ujolaCat` (`default_x="0"
+  default_y="0"`) and `PLEdit` (`default_visible="1" default_x="0" default_y="383"`) both declare it,
+  which is why this skin looked like a console with its companion window missing: the cat is not an
+  optional extra, it is half the skin.
+
 ### Not implemented / knowingly wrong
 
 - **`<eqvis>` ignores `gammagroup`** — deliberately. `xml/player-console-left.xml` carries the

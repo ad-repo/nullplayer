@@ -150,6 +150,11 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   `param` is a **container id**, and **it works — confirmed live 2026-08-19.** Markup
   `TOGGLE param=<container id>` opens the window. It cannot be measured headlessly at all (see the
   trap below), so the harness is silent on it, not negative.
+- **`Config` and `pledit` open *with* the skin** (Phase 40, B6): both declare `default_visible="1"`,
+  which nothing read until now, and both are on screen at load — **confirmed live 2026-08-20**, the
+  configurator with its nine switches and seven scaling buttons and the playlist editor with its
+  queue. Closing either one is remembered, per skin, so a configurator you dismiss does not come back
+  at the next launch. Defix's `notifier` declares `default_visible="0"` and is unaffected.
 - **The speaker cones do not animate, and the cabinets render very dark — confirmed live 2026-08-19.**
   What is measured about it so far:
   - `SPEAKER.maki` **is bound**, twice, one per cabinet (two programs whose handler set is exactly

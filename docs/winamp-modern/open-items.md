@@ -148,9 +148,38 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       (`host=playlistAdd`, `host=inert(no internet TV source in NullPlayer)`, …). 17 new unit tests.
       Residue: presenting an `NSMenu` runs AppKit's own tracking loop, so the menus themselves are
       covered by their commands' tests and not headlessly, the same boundary Phase 36 drew
-- [ ] **B6. `default_visible="1"` on an auxiliary container.** Defix's `Config` window opens *with*
-      the skin in Winamp; here it is only reachable. The attribute is parsed nowhere — the window
-      controller has the seam already (it can force a container visible for the harness)
+- [x] **B6. `default_visible="1"` on an auxiliary container.** ~~Defix's `Config` window opens *with*
+      the skin in Winamp; here it is only reachable. The attribute is parsed nowhere~~ — **closed in
+      Phase 40.** The corpus scan puts the demand at **10 containers in 8 of the 17 skins**, not one:
+      Defix's `Config` *and* its `pledit`, winampmodern566's `Pledit` + `winamp.albumart`, Ujola Cat's
+      `PLEdit` + `ujolaCat`, ZDL's `EQ` + `thinger`, Overdrive_2's `Pledit`, plus the two suppressed
+      cases below. Four parts:
+      1. **The attribute** — decoded in `WinampModernContainerTopology` with everything else a
+         container declares (`opensByDefault`), applied by the controller right after
+         `scriptsDidStart()` so a window that opens at load is told `onSetVisible` with its geometry
+         already dispatched, and opened **non-activating** — the player belongs in front after a load.
+      2. **A default, not a command** — what the user last decided about that window wins over it
+         (`opensAtLoad(opensByDefault:remembered:)`), stored in the **skin's own** namespaced
+         configuration, so a settings window they closed does not reopen at every launch. That was the
+         objection that kept this unimplemented for eight phases, and it is answered rather than
+         accepted. Only explicit routes record — a menu item, a skin button, a close box; a script's
+         own `show()`/`hide()` describes this run, not the next one.
+      3. **`default_x` / `default_y`** — the arrangement the skin ships. Winamp reads them as desktop
+         coordinates around a player at the origin, so they are applied relative to the *player's own*
+         declared origin, in skin pixels, y flipped, scaled by UI Size (`arrangedOrigin`). Winamp
+         Modern's playlist lands beside the player and its album art under that, instead of every
+         window stacking below the player as before.
+      4. **Two suppressions**, each recorded once in the skin's diagnostics and neither of them
+         blocking the window (menu, skin button and script still open it): a `notifier`/`tooltip`
+         container (Winamp's track-change toaster is driven by a host subsystem we do not implement —
+         Love is War Miku's would sit on screen all session reading "Nothing / Next track"), and a
+         container holding a `<browser>` (Rika's and T800's 860×704 "HOME" window, which the sandboxed
+         engine opens as an empty frame).
+      Verified live on Defix 2026-08-20 — configurator and playlist editor both on screen at launch —
+      and in the harness, which now opens a `default_visible` window itself and prints
+      `DEFAULT-VISIBLE <id> suppressed: <reason>` for one it will not. 7 new unit tests.
+      Residue: the *user's* half of the persistence (close it, relaunch, it stays closed) is covered by
+      its precedence and storage tests rather than by a GUI run
 
 ## Tier 2 — real work, several skins each
 

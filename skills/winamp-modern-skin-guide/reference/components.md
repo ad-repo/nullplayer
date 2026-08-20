@@ -17,10 +17,43 @@ routing one: the skin ships `Disable Songticker Scrolling = 1`, its own `onDataC
 falls through to `containerWindowToggleRequested`, matching an auxiliary container by id
 (case-insensitively) — so a skin button and the View menu still resolve through the same windows.
 
-> **Gotcha:** an auxiliary container's `default_visible="1"` is not honoured — every one is
-> `orderOut` at setup and placed on first show. Defix's `Config` declares it, so in Winamp its
-> settings window opens with the skin and here it does not. Deliberate for now (a settings window
-> opening at every launch is worse), but it is a real difference.
+#### `default_visible="1"` — the windows a skin opens with itself
+
+An auxiliary container that declares it is on screen the moment the skin loads, in Winamp and here
+(Phase 40). The corpus: **10 containers in 8 of the 17 skins** — Defix's `Config` *and* its `pledit`,
+the stock Winamp Modern skin's `Pledit` + `winamp.albumart`, Ujola Cat's `PLEdit` + `ujolaCat`, ZDL's
+`EQ` + `thinger`, Overdrive_2's `Pledit`, Love is War Miku's `notifier`, Rika's and T800's
+`Warp Browser`. Four parts:
+
+- **The attribute** is decoded in `WinampModernContainerTopology` with everything else a container
+  declares (`opensByDefault`; the main player is always true whatever it says), and applied by the
+  controller right after `scriptsDidStart()` — so a window that opens at load is told `onSetVisible`
+  with its geometry already dispatched. It opens **non-activating**: the player is what should be in
+  front after a load, not the configurator behind it.
+- **It is a default, not a command.** What the user last decided about that window wins over it, so a
+  settings window they closed does not come back at every launch — which is why this sat unimplemented
+  for eight phases. The decision lives in the **skin's own namespaced configuration**
+  (`WinampModernConfiguration`, section `@nullplayer.windows`), so two skins that both ship a `Config`
+  window do not share one answer, and "never said" is distinguishable from "said no"
+  (`opensAtLoad(opensByDefault:remembered:)`). Only *explicit* routes record — a menu item, a skin
+  button, a close box. A script's own `show()`/`hide()` does not: a skin opening one of its windows
+  from a timer is describing this run, not the next one.
+- **`default_x` / `default_y`** place it. Winamp reads them as desktop coordinates around a player at
+  the origin; the player here is wherever the user left it, so they are applied **relative to the
+  player's own** `default_x`/`default_y`, in skin pixels, y flipped, scaled by UI Size
+  (`arrangedOrigin`). Winamp Modern's playlist at `default_x="354"` lands beside the player and its
+  album art under that. A container that declares neither is stacked under whatever is already on
+  screen, as every auxiliary window was before.
+- **Two suppressions**, recorded in the skin's diagnostics rather than silently dropped
+  (`defaultVisibilitySuppression`), and neither of them blocks the window — the menu, a skin button and
+  the skin's own script still open it:
+  - **`hostManagedTransient`** — a `notifier` or `tooltip` container. Winamp's track-change toaster is
+    driven by a host subsystem we do not implement, so honouring Love is War Miku's
+    `<container id="notifier" default_visible="1">` leaves a popup reading *"Nothing / Next track"* on
+    screen for the whole session. Matched on the id, which is the only name Wasabi gives these (there
+    is no notifier GUID) — and scoped to auto-opening, so a mis-match costs nothing visible.
+  - **`emptyBrowser`** — a container holding a `<browser url=…>`. The engine is sandboxed and loads no
+    network content, so Rika's and T800's 860×704 "HOME" window would open as an empty frame.
 
 ### Component hosting
 

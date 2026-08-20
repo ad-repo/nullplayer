@@ -121,19 +121,38 @@ final class WinampModernRenderDumpTests: XCTestCase {
             .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
             .filter { !$0.isEmpty })
         if env["WINAMP_MODERN_RENDER_FX"] != nil || !shownContainers.isEmpty {
+            // `default_visible="1"` opens a window with the skin in the app (B6), so the harness sees
+            // the same set: a probe that measured Defix's configurator as closed was measuring a
+            // state the app no longer starts in.
+            // `windowContainers`, not `analyze`: the app only opens containers that are real
+            // windows, so a collapsed SUI stub that declares the attribute is not one of them.
+            let defaultVisibleContainers = WinampModernContainerTopology
+                .windowContainers(graph: loaded.runtime.graph)
+                .filter { $0.opensByDefault && !$0.isMainPlayer }
+            for info in defaultVisibleContainers {
+                guard let suppression = WinampModernContainerTopology
+                    .defaultVisibilitySuppression(of: info) else { continue }
+                print("DEFAULT-VISIBLE \(info.id) suppressed: \(suppression.reason)")
+            }
+            let defaultVisible = Set(defaultVisibleContainers
+                .filter { WinampModernContainerTopology.defaultVisibilitySuppression(of: $0) == nil }
+                .map { $0.id.lowercased() })
             for container in loaded.runtime.graph.roots
             where container.typeName.caseInsensitiveCompare("container") == .orderedSame {
                 let identifier = container.xmlID ?? ""
                 let isMain = identifier.caseInsensitiveCompare("main") == .orderedSame
+                let opensByDefault = defaultVisible.contains(identifier.lowercased())
                 let isShown = shownContainers.contains(identifier.lowercased())
                 runtime.notifyContainerVisibility(containerID: container.stableID,
-                                                  visible: isMain || isShown)
+                                                  visible: isMain || isShown || opensByDefault)
                 if isShown { print("SHOW \(identifier)") }
+                else if opensByDefault { print("SHOW \(identifier) (default_visible)") }
             }
             // A window that has just opened has not ticked yet: the timer `onSetVisible` starts is
             // the whole point of opening it, so settle *again* after the show or every probe below
             // measures the scene one frame after launch.
-            if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init), !shownContainers.isEmpty {
+            if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init),
+               !shownContainers.isEmpty || !defaultVisible.isEmpty {
                 RunLoop.current.run(until: Date().addingTimeInterval(settle))
             }
         }

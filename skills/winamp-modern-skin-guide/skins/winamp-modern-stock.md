@@ -54,6 +54,14 @@ Measured after the fix: at 354px the left streak is 20–152, the title 152–20
   previous and next all work. Its shade-layout arrows target a `<ColorThemes:Mgr>` rather than the
   list; they step the applied theme directly, so they work without it.
 
+- **Its playlist and album-art windows open with the skin, where the skin puts them** (Phase 40).
+  `Pledit` is `default_visible="1" default_x="354" default_y="0"` and `winamp.albumart` is
+  `default_visible="1" default_x="354" default_y="165" nomenu="1"` — measured from a player declared at
+  the origin, so both are placed relative to the player's actual top-left: the playlist beside it, the
+  album art under the playlist. This is the skin whose arrangement made `default_x`/`default_y` worth
+  reading at all; stacking every window under the player put the album art two windows down from where
+  it belongs.
+
 ### Not implemented or knowingly wrong
 
 - The 1px `window.titlebar.title.overlay` layer keeps its declared slot instead of being stretched over

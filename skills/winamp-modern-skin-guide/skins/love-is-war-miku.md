@@ -41,6 +41,13 @@ embedded (a second panel over the same box, swapped by `maineq.maki`). Compatibi
   video Options button opens the video window's own menu. Twelve of this skin's buttons; five of them
   were the whole toolbar of a window.
 
+- **Its `notifier` window is the one `default_visible="1"` we refuse** (Phase 40). The skin ships
+  `<container id="notifier" dynamic="1" default_visible="1" nomenu="1">`, and honouring it here would
+  leave a toaster reading *"Nothing / Next track"* on screen for the whole session: Winamp's notifier
+  is driven by a host subsystem NullPlayer does not implement, so nothing would ever hide it again.
+  Suppressed as `hostManagedTransient`, recorded in the skin's diagnostics, and still openable from
+  the Skin Windows menu.
+
 ### Not implemented / knowingly wrong
 
 - **`fliph` on `<vis>`** — a left-click on the same invisible trigger toggles it in the skin's script,

@@ -24,6 +24,16 @@ struct WinampModernContainerInfo {
     /// True when NullPlayer synthesized this container because the skin declared no window for a
     /// surface it needs (Phase 13.2). Skin-declared containers are always false.
     let isSynthesized: Bool
+    /// The skin's `default_visible="1"`: this window opens **with the skin**, not on first request.
+    /// Defix's configurator says exactly this, and so does its playlist editor. The main player is
+    /// always visible whatever it declares; every other container defaults to closed, which is what
+    /// Winamp does with an auxiliary container that declares nothing.
+    let opensByDefault: Bool
+    /// The skin's `default_x`/`default_y` — where this window sits in the arrangement the skin ships,
+    /// in skin pixels with y **downward**, as every Wasabi coordinate is. `nil` when the container
+    /// declares neither. Winamp reads these as desktop coordinates around a player at the origin; here
+    /// they are applied *relative to the main window*, which is not at 0,0 (see `place`).
+    let defaultOrigin: CGPoint?
 }
 
 /// How a skin lays its surfaces out. cPro-Bento embeds everything in one window; mmd3, CornerAmp,
@@ -37,6 +47,33 @@ struct WinampModernContainerInfo {
 enum WinampModernSurfaceArrangement: Equatable {
     case singleWindowSUI
     case separateWindows
+}
+
+/// Why a container that declares `default_visible="1"` is **not** opened with the skin anyway.
+///
+/// The attribute is honoured (Phase 40, B6) — but two kinds of window in the wild corpus declare it
+/// and would open here as something the user did not ask for and cannot use. Both are recorded in the
+/// skin's diagnostics rather than silently dropped, and neither is *blocked*: the window still opens
+/// from the Skin Windows menu, from a skin button, and from its own script, exactly as before.
+enum WinampModernDefaultVisibilitySuppression: String {
+    /// Winamp's track-change **notifier** (and its tooltip window): a toaster whose visibility is
+    /// driven by a host subsystem NullPlayer does not implement, not by the person using the player.
+    /// Love is War Miku ships `<container id="notifier" default_visible="1" nomenu="1">`, and opening
+    /// it at load leaves a popup reading "Nothing / Next track" on screen for the whole session.
+    case hostManagedTransient
+    /// A window whose content is Winamp's embedded **web browser** (`<browser url=…>`). The engine is
+    /// sandboxed and loads no network content, so Rika's and T800's 860×704 "HOME" window opens as an
+    /// empty frame. A window with nothing in it is worse than one the user opens deliberately.
+    case emptyBrowser
+
+    var reason: String {
+        switch self {
+        case .hostManagedTransient:
+            return "it is a host-managed notifier/tooltip window, and NullPlayer has no notifier"
+        case .emptyBrowser:
+            return "its content is a <browser>, which the sandboxed engine does not load"
+        }
+    }
 }
 
 /// Classifies a loaded skin's containers so the controller can decide, per P0B §3, between the
@@ -75,7 +112,9 @@ enum WinampModernContainerTopology {
                                  height: maximum.height > 0 ? maximum.height : .greatestFiniteMagnitude)
                         : nil,
                     kind: kind(of: container),
-                    isSynthesized: container.attributes[Self.synthesizedAttribute] == "1"
+                    isSynthesized: container.attributes[Self.synthesizedAttribute] == "1",
+                    opensByDefault: isMain || isTrue(container.attributes["default_visible"]),
+                    defaultOrigin: defaultOrigin(of: container)
                 )
             }
     }
@@ -100,6 +139,30 @@ enum WinampModernContainerTopology {
         guard !info.isMainPlayer, !info.isSynthesized, info.kind == nil else { return false }
         guard let name = info.object.attributes["name"], !name.isEmpty else { return false }
         return info.object.attributes["nomenu"] != "1"
+    }
+
+    /// Whether `default_visible="1"` should be *acted on* for this container, and why not when it
+    /// should not. `nil` means "open it", which is the answer for every container in the corpus that
+    /// is neither a notifier nor an empty browser frame.
+    static func defaultVisibilitySuppression(of info: WinampModernContainerInfo)
+        -> WinampModernDefaultVisibilitySuppression? {
+        guard info.opensByDefault, !info.isMainPlayer else { return nil }
+        // The id is the only name Wasabi gives these — there is no notifier component GUID to match
+        // on — and the corpus spells them exactly this way (`notifier`, `notifier.preferences`,
+        // `tooltip`). Scoped to auto-opening, so a mis-match costs nothing a user can see.
+        let identifier = info.id.lowercased()
+        for transient in ["notifier", "tooltip"] where identifier == transient
+            || identifier.hasPrefix(transient + ".") {
+            return .hostManagedTransient
+        }
+        if containsBrowser(info.object) { return .emptyBrowser }
+        return nil
+    }
+
+    /// Winamp's embedded web browser anywhere under the container.
+    private static func containsBrowser(_ object: WasabiObject) -> Bool {
+        if object.typeName.caseInsensitiveCompare("browser") == .orderedSame { return true }
+        return object.children.contains(where: containsBrowser)
     }
 
     /// The container's own display name, which is what the menu shows.
@@ -148,5 +211,22 @@ enum WinampModernContainerTopology {
     private static func isHidden(_ container: WasabiObject) -> Bool {
         let value = container.attributes["visible"]?.lowercased()
         return value == "0" || value == "false" || value == "no"
+    }
+
+    /// `default_x` / `default_y`, present only when the container declares at least one of them —
+    /// an axis it leaves out is 0, which is what Winamp uses for it.
+    private static func defaultOrigin(of container: WasabiObject) -> CGPoint? {
+        let x = container.attributes["default_x"].flatMap(Double.init)
+        let y = container.attributes["default_y"].flatMap(Double.init)
+        guard x != nil || y != nil else { return nil }
+        return CGPoint(x: x ?? 0, y: y ?? 0)
+    }
+
+    /// Wasabi's boolean spelling, the same set `autoopen` and `visible` are read with.
+    private static func isTrue(_ value: String?) -> Bool {
+        switch value?.lowercased() {
+        case "1", "true", "yes": return true
+        default: return false
+        }
     }
 }

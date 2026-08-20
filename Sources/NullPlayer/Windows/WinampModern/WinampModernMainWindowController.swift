@@ -29,6 +29,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         /// menu. Without the equivalent here they exist, render, and cannot be reached at all.
         let displayName: String
         let isListedInWindowMenu: Bool
+        /// `default_visible="1"`: this window opens with the skin unless the user has since closed
+        /// it (Phase 40, B6). Already net of the suppressions — a notifier and an empty browser frame
+        /// arrive here as `false`, with the reason recorded in the skin's diagnostics.
+        let opensByDefault: Bool
+        /// Where the skin's own arrangement puts this window, **relative to the player's** own
+        /// `default_x`/`default_y`, in skin pixels with y downward. `nil` when the skin says nothing,
+        /// which is when the window is stacked under whatever is already on screen instead.
+        let defaultOffset: CGPoint?
     }
 
     /// Every container this controller hosts, main included, addressed the way a script addresses it.
@@ -147,6 +155,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // `onSetVisible` (Defix's cassette reels) needs to be told.
             view.setSceneVisible(true)
             auxiliaryContainers.forEach { $0.view.setSceneVisible($0.window.isVisible) }
+            // …and then the windows the skin says open *with* it. After `scriptsDidStart`, so a
+            // window that opens at launch is told `onSetVisible` with its geometry already dispatched.
+            applyDefaultContainerVisibility()
             // After `start()`: the catalog is reconciled against the containers that actually opened,
             // and against the holders the skin's own scripts built while starting.
             makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
@@ -200,8 +211,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                                           host: WinampModernAudioEngineHost,
                                           scripts: WinampModernScriptRuntime,
                                           componentBridge: WinampModernComponentBridge) {
-        let containers = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
-            .filter { !$0.isMainPlayer }
+        let all = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
+        // The player's own declared spot is the origin the rest of the arrangement is measured from:
+        // a skin puts its playlist at `default_x="354"` *beside a player at 0*, and our player is
+        // wherever the user (or a restored session) left it.
+        let playerOrigin = all.first(where: \.isMainPlayer)?.defaultOrigin ?? .zero
+        let containers = all.filter { !$0.isMainPlayer }
         for info in containers {
             guard let renderer = try? WasabiSceneRenderer(loadedSkin: loaded, host: host,
                                                           containerID: info.id) else { continue }
@@ -231,10 +246,24 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             // The container's own `component=` GUID, not its id — `Pledit` and `MLibrary` only look
             // like their kinds by convention (`WinampModernContainerTopology.kind(of:)`).
+            // `default_visible="1"` on a window we cannot fill is recorded, once, rather than acted
+            // on — so a compatibility report says why Rika's HOME window did not open with the skin.
+            let suppression = WinampModernContainerTopology.defaultVisibilitySuppression(of: info)
+            if let suppression {
+                loaded.runtime.record(WalDiagnostic(
+                    .unsupportedElement,
+                    "container '\(info.id)' declares default_visible=\"1\" and is not opened with "
+                        + "the skin: \(suppression.reason).",
+                    severity: .warning))
+            }
             auxiliaryContainers.append(AuxiliaryContainer(
                 window: auxWindow, view: view, kind: info.kind, containerID: info.id,
                 displayName: WinampModernContainerTopology.displayName(of: info),
-                isListedInWindowMenu: WinampModernContainerTopology.isListedInWindowMenu(info)))
+                isListedInWindowMenu: WinampModernContainerTopology.isListedInWindowMenu(info),
+                opensByDefault: info.opensByDefault && suppression == nil,
+                defaultOffset: info.defaultOrigin.map {
+                    CGPoint(x: $0.x - playerOrigin.x, y: $0.y - playerOrigin.y)
+                }))
             viewsByContainer[view.containerID] = view
         }
     }
@@ -307,7 +336,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                     self?.auxiliaryContainers.first { $0.containerID == id }?.window
                 },
                 setVisible: { [weak self] id, visible in
-                    self?.setAuxiliaryWindow(id: id, visible: visible)
+                    // A menu item or a skin button asked: an explicit decision, remembered.
+                    self?.setAuxiliaryWindow(id: id, visible: visible, record: true)
                 },
                 classicFallback: { kind, showOnly in
                     WindowManager.shared.showClassicSurfaceForWinampModern(kind, showOnly: showOnly)
@@ -337,7 +367,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                                                            in: auxiliaryContainers.map(\.containerID)),
                   let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
             else { return false }
-            setAuxiliaryWindow(id: container.containerID, visible: !container.window.isVisible)
+            setAuxiliaryWindow(id: container.containerID, visible: !container.window.isVisible,
+                               record: true)
             return true
         }
         skinView?.containerWindowToggleRequested = toggleContainer
@@ -470,16 +501,77 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
-    private func setAuxiliaryWindow(id: String, visible: Bool) {
+    private func setAuxiliaryWindow(id: String, visible: Bool, record: Bool = false,
+                                    activate: Bool = true) {
         guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return }
         if visible {
             container.view.needsDisplay = true
             place(container)
-            container.window.makeKeyAndOrderFront(nil)
+            if activate {
+                container.window.makeKeyAndOrderFront(nil)
+            } else {
+                container.window.orderFront(nil)
+            }
         } else {
             container.window.orderOut(nil)
         }
         container.view.setSceneVisible(visible)
+        if record { rememberContainerVisibility(id: id, visible: visible) }
+    }
+
+    // MARK: - `default_visible` (Phase 40, B6)
+
+    /// The section a container's remembered open/closed state lives in, inside the *skin's own*
+    /// namespaced configuration — so two skins that both declare a `Config` window do not share one
+    /// answer, and nothing here reaches arbitrary preferences.
+    private static let windowVisibilitySection = "@nullplayer.windows"
+
+    /// Open the windows the skin declares as `default_visible="1"`.
+    ///
+    /// Winamp opens these *with* the skin: Defix's configurator is on screen the moment its skin
+    /// loads, and here it was only ever reachable. The declaration is a **default**, not a command —
+    /// a window the user has since closed from the menu, from the skin's own button, or from its
+    /// close box stays closed on the next launch, which is the whole reason a settings window opening
+    /// at every launch was worse than not honouring the attribute at all.
+    ///
+    /// Non-activating: the player window is what the user should be looking at after a load, not the
+    /// configurator that happened to open behind it.
+    private func applyDefaultContainerVisibility() {
+        var opened = false
+        for container in auxiliaryContainers where !container.window.isVisible {
+            guard Self.opensAtLoad(opensByDefault: container.opensByDefault,
+                                   remembered: rememberedContainerVisibility(id: container.containerID))
+            else { continue }
+            setAuxiliaryWindow(id: container.containerID, visible: true, activate: false)
+            opened = true
+        }
+        // Everything that just opened was ordered in front; the player belongs on top of its own
+        // auxiliary windows. Only if it is already on screen — at launch this runs *before*
+        // `WindowManager` has placed and shown it, and fronting it here would flash it at the frame
+        // a restored session is about to replace.
+        if opened, window?.isVisible == true { window?.orderFront(nil) }
+    }
+
+    /// The precedence, in one testable place: what the user last decided about this window wins over
+    /// what the skin declares, and the skin's declaration wins over "closed". A user who has never
+    /// touched the window has `remembered == nil`, which is not the same as having closed it.
+    static func opensAtLoad(opensByDefault: Bool, remembered: Bool?) -> Bool {
+        remembered ?? opensByDefault
+    }
+
+    /// What the user last did with this window, or `nil` when they have never said.
+    private func rememberedContainerVisibility(id: String) -> Bool? {
+        guard let configuration = loadedSkin?.configuration else { return nil }
+        let stored = configuration.integer(section: Self.windowVisibilitySection, key: id, default: -1)
+        return stored < 0 ? nil : stored != 0
+    }
+
+    /// Record an explicit user decision — a menu item, a skin button, a close box. Script-driven
+    /// `show()`/`hide()` and the startup default deliberately do **not** write here: a skin that
+    /// opens one of its own windows from a timer is describing this run, not the next one.
+    private func rememberContainerVisibility(id: String, visible: Bool) {
+        loadedSkin?.configuration.setInteger(visible ? 1 : 0,
+                                             section: Self.windowVisibilitySection, key: id)
     }
 
     /// Close / Minimize as Winamp means them, wired to every window this skin owns.
@@ -498,7 +590,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // from their window's layout `onSetVisible`, so a close that bypassed the scene left the
             // button lit with nothing on screen.
             container.view.closeRequested = { [weak self, id = container.containerID] in
-                self?.setAuxiliaryWindow(id: id, visible: false)
+                self?.setAuxiliaryWindow(id: id, visible: false, record: true)
             }
             container.view.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
         }
@@ -520,17 +612,34 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         placedAuxiliaryWindows.insert(container.containerID)
         let size = container.window.frame.size
         guard let anchor = window?.frame ?? NSScreen.main?.visibleFrame else { return }
-        // Stack under whatever this skin already has on screen, so opening the playlist and then the
-        // library does not put one on top of the other.
-        let occupied = auxiliaryContainers
-            .filter { $0.containerID != container.containerID && $0.window.isVisible }
-            .reduce(0) { $0 + $1.window.frame.height }
-        var origin = NSPoint(x: anchor.minX, y: anchor.minY - occupied - size.height)
+        var origin: NSPoint
+        if let offset = container.defaultOffset {
+            // The skin's own arrangement: Winamp Modern's playlist sits at `default_x="354"` beside a
+            // player at 0, its album art under that at `default_y="165"`. Measured from the player's
+            // top-left, at the current UI Size, with the skin's downward y flipped into AppKit's.
+            origin = Self.arrangedOrigin(playerFrame: anchor, size: size, offset: offset,
+                                         scale: skinScale)
+        } else {
+            // The skin says nothing: stack under whatever it already has on screen, so opening the
+            // playlist and then the library does not put one on top of the other.
+            let occupied = auxiliaryContainers
+                .filter { $0.containerID != container.containerID && $0.window.isVisible }
+                .reduce(0) { $0 + $1.window.frame.height }
+            origin = NSPoint(x: anchor.minX, y: anchor.minY - occupied - size.height)
+        }
         if let visible = (window?.screen ?? NSScreen.main)?.visibleFrame {
             origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
             origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
         }
         container.window.setFrameOrigin(origin)
+    }
+
+    /// Where the skin's own arrangement puts a window, in AppKit coordinates: `offset` skin pixels
+    /// right of and *below* the player's top-left, scaled to the current UI Size.
+    static func arrangedOrigin(playerFrame: NSRect, size: NSSize, offset: CGPoint,
+                               scale: CGFloat) -> NSPoint {
+        NSPoint(x: playerFrame.minX + offset.x * scale,
+                y: playerFrame.maxY - offset.y * scale - size.height)
     }
 
     /// One installation of the two container-addressed callbacks, owned by the controller rather than
@@ -583,6 +692,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             container.window.orderFront(nil)
         }
         container.view.setSceneVisible(container.window.isVisible)
+        rememberContainerVisibility(id: container.containerID, visible: container.window.isVisible)
         return true
     }
 
@@ -613,6 +723,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             container.window.orderFront(nil)
         }
         container.view.setSceneVisible(container.window.isVisible)
+        rememberContainerVisibility(id: container.containerID, visible: container.window.isVisible)
         return true
     }
 

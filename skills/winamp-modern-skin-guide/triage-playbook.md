@@ -130,7 +130,7 @@ head of it, so a reader of this file does not have to go looking:
 | ~~B3~~ | ~~`PAN` (balance) has no case beside `SEEK`/`VOLUME`~~ — **closed in Phase 37**: the drag writes the engine's balance, the thumb is drawn from it, and a drag now moves the object's own position and dispatches `onSetPosition` | ~~6 skins~~ — the scan found **8 uses in 7 skins** |
 | ~~B4~~ | ~~`valign` ignored — text is always vertically centred~~ — **closed in Phase 38**: decoded for both draw paths, and the bitmap-font path (which was pinned to the box's top edge) centres by default | ~~every skin's text~~ — the scan found **63 uses in 9 skins**, 54 of them `top` |
 | ~~B5~~ | ~~`VIS_*` / `PE_*` / `VID_*` / `CB_*` host actions inert~~ — **closed in Phase 39**: the five visualization, five playlist and two video commands implemented; `VID_1X`/`2X`, `VID_TV` and `CB_*` accepted and inert with a recorded reason | ~~75 button uses~~ — the scan found **108 uses in 11 skins** |
-| B6 | `default_visible="1"` not honoured on auxiliary containers | Defix's `Config` |
+| ~~B6~~ | ~~`default_visible="1"` not honoured on auxiliary containers~~ — **closed in Phase 40**: honoured as a *default* the user's own choice overrides, placed by `default_x`/`default_y`, with a notifier and an empty `<browser>` frame suppressed and recorded | ~~Defix's `Config`~~ — the scan found **10 containers in 8 of the 17 skins** |
 | B7 | `onEqBandChanged` / `onEqPreampChanged` never dispatched | 5 skins' EQ readouts |
 | B10 | No CI cover for the render sweep (see §6 — still the biggest process gap) | all |
 

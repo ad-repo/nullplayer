@@ -130,8 +130,12 @@ Measured: Defix → `SPEAKER 1`, `SPEAKER 2`, `Skin Settings`; mmd3 → `ColorTh
 `Widgets Manager`; CornerAmp Redux → `Color Themes`; T800 → `Quadhelix Home`; stock Winamp Modern →
 none. The harness prints the list as `RENDER-DUMP skin windows:`. Phase 27.
 
-**Still missing:** `default_visible="1"` on an auxiliary container is not honoured, so a skin that
-expects one of these open at load (Defix's configurator) starts with it closed.
+`default_visible="1"` **is honoured** as of Phase 40 — a skin that expects one of these open at load
+(Defix's configurator and playlist editor; 10 containers in 8 of the 17 skins) starts with it on
+screen, placed by the skin's own `default_x`/`default_y` relative to the player. It is a *default*: a
+window the user closes stays closed for that skin. A `notifier`/`tooltip` container and one holding a
+`<browser>` are the two suppressed cases, each recorded in the skin's diagnostics. See
+[reference/components.md](reference/components.md) §*`default_visible="1"`*.
 
 ### Skin Settings — the options a skin registers but binds nothing to
 
