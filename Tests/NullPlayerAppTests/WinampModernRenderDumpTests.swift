@@ -638,6 +638,17 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             print("CLICK toggled \(target.xmlID ?? "-") "
                                   + "activated=\(target.attributes["activated"] ?? "0")")
                         }
+                        // The other two action attributes: a command on the second click or the
+                        // right button. The view performs these, so like the toggle above they are
+                        // mirrored rather than dispatched — a titlebar mousetrap's `SWITCH;shade`
+                        // and a song title's `TRACKINFO` are invisible in every other probe line.
+                        for gesture in [WasabiClickGesture.double, .right] {
+                            guard let target,
+                                  let resolved = WasabiClickAction.resolve(target, gesture: gesture)
+                            else { continue }
+                            print("CLICK \(gesture.rawValue)action: \(resolved.action) "
+                                  + "param=\(resolved.parameter ?? "-")")
+                        }
                         // A `cfgattrib`-bound control carries no `action`; the binding is what it
                         // does, and the *view* is what performs it. Mirror that here so a settings
                         // switch can be driven headlessly, and report the stored value either side.

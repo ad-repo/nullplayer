@@ -48,6 +48,46 @@ alpha-tests the node's bitmap. Two rules about *which* objects may claim a point
 - **`animatedlayer` is clickable like `layer`.** MMD3's rotary volume/bass/treble knobs are animated
   layers whose scripts hook `onLeftButtonDown`; leaving the type out of `isInteractive` meant no click
   ever reached them.
+- **A command on the *second* click or the right button makes an object claimable too** (Phase 36).
+  `dblclickaction=` / `rightclickaction=` are commands like `action=`, and for a `<text>` they are
+  usually the only one it has: a song title is not one of the interactive types and carries no
+  `action`, so before this every double- and right-click on one fell through to the background layer
+  behind it. `ghost="1"` still outranks the attribute — `object(at:)` drops a ghost before
+  `isInteractive` is consulted at all, which is what keeps multipass's `ghost="1"` playlist ticker
+  (which carries `dblclickaction` anyway) from swallowing clicks meant for the list.
+
+#### The three action attributes (Phase 36)
+
+An object may carry `action=`, `dblclickaction=` and `rightclickaction=` **independently**, and skins
+do: multipass's song title has the last two and not the first. The view performs each on its own
+gesture — `action` on the click, the other two after `onleftbuttondblclk` / `onrightclick`, both gated
+on press and release agreeing on the target. Only `action` flips a togglebutton or falls through to a
+`cfgattrib` binding; the other two are plain commands.
+
+The parameter has two spellings, decoded once in `WasabiClickAction` so the view and the probe cannot
+disagree:
+
+- a `;`-separated **tail on the action itself** — `dblClickAction="SWITCH;shade"`, 45 of the 62
+  measured uses. Only the first `;` separates, so `action="SWITCHTO;optionsgroup.notifications;subpage"`
+  keeps its second field.
+- a sibling **`dblclickparam=` / `rightclickparam=`**, which wins when both are present.
+
+The tail split is applied in the view's action switch, so it serves `action=` as well.
+
+The corpus is wider than the button-shaped reading of it suggests: 62 declarations in 9 of the 17
+skins, and most are not `TRACKINFO` at all but the **winshade switch** — a bitmap-less mousetrap layer
+over the titlebar with `dblclickaction="SWITCH;shade"` (mmd3, multipass, winampmodern566, ZDL,
+Overdrive_2), with the shade layout's own background layers carrying `SWITCH;normal` back. mmd3 also
+puts the attribute on the `<layout>` itself. `RENDER_CLICK` prints `CLICK dblclickaction:` /
+`CLICK rightclickaction:` for whatever it hits, which is how a mousetrap is told from the background
+under it — and note the trap is only 18px tall, so a click 30px down the titlebar reports the
+background and looks like a bug in the fix.
+
+`TRACKINFO` opens a File Info **sheet** for the playing track. Never `runModal()`: the action is
+reachable from a script (`sendAction`), and a modal run loop an untrusted skin can enter at will is a
+hang the user cannot dismiss the app out of. `TRACKMENU` opens a track menu (File Info, Copy Title,
+Reveal in Finder) at the pointer, disabled items and all when nothing is playing — a right-click that
+produces no menu reads as a dead control. Neither is `SYSMENU`, which stays the host's main menu.
 
 #### Dragging the window
 

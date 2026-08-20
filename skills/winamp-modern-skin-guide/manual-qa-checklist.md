@@ -115,6 +115,13 @@ For each of the three fixtures:
 - [ ] Clicks **outside** the alpha region fall through (do not activate the window)
 - [ ] Dragging the window body moves it; dragging a control does not
 - [ ] Right-click opens the expected menu
+- [ ] **Double-click the title bar** — the window goes to its winshade/compact layout and a
+      double-click on the shade goes back (multipass, mmd3, winampmodern566, ZDL, Overdrive_2; the
+      trap is only the top ~18px). Do it for the playlist and equalizer windows too, where the skin
+      ships shade layouts for them
+- [ ] **Double-click the song title** — the File Info sheet opens for the playing track and dismisses
+      cleanly; **right-click it** — the track menu appears at the pointer and Reveal in Finder is
+      disabled for a stream
 - [ ] Seek slider scrubs, and the position display tracks it
 - [ ] Volume slider changes output level and is clamped at both ends
 - [ ] Repeat and shuffle toggles reflect and change real state

@@ -67,9 +67,11 @@ A **seventh** gap only became visible once the abort was gone: nothing in the en
   `ledfillbar` EQ bars follow the skin's own slider drags but not an EQ change made from the menu bar
   or another window.
 - **`onKeyDown` is not dispatched** (engine-wide); the skin declares a handler for it.
-- **The song title's `dblclickaction="TRACKINFO"` and `rightclickaction="TRACKMENU"` do nothing** —
-  those two attributes are not read at all (engine-wide, 6 and 5 skins respectively), and `PAN` (its
-  balance slider) is inert.
+- **`PAN` (its balance slider) is inert** (engine-wide). Its song title's
+  `dblclickaction="TRACKINFO"` / `rightclickaction="TRACKMENU"` and its titlebar mousetrap's
+  `dblclickaction="SWITCH;shade"` were dead for the same engine-wide reason until Phase 36; all three
+  work now. The mousetrap is `player.mousetrap`, 45,0 182×18 in `main/normal` — only 18px tall, which
+  is worth knowing before concluding from a probe that it does not respond.
 
 ### Traps this skin sets
 

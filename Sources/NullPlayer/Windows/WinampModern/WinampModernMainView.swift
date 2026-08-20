@@ -638,15 +638,24 @@ final class WinampModernMainView: NSView {
         if draggedDivider != nil { draggedDivider = nil; return }
         if pressedEQHolder != nil { pressedEQHolder = nil; needsDisplay = true; return }
         let releasedOver = renderer.object(at: point)
+        // The drag session is closed **before** any action runs. A titlebar mousetrap is both a drag
+        // handle and a `dblclickaction="SWITCH;shade"` control, so its double-click ends in a layout
+        // switch that resizes the window — and doing that inside an open drag session hands the
+        // docking code a window that moved under it.
+        if isDraggingWindow, let window { WindowManager.shared.windowDidFinishDragging(window) }
+        isDraggingWindow = false
         if let pressedObject {
             dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
             if releasedOver === pressedObject {
                 _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")
                 performAction(for: pressedObject)
+                // The *second* click carries its own command in Wasabi, and for most objects that
+                // carry one it is the only command they have: a titlebar mousetrap's
+                // `dblclickaction="SWITCH;shade"`, a song title's `TRACKINFO`. It runs after the
+                // normal click's action, as it does in Winamp — the two are independent attributes.
+                if event.clickCount >= 2 { performClickAction(.double, for: pressedObject) }
             }
         }
-        if isDraggingWindow, let window { WindowManager.shared.windowDidFinishDragging(window) }
-        isDraggingWindow = false
         pressedObject = nil
         needsDisplay = true
     }
@@ -680,6 +689,7 @@ final class WinampModernMainView: NSView {
         // and like the left one only fires when press and release agree on the target.
         if releasedOver === object {
             _ = try? scripts.dispatch(object: object, event: "onrightclick")
+            performClickAction(.right, for: object)
         }
         needsDisplay = true
     }
@@ -1022,7 +1032,28 @@ final class WinampModernMainView: NSView {
         updatePlaybackState()
     }
 
-    private func performAction(action: String?, parameter: String?, object: WasabiObject? = nil) {
+    /// Perform the command a skin hung on a double- or right-click, if it hung one there.
+    ///
+    /// Separate from `performAction(for:)` on purpose: these attributes do **not** flip a
+    /// togglebutton and do not fall through to the `cfgattrib` binding — they are a second, plain
+    /// command on the same object, and a mousetrap layer that carries one usually carries nothing
+    /// else at all.
+    private func performClickAction(_ gesture: WasabiClickGesture, for object: WasabiObject) {
+        guard let resolved = WasabiClickAction.resolve(object, gesture: gesture) else { return }
+        performAction(action: resolved.action, parameter: resolved.parameter, object: object)
+    }
+
+    private func performAction(action rawAction: String?, parameter rawParameter: String?, object: WasabiObject? = nil) {
+        // `ACTION;PARAM` is the other way a skin writes a parameter — mmd3, ZDL and winampmodern566
+        // spell every one of their layout switches that way, and winampmodern566 also writes
+        // `action="SWITCHTO;optionsgroup.misc"`. An explicit `param=` still wins.
+        let action: String?
+        let parameter: String?
+        if let rawAction {
+            (action, parameter) = WasabiClickAction.split(action: rawAction, parameter: rawParameter)
+        } else {
+            (action, parameter) = (nil, rawParameter)
+        }
         switch action?.uppercased() {
         case "PLAY": host.play()
         case "PAUSE": host.pause()
@@ -1102,6 +1133,14 @@ final class WinampModernMainView: NSView {
         // right-click — so the button opens it rather than a second, thinner imitation.
         case "SYSMENU", "CONTROLMENU":
             showMainMenu(from: object)
+        // Winamp's two song-title commands, both reached through `dblclickaction=`/`rightclickaction=`
+        // rather than `action=`: the file-info dialog and the track's own context menu. Here they are
+        // the same File Info sheet and the same track menu the playlist windows already show, so the
+        // three routes to a track's details cannot drift apart.
+        case "TRACKINFO":
+            showTrackInfo()
+        case "TRACKMENU":
+            showTrackMenu(from: object)
         // (`opensMainMenu` is the same decision, spelled once, for a test that cannot open a menu.)
         default: break
         }
@@ -1121,9 +1160,17 @@ final class WinampModernMainView: NSView {
     /// has no resolved frame — a script can raise this from anywhere).
     private func showMainMenu(from object: WasabiObject?) {
         let menu = ContextMenuBuilder.buildMenu()
+        popUpMenu(menu, from: object)
+    }
+
+    /// Drop a menu under the object that asked for it, or at the pointer.
+    ///
+    /// `atMouse` is what a right-click menu wants — Winamp pops it where the click was, and a
+    /// song-title ticker is wide enough that its top-left corner is nowhere near the pointer.
+    private func popUpMenu(_ menu: NSMenu, from object: WasabiObject?, atMouse: Bool = false) {
         guard menu.numberOfItems > 0 else { return }
         let location: NSPoint
-        if let frame = object.flatMap({ renderer.frame(of: $0) }) {
+        if let frame = object.flatMap({ renderer.frame(of: $0) }), !atMouse {
             location = NSPoint(x: frame.minX * skinScale,
                                y: bounds.height - frame.maxY * skinScale)
         } else if let window {
@@ -1132,6 +1179,71 @@ final class WinampModernMainView: NSView {
             location = .zero
         }
         menu.popUp(positioning: nil, at: location, in: self)
+    }
+
+    /// Winamp's **File Info** for the playing track — what a song title's `dblclickaction="TRACKINFO"`
+    /// asks for, in six of the seventeen measured skins.
+    ///
+    /// Presented as a *sheet*, never `runModal()`: this action is reachable from a script
+    /// (`sendAction("TRACKINFO")`), and a skin is untrusted input — a modal run loop it can enter at
+    /// will is a hang the user cannot dismiss the app out of. A sheet needs a window, so with none
+    /// (the tests' detached view) it is simply inert.
+    private func showTrackInfo() {
+        guard let window, let track = WindowManager.shared.audioEngine.currentTrack else { return }
+        let alert = NSAlert()
+        alert.messageText = track.displayTitle
+        var lines = ["Artist: \(track.artist ?? "Unknown")",
+                     "Album: \(track.album ?? "Unknown")",
+                     "Duration: \(track.formattedDuration)"]
+        // The stream figures the skin's own readouts show, when the engine has them.
+        if host.bitrateKbps > 0 { lines.append("Bitrate: \(host.bitrateKbps) kbps") }
+        if host.sampleRateHz > 0 { lines.append("Sample rate: \(host.sampleRateHz) Hz") }
+        if host.channelCount > 0 { lines.append("Channels: \(host.channelCount)") }
+        lines.append(track.url.isFileURL ? "Path: \(track.url.path)" : "URL: \(track.url.absoluteString)")
+        alert.informativeText = lines.joined(separator: "\n")
+        alert.beginSheetModal(for: window)
+    }
+
+    /// The track's own context menu — `rightclickaction="TRACKMENU"`, five of the seventeen skins.
+    ///
+    /// Winamp's is a menu *about the playing track*, not the player's main menu (which is what
+    /// `SYSMENU` already opens), so this is the same three commands the playlist windows offer for a
+    /// row, aimed at whatever is playing. With no track the items are shown disabled rather than the
+    /// menu suppressed: a right-click that produces nothing at all reads as a dead control.
+    private func showTrackMenu(from object: WasabiObject?) {
+        let track = WindowManager.shared.audioEngine.currentTrack
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let title = NSMenuItem(title: track?.displayTitle ?? "No Track", action: nil, keyEquivalent: "")
+        title.isEnabled = false
+        menu.addItem(title)
+        menu.addItem(.separator())
+        for (name, selector) in [("File Info...", #selector(showTrackInfoFromMenu(_:))),
+                                 ("Copy Title", #selector(copyTrackTitleFromMenu(_:)))] {
+            let item = NSMenuItem(title: name, action: selector, keyEquivalent: "")
+            item.target = self
+            item.isEnabled = track != nil
+            menu.addItem(item)
+        }
+        let reveal = NSMenuItem(title: "Reveal in Finder", action: #selector(revealTrackFromMenu(_:)),
+                                keyEquivalent: "")
+        reveal.target = self
+        reveal.isEnabled = track?.url.isFileURL == true
+        menu.addItem(reveal)
+        popUpMenu(menu, from: object, atMouse: true)
+    }
+
+    @objc private func showTrackInfoFromMenu(_ sender: Any?) { showTrackInfo() }
+
+    @objc private func copyTrackTitleFromMenu(_ sender: Any?) {
+        guard let track = WindowManager.shared.audioEngine.currentTrack else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(track.displayTitle, forType: .string)
+    }
+
+    @objc private func revealTrackFromMenu(_ sender: Any?) {
+        guard let track = WindowManager.shared.audioEngine.currentTrack, track.url.isFileURL else { return }
+        host.revealInFinder(track.url.path)
     }
 
     /// Winamp's preferences page for colour themes. A skin that opens it is asking for the same list

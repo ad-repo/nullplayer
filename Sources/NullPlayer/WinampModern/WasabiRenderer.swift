@@ -2649,6 +2649,13 @@ final class WasabiSceneRenderer {
             return true
         }
         if object.attributes["action"] != nil { return true }
+        // A command on the *second* click or the right button is still a command, and it is the only
+        // one some objects carry: a `<text>` song title with `dblclickaction="TRACKINFO"` is not one
+        // of the types above and has no `action=`, so it was never under the mouse at all. Ghosts are
+        // already excluded by `object(at:)`, which is what keeps multipass's `ghost="1"` playlist
+        // ticker from swallowing clicks meant for the list behind it.
+        if object.attributes[WasabiClickGesture.double.actionAttribute] != nil
+            || object.attributes[WasabiClickGesture.right.actionAttribute] != nil { return true }
         // A colour-theme list owns no bitmap and carries no action — Winamp supplies the widget, the
         // skin supplies only the tag — so without naming it here a click could never reach a row.
         if Self.isColorThemeList(object) { return true }

@@ -90,6 +90,7 @@ verbatim; it just lives in a reference file now.
 | Layer fill modes | [reference/rendering.md](reference/rendering.md) |
 | `<ProgressGrid>` — the bar's *filled* part | [reference/rendering.md](reference/rendering.md) |
 | A skin's own right-click menus | [reference/rendering.md](reference/rendering.md) |
+| The three action attributes (Phase 36) | [reference/rendering.md](reference/rendering.md) |
 | Colour themes (`gammaset` / `gammagroup`) | [reference/rendering.md](reference/rendering.md) |
 | Colour theme screen is empty / will not switch | [reference/rendering.md](reference/rendering.md) §*The picker* |
 | Animated layers are played as a range | [reference/rendering.md](reference/rendering.md) |

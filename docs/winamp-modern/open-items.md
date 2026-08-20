@@ -47,10 +47,28 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       Residue, both small: Itemskin's notifier wants `getPath` and `setChecked` (which is why its
       compatibility level reads `unsupported` while it renders fine), and Overdrive_2's playlist
       window is the one its skipped `pledit-elements.xml` would have furnished
-- [ ] **B2. `dblclickaction=` / `rightclickaction=` attributes.** Read nowhere, so **`TRACKINFO`
-      (6 skins) and `TRACKMENU` (5)** are unreachable: multipass's and Defix's song titles are dead to
-      double- and right-click. One mechanism in the view's mouse path unblocks both actions in every
-      skin at once. Decide what each maps to in NullPlayer (track info sheet; the context menu)
+- [x] **B2. `dblclickaction=` / `rightclickaction=` attributes.** ~~Read nowhere, so `TRACKINFO`
+      (6 skins) and `TRACKMENU` (5) are unreachable~~ — **closed in Phase 36.** The corpus scan found
+      the demand was more than twice what was recorded: **62 declarations across 9 of the 17 skins**,
+      because the same two attributes carry every skin's *winshade* switch
+      (`dblclickaction="SWITCH;shade"` — mmd3, multipass, winampmodern566, ZDL, Overdrive_2). Three
+      parts:
+      1. **Decoding** — `WasabiClickAction` (`WinampModernClickActions.swift`) reads the pair and
+         splits the `ACTION;PARAM` spelling that 45 of the 62 uses are written in. The split is
+         applied in the view's action switch, so it also serves `action="SWITCHTO;…"`; an explicit
+         `dblclickparam=`/`rightclickparam=` still wins, and only the first `;` separates.
+      2. **Reachability** — a `<text>` carrying only `dblclickaction` is none of the interactive types
+         and has no `action=`, so the hit test never reached it: every song title's click fell through
+         to the background layer behind it. `isInteractive` now accepts either attribute. `ghost="1"`
+         still outranks both, which is what keeps multipass's ghosted playlist ticker transparent.
+      3. **The two commands** — `TRACKINFO` opens a File Info **sheet** for the playing track (never
+         `runModal()`: the action is reachable from a script, and a modal loop an untrusted skin can
+         enter at will is a hang), `TRACKMENU` opens a track menu — File Info / Copy Title / Reveal in
+         Finder — at the pointer. `SYSMENU` keeps the host's main menu; the two are different menus in
+         Winamp too.
+      Verified with `RENDER_CLICK`, which now prints `CLICK dblclickaction:` / `CLICK rightclickaction:`
+      for the object it hits. Residue: winampmodern566's `dblclickaction="WA5:Prefs" dblclickparam="42"`
+      is decoded and inert — it addresses a Winamp preferences page we have no dialog for
 - [ ] **B3. `PAN` — the balance slider (6 skins).** `updateSlider` already handles `SEEK` and
       `VOLUME`; this is the third case, against `AudioEngine`'s balance. Near-trivial, and it is a
       control the user can see doing nothing

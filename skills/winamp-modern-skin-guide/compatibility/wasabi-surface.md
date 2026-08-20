@@ -26,10 +26,20 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   a skin's title bar; it opens NullPlayer's own context menu, which is what Winamp's menu there is.
   Measured: `SYSMENU` in multipass, CornerAmp, Overdrive_2, winampmodern566, ZDL; `CONTROLMENU` in
   multipass, mmd3, Overdrive_2, ZDL — every one of them inert until then)
-- Button actions still **inert**, measured across the 17 installed skins: `TRACKINFO` (6 skins) and
-  `TRACKMENU` (5) — both usually reached through `dblclickaction=`/`rightclickaction=` on a `<text>`,
-  a mechanism of its own; `PAN` (6, the balance slider); the playlist, video and visualization command
-  families `PE_*`, `VID_*`, `VIS_*`, `CB_*`
+- **`dblclickaction=` / `rightclickaction=`** (Phase 36) — the second and third action attributes an
+  object may carry, independent of `action=`. Both are read on any object, and an object carrying only
+  one of them is hit-tested for it (a `<text>` song title is otherwise not an interactive type);
+  `ghost="1"` still outranks them. The parameter is either the `;`-separated tail of the action
+  (`SWITCH;shade`) or a sibling `dblclickparam=`/`rightclickparam=`, the explicit one winning. The
+  tail split applies to `action=` too, so `action="SWITCHTO;<group>"` decodes. Measured: 62 uses in 9
+  of the 17 skins — every skin's winshade switch is one
+- **`TRACKINFO` / `TRACKMENU`** (Phase 36) — the two song-title commands, reached through those
+  attributes. `TRACKINFO` opens a File Info **sheet** for the playing track (never a modal run loop:
+  the action is script-reachable); `TRACKMENU` opens a track menu — File Info / Copy Title / Reveal in
+  Finder — at the pointer. Distinct from `SYSMENU`, which is the host's main menu
+- Button actions still **inert**, measured across the 17 installed skins: `PAN` (6, the balance
+  slider); the playlist, video and visualization command families `PE_*`, `VID_*`, `VIS_*`, `CB_*`;
+  `WA5:Prefs` (winampmodern566 — a Winamp preferences page, and there is no dialog to open)
 - Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
   and vertical), text, `clipchildren` parent clipping
 - Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups. A

@@ -256,8 +256,9 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   `CLICKABLE` probe named it before the user did, which is the argument for running that probe.
 - **`setScale` is missing** — the configurator's seven window-scaling buttons (100–300%) are inert.
 - **Most of its menus are host actions, and those are still unimplemented.** `trackmenu`/`trackinfo`
-  (declared as `rightclickaction`/`dblclickaction` on the song ticker — both *attributes* are also
-  unsupported), `VIS_Menu`, `VIS_Cfg`, `VIS_Next`, `VIS_Prev`, `PE_Add/Rem/Sel/Misc/List`,
+  on the song ticker **work as of Phase 36** — the ticker (`Songticker`, 17,115 261×23 in
+  `main/normal`) is hit-tested for its `rightclickaction`/`dblclickaction` and both commands are
+  implemented. Still inert: `VIS_Menu`, `VIS_Cfg`, `VIS_Next`, `VIS_Prev`, `PE_Add/Rem/Sel/Misc/List`,
   `ML_SendTo`. **`colorthemes_switch` works as of Phase 32** — and the skin turned out to ship a real
   picker after all: a `<ColorThemes:List id="picker">` in its `Config` window, under the heading
   "Color Themes", with a `Switch to selected Color Theme` button beneath it. It lists the skin's
