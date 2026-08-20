@@ -72,11 +72,16 @@ non-default display styles, which have no headless route in (below). **Grade B, 
 
 ### Not implemented or knowingly wrong
 
-- **Its songticker never scrolls, and no UI here can change that.** The skin registers
-  `Disable`/`Modern`/`Classic Songticker Scrolling` with `newAttribute` for **Winamp's** preferences
-  dialog — they appear nowhere in its own Skin Settings window — and ships `Disable = 1`, which its
-  `onDataChanged` applies as `ticker="off"`. The engine handles all three values; there is simply no
-  way to reach the setting. Do not "fix" the ticker code for this.
+- **Its songticker mode is reachable, and its default is off** (rewritten Phase 45; this entry used
+  to say no UI could change it, which stopped being true when Phase 27 built **Winamp Modern → Skin
+  Settings...**). The skin registers `Disable`/`Modern`/`Classic Songticker Scrolling` with
+  `newAttribute` for **Winamp's** preferences dialog and binds no control of its own to them, so its
+  Skin Settings *window* has no switch — the host list does. Measured with
+  `WINAMP_MODERN_RENDER_SET`: *Modern* → `ticker="bounce"`, *Classic* → `ticker="scroll"`, both
+  applied from the skin's `onDataChanged`. **The three are a radio group the skin does not enforce**
+  and its handler tests `Disable` first: `Modern = 1` with `Disable` still `1` measures `ticker=off`.
+  Untick `Disable` as well. Do not "fix" the ticker code for this, and do not add a host heuristic to
+  guess the group — Winamp shows the same three checkboxes.
 - **Its `<Browser>` explorer tab** — the Explorer tab's content is a `<Browser>` control (Winamp
   embeds Internet Explorer and points it at a file path). The tab switches and its chrome draws; the
   browser pane itself is empty, and hosting a real web view for untrusted skin content is outside the
@@ -134,14 +139,21 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   (`WINAMP_MODERN_RENDER_DISASM=@MAIN_LAYOUT_1.xml`) holds five distinct artwork blocks —
   `needleimgDef`+`SCALE1DEFBT`, `needleimgDef`+`SCALE2DEFLR`, `NEEDLE1MC`+`SCALE3MC`,
   `RT_Left`/`RT_Right`, and `Technics1_*` — so two of the eight names share a block with a variation.
-  **Which two is unsettled**; selecting `Ovis 1`/`Ovis 2` live and looking is the cheapest answer.
+  **Settled Phase 45, and the answer is neither: `Ovis 1` and `Ovis 2` are the skin's own dead
+  entries.** Their `onDataChanged` handlers do run and do store `CurVuVis = 4` / `5`, and the apply
+  routine's chain has an **empty branch** for 4 and jumps 5 straight to the tail — so picking either
+  leaves whatever display was showing. Six of the eight names change the scene
+  (`WINAMP_MODERN_RENDER_SET="<Visualizer GUID>;P-402 VU=1"` and the rest give six distinct
+  `main-normal.png` hashes; `Ovis 1`/`Ovis 2` give the previous one). Same family as `SCALENEON`
+  below: artwork and menu entries the author cut without removing the registration.
 - **`SCALENEON` and `needleimgNEON` are dead artwork.** Both bitmaps are declared
   (`LAYOUT1/VU2/SCALENEON.PNG`, `NEONNeedle.PNG`) and **no script references either** — zero hits for
   `NEON` in the full disassembly of `MAIN_LAYOUT_1.xml`. Nothing we do can show them; they are a
   fifth needle style the author cut. They are now listed in **Winamp Modern → Skin Settings...**
   along with the songticker modes below and the rest of the 32 options this skin registers
-  (`WINAMP_MODERN_RENDER_SETTINGS=1` prints them). Whether picking one actually changes the display
-  is the live pass.
+  (`WINAMP_MODERN_RENDER_SETTINGS=1` prints them). Picking one **does** change the display — measured
+  Phase 45 with `WINAMP_MODERN_RENDER_SET`, which is the headless equivalent of ticking a box in that
+  window; `RENDER_CONFIG` cannot do it, because the skin reads its own `CurVuVis` at load.
 - **Its two speaker cabinets are opened from the host's Skin Windows menu** (Phase 27). The skin
   declares `SPEAKER 1`, `SPEAKER 2` and `Config name="Skin Settings"` and binds no button to the two
   speakers — in Winamp they live in Winamp's own Windows menu. **`Config` is the exception, and this
@@ -292,7 +304,28 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   rejects. The intent is unambiguous: `MAIN_LAYOUT_1_SCRIPT.maki` carries `Time elapsed`,
   `Time remaining` and a registered `find Remaining` setting. A real dead control — and the
   `CLICKABLE` probe named it before the user did, which is the argument for running that probe.
-- **`setScale` is missing** — the configurator's seven window-scaling buttons (100–300%) are inert.
+- **The configurator drives everything but the scaling buttons (Phase 45, B11).** Its three pages —
+  the nine `cfgattrib` switches, the *Body material* / *Change sticker* page with the colour-theme
+  picker, and the About page — cycle from the `◀`/`▶` pair in its titlebar (`ConfBtnP`/`ConfBtnN`,
+  `lastcurCONFSET` 1…3), and both arrow pairs on the middle page work:
+  - **Body material — 31 backgrounds**, stored as `BG` (`BG1`…`BG31`) plus `lastcurBODY`, wrapping
+    `BG31 → BG1`. The click stores the id and then **pulses** the `Bg Chng` attribute; each window's
+    `STANDARDFRAME`/`STANDARDFRAME_CORE` script re-reads `BG` from its own `onDataChanged` and
+    re-images its nine frame slices. **That pulse is why it was broken:** `setData` told only the
+    calling script, so the player, both cabinets, the playlist and the library kept the old wood
+    panelling. Fixed in the engine, not in the skin (see `reference/rendering.md` §*A `cfgattrib`
+    control has no `action`*). `BG1` is the shipped artwork, so the *first* click looks like nothing
+    happened — go two. **Confirmed live 2026-08-20** with
+    `WINAMP_MODERN_DEBUG_CLICK="Config@360,50"`: one click wrapped `BG31 → BG1`, drove 36 image
+    params across the frame scripts, and the **playlist** window's frame changed from black to wood
+    on screen.
+  - **Change sticker — 31 icons** (`ICON1`…`ICON31`, `lastcurICON`), swapped onto `LayCON`/`LayPIC`
+    on the **main** window, so the configurator page itself does not change when you click it.
+  - The **Switch** button beside *Autoswitching infoboxes* and the nine switches themselves were
+    already working (Phase 25/27); their indicators read the stored value, and three of them ship
+    `1`.
+- **`setScale` is missing** — the configurator's seven window-scaling buttons (100–300%) are inert
+  (B12).
 - **Most of its menus are host actions, and those are still unimplemented.** `trackmenu`/`trackinfo`
   on the song ticker **work as of Phase 36** — the ticker (`Songticker`, 17,115 261×23 in
   `main/normal`) is hit-tested for its `rightclickaction`/`dblclickaction` and both commands are

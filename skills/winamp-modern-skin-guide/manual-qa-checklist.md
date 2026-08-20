@@ -103,9 +103,14 @@ For each of the three fixtures:
       the frames it uses, not your eyes (`reference/harness.md`, *Debugging a live defect*)
 - [ ] Defix: the playlist window's info box shows **`Items: N`** and **`Time: h:mm:ss`**, and both
       follow a playlist edit. Blank readouts here have had four separate causes
-- [ ] Defix: work through its configurator — the 31 changeable backgrounds, the eight display styles
-      (cassette, the VU meters, the oscilloscopes), the colour/ink options. None of this has ever been
-      driven, headless or live; note which ones fail and how
+- [ ] Defix: its configurator's **Body material** arrow changes the background of the player, both
+      speaker cabinets, the playlist and the library — not only the configurator's own window. `BG1`
+      is the shipped artwork, so click twice. **Change sticker** swaps the round sticker on the
+      *main* window
+- [ ] Defix: **Winamp Modern → Skin Settings...** — picking a display style under *Visualizer*
+      switches the display (six of the eight do; `Ovis 1`/`Ovis 2` are the skin's own empty branches),
+      and under *Songticker*, unticking *Disable* and ticking *Modern* or *Classic* makes the song
+      title move
 - [ ] Capture a reference screenshot per fixture into `docs/winamp-modern/screenshots/`
 
 ## 2. Input and transport

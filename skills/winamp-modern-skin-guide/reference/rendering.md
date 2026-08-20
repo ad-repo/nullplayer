@@ -297,13 +297,31 @@ Both halves are needed, and the second is the one that is easy to miss:
   strip `grid.s2` hide, and `FRAMING_GROUP` re-lays out.
 - `configStateProvider` lets the renderer read the binding for a togglebutton's active state, so the
   indicator follows the value. Every renderer shares the one runtime, so a switch and any control it
-  mirrors in another window always agree.
+  mirrors in another window always agree. **Every path that draws a scene has to wire it** — both app
+  paths do, and the render harness did not, which is why Defix's configurator dumped nine `OFF`
+  indicators against three settings that ship as `1` (fixed Phase 45; a blind instrument reporting a
+  defect the app does not have).
+
+**There are three ways a value gets written, and they must all be the same way.** The host's Skin
+Settings window and a `cfgattrib` control already shared `setConfigAttribute`; a **script's own
+`ConfigAttribute.setData`** did not, and dispatched `onDataChanged` to the calling object alone.
+That is not a detail: a skin registers the same attribute once **per script**, so every other window
+holds a different object for it, and the whole point of the write is that they hear about it. Defix's
+configurator changes its 31 backgrounds by storing a `BG` id and then pulsing a `Bg Chng` attribute —
+one `setData`, five windows' `STANDARDFRAME` scripts each re-reading the id and re-imaging nine frame
+slices. Dispatching to the caller alone repainted the configurator's own background and left the
+player, both speaker cabinets, the playlist and the library wearing the old artwork (Phase 45).
 
 > Not every attribute a skin registers appears in its own configurator. Defix's songticker mode
 > (`Disable`/`Modern`/`Classic Songticker Scrolling`) is registered with `newAttribute` for **Winamp's**
-> preferences dialog and appears nowhere in its Skin Settings window — so with no Winamp preferences
-> UI here, there is currently no way to reach it. The skin ships `Disable = 1`, which is why its song
-> ticker does not scroll.
+> preferences dialog and appears nowhere in its own Skin Settings window. The host's
+> **Winamp Modern → Skin Settings...** is where those live (Phase 27), and they work: the skin's
+> `onDataChanged` writes `ticker="bounce"` for Modern and `ticker="scroll"` for Classic.
+> **Its three modes are a radio group the skin does not enforce** — the handler tests `Disable`
+> first, so ticking *Modern* while `Disable` is still `1` leaves the ticker off. Unticking `Disable`
+> is the other half, and no host heuristic should guess that: Winamp's dialog offers the same three
+> checkboxes and the same skin logic decides. The skin ships `Disable = 1`, which is why an untouched
+> profile's ticker does not scroll.
 
 #### `<AlbumArt>` needs a host that actually has the cover
 

@@ -181,14 +181,32 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // launch — the only way to reproduce a click-path defect that lives in the *window* layer,
             // which the render harness does not have. See `WinampModernMainView.debugClick`.
             if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_CLICK"] {
-                let points = spec.split(separator: ";").compactMap { entry -> CGPoint? in
-                    let parts = entry.split(separator: ",").compactMap { Double($0) }
-                    return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
+                // `<container>@x,y` aims at one of the skin's *other* windows. Without it this hook
+                // could only ever reach the main player, and a skin's configurator — the window whose
+                // switches change every other window — is an auxiliary container (Phase 45).
+                let points = spec.split(separator: ";").compactMap { entry -> (String?, CGPoint)? in
+                    let halves = entry.split(separator: "@", maxSplits: 1)
+                    let container = halves.count == 2 ? String(halves[0]) : nil
+                    let parts = (halves.last ?? "").split(separator: ",").compactMap { Double($0) }
+                    guard parts.count == 2 else { return nil }
+                    return (container, CGPoint(x: parts[0], y: parts[1]))
                 }
                 for (index, point) in points.enumerated() {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3 + Double(index) * 2) { [weak self] in
-                        NSLog("WinampModern debug click %d at %@", index + 1, "\(point)")
-                        self?.skinView?.debugClick(atSkinPoint: point)
+                        guard let self else { return }
+                        NSLog("WinampModern debug click %d at %@ in %@", index + 1, "\(point.1)",
+                              point.0 ?? "main")
+                        guard let container = point.0 else {
+                            self.skinView?.debugClick(atSkinPoint: point.1)
+                            return
+                        }
+                        guard let target = self.auxiliaryContainers.first(where: {
+                            $0.containerID.caseInsensitiveCompare(container) == .orderedSame
+                        }) else {
+                            NSLog("WinampModern debug click: no container '%@'", container)
+                            return
+                        }
+                        target.view.debugClick(atSkinPoint: point.1)
                     }
                 }
             }

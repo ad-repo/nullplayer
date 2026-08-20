@@ -2855,8 +2855,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .string(loadedSkin.configuration.string(section: section, key: key))
         case "setdata":
             guard case .configAttribute(let section, let key) = state.role else { return .null }
-            loadedSkin.configuration.setString(arguments[0].stringValue, section: section, key: key)
-            _ = try dispatch(target: MakiObjectReference(.dynamic(id)), event: "ondatachanged", arguments: [])
+            // Through the shared write route, not this object alone. A skin's configurator writes an
+            // attribute from one script and every *other* script that registered the same attribute
+            // applies it from its own `onDataChanged` — Defix changes its background that way, one
+            // `setData` in the configurator against a `STANDARDFRAME` script per window. Dispatching
+            // only to the caller left the write visible in exactly the window that made it.
+            setConfigAttribute(section: section, key: key, value: arguments[0].stringValue)
             return .null
         case "getid":
             switch state.role {

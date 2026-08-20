@@ -56,7 +56,8 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>]` | stand a synthetic queue up behind the component seam **before** the scripts start — the only way a skin's `PlEdit` API can be observed headlessly, since the dump harness sets no component host and every script that walks the queue otherwise takes its empty branch. It also fills the drawn playlist panel, which has always come out as an empty box for exactly that reason. Prints `PLAYLIST before:` / `PLAYLIST after:` so an edit a script made (`removeTrack`, `moveTo`, `clear`) is visible, and `PLAYLIST reveal row=<n>` for a `showTrack`. Pair with `WINAMP_MODERN_CALL_TRACE=1` to see each call and its result. Phase 42's addition |
 | `WINAMP_MODERN_RENDER_KEY=<accelerator>[,<accelerator>]` | press keys at the skin the way the window does — `System.onKeyDown("alt+g")` — and print the handlers each one reached (`KEY handler alt+g -> skin.xml`) plus `KEY <accel>: handlers=<n> consumed=<0/1>`, where `consumed` is whether any handler ran MAKI's `complete;` (what tells the view to swallow the key). Accelerators are Winamp's own lowercase strings: `alt+g`, `ctrl+w`, `esc`. Without it the harness has no keyboard at all and every `onKeyDown` in the corpus measures as an unreached handler. Note the harness answers `isActive()` **true** for every object (no windows, so no focus), where the app answers per window — a `ctrl+w` that measures `consumed=1` here is still gated by focus in the app. Phase 43's addition |
 | `WINAMP_MODERN_RENDER_VU=<level>` | inject a program level per channel (0…1) for `getLeftVUMeter`/`getRightVUMeter`; `sweep` oscillates 0…1 at 0.5 Hz. The harness has no audio, so without it every meter reads silence and a needle's travel cannot be measured. It also **scales the injected spectrum**, because meters that read `getVisBand` rather than the VU (Defix's speaker cones) sit on one frame against the harness's otherwise-constant ramp and measure as dead at every level |
-| `WINAMP_MODERN_RENDER_CONFIG=<section>;<key>=<value>[\|…]` | write skin configuration **before** the scripts start — where the app reads it from, since the value is persisted. How a skin option that changes what is drawn (Defix's eight display styles) is selected without a GUI. Note it *stays* set for later runs, and a skin may keep its own private copy (Defix: `CurVuVis`) |
+| `WINAMP_MODERN_RENDER_CONFIG=<section>;<key>=<value>[\|…]` | write skin configuration **before** the scripts start — where the app reads it from, since the value is persisted. How a stored option the skin reads at load (a background id, a page index) is set without a GUI. Note it *stays* set for later runs. **It cannot select a display style**: Defix reads its own private copy (`CurVuVis`) at load and only writes it from `onDataChanged`, so a value seeded here is simply ignored — that is what `RENDER_SET` is for |
+| `WINAMP_MODERN_RENDER_SET=<section>;<key>=<value>[\|…]` | write a registered setting **after** the skin is up, through `setConfigAttribute` — the exact route the host's Skin Settings window takes. Prints `SET handler <key> -> <script>` per handler reached and `SET [<section>] <key> = <value> handlers=<n>`. The only headless way to pick one of a skin's display styles or songticker modes and see what it draws. Expect a *cascade* of handler lines where the setting is one of a radio group: Defix's style handler switches the other seven off, and each of those is another `onDataChanged`. Phase 45's addition |
 | `WINAMP_MODERN_RENDER_TIME=<frames>` (+ `_SCALE=2`, `_CLIP=1`) | ms/frame for a full repaint. `_SCALE=2` is the number that matters — it is the Retina backing store the app actually pays for; `_CLIP=1` measures the same frame clipped to the warped layers' rects. Defix, after Phase 29's pre-scaled artwork cache: **3.5 ms at 2×** idle, 5.4 ms with both reels warping, 4.4 ms clipped (it was 19.3 / 6.9 when every bitmap was resampled to the backing scale on every frame) |
 | `WINAMP_MODERN_DRAW_PROFILE=1` | per-object draw cost, top 8 — which node costs the frame, without a sampling profiler |
 | `WINAMP_MODERN_FX_TRACE=1` | every `fx_*` call with its receiver: which layers a skin warps, and **when** it switches them on |
@@ -108,6 +109,27 @@ that changes the right attributes but nothing on screen is a renderer gap.
 > absence. A markup `TOGGLE` to a container id can only be judged in the app — and it does work
 > there: Defix's `CONF` button (`action="TOGGLE" param="Config"`) opens its Skin Settings window,
 > confirmed live 2026-08-19, while measuring as stone dead headlessly.
+
+> **Compare the sweep by pixels, not by PNG bytes.** Anexa's `main-shade` hashes differently on
+> every run of the *same* build while being pixel-identical (`ImageChops.difference(...).getbbox()`
+> is `None`) — the encoder, not the renderer. One unexplained hash in a 21-skin sweep is worth two
+> minutes of checking before it is worth a bisect (Phase 45).
+
+> **A click is driven when the loop reaches its container, so the clicked container is dumped
+> first.** The dump walks containers in declaration order and drives `RENDER_CLICK` inside that walk;
+> Defix's `Config` is second to last, so a click that changed the background art of five other
+> windows had already missed all five PNGs — the probe printed `changed layer#…` lines no image in
+> the dump could show. The clicked container is now hoisted to the front of the walk (Phase 45), so
+> everything else is rendered *after* the click. Nothing reorders the containers when no click is
+> driven.
+
+> **Drive a multi-click sequence with `RENDER_SETTLE`, or one click in the burst goes missing.**
+> Twelve clicks on Defix's *Body material* arrow with no settle between them step the background
+> `1…9, 11, 12` — one click leaves no write at all, reproducibly. With `RENDER_SETTLE=0.3` the same
+> twelve step `1…12`. The skin is not skipping a background (a fresh run from `lastcurBODY=9` reaches
+> `BG10` in one click); a burst with no run loop between the clicks is not a sequence the app can
+> produce. This is the same family as the note B11 carried about a timer undoing a page switch
+> mid-sequence.
 
 > **A bare `RENDER_CLOCK` ladder is not a motion verdict for a skin whose FX is switched on from
 > playback.** Defix's six windows hash identical at t = 0 / 0.25 / 1 / 4 with `SETTLE=3`, and its
@@ -191,8 +213,10 @@ a change against real artwork — they catch the *mechanism* regressing under it
 
 ### Driving a click in the *running app*
 
-`WINAMP_MODERN_DEBUG_CLICK=<x>,<y>[;<x>,<y>…]` (DEBUG builds) clicks skin points a few seconds after
-launch, two seconds apart, replaying exactly what `mouseUp` does. It exists because
+`WINAMP_MODERN_DEBUG_CLICK=[<container>@]<x>,<y>[;…]` (DEBUG builds) clicks skin points a few seconds
+after launch, two seconds apart, replaying exactly what `mouseUp` does. A bare `x,y` aims at the main
+player; `Config@360,50` aims at one of the skin's **other** windows (Phase 45) — which is where a
+configurator lives, and therefore where a click that changes every other window has to be driven. It exists because
 `RENDER_CLICK` **has no windows**: a defect that lives in the window layer measures as clean there.
 Defix's playlist button was the case — one tidy `CLICK action:` line in the harness, and a window
 that opened and shut again on every press in the app. Pair it with `WINAMP_MODERN_CALL_TRACE=1`,

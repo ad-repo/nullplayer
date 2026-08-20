@@ -332,12 +332,42 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       once a scene is inside an `NSWindow` (Phase 42's doubled playlist toggle) still needs
       `WINAMP_MODERN_DEBUG_CLICK` in the app. And the 17-skin sweep is still the acceptance gate for a
       change to real artwork; what CI now catches is the *mechanism* regressing under it
-- [ ] **B11. Defix's configurator, the rest of it** — the 31 backgrounds, the nine display styles, the
-      songticker mode. The pages exist and are reachable; they are undriven, and the songticker mode
-      is registered only for Winamp's own preferences dialog, so the skin's `Disable = 1` default
-      cannot be changed from anywhere (which is why its ticker does not scroll). Includes the harness
-      note that a timer can undo a page switch mid-sequence — understand that before trusting a
-      multi-click run
+- [x] **B11. Defix's configurator, the rest of it** — ~~the 31 backgrounds, the nine display styles,
+      the songticker mode; the pages exist and are reachable but undriven~~ — **closed in Phase 45.**
+      One engine defect, one instrument gap, and three measurements:
+      1. **`ConfigAttribute.setData` was a second write route, and the wrong one.** A skin registers
+         the same attribute once **per script**, so every window holds its own object for it; the
+         script route dispatched `onDataChanged` to the *calling* object alone while
+         `setConfigAttribute` (the host's Skin Settings window, and a `cfgattrib` control) had
+         broadcast to every holder since Phase 27. Defix's **31 backgrounds** are a stored `BG` id
+         plus a pulse on `Bg Chng`, and five windows' `STANDARDFRAME` scripts re-image nine frame
+         slices each from that pulse — so *Body material* repainted the configurator's own window and
+         left the player, both cabinets, the playlist and the library wearing the old wood panelling.
+         `setData` now goes through the one route. **Change sticker** (31 `ICON*` on the main window's
+         `LayCON`/`LayPIC`) and the three-page `◀`/`▶` switch were already sound.
+      2. **The display styles work, and two of the eight are the skin's own dead entries.** Six give
+         six distinct scenes; `Ovis 1`/`Ovis 2` store `CurVuVis = 4`/`5` into an **empty branch** of
+         the apply routine, which settles the long-open "which two share an artwork block" question —
+         neither does. Same family as `SCALENEON`.
+      3. **The songticker mode was never unreachable** — that claim predated Phase 27's Skin Settings
+         window and was never re-measured. *Modern* → `ticker="bounce"`, *Classic* → `ticker="scroll"`.
+         The three are a radio group the **skin** does not enforce and whose handler tests `Disable`
+         first, so *Modern* with `Disable` still ticked measures `off`; Winamp offers the same three
+         checkboxes, and no host heuristic should guess the grouping.
+      New probe: **`WINAMP_MODERN_RENDER_SET=<section>;<key>=<value>`** writes a registered setting
+      *after* the skin is up, through `setConfigAttribute` — the only headless route to a display
+      style, because `RENDER_CONFIG` seeds the store before `onScriptLoaded` and Defix reads its own
+      `CurVuVis` copy. Two harness traps found and fixed with it: the clicked container is now dumped
+      **first** (a click on the configurator changed five windows that had already been written), and
+      the dump wires `configStateProvider` like both app paths do (nine indicators read `OFF` against
+      three settings that ship as `1` — a blind instrument reporting a defect the app does not have).
+      A multi-click burst also needs `RENDER_SETTLE`, or one click in twelve leaves no write.
+      3 new unit tests; 907 green; the 21-skin render sweep is pixel-identical (one PNG, Anexa's
+      `main-shade`, hashes differently on every run of the same build and is pixel-identical — the
+      encoder, not the renderer). **Confirmed live 2026-08-20**: one click on *Body material* in the
+      running app wrapped `BG31 → BG1` and changed the playlist window's frame on screen.
+      Residue: the seven scaling buttons are still inert (B12), and the live pass is the QA checklist
+      item, not a probe
 - [ ] **B12. `setScale`** — the configurator's seven 100–300% window-scaling buttons are inert.
       Decide first whether it drives our own UI Size or a skin-local scale; the two must not fight
 - [ ] **B20. Host the video player in the skin's own video window.** Five of the 17 skins (Love is

@@ -159,9 +159,16 @@ three songticker modes.
   root item registers one attribute per **child item** whose value is that child's GUID (6 of Defix's
   38); those are navigation, not options, and stay out of the list.
 - **One write route.** Changes go through `WinampModernScriptRuntime.setConfigAttribute`, the same
-  path a `cfgattrib` control the skin drew itself uses, so the skin applies the change from its own
+  path a `cfgattrib` control the skin drew itself uses **and the path a script's own
+  `ConfigAttribute.setData` takes since Phase 45**, so the skin applies the change from its own
   `onDataChanged` exactly as it would in Winamp — and a switch in this window and the control that
-  mirrors it in the skin cannot disagree.
+  mirrors it in the skin cannot disagree. The broadcast half is what matters: a skin registers the
+  same attribute once per script, so a write that only tells the caller reaches one window.
+- **A radio group is the skin's logic, not the list's.** Defix's eight display styles and three
+  songticker modes are each a group of `0`/`1` attributes whose exclusivity lives in the skin's
+  `onDataChanged` (picking one writes `0` to the others, and the list re-reads every row after a
+  write). Where a skin does *not* enforce it, the checkboxes behave exactly as Winamp's do: Defix's
+  songticker handler tests `Disable` first, so *Modern* only takes effect once `Disable` is unticked.
 - **Empty state.** A skin that registers nothing shows **no menu entry**, rather than an empty window.
 - Palette-themed through `WinampModernSurfaceStyle` like every other NullPlayer-drawn surface, and
   torn down with the skin it belongs to.

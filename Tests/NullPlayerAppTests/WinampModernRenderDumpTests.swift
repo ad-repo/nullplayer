@@ -312,6 +312,42 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
         }
 
+        // WINAMP_MODERN_RENDER_SET=<section>;<key>=<value>[|…] writes a registered setting **after**
+        // the skin is up, which is what the host's Skin Settings window does and what
+        // `WINAMP_MODERN_RENDER_CONFIG` deliberately cannot do: that one seeds the store *before*
+        // `onScriptLoaded`, so a skin that keeps its own private copy of the value (Defix reads
+        // `CurVuVis`, not the attribute) ignores it entirely. The change here goes through
+        // `setConfigAttribute`, the single write route, so every script that registered the same
+        // attribute gets `onDataChanged` — the only headless way to select one of a skin's display
+        // styles or songticker modes and see what it draws (Phase 45).
+        if let spec = env["WINAMP_MODERN_RENDER_SET"] {
+            for entry in spec.split(separator: "|") {
+                let parts = entry.split(separator: ";", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { continue }
+                let assignment = parts[1].split(separator: "=", maxSplits: 1).map(String.init)
+                guard assignment.count == 2 else { continue }
+                let section = parts[0]
+                let key = assignment[0]
+                let previousObserver = runtime.dispatchObserver
+                var reached = 0
+                runtime.dispatchObserver = { event, program, failure in
+                    guard event == "ondatachanged" else { return }
+                    reached += 1
+                    print("SET handler \(key) -> \((program.source.path as NSString).lastPathComponent)"
+                          + (failure == nil ? "" : " !FAILED: "
+                             + failure!.diagnostics.map(\.message).joined(separator: "; ")))
+                }
+                runtime.setConfigAttribute(section: section, key: key, value: assignment[1])
+                runtime.dispatchObserver = previousObserver
+                print("SET [\(section)] \(key) = \(assignment[1]) handlers=\(reached)")
+            }
+            // A skin applies part of a setting from a timer it starts in `onDataChanged`, so give it
+            // the same settle the rest of the harness gets before anything is measured.
+            if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
+                RunLoop.current.run(until: Date().addingTimeInterval(settle))
+            }
+        }
+
         if env["WINAMP_MODERN_RENDER_XUI"] != nil {
             func walk(_ objects: [WasabiObject]) {
                 for object in objects {
@@ -564,7 +600,19 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
             walkThemes(loaded.runtime.graph.roots)
         }
-        for info in containers {
+        // The container `WINAMP_MODERN_RENDER_CLICK` names is dumped **first**, so every other window
+        // is rendered *after* the click and shows what it did. Ordering matters more than it looks: a
+        // click on Defix's configurator changes the background art of five other windows, and with the
+        // configurator in its declared position (second to last) all five had already been written —
+        // the probe reported a change no PNG in the dump could show (Phase 45).
+        let clickedContainer = env["WINAMP_MODERN_RENDER_CLICK"]?
+            .split(separator: "@").first?.split(separator: "/").first.map(String.init)
+        let isClicked = { (id: String) in
+            clickedContainer.map { id.caseInsensitiveCompare($0) == .orderedSame } ?? false
+        }
+        let orderedContainers = containers.filter { isClicked($0.id) }
+            + containers.filter { !isClicked($0.id) }
+        for info in orderedContainers {
             // A fixed clock makes ticker/animation frames reproducible; set
             // WINAMP_MODERN_RENDER_CLOCK to a different value to capture a later frame.
             let clock = Double(env["WINAMP_MODERN_RENDER_CLOCK"] ?? "") ?? 0
@@ -579,6 +627,11 @@ final class WinampModernRenderDumpTests: XCTestCase {
             runtime.resolvedGeometryRequested = { object in renderer.resolvedGeometry(of: object) }
             // Layer FX, as the app wires it — so a warped layer is warped in the dumped PNG too.
             renderer.layerFXProvider = { [weak runtime] in runtime?.layerFXMesh(for: $0) }
+            // A `cfgattrib` control's state *is* the stored preference, and both app paths wire this.
+            // Without it every switch in Defix's configurator dumped its "off" artwork whatever the
+            // value was — nine indicators reading OFF against three settings that ship as 1, which is
+            // a blind instrument reporting a defect the app does not have (Phase 45).
+            renderer.configStateProvider = { [weak runtime] in runtime?.configValue(of: $0) ?? false }
             // The same synthetic queue the scripts see, so the drawn playlist panel is no longer the
             // empty box the harness has always produced (§2's documented blind spot).
             renderer.componentHost = playlistHost
