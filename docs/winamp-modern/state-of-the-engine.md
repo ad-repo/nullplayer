@@ -268,10 +268,14 @@ its handoff carries the open list and the debugging method that found them
 
 **The highest-value next work is now [open-items.md](open-items.md)**, which supersedes the paragraph
 that used to sit here — that one was written at Phase 30, and several of its items (the Layer FX
-follow-ups, the auxiliary-window repaint hooks, `getVisBand`'s scale) have since landed. Two things
-from it survive in that file's ranking: **the `<vis>` analyzer's linear scale** (B13 — the third
+follow-ups, the auxiliary-window repaint hooks, `getVisBand`'s scale) have since landed. One thing
+from it survives in that file's ranking: **the `<vis>` analyzer's linear scale** (B13 — the third
 instance of "a linear magnitude handed to artwork cut for a logarithmic sweep", after the VU meter in
-Phase 29 and `getVisBand` in Phase 30) and **automating the multi-skin render sweep** (B10).
+Phase 29 and `getVisBand` in Phase 30). The second, **automating the multi-skin render sweep** (B10),
+closed in Phase 44: `WinampModernGoldenImageTests` holds five committed golden images over synthetic
+fixtures, so the mechanisms the sweep protects — group clipping, frame slicing, animated-layer
+framing, text placement, `alpha` — now fail in CI rather than by eye. The 17-skin sweep remains the
+acceptance gate for a change against real artwork.
 
 Three more remain true and are deliberately *not* in that file, because they are engine-wide or
 process work rather than skin-facing compatibility: **per-object repaint rects** — `graphDidMutate` is

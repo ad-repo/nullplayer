@@ -298,12 +298,40 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       separate event and is still not dispatched (winampmodern566's playlist and library declare one).
       A skin cannot register a shortcut with the host either; only keys arriving at a skin window are
       offered
-- [ ] **B10. Golden-image regression cover for the render sweep.** The evidence that a rendering
+- [x] **B10. Golden-image regression cover for the render sweep.** ~~The evidence that a rendering
       change does not disturb the other sixteen skins is a **manual** 17-skin sweep — nothing in CI
-      catches a third skin regressing, and every rendering phase pays that cost again by hand (this
-      one did). Commit synthetic fixtures that exercise group clipping, frame slicing, animated-layer
-      framing and text placement, and assert their pixels. Also folds in the Phase 25 regression tests
-      (25.1–25.5) that were never written
+      catches a third skin regressing~~ — **closed in Phase 44.** Five synthetic scenes
+      (`WinampModernGoldenImageTests`) are rendered whole and compared against committed PNGs in
+      `Tests/NullPlayerAppTests/Goldens/WinampModern/`, one per mechanism the manual sweep exists to
+      protect: **group clipping** (Defix's reels over the song ticker), **frame slicing** (cPro-Bento's
+      collapsed pane painting over the volume slider), **animated-layer framing** (a meter cutting the
+      wrong row of its sheet), **bitmap-font text placement** (align × valign) and **`alpha` on every
+      object** (Phase 25.1). Three things make them committable and stable:
+      1. **The fixtures are built in code** — a 64×64 atlas of flat colour cells and a bitmap font
+         whose glyph cells are flat colours keyed to their position in the sheet — so nothing
+         third-party is committed and "which glyph landed where" is readable straight off the pixels.
+      2. **A whole canvas is the assertion**, not a handful of probe points: a defect anywhere in the
+         frame fails, which is the property the manual sweep had and `WinampModernRenderPixelTests`
+         (four points of three scenes) does not.
+      3. **Deterministic by construction** — every sprite blits at natural size and the animation
+         clock is pinned, so the per-channel tolerance (2) absorbs a resampler edge and nothing else.
+      Each golden was verified to **fail** under a deliberately reintroduced regression before being
+      trusted (`isSizedGroup` → false; the animation row → 0; the bitmap-font `valign` offset → top;
+      `WasabiFrame.dividerHalfThickness` → 2), and to fail nowhere else. `WINAMP_MODERN_GOLDEN_UPDATE=1`
+      regenerates them; a mismatch writes `<scene>.actual.png` and `<scene>.diff.png` (differing pixels
+      in red) to `WINAMP_MODERN_GOLDEN_DUMP` or the temporary directory.
+      Also folds in the **Phase 25 regression tests (25.1–25.5)**, which that phase deferred to a live
+      QA pass that closed without them: alpha parsing at its edges, `setXmlParam`'s image-valued keys
+      as a *load* (unresolvable or empty leaves the artwork it had; a registered id, colour included,
+      applies; a non-image key is written whatever it says), `getExtension`, Layer FX accepted-and-inert
+      without a recorded unsupported call, `newDynamicContainer`, `setFontSize`, navigation denied
+      quietly, `hasVideoSupport() == false`, the skin-level `<scripts>` block running **after** every
+      object script and its XUI params, and `@HAVE_LIBRARY@` expanding to 1 while an unknown macro
+      passes through. 16 new unit tests (5 golden scenes + 11); the full suite is 904 tests green.
+      Residue: the goldens cover the renderer, not the **window layer** — a defect that only exists
+      once a scene is inside an `NSWindow` (Phase 42's doubled playlist toggle) still needs
+      `WINAMP_MODERN_DEBUG_CLICK` in the app. And the 17-skin sweep is still the acceptance gate for a
+      change to real artwork; what CI now catches is the *mechanism* regressing under it
 - [ ] **B11. Defix's configurator, the rest of it** — the 31 backgrounds, the nine display styles, the
       songticker mode. The pages exist and are reachable; they are undriven, and the songticker mode
       is registered only for Winamp's own preferences dialog, so the skin's `Disable = 1` default

@@ -273,6 +273,23 @@ Test audio files are located in `Tests/Fixtures/`:
 - `test-3min.mp3` - 3 minute track for seek tests
 - `test-metadata.mp3` - File with full ID3 tags
 
+### Golden images (Winamp Modern `.wal` renderer)
+
+`Tests/NullPlayerAppTests/Goldens/WinampModern/` holds five committed PNGs that
+`WinampModernGoldenImageTests` renders synthetic skins against — the CI cover for group clipping,
+`<Wasabi:Frame>` slicing, animated-layer framing, bitmap-font text placement and per-object `alpha`.
+The fixtures are generated in code (no third-party artwork is committed), the comparison is the whole
+canvas, and a failure writes `<scene>.actual.png` / `<scene>.diff.png` to `WINAMP_MODERN_GOLDEN_DUMP`
+or the temporary directory.
+
+```sh
+WINAMP_MODERN_GOLDEN_UPDATE=1 swift test --filter WinampModernGoldenImageTests
+```
+
+Regenerate **only** for an intended rendering change, and read the diff before committing it. A new
+scene is only worth adding once you have watched it fail with the behaviour it guards deliberately
+broken — see `skills/winamp-modern-skin-guide/reference/harness.md` §*The golden images*.
+
 ## Reporting Test Issues
 
 When a test fails and cannot be fixed:

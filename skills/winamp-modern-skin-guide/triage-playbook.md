@@ -134,7 +134,7 @@ head of it, so a reader of this file does not have to go looking:
 | ~~B7~~ | ~~`onEqBandChanged` / `onEqPreampChanged` never dispatched~~ — **closed in Phase 41**: one funnel that dispatches only what moved, on every route including a 1 Hz poll for the ones nothing calls back on, with the skins' own EQ sliders synced first | ~~5 skins' EQ readouts~~ — all five answer under `RENDER_EQ` |
 | ~~B8~~ | ~~The playlist-editor script API (`getCurrentIndex`, `getNumTracks`, `playTrack`, …)~~ — **closed in Phase 42**: the cause was the parser reading *every* `system`-flagged global as the System object, so `PlEdit.x()` arrived as a call on System; the twelve methods are keyed on `PlEdit`'s class GUID, not by name | ~~Defix's known gap~~ — and every skin that drives its own list |
 | ~~B9~~ | ~~`onKeyDown` never dispatched~~ — **closed in Phase 43**: it carries Winamp's accelerator *string*, not a keycode, and the missing seam was a borderless window's `canBecomeKey` rather than first responder. `complete;` is the consumption signal; `isActive()` implemented alongside, because the corpus gates on it | ~~5 skins~~ — the measurement found **3** that bind it (Rika's and T800's are the edit control's `onKeyDown(Int)`, in a program neither skin loads) |
-| B10 | No CI cover for the render sweep (see §6 — still the biggest process gap) | all |
+| ~~B10~~ | ~~No CI cover for the render sweep~~ — **closed in Phase 44**: five committed golden images over synthetic fixtures (`WinampModernGoldenImageTests`) cover group clipping, frame slicing, animated-layer framing, text placement and `alpha`, each verified to fail under a reintroduced regression. §6 still stands for the corpus half — CI now catches the *mechanism*, not a change against real artwork | all |
 
 The pattern worth noticing across B1–B9: each is a **single attribute or policy** that nothing reads,
 and each makes a *visible* control dead in several skins at once. That is what the demand index is
@@ -161,10 +161,20 @@ in every batch forever, and an un-recorded "no" is re-litigated every time.
 
 ## 6. Regression safety at corpus scale
 
-The single biggest process gap today: the evidence that a renderer change disturbs no other skin is a
-**manual 17-skin before/after sweep**, and nothing in CI would catch a third skin regressing.
+**Half of this is now done.** Phase 44 committed golden images for the *mechanisms* the sweep protects
+— group clipping, `<Wasabi:Frame>` slicing, animated-layer framing, bitmap-font text placement and
+per-object `alpha` — as synthetic fixtures no third-party artwork is needed for
+(`WinampModernGoldenImageTests`, goldens in `Tests/NullPlayerAppTests/Goldens/WinampModern/`,
+regenerated with `WINAMP_MODERN_GOLDEN_UPDATE=1`). A whole canvas is the assertion, so a defect
+anywhere in the frame fails; each golden was checked to fail under a deliberately reintroduced
+regression before being trusted, which is the only thing that tells a golden apart from a
+[blind instrument](reference/harness.md).
 
-Replace it with the corpus:
+What is still manual is the other half: the evidence that a renderer change disturbs no other *real*
+skin is a **17-skin before/after sweep**, and no synthetic fixture can stand in for a skin's own
+artwork and scripts.
+
+Replace that half with the corpus:
 
 - **Render hashes** for every Gold + Silver layout, clock pinned (unpinned, animation noise makes every
   skin look changed — it did on the first manual run). A diff surfaces the exact skin/layout/frame.

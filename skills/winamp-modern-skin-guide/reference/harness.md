@@ -149,6 +149,46 @@ reproduce — extend it rather than starting over.
 origin, upright orientation, tiling, and `fitparent` sizing are asserted per pixel. When you touch
 `WasabiSceneRenderer`, verify a fix *fails* without the change before trusting it.
 
+### The golden images
+
+`WinampModernGoldenImageTests` (Phase 44, backlog B10) is the same idea at scene scale: five
+synthetic skins rendered **whole** and compared against committed PNGs in
+`Tests/NullPlayerAppTests/Goldens/WinampModern/`. Between them they cover the mechanisms the manual
+17-skin sweep exists to protect, one scene each:
+
+| Scene | Guards against |
+|---|---|
+| `group-clipping` | a sized `<group>` letting its children spill (Defix's reels over the song ticker) |
+| `frame-collapsed` | a `<Wasabi:Frame>` pane's geometry or its clip (cPro-Bento's closed mini view over the volume slider) |
+| `animated-layer` | the wrong cell of an animation sheet — column, **row**, or a frame that will not advance against the clock |
+| `text-placement` | bitmap-font `align` × `valign`, and `leftpadding` |
+| `alpha-stack` | `alpha` reaching text and bitmaps alike (Phase 25.1) |
+
+The fixtures are built in code — an atlas of flat colour cells, and a bitmap font whose glyph cells
+are flat colours keyed to their position in the sheet — so nothing third-party is committed and a
+wrong glyph is a wrong colour. Every sprite blits at natural size and the animation clock is pinned,
+so the comparison is exact up to a ±2 per-channel tolerance for a resampler edge.
+
+```sh
+swift test --filter WinampModernGoldenImageTests                        # check
+WINAMP_MODERN_GOLDEN_UPDATE=1 swift test --filter WinampModernGoldenImageTests   # regenerate
+```
+
+A mismatch writes `<scene>.actual.png` and `<scene>.diff.png` (differing pixels in red) to
+`WINAMP_MODERN_GOLDEN_DUMP`, or the temporary directory. **Regenerate only for an intended change,
+and look at the diff before committing it** — a golden updated without being read is how a defect
+becomes the expectation.
+
+> **A golden nobody has seen fail is a blind instrument** (§"A blind instrument reads as a working
+> feature"). Each of these five was checked to fail under a deliberately reintroduced regression —
+> `isSizedGroup` → `false`, the animation row → `0`, the bitmap-font `valign` offset → top,
+> `WasabiFrame.dividerHalfThickness` → 2 — and to fail nowhere else. Do the same for a scene you add.
+
+What they do **not** cover: the window layer. A defect that only exists once a scene is inside an
+`NSWindow` (Phase 42's playlist window opening and shutting on one click) measures clean here, and
+still needs `WINAMP_MODERN_DEBUG_CLICK` in the running app. Nor do they replace the 17-skin sweep for
+a change against real artwork — they catch the *mechanism* regressing under it.
+
 ### Driving a click in the *running app*
 
 `WINAMP_MODERN_DEBUG_CLICK=<x>,<y>[;<x>,<y>…]` (DEBUG builds) clicks skin points a few seconds after
@@ -201,8 +241,9 @@ filesystem bypass.
 Run the engine tests:
 
 ```sh
-swift test --filter WinampModern              # all synthetic coverage, headless
-swift test --filter WinampModernPhase7Tests   # fuzz / stress / limits
+swift test --filter WinampModern                    # all synthetic coverage, headless
+swift test --filter WinampModernPhase7Tests         # fuzz / stress / limits
+swift test --filter WinampModernGoldenImageTests    # the committed golden images (see above)
 ```
 
 Opt-in tests against user-supplied skins (nothing third-party is committed, so these skip unless the

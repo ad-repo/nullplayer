@@ -60,6 +60,7 @@ concept; read the one your symptom points at, not all of them.
 | **A whole skin is dead / "none of it works"** — start at the abort, not the symptom | [reference/harness.md](reference/harness.md) — *The order that made Phase 33 cheap* |
 | **What should I work on next?** | `docs/winamp-modern/open-items.md` — the ranked backlog (every phase is closed) |
 | A meter/needle/cone runs but barely moves | [reference/harness.md](reference/harness.md) — histogram the frames it uses |
+| **I changed the renderer — what proves I broke nothing?** | [reference/harness.md](reference/harness.md) — *The golden images*, then the 17-skin sweep for real artwork |
 | What Wasabi markup is supported at all? | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
 | Is this MAKI method implemented? What events fire? | [compatibility/maki-surface.md](compatibility/maki-surface.md) |
 | Limits, engine policy, verification status | [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md) |
@@ -124,6 +125,7 @@ verbatim; it just lives in a reference file now.
 | An `<animatedlayer>` is one frame, not one sheet | [reference/rendering.md](reference/rendering.md) |
 | Debugging a skin | [reference/harness.md](reference/harness.md) |
 | The order that made Phase 33 cheap | [reference/harness.md](reference/harness.md) |
+| The golden images | [reference/harness.md](reference/harness.md) |
 | What is open right now, ranked | [triage-playbook.md](triage-playbook.md) §4b → `docs/winamp-modern/open-items.md` |
 
 ## Where things live
