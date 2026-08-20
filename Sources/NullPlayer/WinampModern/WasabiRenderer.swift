@@ -1527,13 +1527,16 @@ final class WasabiSceneRenderer {
             attributes[.paragraphStyle] = paragraph
         }
 
-        // Wasabi centres a string in its box; `NSString.draw(in:)` starts at the box's top edge. The
-        // difference is a whole line's leading on a tall box (Love is War Miku's 30px time readout)
-        // and enough on a tight one to push the song ticker's descenders onto the seek bar below it.
-        // Under the local mirror below, a rect's *top* edge is its `maxY`, so lowering the text by
-        // `inset` means moving the rect down the same amount.
+        // Wasabi centres a string in its box unless `valign=` says otherwise; `NSString.draw(in:)`
+        // starts at the box's top edge, which is `valign="top"` and nothing else. The difference is a
+        // whole line's leading on a tall box (Love is War Miku's 30px time readout) and enough on a
+        // tight one to push the song ticker's descenders onto the seek bar below it. Under the local
+        // mirror below, a rect's *top* edge is its `maxY`, so lowering the text by `inset` means
+        // moving the rect down the same amount. Clamped at zero: a string taller than its own box
+        // starts at the top rather than above it, whatever it asked for.
         let cell = font.ascender - font.descender
-        let inset = max(0, (frame.height - cell) / 2)
+        let inset = max(0, WasabiTextMetrics.verticalAlignment(of: object)
+            .offset(cell: cell, in: frame.height))
         let drawFrame = frame.offsetBy(dx: 0, dy: -inset)
 
         context.saveGState()
@@ -1621,14 +1624,16 @@ final class WasabiSceneRenderer {
         default: alignment = .left
         }
         drawBitmapText(text, definition: definition, frame: frame, alignment: alignment,
+                       verticalAlignment: WasabiTextMetrics.verticalAlignment(of: object),
                        ticker: object, context: context)
     }
 
     /// Draw a run of bitmap-font glyphs. `ticker` is the object whose scroll state applies, or nil for
     /// content NullPlayer draws itself (a playlist row never scrolls).
     private func drawBitmapText(_ text: String, definition: WalResourceDefinition, frame: CGRect,
-                                alignment: NSTextAlignment, ticker: WasabiObject?,
-                                context: CGContext) {
+                                alignment: NSTextAlignment,
+                                verticalAlignment: WasabiTextMetrics.VerticalAlignment = .center,
+                                ticker: WasabiObject?, context: CGContext) {
         guard let sheet = resources.fontSheet(for: definition) else { return }
         let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
         let charHeight = max(1, Int(Double(definition.attributes["charheight"] ?? "1") ?? 1))
@@ -1663,6 +1668,15 @@ final class WasabiSceneRenderer {
             repeats = scroll.wraps ? [width + Self.tickerGap] : []
         }
 
+        // A sheet's glyphs are a fixed `charheight` tall, so the run's vertical placement is one
+        // offset for the whole line. The scene is drawn top-origin (see `draw(in:)`), so this is a
+        // distance down from `minY` — it was pinned there, which is `valign="top"` and only correct
+        // for the 54 declarations that ask for it. Rounded: a glyph is a blit, and a half-pixel
+        // origin resamples an LED readout into a blur. Clamped at zero for the same reason as the
+        // Core Text path: a sheet whose glyphs are taller than the box keeps their tops.
+        let top = frame.minY + max(0, verticalAlignment
+            .offset(cell: CGFloat(charHeight), in: frame.height).rounded())
+
         context.saveGState()
         context.clip(to: frame)
         for origin in [CGFloat.zero] + repeats {
@@ -1675,7 +1689,7 @@ final class WasabiSceneRenderer {
                 if x + CGFloat(advance) >= frame.minX, x <= frame.maxX,
                    cropRect.maxY <= CGFloat(sheet.height), cropRect.maxX <= CGFloat(sheet.width),
                    let glyph = cropped(sheet.image, to: cropRect) {
-                    drawImage(glyph, in: CGRect(x: x, y: frame.minY,
+                    drawImage(glyph, in: CGRect(x: x, y: top,
                                                 width: CGFloat(charWidth), height: CGFloat(charHeight)),
                               context: context)
                 }

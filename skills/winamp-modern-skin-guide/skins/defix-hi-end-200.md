@@ -43,6 +43,9 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   ticker on the cassette label, the time readout, and the Shuffle / Repeat / Kbps / Extension
   readouts, one variant at a time.
 - **The SUI tab strip** — Media Library / Visualization / Explorer, each sized to its own label.
+- **Text placement** (Phase 38) — its `Songticker` and `Infoticker` (both `valign="top"`, 23px boxes),
+  the playlist window's title, and the cassette labels' `valign="center"` are all drawn where the
+  markup asks; before this every string in the skin was centred in its box regardless.
 - Transport, seek and volume with their scales, the playlist window with its own titlebar buttons,
   both speaker cabinets, the About page.
 - **The four round buttons and their assignment menu** (Phase 31, partial — see the open bugs at the

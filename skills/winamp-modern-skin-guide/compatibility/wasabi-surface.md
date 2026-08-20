@@ -55,6 +55,13 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   `display=` binding (`time`, `songname` → "Artist - Title", `songinfo` → the stream-info line a
   `songinfo.maki` tokenises), then `text`/`default`, then the XML `alternatetext` as the
   nothing-to-show placeholder. `getText()` answers with the same resolved string
+- Text placement: `align` (`left`/`center`/`right`) and, from Phase 38, **`valign`**
+  (`top`/`center`/`bottom`, default `center` as in Wasabi) — 63 declarations across 9 of the 17
+  skins, 54 of them `top`. Both draw paths honour it: the Core Text path insets the string inside its
+  own rect (clamped, so a string taller than its box starts at the box's top rather than above it),
+  and the bitmap-font sheet path offsets the whole run — that path used to be **pinned to the box's
+  top edge**, which is `valign="top"` and nothing else, including for the rows NullPlayer draws into
+  a skin's own playlist. `valign` on a `<layer>` (mmd3, ZDL) is inert here, as it is in Wasabi
 - `<vis mode>`: `1` = **spectrum analyzer**, `2` = **oscilloscope**, `0`/`3` = off (a skin uses "off"
   when it fills the box with its own animated layer); an undeclared mode is the analyzer. `setMode`
   switches it. A skin's menu script is the proof of the pairing (`bandwidth` + `setMode(1)` vs

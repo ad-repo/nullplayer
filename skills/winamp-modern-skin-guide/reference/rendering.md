@@ -228,6 +228,16 @@ render is the ground truth for this kind of thing):
 - **Text is centred in its box**, not drawn from the top edge the way `NSString.draw(in:)` does. On a
   30px-tall readout that is a whole line's leading; on a tight one it is the difference between a
   ticker inside its slot and one sitting on whatever is under it.
+- **`valign` moves it** (Phase 38) — `top`, `center` (the default, and what an unrecognised value
+  falls back to) or `bottom`, decoded by `WasabiTextMetrics.verticalAlignment` and applied as one
+  offset down from the box's top edge (`VerticalAlignment.offset(cell:in:)`). 63 declarations across
+  9 of the 17 skins, 54 of them `top`: Defix's songticker and Infoticker, every readout in Nokia
+  5220's screen, multipass's whole display. The Core Text inset is **clamped at zero**, so a string
+  taller than its own box starts at the top rather than above it.
+  **The bitmap-font sheet path shares this**, and used to be pinned to `frame.minY` — that is
+  `valign="top"` and nothing else, so every sheet-drawn readout with no `valign` (and every playlist
+  row NullPlayer draws into a skin's own list) sat half a box too high. `valign` on a `<layer>` is
+  inert, here and in Wasabi.
 
 `forcefixed="1"` gives every glyph the same advance (the widest digit's) so a clock's digits do not
 shuffle sideways as they tick, and `timecolonwidth` gives the colon a narrower cell of its own. Both

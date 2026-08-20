@@ -122,6 +122,34 @@ final class WasabiTextMetrics {
         return traits
     }
 
+    /// Where a text object sits inside its own box vertically.
+    ///
+    /// Wasabi centres a string in its rect unless the skin says otherwise, and `valign=` is how it
+    /// says so: 63 declarations across 9 of the 17 corpus skins, 54 of them `top`. It is the
+    /// difference between a songticker on its baseline and one floating in the middle of a tall
+    /// display (Defix), and between a bitmap-font readout inside its LED window and one riding its
+    /// upper edge (multipass).
+    enum VerticalAlignment {
+        case top, center, bottom
+
+        /// The offset from the box's top edge for a run `cell` tall inside a box `height` tall.
+        func offset(cell: CGFloat, in height: CGFloat) -> CGFloat {
+            switch self {
+            case .top: return 0
+            case .center: return (height - cell) / 2
+            case .bottom: return height - cell
+            }
+        }
+    }
+
+    static func verticalAlignment(of object: WasabiObject) -> VerticalAlignment {
+        switch object.attributes["valign"]?.lowercased() {
+        case "top": return .top
+        case "bottom": return .bottom
+        default: return .center
+        }
+    }
+
     private static func isEnabled(_ value: String?) -> Bool {
         guard let value = value?.lowercased() else { return false }
         return !["0", "off", "false", "no", ""].contains(value)

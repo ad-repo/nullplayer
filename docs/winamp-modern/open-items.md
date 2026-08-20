@@ -87,9 +87,30 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
          sliders that write each other's position from their own handler.
       Residue: `AudioEngine.balance` is deliberately not persisted, so a skin's balance slider starts
       centred on each launch, as the rest of the app does
-- [ ] **B4. `valign` in `drawText`.** Text is always vertically centred. Defix's songticker asks for
-      `valign="top"`, its cassette labels for `center`. Cheap, and text placement is visible in every
-      skin — worth a sweep afterwards
+- [x] **B4. `valign` in `drawText`.** ~~Text is always vertically centred. Defix's songticker asks
+      for `valign="top"`, its cassette labels for `center`~~ — **closed in Phase 38.** The corpus scan
+      puts it at **63 declarations across 9 of the 17 skins** — 54 `top`, 8 `center`, 1 `bottom` —
+      and it is not only Defix: every readout on Nokia 5220's screen and multipass's whole display
+      ask for `top`. Three parts:
+      1. **The attribute** — `WasabiTextMetrics.VerticalAlignment` decodes it and answers one offset
+         down from the box's top edge. `center` is the default *and* the fallback for anything
+         unrecognised, because that is what Wasabi does with a value it does not know.
+      2. **The Core Text path** — the inset that used to be `(height − cell) / 2` is now that offset,
+         still clamped at zero so a string taller than its own box starts at the top rather than
+         above it.
+      3. **The bitmap-font sheet path** — which was pinned to `frame.minY`, i.e. `valign="top"` and
+         nothing else. Every sheet-drawn readout that asked for nothing (and every playlist row
+         NullPlayer draws into a skin's own list) therefore sat half a box too high; those now centre.
+         Clamped and rounded: a sheet whose glyphs are taller than the box keeps their tops (which is
+         what leaves Love is War Miku's preferences labels exactly where they were), and a run lands
+         on a whole pixel so an LED readout is not resampled into a blur.
+      Verified with a 17-skin render sweep, before and after: **16 of 122 rendered images changed,
+      across 10 skins**, and a per-pixel diff mask confirms every one of them is text moving — no
+      artwork, geometry or animation frame shifted. (Anexa's `main-shade` also differs run to run on
+      its own: the clock face reads wall time.)
+      Residue: `<Wasabi:Text>` (3 declarations, Anexa) is a XUI type we do not draw as text at all,
+      so its `valign` is moot until that type renders; `valign` on a `<layer>` (mmd3, ZDL) is inert
+      here as in Wasabi
 - [ ] **B5. The `VIS_*` / `PE_*` / `VID_*` / `CB_*` host actions.** `VIS_MENU`/`_NEXT`/`_PREV`/`_CFG`
       (16 uses), `PE_ADD`/`_REM`/`_SEL`/`_MISC`/`_LIST` (33), `VID_FS`/`_TV`/`_MISC` (14),
       `CB_NEXT`/`_PREV` (12). Each is a few lines against machinery NullPlayer already has, and each

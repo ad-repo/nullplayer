@@ -128,7 +128,7 @@ head of it, so a reader of this file does not have to go looking:
 | ~~B1~~ | ~~A missing `<include>` fails the **whole skin** instead of warning~~ — **closed in Phase 35**; the corpus is 17 skins wide | ~~2 of 17 skins do not load at all~~ (Itemskin, Overdrive_2 both render) |
 | ~~B2~~ | ~~`dblclickaction=` / `rightclickaction=` read nowhere~~ — **closed in Phase 36**: decoded (including `ACTION;PARAM`), hit-tested, and `TRACKINFO`/`TRACKMENU` implemented | ~~`TRACKINFO` 6 skins, `TRACKMENU` 5~~ — the scan found **62 uses in 9 skins**, most of them the winshade switch |
 | ~~B3~~ | ~~`PAN` (balance) has no case beside `SEEK`/`VOLUME`~~ — **closed in Phase 37**: the drag writes the engine's balance, the thumb is drawn from it, and a drag now moves the object's own position and dispatches `onSetPosition` | ~~6 skins~~ — the scan found **8 uses in 7 skins** |
-| B4 | `valign` ignored — text is always vertically centred | every skin's text |
+| ~~B4~~ | ~~`valign` ignored — text is always vertically centred~~ — **closed in Phase 38**: decoded for both draw paths, and the bitmap-font path (which was pinned to the box's top edge) centres by default | ~~every skin's text~~ — the scan found **63 uses in 9 skins**, 54 of them `top` |
 | B5 | `VIS_*` / `PE_*` / `VID_*` / `CB_*` host actions inert | 75 button uses |
 | B6 | `default_visible="1"` not honoured on auxiliary containers | Defix's `Config` |
 | B7 | `onEqBandChanged` / `onEqPreampChanged` never dispatched | 5 skins' EQ readouts |

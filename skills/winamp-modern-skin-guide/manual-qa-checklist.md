@@ -130,6 +130,10 @@ For each of the three fixtures:
       while you drag it
 - [ ] Repeat and shuffle toggles reflect and change real state
 - [ ] Ticker/marquee and elapsed-time text update during playback
+- [ ] **Text sits inside its slot, not floating in it** — Nokia 5220's KBPS/Mono/volume/time readouts
+      and Defix's song ticker and info line ask for `valign="top"`; a skin's pixel-art font readouts
+      (multipass's display, micro's and Itemskin's clocks) and the rows in a skin's own playlist
+      should look vertically centred in their slots
 
 ## 3. Playback (never verified from a `.wal` skin)
 

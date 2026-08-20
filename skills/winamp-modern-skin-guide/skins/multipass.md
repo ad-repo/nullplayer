@@ -67,6 +67,10 @@ A **seventh** gap only became visible once the abort was gone: nothing in the en
   `ledfillbar` EQ bars follow the skin's own slider drags but not an EQ change made from the menu bar
   or another window.
 - **`onKeyDown` is not dispatched** (engine-wide); the skin declares a handler for it.
+- Its display reads at the right height as of Phase 38: 13 `valign="top"` texts on a bitmap-font
+  sheet (`player.bitmapfont.display.*`) — song name, action info, time, playlist rows. That path was
+  pinned to the box's top edge, so those were already right by accident and everything else on a
+  sheet was half a box too high; both go through `valign` now.
 - Its balance slider works as of Phase 37 (`PAN`), including the "Balance: Left +40%" readout its
   `onSetPosition` prints on the song ticker — that handler is now dispatched on a **drag**, not only
   on a script's `setPosition`. The skin stacks two sliders on the same rect (`player.slider.balance`
