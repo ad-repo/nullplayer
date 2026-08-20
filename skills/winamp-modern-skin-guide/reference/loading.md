@@ -19,6 +19,16 @@ allowed **only** in the final include component and returns sorted, deterministi
 Cross-mount climbs work, which is how cPro-Bento reaches its engine:
 `@COLORTHEMESPATH@\..\..\Plugins\classicPro\engine\load.xml`.
 
+**A missing `<include>` is a warning, not a failure** (Phase 35) — Winamp warns and carries on, and
+two shipped skins (`Itemskin`: `xml/eq.xml`, `Overdrive_2`: `xml/pledit-elements.xml`) name a file
+their archive does not contain. The expander skips it, records `resourceMissing` at `.warning`, and
+expands the rest of the document; this is the same tolerance `WasabiSkinInitializer` applies to a
+missing bitmap, cursor or TTF. **Scoped to the skin mount:** the tolerance only covers a path that
+resolves inside `@SKINPATH@`. An include that climbs into another mount — the ClassicPro engine line
+above — still fails the load, because that one means *the engine is not installed*, and a skin that
+loads and draws almost nothing is worse than a named error. Cycles, depth, expansion limits, path
+escapes and unresolved variables are all unchanged: still hard errors.
+
 ### Initialization passes
 
 `WasabiSkinInitializer` runs six explicit, tested passes, in this order:

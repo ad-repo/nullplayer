@@ -176,6 +176,23 @@ final class MakiProgram {
         self.ownerID = ownerID
         self.parameter = parameter
     }
+
+    /// Winamp's `PopupMenu`, as its class table stores it. Only used to recognise the one class the
+    /// dispatcher builds something other than a generic dynamic object for.
+    static let popupMenuClassGUID = "f47a78f4bbb2f74e9cfbe74ba9bea88d"
+
+    /// The GUID a `new` should build, or `nil` when the index is out of range in a program that does
+    /// declare its classes (a corrupt table). A program compiled without a class table (see the
+    /// legacy retry in `MakiBytecodeParser`) still says which *methods* belong to each class code,
+    /// and that is enough to tell a popup menu from everything else — the rest are dynamic objects,
+    /// which is what a `Map`, the measured case, needs to be anyway.
+    func classGUID(atIndex index: Int) -> String? {
+        if classes.indices.contains(index) { return classes[index] }
+        guard classes.isEmpty else { return nil }
+        let names = Set(methods.filter { $0.classIndex == index }.map(\.name))
+        return names.contains("popatmouse") || names.contains("addcommand")
+            ? Self.popupMenuClassGUID : ""
+    }
 }
 
 struct MakiBytecodeParser {
@@ -256,6 +273,33 @@ struct MakiBytecodeParser {
     func parse(_ data: Data, source: WalSourceLocation, ownerID: WasabiObjectID? = nil,
                parameter: String? = nil) throws -> MakiProgram {
         do {
+            do {
+                return try parse(data, source: source, ownerID: ownerID, parameter: parameter,
+                                 classTablePresent: true)
+            } catch is ParseError {
+                // A pre-5.0 `mc.exe` wrote a different shape under the *same* version word (0x0403),
+                // so the variant cannot be told apart by the header — only by trying it.
+                // `Overdrive_2`'s `scripts/seek.maki` (2001) is the measured case, and it sits beside
+                // four siblings in the ordinary form, which is why this is a retry and not a branch.
+                // Two differences, both decoded from that file:
+                //   * no class GUID table at all — the class code in a method record indexes a table
+                //     the runtime supplied, so a call here dispatches on its *name* alone (which is
+                //     what the interpreter already does for an out-of-range class index), and
+                //   * a **13-byte** variable record: the trailing `global`/`system` pair is one byte
+                //     holding `object` instead. `System` is the first variable a MAKI program
+                //     declares, so index 0 is the system object.
+                // Failing this reading too, its own error is the one reported.
+                return try parse(data, source: source, ownerID: ownerID, parameter: parameter,
+                                 classTablePresent: false)
+            }
+        } catch let error as ParseError {
+            throw WalFailure(WalDiagnostic(.invalidScript, error.message, location: source))
+        }
+    }
+
+    private func parse(_ data: Data, source: WalSourceLocation, ownerID: WasabiObjectID?,
+                       parameter: String?, classTablePresent: Bool) throws -> MakiProgram {
+        do {
             var reader = Reader(data: data)
             guard try reader.readData(count: 2) == Data([0x46, 0x47]) else {
                 throw ParseError("MAKI magic must be 'FG'.")
@@ -263,12 +307,14 @@ struct MakiBytecodeParser {
             let version = try reader.readUInt16()
             _ = try reader.readUInt32()
 
-            let classCount = try boundedCount(try reader.readUInt32(), section: "class")
             var classes: [String] = []
-            classes.reserveCapacity(classCount)
-            for _ in 0..<classCount {
-                let bytes = try reader.readData(count: 16)
-                classes.append(bytes.map { String(format: "%02x", $0) }.joined())
+            if classTablePresent {
+                let classCount = try boundedCount(try reader.readUInt32(), section: "class")
+                classes.reserveCapacity(classCount)
+                for _ in 0..<classCount {
+                    let bytes = try reader.readData(count: 16)
+                    classes.append(bytes.map { String(format: "%02x", $0) }.joined())
+                }
             }
 
             let methodCount = try boundedCount(try reader.readUInt32(), section: "method")
@@ -278,23 +324,33 @@ struct MakiBytecodeParser {
                 let classCode = try reader.readUInt16()
                 _ = try reader.readUInt16()
                 let classIndex = Int(classCode & 0xff)
-                guard classIndex < classes.count else { throw ParseError("MAKI method references an unknown class.") }
+                guard classIndex < classes.count || classes.isEmpty else {
+                    throw ParseError("MAKI method references an unknown class.")
+                }
                 methods.append(MakiMethod(classIndex: classIndex, name: try reader.readString().lowercased()))
             }
 
             let variableCount = try boundedCount(try reader.readUInt32(), section: "variable")
             var variables: [MakiVariable] = []
             variables.reserveCapacity(variableCount)
-            for _ in 0..<variableCount {
+            for index in 0..<variableCount {
                 let typeOffset = Int(try reader.readUInt8())
-                let object = try reader.readUInt8() != 0
+                var object = try reader.readUInt8() != 0
                 let subclass = try reader.readUInt16() != 0
                 let initial1 = try reader.readUInt16()
                 let initial2 = try reader.readUInt16()
                 _ = try reader.readUInt16()
                 _ = try reader.readUInt16()
-                let global = try reader.readUInt8() != 0
-                let system = try reader.readUInt8() != 0
+                var global = false
+                var system = false
+                if classTablePresent {
+                    global = try reader.readUInt8() != 0
+                    system = try reader.readUInt8() != 0
+                } else {
+                    object = try reader.readUInt8() != 0
+                    system = object && index == 0
+                    global = system
+                }
 
                 if subclass {
                     guard typeOffset < variables.count else { throw ParseError("MAKI subclass references an unknown variable.") }
@@ -305,9 +361,12 @@ struct MakiBytecodeParser {
                     variables.append(variable)
                     base.classMembers.append(variables.count - 1)
                 } else if object {
-                    guard typeOffset < classes.count else { throw ParseError("MAKI object references an unknown class.") }
+                    guard typeOffset < classes.count || classes.isEmpty else {
+                        throw ParseError("MAKI object references an unknown class.")
+                    }
                     let initial: MakiValue = system ? .object(MakiObjectReference(.system)) : .null
-                    variables.append(MakiVariable(declaredKind: .object, classGUID: classes[typeOffset],
+                    let guid = typeOffset < classes.count ? classes[typeOffset] : nil
+                    variables.append(MakiVariable(declaredKind: .object, classGUID: guid,
                                                   isGlobal: global, isSystem: system, value: initial))
                 } else {
                     let kind = MakiValueKind(rawValue: UInt8(typeOffset))
@@ -397,7 +456,9 @@ struct MakiBytecodeParser {
                     guard raw >= 0, raw < methods.count else { throw ParseError("MAKI opcode references unknown method \(raw).") }
                     argument = .method(raw)
                 case .type:
-                    guard raw >= 0, raw < classes.count else { throw ParseError("MAKI opcode references unknown class \(raw).") }
+                    guard raw >= 0, raw < classes.count || classes.isEmpty else {
+                        throw ParseError("MAKI opcode references unknown class \(raw).")
+                    }
                     argument = .type(raw)
                 case .instruction:
                     guard let target = offsetToInstruction[raw] else { throw ParseError("MAKI jump target \(raw) is not an instruction boundary.") }
@@ -412,10 +473,11 @@ struct MakiBytecodeParser {
                     }
                     let typeOffset = raw & 0xff
                     if raw >> 8 != 0 {
-                        guard typeOffset < classes.count else {
+                        guard typeOffset < classes.count || classes.isEmpty else {
                             throw ParseError("MAKI member access references unknown class \(typeOffset).")
                         }
-                        argument = .valueKind(.object, classGUID: classes[typeOffset])
+                        argument = .valueKind(.object,
+                                              classGUID: typeOffset < classes.count ? classes[typeOffset] : nil)
                     } else {
                         guard let kind = MakiValueKind(rawValue: UInt8(typeOffset)) else {
                             throw ParseError("MAKI member access declares unknown value type \(raw).")
@@ -436,8 +498,6 @@ struct MakiBytecodeParser {
             return MakiProgram(version: version, classes: classes, methods: methods, variables: variables,
                                bindings: bindings, instructions: instructions, source: source,
                                ownerID: ownerID, parameter: parameter)
-        } catch let error as ParseError {
-            throw WalFailure(WalDiagnostic(.invalidScript, error.message, location: source))
         }
     }
 
@@ -773,7 +833,11 @@ final class MakiInterpreter {
                 try push(.temporary(.boolean(result)))
             case 96:
                 let classIndex = try argument(instruction)
-                try push(.temporary(.object(try dispatcher.makeObject(classGUID: program.classes[classIndex], program: program))))
+                guard let classGUID = program.classGUID(atIndex: classIndex) else {
+                    throw failure(.unsupportedScriptCapability,
+                                  "MAKI 'new' names class \(classIndex), which the program does not declare.")
+                }
+                try push(.temporary(.object(try dispatcher.makeObject(classGUID: classGUID, program: program))))
                 allocatedBytes += 128
             case 97:
                 // `delete obj` — destroys the object but is still an *expression*, so the compiler

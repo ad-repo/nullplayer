@@ -7,8 +7,8 @@
 - **Audience:** anyone picking this up, reviewing it, or deciding whether it ships
 
 This is the orientation document; `skills/winamp-modern-skin-guide/triage-playbook.md` is the process
-for working the long tail beyond the measured skins (17 are installed locally; two of them —
-`Itemskin.wal`, `Overdrive_2.wal` — still fail to load outright, which is the top item in
+for working the long tail beyond the measured skins (17 are installed locally, and as of Phase 35 all
+17 load — `Itemskin.wal` and `Overdrive_2.wal`, which used to fail outright, were the top item in
 [open-items.md](open-items.md)). The durable technical reference is
 `skills/winamp-modern-skin-guide/` — SKILL.md is a router over `reference/` topic files, alongside
 compatibility.md, skins.md → `skins/<skin>.md`, and manual-qa-checklist.md. The per-phase records are

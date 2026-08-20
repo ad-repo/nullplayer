@@ -26,13 +26,27 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
 
 ## Tier 1 — small change, disproportionate payoff
 
-- [ ] **B1. Tolerate a missing `<include>` instead of failing the whole skin.** `Itemskin.wal` and
-      `Overdrive_2.wal` — **2 of 17 skins — do not load at all**, both because an `<include>` names a
-      file the archive does not ship (`xml/eq.xml`, `xml/pledit-elements.xml`). Winamp warns and
-      carries on. We already degrade this way for a missing bitmap, cursor and TTF (see the
-      `resourceMissing` tolerance in `WasabiSkinInitializer`); this is the same policy one layer up,
-      in the include expander. Two whole skins for what is likely a dozen lines — and they have been
-      unmeasurable since Phase 19, so the corpus has effectively been 15 skins wide
+- [x] **B1. Tolerate a missing `<include>` instead of failing the whole skin.** ~~`Itemskin.wal` and
+      `Overdrive_2.wal` — 2 of 17 skins — do not load at all~~ — **closed in Phase 35.** Both now
+      load and render, so the corpus is 17 skins wide for the first time since Phase 19. It took
+      three changes, because each one uncovered the next abort behind it:
+      1. the include expander records a **warning** and skips an include naming a file the skin does
+         not ship, instead of failing the load — the same tolerance `WasabiSkinInitializer` already
+         applies to a missing bitmap, cursor or TTF. Scoped to the skin mount: an include that climbs
+         into another mount (`@COLORTHEMESPATH@\..\..\Plugins\classicPro\engine\load.xml`) is a
+         ClassicPro skin whose engine is not installed, and that stays a hard, nameable failure
+         rather than a skin that loads and draws almost nothing;
+      2. a **script the parser cannot read** is dropped with its diagnostic instead of failing the
+         skin, matching what the event dispatch already did for a script that fails while *running*;
+      3. `Overdrive_2/scripts/seek.maki` (2001) is written in a **pre-5.0 MAKI layout** under the same
+         version word as its four modern siblings: no class GUID table, and 13-byte variable records
+         whose trailing `global`/`system` pair is one `object` byte. `MakiBytecodeParser` retries in
+         that layout when the strict read fails; a class code that resolves to nothing dispatches by
+         method name, and `new` picks a popup menu vs. a generic dynamic object from the method names
+         declared against the class. All five of the skin's programs now load and run.
+      Residue, both small: Itemskin's notifier wants `getPath` and `setChecked` (which is why its
+      compatibility level reads `unsupported` while it renders fine), and Overdrive_2's playlist
+      window is the one its skipped `pledit-elements.xml` would have furnished
 - [ ] **B2. `dblclickaction=` / `rightclickaction=` attributes.** Read nowhere, so **`TRACKINFO`
       (6 skins) and `TRACKMENU` (5)** are unreachable: multipass's and Defix's song titles are dead to
       double- and right-click. One mechanism in the view's mouse path unblocks both actions in every

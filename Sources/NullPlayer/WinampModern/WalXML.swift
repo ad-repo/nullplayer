@@ -221,6 +221,7 @@ final class WalXMLDocumentLoader {
     private var visited: [String] = []
     private var visitedSet: Set<String> = []
     private var expandedNodeCount = 0
+    private var diagnostics: [WalDiagnostic] = []
 
     init(vfs: WalVirtualFileSystem, limits: WalXMLLimits = .production) {
         self.vfs = vfs
@@ -231,9 +232,10 @@ final class WalXMLDocumentLoader {
         visited = []
         visitedSet = []
         expandedNodeCount = 0
+        diagnostics = []
         let canonical = try vfs.resolve(entryPath, relativeTo: "/", mustExist: true).logicalPath
         let roots = try loadFile(canonical, includeStack: [], depth: 0)
-        return WalExpandedXMLDocument(roots: roots, visitedPaths: visited, diagnostics: [])
+        return WalExpandedXMLDocument(roots: roots, visitedPaths: visited, diagnostics: diagnostics)
     }
 
     private func loadFile(_ path: String, includeStack: [String], depth: Int) throws -> [WalXMLNode] {
@@ -272,9 +274,26 @@ final class WalXMLDocumentLoader {
                 guard let file = node.attribute("file"), !file.isEmpty else {
                     throw WalFailure(WalDiagnostic(.malformedXML, "<\(node.name)> requires a non-empty file attribute.", location: node.location))
                 }
-                let targets = try vfs.expand(file, relativeTo: sourcePath, location: node.location)
-                for target in targets {
-                    result.append(contentsOf: try loadFile(target.logicalPath, includeStack: includeStack, depth: depth + 1))
+                do {
+                    let targets = try vfs.expand(file, relativeTo: sourcePath, location: node.location)
+                    for target in targets {
+                        result.append(contentsOf: try loadFile(target.logicalPath, includeStack: includeStack, depth: depth + 1))
+                    }
+                } catch let failure as WalFailure
+                    where failure.diagnostics.allSatisfy({ $0.code == .resourceMissing })
+                        && isInsideSkin(file, relativeTo: sourcePath) {
+                    // Real skins ship `<include>`s naming files the archive does not contain —
+                    // `Itemskin` asks for `xml/eq.xml`, `Overdrive_2` for `xml/pledit-elements.xml`.
+                    // Winamp warns and carries on; failing the include failed the *whole skin*, so
+                    // neither loaded at all. This is the same tolerance the initializer already
+                    // applies one layer down to a missing bitmap, cursor or TTF. Security failures
+                    // (traversal, escape, unresolved variable) and every other diagnostic code —
+                    // malformed XML in a file that *does* exist, cycles, depth — still throw.
+                    diagnostics.append(WalDiagnostic(
+                        .resourceMissing,
+                        "<\(node.name) file=\"\(file)\"> was not found; the include was skipped.",
+                        severity: .warning,
+                        location: node.location))
                 }
                 continue
             }
@@ -288,6 +307,17 @@ final class WalXMLDocumentLoader {
             result.append(node)
         }
         return result
+    }
+
+    /// A missing include is only tolerated when it names a file *inside the skin*. One that climbs
+    /// into another mount — `@COLORTHEMESPATH@\..\..\Plugins\classicPro\engine\load.xml` — is a
+    /// ClassicPro skin whose engine is not installed, and that stays a hard, nameable failure rather
+    /// than a skin that loads and draws almost nothing.
+    private func isInsideSkin(_ rawPath: String, relativeTo sourcePath: String) -> Bool {
+        guard let skinRoot = vfs.skinRoot,
+              let canonical = try? vfs.resolve(rawPath, relativeTo: sourcePath, mustExist: false)
+        else { return false }
+        return Self.fold(canonical.logicalPath).hasPrefix(Self.fold(skinRoot + "/"))
     }
 
     private static func fold(_ value: String) -> String {

@@ -22,9 +22,9 @@ objects in the graph / `colorthemes_*` actions: mmd3 82/4/4 · multipass 58/1/3 
 Phase 32 measurement read 58/0/3 and concluded the skin ships no list; it ships one, in a groupdef
 only `System.newGroupAsLayout` instantiates, and that method was refused) · winampmodern566 44/1/5 ·
 micro 24/0/0 · Anexa 11/0/0 · Rika 10/1/0 · cPro-Bento 6/1/3 · Defix 5/1/1 · CornerAmp 5/1/3 ·
-T800 2/0/0 · ZDL 1/0/0 · Love is War Miku, Sony Walkman, Nokia 5220 0/0/0. **Ujola Cat 19/1/1** (Phase 34). **Itemskin and Overdrive_2
-do not load at all** (`resourceMissing`: `xml/eq.xml`, `xml/pledit-elements.xml`) — a separate defect,
-not a colour-theme one.
+T800 2/0/0 · ZDL 1/0/0 · Love is War Miku, Sony Walkman, Nokia 5220 0/0/0. **Ujola Cat 19/1/1** (Phase 34). **Itemskin and Overdrive_2 load as of
+Phase 35** (they were `resourceMissing` on `xml/eq.xml` and `xml/pledit-elements.xml`); their theme
+counts above are the pre-Phase-35 reading and neither ships a picker.
 
 | Skin | Last worked | State | Biggest gap |
 |---|---|---|---|
@@ -38,6 +38,8 @@ not a colour-theme one.
 | Rika | Phase 32 | loads without its missing TTF; vis colours honoured; its `Color Themes` window lists all 10 and a double-click applies | no Switch button in the skin — double-click is the only in-skin route |
 | multipass 1.4 | Phase 33 | **the whole skin**: one refused method aborted `System.onScriptLoaded`, so drawers, seek, time, sliders, notifier, shade, behaviors and style never initialised. All of it now runs; the hover drawers animate, the bottom drawer opens from its toggle, and the 58-theme picker instantiates at (54, 217); its seek bar draws, takes a click across its whole width and seeks; its `≡` main-menu button opens the host menu. **Confirmed live** 2026-08-19 | `TRACKINFO`/`TRACKMENU` on the song title and `PAN` are inert (engine-wide); the `.wal`'s own Preferences route (`TOGGLE {53DE6284…}`) has no host window |
 | Defix Hi-End 200 | Phase 26–31 (**confirmed live** 2026-08-19; measured `/wal-skin-report` 2026-08-19 — **B**, confidence medium) | wood panel + framed windows, cassette display, **live SUI tabs + embedded library**; display styles and songticker modes selectable through **Skin Settings**; **the four round buttons' right-click assignment menu** (Phase 31); **all eight display styles animate smoothly** — needles and cassette reels through Layer FX, level strips through frame strips; frame cost 18.3 → 3.5 ms at Retina scale; VU fed block-played peak amplitude that falls to rest on silence | round buttons re-assign but mis-target after the swap (Phase 31, open); speaker cones static **and cabinets very dark** (live 2026-08-19); time readout click dead; `getcurrentindex` unimplemented (surfaces on interaction, not at load); 13 inert host-action menus; `fx_setBgFx(1)` / `fx_onGetPixelA` accepted and inert — `phase-29-handoff.md` |
+| Itemskin | Phase 35 | loads and renders for the first time — main, mini and Equalizer layouts, the playlist/video/library/AVS windows and the notifier. Its `<include file="xml/eq.xml">` names a file the archive does not ship and is now skipped with a warning | its notifier script wants `getPath` and `setChecked`, which is why its compatibility level reads `unsupported` although the skin draws; unmeasured beyond the render sweep |
+| Overdrive_2 | Phase 35 | loads and renders for the first time — the speedometer/tachometer face, transport ring and shade layout. All five of its MAKI programs run, including `scripts/seek.maki`, which is written in the pre-5.0 bytecode layout | the playlist window is furnished by the `pledit-elements.xml` it does not ship, so it is near-empty; unmeasured beyond the render sweep |
 | Ujola Cat | Phase 34 (**confirmed live** 2026-08-20) | **first measurement.** Both drawers, embedded EQ, the cat window, its 19-theme picker; **the Color Themes and cat buttons** (they carry no `action` — `Container.toggle()` is their whole behaviour) and the console lamps that follow their windows; the `<vis>` analyzer now follows the colour themes, draws Winamp's bands on a dB scale and paints its peak caps; the framed windows stop painting their `sysregion="-2"` masks — [skins/ujola-cat.md](skins/ujola-cat.md) | the window *region* those masks describe is still not applied (the windows stay rectangular); `<eqvis>` ignores `gammagroup`, as in Winamp |
 
 ---

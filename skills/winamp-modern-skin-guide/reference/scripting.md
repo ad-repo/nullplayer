@@ -13,6 +13,27 @@ A missing method aborts only the script event that hit it — the rest of the sk
 and the failure is collected into the compatibility report. It cannot be finer-grained than that:
 call sites carry no argument count, so without a signature the stack cannot be unwound.
 
+A program the parser cannot read at all is dropped the same way (Phase 35): `WinampModernScriptRuntime`
+records its diagnostic and keeps the programs it *could* read, rather than failing the skin. One
+unreadable script used to cost the whole skin — which is how `Overdrive_2` stayed invisible after its
+include defect was fixed.
+
+**Two MAKI layouts share one version word.** A pre-5.0 `mc.exe` wrote `0x0403` files that differ from
+the modern form in two ways, and nothing in the header distinguishes them — `Overdrive_2` ships four
+ordinary programs and one of these (`scripts/seek.maki`, 2001) side by side:
+
+| | modern | pre-5.0 |
+|---|---|---|
+| class GUID table | `count`, then `count`×16 bytes | **absent** — the count is not written either; the method table follows the header word directly |
+| variable record | 14 bytes, trailing `global` + `system` | **13 bytes**, that pair replaced by one `object` flag |
+| the System object | the variable with `system=1` | variable **0** (the first one a MAKI program declares) |
+
+`MakiBytecodeParser` tries the modern reading and **retries** in the legacy one when it fails, so a
+genuinely corrupt file still reports its own error. With no class GUIDs, a call dispatches on its
+*name* (which the interpreter already does for an out-of-range class index) and `MakiProgram
+.classGUID(atIndex:)` tells a `PopupMenu` from everything else by the method names declared against
+the class — everything else becomes a generic dynamic object, which is what a `Map` needs anyway.
+
 > **Gotcha:** `MakiInterpreter.dispatcher` is `weak` (the runtime owns the dispatcher). If you
 > construct an interpreter in a test with a temporary dispatcher, it deallocates immediately and
 > `execute` silently returns at its `guard let dispatcher` without running an instruction — the test

@@ -168,13 +168,18 @@ final class WinampModernPhase2Tests: XCTestCase {
             try WalXMLDocumentLoader(vfs: cycleVFS).load(entryPath: "/Skins/Cycle/skin.xml")
         }, .includeCycle)
 
+        // A missing include is a *warning*, not a failure: Winamp carries on, and two shipped skins
+        // (Itemskin, Overdrive_2) name a file their archive does not contain and would otherwise
+        // not load at all. The rest of the document still expands.
         let missingProvider = try WalMemoryResourceProvider(resources: [
-            "skin.xml": Data("<include file=\"missing.xml\"/>".utf8)
+            "skin.xml": Data("<include file=\"missing.xml\"/><container id=\"main\"/>".utf8)
         ])
         let missingVFS = try WalVirtualFileSystem(skinName: "Missing", skin: missingProvider)
-        XCTAssertEqual(errorCode {
-            try WalXMLDocumentLoader(vfs: missingVFS).load(entryPath: "/Skins/Missing/skin.xml")
-        }, .resourceMissing)
+        let missingDocument = try WalXMLDocumentLoader(vfs: missingVFS)
+            .load(entryPath: "/Skins/Missing/skin.xml")
+        XCTAssertEqual(missingDocument.roots.map(\.name), ["container"])
+        XCTAssertEqual(missingDocument.diagnostics.map(\.code), [.resourceMissing])
+        XCTAssertEqual(missingDocument.diagnostics.map(\.severity), [.warning])
 
         let includeDepthProvider = try WalMemoryResourceProvider(resources: [
             "skin.xml": Data("<include file=\"a.xml\"/>".utf8),

@@ -125,7 +125,7 @@ head of it, so a reader of this file does not have to go looking:
 
 | # | Open item | Reach |
 |---|---|---|
-| B1 | A missing `<include>` fails the **whole skin** instead of warning | **2 of 17 skins do not load at all** (Itemskin, Overdrive_2) |
+| ~~B1~~ | ~~A missing `<include>` fails the **whole skin** instead of warning~~ — **closed in Phase 35**; the corpus is 17 skins wide | ~~2 of 17 skins do not load at all~~ (Itemskin, Overdrive_2 both render) |
 | B2 | `dblclickaction=` / `rightclickaction=` read nowhere | `TRACKINFO` 6 skins, `TRACKMENU` 5 |
 | B3 | `PAN` (balance) has no case beside `SEEK`/`VOLUME` | 6 skins |
 | B4 | `valign` ignored — text is always vertically centred | every skin's text |

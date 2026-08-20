@@ -106,6 +106,11 @@ final class WalVirtualFileSystem {
         return WalResolvedResource(logicalPath: try canonicalExistingPath(canonical, location: location))
     }
 
+    /// Where the skin archive is mounted. An include that resolves outside it is reaching for
+    /// another mount — the ClassicPro engine — and its absence is a different kind of failure than
+    /// a file the skin forgot to ship.
+    var skinRoot: String? { variables["SKINPATH"] }
+
     func expand(
         _ rawPath: String,
         relativeTo sourcePath: String,

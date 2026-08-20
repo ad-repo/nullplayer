@@ -272,13 +272,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         self.interpreter = MakiInterpreter(dispatcher: DummyMakiDispatcher.shared,
                                            limits: executionLimits)
         self.interpreter.dispatcher = self
-        self.programs = try loadedSkin.runtime.scriptBindings.map { binding in
-            let data = try loadedSkin.vfs.data(at: binding.logicalPath, location: binding.source)
-            return try MakiBytecodeParser().parse(data, source: binding.source,
-                                                  ownerID: binding.ownerID,
-                                                  parameter: binding.parameter)
+        // One script the parser cannot read must not take the whole skin down with it — the same
+        // policy the event dispatch below already applies to a script that fails while running.
+        // `Overdrive_2` is the measured case: four of its five programs are ordinary MAKI, and
+        // `scripts/seek.maki` (2001) ships a header its own siblings do not, so the strict parse
+        // aborted the load and the skin did not appear at all. The unreadable program is dropped,
+        // its diagnostic lands in the compatibility report, and everything else runs.
+        var parsedPrograms: [MakiProgram] = []
+        var parseFailures: [WalDiagnostic] = []
+        for binding in loadedSkin.runtime.scriptBindings {
+            do {
+                let data = try loadedSkin.vfs.data(at: binding.logicalPath, location: binding.source)
+                parsedPrograms.append(try MakiBytecodeParser().parse(data, source: binding.source,
+                                                                     ownerID: binding.ownerID,
+                                                                     parameter: binding.parameter))
+            } catch let failure as WalFailure {
+                parseFailures.append(contentsOf: failure.diagnostics)
+            }
         }
+        self.programs = parsedPrograms
         self.boundScriptPaths = Set(loadedSkin.runtime.scriptBindings)
+        self.scriptFailures = Array(parseFailures.prefix(Self.maximumRecordedScriptFailures))
         for root in loadedSkin.runtime.graph.roots where root.typeName.caseInsensitiveCompare("container") == .orderedSame {
             if let normal = root.children.first(where: {
                 $0.typeName.caseInsensitiveCompare("layout") == .orderedSame &&
@@ -517,10 +531,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             for binding in object.scriptBindings where !boundScriptPaths.contains(binding) {
                 guard programs.count + added.count < Self.maximumRuntimePrograms else { return }
                 boundScriptPaths.insert(binding)
-                let data = try loadedSkin.vfs.data(at: binding.logicalPath, location: binding.source)
-                added.append(try MakiBytecodeParser().parse(data, source: binding.source,
-                                                            ownerID: binding.ownerID,
-                                                            parameter: binding.parameter))
+                do {
+                    let data = try loadedSkin.vfs.data(at: binding.logicalPath, location: binding.source)
+                    added.append(try MakiBytecodeParser().parse(data, source: binding.source,
+                                                                ownerID: binding.ownerID,
+                                                                parameter: binding.parameter))
+                } catch let failure as WalFailure {
+                    // Same tolerance as the initial load: an unreadable program is dropped, not fatal.
+                    if scriptFailures.count < Self.maximumRecordedScriptFailures {
+                        scriptFailures.append(contentsOf: failure.diagnostics)
+                    }
+                }
             }
             for child in object.children { try collect(child) }
         }
