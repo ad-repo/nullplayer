@@ -236,6 +236,41 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
                        "an unrecognized macro passes through untouched")
     }
 
+    // MARK: - 25.6 `notify="key,value"` delivers XUI params on a `<group>` instance
+
+    /// Lobe's Pledit uses `<group id="wasabi.standardframe.statusbar" notify="content,pledit.normal.
+    /// content.group">` — a `<group>` instance, not a XUI tag like `<Wasabi:StandardFrame:Status>`.
+    /// The standard frame script reads the `content` param to instantiate the playlist body, so
+    /// `notify` must deliver it as `onSetXuiParam("content", "...")` even though the tag is `group`.
+    func testNotifyAttributeDeliversXUIParamsOnAGroupInstance() throws {
+        let runtime = try makeRuntime(xml: Self.notifyXML,
+                                      files: [("frame.maki", Self.makeScript())])
+        let frame = try object(named: "synthetic.frame", in: runtime)
+        var params: [(String, String)] = []
+        runtime.dispatchObserver = { event, program, _ in
+            guard event == "onsetxuiparam", program.ownerID == frame.stableID else { return }
+            params.append(("onsetxuiparam", program.ownerID == frame.stableID ? "owned" : "other"))
+        }
+
+        try runtime.start()
+
+        XCTAssertFalse(params.isEmpty, "notify= must deliver onSetXuiParam to the group's script")
+    }
+
+    private static let notifyXML = """
+    <WasabiXML>
+      <groupdef id="synthetic.frame" xuitag="Synthetic:Frame">
+        <script file="frame.maki"/>
+      </groupdef>
+      <container id="Main">
+        <layout id="normal" w="300" h="250">
+          <group id="synthetic.frame" x="0" y="0" w="0" h="0" relatw="1" relath="1"
+                 notify="content,my.content.group"/>
+        </layout>
+      </container>
+    </WasabiXML>
+    """
+
     // MARK: - Fixtures
 
     private static let alphaXML = """

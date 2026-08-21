@@ -8,6 +8,9 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
 
 - Multiple document roots and raw ampersands (real skins contain both) — but tags must balance
 - `groupdef` with `inherit_group` inheritance; `xuitag` custom tag registration
+- `notify="key,value"` on a group instance delivers `onSetXuiParam("key", "value")` to the group's
+  scripts, even when the instance tag is `<group>` rather than the XUI tag name. This is how Lobe
+  passes `content` to its standard frame without using `<Wasabi:StandardFrame:Status content="…">`
 - `instanceid` on a group instance **renames the expanded object**: it answers to the instance id
   instead of the groupdef's id, which is the only way a skin can address one of several instantiations
   of one definition — from `sendparams group="…"` and from a script's `findObject`. Winamp Modern's

@@ -385,15 +385,31 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     }
 
     private func deliverXUIParams(for object: WasabiObject) {
-        guard loadedSkin.runtime.types.isXUITag(object.typeName), !object.scriptBindings.isEmpty else { return }
-        // `onSetXuiParam` is a *System* event, and each XUI instance gets its own program
-        // instance, so the params must go only to the programs that instance owns —
-        // dispatching to every program would hand one frame's `content` to all of them.
+        guard !object.scriptBindings.isEmpty else { return }
         let owned = programs.filter { $0.ownerID == object.stableID }
         guard !owned.isEmpty else { return }
-        for (name, value) in object.attributes.sorted(by: { $0.key < $1.key }) {
-            _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
-                              arguments: [.string(name), .string(value)], in: owned)
+        if loadedSkin.runtime.types.isXUITag(object.typeName) {
+            // `onSetXuiParam` is a *System* event, and each XUI instance gets its own program
+            // instance, so the params must go only to the programs that instance owns —
+            // dispatching to every program would hand one frame's `content` to all of them.
+            for (name, value) in object.attributes.sorted(by: { $0.key < $1.key }) {
+                _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
+                                  arguments: [.string(name), .string(value)], in: owned)
+            }
+        }
+        // Wasabi's `notify="key,value"` delivers `key` as an XUI param with the given value.
+        // Lobe uses `<group id="wasabi.standardframe.statusbar" notify="content,pledit.normal.
+        // content.group">` — a `<group>` instance, not a XUI tag, so the standard param loop
+        // above never fires, but the standard frame script still needs `content` to instantiate
+        // the playlist body.
+        if let notify = object.attributes["notify"] {
+            let parts = notify.split(separator: ",", maxSplits: 1)
+            if parts.count == 2 {
+                let key = String(parts[0])
+                let value = String(parts[1])
+                _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
+                                  arguments: [.string(key), .string(value)], in: owned)
+            }
         }
     }
 

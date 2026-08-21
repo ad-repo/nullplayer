@@ -19,6 +19,9 @@ draws and all ten bands plus preamp follow the host.
 
 It **was** input that was broken. B27 fixed ten of the thirteen dead controls and the reporter
 confirmed live 2026-08-21 that they all work. The one whole window that was missing is back (B26).
+The **playlist window was blank** until B31: Lobe uses `notify="content,pledit.normal.content.group"`
+on a `<group>` instance instead of the `content=` attribute on a XUI tag, and `deliverXUIParams` only
+fired for XUI tags. The content group is now instantiated and tracks render.
 
 ## What is knowingly missing
 
@@ -104,5 +107,5 @@ confirmed live 2026-08-21 that they all work. The one whole window that was miss
 
 ## Not yet measured
 
-Playlist and library content (no `componentHost` headlessly), the drawers in their slid-out state,
-the EQ presets popup, and the complete static method demand of the 13 programs.
+The drawers in their slid-out state, the EQ presets popup, and the complete static method demand of
+the 13 programs.

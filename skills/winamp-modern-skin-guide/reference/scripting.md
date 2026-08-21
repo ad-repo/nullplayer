@@ -106,6 +106,11 @@ Three ordering rules make or break this:
   `label.getAutoWidth() + 20` per tab; run before the labels arrived as params, all five tabs came out
   at that bare 20px, stacked at the left edge. `start()` therefore runs object-owned scripts, then
   `deliverXUIParams`, then the skin-level ones — do not collapse it back into one pass.
+- **`notify="key,value"`** on a group instance delivers `onSetXuiParam("key", "value")` even when the
+  instance tag is `<group>`, not the XUI tag name. Lobe's Pledit uses
+  `<group id="wasabi.standardframe.statusbar" notify="content,pledit.normal.content.group">` — the
+  standard frame script needs `content` to call `newGroup`, but `deliverXUIParams` only sends
+  attributes for XUI-tag instances. `notify` is parsed separately and fires on any object with scripts.
 
 `<script param="…">` carries Winamp's own macros rather than a path, so it is expanded in
 `WasabiSkinInitializer`, not by the VFS: `@HAVE_LIBRARY@` → `1` (we host a library surface), anything
