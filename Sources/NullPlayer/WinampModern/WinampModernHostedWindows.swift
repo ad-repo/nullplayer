@@ -17,6 +17,7 @@ enum WinampModernSurfaceID: Hashable, CustomStringConvertible {
     static let peppyMeter: Self = .hostWindow(.peppyMeter)
     static let audioAnalysis: Self = .hostWindow(.audioAnalysis)
     static let waveform: Self = .hostWindow(.waveform)
+    static let projectM: Self = .hostWindow(.projectM)
 
     var componentKind: WinampModernComponentKind? {
         guard case .component(let kind) = self else { return nil }
@@ -69,6 +70,7 @@ enum WinampModernHostedWindowID: String, CaseIterable {
     case peppyMeter
     case audioAnalysis
     case waveform
+    case projectM
 
     var containerIdentifier: String { "nullplayer.\(rawValue)" }
     var contentGroupIdentifier: String { "\(containerIdentifier).content" }
@@ -187,6 +189,22 @@ enum WinampModernHostedWindowRegistry {
             ),
             makeSurface: { context in
                 let view = WaveformView(frame: NSRect(origin: .zero, size: SkinElements.WaveformWindow.windowSize))
+                view.configureForHostedSurface(context: context)
+                return view
+            }
+        ),
+        WinampModernHostedWindowDefinition(
+            id: .projectM,
+            title: "Visualizations",
+            defaultSize: SkinElements.ProjectM.defaultSize,
+            minimumSize: SkinElements.ProjectM.minSize,
+            maximumSize: nil,
+            stackPolicy: WinampModernHostedStackPolicy(
+                participatesInCenterStack: false,
+                preferredHeightMultiplier: 1
+            ),
+            makeSurface: { context in
+                let view = ModernProjectMView(frame: NSRect(origin: .zero, size: SkinElements.ProjectM.defaultSize))
                 view.configureForHostedSurface(context: context)
                 return view
             }

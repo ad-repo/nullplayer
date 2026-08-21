@@ -221,7 +221,7 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
 
 #### NullPlayer-owned hosted windows are lazy
 
-Spectrum, Cava, Flow, PeppyMeter, Audio Analysis, and Waveform use a second, typed window catalog.
+Spectrum, Cava, Flow, PeppyMeter, Audio Analysis, Waveform, and ProjectM use a second, typed window catalog.
 They are application features, not Winamp component GUIDs, so they must never be added to
 `WinampModernComponentRegistry` or to load-time component synthesis.
 

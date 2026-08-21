@@ -1033,6 +1033,7 @@ class WindowManager {
         case .peppyMeter: showOnly ? showPeppyMeter() : togglePeppyMeter()
         case .audioAnalysis: showOnly ? showAudioAnalysis() : toggleAudioAnalysis()
         case .waveform: showOnly ? showWaveform() : toggleWaveform()
+        case .projectM: showOnly ? showProjectM(routeToSkin: false) : toggleLocalProjectMWindow()
         }
     }
 
@@ -1469,6 +1470,9 @@ class WindowManager {
     
     /// Get the ProjectM window frame (for state saving)
     var projectMWindowFrame: NSRect? {
+        if let frame = winampModernHostedController?.hostedWindow(ifMaterialized: .projectM)?.frame {
+            return frame
+        }
         return projectMWindowController?.window?.frame
     }
 
@@ -1798,7 +1802,9 @@ class WindowManager {
             networkMonitor: snapWindow(networkMonitorWindow, trackDetachedState: true),
             cava: snapWindow(cavaWindow, trackDetachedState: true),
             waveform: snapWindow(waveformWindow, trackDetachedState: true),
-            projectM: snap(projectMWindowController, trackDetachedState: true),
+            projectM: snap(projectMWindowController, trackDetachedState: true)
+                ?? snapWindow(winampModernHostedController?.hostedWindow(ifMaterialized: .projectM),
+                              trackDetachedState: true),
             // Library stores its position frame for restoration after Compact-mode rebuild.
             library: snap(plexBrowserWindowController,
                           normalFrame: plexBrowserWindowController?.frameForPositionMemory,
@@ -2779,6 +2785,13 @@ class WindowManager {
                       routeToSkin: Bool = true) {
         if routeToSkin,
            routeWinampModernSurface(.visualization, toggle: false, restoredFrame: restoredFrame) { return }
+        if routeToSkin,
+           routeWinampModernHostedWindow(.projectM, toggle: false, restoredFrame: restoredFrame) {
+            if let presetIndex, presetIndex >= 0 {
+                hostedProjectMView?.visualizationGLView?.restorePresetSelection(index: presetIndex)
+            }
+            return
+        }
         // Our own window is going up, so the skin's comes down: one visualization at a time.
         hideWinampModernVisualizationWindow()
         let isNewWindow = projectMWindowController == nil
@@ -2826,6 +2839,7 @@ class WindowManager {
     /// the window that was, and two engines rendered side by side against the same audio.
     var isProjectMVisible: Bool {
         if projectMWindowController?.window?.isVisible == true { return true }
+        if winampModernHostedController?.isHostedWindowVisible(.projectM) == true { return true }
         return winampModernSurfaces?.isSurfaceVisible(.visualization) == true
     }
 
@@ -2836,10 +2850,12 @@ class WindowManager {
     /// (a restored session, a `VIS_FS` before Phase 48's fullscreen, a skin switched mid-session)
     /// cannot end up competing.
     func hideLocalVisualizationWindow() {
-        guard let controller = projectMWindowController, controller.window?.isVisible == true else { return }
-        rememberProjectMFrame()
-        controller.stopRenderingForHide()
-        controller.window?.orderOut(nil)
+        if let controller = projectMWindowController, controller.window?.isVisible == true {
+            rememberProjectMFrame()
+            controller.stopRenderingForHide()
+            controller.window?.orderOut(nil)
+        }
+        winampModernHostedController?.hideHostedWindow(.projectM)
     }
 
     /// The other half of the rule: put the skin's AVS window away before ours goes up.
@@ -2873,11 +2889,18 @@ class WindowManager {
     /// Winamp's "next/previous visualization"; with the visualization window up, its presets are
     /// what those buttons are pointing at.
     func stepProjectMPreset(by delta: Int) {
-        guard let controller = projectMWindowController else { return }
-        if delta >= 0 {
-            controller.nextPreset(hardCut: false)
-        } else {
-            controller.previousPreset(hardCut: false)
+        if let controller = projectMWindowController {
+            if delta >= 0 {
+                controller.nextPreset(hardCut: false)
+            } else {
+                controller.previousPreset(hardCut: false)
+            }
+        } else if let visView = hostedProjectMView?.visualizationGLView {
+            if delta >= 0 {
+                visView.nextPreset(hardCut: false)
+            } else {
+                visView.previousPreset(hardCut: false)
+            }
         }
     }
 
@@ -2906,7 +2929,14 @@ class WindowManager {
             updateDockedChildWindows()
             return
         }
+        if winampModernHostedController?.isHostedWindowVisible(.projectM) == true {
+            winampModernHostedController?.hideHostedWindow(.projectM)
+            postLayoutChangeNotification()
+            updateDockedChildWindows()
+            return
+        }
         if routeWinampModernSurface(.visualization, toggle: true) { return }
+        if routeWinampModernHostedWindow(.projectM, toggle: true) { return }
         if let controller = projectMWindowController, controller.window?.isVisible == true {
             rememberProjectMFrame()
             // Stop rendering before hiding to save CPU (orderOut doesn't trigger windowWillClose)
@@ -3493,20 +3523,30 @@ class WindowManager {
     }
     
     // MARK: - Visualization Settings
-    
+
+    /// The hosted ProjectM view inside a `.wal` skin frame, if one has been materialized.
+    private var hostedProjectMView: ModernProjectMView? {
+        winampModernHostedController?.hostedWindowSurface(.projectM) as? ModernProjectMView
+    }
+
     /// Whether projectM visualization is available
     var isProjectMAvailable: Bool {
-        projectMWindowController?.isProjectMAvailable ?? false
+        projectMWindowController?.isProjectMAvailable
+            ?? hostedProjectMView?.visualizationGLView?.isProjectMAvailable
+            ?? false
     }
-    
+
     /// Total number of visualization presets
     var visualizationPresetCount: Int {
-        projectMWindowController?.presetCount ?? 0
+        projectMWindowController?.presetCount
+            ?? hostedProjectMView?.visualizationGLView?.presetCount
+            ?? 0
     }
-    
+
     /// Current visualization preset index
     var visualizationPresetIndex: Int? {
         projectMWindowController?.currentPresetIndex
+            ?? hostedProjectMView?.visualizationGLView?.currentPresetIndex
     }
 
     /// The visualization engine running inside the loaded `.wal` skin's own AVS window, if it has
@@ -3519,7 +3559,9 @@ class WindowManager {
 
     /// Current visualization engine type
     var visualizationEngineType: VisualizationType {
-        projectMWindowController?.currentEngineType ?? winampModernVisualizationSurface?.engineType ?? {
+        projectMWindowController?.currentEngineType
+            ?? hostedProjectMView?.visualizationGLView?.currentEngineType
+            ?? winampModernVisualizationSurface?.engineType ?? {
             if let raw = UserDefaults.standard.string(forKey: "visualizationEngineType"),
                let type = VisualizationType(rawValue: raw) {
                 return type
@@ -3532,6 +3574,7 @@ class WindowManager {
     func switchVisualizationEngine(to type: VisualizationType) {
         UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
         projectMWindowController?.switchEngine(to: type)
+        hostedProjectMView?.visualizationGLView?.switchEngine(to: type)
         winampModernVisualizationSurface?.switchEngine(to: type)
     }
 
@@ -3539,6 +3582,7 @@ class WindowManager {
     func resetVisualizationWindowPreferences() {
         UserDefaults.standard.set(VisualizationType.projectM.rawValue, forKey: "visualizationEngineType")
         projectMWindowController?.resetVisualizationWindowPreferences()
+        hostedProjectMView?.resetVisualizationWindowPreferences()
     }
 
     /// Force the open standalone Cava window (if any) to re-read tuning and re-derive its
@@ -3553,22 +3597,27 @@ class WindowManager {
     
     /// Get information about loaded presets (bundled count, custom count, custom path)
     var visualizationPresetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
-        projectMWindowController?.presetsInfo ?? (0, 0, nil)
+        projectMWindowController?.presetsInfo
+            ?? hostedProjectMView?.visualizationGLView?.presetsInfo
+            ?? (0, 0, nil)
     }
-    
+
     /// Reload all visualization presets from bundled and custom folders
     func reloadVisualizationPresets() {
         projectMWindowController?.reloadPresets()
+        hostedProjectMView?.visualizationGLView?.reloadPresets()
     }
 
     /// Build the visualization window's full controls menu when the window has been created.
     func buildVisualizationMenu() -> NSMenu? {
         projectMWindowController?.buildVisualizationMenu()
+            ?? hostedProjectMView?.buildVisualizationMenu()
     }
-    
+
     /// Select a visualization preset by index
     func selectVisualizationPreset(at index: Int) {
         projectMWindowController?.selectPreset(at: index, hardCut: false)
+        hostedProjectMView?.visualizationGLView?.selectPreset(at: index, hardCut: false)
     }
 
     func notifyMainWindowVisibilityChanged() {
@@ -4364,6 +4413,7 @@ class WindowManager {
         case .peppyMeter: return .peppyMeter
         case .audioAnalysis: return .audioAnalysis
         case .waveform: return .waveform
+        case .projectM: return nil
         }
     }
 
@@ -6081,7 +6131,8 @@ class WindowManager {
             equalizer: snap(equalizerWindowController),
             // Library stores its position frame for restoration after the rebuild.
             library: snap(plexBrowserWindowController, normalFrame: plexBrowserWindowController?.frameForPositionMemory),
-            projectM: snap(projectMWindowController),
+            projectM: snap(projectMWindowController)
+                ?? snapWindow(winampModernHostedController?.hostedWindow(ifMaterialized: .projectM)),
             spectrum: snapWindow(spectrumWindow),
             audioAnalysis: snapWindow(audioAnalysisWindow),
             peppyMeter: snapWindow(peppyMeterWindow),
@@ -6093,12 +6144,17 @@ class WindowManager {
     }
 
     private func restorableProjectMPresetIndex() -> Int? {
-        guard let controller = projectMWindowController,
-              controller.isProjectMAvailable else { return nil }
-        let count = controller.presetCount
-        let index = controller.currentPresetIndex
-        guard count > 0, index >= 0, index < count else { return nil }
-        return index
+        if let controller = projectMWindowController, controller.isProjectMAvailable {
+            let count = controller.presetCount
+            let index = controller.currentPresetIndex
+            if count > 0, index >= 0, index < count { return index }
+        }
+        if let visView = hostedProjectMView?.visualizationGLView, visView.isProjectMAvailable {
+            let count = visView.presetCount
+            let index = visView.currentPresetIndex
+            if count > 0, index >= 0, index < count { return index }
+        }
+        return nil
     }
 
     /// Rebuild the mode-dependent windows from a snapshot: the main window always returns,
@@ -6406,7 +6462,8 @@ class WindowManager {
             networkMonitor: detachedFrame(networkMonitorWindow),
             cava: detachedFrame(cavaWindow),
             library: detachedFrame(plexBrowserWindowController?.window),
-            projectM: detachedFrame(projectMWindowController?.window)
+            projectM: detachedFrame(projectMWindowController?.window
+                ?? winampModernHostedController?.hostedWindow(ifMaterialized: .projectM))
         )
     }
 

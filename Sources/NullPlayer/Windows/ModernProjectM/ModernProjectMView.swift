@@ -17,6 +17,9 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     
     weak var controller: ModernProjectMWindowController?
 
+    /// Hosted surface context when mounted inside a `.wal` skin's standard frame.
+    private var hostedContext: WinampModernHostedSurfaceContext?
+
     /// The skin renderer
     private var renderer: ModernSkinRenderer!
 
@@ -229,11 +232,10 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     }()
     
     private func calculateVisualizationArea() -> NSRect {
-        // In fullscreen mode, visualization takes the entire bounds
-        if isFullscreen {
+        if isFullscreen || hostedContext != nil {
             return bounds
         }
-        
+
         // Content area inside the chrome (standard macOS bottom-left coordinates)
         return NSRect(
             x: borderWidth,
@@ -247,14 +249,17 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
+
+        // When hosted inside a `.wal` skin frame, the frame owns all chrome.
+        if hostedContext != nil { return }
+
         // In fullscreen mode, just draw black background (visualization fills the rest)
         if isFullscreen {
             context.setFillColor(NSColor.black.cgColor)
             context.fill(bounds)
             return
         }
-        
+
         // Draw window background
         renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
 
@@ -482,6 +487,14 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     }
     
     override func mouseDown(with event: NSEvent) {
+        if hostedContext != nil {
+            if event.clickCount == 2 { togglePerformanceMode(nil) }
+            if visualizationGLView?.currentEngineType == .projectM {
+                showPresetRatingOverlay()
+            }
+            return
+        }
+
         let point = convert(event.locationInWindow, from: nil)
 
         // Check close button (only when titlebar is visible)
@@ -491,7 +504,7 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
             needsDisplay = true
             return
         }
-        
+
         // Top 1/4 of window: drag zone
         if hitTestTopZone(at: point) {
             isDraggingWindow = true
@@ -588,13 +601,15 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
         switch event.keyCode {
         case 53: // Escape - exit fullscreen if in fullscreen mode
             if isFullscreen {
-                controller?.toggleFullscreen()
+                if let hostedContext { hostedContext.requestFullscreen() }
+                else { controller?.toggleFullscreen() }
                 return true
             }
             return false
-            
+
         case 3: // F key - toggle fullscreen
-            controller?.toggleFullscreen()
+            if let hostedContext { hostedContext.requestFullscreen() }
+            else { controller?.toggleFullscreen() }
             return true
             
         case 35: // P key - toggle quality mode (30fps/60fps)
@@ -761,7 +776,8 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     }
     
     @objc func toggleFullscreenAction(_ sender: NSMenuItem?) {
-        controller?.toggleFullscreen()
+        if let hostedContext { hostedContext.requestFullscreen() }
+        else { controller?.toggleFullscreen() }
     }
     
     @objc func togglePerformanceMode(_ sender: NSMenuItem?) {
@@ -830,7 +846,8 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     }
 
     @objc func closeWindow(_ sender: NSMenuItem?) {
-        window?.close()
+        if let hostedContext { hostedContext.requestClose() }
+        else { window?.close() }
     }
     
     @objc func setAudioSensitivity(_ sender: NSMenuItem) {
@@ -1020,18 +1037,25 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
         presetCycleTimer = nil
     }
     
+    // MARK: - Hosted surface
+
+    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
+        hostedContext = context
+        autoresizingMask = [.width, .height]
+    }
+
     // MARK: - Layout
-    
+
     override func layout() {
         super.layout()
         updateVisualizationFrame()
-        updateCornerMask()
+        if hostedContext == nil { updateCornerMask() }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         layer?.isOpaque = false
-        updateCornerMask()
+        if hostedContext == nil { updateCornerMask() }
     }
 
     private func updateCornerMask() {
@@ -1043,5 +1067,26 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
         let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
                                          .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         layer.maskedCorners = allCorners.subtracting(sharpCorners)
+    }
+}
+
+// MARK: - WinampModernHostedSurface
+
+extension ModernProjectMView: WinampModernHostedSurface {
+    var view: NSView { self }
+    func applyPalette(_ style: WinampModernSurfaceStyle) { needsDisplay = true }
+    func applySkinScale(_ scale: CGFloat) {
+        updateVisualizationFrame()
+        needsDisplay = true
+    }
+    func resume() { startRendering() }
+    func suspend() { stopRendering() }
+    func unmountFromHolder() { removeFromSuperview() }
+    func prepareForUITeardown() {
+        stopRendering()
+        stopPresetCycleTimer()
+        stopTripexCycleTimer()
+        removeFromSuperview()
+        hostedContext = nil
     }
 }
