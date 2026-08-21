@@ -148,8 +148,6 @@ Manual QA for UI/playback changes: local file playback, Plex/Subsonic/Jellyfin/E
 
 - **A window's minimum size can be derived from Auto Layout, and `setFrame` refuses silently**: if any view in a window's content tree carries required constraints, AppKit computes a minimum window size from them and quietly returns a *different, larger* frame from `setFrame` — no error, no warning. `VideoControlBarView`'s required chain sums to exactly 395pt, which is why a video window parked over a `.wal` skin's 348pt box kept coming back 46pt too wide. **A hidden view's constraints are still live** — `isHidden` does not drop them; the view has to leave the hierarchy. When a hosted view is the wrong size, log the frame you asked for next to `window.frame` afterwards before theorising.
 
-- **An OpenGL visualization view will not start in a window that is not on screen yet**: `VisualizationGLView.startRendering()` requires `window.isVisible`, and the only path that restarts it is an occlusion change resuming a link that was stopped *because* of occlusion. A view added to a window before it is ordered in is refused once and never asks again — it renders black forever while everything around it draws. Any host that creates the view before showing its window must call `resumeRenderingAfterWindowTransition()` after the window is up (`.wal` skins do this from `setSceneVisible`/`setAuxiliaryWindow`).
-
 - **NSTextField background**: Setting `backgroundColor` has no effect unless `drawsBackground = true` is also set.
 
 - **No Spotify/Apple/Amazon**: These integrations are explicitly not accepted.

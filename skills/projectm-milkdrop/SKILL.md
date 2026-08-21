@@ -92,6 +92,7 @@ Persisted: `projectMBeatSensitivity` (UserDefaults)
 - **Frame Rate**: 60 FPS via CVDisplayLink
 - **Audio Input**: PCM waveform data from AudioEngine
 - **Beat Detection**: built-in projectM beat sensitivity
+- **Rendering lifetime — the view must be in a *visible* window before it will start.** `startRendering()` requires `window.isVisible`, and the only thing that restarts a stopped link is an occlusion change resuming one that was stopped *because* of occlusion. A `VisualizationGLView` added to a window that has not been ordered in yet is refused once and never asks again: it renders black forever while everything around it draws. Any host that builds the view before showing its window must call `resumeRenderingAfterWindowTransition()` afterwards. The window views do this implicitly (their windows are on screen when the view is made); the `.wal` skin surface calls it from `setSceneVisible`/`setAuxiliaryWindow`, because a skin's AVS window is created hidden and opened later.
 - **Drag suspend**: ProjectM rendering is suspended for the duration of any window drag (`.windowDragDidBegin` / `.windowDragDidEnd` from `WindowManager`). This prevents WindowServer stalls on Apple Silicon caused by simultaneous OpenGL compositing and window repositioning. If adding window-movement code that runs outside a drag, do NOT rely on ProjectM being suspended — the suspend is drag-scoped only.
 
 ## Crash Detection & Blacklist
@@ -117,12 +118,14 @@ libprojectM can SIGSEGV/SIGBUS on a buggy preset (bad shader compile, the null-t
 - `Windows/ModernProjectM/ModernProjectMWindowController.swift` — window controller (modern)
 - `Windows/ModernProjectM/ModernProjectMView.swift` — container with modern chrome
 - `Visualization/VisualizationGLView.swift` — OpenGL rendering (shared)
+- `Visualization/VisualizationContextMenu.swift` — the one context menu all three hosts build (`VisualizationMenuTarget` supplies the engine and the actions; `Options` the cycle state and whether Fullscreen/Close apply)
+- `Windows/WinampModern/WinampModernVisualizationSurfaceView.swift` — the third host: the engine inside a `.wal` skin's own AVS window ([winamp-modern-skin-guide](../winamp-modern-skin-guide/reference/components.md))
 - `Visualization/ProjectMWrapper.swift` — ProjectM library wrapper
 - `App/ProjectMWindowProviding.swift` — protocol abstracting classic/modern
 
 ## Troubleshooting
 
-**Black screen**: ProjectM requires OpenGL 4.1; check Console.app for projectM init errors; try reloading presets.
+**Black screen**: ProjectM requires OpenGL 4.1; check Console.app for projectM init errors; try reloading presets. If the view was added to a window that was still hidden, the display link was never started at all — see **Rendering lifetime** under Technical; in a `.wal` skin's window the DEBUG line `WINAMP-MODERN-VIS: resume … rendering=<0/1>` answers it directly.
 
 **No presets loading**: verify preset files exist in bundle or custom folder; check folder permissions.
 
