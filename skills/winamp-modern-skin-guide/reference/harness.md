@@ -167,6 +167,13 @@ reproduce — extend it rather than starting over.
 > point sizes are clamped to a finite 1…256, and a skin TrueType with no PostScript name is rejected.
 > Apply the same discipline to any new skin-derived value handed to a system API.
 
+**A skin asking for a different window size prints `SCALE request <factor> -> <level>%`.** The dump
+installs `uiScaleRequested` before `start()` and reports every `layout.setScale`, named as the UI Size
+level the app would snap to — so a button asking for 250% is not confused with one asking for 200%,
+and nine identical lines from one click is the expected shape, not a bug (Defix registers the
+`SCALING` pulse once per script, and each holder scales its own layout). The harness owns no windows,
+so this is the only headless view of the request; what it cannot show is the resize itself.
+
 `WinampModernRenderPixelTests` is the synthetic guard for all of the above: a banded atlas whose crop
 origin, upright orientation, tiling, and `fitparent` sizing are asserted per pixel. When you touch
 `WasabiSceneRenderer`, verify a fix *fails* without the change before trusting it.

@@ -103,6 +103,16 @@ final class WinampModernRenderDumpTests: XCTestCase {
             print("PLAYLIST before: \(host.describe())")
         }
 
+        // `layout.setScale(f)` — a skin driving the host's **UI Size** (Phase 46, B12). The harness
+        // owns no windows, so this is the only place the request can be seen at all; it is installed
+        // before `start()` because the five scripts that carry it call it from `onScriptLoaded`, and
+        // it names the level the app would snap to so a button that asks for 250% is not confused
+        // with one that asks for 200%.
+        runtime.uiScaleRequested = { factor in
+            print(String(format: "SCALE request %.3f -> %@%%", Double(factor),
+                         UIScaleLevel.nearest(toScaleFactor: factor).rawValue))
+        }
+
         try runtime.start()
 
         if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {

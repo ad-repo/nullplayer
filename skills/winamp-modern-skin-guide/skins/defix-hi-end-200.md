@@ -324,8 +324,15 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   - The **Switch** button beside *Autoswitching infoboxes* and the nine switches themselves were
     already working (Phase 25/27); their indicators read the stored value, and three of them ship
     `1`.
-- **`setScale` is missing** — the configurator's seven window-scaling buttons (100–300%) are inert
-  (B12).
+- **The seven window-scaling buttons work (Phase 46, B12).** Each stores a percentage with
+  `setPrivateInt("SCALING")` and pulses `SCALING Chng`; nine `onDataChanged` handlers across five
+  scripts then call `setScale` on their own layout with the same factor. They drive **NullPlayer's
+  own UI Size** — there is no skin-local scale to fight with it — and each of the seven lands on its
+  own level (100, 125, 150, 175, 200, 250, 300; the last three were added to `UIScaleLevel` for
+  them). Measured with `RENDER_CLICK` on `Config/normal` at y=310: x=30/81/132/183/234/285/336, one
+  button each, nine identical `SCALE request` lines per click. The configurator's page state
+  **persists between harness runs** (xctest defaults), so aim after checking which page is up — the
+  scaling buttons are on `Config.normal.atrb`, one ▶ from the `style` page the window opens on.
 - **Most of its menus are host actions, and those are still unimplemented.** `trackmenu`/`trackinfo`
   on the song ticker **work as of Phase 36** — the ticker (`Songticker`, 17,115 261×23 in
   `main/normal`) is hit-tested for its `rightclickaction`/`dblclickaction` and both commands are

@@ -86,7 +86,10 @@ enum UIScaleLevel: String, Codable, CaseIterable {
     case p125 = "125"
     case p135 = "135"
     case p150 = "150"
+    case p175 = "175"
     case p200 = "200"
+    case p250 = "250"
+    case p300 = "300"
 
     var percent: Int {
         Int(rawValue) ?? 100
@@ -99,6 +102,16 @@ enum UIScaleLevel: String, Codable, CaseIterable {
     /// Linear scale multiplier applied on top of Skin.scaleFactor.
     var scaleFactor: CGFloat {
         CGFloat(percent) / 100.0
+    }
+
+    /// The level closest to an arbitrary multiplier, for a caller that thinks in factors rather
+    /// than in menu entries — a `.wal` skin's `setScale`, whose configurator offers 100–300%. Ties
+    /// go to the larger level; there is no "off the end" case, because the ends clamp.
+    static func nearest(toScaleFactor factor: CGFloat) -> UIScaleLevel {
+        allCases.min(by: {
+            let (a, b) = (abs($0.scaleFactor - factor), abs($1.scaleFactor - factor))
+            return a == b ? $0.scaleFactor > $1.scaleFactor : a < b
+        }) ?? .p100
     }
 
     init?(storedRawValue: String) {

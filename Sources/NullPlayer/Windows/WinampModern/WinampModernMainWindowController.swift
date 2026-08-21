@@ -106,6 +106,21 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     func loadSkin(at url: URL) {
         tearDownSkin()
+        // A `setScale` that arrives while the skin is loading cannot be acted on: `loadSkin` runs
+        // from this controller's own initializer, so `WindowManager.mainWindowController` is not
+        // assigned yet and `applyDoubleSize` would return having changed nothing while the level it
+        // was given stuck — a permanent desync. Defix calls it from five `onScriptLoaded` handlers,
+        // so this is the *normal* case, not an edge one. It is applied one runloop turn after the
+        // skin is up instead — which is also before `AppStateManager` restores a saved UI Size, so
+        // an explicit saved level still has the last word over the skin's stored one.
+        isLoadingSkin = true
+        defer {
+            isLoadingSkin = false
+            if let pending = pendingUIScaleRequest {
+                pendingUIScaleRequest = nil
+                DispatchQueue.main.async { [weak self] in self?.applyUIScaleRequest(pending) }
+            }
+        }
         do {
             let loaded = try WinampModernSkinLoader().load(from: url)
             let host = WinampModernAudioEngineHost(engine: WindowManager.shared.audioEngine)
@@ -744,6 +759,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         scripts.layoutResizeRequested = { [weak self] container, size in
             self?.viewsByContainer[container]?.applyCanvasResize(size)
         }
+        // `layout.setScale(f)` — the skin asking for every window at a different size. It is
+        // answered by the one UI Size system rather than by a scale of the skin's own: the view
+        // already applies UI Size at its drawing and input boundaries, and a second scale on top of
+        // that would be a rival for the same pixels. Defix's seven configurator buttons store a
+        // percentage and then call this on each window's layout with the same factor, so the request
+        // arrives repeatedly with one value — setting the level it is already at is a no-op.
+        scripts.uiScaleRequested = { [weak self] factor in
+            self?.applyUIScaleRequest(factor)
+        }
         // A script moved something. Every container diffs its own scene and notifies what moved; a
         // container nothing happened in dispatches nothing.
         scripts.geometryDidSettle = { [weak self] in
@@ -822,6 +846,26 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// UI Size for this mode. The skin's own pixel grid never changes; the view scales at the drawing
     /// and input boundaries and every window is sized to `canvas × scale`.
     private(set) var skinScale: CGFloat = 1
+
+    /// True between the start and the end of `loadSkin`, so a script's `setScale` is deferred rather
+    /// than pushed at a window layer that does not exist yet.
+    private var isLoadingSkin = false
+    /// The scale a script asked for while the skin was loading; applied once it is up.
+    private var pendingUIScaleRequest: CGFloat?
+
+    /// A skin's `setScale`, snapped onto the host's own UI Size ladder — the seven percentages
+    /// Defix's configurator offers (100, 125, 150, 175, 200, 250, 300) are all levels, so each of
+    /// its buttons lands on its own. There is no skin-local scale to keep in step: this *is* the
+    /// scale, and `WindowManager` resizes every window in every mode from it.
+    private func applyUIScaleRequest(_ factor: CGFloat) {
+        guard !isLoadingSkin else {
+            pendingUIScaleRequest = factor
+            return
+        }
+        let level = UIScaleLevel.nearest(toScaleFactor: factor)
+        guard WindowManager.shared.uiScaleLevel != level else { return }
+        WindowManager.shared.uiScaleLevel = level
+    }
 
     /// The size the main window wants at `scale`, used by `WindowManager.applyDoubleSize` to place
     /// this mode's window instead of the classic main-window constant.
@@ -999,6 +1043,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func prepareForUITeardown() { tearDownSkin() }
 
     private func tearDownSkin() {
+        // A scale the outgoing skin asked for is not owed to the incoming one.
+        pendingUIScaleRequest = nil
         // Auxiliary views share the main view's script runtime + host, so tear them down first
         // (they only release their own renderer); the main view then tears down the shared runtime.
         for container in auxiliaryContainers {

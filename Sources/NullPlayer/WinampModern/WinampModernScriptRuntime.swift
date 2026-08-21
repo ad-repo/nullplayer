@@ -87,6 +87,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// script that resized itself at startup resized the player instead.
     var layoutSwitchRequested: ((WasabiObjectID, String) -> Bool)?
     var layoutResizeRequested: ((WasabiObjectID, CGSize) -> Void)?
+    /// `layout.setScale(f)` — the skin asking for the **whole UI** at a different size. Defix's
+    /// configurator offers seven of them (100–300%) and every one of its five window scripts calls
+    /// this on its own layout from the same stored `SCALING`, so it is one global request repeated,
+    /// not five per-window scales. NullPlayer answers it with its own **UI Size**: a `.wal` scene is
+    /// always laid out on the skin's pixel grid and the view scales at the drawing and input
+    /// boundaries (Phase 10), so a second, layout-local scale would be a rival to that one and the
+    /// two would fight over every window's size. `nil` in the harness, and while a skin is still
+    /// loading the host defers the request rather than resizing windows that do not exist yet.
+    var uiScaleRequested: ((CGFloat) -> Void)?
     var actionRequested: ((String, String?) -> Void)?
     /// A script showing or hiding a **container** is asking for its *window*, not just for an
     /// attribute on the graph. Defix's SUI is reachable only this way: its four round PL/EQ/ML/VD
@@ -1446,6 +1455,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // `isInvalid()` is how a ClassicPro script asks "did this element survive the skin's
             // overrides?" before configuring it; `getScale()` is a layout's zoom factor.
             "isinvalid": .init(argumentCount: 0, returnKind: .boolean),
+            // Its write half is the host's UI Size, not a layout transform — see `uiScaleRequested`.
+            "setscale": .init(argumentCount: 1, returnKind: .null),
             "getscale": .init(argumentCount: 0, returnKind: .float),
             "setredraw": .init(argumentCount: 1, returnKind: .null),
             "setregionfrommap": .init(argumentCount: 3, returnKind: .null),
@@ -2547,6 +2558,22 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 }
             }
             return .integer(Int32(object.attributes["value"] ?? "") ?? (object.attributes["activated"] == "1" ? 1 : 0))
+        case "setscale":
+            // "Scale all my windows to this." Answered by the host's UI Size, and only from a
+            // **layout** receiver: that is the only form in the corpus, and a scale stamped on a
+            // child object would be a second, rival scale for the same pixels (see `getscale`
+            // below, which stays 1 for exactly that reason). A non-layout receiver is accepted and
+            // inert rather than refused — refusing a method aborts the handler that called it.
+            if object.typeName.caseInsensitiveCompare("layout") == .orderedSame {
+                let factor = arguments[0].doubleValue
+                // A skin is not allowed to drive the host off the end of the scale; the host snaps
+                // the request to one of its own levels anyway, and a garbage value should not reach
+                // it as one. Winamp's own range is 1…3.
+                if factor.isFinite, factor > 0 {
+                    uiScaleRequested?(CGFloat(min(max(factor, 0.25), 4)))
+                }
+            }
+            return .null
         case "getscale":
             // The scene is always on the skin's own pixel grid: UI Size is applied at the view's
             // drawing/input boundary and is deliberately invisible to scripts (Phase 10), so the
@@ -3146,6 +3173,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         popupPresenter = nil
         layoutSwitchRequested = nil
         layoutResizeRequested = nil
+        uiScaleRequested = nil
         actionRequested = nil
         themeNamesRequested = nil
         activeThemeRequested = nil

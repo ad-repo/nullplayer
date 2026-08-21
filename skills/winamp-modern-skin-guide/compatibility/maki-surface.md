@@ -55,6 +55,17 @@ By area:
 - **`XmlDoc`**: `load`, `exists` — **inert**. The callback-driven parser is not implemented, so a
   document always reports that it does not exist and every caller takes its own skip path. Cost: a
   skin's optional `ClassicPro.xml` extras (songticker antialiasing, custom beat-vis names) are ignored
+- **Window scaling**: `<layout>.setScale(f)` is answered by **NullPlayer's own UI Size** — the level
+  nearest the requested factor — and by nothing else. A `.wal` scene is always laid out on the skin's
+  pixel grid, with UI Size applied at the view's drawing and input boundaries, so a second
+  layout-local scale would be a rival for the same pixels. `getScale()` therefore still answers **1**
+  whatever size the windows are drawn at: the layout's own scale really is 1, and ClassicPro's resize
+  arithmetic (which multiplies by it) is in skin pixels. On a receiver that is not a layout the call
+  is accepted and inert. Measured demand: Defix's seven configurator buttons (100, 125, 150, 175,
+  200, 250, 300 — the ladder gained 175/250/300 for them), Ebonite's `standardframe.m` and boom's
+  `prefs.m`; all three call it on a layout. **Not** dispatched: `onScale`, the layout event Wasabi
+  raises when a scale changes (Ebonite uses it to keep two layouts in step, which our one global
+  scale already does)
 - **Object validity**: `isInvalid()` is true for a null receiver *and* for an object whose declared
   bitmap never resolved. ClassicPro probes for optional artwork by declaring a hidden layer over it
   and asking that layer whether it is invalid

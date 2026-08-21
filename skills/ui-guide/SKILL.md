@@ -665,7 +665,9 @@ Key implementation details:
 
 ## UI Size Mode (Both UI Modes)
 
-UI label is **UI Size** with mutually-exclusive percentage rows: **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, and **200%**.
+UI label is **UI Size** with mutually-exclusive percentage rows: **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, **175%**, **200%**, **250%**, and **300%**.
+
+`UIScaleLevel.nearest(toScaleFactor:)` maps an arbitrary multiplier onto the ladder (ties to the larger level, ends clamp). It exists for callers that think in factors rather than menu rows — a `.wal` skin's `setScale`, which is answered by this system and not by a scale of the skin's own; 175/250/300 are on the ladder because that skin's configurator offers them.
 
 - **Scale levels**: `UIScaleLevel` stores percentage raw values (`"100"`, `"105"`, etc.); `scaleFactor` is `percent / 100`.
 - **Source of truth**: `WindowManager.uiScaleLevel`; the legacy `isDoubleSize` API remains a compatibility shim (`true` writes 150%, reads are true for any non-100% value).

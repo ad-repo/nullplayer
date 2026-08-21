@@ -366,10 +366,50 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       `main-shade`, hashes differently on every run of the same build and is pixel-identical — the
       encoder, not the renderer). **Confirmed live 2026-08-20**: one click on *Body material* in the
       running app wrapped `BG31 → BG1` and changed the playlist window's frame on screen.
-      Residue: the seven scaling buttons are still inert (B12), and the live pass is the QA checklist
-      item, not a probe
-- [ ] **B12. `setScale`** — the configurator's seven 100–300% window-scaling buttons are inert.
-      Decide first whether it drives our own UI Size or a skin-local scale; the two must not fight
+      Residue: the seven scaling buttons were still inert; closed as B12 in Phase 46. The live pass
+      is the QA checklist item, not a probe
+- [x] **B12. `setScale`** — ~~the configurator's seven 100–300% window-scaling buttons are inert~~ —
+      **closed in Phase 46.** The decision first, because the code follows from it: `setScale` drives
+      **our own UI Size**, and there is no skin-local scale at all. A `.wal` scene is laid out on the
+      skin's pixel grid and `WinampModernMainView` applies UI Size at its drawing and input
+      boundaries (Phase 10); a second, layout-local scale would be a rival for the same pixels, and
+      the two would fight over every window's size. So `getScale()` still answers **1** — the
+      layout's own scale really is 1 however large it is drawn, which is also what ClassicPro's
+      resize arithmetic (in skin pixels, multiplied by it) needs.
+      What the skin actually does, measured (`RENDER_DISASM=@skin.xml`): each button stores a
+      percentage with `System.setPrivateInt(getSkinName(), "SCALING", n)` and pulses `SCALING Chng`;
+      an if-chain then re-reads the stored value and calls `layout.setScale(1 / 1.25 / 1.5 / 1.75 /
+      2 / 2.5 / 3)`. It is registered **once per script**, so one click produces **nine** identical
+      requests across five scripts — one per window the skin owns. That is the whole reason this is
+      one global request and not nine local ones, and the runtime forwards every one: the host
+      de-duplicates, because `WindowManager.uiScaleLevel` ignores a write of the level it is at.
+      Three things the shape of the fix turns on:
+      1. **The ladder gained 175%, 250% and 300%.** Snapping to the old top of 200% collapsed three
+         of the seven buttons onto one level — seven controls, four outcomes. They are ordinary UI
+         Size rows now, available in every mode.
+      2. **A load-time request cannot be acted on.** `loadSkin` runs from the window controller's own
+         initializer, so `WindowManager.mainWindowController` is not assigned yet and
+         `applyDoubleSize` would return having changed nothing while the level it was handed stuck —
+         a permanent desync. Defix calls `setScale` from `onScriptLoaded`, so this is the normal
+         case. It is held and applied one runloop turn after the skin is up, which is also *before*
+         `AppStateManager` restores a saved UI Size — so an explicitly saved level still has the last
+         word over the skin's stored one, and a skin switch does not carry the old skin's request in.
+      3. **Accepted, never refused, on a non-layout receiver.** Refusing a method aborts the handler
+         that called it, which is how one missing call took multipass's entire `onScriptLoaded` with
+         it in Phase 33.
+      New harness line: **`SCALE request <factor> -> <level>%`**, printed for every call and named as
+      the level the app would snap to (a button asking for 250% must not read as one asking for 200%);
+      the harness owns no windows and this is the only headless view of the request. Verified by
+      driving each of the seven buttons in `Config/normal` — one button per x, the right factor, the
+      right level, nine lines each. 8 new unit tests; 915 green. **Manual QA in the running app:
+      good, 2026-08-20.**
+      Residue: **`onScale`** — the layout event Wasabi raises when a scale changes — is still not
+      dispatched. Measured demand is Ebonite's `standardframe.m`, which uses it to keep two layouts in
+      step; our one global scale already does that, so there is nothing for it to fix today. Also
+      measured while here: Ebonite and boom (`prefs.m`) are the only other corpus skins that call
+      `setScale`, both on a layout, so the receiver rule covers every measured use. And note the trap
+      that hid them — a compiled `.maki` carries a trailing index byte after each method name, so a
+      strict `grep setScale` over the corpus finds only the skins that shipped uncompiled `.m` source
 - [ ] **B20. Host the video player in the skin's own video window.** Five of the 17 skins (Love is
       War Miku, Itemskin, multipass, Ujola Cat, winampmodern566) declare a full `<container
       id="video">` — chrome, a `ledstatusbar`, and the 28 `VID_*` buttons B5 answered — and it is
