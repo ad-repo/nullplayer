@@ -147,6 +147,24 @@ object — class GUIDs are not in the archive — so an object becomes a map on 
 Knob scripts mix `getMousePosX()` with the x/y of a mouse event in one expression, so the cursor
 position is reported in **skin pixels**, not screen points; UI Size never enters the script's world.
 
+**The two are not the same space, and that is why the expression exists.** `getMousePos*` is the
+window's canvas; a mouse event's x/y are relative to the **receiver's parent** — the same origin
+`getLeft()`/`getTop()` answer from. Every rotary control in the corpus is written that way:
+
+```c
+// LOBE and Rika, in the handler itself:
+float v = map.getValue(x - anim.getLeft(), y - anim.getTop());   // → the object's own pixels
+// mmd3, shipped as source in scripts/volumebasstreble.m:
+WinX = getMousePosX() - x + Volume.getLeft() + (Volume.getWidth()/2);   // → the knob in cursor space
+```
+
+`getMousePosX() - x` is the parent's origin, which is the conversion mmd3 needs and the reason the
+subtraction is written at all. Sending the canvas point made LOBE's seek dial sample (213, 26) of a
+48×35 map — zero everywhere — so its dial seeked to 0 and its volume strip set 0 (B30, 2026-08-21;
+Styx's volume knob was the same). mmd3's own knob group is at (0, 0), which is why the two
+conventions agreed there and this survived 50 phases. Converted once, in
+`WinampModernMainView.dispatch`, so every mouse event (and the `RENDER_CLICK` probe) uses it.
+
 A `Map` is also a general **image-inspection** object, not only a knob lookup: `getWidth`/`getHeight`
 size things from artwork, and `getARGBValue(x, y, channel)` reads whole pixels — ClassicPro derives
 its visualization colour bands this way (`colorbandpeak="r,g,b"` from channels **2, 1, 0**, i.e. the

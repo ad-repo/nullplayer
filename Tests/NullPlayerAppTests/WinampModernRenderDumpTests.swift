@@ -825,8 +825,14 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 // The button events carry the click's x/y, exactly as the view sends
                                 // them: a handler that pops two arguments off an empty stack fails
                                 // with an underflow that belongs to the harness, not the skin.
+                                // Parent-relative, exactly as the view sends them (see
+                                // `WinampModernMainView.dispatch`): a knob script subtracts its own
+                                // `getLeft()` from this, and a canvas point put Lobe's dial off the
+                                // end of its map.
+                                let parent = renderer.resolvedGeometry(of: target)?.parent ?? .zero
+                                let local = CGPoint(x: point.x - parent.minX, y: point.y - parent.minY)
                                 let arguments: [MakiValue] = ["onleftclick", "onrightclick"].contains(event) ? []
-                                    : [.integer(Int32(point.x)), .integer(Int32(point.y))]
+                                    : [.integer(Int32(local.x)), .integer(Int32(local.y))]
                                 if event.hasPrefix("onright") {
                                     // No view here to show a menu, so record what the skin built.
                                     runtime.popupPresenter = { items, point in

@@ -69,8 +69,9 @@ By area:
 - **Object validity**: `isInvalid()` is true for a null receiver *and* for an object whose declared
   bitmap never resolved. ClassicPro probes for optional artwork by declaring a hidden layer over it
   and asking that layer whether it is invalid
-- **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **skin pixels**, the same units as a mouse event's
-  x/y), `getEQ`, `getEqBand`/`setEqBand` and `getEqPreamp`/`setEqPreamp` (MAKI's −127…127 scale ↔ the
+- **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **skin pixels**, on the window's canvas — *not*
+  the space a mouse event's x/y use, which is the receiver's parent; see
+  [reference/scripting.md](../reference/scripting.md) §*Rotary controls*), `getEQ`, `getEqBand`/`setEqBand` and `getEqPreamp`/`setEqPreamp` (MAKI's −127…127 scale ↔ the
   engine's ±12 dB), `atan`. Both setters **announce the change** (`onEqBandChanged` /
   `onEqPreampChanged`, Phase 41) exactly as `setVolume` does
 - **`List`**: `addItem`, `enumItem`, `getNumItems`, `removeItem`, `removeAll`, `findItem` (objects

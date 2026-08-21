@@ -117,8 +117,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     var themeNamesRequested: (() -> [String])?
     var activeThemeRequested: (() -> String)?
     var themeSwitchRequested: ((String) -> Bool)?
-    /// Cursor position in the *skin's own pixel space* — the same units as the x/y a mouse event hands
-    /// a script, which rotary-knob scripts combine in a single expression.
+    /// Cursor position in the *skin's own pixel space* (the window's canvas), in skin pixels.
+    ///
+    /// **Not** the space a mouse event's x/y are in — those are relative to the receiver's parent
+    /// (see `WinampModernMainView.dispatch`). A rotary-knob script combines the two in one
+    /// expression precisely because they differ: mmd3's `getMousePosX() - x + knob.getLeft()` is the
+    /// parent's origin plus the knob's own offset, i.e. the knob in cursor space.
     var mousePositionRequested: (() -> CGPoint)?
     /// The same cursor position, but in the pixel space of the window that renders `object` — which is
     /// a *different* window from the one `mousePositionRequested` answers for whenever the receiver

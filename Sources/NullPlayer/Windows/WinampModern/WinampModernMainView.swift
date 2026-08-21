@@ -1101,9 +1101,28 @@ final class WinampModernMainView: NSView {
         return skinPoint(convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil))
     }
 
+    /// A mouse event's x/y are in the receiver's **parent** coordinate space — the same space
+    /// `getLeft()`/`getTop()` answer in, and *not* the window-wide space `System.getMousePos*` uses.
+    ///
+    /// Three skins in the corpus say so independently. Lobe's seek dial and volume knob read
+    /// `map.getValue(x - anim.getLeft(), y - anim.getTop())`, and Rika's do the same: that only
+    /// indexes a 48×35 map if `x` is measured from the same origin as `getLeft()`. mmd3's knob is the
+    /// proof from the other side — it opens with `getMousePosX() - x + knob.getLeft() +
+    /// knob.getWidth()/2`, which is the object's centre in *cursor* space only if `getMousePosX() -
+    /// x` is the parent's origin. Sending the canvas point made Lobe's dial sample (213, 26) of a
+    /// 48-wide map, which is 0 everywhere, so every drag seeked to zero and every knob turn set the
+    /// volume to nothing.
     private func dispatch(object: WasabiObject, event: String, point: CGPoint) {
+        let local = pointInParentSpace(of: object, canvasPoint: point)
         _ = try? scripts.dispatch(object: object, event: event,
-                                  arguments: [.integer(Int32(point.x)), .integer(Int32(point.y))])
+                                  arguments: [.integer(Int32(local.x)), .integer(Int32(local.y))])
+    }
+
+    /// The canvas point in `object`'s parent's coordinates. Unchanged for anything whose parent sits
+    /// at the origin, which is why this was invisible until a skin put a knob inside a placed group.
+    func pointInParentSpace(of object: WasabiObject, canvasPoint: CGPoint) -> CGPoint {
+        guard let parent = renderer.resolvedGeometry(of: object)?.parent else { return canvasPoint }
+        return CGPoint(x: canvasPoint.x - parent.minX, y: canvasPoint.y - parent.minY)
     }
 
     /// Whether a press on `object` moves the window. Internal so the drag policy can be tested
