@@ -255,15 +255,12 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   round button assigned to a toggling target would have done the same.
   **The harness could not see this** — it owns no windows, so the doubled toggle printed as one clean
   `CLICK action:`. It was found with `WINAMP_MODERN_DEBUG_CLICK` in the running app.
-- **The `ML` round button does not open the media library until some other window has been opened
-  once — open, reported live 2026-08-20.** After that it works every time. The button's branch is
-  `getContainer("SUI").getLayout("normal").findObject("sui.content").sendAction("opentab", "ML", …)`,
-  and the SUI's `onAction` handler answers with `isVisible() -> 1` followed by
-  `getContainer("sui").hide()` — it believes the tab it was asked for is already showing, so it
-  closes instead of opening. The `isVisible()` receiver is *not* the container (no
-  `containerVisibilityQuery` is consulted), so it is reading a graph `visible` attribute on a tab page
-  that nothing has initialised yet; opening any window first is what runs the initialisation. Same
-  family as the Phase 31 "round buttons re-assign but mis-target after the swap" item.
+- **The `ML` round button works the first time — fixed (B22).** Previously reported live 2026-08-20
+  as not opening the media library until some other window had been opened once. The button's
+  branch sends `opentab ML` to the SUI, and the `onAction` handler checks `isVisible()` on the
+  tab page — which was inside a hidden parent group but returned true because only the object's
+  own attribute was checked. `effectiveVisibility(of:)` now walks the parent chain (as Winamp
+  does), so a tab page inside a hidden group correctly reports false.
 - **The playlist box's readouts were blank — two separate causes, both fixed 2026-08-19.** The user
   reported it as "the playlist window shows art but not the track information", and noticed that
   enabling *Two infoboxes in the playlist* makes the second box show it. That second box is a

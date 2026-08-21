@@ -101,6 +101,49 @@ final class WinampModernPhase34Tests: XCTestCase {
         XCTAssertEqual(group.attributes["visible"], "1", "and back up")
     }
 
+    /// B22 (reverted): `isVisible()` returns the object's **own** `visible` attribute, not a
+    /// computed walk of the ancestor chain. Walking all ancestors broke cPro-Bento's tab system.
+    /// Winamp's `GuiObject.isVisible()` reads the object's own attribute.
+    func testIsVisibleReturnsTheObjectsOwnAttribute() throws {
+        let xml = """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="32" h="32">
+              <group id="tabs" x="0" y="0" w="32" h="16">
+                <group id="tab_ml" x="0" y="0" w="32" h="16" visible="0">
+                  <layer id="content" x="0" y="0" w="32" h="16"/>
+                </group>
+              </group>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml))
+        addTeardownBlock { loaded.teardown() }
+        let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: Host())
+        addTeardownBlock { runtime.teardown() }
+        let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [],
+                                  bindings: [], instructions: [],
+                                  source: WalSourceLocation(path: "/Skins/Synthetic/t.maki"),
+                                  ownerID: nil, parameter: nil)
+
+        // content has no `visible` attribute → defaults to visible. Its parent is hidden, but
+        // isVisible reads only the object's own attribute (Winamp behavior).
+        let content = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "content").first)
+        let answer = try runtime.invoke(method: "isVisible",
+                                        on: MakiObjectReference(.gui(content.stableID)),
+                                        arguments: [], program: program)
+        XCTAssertTrue(answer.truthy,
+                      "isVisible returns the object's own attribute, not the computed ancestor visibility")
+
+        // tab_ml has visible="0" → isVisible returns false for it directly.
+        let tabML = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "tab_ml").first)
+        let tabAnswer = try runtime.invoke(method: "isVisible",
+                                           on: MakiObjectReference(.gui(tabML.stableID)),
+                                           arguments: [], program: program)
+        XCTAssertFalse(tabAnswer.truthy, "tab_ml's own attribute is visible=0")
+    }
+
     // MARK: - 2. Negative `sysregion` is a mask, not artwork
 
     /// `sysregion="-2"` means "contribute to the window region, do not paint". Its bitmap is a

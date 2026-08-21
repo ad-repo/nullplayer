@@ -114,7 +114,8 @@ By area:
   window state** (`containerVisibilityQuery`), not from the graph's `visible` attribute, which the
   host never writes when a window is opened from the Windows menu or closed from its own titlebar —
   read off the attribute the toggle inverts after the first manual close. `isVisible()` answers from
-  the same place, for the same reason. Phase 34
+  the same place for a container; for anything else it **walks up the parent chain** — an object
+  inside a hidden group is not visible, matching Winamp's rule (B22, Phase 34 addendum)
 - **`GuiObject.isActive()`** — "does my window have the keyboard?", answered by walking up to the
   object's **container** and asking the host whether that window is key. The gate a skin puts in front
   of a key handler: `onKeyDown` reaches every program in the skin whatever window is focused, so
