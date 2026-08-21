@@ -4486,9 +4486,41 @@ class WindowManager {
 
     /// Default side-window height when only the main window is visible.
     /// Uses the center-stack baseline height in modern UI.
+    ///
+    /// The `×4` is calibrated for a *thin strip* of a main window — classic's 116pt, giving the 464pt
+    /// column this app has always opened a side window at — so that it spans roughly the stack the
+    /// user is about to build under it. A `.wal` skin's main window is its own full-size canvas
+    /// instead, and multiplying *that* by four is nonsense: Lobe's is 300pt, so the product is
+    /// 1200pt, and 2400pt at 2× UI Size; cPro-Bento's is taller still. The `.winampModern` family
+    /// therefore measures from classic's strip rather than from the skin, so every skin opens the
+    /// same familiar column whatever size its own window happens to be (B28).
+    ///
+    /// The result is anchored at the main window's *top* edge and grows downward, so it is clamped
+    /// to the display afterwards — nothing else stopped it running off the bottom.
     private func defaultSideWindowHeight(mainFrame: NSRect) -> CGFloat {
-        guard isRunningModernUI else { return mainFrame.height * 4 }
-        return expectedMainHeightForCurrentHT(mainWindowController?.window) * 4
+        let baseline: CGFloat
+        if mainWindowController is WinampModernMainWindowController {
+            baseline = SkinElements.mainWindowSize.height * uiScaleLevel.scaleFactor
+        } else if isRunningModernUI {
+            baseline = expectedMainHeightForCurrentHT(mainWindowController?.window)
+        } else {
+            baseline = mainFrame.height
+        }
+        return clampToScreen(sideWindowHeight: baseline * 4, mainFrame: mainFrame)
+    }
+
+    /// Trim a default side-window height to what the main window's display can actually show below
+    /// the anchor. Never grows a height, and never returns less than the main window's own height —
+    /// a main window parked at the very bottom of the screen must not collapse the side window to
+    /// nothing.
+    private func clampToScreen(sideWindowHeight height: CGFloat, mainFrame: NSRect) -> CGFloat {
+        guard let screen = mainWindowController?.window?.screen ?? NSScreen.main else { return height }
+        let visible = screen.visibleFrame
+        // The frame is laid out downward from `mainFrame.maxY`, so the room available is the drop
+        // from that edge to the bottom of the visible frame — capped by the visible height for a main
+        // window whose top edge sits above it.
+        let available = min(visible.height, max(0, mainFrame.maxY - visible.minY))
+        return max(min(height, available), mainFrame.height)
     }
 
     /// Classic-only runtime self-heal for near-docked center-stack gaps/width drift.

@@ -87,6 +87,7 @@ visualization window serves them as before.
 | Itemskin | Phase 39 | its ten `VIS_*`/`PE_*`/`VID_*` buttons answer (Phase 39). Loads and renders as of Phase 35 — main, mini and Equalizer layouts, the playlist/video/library/AVS windows and the notifier. Its `<include file="xml/eq.xml">` names a file the archive does not ship and is now skipped with a warning | its notifier script wants `getPath` and `setChecked`, which is why its compatibility level reads `unsupported` although the skin draws; unmeasured beyond the render sweep |
 | Overdrive_2 | Phase 35 | loads and renders for the first time — the speedometer/tachometer face, transport ring and shade layout. All five of its MAKI programs run, including `scripts/seek.maki`, which is written in the pre-5.0 bytecode layout | the playlist window is furnished by the `pledit-elements.xml` it does not ship, so it is near-empty; unmeasured beyond the render sweep |
 | Ujola Cat | Phase 34 (**confirmed live** 2026-08-20) | **first measurement.** Both drawers, embedded EQ, the cat window, its 19-theme picker; its seven playlist/video toolbar buttons (Phase 39); **the Color Themes and cat buttons** (they carry no `action` — `Container.toggle()` is their whole behaviour) and the console lamps that follow their windows; the `<vis>` analyzer now follows the colour themes, draws Winamp's bands on a dB scale and paints its peak caps; the framed windows stop painting their `sysregion="-2"` masks — [skins/ujola-cat.md](skins/ujola-cat.md) | the window *region* those masks describe is still not applied (the windows stay rectangular); `<eqvis>` ignores `gammagroup`, as in Winamp |
+| LOBE | B27, B28 (**confirmed live** 2026-08-21; measured `/wal-skin-report` 2026-08-21 — **D** at measurement, **C** after) | draws and animates correctly (ticker, time, both level-driven "vis" pods); equalizer window follows the host on all ten bands; **ten dead main-window controls came alive** — this skin is the diagnosis for the `alpha > 0` region floor (B27), its glassy art being max alpha 79 with each glyph engraved at alpha 3 against the old `> 8`; its side windows open at the established 464pt column rather than 4× its own 300pt canvas (B28) | **the whole About / Colour Themes / manual window never exists** — six layouts, none named `normal`, so the container is silently dropped and its 43-theme picker is unreachable (B26); the seek dial stays dead at its centre (all 13 frames transparent there); `main/switch` is the author's abandoned work, settled by disassembly — [skins/lobe.md](skins/lobe.md) |
 
 ---
 
@@ -102,6 +103,7 @@ One file per measured skin. A pointer that says "read `skins.md` for skin X" res
 | Defix Hi-End 200 | [skins/defix-hi-end-200.md](skins/defix-hi-end-200.md) |
 | multipass 1.4 | [skins/multipass.md](skins/multipass.md) |
 | Ujola Cat | [skins/ujola-cat.md](skins/ujola-cat.md) |
+| LOBE | [skins/lobe.md](skins/lobe.md) |
 
 The other skins in the table above are rows only, and stay rows until one is measured with
 `/wal-skin-report`. When that happens, add `skins/<skin>.md` and a row here.
@@ -116,6 +118,9 @@ section is the list; read it *before* changing engine code on that skin's behalf
 - [Love is War Miku](skins/love-is-war-miku.md#traps-this-skin-sets)
 - [Defix Hi-End 200](skins/defix-hi-end-200.md#traps-this-skin-sets) — unseeded background preference,
   alpha-multiplexed readouts, `rectrgn` hit testing, `findObject`'s wide lookup, timer-gated tabs
+- [LOBE](skins/lobe.md#traps-this-skin-sets) — `degraded` inflated by legal double-includes,
+  `CLICKABLE` under-reporting, `RENDER_CLICK` naming the fall-through and not the rejected control,
+  ghost-dependent hover overlays, `skin windows` over-reporting
 
 ## Reference targets
 

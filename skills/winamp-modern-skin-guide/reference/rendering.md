@@ -25,7 +25,21 @@ volume by tracking the mouse across the whole strip, most of which the region ha
 
 `object(at:)` walks the scene in reverse (`sceneNodes()` is a pre-order DFS, so reversing puts every
 object ahead of its own parent and every later sibling's subtree ahead of an earlier one), then
-alpha-tests the node's bitmap. Two rules about *which* objects may claim a point:
+alpha-tests the node's bitmap. **The region is every pixel the skin actually painted — `alpha > 0`,
+Wasabi's own rule** (`WasabiRenderer.regionAlphaFloor`). It was `> 8` until B27, to shrug off
+anti-aliased fringes, and that threshold quietly assumed artwork drawn at full opacity. A skin is
+under no obligation to oblige: LOBE draws its entire button set as glassy discs whose **maximum**
+alpha is 79/255, each icon engraved into its disc at alpha **3** — a hole exactly where a user aims.
+Thirteen of its twenty-three main-window controls were dead at their own centre, and because the
+click then fell through to whatever layer sat behind them the window read as *inert* rather than as a
+button that had missed. Two things make that diagnosis reachable: its `toggle-always-on-top` uses the
+same artwork and worked, because `rectrgn="1"` skips this test (the control experiment), and
+`RENDER_CLICK` names the object the click **fell through to**, never the one it rejected — so check
+the intended target's own artwork alpha before theorising about z-order. When lowering a region
+threshold, check the skin's hover/pressed overlays: they sit directly above the control and are often
+opaque, and what keeps them out of the way is `ghost="1"`, which `object(at:)` honours first.
+
+Two rules about *which* objects may claim a point:
 
 - **A container has no region of its own — its children supply one.** A `group` (or `layout`) is
   claimable only where it paints a `background`. MMD3 declares `<group id="main.mmd3" move="1">`

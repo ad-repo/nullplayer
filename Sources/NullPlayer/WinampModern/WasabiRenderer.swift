@@ -837,6 +837,23 @@ final class WasabiSceneRenderer {
         loadedSkin.runtime.markFirstPaintComplete()
     }
 
+    /// The alpha above which a bitmap pixel is *inside* an object's region, and so takes a click.
+    ///
+    /// Wasabi's region is every pixel with a non-zero alpha, and this used to be `8` to shrug off
+    /// anti-aliased fringes. That threshold assumes artwork drawn at full opacity, and a skin is
+    /// under no obligation to oblige: LOBE draws its whole button set as glassy discs whose
+    /// **maximum** alpha is 79/255, with each glyph engraved into the disc at alpha **3** — a hole
+    /// exactly where a user aims. Thirteen of its twenty-three main-window controls were dead at
+    /// their own centre, and the click fell through to whatever layer was behind them, so the window
+    /// read as inert rather than as a button that missed. Its `toggle-always-on-top` uses the same
+    /// artwork and worked, because `rectrgn="1"` skips this test entirely — which is the control
+    /// experiment for the whole diagnosis.
+    ///
+    /// A skin's hover and pressed overlays sit directly above the control they decorate and are
+    /// often opaque enough to swallow a click at any threshold; what keeps them out of the way is
+    /// `ghost="1"`, which `object(at:)` honours before it ever gets here.
+    private static let regionAlphaFloor = 0
+
     func object(at point: CGPoint, interactiveOnly: Bool = true) -> WasabiObject? {
         for node in sceneNodes().reversed() where node.clip.contains(point) && node.frame.contains(point) {
             let object = node.object
@@ -860,12 +877,13 @@ final class WasabiSceneRenderer {
                 // testing the current frame alone would make the whole point of a seek bar — clicking
                 // *forward* — unreachable.
                 if object.typeName.caseInsensitiveCompare("animatedlayer") == .orderedSame {
-                    guard animationUnionAlpha(bitmap, object: object, node: node, point: point) > 8
+                    guard animationUnionAlpha(bitmap, object: object, node: node, point: point)
+                            > Self.regionAlphaFloor
                     else { continue }
                 } else {
                     let local = CGPoint(x: (point.x - node.frame.minX) / max(1, node.frame.width) * CGFloat(bitmap.width),
                                         y: (point.y - node.frame.minY) / max(1, node.frame.height) * CGFloat(bitmap.height))
-                    guard bitmap.alpha(at: local) > 8 else { continue }
+                    guard bitmap.alpha(at: local) > Self.regionAlphaFloor else { continue }
                 }
             }
             return object
@@ -1834,7 +1852,7 @@ final class WasabiSceneRenderer {
             let origin = CGPoint(x: CGFloat((index % grid.columns) * grid.width),
                                  y: CGFloat((index / grid.columns) * grid.height))
             strongest = max(strongest, Int(bitmap.alpha(at: CGPoint(x: origin.x + x, y: origin.y + y))))
-            if strongest > 8 { break }
+            if strongest > Self.regionAlphaFloor { break }
         }
         return strongest
     }
