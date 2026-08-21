@@ -510,6 +510,7 @@ final class WinampModernMainView: NSView {
         // during a draw cycle; reconciliation belongs here, and drawing only draws.
         reconcileHostedSurfaces()
         layoutHostedSubviews()
+        cachedHolders = nil
     }
 
     /// Invalidate just one skin object's box (plus a pixel of slop for resampling at the edges).
@@ -559,8 +560,9 @@ final class WinampModernMainView: NSView {
     /// 2026-08-21). The scene's own teardown still tears the surfaces down.
     private func reconcileHostedSurfaces() {
         guard !isTornDown else { return }
+        let holders = renderer.componentHolders()
         var live: Set<WasabiObjectID> = []
-        for holder in renderer.componentHolders() where holder.kind == .library {
+        for holder in holders where holder.kind == .library {
             live.insert(holder.object.stableID)
             guard librarySurfaces[holder.object.stableID] == nil,
                   let surface = componentHost?.makeLibrarySurface() else { continue }
@@ -575,7 +577,7 @@ final class WinampModernMainView: NSView {
         }
 
         var liveVideo: Set<WasabiObjectID> = []
-        for holder in renderer.componentHolders() where holder.kind == .video {
+        for holder in holders where holder.kind == .video {
             liveVideo.insert(holder.object.stableID)
             guard videoSurfaces[holder.object.stableID] == nil,
                   let surface = componentHost?.makeVideoSurface() else { continue }
@@ -588,7 +590,7 @@ final class WinampModernMainView: NSView {
             addSubview(surface.view)
         }
         var liveVis: Set<WasabiObjectID> = []
-        for holder in renderer.componentHolders() where holder.kind == .visualization {
+        for holder in holders where holder.kind == .visualization {
             liveVis.insert(holder.object.stableID)
             guard visualizationSurfaces[holder.object.stableID] == nil,
                   let surface = componentHost?.makeVisualizationSurface() else { continue }
@@ -619,7 +621,7 @@ final class WinampModernMainView: NSView {
 
         var liveHostedWindows: Set<WasabiObjectID> = []
         let hostedStyle = WinampModernSurfaceStyle(palette: renderer.palette)
-        for holder in renderer.componentHolders() {
+        for holder in holders {
             guard case .hostWindow(let id) = holder.surfaceID else { continue }
             liveHostedWindows.insert(holder.object.stableID)
             guard hostedWindowSurfaces[holder.object.stableID] == nil,
@@ -635,7 +637,10 @@ final class WinampModernMainView: NSView {
             surface.unmountFromHolder()
             hostedWindowSurfaces[id] = nil
         }
+        cachedHolders = holders
     }
+
+    private var cachedHolders: [WinampModernComponentHolder]?
 
     /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
     /// hand the picture over before showing the skin's video window, and to size that window from
@@ -668,22 +673,23 @@ final class WinampModernMainView: NSView {
     /// skin coordinates to the view's bottom-left ones. Positioning only — nothing is created here.
     private func layoutHostedSubviews() {
         guard !isTornDown else { return }
-        for holder in renderer.componentHolders() where holder.kind == .library {
+        let holders = cachedHolders ?? renderer.componentHolders()
+        for holder in holders where holder.kind == .library {
             guard let surface = librarySurfaces[holder.object.stableID] else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)
         }
-        for holder in renderer.componentHolders() where holder.kind == .visualization {
+        for holder in holders where holder.kind == .visualization {
             guard let surface = visualizationSurfaces[holder.object.stableID] else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)
         }
-        for holder in renderer.componentHolders() where holder.kind == .video {
+        for holder in holders where holder.kind == .video {
             guard let surface = videoSurfaces[holder.object.stableID] else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)
             // The picture is a child window parked on that box, and a child window follows its
             // parent's moves but not a resize of the box inside it.
             surface.updateOutputPlacement()
         }
-        for holder in renderer.componentHolders() {
+        for holder in holders {
             guard case .hostWindow = holder.surfaceID,
                   let surface = hostedWindowSurfaces[holder.object.stableID] else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)

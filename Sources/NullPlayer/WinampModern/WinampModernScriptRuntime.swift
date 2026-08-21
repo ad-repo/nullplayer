@@ -865,7 +865,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
               Self.configBinding(of: object) == nil else { return false }
         let activated = object.attributes["activated"] != "1"
         _ = object.setAttribute("activated", value: activated ? "1" : "0")
-        notifyGraphDidMutate()
+        notifyObjectDidMutate(object)
         // The state is flipped *before* the notification, because that is what the handler reads:
         // multipass's `onToggle` asks the button `getActivated()` rather than trusting its argument.
         _ = try? dispatch(object: object, event: "ontoggle", arguments: [.boolean(activated)])
@@ -1283,6 +1283,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private func notifyGraphDidMutate() {
         graphDidMutate?()
         notifyAuxiliaryViews(of: nil)
+    }
+
+    private func notifyObjectDidMutate(_ object: WasabiObject) {
+        graphDidMutate?()
+        notifyAuxiliaryViews(of: object)
     }
 
     private func notifyAuxiliaryViews(of object: WasabiObject?) {
@@ -2343,8 +2348,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             guard !Self.imageKeys.contains(key.lowercased()) || resolvesToResource(value)
             else { return .null }
             _ = object.setAttribute(key, value: value)
-            if Self.geometryKeys.contains(key.lowercased()) { noteGeometryChange() }
-            notifyGraphDidMutate()
+            if Self.geometryKeys.contains(key.lowercased()) {
+                noteGeometryChange()
+                notifyGraphDidMutate()
+            } else {
+                notifyObjectDidMutate(object)
+            }
             return .null
         case "settext":
             _ = object.setAttribute("text", value: arguments[0].stringValue)
@@ -2352,7 +2361,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // fires `setText("")` a second after a `setAlternateText("VOLUME: 40%")` and expects the
             // song title back.
             _ = object.setAttribute(WasabiTextMetrics.scriptAlternateTextKey, value: "")
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         // What the object *shows*, not just the literal it was declared with. MMD3's songinfo timer
         // reads `getText()` off the `display="songinfo"` text and tokenises it for KBPS/KHZ; answering
@@ -2389,21 +2398,21 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "isactive": return .boolean(isActive(object))
         case "setalpha":
             _ = object.setAttribute("alpha", value: String(max(0, min(255, arguments[0].integerValue))))
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         case "getalpha": return .integer(Int32(object.attributes["alpha"] ?? "255") ?? 255)
         case "setenabled":
             _ = object.setAttribute("enabled", value: arguments[0].truthy ? "1" : "0")
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         case "setactivated":
             _ = object.setAttribute("activated", value: arguments[0].truthy ? "1" : "0")
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(arguments[0].truthy)])
             return .null
         case "setactivatednocallback":
             _ = object.setAttribute("activated", value: arguments[0].truthy ? "1" : "0")
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         case "getactivated": return .boolean(object.attributes["activated"] == "1")
         // The graph type, which is the XML tag the object was declared with (`layer`, `button`,
@@ -2485,30 +2494,30 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let position = String(arguments[0].integerValue)
             guard object.attributes["value"] != position else { return .null }
             _ = object.setAttribute("value", value: position)
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             _ = try dispatch(object: object, event: "onsetposition", arguments: [arguments[0]])
             return .null
         case "setmode":
             _ = object.setAttribute("mode", value: arguments[0].stringValue)
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         case "play":
             // Stamp the clock so the frame is a pure function of elapsed time (`WasabiAnimation`),
             // which keeps the renderer and `isPlaying()` on exactly the same model.
             _ = object.setAttribute("animstart", value: String(WasabiAnimation.now()))
             _ = object.setAttribute("playing", value: "1")
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         case "pause", "stop":
             // Freeze where the animation actually is, not where it started.
             _ = object.setAttribute("frame", value: String(animationFrame(of: object)))
             _ = object.setAttribute("playing", value: "0")
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         case "gotoframe", "setframe":
             _ = object.setAttribute("frame", value: String(max(0, arguments[0].integerValue)))
             _ = object.setAttribute("playing", value: "0")
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         case "getcurframe": return .integer(Int32(animationFrame(of: object)))
         case "getlength": return .integer(Int32(clamping: animationFrameCount(of: object)))
@@ -2528,7 +2537,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // The same pixel height the XML attribute carries, so it goes through the one
             // `WasabiTextMetrics` conversion the renderer and `getAutoWidth()` share.
             _ = object.setAttribute("fontsize", value: String(arguments[0].integerValue))
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         case "setalternatetext":
             // A script's alternate text *replaces* what the object shows — MMD3 puts its SEEK, VOLUME,
@@ -2538,7 +2547,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // promoted into an override (that is what pinned MMD3's display to "updating songticker").
             _ = object.setAttribute(WasabiTextMetrics.scriptAlternateTextKey,
                                     value: arguments[0].stringValue)
-            notifyGraphDidMutate()
+            notifyObjectDidMutate(object)
             return .null
         case "leftclick":
             _ = try dispatch(object: object, event: "onleftclick")
