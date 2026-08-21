@@ -22,6 +22,21 @@ final class WalXMLNode {
     }
 
     func attribute(_ name: String) -> String? { attributes[name.lowercased()] }
+
+    /// Same tag, same attributes, same children in the same order — **ignoring where it was read
+    /// from**. This is what tells a re-include of an identical definition (ordinary Winamp practice:
+    /// LOBE includes `player-elements.xml` from both `player.xml` and `eq.xml`) apart from a skin
+    /// actually redefining something. Depth-bounded like every other walk over untrusted markup.
+    func isStructurallyEqual(to other: WalXMLNode, depth: Int = 0) -> Bool {
+        guard depth < 64 else { return false }
+        guard name == other.name, attributes == other.attributes,
+              children.count == other.children.count else { return false }
+        for (mine, theirs) in zip(children, other.children)
+        where !mine.isStructurallyEqual(to: theirs, depth: depth + 1) {
+            return false
+        }
+        return true
+    }
     func replaceChildren(_ newChildren: [WalXMLNode]) { children = newChildren }
     func appendChild(_ child: WalXMLNode) { children.append(child) }
 }

@@ -29,7 +29,11 @@ final class WalResourceRegistry {
         definitions.append(definition)
         guard let identifier = definition.identifier, !identifier.isEmpty else { return }
         let key = Self.fold(identifier)
-        if let previous = byIdentifier[key] {
+        // A *different* definition replacing an earlier one is worth saying; the same definition read
+        // twice is not. A skin sharing an elements file between two containers re-includes every
+        // resource in it, which is ordinary Winamp practice — 198 of LOBE's 233 findings were this,
+        // and they were what pushed the skin's compatibility level to `degraded` (B29).
+        if let previous = byIdentifier[key], !Self.isSameDefinition(previous, definition) {
             diagnostics.append(WalDiagnostic(
                 .duplicateIdentifier,
                 "Resource id '\(identifier)' replaces the earlier definition at \(previous.source).",
@@ -64,6 +68,15 @@ final class WalResourceRegistry {
             key = Self.fold(target)
         }
         return nil
+    }
+
+    /// What a resource *is*, with no regard for which file it was read from: the kind, the file it
+    /// points at, and its attributes.
+    private static func isSameDefinition(_ lhs: WalResourceDefinition,
+                                         _ rhs: WalResourceDefinition) -> Bool {
+        lhs.kind.caseInsensitiveCompare(rhs.kind) == .orderedSame
+            && lhs.logicalFile == rhs.logicalFile
+            && lhs.attributes == rhs.attributes
     }
 
     private static func fold(_ value: String) -> String {
@@ -110,7 +123,9 @@ final class WasabiTypeRegistry {
 
     func register(_ definition: WasabiGroupDefinition) {
         let key = Self.fold(definition.identifier)
-        if let previous = byIdentifier[key] {
+        // Same rule as the resource registry: a re-include of an identical `<groupdef>` is not a
+        // redefinition, and warning about it says nothing about the skin (B29).
+        if let previous = byIdentifier[key], !Self.isSameDefinition(previous, definition) {
             diagnostics.append(WalDiagnostic(
                 .duplicateIdentifier,
                 "Group definition '\(definition.identifier)' is redefined; the earlier definition at "
@@ -123,7 +138,8 @@ final class WasabiTypeRegistry {
         versionsByIdentifier[key, default: []].append(definition)
         if let xuiTag = definition.xuiTag, !xuiTag.isEmpty {
             let xuiKey = Self.fold(xuiTag)
-            if let previousID = identifierByXUITag[xuiKey] {
+            if let previousID = identifierByXUITag[xuiKey],
+               Self.fold(previousID) != Self.fold(definition.identifier) {
                 diagnostics.append(WalDiagnostic(
                     .duplicateIdentifier,
                     "XUI tag '\(xuiTag)' is reassigned from group '\(previousID)' to '\(definition.identifier)'.",
@@ -251,6 +267,21 @@ final class WasabiTypeRegistry {
                                                    templateChildren: children)
         resolvedCache[cacheKey] = result
         return result
+    }
+
+    /// What a `<groupdef>` *is* — its XUI tag, what it inherits, the XUI it embeds, its defaults and
+    /// its whole template subtree — with no regard for the file it was read from.
+    private static func isSameDefinition(_ lhs: WasabiGroupDefinition,
+                                         _ rhs: WasabiGroupDefinition) -> Bool {
+        guard lhs.xuiTag == rhs.xuiTag, lhs.inheritedGroup == rhs.inheritedGroup,
+              lhs.embeddedXUITag == rhs.embeddedXUITag,
+              lhs.defaultAttributes == rhs.defaultAttributes,
+              lhs.templateChildren.count == rhs.templateChildren.count else { return false }
+        for (mine, theirs) in zip(lhs.templateChildren, rhs.templateChildren)
+        where !mine.isStructurallyEqual(to: theirs) {
+            return false
+        }
+        return true
     }
 
     private static func fold(_ value: String) -> String {

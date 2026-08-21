@@ -60,7 +60,13 @@ Group semantics worth knowing:
   before it. Template children inherit the position of the reference that expanded them, which is
   when Winamp would have read them. Two deliberate leniencies: a reference with no document position
   (`System.newGroup`, a synthesized node) takes the newest version, and one that precedes every
-  definition of its id takes the first rather than nothing. The redefinition still warns.
+  definition of its id takes the first rather than nothing. The redefinition still warns —
+  **but only when it actually differs** (B29). A skin sharing an elements file between two containers
+  re-includes every resource and `<groupdef>` in it, which is ordinary Winamp practice and was 198 of
+  LOBE's 233 findings; a definition is compared on what it *is* (a resource: kind + logical file +
+  attributes; a groupdef: XUI tag, `inherit_group`, `embed_xui`, defaults and the whole template
+  subtree via `WalXMLNode.isStructurallyEqual(to:)`), with the source location ignored. Corpus:
+  1343 → 851 diagnostic occurrences over 30 skins, and every differing redefinition still reported.
 - `registerWasabiStandardLibrary` seeds the curated `wasabi.*` base groups that ship inside Winamp
   rather than in the archive. Skin/engine definitions register first and always win. A base outside
   the curated set warns and is dropped rather than failing the load.
