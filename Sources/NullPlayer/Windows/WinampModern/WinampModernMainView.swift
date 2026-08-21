@@ -10,6 +10,9 @@ final class WinampModernMainView: NSView {
     private var librarySurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
     /// Live video surfaces by holder id, on the same typed handle for the same reasons (B20).
     private var videoSurfaces: [WasabiObjectID: WinampModernVideoSurface] = [:]
+    /// Live visualization surfaces by holder id — the skin's AVS window, filled with the host's own
+    /// visualization engine rather than the engine-drawn analyzer (B20a).
+    private var visualizationSurfaces: [WasabiObjectID: WinampModernVisualizationSurface] = [:]
 
     /// UI Size, as a multiplier on the skin's own pixel grid. The scene is always laid out in skin
     /// pixels — the scale is applied once at the drawing boundary and undone once at the input
@@ -20,6 +23,7 @@ final class WinampModernMainView: NSView {
             setFrameSize(scaledCanvasSize)
             for surface in librarySurfaces.values { surface.applySkinScale(skinScale) }
             for surface in videoSurfaces.values { surface.applySkinScale(skinScale) }
+            for surface in visualizationSurfaces.values { surface.applySkinScale(skinScale) }
             invalidateRectCaches()
             needsLayout = true
             needsDisplay = true
@@ -233,6 +237,11 @@ final class WinampModernMainView: NSView {
         scripts.notifyContainerVisibility(containerID: containerID, visible: visible)
         if visible {
             updateAnimationTimer()
+            // The surfaces are made during a layout pass, which for a window that opens later has
+            // already happened while it was still hidden — and an engine refused a start then is
+            // never asked again. This is the ask (B20a).
+            layoutSubtreeIfNeeded()
+            for surface in visualizationSurfaces.values { surface.resumeRendering() }
             needsDisplay = true
         }
     }
@@ -273,6 +282,7 @@ final class WinampModernMainView: NSView {
     private func themeDidChange() {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
         for surface in videoSurfaces.values { surface.applyPalette(renderer.palette) }
+        for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }
         NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
         needsDisplay = true
     }
@@ -423,6 +433,9 @@ final class WinampModernMainView: NSView {
             needsDisplay = true
             return
         }
+        // The visualization window's own keys (←/→, R, F, P, C), in the window that is showing the
+        // visualization — after the skin has had its say, so a skin accelerator always wins (B20a).
+        if let surface = hostedVisualizationSurface, surface.handleKeyDown(event) { return }
         super.keyDown(with: event)
     }
 
@@ -543,6 +556,24 @@ final class WinampModernMainView: NSView {
             surface.applyPalette(renderer.palette)
             addSubview(surface.view)
         }
+        var liveVis: Set<WasabiObjectID> = []
+        for holder in renderer.componentHolders() where holder.kind == .visualization {
+            liveVis.insert(holder.object.stableID)
+            guard visualizationSurfaces[holder.object.stableID] == nil,
+                  let surface = componentHost?.makeVisualizationSurface() else { continue }
+            visualizationSurfaces[holder.object.stableID] = surface
+            surface.applySkinScale(skinScale)
+            surface.applyPalette(renderer.palette)
+            addSubview(surface.view)
+        }
+        for (id, surface) in visualizationSurfaces where !liveVis.contains(id) {
+            surface.prepareForUITeardown()
+            visualizationSurfaces[id] = nil
+        }
+        // What the renderer paints in the box behind them: bars are the skin's analyzer, and drawing
+        // one under a live engine is a second visualization nobody can see costing a repaint a frame.
+        renderer.hostedVisualizationHolders = liveVis
+
         for (id, surface) in videoSurfaces where !liveVideo.contains(id) {
             // Hands the picture back to its own window if a film is still running — the holder going
             // away is not a stop, and the one video view in the app must never be left orphaned in a
@@ -557,6 +588,10 @@ final class WinampModernMainView: NSView {
     /// the stream's own dimensions for `VID_1X` / `VID_2X`.
     var hostedVideoSurface: WinampModernVideoSurface? { videoSurfaces.values.first }
 
+    /// The visualization surface in this scene, if the skin's AVS holder made one. The host actions
+    /// (`VIS_NEXT`, `VIS_CFG`) and the Visualizations menu reach the running engine through it.
+    var hostedVisualizationSurface: WinampModernVisualizationSurface? { visualizationSurfaces.values.first }
+
     /// The video holder's frame in skin pixels, for the sizing arithmetic `VID_1X` / `VID_2X` do:
     /// the window grows by the difference between the box the skin drew and the box the stream wants.
     var videoHolderFrame: CGRect? {
@@ -569,6 +604,10 @@ final class WinampModernMainView: NSView {
         guard !isTornDown else { return }
         for holder in renderer.componentHolders() where holder.kind == .library {
             guard let surface = librarySurfaces[holder.object.stableID] else { continue }
+            surface.view.frame = viewRect(fromSkin: holder.frame)
+        }
+        for holder in renderer.componentHolders() where holder.kind == .visualization {
+            guard let surface = visualizationSurfaces[holder.object.stableID] else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)
         }
         for holder in renderer.componentHolders() where holder.kind == .video {
@@ -667,7 +706,12 @@ final class WinampModernMainView: NSView {
                 // A filled video box is a live subview and `hitTest` already gave it the click; this
                 // is the empty one (no output to lend yet), and a click on a black box does nothing.
                 return
-            case .library, .visualization, .other:
+            case .visualization:
+                // The GL view passes every click through (`hitTest` returns nil), so a left click on
+                // a live engine is this view's to answer — and there is nothing to answer with. A
+                // right click gets the controls, in `rightMouseDown`.
+                return
+            case .library, .other:
                 return
             }
         }
@@ -769,6 +813,14 @@ final class WinampModernMainView: NSView {
     /// listens on; both are sent, as Winamp sends them.
     override func rightMouseDown(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        // A live visualization box answers for itself: the engine choice, the preset controls and the
+        // host's Visualizations menu, at the pointer. The GL view passes its clicks through, so this
+        // is the only place that right click can be caught (B20a).
+        if let holder = renderer.componentHolder(at: point), holder.kind == .visualization,
+           let surface = visualizationSurfaces[holder.object.stableID] {
+            popUpMenu(surface.buildMenu(), from: nil, atMouse: true)
+            return
+        }
         guard let object = renderer.object(at: point) else { return }
         rightPressedObject = object
         dispatch(object: object, event: "onrightbuttondown", point: point)
@@ -979,6 +1031,8 @@ final class WinampModernMainView: NSView {
         librarySurfaces.removeAll()
         for surface in videoSurfaces.values { surface.prepareForUITeardown() }
         videoSurfaces.removeAll()
+        for surface in visualizationSurfaces.values { surface.prepareForUITeardown() }
+        visualizationSurfaces.removeAll()
         // Auxiliary container views share the skin's single script runtime and host; only the
         // main (script-driving) view tears those down. Every view tears down its own renderer.
         if drivesScripts { scripts.teardown() } else { scripts.removeAuxiliaryRepaintSink(owner: self) }

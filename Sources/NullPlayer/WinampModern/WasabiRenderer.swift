@@ -494,7 +494,10 @@ final class WasabiSceneRenderer {
     /// Reads a `cfgattrib`-bound control's current value. Supplied by the script runtime, which owns
     /// the configuration store; nil in a renderer built without one (the pixel tests).
     var configStateProvider: ((WasabiObject) -> Bool)?
-    /// The Layer FX warp for one object, or nil when it has none. Supplied by the script runtime,
+    /// Visualization holders the view layer has put a live engine into (B20a). The renderer paints
+    /// their boxes black and leaves the drawing to it.
+    var hostedVisualizationHolders: Set<WasabiObjectID> = []
+        /// The Layer FX warp for one object, or nil when it has none. Supplied by the script runtime,
     /// which owns the FX state and runs the skin's `fx_onGetPixel*` callbacks (Phase 28).
     var layerFXProvider: ((WasabiObject) -> WasabiLayerFXMesh?)?
     let resources: WasabiResourceCache
@@ -1368,7 +1371,7 @@ final class WasabiSceneRenderer {
             }
         } else if WinampModernComponentRegistry.isHolderElement(type),
                   let kind = Self.componentKind(of: object) {
-            drawComponent(kind: kind, frame: node.frame, context: context)
+            drawComponent(kind: kind, object: object, frame: node.frame, context: context)
         } else if let imageID = resolvedBitmapID(for: object,
                                                   pressed: pressed == object.stableID,
                                                   hovered: hovered == object.stableID),
@@ -2435,7 +2438,8 @@ final class WasabiSceneRenderer {
     /// Draw a hosted component into its holder frame. Playlist/EQ/vis are skin-framed but
     /// engine-drawn here; library/video/other are hosted as live AppKit subviews by the view layer,
     /// so this only paints a bounded neutral backing for them.
-    private func drawComponent(kind: WinampModernComponentKind, frame: CGRect, context: CGContext) {
+    private func drawComponent(kind: WinampModernComponentKind, object: WasabiObject,
+                               frame: CGRect, context: CGContext) {
         guard frame.width > 1, frame.height > 1 else { return }
         switch kind {
         case .playlist: drawPlaylistComponent(frame: frame, context: context)
@@ -2443,6 +2447,12 @@ final class WasabiSceneRenderer {
         case .visualization:
             context.setFillColor(NSColor.black.cgColor)
             context.fill(frame)
+            // A holder the view layer has filled with the host's own engine (B20a) draws itself, in
+            // an OpenGL view over this box: bars underneath it would be a second visualization
+            // nobody can see, costing a repaint every frame. Black is what shows before its first
+            // frame arrives, and in a headless render — where there is no view layer at all — the
+            // set is empty and the analyzer is still what a `<component>` box holds.
+            guard !hostedVisualizationHolders.contains(object.stableID) else { return }
             drawVisualizationBars(frame: frame, context: context)
         case .video:
             // Black, not the palette's content colour: a video box is black in Winamp and in all five
@@ -2842,14 +2852,31 @@ final class WasabiSceneRenderer {
     /// default gave its 275×348 player a canvas a third of its height — everything below the reels
     /// landed outside the canvas, where `append` drops it, and what was left stacked on top of the
     /// reels. The declared box still wins where a skin gives one.
+    /// The size a layout opens at: its own `default_w`/`default_h`, **never below the minimum it
+    /// declares for itself**.
+    ///
+    /// Four layouts in the 31-skin corpus declare a default smaller than their own minimum, and two
+    /// of them are the visualization windows this was found on: Anaheim_Player_01's `avs_window` is
+    /// `default_w="120"` against `minimum_w="180"`, and Styx's `AVS` is 300×300 against 400×230. The
+    /// window opened at the default, so the standard frame's corner and edge art was laid out for a
+    /// window 60pt wider than the one drawing it and the chrome came out cut off down the right-hand
+    /// side — reported as "a misformed rectangle box". Winamp cannot show a window below its declared
+    /// minimum either; this is the same clamp `resize(to:)` already applies to every later size.
+    ///
+    /// Only the **declared** minimum clamps here, not `layoutMinimumSize` — that one folds in the
+    /// computed protective minimum, which is a defence against a *shrunk* window and has no business
+    /// enlarging one the skin's author sized deliberately.
     private static func defaultSize(for layout: WasabiObject, resources: WasabiResourceCache) -> CGSize {
         let background = resources.bitmap(identifier: layout.attributes["background"])
-        return CGSize(
+        let size = CGSize(
             width: dimension(layout.attributes, keys: ["default_w", "w", "minimum_w"],
                              fallback: background.map { CGFloat($0.width) } ?? 275),
             height: dimension(layout.attributes, keys: ["default_h", "h", "minimum_h"],
                               fallback: background.map { CGFloat($0.height) } ?? 116)
         )
+        let minimum = CGSize(width: dimension(layout.attributes, keys: ["minimum_w"], fallback: 1),
+                             height: dimension(layout.attributes, keys: ["minimum_h"], fallback: 1))
+        return CGSize(width: max(size.width, minimum.width), height: max(size.height, minimum.height))
     }
 
     private static func optionalDimension(_ raw: String?) -> CGFloat? {

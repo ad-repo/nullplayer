@@ -21,6 +21,9 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     var linkSheetPresenter: (() -> Void)?
     private var librarySurface: WinampModernLibrarySurface?
     private var videoSurface: WinampModernVideoSurface?
+    private var visualizationSurface: WinampModernVisualizationSurface?
+    /// The visualization surface if one has been created, without creating one.
+    var currentVisualizationSurface: WinampModernVisualizationSurface? { visualizationSurface }
     /// The video surface if one has been created, without creating one.
     var currentVideoSurface: WinampModernVideoSurface? { videoSurface }
     /// The surface if one has been created, without creating one — session restore must not
@@ -199,6 +202,28 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         videoSurface = nil
     }
 
+    // MARK: - Visualization
+
+    /// The skin's AVS/visualization box, filled with the host's real visualization engine (B20a).
+    ///
+    /// One per skin, owned here for the library surface's reasons: it must survive a layout switch
+    /// that removes and re-adds the holder's subview, and a second holder for the same component
+    /// must reuse it rather than stand up a second OpenGL engine against the same audio.
+    func makeVisualizationSurface() -> WinampModernVisualizationSurface? {
+        if let visualizationSurface { return visualizationSurface }
+        guard let surface = WinampModernVisualizationSurfaceView(
+            surfaceFrame: NSRect(x: 0, y: 0, width: 320, height: 240)) else { return nil }
+        visualizationSurface = surface
+        return surface
+    }
+
+    /// Stop the engine and drop the surface. The view layer tears the surface down first; this only
+    /// drops the bridge's own reference, and is safe to call twice.
+    func releaseVisualizationSurface() {
+        visualizationSurface?.prepareForUITeardown()
+        visualizationSurface = nil
+    }
+
     // MARK: - Classic-window fallback
 
     func toggleClassicWindow(for kind: WinampModernComponentKind) {
@@ -206,7 +231,10 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         case .playlist: WindowManager.shared.togglePlaylist()
         case .equalizer: WindowManager.shared.toggleEqualizer()
         case .library: WindowManager.shared.togglePlexBrowser()
-        case .visualization, .video, .other: break
+        // The skin declares no visualization window of its own: NullPlayer's is the fallback, the
+        // same window the Visualizations menu opens.
+        case .visualization: WindowManager.shared.toggleProjectM()
+        case .video, .other: break
         }
     }
 }

@@ -126,6 +126,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if UserDefaults.standard.bool(forKey: "winampModernAcceptanceLoop") {
             runWinampModernAcceptanceLoop()
         }
+        // B20a live check: `-winampModernShowVisualization 1` opens the visualization window the way
+        // the menu does, once the skin's scene has settled. For a `.wal` skin that declares an AVS
+        // container that is the skin's own window, filled with the host's engine; for one that does
+        // not it is NullPlayer's own — and which of the two happened is the whole point of looking.
+        if UserDefaults.standard.bool(forKey: "winampModernShowVisualization") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.windowManager.showProjectM()
+                NSLog("WINAMP-MODERN-VIS: visible=%@",
+                      self?.windowManager.isProjectMVisible == true ? "1" : "0")
+            }
+        }
         #endif
     }
 

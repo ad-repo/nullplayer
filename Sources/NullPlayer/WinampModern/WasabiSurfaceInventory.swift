@@ -57,7 +57,27 @@ struct WinampModernSurfaceInventory {
     ///   skin's real video window, the one with the chrome and the `VID_*` buttons, empty;
     /// * it stays in the **Skin Windows** menu, because unlike the playlist / EQ / library it has no
     ///   menu item of its own to collide with, and Winamp lists Video in its Windows menu too.
-    static let routedKinds: [WinampModernComponentKind] = managedKinds + [.video]
+    ///
+    /// `.visualization` (B20a) is routed on the same terms and for the same three reasons. Eight
+    /// corpus skins declare an `avs` / `AVS_window` container around the visualization component,
+    /// and until it was routed there was **no way to open one**: a container carrying a `component=`
+    /// GUID is deliberately kept out of the Skin Windows menu (`isListedInWindowMenu`) so a routed
+    /// surface cannot be reached twice, and nothing routed it. Now the host's Visualization window
+    /// command opens the skin's own AVS window when it has one, and NullPlayer's own when it does
+    /// not.
+    static let routedKinds: [WinampModernComponentKind] = managedKinds + [.video, .visualization]
+
+    /// Routed surfaces that still belong in the host's **Skin Windows** menu.
+    ///
+    /// The managed three are excluded from it because each has a menu item of its own (Windows →
+    /// Playlist / Equalizer / Library) and a second entry would be a second route to one window.
+    /// These two have no such item — and, measured, **no skin binds a button to its AVS window
+    /// either**: all eight visualization containers in the corpus declare a `name`
+    /// (`Visualization`, `Visualizer`, `Visualizations`), none declares `nomenu="1"`, and none of
+    /// their players carries a `TOGGLE guid:vis`. In Winamp they are opened from *its* Windows menu,
+    /// so that is where they have to be here. Both toggles route through the surface coordinator, so
+    /// the menu entry and the Visualizations menu's own item cannot reach different windows.
+    static let windowMenuRoutedKinds: Set<WinampModernComponentKind> = [.video, .visualization]
 
     /// Surfaces with no home in this skin: not embedded, no declared container, not ambiguous, and
     /// only ever non-empty for the separate-window arrangement — an SUI skin that appears to be

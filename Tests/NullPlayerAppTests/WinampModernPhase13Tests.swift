@@ -581,7 +581,8 @@ final class WinampModernPhase13Tests: XCTestCase {
         let catalog = WinampModernSurfaceCatalog(playlist: .declaredContainer(id: "Pledit"),
                                                  equalizer: .classicFallback(reason: "none"),
                                                  library: .synthesizedContainer(id: "nullplayer.library"),
-                                                 video: .classicFallback(reason: "no video window"))
+                                                 video: .classicFallback(reason: "no video window"),
+                                                 visualization: .classicFallback(reason: "no AVS window"))
         var visibility: [String: Bool] = ["Pledit": false, "nullplayer.library": false]
         let windows: [String: NSWindow] = [:]
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
@@ -604,13 +605,14 @@ final class WinampModernPhase13Tests: XCTestCase {
         let catalog = WinampModernSurfaceCatalog(playlist: .declaredContainer(id: "Pledit"),
                                                  equalizer: .embedded(containerID: WasabiObjectID(rawValue: 1)),
                                                  library: .classicFallback(reason: "no frame"),
-                                                 video: .classicFallback(reason: "no video window"))
+                                                 video: .classicFallback(reason: "no video window"),
+                                                 visualization: .classicFallback(reason: "no AVS window"))
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
             revealEmbedded: { _, _ in true }, isMainWindowVisible: { true }, window: { _ in nil },
             setVisible: { _, _ in }, classicFallback: { _, _ in }, redraw: {}))
         XCTAssertEqual(coordinator.summary,
                        "playlist=declared:Pledit equalizer=embedded library=classic(no frame) "
-                       + "video=classic(no video window)")
+                       + "video=classic(no video window) visualization=classic(no AVS window)")
     }
 
     // MARK: - 13.5 Shared theme and palette

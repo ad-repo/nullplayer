@@ -23,7 +23,7 @@ extension WinampModernMainView {
         case .visualizationNext: stepVisualization(by: 1)
         case .visualizationPrevious: stepVisualization(by: -1)
         case .visualizationConfig: showVisualizationOptionsMenu(from: object)
-        case .visualizationFullscreen: WindowManager.shared.showProjectMFullscreen()
+        case .visualizationFullscreen: toggleVisualizationFullscreen()
         case .playlistAdd: showPlaylistAddMenu(from: object)
         case .playlistRemove: showPlaylistRemoveMenu(from: object)
         case .playlistSelect: showPlaylistSelectMenu(from: object)
@@ -48,6 +48,17 @@ extension WinampModernMainView {
 
     // MARK: - VIS_* — the visualization
 
+    /// `VIS_FS`. The skin's own AVS window carries this button in five of the eight corpus skins, and
+    /// answering it with NullPlayer's window opened a *second* visualization beside the one already
+    /// running in the skin's box. When the skin hosts the engine, the engine goes fullscreen.
+    private func toggleVisualizationFullscreen() {
+        if let surface = hostedVisualizationSurface {
+            surface.toggleFullscreen()
+            return
+        }
+        WindowManager.shared.showProjectMFullscreen()
+    }
+
     /// `VIS_NEXT` / `VIS_PREV`.
     ///
     /// Two things can be "the visualization" at once, so the button points at whichever one the user
@@ -56,6 +67,13 @@ extension WinampModernMainView {
     /// otherwise they step the mode of the skin's own `<vis>` box — analyzer → oscilloscope → off,
     /// Winamp's own order — which is the visualization the skin is drawing in its own window.
     private func stepVisualization(by delta: Int) {
+        // The skin's own AVS window first (B20a): when the box beside the button is a live engine,
+        // that is unambiguously the visualization the user means, and it wins over both our separate
+        // window and the `<vis>` box's mode.
+        if let surface = hostedVisualizationSurface {
+            surface.stepPreset(by: delta)
+            return
+        }
         if WindowManager.shared.isProjectMVisible {
             WindowManager.shared.stepProjectMPreset(by: delta)
             return
@@ -72,6 +90,12 @@ extension WinampModernMainView {
     /// `VIS_MENU` — *which* visualization. The skin's own modes when it draws one, then the host's
     /// Visualizations menu, which is where the visualization window and the engine choice live.
     private func showVisualizationMenu(from object: WasabiObject?) {
+        // A live engine in the skin's own AVS window brings its own controls, and they are the ones
+        // that act on what the user is looking at (B20a).
+        if let surface = hostedVisualizationSurface {
+            popUpMenu(surface.buildMenu(), from: object)
+            return
+        }
         let menu = NSMenu(title: "Visualization")
         menu.autoenablesItems = false
         if let mode = renderer.visualizationMode {
@@ -98,6 +122,10 @@ extension WinampModernMainView {
     /// next to its "Presets" button. With the visualization window up that is its own live menu
     /// (preset list, rating, engine settings); otherwise it is the analyzer's one real option.
     private func showVisualizationOptionsMenu(from object: WasabiObject?) {
+        if let surface = hostedVisualizationSurface {
+            popUpMenu(surface.buildMenu(), from: object)
+            return
+        }
         if WindowManager.shared.isProjectMVisible, let live = WindowManager.shared.buildVisualizationMenu() {
             popUpMenu(live, from: object)
             return

@@ -136,7 +136,14 @@ enum WinampModernContainerTopology {
     /// items, and a second entry here would be a second route to one window, which the catalog exists
     /// to prevent.
     static func isListedInWindowMenu(_ info: WinampModernContainerInfo) -> Bool {
-        guard !info.isMainPlayer, !info.isSynthesized, info.kind == nil else { return false }
+        guard !info.isMainPlayer, !info.isSynthesized else { return false }
+        // A container declaring a component GUID is normally the catalog's business, not the menu's.
+        // The two exceptions are the surfaces the catalog routes but no menu item names — the
+        // visualization and video windows — and excluding those left a skin's AVS window with no way
+        // to be opened at all (Phase 48): every one in the corpus is named, none is `nomenu`, and
+        // none of their skins binds a button to it.
+        if let kind = info.kind,
+           !WinampModernSurfaceInventory.windowMenuRoutedKinds.contains(kind) { return false }
         guard let name = info.object.attributes["name"], !name.isEmpty else { return false }
         return info.object.attributes["nomenu"] != "1"
     }

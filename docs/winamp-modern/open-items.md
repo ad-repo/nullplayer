@@ -441,6 +441,83 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       with no holder (Hoop_Life_WA3, Media_Whore) correctly falls back to our own window. 915 green.
       **Confirmed live 2026-08-21** on multipass: picture in the box on play, asked frame granted.
 
+- [x] **B20a. Host the real visualization engine in the skin's own AVS window.** ~~Eight skins
+      declare a `<container>` for the visualization component and every one of them is a second,
+      larger copy of the spectrum analyzer~~ — **closed in Phase 48.** The measurement first, with
+      the new `VIS holder` / `VIS box` harness lines: **8 of the 31 installed skins** declare a
+      container whose body is a `<component param="{0000000A-000C-0010-FF7B-01014263450C}">` —
+      Anaheim_Player_01 `avs_window` 100×200 · hatsune_miku_5 `avs` 479×326 · Itemskin `AVS_window`
+      277×71 · Love is War Miku `avs` 190×84 (V2 190×90) · multipass `avs_window` 298×134 · Styx
+      `AVS` 220×200 · winampmodern566 `AVS` 342×232. That holder is Winamp's *plugin* surface, the
+      box AVS and MilkDrop drew into, and it now holds NullPlayer's own visualization stack —
+      ProjectM/MilkDrop, Geiss, Tripex — with the same engine preference, preset store and
+      Visualizations menu as our own window. A `<vis>` box is a different thing (Winamp's built-in
+      analyzer/oscilloscope) and stays engine-drawn, which is what keeps every render sweep and
+      golden image measuring the same picture.
+      **The finding that shaped it: there was no way to open one of these windows at all.** A
+      container carrying a `component=` GUID is deliberately kept out of the Skin Windows menu
+      (`isListedInWindowMenu` requires `kind == nil`) so a routed surface cannot be reached twice —
+      and nothing routed `.visualization`. So it joins `.video` as a **routed but not managed**
+      surface: never synthesized, never embedded, `.declaredContainer` or `.classicFallback` only.
+      `showProjectM`/`toggleProjectM` route through the catalog first, so **Show Visualizations
+      Window**, a skin's own `TOGGLE guid:vis` and the `VIS_*` toolbar buttons all reach the same
+      window. `showProjectMFullscreen` and the coordinator's own fallback take `routeToSkin: false` —
+      a borderless `.wal` container has no fullscreen of its own to enter.
+      Unlike the video picture this one **is** a subview: `VisualizationGLView` is a self-contained
+      `NSOpenGLView` that sizes no ancestor, so the `.library` seam's shape works here where it did
+      not for VLCKit. Its `hitTest` returns nil, so the skin keeps every click over the box — which
+      is how a right-click on the box opens the engine's own controls. The renderer is told which
+      holders the view layer filled (`hostedVisualizationHolders`) and paints those black instead of
+      drawing bars underneath a live engine; headless, that set is empty and the analyzer is still
+      what a `<component>` box holds.
+      **Live pass 2026-08-21 found two things, both fixed in the same phase.** *(1) The windows could
+      not be opened.* `isListedInWindowMenu` keeps any container with a `component=` GUID out of the
+      Skin Windows menu so a routed surface is not reachable twice — and measured, **no corpus skin
+      binds a button to its AVS window** (all eight are named, none is `nomenu`, hatsune_miku_5's
+      player carries only `eq`/`pl`/`ml`). So routing alone left "I cannot find a visualization
+      window", with only cPro-Bento working because its holder is script-built inside the SUI body.
+      The menu rule now admits `windowMenuRoutedKinds` (`.visualization`, `.video`) and
+      `toggleSkinWindow` routes those two through the coordinator, so the menu entry and the
+      Visualizations menu reach one window. *(2) The menu was truncated.* Reported against Bento: the
+      surface had a short hand-written menu beside the visualization window's full one. The window
+      menu was itself written **twice**, identically, in `ProjectMView` and `ModernProjectMView`; all
+      three now build `VisualizationContextMenu` from one `VisualizationMenuTarget`, with `Options`
+      for the cycle state and for whether Fullscreen/Close apply.
+      **Second live pass, same day, three more.** *(1) Two visualization windows at once.* Miku's AVS
+      window carries a `VIS_FS` button **inside** it (5 of the 8 do), and `VIS_FS` opened
+      NullPlayer's own window with a second engine while the skin's box kept rendering. `VIS_FS` on a
+      hosted surface now moves the `VisualizationGLView` itself into a borderless `.screenSaver`
+      window and back (Esc / `f` / double-click) — one view, two homes, no second engine — and ours
+      and the skin's are made mutually exclusive besides: `isProjectMVisible` answers for either,
+      each hides the other before showing, a visible window of ours wins `toggleProjectM`, and a skin
+      that owns the surface takes it over at load. *(2) A misformed box.* Anaheim's `avs_window`
+      declares `default_w="120"` under `minimum_w="180"` (Styx's `AVS`: 300×300 under 400×230), and
+      the window opened at the default while its frame art was laid out for the minimum, so the
+      chrome was cut off. `defaultSize` now clamps to the skin's **declared** minimum — 4 layouts in
+      219 change, 2 of them these AVS windows. *(3) The Miku skins bind no button to the window
+      itself*, which the Skin Windows entry from the first pass is the answer to.
+      **Third live pass: every AVS window was black except Bento's** — screenshot showed Miku's window
+      open, chrome perfect, box black (which itself proved the *hosted* path was live: an unhosted box
+      draws bars). `VisualizationGLView.startRendering()` refuses while `window.isVisible` is false,
+      and nothing restarts a link that never started — an aux container window is created hidden and
+      ordered in later, so the surface made during its first layout pass was refused once and never
+      asked again. Bento was unaffected because its holder is in the main player window. The surface
+      now has `resumeRendering()`, called after the window is ordered in (`setSceneVisible`, which
+      forces the layout pass first, and `setAuxiliaryWindow`), plus a DEBUG `WINAMP-MODERN-VIS:
+      resume …` line carrying window visibility, the box, the engine and whether frames are running.
+      **Fourth pass: the keyboard.** The visualization window answers ←/→ (shift = hard cut), R, F, P,
+      C and Esc; the embedded surface answered none of them — a skin's window offers nothing but its
+      five buttons, so that is the whole keyboard for it. `WinampModernMainView.keyDown` now offers a
+      key the *skin* did not claim to the hosted surface, and the fullscreen window hands it the whole
+      map. Also corrected: the minimum clamp changes **11 layouts in 4 skins**, not the 4 first
+      reported (the scan's regex dropped every skin whose filename contains a space) — both Miku
+      skins' `avs` is 200×150 against a declared 400×300, which is the window size in the live
+      screenshot. The `VIS_NEXT`/`VIS_PREV`/`VIS_FS` buttons themselves are confirmed reaching
+      `visualizationNext`/`Previous`/`Fullscreen` under `RENDER_CLICK`.
+      926 green. **Confirmed live 2026-08-21** across Bento, both Miku skins, Anaheim and Styx: the
+      engine draws in the skin's own window, its `VIS_*` buttons and the visualization keyboard drive
+      it, `VIS_FS` fills the screen from the skin's box, and only one visualization window is ever up.
+
 - [ ] **B21. `enqueueFile` / `playFile` — skin-supplied path ingest.** `PlEdit.enqueueFile(path)`
       (cPro-Bento) and `System.playFile(path)` (T800) hand the host a filesystem path the *skin*
       chose. Deliberately left out of B8: it is a sandbox policy decision (what may a script add to

@@ -59,6 +59,19 @@ they correctly fall back to NullPlayer's own video window. Only **mmd3 and BLAKK
 command bar (`noshowcmdbar=` absent) and both boxes are under its 395pt constraint minimum, so no
 corpus skin actually gets one.
 
+**Visualization (AVS) windows, measured (Phase 48 / B20a, `VIS holder` in the render dump).** **8 of
+the 31 installed skins** declare a container around the visualization *component*, and all of them now
+hold the real engine — ProjectM/MilkDrop, Geiss or Tripex, as a subview at the box the skin draws
+(see [reference/components.md](reference/components.md) for why this one is a subview where the video
+picture is a parked window). By box size: hatsune_miku_5 `avs` 479×326 · winampmodern566 `AVS`
+342×232 · multipass `avs_window` 298×134 · Itemskin `AVS_window` 277×71 · Styx `AVS` 220×200 ·
+Anaheim_Player_01 `avs_window` 100×200 · Love is War Miku `avs` 190×84 (V2 190×90). **Confirmed live 2026-08-21** (Bento, both Miku skins, Anaheim, Styx). **These eight are
+the live-QA list**, and each is opened from **Skin Windows** (no skin in the corpus
+binds a button to its own AVS window, which is why routing alone left them unreachable in the first
+live pass). A skin's `<vis>` box is a different surface and stays the
+engine-drawn analyzer/oscilloscope. The other 23 skins declare no AVS container and NullPlayer's own
+visualization window serves them as before.
+
 | Skin | Last worked | State | Biggest gap |
 |---|---|---|---|
 | Love is War Miku | Phase 39 | renders and drives correctly; its visualization window's **Fullscreen / Prev / Next / Menu** and its video window's **Fullscreen / Options** buttons all answer (Phase 39) | `fliph`; oscilloscope is a mirrored spectrum; its video **1x / 2x / TV** buttons are accepted and inert |

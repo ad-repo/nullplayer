@@ -25,6 +25,9 @@ struct WinampModernSurfaceCatalog {
     /// The skin's own video window (B20). Only ever `.declaredContainer` or `.classicFallback`: see
     /// `WinampModernSurfaceInventory.routedKinds` for why it is never embedded and never synthesized.
     let video: WinampModernSurfaceTarget
+    /// The skin's own AVS/visualization window (B20a). Like `video`, only ever `.declaredContainer`
+    /// or `.classicFallback`.
+    let visualization: WinampModernSurfaceTarget
 
     /// The container ids this catalog already routes. A surface reached through the catalog has its
     /// own menu item (Windows → Playlist / Equalizer / Library), so anything listing skin windows
@@ -48,6 +51,7 @@ struct WinampModernSurfaceCatalog {
         case .equalizer: return equalizer
         case .library: return library
         case .video: return video
+        case .visualization: return visualization
         default: return .classicFallback(reason: "\(kind.rawValue) is not a routed surface")
         }
     }
@@ -125,7 +129,8 @@ final class WinampModernSurfaceCoordinator {
         return WinampModernSurfaceCatalog(playlist: target(for: .playlist),
                                           equalizer: target(for: .equalizer),
                                           library: target(for: .library),
-                                          video: target(for: .video))
+                                          video: target(for: .video),
+                                          visualization: target(for: .visualization))
     }
 
     // MARK: - Routing

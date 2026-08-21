@@ -951,6 +951,25 @@ final class WinampModernRenderDumpTests: XCTestCase {
                     print("VIDEO holder \(info.id)/\(layoutID): \(holder.object.xmlID ?? "-")"
                           + "\(holder.frame) cmdbar=\(bar ? 1 : 0)")
                 }
+                // The visualization surfaces a skin declares (B20a): the AVS/vis `<component>`
+                // holder, which is the one the host's own visualization engine fills, and every
+                // `<vis>` box in this layout with the mode it is asking for. The two are different
+                // things — a `<vis>` is the skin's own analyzer/scope and stays engine-drawn — and
+                // telling them apart is the whole routing question, so both are printed.
+                for holder in holders where holder.kind == .visualization {
+                    // `name=` and `nomenu=` decide whether the host can offer this window in its own
+                    // Windows menu, which for an AVS container is the only way a user reaches it —
+                    // the skins bind no button to it (Phase 48).
+                    print("VIS holder \(info.id)/\(layoutID): \(holder.object.xmlID ?? "-")"
+                          + "\(holder.frame) name=\(info.object.attributes["name"] ?? "-")"
+                          + " nomenu=\(info.object.attributes["nomenu"] ?? "-")")
+                }
+                for node in renderer.sceneNodes()
+                where node.object.typeName.caseInsensitiveCompare("vis") == .orderedSame {
+                    let mode = WasabiVisualizationMode(attribute: node.object.attributes["mode"])
+                    print("VIS box \(info.id)/\(layoutID): \(node.object.xmlID ?? "-")\(node.frame) "
+                          + "mode=\(mode.attributeValue)(\(mode.displayName))")
+                }
                 // WINAMP_MODERN_RENDER_THEMES=1 — the colour-theme picture for this skin, which is
                 // otherwise unmeasurable: a `.wal` is a compressed NSIS archive with no unpacked form,
                 // so `strings … | grep -i colorthemes` answers 0 for four skins that ship a full

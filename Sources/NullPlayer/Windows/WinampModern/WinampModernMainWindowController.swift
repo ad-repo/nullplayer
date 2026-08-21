@@ -430,6 +430,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                         $0.view.needsDisplay = true
                     }
                 }))
+        // A skin that owns the visualization takes it over from our own window, if that is where it
+        // was (a restored session, or the previous skin had no AVS window of its own).
+        DispatchQueue.main.async { WindowManager.shared.handOverVisualizationToSkinIfNeeded() }
         // Every view's own `TOGGLE guid:…` now resolves through the same catalog the menu uses.
         let toggle: (WinampModernComponentKind) -> Bool = { [weak self] kind in
             guard let coordinator = self?.surfaceCoordinator, coordinator.handles(kind) else { return false }
@@ -586,6 +589,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// has actually appeared in a scene.
     var embeddedLibrarySurface: WinampModernLibrarySurface? { componentBridge?.currentLibrarySurface }
 
+    /// The skin's embedded visualization engine, if a scene has made one (B20a). The Visualizations
+    /// menu and the `VIS_*` host actions reach the running engine through it.
+    var embeddedVisualizationSurface: WinampModernVisualizationSurface? {
+        componentBridge?.currentVisualizationSurface
+    }
+
     // MARK: - Video (B20)
 
     /// The skin's own video window, its holder filled with the app's video output.
@@ -709,6 +718,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // the window is on screen, because the picture is parked on it as a child window and a
             // child of a window nobody has ordered in has nowhere to appear; and after a layout pass,
             // because that is what makes the box and gives it its frame.
+            // One visualization window at a time: the skin's is going up, so ours comes down —
+            // whoever opened this one (the menu, a `TOGGLE guid:vis`, a script's `show()`).
+            if routedSurfaceKind(ofContainer: id) == .visualization {
+                WindowManager.shared.hideLocalVisualizationWindow()
+                // After the window is on screen, and after a layout pass has made the surface: the
+                // engine's display link will not start against a window that is not visible yet.
+                container.view.needsLayout = true
+                container.view.layoutSubtreeIfNeeded()
+                container.view.hostedVisualizationSurface?.resumeRendering()
+            }
             if isVideoSurfaceContainer(id) {
                 container.view.needsLayout = true
                 container.view.layoutSubtreeIfNeeded()
@@ -916,6 +935,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         return true
     }
 
+    /// Which routed surface a container *is*, for the two kinds the Skin Windows menu lists. Matched
+    /// through the catalog rather than the container's own GUID, because a skin can declare the
+    /// window without one (Love is War Miku's bare `<container id="video">`).
+    private func routedSurfaceKind(ofContainer id: String) -> WinampModernComponentKind? {
+        guard let catalog = surfaceCoordinator?.catalog else { return nil }
+        for kind in WinampModernSurfaceInventory.windowMenuRoutedKinds {
+            if case .declaredContainer(let routedID) = catalog[kind], routedID == id { return kind }
+        }
+        return nil
+    }
+
     /// The windows this skin declares that only the host can open: named, not `nomenu`, and not one
     /// of the surfaces the catalog already routes. Empty for a single-window SUI.
     var skinWindows: [(id: String, name: String, isVisible: Bool)] {
@@ -935,6 +965,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     @discardableResult
     func toggleSkinWindow(id: String) -> Bool {
         guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return false }
+        // The two routed surfaces the menu *does* list (visualization, video) go through the
+        // coordinator, so this entry and the Visualizations menu's own item reach one window with one
+        // set of bookkeeping — and the video window still gets its picture parked on it (Phase 48).
+        if let kind = routedSurfaceKind(ofContainer: container.containerID) {
+            surfaceCoordinator?.toggleSurface(kind)
+            return true
+        }
         if container.window.isVisible {
             container.window.orderOut(nil)
         } else {
@@ -1175,6 +1212,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // The picture goes home before the windows holding it do — the video view is the app's, not
         // the skin's, and a still-running film survives a skin or mode switch in its own window.
         componentBridge?.releaseVideoSurface()
+        // The visualization engine stops with the skin that asked for it: an OpenGL context and a
+        // display link left running behind a torn-down window is a frame a second nobody sees (B20a).
+        componentBridge?.releaseVisualizationSurface()
         skinView?.teardown()
         skinView = nil
         host?.endVisualizationConsumption()

@@ -237,6 +237,11 @@ protocol WinampModernComponentHost: AnyObject {
     /// output exists in this session.
     func makeVideoSurface() -> WinampModernVideoSurface?
 
+    /// Visualization — the skin's AVS/vis window, filled with the host's real visualization engine
+    /// (ProjectM/MilkDrop, Geiss, Tripex) rather than the engine-drawn analyzer. `nil` when no
+    /// visualization output exists in this session.
+    func makeVisualizationSurface() -> WinampModernVisualizationSurface?
+
     /// Fallback for a component the skin does not embed: surface it through the classic
     /// WindowManager window instead of a skin-owned holder.
     func toggleClassicWindow(for kind: WinampModernComponentKind)
@@ -245,6 +250,7 @@ protocol WinampModernComponentHost: AnyObject {
 extension WinampModernComponentHost {
     func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
     func makeVideoSurface() -> WinampModernVideoSurface? { nil }
+    func makeVisualizationSurface() -> WinampModernVisualizationSurface? { nil }
     /// A host with no selection model of its own keeps the single anchor it already had.
     func playlistSetSelection(_ rows: Set<Int>) { playlistSelect(row: rows.min() ?? -1) }
     /// Highest row first, so each removal cannot shift the rows still to come.
@@ -313,5 +319,54 @@ protocol WinampModernVideoSurface: AnyObject {
     /// UI Size, as the `.wal` window's own skin scale.
     func applySkinScale(_ scale: CGFloat)
     /// Return the video output and release resources before the view is removed. Must be idempotent.
+    func prepareForUITeardown()
+}
+
+/// The host's visualization engine, drawn into a `.wal` skin's own AVS/visualization window (B20a).
+///
+/// Eight of the installed skins declare a `<container>` whose body is a
+/// `<component param="{0000000A-000C-0010-FF7B-01014263450C}">` — Winamp's *visualization plugin*
+/// component, the window AVS and MilkDrop drew into. Ours filled it with the same engine-drawn
+/// spectrum bars the little `<vis>` box in the player draws, so a skin's dedicated visualization
+/// window was a second, larger copy of the analyzer. It gets the real engines instead.
+///
+/// The two are deliberately different things and both stay: a `<vis>` is Winamp's built-in
+/// analyzer/oscilloscope and remains engine-drawn (`drawVisualization`), while the component holder
+/// is the plugin surface. That is Winamp's own division, and a skin that draws both wants both.
+///
+/// Unlike the video surface this one *does* contain its output: `VisualizationGLView` is an
+/// `NSOpenGLView` that owns nothing outside itself, so it can live in the skin's view tree the way
+/// the library browser does. Its `hitTest` returns nil, so the skin keeps every click over the box.
+protocol WinampModernVisualizationSurface: AnyObject {
+    var view: NSView { get }
+    /// The engine currently drawing — the same `VisualizationType` the host's own window uses, so
+    /// the Visualizations menu and this surface can never disagree about what is running.
+    var engineType: VisualizationType { get }
+    func switchEngine(to type: VisualizationType)
+    /// `VIS_NEXT` / `VIS_PREV`: step the preset (ProjectM) or the effect (Geiss, Tripex).
+    func stepPreset(by delta: Int)
+    /// The visualization window's own keyboard — ←/→ step, R random, F fullscreen, P quality, C
+    /// cycle, Esc leaves fullscreen — offered to a key the skin itself did not claim. Returns
+    /// whether it took the key.
+    func handleKeyDown(_ event: NSEvent) -> Bool
+    /// The window holding this surface has just come on screen. **Load-bearing**: the engine's
+    /// display link refuses to start while its window is not visible, and nothing restarts a link
+    /// that never started — so a surface built inside a skin's own (initially hidden) AVS window
+    /// stayed black forever without this.
+    func resumeRendering()
+    /// Whether this surface's engine is currently filling a screen rather than the skin's box.
+    var isFullscreen: Bool { get }
+    /// `VIS_FS` — take the *engine* fullscreen, leaving the skin's window where it is. It must not
+    /// open NullPlayer's own visualization window: five of the eight AVS windows carry a `VIS_FS`
+    /// button inside them, and answering it with our window left two visualizations running.
+    func toggleFullscreen()
+    /// The controls menu for whatever is running, for `VIS_CFG` and a right-click on the box.
+    func buildMenu() -> NSMenu
+    /// Recolour to the skin's active colour theme.
+    func applyPalette(_ palette: WasabiPalette)
+    /// UI Size, as the `.wal` window's own skin scale.
+    func applySkinScale(_ scale: CGFloat)
+    /// Stop rendering, drop observers and release the engine before the view is removed. Must be
+    /// idempotent.
     func prepareForUITeardown()
 }

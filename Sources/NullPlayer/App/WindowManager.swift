@@ -957,6 +957,9 @@ class WindowManager {
         case .equalizer: showOnly ? showEqualizer() : classicToggleEqualizer()
         case .library: showOnly ? showPlexBrowser() : classicTogglePlexBrowser()
         case .video: showOrToggleLocalVideoWindow(showOnly: showOnly)
+        // Bypassing the routing on purpose: the coordinator only calls this when the skin has no
+        // visualization window of its own, and re-entering would route straight back here.
+        case .visualization: showOnly ? showProjectM(routeToSkin: false) : toggleLocalProjectMWindow()
         default: break
         }
     }
@@ -996,6 +999,20 @@ class WindowManager {
         guard uiMode.controllerFamily == .winampModern else { return false }
         return (mainWindowController as? WinampModernMainWindowController)?
             .sizeVideoSurface(toNativeMultiple: multiple) ?? false
+    }
+
+    /// The classic fallback for `.visualization`: NullPlayer's own visualization window, toggled
+    /// without consulting the coordinator that asked for it.
+    private func toggleLocalProjectMWindow() {
+        if let controller = projectMWindowController, controller.window?.isVisible == true {
+            rememberProjectMFrame()
+            controller.stopRenderingForHide()
+            controller.window?.orderOut(nil)
+        } else {
+            showProjectM(routeToSkin: false)
+        }
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
     }
 
     /// The classic fallback for `.video`: NullPlayer's own video window, and only when a video is
@@ -2667,7 +2684,15 @@ class WindowManager {
     
     // MARK: - ProjectM Visualization Window
     
-    func showProjectM(at restoredFrame: NSRect? = nil, restoringPresetIndex presetIndex: Int? = nil) {
+    /// - Parameter routeToSkin: whether a loaded `.wal` skin's own AVS window may take this (B20a).
+    ///   False is the deliberate bypass for the two things only our own window does — custom
+    ///   fullscreen (`VIS_FS`) and the classic fallback the surface coordinator calls back into.
+    func showProjectM(at restoredFrame: NSRect? = nil, restoringPresetIndex presetIndex: Int? = nil,
+                      routeToSkin: Bool = true) {
+        if routeToSkin,
+           routeWinampModernSurface(.visualization, toggle: false, restoredFrame: restoredFrame) { return }
+        // Our own window is going up, so the skin's comes down: one visualization at a time.
+        hideWinampModernVisualizationWindow()
         let isNewWindow = projectMWindowController == nil
         if isNewWindow {
             if isModernUIEnabled {
@@ -2706,8 +2731,44 @@ class WindowManager {
         postLayoutChangeNotification()
     }
     
+    /// Whether **a** visualization window is up — ours or the skin's (B20a).
+    ///
+    /// Both are asked, never one or the other. Answering only for the skin's while ours was on screen
+    /// is what let the two exist at once: the menu believed nothing was open, so nothing ever closed
+    /// the window that was, and two engines rendered side by side against the same audio.
     var isProjectMVisible: Bool {
-        projectMWindowController?.window?.isVisible == true
+        if projectMWindowController?.window?.isVisible == true { return true }
+        return winampModernSurfaces?.isSurfaceVisible(.visualization) == true
+    }
+
+    /// Put NullPlayer's own visualization window away, without touching the skin's.
+    ///
+    /// The rule this serves: **one visualization window at a time.** Whichever of the two is being
+    /// shown puts the other away first, so a skin that owns the surface and a leftover window of ours
+    /// (a restored session, a `VIS_FS` before Phase 48's fullscreen, a skin switched mid-session)
+    /// cannot end up competing.
+    func hideLocalVisualizationWindow() {
+        guard let controller = projectMWindowController, controller.window?.isVisible == true else { return }
+        rememberProjectMFrame()
+        controller.stopRenderingForHide()
+        controller.window?.orderOut(nil)
+    }
+
+    /// The other half of the rule: put the skin's AVS window away before ours goes up.
+    private func hideWinampModernVisualizationWindow() {
+        guard let coordinator = winampModernSurfaces, coordinator.handles(.visualization),
+              coordinator.isSurfaceVisible(.visualization) else { return }
+        coordinator.toggleSurface(.visualization)
+    }
+
+    /// A `.wal` skin that owns the visualization has just finished loading. If our own window was the
+    /// one showing it — a restored session, or the skin before this one had no AVS window — hand the
+    /// visualization over rather than leaving two of them.
+    func handOverVisualizationToSkinIfNeeded() {
+        guard projectMWindowController?.window?.isVisible == true,
+              winampModernSurfaces?.handles(.visualization) == true else { return }
+        hideLocalVisualizationWindow()
+        routeWinampModernSurface(.visualization, toggle: false)
     }
     
     /// Whether ProjectM is in fullscreen mode
@@ -2735,7 +2796,9 @@ class WindowManager {
     /// Show the visualization window and put it fullscreen — Winamp's `VIS_FS`, which starts the
     /// visualization if it is not already running.
     func showProjectMFullscreen() {
-        if !isProjectMVisible { showProjectM() }
+        // Our own window, never the skin's: custom fullscreen is this controller's, and a borderless
+        // `.wal` container window has no fullscreen of its own to enter.
+        if projectMWindowController?.window?.isVisible != true { showProjectM(routeToSkin: false) }
         guard !isProjectMFullscreen else { return }
         toggleProjectMFullscreen()
     }
@@ -2746,6 +2809,16 @@ class WindowManager {
     }
     
     func toggleProjectM() {
+        // A window of ours that is actually on screen wins the toggle, whatever the skin declares:
+        // it is the one the user is looking at, and leaving it open while toggling the skin's is how
+        // two visualization windows used to appear at once.
+        if let controller = projectMWindowController, controller.window?.isVisible == true {
+            hideLocalVisualizationWindow()
+            postLayoutChangeNotification()
+            updateDockedChildWindows()
+            return
+        }
+        if routeWinampModernSurface(.visualization, toggle: true) { return }
         if let controller = projectMWindowController, controller.window?.isVisible == true {
             rememberProjectMFrame()
             // Stop rendering before hiding to save CPU (orderOut doesn't trigger windowWillClose)
@@ -3248,9 +3321,17 @@ class WindowManager {
         projectMWindowController?.currentPresetIndex
     }
 
+    /// The visualization engine running inside the loaded `.wal` skin's own AVS window, if it has
+    /// one and a scene has made it (B20a). The Visualizations menu drives it alongside our own
+    /// window, so the two can never disagree about which engine is running.
+    var winampModernVisualizationSurface: WinampModernVisualizationSurface? {
+        guard uiMode.controllerFamily == .winampModern else { return nil }
+        return (mainWindowController as? WinampModernMainWindowController)?.embeddedVisualizationSurface
+    }
+
     /// Current visualization engine type
     var visualizationEngineType: VisualizationType {
-        projectMWindowController?.currentEngineType ?? {
+        projectMWindowController?.currentEngineType ?? winampModernVisualizationSurface?.engineType ?? {
             if let raw = UserDefaults.standard.string(forKey: "visualizationEngineType"),
                let type = VisualizationType(rawValue: raw) {
                 return type
@@ -3263,6 +3344,7 @@ class WindowManager {
     func switchVisualizationEngine(to type: VisualizationType) {
         UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
         projectMWindowController?.switchEngine(to: type)
+        winampModernVisualizationSurface?.switchEngine(to: type)
     }
 
     /// Reset visualization-window preferences to defaults and force the live view to re-read them.
