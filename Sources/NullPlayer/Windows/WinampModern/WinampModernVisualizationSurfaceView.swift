@@ -494,6 +494,18 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
         window?.makeKeyAndOrderFront(nil)
     }
 
+    /// The holder went away: the engine stops and the view leaves the hierarchy, but nothing is
+    /// released and `isTornDown` stays closed — the bridge caches one engine per skin, and the next
+    /// time the holder appears `resumeRendering()` starts this same one again.
+    func unmountFromHolder() {
+        guard !isTornDown else { return }
+        exitFullscreen()
+        // `engineView` stays a subview of this one: it is the engine, and the surface is what leaves
+        // the holder. Detaching it here would give the remount an empty box.
+        engineView.stopRendering()
+        removeFromSuperview()
+    }
+
     func prepareForUITeardown() {
         guard !isTornDown else { return }
         exitFullscreen()

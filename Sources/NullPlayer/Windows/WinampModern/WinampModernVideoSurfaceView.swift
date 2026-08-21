@@ -83,14 +83,22 @@ final class WinampModernVideoSurfaceView: WinampModernVideoSurface {
     }
 
     func detachVideoOutput() {
+        // Reveal only if there is still something to watch: a box that goes away mid-film must not
+        // leave the film playing into a window nobody can see, and one that goes away after the film
+        // ended must not pop an empty black window open.
+        unpark(revealing: WindowManager.shared.currentVideoPlayerController?.currentTitle != nil)
+    }
+
+    /// The deliberate opposite: unpark and stay hidden. An embedded surface has no window to order
+    /// out, so this is what putting its picture away has to mean (B23).
+    func hideVideoOutput() { unpark(revealing: false) }
+
+    private func unpark(revealing reveal: Bool) {
         guard isAttached else { return }
         isAttached = false
         guard let controller = WindowManager.shared.currentVideoPlayerController else { return }
         controller.showsVideoControlBar = true
-        // Reveal only if there is still something to watch: a box that goes away mid-film must not
-        // leave the film playing into a window nobody can see, and one that goes away after the film
-        // ended must not pop an empty black window open.
-        controller.reclaimVideoOutput(reveal: controller.currentTitle != nil)
+        controller.reclaimVideoOutput(reveal: reveal)
     }
 
     /// The video box is black in every skin that draws one — Winamp's own, and all six in the
@@ -108,6 +116,11 @@ final class WinampModernVideoSurfaceView: WinampModernVideoSurface {
         detachVideoOutput()
         container.removeFromSuperview()
     }
+
+    /// Identical here, and that is the point: this surface owns nothing terminal, so the holder
+    /// coming and going is already safe. The library and visualization surfaces need the two paths
+    /// kept apart.
+    func unmountFromHolder() { prepareForUITeardown() }
 }
 
 /// The black box the skin lays out, and the single source of truth for where the parked window goes.

@@ -1,10 +1,17 @@
 # Winamp Modern (`.wal`) — Open Items
 
-**Compiled:** 2026-08-19, after Phase 33 · **Audience:** whoever picks this subsystem up next
+**Compiled:** 2026-08-19, after Phase 33 · **Frozen:** 2026-08-21, at B23a ·
+**Audience:** whoever picks this subsystem up next
 
-This is the **tracked** copy and the source of truth. `TASKS.md` (the local, gitignored working
-checklist) carries the same list against the phase history it came out of; if the two ever disagree,
-this file wins, because it is the one a fresh clone has.
+> **Superseded — do not add to this file.** `TASKS.md` (local, gitignored) is the live list, and it
+> is where B24, B25 and everything after them are tracked. What is below is still accurate about the
+> items it names — it was verified against the code when it was written — but it stops at **B23a**
+> and no longer receives new work. Read it for the reasoning behind B1–B23a; take the current backlog
+> from `TASKS.md`.
+
+It was written as the **tracked** copy and the source of truth, on the reasoning that a fresh clone
+has it and `TASKS.md` is gitignored. That is the one thing to know when the two disagree: they now
+do, deliberately.
 
 Phases 0A–33 are all closed. Everything below is what survived a walk of every unchecked item left in
 `TASKS.md` after Phase 33: each was verified against the current code, and the ones already fixed by a
@@ -517,6 +524,35 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       926 green. **Confirmed live 2026-08-21** across Bento, both Miku skins, Anaheim and Styx: the
       engine draws in the skin's own window, its `VIS_*` buttons and the visualization keyboard drive
       it, `VIS_FS` fills the screen from the skin's box, and only one visualization window is ever up.
+
+- [x] **B23. Video in an SUI skin's own tab.** Reported live 2026-08-21: cPro-Bento's **Video** tab
+      was an empty box and a film opened NullPlayer's own window beside it. The skin embeds the video
+      component in its tab sheet (`centro.windowholder.video hold="guid:{F0816D7B-…}"`) and collapses
+      its standalone `Video` container to a 1×1 stub in `window-overrides.xml`, so B20's absolute
+      "`.video` is never embedded" rule left the surface with nowhere to go (`video=classic`). The
+      rule is now conditional on what it was protecting: a skin declaring a **visible** video window
+      keeps it, and only a skin whose sole video surface is the in-player holder embeds. Measured
+      over the 31 installed skins, exactly two reach a video holder in the player — cPro-Bento (no
+      window: embeds) and winampmodern566 (real window: unchanged); the sweep shows one changed line
+      in one skin's `surfaces.txt` and **zero** changed pixels anywhere.
+      Three things the live run found that no probe could: the `autoopen` fallback must run **only if
+      the skin did not switch tabs itself** (cPro has three video holders, and forcing all of them
+      open put the mini view and the drawer on screen too); `hostedVideoSurface` must pick the
+      **biggest visible box** rather than a dictionary's first value; and the picture has to be placed
+      **twice**, because revealing a tab sets off the skin's own `onResize` cascade a turn after the
+      attach — one placement left a white slab down the side of the tab. `VID_1X`/`VID_2X` are
+      deliberately inert for an embedded box (sizing it to the stream would resize the whole player
+      around a tab), and switching away from the tab mid-film unparks the picture into our own window,
+      which is `detachVideoOutput`'s existing rule. `.visualization` is deliberately **not** given the
+      same treatment: the only corpus skin it would move is BLAKK, and nothing has measured what it
+      should show there — filed as **B23a** if a report ever asks. New DEBUG hook
+      `WINAMP_MODERN_DEBUG_PLAY=<path>` (the app takes no file argument, and `openFiles` accepts audio
+      extensions only, so the video path could not be driven from a cold launch at all). 929 green.
+      **Confirmed live 2026-08-21** on cPro-Bento (tab open and tab closed) and multipass (unchanged).
+
+- [ ] **B23a. `.visualization` embedded in a player.** BLAKK reaches a visualization holder in its
+      player and declares no AVS container, so its engine could live in that box instead of our own
+      window. Deliberately left alone by B23 — no report, no measurement of what the box should show.
 
 - [ ] **B21. `enqueueFile` / `playFile` — skin-supplied path ingest.** `PlEdit.enqueueFile(path)`
       (cPro-Bento) and `System.playFile(path)` (T800) hand the host a filesystem path the *skin*

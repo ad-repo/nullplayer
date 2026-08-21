@@ -801,9 +801,20 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             // pair and a skin picks either half: Defix hangs its four "what does this
                             // button open" menus off the *down*, and while the probe drove only the up
                             // it reported four dead buttons that the skin implements fully.
-                            for event in ["onleftbuttondown", "onleftbuttondblclk", "onleftbuttonup",
-                                          "onleftclick", "onrightbuttondown", "onrightbuttonup",
-                                          "onrightclick"] {
+                            // `WINAMP_MODERN_RENDER_CLICK_EVENTS=onleftbuttondown,onleftbuttonup`
+                            // narrows the blast to the events a *plain* click sends. The full seven
+                            // include the double-click and both right-button halves, and a skin that
+                            // hangs a command off one of those (cPro's tab strip maximizes the window
+                            // from its dblclk) makes every probe of an ordinary click unreadable.
+                            let requested = (env["WINAMP_MODERN_RENDER_CLICK_EVENTS"] ?? "")
+                                .split(separator: ",")
+                                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+                                .filter { !$0.isEmpty }
+                            let allEvents = ["onleftbuttondown", "onleftbuttondblclk", "onleftbuttonup",
+                                             "onleftclick", "onrightbuttondown", "onrightbuttonup",
+                                             "onrightclick"]
+                            for event in (requested.isEmpty ? allEvents
+                                          : allEvents.filter { requested.contains($0) }) {
                                 // The button events carry the click's x/y, exactly as the view sends
                                 // them: a handler that pops two arguments off an empty stack fails
                                 // with an underflow that belongs to the harness, not the skin.
@@ -950,6 +961,17 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         holderAttributes: holder.object.attributes)
                     print("VIDEO holder \(info.id)/\(layoutID): \(holder.object.xmlID ?? "-")"
                           + "\(holder.frame) cmdbar=\(bar ? 1 : 0)")
+                }
+                // …and the ones that are in the graph but **not on screen** (B23). An SUI skin keeps
+                // its video component in a tab, so at load the holder is inside a hidden group and
+                // every visibility-filtered probe answers "this skin declares no video box" — which
+                // is exactly what routing believed about cPro-Bento while its Video tab sat empty and
+                // the film opened a window of its own. No frame: an object that is not in the scene
+                // has no resolved geometry to report, and inventing one would be a lie.
+                for object in Self.hiddenComponentHolders(kind: .video, in: info.object)
+                where !holders.contains(where: { $0.object === object }) {
+                    print("VIDEO holder \(info.id)/\(layoutID): \(object.xmlID ?? "-") hidden"
+                          + " cmdbar=\(WinampModernVideoHolder.showsCommandBar(holderAttributes: object.attributes) ? 1 : 0)")
                 }
                 // The visualization surfaces a skin declares (B20a): the AVS/vis `<component>`
                 // holder, which is the one the host's own visualization engine fills, and every
@@ -1129,6 +1151,22 @@ final class WinampModernRenderDumpTests: XCTestCase {
     }
 
     /// A script-built menu as one line: `Title > [child, …]`, separators as `--`.
+    /// Every component holder of `kind` anywhere under a container's retained subtree, visible or
+    /// not. The companion to `componentHolders()`, which only ever answers for the current scene.
+    private static func hiddenComponentHolders(kind: WinampModernComponentKind,
+                                               in container: WasabiObject) -> [WasabiObject] {
+        var found: [WasabiObject] = []
+        func visit(_ object: WasabiObject) {
+            if WinampModernComponentRegistry.isHolderElement(object.typeName),
+               WasabiSceneRenderer.componentKind(of: object) == kind {
+                found.append(object)
+            }
+            for child in object.children { visit(child) }
+        }
+        visit(container)
+        return found
+    }
+
     private static func describe(_ items: [WinampModernPopupMenuItem]) -> String {
         items.map { item in
             if item.isSeparator { return "--" }

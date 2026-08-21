@@ -659,6 +659,14 @@ final class MakiInterpreter {
         switch (kind, value) {
         case (.integer, .float), (.integer, .double): return .integer(value.integerValue)
         case (.boolean, .float), (.boolean, .double), (.boolean, .integer): return .boolean(value.truthy)
+        // MAKI has no null literal of its own: `NULL` compiles to a plain integer 0, so
+        // `lastActiveT = NULL;` stored an *integer* in an object-typed variable. It compared equal to
+        // null and read as false, so nothing looked wrong until a member access — which is a
+        // different instruction and fails closed on a non-object owner (`op104`, below). ClassicPro's
+        // tab strip opens every tab activation with `closeTab(lastActiveT)`, whose first line reads
+        // `lastActiveT.ID`, so the handler that re-aligns the strip died halfway through on the first
+        // click of a session and left the tabs half-deactivated and unaligned.
+        case (.object, .integer(0)), (.object, .boolean(false)): return .null
         default: return value
         }
     }

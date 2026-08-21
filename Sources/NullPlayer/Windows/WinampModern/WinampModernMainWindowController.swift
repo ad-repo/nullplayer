@@ -246,6 +246,21 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             #endif
             #if DEBUG
+            // `WINAMP_MODERN_DEBUG_PLAY=/path/film.mp4` starts a local video a few seconds after
+            // launch — the only way to drive the video path from a cold launch, since the app takes
+            // no file argument and `openFiles` accepts audio extensions only. Ordered *after*
+            // `DEBUG_CLICK` on purpose: the tab a click opens is the surface the film should land in,
+            // so the two together are the whole B23 case in one command.
+            if let path = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_PLAY"] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                    let track = Track(url: URL(fileURLWithPath: path))
+                    NSLog("WinampModern debug play %@ mediaType=%@", path, "\(track.mediaType)")
+                    guard track.mediaType == .video else { return }
+                    WindowManager.shared.playVideoTrack(track)
+                }
+            }
+            #endif
+            #if DEBUG
             // `WINAMP_MODERN_SHOW_WINDOWS=SPEAKER1,SPEAKER2` opens skin windows at launch, the way
             // the user does from the Skin Windows menu. The counterpart of the harness's
             // `WINAMP_MODERN_RENDER_SHOW`: a defect confined to a window that ships
@@ -406,7 +421,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 revealEmbedded: { [weak self, weak scripts] kind, _ in
                     guard let self, let scripts else { return false }
                     window?.makeKeyAndOrderFront(nil)
-                    let revealed = Self.revealEmbeddedSurface(kind, scripts: scripts)
+                    let revealed = self.revealEmbeddedSurface(kind, scripts: scripts)
                     skinView?.needsDisplay = true
                     return revealed
                 },
@@ -526,8 +541,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// against `PL_GUID`/`ML_GUID`/`VIDEO_GUID`/`VIS_GUID` and calls `openTabNo`. Sending the same
     /// event is what actually opens cPro's Media Library tab; finding the holder and returning (the
     /// old behaviour) left the click doing nothing at all.
-    private static func revealEmbeddedSurface(_ kind: WinampModernComponentKind,
-                                              scripts: WinampModernScriptRuntime) -> Bool {
+    ///
+    /// The script gets first refusal, and the `autoopen` fallback runs **only if the scene still has
+    /// no visible holder of that kind** (B23). A skin can carry the same component in several places
+    /// — cPro-Bento holds video in its tab, in the mini view *and* in the drawer, three holders all
+    /// declaring `autoopen="1"` — so forcing every one of them open after the skin had already
+    /// switched to the right tab put two more copies of the surface on screen beside it.
+    private func revealEmbeddedSurface(_ kind: WinampModernComponentKind,
+                                       scripts: WinampModernScriptRuntime) -> Bool {
         guard let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else {
             // The equalizer has no component GUID; a skin-drawn EQ is already on screen wherever the
             // skin drew it, so revealing the player window is the whole job.
@@ -535,11 +556,22 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         let handled = (try? scripts.dispatchSystem(event: "ongetcancelcomponent",
                                                    arguments: [.string(guid), .boolean(true)])) ?? 0
+        if hasVisibleHolder(kind) {
+            #if DEBUG
+            NSLog("WinampModern reveal %@ guid=%@ handlers=%d (skin opened it)", kind.rawValue, guid, handled)
+            #endif
+            return true
+        }
         let opened = Self.openHolders(for: kind, in: scripts.loadedSkin.runtime.graph)
         #if DEBUG
         NSLog("WinampModern reveal %@ guid=%@ handlers=%d opened=%d", kind.rawValue, guid, handled, opened)
         #endif
         return handled > 0 || opened > 0
+    }
+
+    /// Whether the player's current scene already shows a holder for this surface.
+    private func hasVisibleHolder(_ kind: WinampModernComponentKind) -> Bool {
+        skinView?.renderer.componentHolders().contains { $0.kind == kind } ?? false
     }
 
     /// Wasabi's `windowholder autoopen="1"`: when the component a holder holds becomes visible, the
@@ -605,8 +637,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// charge exactly as before.
     @discardableResult
     func hostVideoOutput() -> Bool {
-        guard let coordinator = surfaceCoordinator,
-              case .declaredContainer(let id) = coordinator.catalog.video,
+        guard let coordinator = surfaceCoordinator else { return false }
+        if case .embedded = coordinator.catalog.video { return hostVideoOutputInPlayer() }
+        guard case .declaredContainer(let id) = coordinator.catalog.video,
               let container = auxiliaryContainers.first(where: { $0.containerID == id })
         else { return false }
         // The holder's surface is made by the view's own layout pass, and a window that has never
@@ -619,12 +652,54 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         return true
     }
 
+    /// The other shape of a skin's video surface: a **tab of the player window** (B23).
+    ///
+    /// cPro-Bento hosts the video component in its SUI's Video tab and collapses its standalone
+    /// `Video` container to a 1×1 stub, so there is no window to open — the tab has to be revealed
+    /// instead, through the same `onGetCancelComponent` + `autoopen` route the Skin Windows menu and
+    /// a script's `TOGGLE guid:{F0816D7B-…}` take. Answers **false** when revealing the tab produces
+    /// no live holder, which is what leaves NullPlayer's own video window in charge rather than
+    /// swallowing the picture into a surface that does not exist.
+    private func hostVideoOutputInPlayer() -> Bool {
+        guard let view = skinView, let coordinator = surfaceCoordinator else { return false }
+        coordinator.showSurface(.video)
+        // The surface is made by the view's own layout pass, and revealing the tab has only changed
+        // the graph so far: without this the first film of a session finds no box to fill.
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        guard let surface = view.hostedVideoSurface else { return false }
+        surface.attachVideoOutput()
+        surface.updateOutputPlacement()
+        // …and again once the reveal has settled. Switching the tab sets off the skin's own
+        // `onResize` cascade, which is what gives the box its final width — it runs after this turn,
+        // and a film started while the tab was closed otherwise parked the picture over the box's
+        // opening geometry and left it there, a white slab down one side of the tab.
+        DispatchQueue.main.async { [weak self] in
+            guard let view = self?.skinView else { return }
+            view.needsLayout = true
+            view.layoutSubtreeIfNeeded()
+            view.hostedVideoSurface?.updateOutputPlacement()
+        }
+        return true
+    }
+
     /// Put the skin's video window away — the `autoclose="1"` every measured holder declares. The
     /// picture stays lent, so the next play reopens rather than re-attaching.
+    ///
+    /// For an embedded surface there is no window to put away — hiding the player window is not what
+    /// "close the video" means — so the picture is simply unparked and the tab left as it is, for the
+    /// user or the skin to switch away from.
     @discardableResult
     func hideVideoSurfaceWindow() -> Bool {
-        guard let coordinator = surfaceCoordinator,
-              case .declaredContainer(let id) = coordinator.catalog.video,
+        guard let coordinator = surfaceCoordinator else { return false }
+        if case .embedded = coordinator.catalog.video {
+            guard let surface = skinView?.hostedVideoSurface,
+                  WindowManager.shared.currentVideoPlayerController?.isVideoOutputHosted == true
+            else { return false }
+            surface.hideVideoOutput()
+            return true
+        }
+        guard case .declaredContainer(let id) = coordinator.catalog.video,
               let container = auxiliaryContainers.first(where: { $0.containerID == id }),
               container.window.isVisible
         else { return false }
@@ -634,7 +709,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     /// Unpark the picture from the skin's box, leaving the window it came from alone.
     func detachVideoOutput() {
-        guard case .declaredContainer(let id) = surfaceCoordinator?.catalog.video,
+        guard let catalog = surfaceCoordinator?.catalog else { return }
+        if case .embedded = catalog.video {
+            skinView?.hostedVideoSurface?.detachVideoOutput()
+            return
+        }
+        guard case .declaredContainer(let id) = catalog.video,
               let container = auxiliaryContainers.first(where: { $0.containerID == id })
         else { return }
         container.view.hostedVideoSurface?.detachVideoOutput()
@@ -658,6 +738,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// own frame, buttons and status bar stay where they are. Answers false when nothing is playing
     /// or the decoder has not published a size yet, which is where these buttons stay inert rather
     /// than resizing to a guess.
+    ///
+    /// **Inert for an embedded surface** (B23): there the box is a tab inside the player, and sizing
+    /// it to the stream would resize the whole player window around a tab — Winamp sizes a *video
+    /// window* from the stream, and cPro-Bento's video is not one. The buttons answer false and
+    /// nothing moves, which is what they did before the tab hosted anything at all.
     @discardableResult
     func sizeVideoSurface(toNativeMultiple multiple: CGFloat) -> Bool {
         guard let coordinator = surfaceCoordinator,

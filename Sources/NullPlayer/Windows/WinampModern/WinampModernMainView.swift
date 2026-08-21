@@ -522,10 +522,15 @@ final class WinampModernMainView: NSView {
         context.restoreGState()
     }
 
-    /// Create a live surface for each library holder the scene now has, and tear down the ones whose
-    /// holder has gone (a layout switch, a script hiding the tab). A surface is told to stand down
-    /// *before* its view leaves the hierarchy, so its in-flight server tasks and timers do not
-    /// outlive it.
+    /// Create a live surface for each library holder the scene now has, and **unmount** the ones whose
+    /// holder has gone (a layout switch, a script hiding the tab).
+    ///
+    /// Unmount, not tear down. The bridge owns one surface of each kind per skin and re-serves that
+    /// same instance when the holder comes back, so a terminal teardown here poisoned the cache: the
+    /// second visit to a tab re-added an already-torn-down surface, and the third found the teardown
+    /// latch already closed and never removed its view — cPro-Bento's library browser then stayed on
+    /// screen over every other tab (Media Library → Playlist → Media Library → Playlist, reported
+    /// 2026-08-21). The scene's own teardown still tears the surfaces down.
     private func reconcileHostedSurfaces() {
         guard !isTornDown else { return }
         var live: Set<WasabiObjectID> = []
@@ -539,7 +544,7 @@ final class WinampModernMainView: NSView {
             addSubview(surface.view)
         }
         for (id, surface) in librarySurfaces where !live.contains(id) {
-            surface.prepareForUITeardown()
+            surface.unmountFromHolder()
             librarySurfaces[id] = nil
         }
 
@@ -565,9 +570,13 @@ final class WinampModernMainView: NSView {
             surface.applySkinScale(skinScale)
             surface.applyPalette(renderer.palette)
             addSubview(surface.view)
+            // A surface the bridge handed back was stopped when its holder went away, and the only
+            // other thing that starts an engine is a window becoming visible — which has already
+            // happened for a holder that lives in a window that is on screen.
+            surface.resumeRendering()
         }
         for (id, surface) in visualizationSurfaces where !liveVis.contains(id) {
-            surface.prepareForUITeardown()
+            surface.unmountFromHolder()
             visualizationSurfaces[id] = nil
         }
         // What the renderer paints in the box behind them: bars are the skin's analyzer, and drawing
@@ -578,7 +587,7 @@ final class WinampModernMainView: NSView {
             // Hands the picture back to its own window if a film is still running — the holder going
             // away is not a stop, and the one video view in the app must never be left orphaned in a
             // view that is about to leave the hierarchy.
-            surface.prepareForUITeardown()
+            surface.unmountFromHolder()
             videoSurfaces[id] = nil
         }
     }
@@ -586,7 +595,19 @@ final class WinampModernMainView: NSView {
     /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
     /// hand the picture over before showing the skin's video window, and to size that window from
     /// the stream's own dimensions for `VID_1X` / `VID_2X`.
-    var hostedVideoSurface: WinampModernVideoSurface? { videoSurfaces.values.first }
+    ///
+    /// **The biggest visible box wins.** A skin can hold the same component in several places at
+    /// once — cPro-Bento's video lives in its tab, in the mini view above the playlist column *and*
+    /// in the drawer — and a dictionary's first value is whichever the hash gave up, so the picture
+    /// landed in a different box between runs of the same build. The largest is the one the user
+    /// asked to see: the small ones are strips the skin leaves open beside it.
+    var hostedVideoSurface: WinampModernVideoSurface? {
+        let holders = renderer.componentHolders()
+            .filter { $0.kind == .video && videoSurfaces[$0.object.stableID] != nil }
+            .sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
+        if let best = holders.first { return videoSurfaces[best.object.stableID] }
+        return videoSurfaces.values.first
+    }
 
     /// The visualization surface in this scene, if the skin's AVS holder made one. The host actions
     /// (`VIS_NEXT`, `VIS_CFG`) and the Visualizations menu reach the running engine through it.
@@ -673,7 +694,28 @@ final class WinampModernMainView: NSView {
         performAction(for: object)
         pressedObject = nil
         needsDisplay = true
+        logHolders(tag: "debug click")
     }
+
+    /// `WINAMP_MODERN_DEBUG_HOLDERS=1` — after every click: the component holders the scene actually
+    /// has, and the live host subviews still in the hierarchy. A subview whose holder is gone is the
+    /// tab-overlap bug as a *live* view; a holder gone with no subview left is a stale-pixel bug.
+    func logHolders(tag: String) {
+        guard ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_HOLDERS"] != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self else { return }
+            let holders = self.renderer.componentHolders()
+                .map { "\($0.kind.rawValue)#\($0.object.xmlID ?? "-")\($0.frame)" }
+                .joined(separator: " | ")
+            let subs = self.subviews
+                .map { "\(type(of: $0))\($0.frame)hidden=\($0.isHidden ? 1 : 0)" }
+                .joined(separator: " | ")
+            NSLog("WinampModern HOLDERS after %@: lib=%d vid=%d vis=%d holders=[%@] subviews=[%@]",
+                  tag, self.librarySurfaces.count, self.videoSurfaces.count,
+                  self.visualizationSurfaces.count, holders, subs)
+        }
+    }
+
     #endif
 
     override func mouseDown(with event: NSEvent) {
@@ -802,6 +844,9 @@ final class WinampModernMainView: NSView {
         }
         pressedObject = nil
         needsDisplay = true
+        #if DEBUG
+        logHolders(tag: "mouseUp")
+        #endif
     }
 
     /// Wasabi's right button is a *pair* of events, and a skin is free to use either. Defix puts its

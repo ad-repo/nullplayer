@@ -49,6 +49,7 @@ concept; read the one your symptom points at, not all of them.
 | A keyboard shortcut the skin declares does nothing (`onKeyDown`, `alt+g`, `ctrl+w`) | [reference/scripting.md](reference/scripting.md) — *The keyboard is a string, and a borderless window has to ask for it* |
 | A slider drags but nothing happens, or its readout never appears | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the action families, and `onSetPosition` on a drag |
 | Playlist / EQ / library / video surface missing, empty, or in the wrong window | [reference/components.md](reference/components.md) |
+| A hosted surface (library/video/vis) stays on screen over another tab, or comes back dead, after its holder went away and returned | [reference/components.md](reference/components.md) — *Unmounting is not teardown* |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
 | A window the skin opens with itself does not open, or opens in the wrong place (`default_visible`, `default_x`/`default_y`) | [reference/components.md](reference/components.md) |
 | A toolbar button on a playlist/visualization/video window does nothing (`PE_*`, `VIS_*`, `VID_*`, `CB_*`) | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the host-action families, and the three that are inert on purpose |
@@ -58,7 +59,7 @@ concept; read the one your symptom points at, not all of them.
 | **How do I see what the engine is doing?** Probes, env vars, dumps | [reference/harness.md](reference/harness.md) |
 | A GUI-only report, and no probe reproduces it | [reference/harness.md](reference/harness.md) — *Debugging a live defect* |
 | **A whole skin is dead / "none of it works"** — start at the abort, not the symptom | [reference/harness.md](reference/harness.md) — *The order that made Phase 33 cheap* |
-| **What should I work on next?** | `docs/winamp-modern/open-items.md` — the ranked backlog (every phase is closed) |
+| **What should I work on next?** | `TASKS.md` — the live backlog (gitignored, local). `docs/winamp-modern/open-items.md` is the tracked but **frozen** copy: ranked reasoning for B1–B23a, no new items |
 | A meter/needle/cone runs but barely moves | [reference/harness.md](reference/harness.md) — histogram the frames it uses |
 | **I changed the renderer — what proves I broke nothing?** | [reference/harness.md](reference/harness.md) — *The golden images*, then the 17-skin sweep for real artwork |
 | What Wasabi markup is supported at all? | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
@@ -126,7 +127,7 @@ verbatim; it just lives in a reference file now.
 | Debugging a skin | [reference/harness.md](reference/harness.md) |
 | The order that made Phase 33 cheap | [reference/harness.md](reference/harness.md) |
 | The golden images | [reference/harness.md](reference/harness.md) |
-| What is open right now, ranked | [triage-playbook.md](triage-playbook.md) §4b → `docs/winamp-modern/open-items.md` |
+| What is open right now, ranked | [triage-playbook.md](triage-playbook.md) §4b → `TASKS.md` (live); `docs/winamp-modern/open-items.md` for B1–B23a's reasoning |
 
 ## Where things live
 

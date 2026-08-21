@@ -1002,8 +1002,8 @@ final class WinampModernPhase13Tests: XCTestCase {
     // MARK: - 13.8 Typed embedded library
 
     /// The typed seam replaces an unowned `NSView`: a surface is created once per holder, told its
-    /// scale and palette, and torn down — before its view leaves the hierarchy — when the holder
-    /// goes, when the layout switches, and again on teardown.
+    /// scale and palette, **unmounted** when the holder goes or the layout switches, and torn down
+    /// only when the scene itself is.
     func testLibrarySurfaceLifecycleFollowsItsHolder() throws {
         let loaded = try makeSkin(xml: """
         <WasabiXML>
@@ -1037,16 +1037,78 @@ final class WinampModernPhase13Tests: XCTestCase {
         // Positioned at the holder's frame, converted from top-left skin space.
         XCTAssertEqual(surface.view.frame, NSRect(x: 10, y: 200 - 70, width: 100, height: 50))
 
-        // A layout switch removes the holder; the surface must be told, not merely unparented.
+        // A layout switch removes the holder; the surface leaves the hierarchy and is told so — but
+        // it must **not** be torn down, because the host hands this same instance back next time.
         view.activateLayout(id: "shade")
         view.layoutSubtreeIfNeeded()
-        XCTAssertTrue(surface.isTornDown, "the surface stands down before its view is removed")
+        XCTAssertEqual(surface.unmounts, 1, "the surface is told its holder went")
+        XCTAssertFalse(surface.isTornDown, "and is not destroyed — the host is still caching it")
         XCTAssertFalse(view.subviews.contains(surface.view))
 
-        // Idempotent: teardown after a removal must not fail or double-report.
+        // Idempotent: teardown after a removal must not fail or double-report. The scene no longer
+        // holds an unmounted surface at all — the host does, and the controller's own teardown is
+        // what destroys it (`WinampModernComponentBridge.releaseLibrarySurface`).
         let teardownsAfterRemoval = surface.teardowns
         view.teardown()
-        XCTAssertEqual(surface.teardowns, teardownsAfterRemoval, "repeated teardown is a no-op")
+        XCTAssertEqual(surface.teardowns, teardownsAfterRemoval,
+                       "the scene does not destroy a surface it has unmounted")
+        surface.prepareForUITeardown()
+        XCTAssertTrue(surface.isTornDown, "the host's release is the terminal path")
+    }
+
+    /// A holder that comes back, twice — the reported cPro-Bento defect (2026-08-21).
+    ///
+    /// The host caches one surface per skin and re-serves it, so tearing the surface down when its
+    /// holder went left the second visit re-adding a dead surface and the third visit hitting the
+    /// teardown latch, which returned early and **never removed the view**. The browser then sat on
+    /// top of every other tab: full-size over the playlist, and on the video tab everything the
+    /// picture did not cover.
+    func testLibrarySurfaceSurvivesItsHolderLeavingAndComingBackTwice() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <component id="ml" param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"
+                         x="10" y="20" w="100" h="50"/>
+            </layout>
+            <layout id="shade" w="200" h="20"/>
+          </container>
+        </WasabiXML>
+        """)
+        let host = TestHost()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
+        addTeardownBlock { renderer.teardown() }
+        let componentHost = FakeComponentHost()
+        let surface = StubLibrarySurface()
+        componentHost.librarySurface = surface
+        renderer.componentHost = componentHost
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
+                                        componentHost: componentHost)
+        view.setFrameSize(renderer.canvasSize)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(view.subviews.contains(surface.view))
+
+        // Media Library → Playlist → Media Library → Playlist.
+        for visit in 1...2 {
+            view.activateLayout(id: "shade")
+            view.layoutSubtreeIfNeeded()
+            XCTAssertFalse(view.subviews.contains(surface.view),
+                           "visit \(visit): the browser must leave the screen with its holder")
+            XCTAssertFalse(surface.isTornDown, "visit \(visit): and must stay reusable")
+
+            view.activateLayout(id: "normal")
+            view.layoutSubtreeIfNeeded()
+            XCTAssertTrue(view.subviews.contains(surface.view),
+                          "visit \(visit): and come back when the holder does")
+        }
+
+        view.activateLayout(id: "shade")
+        view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(view.subviews.contains(surface.view),
+                       "the third removal is the one the teardown latch used to swallow")
+        view.teardown()
     }
 
     /// UI Size and colour themes reach the hosted surface, not just the scene around it.
@@ -1124,6 +1186,11 @@ final class WinampModernPhase13Tests: XCTestCase {
         func prepareForUITeardown() {
             guard !isTornDown else { return }
             teardowns += 1
+            view.removeFromSuperview()
+        }
+        var unmounts = 0
+        func unmountFromHolder() {
+            unmounts += 1
             view.removeFromSuperview()
         }
     }

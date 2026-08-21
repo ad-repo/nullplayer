@@ -51,8 +51,18 @@ final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
         browser.needsDisplay = true
     }
 
-    /// Idempotent: the view layer calls this on holder removal, on a layout switch, and again on
-    /// teardown, and the controller may tear the whole skin down after that.
+    /// The holder went away — a tab switched, a layout changed. The browser leaves the screen and
+    /// nothing else happens to it: the bridge owns one browser per skin and hands this same instance
+    /// back when the holder returns, so cancelling its server work here would return a dead browser
+    /// to the next visit.
+    func unmountFromHolder() {
+        browser.removeFromSuperview()
+    }
+
+    /// Idempotent and terminal: the view layer calls this when the *scene* is torn down, and the
+    /// controller may tear the whole skin down after that. Holder removal takes `unmountFromHolder()`
+    /// instead — routing it here latched `isTornDown` on the bridge's cached browser, after which the
+    /// next call returned early and left the view sitting on top of every other tab.
     func prepareForUITeardown() {
         guard !isTornDown else { return }
         isTornDown = true

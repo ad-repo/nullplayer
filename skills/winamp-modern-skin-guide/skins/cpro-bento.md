@@ -41,6 +41,11 @@ synthesized and nothing left to the classic fallback.
   script → `CproTabs` → `CentroSUI.onAction("show_tab")`. It re-lays itself out on resize and drops to
   short labels (`LIB`/`PLE`/…) when the sheet is narrower than 50px per tab, which is its own
   behaviour, not a defect. Phase 24; see the trap below about §15.6.
+- **The Video tab plays video** (B23) — the skin embeds the video component in its tab sheet
+  (`centro.windowholder.video`) and collapses its standalone `Video` container to a 1×1 stub, so
+  until the embedded-video route existed the tab was an empty box and every film opened NullPlayer's
+  own window beside it. Playing with the tab closed switches to it; switching away mid-film hands the
+  picture back to our window.
 - **The beat visualization** in the middle of the display, centred on the window and surviving play /
   pause / resume, with its VU timer started and stopped by the transitions. Double-clicking it cycles
   the animations (and **re-centres** them — `beat.m` centres only inside `onResize`, and showing or
@@ -82,6 +87,15 @@ synthesized and nothing left to the classic fallback.
   over `Volume`, `mute` and the `fileinfo` readouts, with `comp.goto` left floating as a stray `▭≡` on
   the display. A `Wasabi:Frame` pane is a window and always clips; that is the whole fix (Phase 24.2).
   The escaped children still *have* frames at y=79 — check their **clip**, not their frame.
+- **`NULL` is an integer, and an object-typed variable has to be told that.** MAKI has no null literal of its own: `lastActiveT = NULL;` compiles to a plain integer 0, and storing that in an object variable left it comparing equal to null and reading as false while *not being* null — so `if (lastActiveT)` skipped it correctly and `lastActiveT.ID` (a different instruction, which fails closed on a non-object owner) took the whole handler down. `CproTabs`' `ON_TAB_ACTIVATED` opens with an unguarded `closeTab(lastActiveT)` whose first line is that read, so on the first tab activation of a session the handler died before its `sendAction("show_tab")` and before `alignByResize()`. The fix is one line in `MakiValue.coerced` (integer 0 / boolean false → `.null` for an object-typed target), not a special case in the member instruction. Probe it with `RENDER_CLICK` + `RENDER_CLICK_EVENTS=onleftbuttondown,onleftbuttonup`: the chain shows `CproTabs.xml.onaction!FAILED` before, and `CLICK action: show_tab` after.
+- **A tab this skin closes is not a surface this skin destroyed.** The library, video and
+  visualization surfaces are owned by the component bridge, one per skin, and re-served when their
+  holder comes back; the tab strip removes and restores those holders all session long. Tearing a
+  surface down when its holder goes made the *third* tab switch leave the browser on screen over every
+  other tab (B24) — the repro is **Media Library → Playlist → Media Library → Playlist**, and the
+  first two switches look perfect, which is why it reads as intermittent. `WINAMP_MODERN_DEBUG_HOLDERS=1`
+  is the probe: `holders=[…]` without the matching entry in `subviews=[…]` is the bug, in one line.
+
 - **`WINAMP_MODERN_RENDER_XUI`'s `onscriptloaded=false` is not evidence a script did not run.** It
   reports per-object *bindings*, and it says `false` for every object in this skin including
   `layout id=normal`, whose scripts demonstrably run. TASKS §15.6 concluded the tab strip's script

@@ -280,8 +280,18 @@ protocol WinampModernLibrarySurface: AnyObject {
     func applyPalette(_ palette: WasabiPalette)
     /// UI Size, as the `.wal` window's own skin scale.
     func applySkinScale(_ scale: CGFloat)
-    /// Cancel work and release resources before the view is removed. Must be idempotent.
+    /// Cancel work and release resources before the view is removed. Must be idempotent, and it is
+    /// **terminal**: the surface never works again after it.
     func prepareForUITeardown()
+    /// The skin's holder for this surface has gone from the scene (a tab switched, a layout changed),
+    /// so leave the view hierarchy — and stay reusable, because the bridge is still caching this
+    /// instance and will hand the very same one back the next time the holder appears.
+    ///
+    /// This is not `prepareForUITeardown()`. Tearing down on holder removal made the second visit to
+    /// a tab re-add an already-torn-down surface, and the *third* one found the teardown latch
+    /// already closed and never removed the view at all — cPro-Bento's browser then sat on top of
+    /// every other tab (Media Library → Playlist → Media Library → Playlist).
+    func unmountFromHolder()
 }
 
 /// The host's video output, placed over a `.wal` skin's video box.
@@ -314,12 +324,21 @@ protocol WinampModernVideoSurface: AnyObject {
     /// Give the video output back to a free-floating window of its own, showing it there if
     /// something is still playing. Idempotent.
     func detachVideoOutput()
+    /// Put the picture **away**: unpark it and leave its own window hidden, playback untouched.
+    ///
+    /// This is what "close the video" means for a surface embedded in the player window (B23), which
+    /// has no window of its own to order out — and unparking with `detachVideoOutput()` there would
+    /// reveal exactly the free-floating window the embedded route exists to avoid. Idempotent.
+    func hideVideoOutput()
     /// Recolour to the skin's active colour theme.
     func applyPalette(_ palette: WasabiPalette)
     /// UI Size, as the `.wal` window's own skin scale.
     func applySkinScale(_ scale: CGFloat)
     /// Return the video output and release resources before the view is removed. Must be idempotent.
     func prepareForUITeardown()
+    /// The skin's holder has gone from the scene: leave the view hierarchy, hand the picture back,
+    /// and stay reusable — the bridge caches this surface and re-serves it when the holder returns.
+    func unmountFromHolder()
 }
 
 /// The host's visualization engine, drawn into a `.wal` skin's own AVS/visualization window (B20a).
@@ -367,6 +386,10 @@ protocol WinampModernVisualizationSurface: AnyObject {
     /// UI Size, as the `.wal` window's own skin scale.
     func applySkinScale(_ scale: CGFloat)
     /// Stop rendering, drop observers and release the engine before the view is removed. Must be
-    /// idempotent.
+    /// idempotent, and it is **terminal**: the engine never runs again after it.
     func prepareForUITeardown()
+    /// The skin's holder has gone from the scene: stop rendering and leave the view hierarchy, but
+    /// keep the engine intact — the bridge caches this surface, and `resumeRendering()` is what
+    /// starts it again when the holder comes back.
+    func unmountFromHolder()
 }

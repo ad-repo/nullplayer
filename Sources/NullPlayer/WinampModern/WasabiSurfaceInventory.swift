@@ -52,13 +52,18 @@ struct WinampModernSurfaceInventory {
     /// * it is never **synthesized** — a skin that draws no video window is a skin the host's own
     ///   video window serves, and a synthesized one would be a `.wal` frame around our picture that
     ///   the skin never asked for;
-    /// * it is never **embedded** — Winamp Modern's player also declares an invisible in-player
-    ///   `windowholder` for the video component, and resolving the surface to that would leave the
-    ///   skin's real video window, the one with the chrome and the `VID_*` buttons, empty;
+    /// * it is embedded **only** when the skin declares no visible video window of its own — Winamp
+    ///   Modern's player also declares an invisible in-player `windowholder` for the video component,
+    ///   and resolving the surface to that would leave the skin's real video window, the one with the
+    ///   chrome and the `VID_*` buttons, empty. An SUI skin that hosts video in a tab and collapses
+    ///   its standalone container to a stub (cPro-Bento) has no such window, and embedding is the
+    ///   only place its picture can go (B23);
     /// * it stays in the **Skin Windows** menu, because unlike the playlist / EQ / library it has no
     ///   menu item of its own to collide with, and Winamp lists Video in its Windows menu too.
     ///
-    /// `.visualization` (B20a) is routed on the same terms and for the same three reasons. Eight
+    /// `.visualization` (B20a) is routed on the same terms, and stays **never embedded**: the only
+    /// corpus skin an in-player holder would move is BLAKK, and nothing has measured what it should
+    /// show there. `.visualization` Eight
     /// corpus skins declare an `avs` / `AVS_window` container around the visualization component,
     /// and until it was routed there was **no way to open one**: a container carrying a `component=`
     /// GUID is deliberately kept out of the Skin Windows menu (`isListedInWindowMenu`) so a routed
@@ -209,7 +214,8 @@ struct WinampModernSurfaceInventory {
         }
 
         let main = containers.first { $0.isMainPlayer } ?? containers.first
-        var embedded = main?.reachableKinds ?? []
+        let mainReaches = main?.reachableKinds ?? []
+        var embedded = mainReaches
         // A skin-drawn equalizer *is* the equalizer surface. Winamp defines no EQ component GUID, so
         // every measured skin expresses one as ordinary sliders carrying `EQ_BAND`/`EQ_PREAMP` — cPro
         // in a drawer, mmd3 in a main-window drawer, CornerAmp in its own `eq` container.
@@ -226,6 +232,27 @@ struct WinampModernSurfaceInventory {
             guard let kind, declared[kind] == nil else { continue }
             declared[kind] = container.id
         }
+
+        // **Video, when the skin's own video window is a stub.** B20 made `.video` never-embedded to
+        // protect one measured case: Winamp Modern's player carries an *invisible* in-player holder
+        // for the video component beside a real `Video` window, and resolving the surface to the
+        // holder would have left that window — the one with the chrome and the `VID_*` buttons —
+        // empty. The rule was absolute, and cPro-Bento is the other shape of the same skin: it hosts
+        // the video component in a tab of its single SUI window and deliberately collapses its
+        // standalone `Video` container to 1×1 in `window-overrides.xml` so Winamp cannot open a
+        // second window for it. With nothing declared and nothing embedded, its Video tab was an
+        // empty box and every film opened NullPlayer's own window beside it.
+        //
+        // So the rule is conditional on what it was actually protecting: a skin that declares a
+        // *visible* video window keeps it, and only a skin whose sole video surface is the in-player
+        // holder embeds. Measured over the 31 installed skins, exactly two reach a video holder in
+        // the player — cPro-Bento (no window: embeds) and winampmodern566 (real window: unchanged).
+        //
+        // `.visualization` is **not** given the same treatment. It has the same two shapes, but the
+        // only corpus skin it would move is BLAKK, whose AVS would go from NullPlayer's window to an
+        // in-player box — a behaviour change to a skin nobody reported, and one no measurement has
+        // been taken of. It stays never-embedded until a report or a measurement asks for it.
+        if mainReaches.contains(.video), declared[.video] == nil { embedded.insert(.video) }
 
         // cPro-Bento hosts its surfaces inside the player window; everyone else opens windows. The
         // count of containers cannot tell them apart (cPro also ships a notifier, a widget manager and

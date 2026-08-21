@@ -374,6 +374,7 @@ final class WinampModernPhase5Tests: XCTestCase {
             isTornDown = true
             view.removeFromSuperview()
         }
+        func unmountFromHolder() { view.removeFromSuperview() }
     }
 
     // MARK: - Opt-in user-supplied fixtures

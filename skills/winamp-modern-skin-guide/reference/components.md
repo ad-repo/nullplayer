@@ -121,6 +121,22 @@ Two things about the embedded case that are easy to get wrong:
   `centro.library` has never been shown. `windowholder autoopen="1"` is the other half: the holder
   opens its own surroundings. `openHolders(for:in:)` un-hides the ancestors between an `autoopen`
   holder and its layout.
+- **The `autoopen` fallback runs only when the skin did not do it itself** (B23). A skin can carry
+  one component in several places — cPro-Bento holds video in its tab, its mini view *and* its
+  drawer, three holders all declaring `autoopen="1"` — so forcing every one of them open after the
+  script had already switched tabs put two more copies of the surface on screen. `revealEmbeddedSurface`
+  now asks the scene (`hasVisibleHolder`) between the two halves.
+- **`.video` can be embedded, `.visualization` cannot** (B23). B20 made video never-embedded to stop
+  Winamp Modern's *invisible* in-player holder winning over its real video window; the rule is now
+  conditional on the skin declaring a **visible** video container, so an SUI skin whose only video
+  surface is a tab (cPro-Bento) hosts the picture there. `hostVideoOutput()` reveals the tab, lays
+  out, attaches — and places the picture **twice**, because revealing a tab sets off the skin's own
+  `onResize` cascade a turn later. `VID_1X`/`VID_2X` stay inert for an embedded box: sizing it to the
+  stream would resize the whole player around a tab. Switching away from the tab mid-film unparks the
+  picture into NullPlayer's own window, which is `detachVideoOutput`'s existing rule.
+- **Two holders of one kind on screen: the biggest box wins.** `hostedVideoSurface` used to answer
+  with a dictionary's first value, so the picture landed in a different box between runs of the same
+  build.
 - An embedded surface owns **no `NSWindow`** and must never reach docking, compact-mode snapshots, or
   frame persistence.
 - **An embedded library is revealed once at launch** (`revealEmbeddedLibraryAtStartup`, right after the
@@ -245,8 +261,21 @@ not looking at.
 Hosted AppKit surfaces (`WinampModernLibrarySurface`) are **reconciled from `layout()`, never from
 `draw`** — creating and adding a subview inside a draw cycle is a re-entrant hierarchy mutation. A
 script mutating the graph or switching layout sets `needsLayout`, because a script can create or
-reveal a holder. Each surface is told `prepareForUITeardown()` *before* its view leaves the hierarchy,
-so its in-flight tasks and timers do not outlive it.
+reveal a holder.
+
+**Unmounting is not teardown, and confusing the two is a bug the user sees.** The component bridge
+owns **one surface of each kind per skin** and re-serves that same instance whenever a holder for it
+reappears — that is what lets a browser survive a layout switch with its servers, tabs and history
+intact. So a holder leaving the scene is answered with `unmountFromHolder()` (leave the view
+hierarchy, stay reusable), and `prepareForUITeardown()` is reserved for the scene's own teardown and
+the bridge's `release*Surface()`, where it is **terminal**: it latches `isTornDown`.
+
+Routing holder removal to the terminal path is B24: the second visit to a tab re-added an
+already-torn-down surface, and the third hit the latch, returned early, and never removed the view —
+cPro-Bento's library browser then sat on top of every other tab (Media Library → Playlist → Media
+Library → Playlist). The video surface never had the defect because B20 had already made *its*
+teardown non-terminal; the visualization surface did, and is now unmounted by stopping its engine and
+keeping it, with `resumeRendering()` starting it again on the way back in.
 
 #### Repaint routes are per-window, and scripts are not
 
@@ -285,7 +314,8 @@ Synchronous and idempotent — every async producer must stop before its resourc
 
 Auxiliary container views tear down **before** the main view; the graph goes last. Hosted surfaces
 (the embedded library) are told `prepareForUITeardown()` before step 1 removes their view, and the
-component bridge releases its own reference behind them.
+component bridge releases its own reference behind them — which is also what destroys a surface the
+scene had merely *unmounted*, since the scene no longer holds one of those at all.
 `WinampModernMainWindowController.prepareForUITeardown()` drives this before a mode controller is
 released.
 
