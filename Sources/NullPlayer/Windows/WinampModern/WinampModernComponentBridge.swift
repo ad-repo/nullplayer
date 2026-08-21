@@ -20,6 +20,9 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     /// How the embedded browser asks for the server-link sheet, since it has no classic controller.
     var linkSheetPresenter: (() -> Void)?
     private var librarySurface: WinampModernLibrarySurface?
+    private var videoSurface: WinampModernVideoSurface?
+    /// The video surface if one has been created, without creating one.
+    var currentVideoSurface: WinampModernVideoSurface? { videoSurface }
     /// The surface if one has been created, without creating one — session restore must not
     /// instantiate a browser for a skin that never asked for it.
     var currentLibrarySurface: WinampModernLibrarySurface? { librarySurface }
@@ -173,6 +176,27 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     func releaseLibrarySurface() {
         librarySurface?.prepareForUITeardown()
         librarySurface = nil
+    }
+
+    // MARK: - Video
+
+    /// The skin's video box, filled with the app's own video output (B20).
+    ///
+    /// One per skin, and owned here for the same two reasons the library surface is: it must survive
+    /// a layout switch that removes and re-adds the holder's subview, and a second holder for the
+    /// same component must reuse it rather than fight over the one video view the app has.
+    func makeVideoSurface() -> WinampModernVideoSurface? {
+        if let videoSurface { return videoSurface }
+        let surface = WinampModernVideoSurfaceView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        videoSurface = surface
+        return surface
+    }
+
+    /// Hand the video output back and drop the surface. The view layer tears the surface down first;
+    /// this only drops the bridge's own reference, and is safe to call twice.
+    func releaseVideoSurface() {
+        videoSurface?.prepareForUITeardown()
+        videoSurface = nil
     }
 
     // MARK: - Classic-window fallback

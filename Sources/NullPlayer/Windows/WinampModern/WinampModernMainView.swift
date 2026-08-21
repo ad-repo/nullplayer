@@ -8,6 +8,8 @@ final class WinampModernMainView: NSView {
     /// Live library surfaces by holder id. Typed, so each one can be told about a palette change, a
     /// UI Size change, and its own teardown (Phase 13.8).
     private var librarySurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
+    /// Live video surfaces by holder id, on the same typed handle for the same reasons (B20).
+    private var videoSurfaces: [WasabiObjectID: WinampModernVideoSurface] = [:]
 
     /// UI Size, as a multiplier on the skin's own pixel grid. The scene is always laid out in skin
     /// pixels — the scale is applied once at the drawing boundary and undone once at the input
@@ -17,6 +19,7 @@ final class WinampModernMainView: NSView {
             guard skinScale != oldValue else { return }
             setFrameSize(scaledCanvasSize)
             for surface in librarySurfaces.values { surface.applySkinScale(skinScale) }
+            for surface in videoSurfaces.values { surface.applySkinScale(skinScale) }
             invalidateRectCaches()
             needsLayout = true
             needsDisplay = true
@@ -269,6 +272,7 @@ final class WinampModernMainView: NSView {
     /// can have one of each open at the same time.
     private func themeDidChange() {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
+        for surface in videoSurfaces.values { surface.applyPalette(renderer.palette) }
         NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
         needsDisplay = true
     }
@@ -525,6 +529,38 @@ final class WinampModernMainView: NSView {
             surface.prepareForUITeardown()
             librarySurfaces[id] = nil
         }
+
+        var liveVideo: Set<WasabiObjectID> = []
+        for holder in renderer.componentHolders() where holder.kind == .video {
+            liveVideo.insert(holder.object.stableID)
+            guard videoSurfaces[holder.object.stableID] == nil,
+                  let surface = componentHost?.makeVideoSurface() else { continue }
+            videoSurfaces[holder.object.stableID] = surface
+            // `noshowcmdbar="1"` — the holder's own instruction that it draws the transport itself.
+            surface.showsCommandBar =
+                WinampModernVideoHolder.showsCommandBar(holderAttributes: holder.object.attributes)
+            surface.applySkinScale(skinScale)
+            surface.applyPalette(renderer.palette)
+            addSubview(surface.view)
+        }
+        for (id, surface) in videoSurfaces where !liveVideo.contains(id) {
+            // Hands the picture back to its own window if a film is still running — the holder going
+            // away is not a stop, and the one video view in the app must never be left orphaned in a
+            // view that is about to leave the hierarchy.
+            surface.prepareForUITeardown()
+            videoSurfaces[id] = nil
+        }
+    }
+
+    /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
+    /// hand the picture over before showing the skin's video window, and to size that window from
+    /// the stream's own dimensions for `VID_1X` / `VID_2X`.
+    var hostedVideoSurface: WinampModernVideoSurface? { videoSurfaces.values.first }
+
+    /// The video holder's frame in skin pixels, for the sizing arithmetic `VID_1X` / `VID_2X` do:
+    /// the window grows by the difference between the box the skin drew and the box the stream wants.
+    var videoHolderFrame: CGRect? {
+        renderer.componentHolders().first { $0.kind == .video }?.frame
     }
 
     /// Position live host surfaces at their skin-provided holder frames, converting from top-left
@@ -534,6 +570,13 @@ final class WinampModernMainView: NSView {
         for holder in renderer.componentHolders() where holder.kind == .library {
             guard let surface = librarySurfaces[holder.object.stableID] else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)
+        }
+        for holder in renderer.componentHolders() where holder.kind == .video {
+            guard let surface = videoSurfaces[holder.object.stableID] else { continue }
+            surface.view.frame = viewRect(fromSkin: holder.frame)
+            // The picture is a child window parked on that box, and a child window follows its
+            // parent's moves but not a resize of the box inside it.
+            surface.updateOutputPlacement()
         }
     }
 
@@ -620,7 +663,11 @@ final class WinampModernMainView: NSView {
                 pressedEQHolder = holder.object
                 updateEqualizer(holder: holder.object, frame: holder.frame, point: point)
                 return
-            case .library, .visualization, .video, .other:
+            case .video:
+                // A filled video box is a live subview and `hitTest` already gave it the click; this
+                // is the empty one (no output to lend yet), and a click on a black box does nothing.
+                return
+            case .library, .visualization, .other:
                 return
             }
         }
@@ -930,6 +977,8 @@ final class WinampModernMainView: NSView {
         hoveredObject = nil
         for surface in librarySurfaces.values { surface.prepareForUITeardown() }
         librarySurfaces.removeAll()
+        for surface in videoSurfaces.values { surface.prepareForUITeardown() }
+        videoSurfaces.removeAll()
         // Auxiliary container views share the skin's single script runtime and host; only the
         // main (script-driving) view tears those down. Every view tears down its own renderer.
         if drivesScripts { scripts.teardown() } else { scripts.removeAuxiliaryRepaintSink(owner: self) }

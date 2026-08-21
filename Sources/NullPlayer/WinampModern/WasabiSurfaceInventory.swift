@@ -46,6 +46,19 @@ struct WinampModernSurfaceInventory {
     /// The surfaces Phase 13 can host and therefore cares about.
     static let managedKinds: [WinampModernComponentKind] = [.playlist, .equalizer, .library]
 
+    /// The surfaces the catalog routes. `.video` is routed but **not managed** (B20), and the
+    /// distinction is doing three separate jobs:
+    ///
+    /// * it is never **synthesized** — a skin that draws no video window is a skin the host's own
+    ///   video window serves, and a synthesized one would be a `.wal` frame around our picture that
+    ///   the skin never asked for;
+    /// * it is never **embedded** — Winamp Modern's player also declares an invisible in-player
+    ///   `windowholder` for the video component, and resolving the surface to that would leave the
+    ///   skin's real video window, the one with the chrome and the `VID_*` buttons, empty;
+    /// * it stays in the **Skin Windows** menu, because unlike the playlist / EQ / library it has no
+    ///   menu item of its own to collide with, and Winamp lists Video in its Windows menu too.
+    static let routedKinds: [WinampModernComponentKind] = managedKinds + [.video]
+
     /// Surfaces with no home in this skin: not embedded, no declared container, not ambiguous, and
     /// only ever non-empty for the separate-window arrangement — an SUI skin that appears to be
     /// missing a surface is not missing it, it builds it from a script at runtime.

@@ -47,6 +47,18 @@ container).** 10 containers in 8 of the 17 skins: Defix `Config` + `pledit` · w
 Love is War Miku `notifier` (**suppressed** — host-managed transient) · Rika and T800 `Warp Browser`
 (**suppressed** — empty `<browser>`). The other nine skins declare it nowhere.
 
+**Video windows, measured (Phase 47 / B20, `VIDEO holder` in the render dump).** **15 of the 33
+measured skins** declare a `<container>` for the video component, and all of them now host the real
+picture — parked as a child window over the box the skin draws (see
+[reference/components.md](reference/components.md) for why it is a child window and not a subview).
+By box width: hatsune_miku_5 429×340 · Ujola Cat 390×91 · mmd3 375×190 · winampmodern566 342×232 ·
+multipass 332×113 · corneramp_redux 310×164 · Styx 284×59 · Itemskin 277×71 · Anaheim_Player_01
+240×120 · Love is War Miku 240×184 (V2 240×190) · Ebonite_2_1 227×172 · BLAKK 192×125.
+**Hoop_Life_WA3 and Media_Whore** declare the container but render **no `<component>` holder**, so
+they correctly fall back to NullPlayer's own video window. Only **mmd3 and BLAKK** ask for Winamp's
+command bar (`noshowcmdbar=` absent) and both boxes are under its 395pt constraint minimum, so no
+corpus skin actually gets one.
+
 | Skin | Last worked | State | Biggest gap |
 |---|---|---|---|
 | Love is War Miku | Phase 39 | renders and drives correctly; its visualization window's **Fullscreen / Prev / Next / Menu** and its video window's **Fullscreen / Options** buttons all answer (Phase 39) | `fliph`; oscilloscope is a mirrored spectrum; its video **1x / 2x / TV** buttons are accepted and inert |

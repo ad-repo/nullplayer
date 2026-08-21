@@ -410,37 +410,36 @@ Measurement basis: the 17 installed `.wal` skins, the render sweep at `RENDER_CL
       `setScale`, both on a layout, so the receiver rule covers every measured use. And note the trap
       that hid them — a compiled `.maki` carries a trailing index byte after each method name, so a
       strict `grep setScale` over the corpus finds only the skins that shipped uncompiled `.m` source
-- [ ] **B20. Host the video player in the skin's own video window.** Five of the 17 skins (Love is
-      War Miku, Itemskin, multipass, Ujola Cat, winampmodern566) declare a full `<container
-      id="video">` — chrome, a `ledstatusbar`, and the 28 `VID_*` buttons B5 answered — and it is
-      **decoration over an empty box**. Play a video from the library in this mode and NullPlayer's
-      own `VideoPlayerWindowController` opens somewhere else on screen; the skin's window stays shut
-      and is never told. This is the same gap `.library` had before Phase 13.8, and the fix has the
-      same shape:
-      1. **The seam** — `makeVideoSurface()` on `WinampModernComponentHost`, returning a typed handle
-         (view, palette, scale, teardown) exactly as `makeLibrarySurface()` does, with the bridge
-         owning it so it survives a layout switch that removes and re-adds the holder's subview.
-      2. **The drawing and the input** — `<component param="{F0816D7B-…}">` resolves to `.video`
-         today and gets a flat neutral fill (`WasabiSceneRenderer.drawComponent`), while clicks over
-         the holder are swallowed (`WinampModernMainView.mouseDown`, `case .library, .visualization,
-         .video, .other: return`). Both need the `.library` treatment: a live AppKit subview placed
-         at the holder's frame by `reconcileHostedSurfaces`, and the holder's own input left to it.
-      3. **The routing** — `WindowManager.showVideoPlayer(url:title:)` / `playMovie` / `playEpisode`
-         have **no mode branch at all**; compare `showPlaylist`, which asks the skin first through
-         `routeWinampModernSurface`. They need the same first question, and
-         `WinampModernSurfaceCoordinator`'s catalog needs a real `.video` target instead of falling
-         through its `default:` to `.classicFallback` — which is also why
-         `WindowManager.showClassicSurfaceForWinampModern` ignores `.video` today.
-      4. **Lifetime** — the video window is currently *mode-independent* and deliberately preserved
-         across `reloadUI` (see CLAUDE.md). A surface hosted inside a `.wal` window is not: it has to
-         be torn down before its view leaves the hierarchy, and playback has to survive (or be
-         explicitly abandoned at) a live skin or mode switch. Decide that before writing the seam.
-      5. **Casting** — `showVideoPlayer` returns *early* when a cast device is active and opens
-         nothing locally. A skin surface must not resurrect a local window in that case.
-      Payoff beyond the five skins: `VID_1X` / `VID_2X` (12 declarations, accepted and inert since
-      Phase 39) become implementable, because a hosted surface finally has a native size to scale
-      from — nothing in our video window reads `presentationSize` today. Numbered B20 but sits in
-      Tier 2 by size; it is the largest single piece of "the skin draws it, we don't fill it" left
+- [x] **B20. Host the video player in the skin's own video window.** ~~Five of the 17 skins declare a
+      full `<container id="video">` and it is decoration over an empty box~~ — **closed in Phase 47**,
+      and it is **15 of the 33 measured skins**, not five. The decision the whole thing turns on:
+      the picture is **not** a subview of the skin. Moving `VideoPlayerView` into the holder is the
+      `.library` seam's shape and it does not survive contact with the video engine — VLCKit installs
+      its own output view under the player's host view and sizes *that view's ancestors*, so the skin
+      window's content view ran away at +46pt per layout pass (372 → 14,219 in 80ms) and the picture
+      never appeared until something else forced a relayout. The surface holds a **black box the skin
+      lays out**; `VideoPlayerWindowController` parks its **own window** over it with
+      `addChildWindow`. A child window has its own layout tree, so the decoder cannot reach the
+      skin's, and it follows the parent's moves, hides and closes for free — which is also the
+      lifetime answer: a layout, skin or mode switch *unparks* a still-playing film instead of
+      tearing the player down with the window.
+      **The trap that cost three wrong fixes: `setFrame` refuses silently.** A window whose content
+      carries required Auto Layout constraints has a minimum size derived from them, and AppKit
+      returns a larger frame with no error. `VideoControlBarView`'s required chain sums to exactly
+      **395pt** — the same +46 as the runaway — so every parked frame narrower than that was widened
+      and the picture ran out through the skin's chrome. A *hidden* view's constraints are still
+      live, so the bar now leaves the view hierarchy, and the surface gates it on the box: in only
+      when the holder asked for it **and** the box is at least the bar's own `fittingSize`. Only mmd3
+      and BLAKK ask for the bar and both boxes are under 395pt, so no corpus skin gets one.
+      `VID_1X` / `VID_2X` are live (12 declarations, inert since Phase 39) — they size the skin's
+      window so the box is the stream's own pixels times N, clamped to the visible screen as well as
+      the layout's range. `.video` is a **routed** surface but not a **managed** one: never
+      synthesized, never embedded (Winamp Modern's player declares an invisible in-player holder that
+      would otherwise win and leave the real video window empty). Casting is untouched — every
+      `play*` returns before the video controller when a device is active. New harness line
+      **`VIDEO holder <container>/<layout>: <id><frame> cmdbar=<0/1>`**, and a container that routes
+      with no holder (Hoop_Life_WA3, Media_Whore) correctly falls back to our own window. 915 green.
+      **Confirmed live 2026-08-21** on multipass: picture in the box on play, asked frame granted.
 
 - [ ] **B21. `enqueueFile` / `playFile` — skin-supplied path ingest.** `PlEdit.enqueueFile(path)`
       (cPro-Bento) and `System.playFile(path)` (T800) hand the host a filesystem path the *skin*

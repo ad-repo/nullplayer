@@ -2444,7 +2444,13 @@ final class WasabiSceneRenderer {
             context.setFillColor(NSColor.black.cgColor)
             context.fill(frame)
             drawVisualizationBars(frame: frame, context: context)
-        case .library, .video, .other:
+        case .video:
+            // Black, not the palette's content colour: a video box is black in Winamp and in all five
+            // corpus skins that draw one, and while a film is playing this is what shows in the
+            // letterbox margins around the hosted picture (B20).
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(frame)
+        case .library, .other:
             context.setFillColor(palette.contentBackground.cgColor)
             context.fill(frame)
         }

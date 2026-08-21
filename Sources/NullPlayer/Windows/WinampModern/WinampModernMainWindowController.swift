@@ -586,6 +586,102 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// has actually appeared in a scene.
     var embeddedLibrarySurface: WinampModernLibrarySurface? { componentBridge?.currentLibrarySurface }
 
+    // MARK: - Video (B20)
+
+    /// The skin's own video window, its holder filled with the app's video output.
+    ///
+    /// Five corpus skins declare a full `<container id="video">` — chrome, a `ledstatusbar` and the
+    /// `VID_*` buttons — around a component holder that was decoration over an empty box. Returns
+    /// false for a skin that declares none, which is what leaves NullPlayer's own video window in
+    /// charge exactly as before.
+    @discardableResult
+    func hostVideoOutput() -> Bool {
+        guard let coordinator = surfaceCoordinator,
+              case .declaredContainer(let id) = coordinator.catalog.video,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id })
+        else { return false }
+        // The holder's surface is made by the view's own layout pass, and a window that has never
+        // been on screen has not run one — the first video of a session would otherwise find no
+        // surface to fill and fall back to our window while the skin's opened empty beside it.
+        container.view.needsLayout = true
+        container.view.layoutSubtreeIfNeeded()
+        guard container.view.hostedVideoSurface != nil else { return false }
+        setAuxiliaryWindow(id: id, visible: true, record: true)
+        return true
+    }
+
+    /// Put the skin's video window away — the `autoclose="1"` every measured holder declares. The
+    /// picture stays lent, so the next play reopens rather than re-attaching.
+    @discardableResult
+    func hideVideoSurfaceWindow() -> Bool {
+        guard let coordinator = surfaceCoordinator,
+              case .declaredContainer(let id) = coordinator.catalog.video,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+              container.window.isVisible
+        else { return false }
+        setAuxiliaryWindow(id: id, visible: false, record: true)
+        return true
+    }
+
+    /// Unpark the picture from the skin's box, leaving the window it came from alone.
+    func detachVideoOutput() {
+        guard case .declaredContainer(let id) = surfaceCoordinator?.catalog.video,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id })
+        else { return }
+        container.view.hostedVideoSurface?.detachVideoOutput()
+    }
+
+    /// Whether this container is the one the catalog routes video to. Matched through the catalog
+    /// rather than through `AuxiliaryContainer.kind`, because a skin can declare the window without a
+    /// `component=` GUID (Love is War Miku's is a bare `<container id="video">`) and the catalog is
+    /// the one place that reconciles both routes.
+    private func isVideoSurfaceContainer(_ id: String) -> Bool {
+        guard case .declaredContainer(let videoID) = surfaceCoordinator?.catalog.video else { return false }
+        return videoID == id
+    }
+
+    /// `VID_1X` / `VID_2X`: size the skin's video window so its **box** is the stream's own pixel
+    /// size times `multiple`.
+    ///
+    /// Winamp sizes its video window from the stream, not from an invented pixel count, and a `.wal`
+    /// video layout is chrome around a `relatw="1"` holder — so the window grows by exactly the
+    /// difference between the box the skin is drawing and the box the stream wants, and the skin's
+    /// own frame, buttons and status bar stay where they are. Answers false when nothing is playing
+    /// or the decoder has not published a size yet, which is where these buttons stay inert rather
+    /// than resizing to a guess.
+    @discardableResult
+    func sizeVideoSurface(toNativeMultiple multiple: CGFloat) -> Bool {
+        guard let coordinator = surfaceCoordinator,
+              case .declaredContainer(let id) = coordinator.catalog.video,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+              let holder = container.view.videoHolderFrame,
+              let surface = container.view.hostedVideoSurface
+        else { return false }
+        let renderer = container.view.renderer
+        guard let proposed = WinampModernVideoHolder.canvasSize(canvas: renderer.canvasSize,
+                                                                holder: holder,
+                                                                native: surface.presentationSize,
+                                                                multiple: multiple)
+        else { return false }
+        // Clamped to the screen as well as to the layout's own range. A 1x on a 1080p film is a
+        // ~1940px window and a 2x is nearly 3900 — Winamp's own 1x/2x are exactly that literal, but a
+        // window wider than the display is one the user cannot get hold of again.
+        let visible = (container.window.screen ?? NSScreen.main)?.visibleFrame.size
+            ?? CGSize(width: 1_440, height: 900)
+        let limits = renderer.userResizeLimits
+        let ceilingW = min(limits.maximum.width, visible.width / skinScale)
+        let ceilingH = min(limits.maximum.height, visible.height / skinScale)
+        renderer.resize(to: CGSize(
+            width: min(max(proposed.width, limits.minimum.width), ceilingW),
+            height: min(max(proposed.height, limits.minimum.height), ceilingH)))
+        let size = container.view.scaledCanvasSize
+        resize(window: container.window, to: size)
+        container.view.setFrameSize(size)
+        container.view.needsLayout = true
+        container.view.needsDisplay = true
+        return true
+    }
+
     /// The embedded browser's "link a server" flow. It has no classic controller to present from, so
     /// the sheet is attached to whichever `.wal` window is hosting it.
     private func presentEmbeddedLibraryLinkSheet() {
@@ -607,6 +703,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 container.window.makeKeyAndOrderFront(nil)
             } else {
                 container.window.orderFront(nil)
+            }
+            // Opening the skin's video window is what asks for the picture, whoever opened it — a
+            // `TOGGLE guid:{F0816D7B-…}` on the player, the Skin Windows menu, or a play call. After
+            // the window is on screen, because the picture is parked on it as a child window and a
+            // child of a window nobody has ordered in has nowhere to appear; and after a layout pass,
+            // because that is what makes the box and gives it its frame.
+            if isVideoSurfaceContainer(id) {
+                container.view.needsLayout = true
+                container.view.layoutSubtreeIfNeeded()
+                container.view.hostedVideoSurface?.attachVideoOutput()
+                container.view.hostedVideoSurface?.updateOutputPlacement()
             }
         } else {
             container.window.orderOut(nil)
@@ -1065,6 +1172,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         WasabiTextMetrics.componentTextProvider = nil
         // Views tear their own surfaces down; this releases the bridge's reference behind them.
         componentBridge?.releaseLibrarySurface()
+        // The picture goes home before the windows holding it do — the video view is the app's, not
+        // the skin's, and a still-running film survives a skin or mode switch in its own window.
+        componentBridge?.releaseVideoSurface()
         skinView?.teardown()
         skinView = nil
         host?.endVisualizationConsumption()

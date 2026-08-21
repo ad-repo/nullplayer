@@ -941,6 +941,16 @@ final class WinampModernRenderDumpTests: XCTestCase {
                           + holders.map { "\($0.kind.rawValue)@\($0.object.xmlID ?? "-")\($0.frame)" }
                             .joined(separator: " "))
                 }
+                // The video box a skin declares, and the two things about it the window layer needs
+                // (B20): the frame the picture is placed at, and whether the holder asked for
+                // Winamp's command bar. A `video=declared:…` catalog entry whose container turns out
+                // to hold no `<component>` would route and never fill, and this is where that shows.
+                for holder in holders where holder.kind == .video {
+                    let bar = WinampModernVideoHolder.showsCommandBar(
+                        holderAttributes: holder.object.attributes)
+                    print("VIDEO holder \(info.id)/\(layoutID): \(holder.object.xmlID ?? "-")"
+                          + "\(holder.frame) cmdbar=\(bar ? 1 : 0)")
+                }
                 // WINAMP_MODERN_RENDER_THEMES=1 — the colour-theme picture for this skin, which is
                 // otherwise unmeasurable: a `.wal` is a compressed NSIS archive with no unpacked form,
                 // so `strings … | grep -i colorthemes` answers 0 for four skins that ship a full

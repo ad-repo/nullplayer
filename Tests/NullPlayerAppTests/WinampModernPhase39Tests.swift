@@ -46,10 +46,11 @@ final class WinampModernPhase39Tests: XCTestCase {
         XCTAssertEqual(WinampModernHostAction(action: "PE_LISTOFLISTS"), .playlistList)
     }
 
-    /// The three we answer with a recorded nothing, so the demand is visible in a report instead of
-    /// looking like a dead button of unknown cause.
+    /// The ones we answer with a recorded nothing, so the demand is visible in a report instead of
+    /// looking like a dead button of unknown cause. `VID_1X` / `VID_2X` left this list in B20: a
+    /// skin-hosted picture has a native size to scale from, which is the thing they lacked.
     func testTheDeliberatelyInertActionsCarryTheirReason() {
-        for name in ["VID_TV", "VID_1X", "VID_2X", "CB_NEXT", "CB_PREV", "CB_NEXTPAGE", "CB_PREVPAGE"] {
+        for name in ["VID_TV", "CB_NEXT", "CB_PREV", "CB_NEXTPAGE", "CB_PREVPAGE"] {
             guard case .inert(let action, let reason)? = WinampModernHostAction(action: name) else {
                 return XCTFail("\(name) should decode as inert")
             }

@@ -106,3 +106,12 @@ A **seventh** gap only became visible once the abort was gone: nothing in the en
   from before concluding the skin does not have one.
 - **The bottom drawer's page buttons are only in the graph while the drawer is open.** Drive the
   toggle first, then the page button, as two points in one `RENDER_CLICK` run.
+
+## Video window (Phase 47, B20)
+
+`xml/video.xml` declares `<container id="video">` with a 332×113 box at (11, 29), `noshowcmdbar="1"`,
+a `ledstatusbar display="VID_Info"`, and `VID_FS` / `VID_1X` / `VID_2X` / `VID_TV` / `VID_Misc`. It
+hosts the real picture now: playing a video opens this window and parks the video output over the
+box. This is the skin the defect was found and fixed on — its box is 332pt against
+`VideoControlBarView`'s 395pt Auto Layout minimum, which is what made the window come back 46pt too
+wide with the picture through its right-hand chrome. **Confirmed live 2026-08-21.**

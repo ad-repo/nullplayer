@@ -91,6 +91,44 @@ class VideoPlayerView: NSView {
     private var initialMouseLocation: NSPoint?
     private var initialWindowFrame: NSRect?
     private let resizeMargin: CGFloat = 8  // Width of resize zones at edges
+
+    /// True while this view is lent to a `.wal` skin's own video window (B20).
+    ///
+    /// Two behaviours here belong to the free-floating window this view normally fills and to nothing
+    /// else. The **resize zones** are an 8px margin at the view's own edges, which inside a skin's
+    /// video box sit in the middle of the skin's own chrome. And the **drag**, which would slide the
+    /// parked window off the box it is filling. The skin's window still moves and resizes normally
+    /// from its own frame, and the picture follows it.
+    var isEmbeddedInSkin = false {
+        didSet {
+            guard isEmbeddedInSkin != oldValue else { return }
+            if isEmbeddedInSkin { hideTrackSelectionPanel() }
+        }
+    }
+
+    /// Winamp's command bar. A skin's holder decides: five of the six corpus video windows declare
+    /// `noshowcmdbar="1"` because they draw their own `VID_*` buttons, and mmd3's does not.
+    ///
+    /// Taken **out of the view hierarchy**, not merely hidden. The bar lays its controls out with a
+    /// required constraint chain — `10+30+5+30+5+30+5+30+10+50` from the left and
+    /// `10+30+5+30+5+30+10+50+10` from the right — and a hidden view's constraints are still live, so
+    /// AppKit derives a 395pt minimum for the whole window from them and *refuses any smaller frame*.
+    /// Parked over a skin's video box that is the difference between the picture filling the box and
+    /// the picture running 46pt through the skin's own chrome.
+    var showsControlBar = true {
+        didSet {
+            guard showsControlBar != oldValue else { return }
+            if showsControlBar { addSubview(controlBarView) } else { controlBarView.removeFromSuperview() }
+            needsLayout = true
+        }
+    }
+
+    /// The narrowest this view can be with the command bar in it, from the bar's own constraints
+    /// rather than from a number written down twice.
+    var controlBarMinimumWidth: CGFloat { controlBarView.fittingSize.width }
+
+    /// The stream's own pixel size, or `.zero` before the decoder knows it.
+    var presentationSize: CGSize { mediaPlayer?.videoSize ?? .zero }
     
     /// Center overlay for click-to-play/pause (large centered icons)
     private var centerOverlayView: VideoCenterOverlayView?
@@ -436,6 +474,7 @@ class VideoPlayerView: NSView {
     
     private func showControls() {
         controlsVisible = true
+        guard showsControlBar else { return }
         controlBarView.alphaValue = 1.0
         resetControlsHideTimer()
         // Ensure we're first responder to capture keyboard events
@@ -465,7 +504,7 @@ class VideoPlayerView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         
         // Check if in resize zone
-        let zone = resizeZoneAt(location)
+        let zone = isEmbeddedInSkin ? .none : resizeZoneAt(location)
         if zone != .none {
             isResizing = true
             resizeZone = zone
@@ -495,7 +534,9 @@ class VideoPlayerView: NSView {
         // performDrag only moves the window if the pointer actually moves, so a
         // plain click still just shows the overlay.
         showCenterOverlay()
-        window?.performDrag(with: event)
+        // Parked over a skin's video box, this window is a child window pinned to that box: a drag
+        // would slide the picture out of the hole it is filling.
+        if !isEmbeddedInSkin { window?.performDrag(with: event) }
     }
     
     override func mouseDragged(with event: NSEvent) {
@@ -555,7 +596,7 @@ class VideoPlayerView: NSView {
         
         // Update cursor for resize zones
         let location = convert(event.locationInWindow, from: nil)
-        let zone = resizeZoneAt(location)
+        let zone = isEmbeddedInSkin ? .none : resizeZoneAt(location)
         updateCursor(for: zone)
     }
     
@@ -564,7 +605,7 @@ class VideoPlayerView: NSView {
         
         // Update cursor for resize zones
         let location = convert(event.locationInWindow, from: nil)
-        let zone = resizeZoneAt(location)
+        let zone = isEmbeddedInSkin ? .none : resizeZoneAt(location)
         updateCursor(for: zone)
     }
     
@@ -583,9 +624,11 @@ class VideoPlayerView: NSView {
         // Video fills entire view
         playerHostView.frame = bounds
         
-        // Control bar at bottom
-        controlBarView.frame = NSRect(x: 0, y: bounds.height - controlBarHeight, 
-                                       width: bounds.width, height: controlBarHeight)
+        // Control bar at bottom, when it is in the hierarchy at all.
+        if controlBarView.superview != nil {
+            controlBarView.frame = NSRect(x: 0, y: bounds.height - controlBarHeight,
+                                          width: bounds.width, height: controlBarHeight)
+        }
     }
     
     // MARK: - Window Resize Handling

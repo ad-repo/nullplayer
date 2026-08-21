@@ -232,6 +232,11 @@ protocol WinampModernComponentHost: AnyObject {
     // Library — a live host surface embedded at the skin-provided frame, or nil when unavailable.
     func makeLibrarySurface() -> WinampModernLibrarySurface?
 
+    /// Video — the same shape as the library's, and for the same reason: the skin draws a window
+    /// around a box it cannot fill, and only the host can put the picture in it. `nil` when no video
+    /// output exists in this session.
+    func makeVideoSurface() -> WinampModernVideoSurface?
+
     /// Fallback for a component the skin does not embed: surface it through the classic
     /// WindowManager window instead of a skin-owned holder.
     func toggleClassicWindow(for kind: WinampModernComponentKind)
@@ -239,6 +244,7 @@ protocol WinampModernComponentHost: AnyObject {
 
 extension WinampModernComponentHost {
     func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
+    func makeVideoSurface() -> WinampModernVideoSurface? { nil }
     /// A host with no selection model of its own keeps the single anchor it already had.
     func playlistSetSelection(_ rows: Set<Int>) { playlistSelect(row: rows.min() ?? -1) }
     /// Highest row first, so each removal cannot shift the rows still to come.
@@ -269,5 +275,43 @@ protocol WinampModernLibrarySurface: AnyObject {
     /// UI Size, as the `.wal` window's own skin scale.
     func applySkinScale(_ scale: CGFloat)
     /// Cancel work and release resources before the view is removed. Must be idempotent.
+    func prepareForUITeardown()
+}
+
+/// The host's video output, placed over a `.wal` skin's video box.
+///
+/// Six of the corpus skins declare a full `<container id="video">` — chrome, a `ledstatusbar`, and
+/// the `VID_*` buttons — around a `<component param="{F0816D7B-…}">` that was decoration over an
+/// empty box: playing a video opened NullPlayer's own window somewhere else on screen while the
+/// skin's stayed shut.
+///
+/// Two things are deliberately unlike the `.library` seam. A library surface *is* a browser the
+/// bridge creates; a video surface only says **where** the one video output the app already owns
+/// should be, because playback, casting, server reporting and analytics all live in
+/// `VideoPlayerWindowController`. And it does not host that output as a subview — see
+/// `WinampModernVideoSurfaceView` for why the video engine will not tolerate that — it hands over a
+/// box and the controller parks its own window on it.
+protocol WinampModernVideoSurface: AnyObject {
+    var view: NSView { get }
+    /// The stream's own pixel size, or `.zero` when nothing is playing or it is not known yet.
+    /// `VID_1X` / `VID_2X` size the skin's window from it; with no size they stay inert rather than
+    /// resizing to an invented one.
+    var presentationSize: CGSize { get }
+    /// Winamp's command bar over the picture. The skin's holder decides with `noshowcmdbar=`: five
+    /// of the six corpus video windows switch it off because they draw their own `VID_*` buttons,
+    /// and mmd3's leaves it on.
+    var showsCommandBar: Bool { get set }
+    /// Take the host's video output into this surface. Idempotent.
+    func attachVideoOutput()
+    /// Re-place the video output over this surface's box after the skin has laid it out again.
+    func updateOutputPlacement()
+    /// Give the video output back to a free-floating window of its own, showing it there if
+    /// something is still playing. Idempotent.
+    func detachVideoOutput()
+    /// Recolour to the skin's active colour theme.
+    func applyPalette(_ palette: WasabiPalette)
+    /// UI Size, as the `.wal` window's own skin scale.
+    func applySkinScale(_ scale: CGFloat)
+    /// Return the video output and release resources before the view is removed. Must be idempotent.
     func prepareForUITeardown()
 }

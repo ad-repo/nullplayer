@@ -956,8 +956,59 @@ class WindowManager {
         case .playlist: showOnly ? showPlaylist() : classicTogglePlaylist()
         case .equalizer: showOnly ? showEqualizer() : classicToggleEqualizer()
         case .library: showOnly ? showPlexBrowser() : classicTogglePlexBrowser()
+        case .video: showOrToggleLocalVideoWindow(showOnly: showOnly)
         default: break
         }
+    }
+
+    // MARK: - Video in a `.wal` skin's own window (B20)
+
+    /// Hand the video output to the loaded skin's video window and open it. False for every other
+    /// mode, and for a `.wal` skin that declares no video window of its own — which is what leaves
+    /// `VideoPlayerWindowController`'s own window in charge exactly as before.
+    ///
+    /// Casting is not a caller: every `play*` entry point returns *before* reaching the video
+    /// controller when a cast device is active, so a cast never resurrects a local window, skin-owned
+    /// or not.
+    @discardableResult
+    func hostVideoOutputInWinampModernSkin() -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.hostVideoOutput() ?? false
+    }
+
+    /// Put the skin's video window away (`autoclose="1"`). False when there is none showing.
+    @discardableResult
+    func hideWinampModernVideoSurface() -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.hideVideoSurfaceWindow() ?? false
+    }
+
+    /// Unpark the video output from the skin's box — the picture is finished with, and the child
+    /// window must stop hanging off a skin window that may be torn down next.
+    func detachWinampModernVideoOutput() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.detachVideoOutput()
+    }
+
+    /// `VID_1X` / `VID_2X` — size the skin's video window from the stream's own dimensions.
+    @discardableResult
+    func sizeWinampModernVideoSurface(toNativeMultiple multiple: CGFloat) -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?
+            .sizeVideoSurface(toNativeMultiple: multiple) ?? false
+    }
+
+    /// The classic fallback for `.video`: NullPlayer's own video window, and only when a video is
+    /// actually loaded. A skin button asking for a video window when nothing is playing must not open
+    /// a black rectangle — that is the same rule `VID_FS` has followed since Phase 39.
+    private func showOrToggleLocalVideoWindow(showOnly: Bool) {
+        guard let controller = videoPlayerWindowController, controller.currentTitle != nil else { return }
+        if !showOnly, controller.isVideoOutputVisible {
+            controller.window?.orderOut(nil)
+            return
+        }
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
     }
 
     func showPlaylist(at restoredFrame: NSRect? = nil) {
@@ -2349,7 +2400,7 @@ class WindowManager {
     }
     
     var isVideoPlayerVisible: Bool {
-        videoPlayerWindowController?.window?.isVisible == true
+        videoPlayerWindowController?.isVideoOutputVisible == true
     }
     
     /// Whether video is currently playing
@@ -2374,10 +2425,18 @@ class WindowManager {
     }
     
     func toggleVideoPlayer() {
-        if let controller = videoPlayerWindowController, controller.window?.isVisible == true {
+        guard let controller = videoPlayerWindowController else { return }
+        // A hosted picture lives in the skin's own video window, so that is the window this shows and
+        // hides — ordering out this controller's own would do nothing visible at all (B20).
+        if controller.isVideoOutputHosted {
+            if controller.isVideoOutputVisible { hideWinampModernVideoSurface() }
+            else { hostVideoOutputInWinampModernSkin() }
+            return
+        }
+        if controller.window?.isVisible == true {
             controller.window?.orderOut(nil)
-        } else if videoPlayerWindowController != nil {
-            videoPlayerWindowController?.showWindow(nil)
+        } else {
+            controller.showWindow(nil)
         }
     }
     
@@ -2578,9 +2637,10 @@ class WindowManager {
         // A video session is active if the video player is visible AND has a video loaded
         // (indicated by currentTitle being set). This is different from isVideoPlaying
         // which only returns true when actively playing (not paused).
-        guard let controller = videoPlayerWindowController,
-              let window = controller.window,
-              window.isVisible else {
+        // `isVideoOutputVisible` and not `window.isVisible`: with the picture lent to a `.wal`
+        // skin's video window this controller's own window is ordered out, and asking it would
+        // answer "no video session" while a film plays in plain sight (B20).
+        guard let controller = videoPlayerWindowController, controller.isVideoOutputVisible else {
             return false
         }
         return controller.currentTitle != nil
@@ -2590,9 +2650,7 @@ class WindowManager {
     /// Unlike isVideoActivePlayback, does NOT rely on VideoPlayerWindowController.isCastingVideo.
     var isVideoContentActive: Bool {
         if case .video = CastManager.shared.currentCast { return true }
-        guard let controller = videoPlayerWindowController,
-              let window = controller.window,
-              window.isVisible else {
+        guard let controller = videoPlayerWindowController, controller.isVideoOutputVisible else {
             return false
         }
         return controller.currentTitle != nil

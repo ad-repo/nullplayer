@@ -28,6 +28,9 @@ enum WinampModernHostAction: Equatable {
     // Video
     case videoFullscreen
     case videoMenu
+    /// `VID_1X` / `VID_2X` — size the video window so its picture is the stream's own pixel size
+    /// times this multiple (B20).
+    case videoNativeSize(multiple: Int)
     /// Declared by the corpus and answered by nothing here, with the reason a triage pass needs.
     case inert(action: String, reason: String)
 
@@ -50,11 +53,11 @@ enum WinampModernHostAction: Equatable {
         case "PE_LIST", "PE_LISTOFLISTS": self = .playlistList
         case "VID_FS": self = .videoFullscreen
         case "VID_MISC": self = .videoMenu
-        // Winamp's video window sizes itself to the stream's own dimensions; NullPlayer's video
-        // window has no notion of a native size at all (nothing reads `presentationSize`), so 1x/2x
-        // have nothing to size *to*. Recorded rather than approximated with an arbitrary pixel size.
-        case "VID_1X", "VID_2X":
-            self = .inert(action: name, reason: "video window has no native-size sizing to scale from")
+        // Winamp's video window sizes itself to the stream's own dimensions. Inert until B20, because
+        // nothing read `presentationSize` and there was nothing to size *to*; a hosted surface has a
+        // native size, and the skin's own window is what gets sized around it.
+        case "VID_1X": self = .videoNativeSize(multiple: 1)
+        case "VID_2X": self = .videoNativeSize(multiple: 2)
         // SHOUTcast TV. NullPlayer has no internet-TV source and will not gain one here.
         case "VID_TV": self = .inert(action: name, reason: "no internet TV source in NullPlayer")
         // The component bucket is Winamp's scrolling strip of *installed component* icons. Ours is

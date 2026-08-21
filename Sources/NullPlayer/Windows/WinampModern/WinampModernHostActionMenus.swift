@@ -31,6 +31,7 @@ extension WinampModernMainView {
         case .playlistList: showPlaylistListMenu(from: object)
         case .videoFullscreen: toggleVideoFullscreen()
         case .videoMenu: showVideoMenu(from: object)
+        case .videoNativeSize(let multiple): sizeVideoToNative(multiple: multiple)
         case .inert(let action, let reason): recordInertHostAction(action, reason: reason)
         }
     }
@@ -441,8 +442,22 @@ extension WinampModernMainView {
     private func toggleVideoFullscreen() {
         guard let controller = WindowManager.shared.currentVideoPlayerController,
               controller.window != nil else { return }
+        // A hosted picture borrows itself back into the host's own window first: a `.wal` window is
+        // `.borderless` and owns no fullscreen behaviour, and leaving fullscreen hands it back.
+        if controller.isVideoOutputHosted {
+            controller.enterFullScreenReclaimingOutput()
+            return
+        }
         controller.showWindow(nil)
         controller.toggleFullScreen(nil)
+    }
+
+    /// `VID_1X` / `VID_2X`. Only a **skin-hosted** picture has a box to size: the host's own video
+    /// window is a free-floating rectangle the user sizes by dragging, and resizing it to the stream's
+    /// dimensions behind their back is not what these buttons mean. Nothing happens when no video is
+    /// playing or the decoder has not published a size yet.
+    private func sizeVideoToNative(multiple: Int) {
+        WindowManager.shared.sizeWinampModernVideoSurface(toNativeMultiple: CGFloat(multiple))
     }
 
     /// `VID_MISC` — the video window's own context menu (play/pause, skip, audio and subtitle track

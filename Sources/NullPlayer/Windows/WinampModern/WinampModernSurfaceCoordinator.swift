@@ -17,11 +17,14 @@ enum WinampModernSurfaceTarget: Equatable {
     }
 }
 
-/// The reconciled answer for all three surfaces, published once per loaded skin.
+/// The reconciled answer for every routed surface, published once per loaded skin.
 struct WinampModernSurfaceCatalog {
     let playlist: WinampModernSurfaceTarget
     let equalizer: WinampModernSurfaceTarget
     let library: WinampModernSurfaceTarget
+    /// The skin's own video window (B20). Only ever `.declaredContainer` or `.classicFallback`: see
+    /// `WinampModernSurfaceInventory.routedKinds` for why it is never embedded and never synthesized.
+    let video: WinampModernSurfaceTarget
 
     /// The container ids this catalog already routes. A surface reached through the catalog has its
     /// own menu item (Windows → Playlist / Equalizer / Library), so anything listing skin windows
@@ -44,6 +47,7 @@ struct WinampModernSurfaceCatalog {
         case .playlist: return playlist
         case .equalizer: return equalizer
         case .library: return library
+        case .video: return video
         default: return .classicFallback(reason: "\(kind.rawValue) is not a routed surface")
         }
     }
@@ -120,7 +124,8 @@ final class WinampModernSurfaceCoordinator {
 
         return WinampModernSurfaceCatalog(playlist: target(for: .playlist),
                                           equalizer: target(for: .equalizer),
-                                          library: target(for: .library))
+                                          library: target(for: .library),
+                                          video: target(for: .video))
     }
 
     // MARK: - Routing
@@ -189,7 +194,7 @@ final class WinampModernSurfaceCoordinator {
 extension WinampModernSurfaceCatalog {
     /// Where each surface lives, in one readable line.
     var summaryLine: String {
-        WinampModernSurfaceInventory.managedKinds.map { kind in
+        WinampModernSurfaceInventory.routedKinds.map { kind in
             switch self[kind] {
             case .embedded: return "\(kind.rawValue)=embedded"
             case .declaredContainer(let id): return "\(kind.rawValue)=declared:\(id)"

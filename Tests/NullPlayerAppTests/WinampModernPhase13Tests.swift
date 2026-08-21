@@ -580,7 +580,8 @@ final class WinampModernPhase13Tests: XCTestCase {
     func testContainerSurfaceTogglesItsOwnWindow() throws {
         let catalog = WinampModernSurfaceCatalog(playlist: .declaredContainer(id: "Pledit"),
                                                  equalizer: .classicFallback(reason: "none"),
-                                                 library: .synthesizedContainer(id: "nullplayer.library"))
+                                                 library: .synthesizedContainer(id: "nullplayer.library"),
+                                                 video: .classicFallback(reason: "no video window"))
         var visibility: [String: Bool] = ["Pledit": false, "nullplayer.library": false]
         let windows: [String: NSWindow] = [:]
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
@@ -602,12 +603,14 @@ final class WinampModernPhase13Tests: XCTestCase {
     func testCatalogSummaryNamesEverySurface() {
         let catalog = WinampModernSurfaceCatalog(playlist: .declaredContainer(id: "Pledit"),
                                                  equalizer: .embedded(containerID: WasabiObjectID(rawValue: 1)),
-                                                 library: .classicFallback(reason: "no frame"))
+                                                 library: .classicFallback(reason: "no frame"),
+                                                 video: .classicFallback(reason: "no video window"))
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
             revealEmbedded: { _, _ in true }, isMainWindowVisible: { true }, window: { _ in nil },
             setVisible: { _, _ in }, classicFallback: { _, _ in }, redraw: {}))
         XCTAssertEqual(coordinator.summary,
-                       "playlist=declared:Pledit equalizer=embedded library=classic(no frame)")
+                       "playlist=declared:Pledit equalizer=embedded library=classic(no frame) "
+                       + "video=classic(no video window)")
     }
 
     // MARK: - 13.5 Shared theme and palette
