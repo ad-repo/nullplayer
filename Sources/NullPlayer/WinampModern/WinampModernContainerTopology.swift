@@ -145,6 +145,11 @@ enum WinampModernContainerTopology {
         if let kind = info.kind,
            !WinampModernSurfaceInventory.windowMenuRoutedKinds.contains(kind) { return false }
         guard let name = info.object.attributes["name"], !name.isEmpty else { return false }
+        // A leading `:` is a Wasabi string-table reference, not a name. Only the standard library's
+        // `Component` shell uses one in the corpus (`:componenttitle`, in Anexa, Sony_Walkman and
+        // boom), and it became reachable when B26 stopped dropping containers with no `normal`
+        // layout — an empty frame under a name that reads like a bug is worse than no entry.
+        guard !name.hasPrefix(":") else { return false }
         return info.object.attributes["nomenu"] != "1"
     }
 

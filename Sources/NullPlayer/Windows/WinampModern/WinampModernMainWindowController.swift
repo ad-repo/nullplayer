@@ -312,8 +312,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let playerOrigin = all.first(where: \.isMainPlayer)?.defaultOrigin ?? .zero
         let containers = all.filter { !$0.isMainPlayer }
         for info in containers {
-            guard let renderer = try? WasabiSceneRenderer(loadedSkin: loaded, host: host,
-                                                          containerID: info.id) else { continue }
+            let renderer: WasabiSceneRenderer
+            do {
+                renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, containerID: info.id)
+            } catch {
+                // A dropped container is a whole window the user can never reach — Lobe's Colour
+                // Themes screen was lost this way — so it goes in the compatibility report instead of
+                // vanishing into a bare `continue`.
+                loaded.runtime.record(WalDiagnostic(
+                    .malformedXML,
+                    "container '\(info.id)' has no window and is unreachable: "
+                        + "\(error.localizedDescription)",
+                    severity: .warning))
+                continue
+            }
             renderer.componentHost = componentBridge
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
             renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }

@@ -556,8 +556,15 @@ final class WinampModernRenderDumpTests: XCTestCase {
         // declares, names, and binds no button to (Phase 27.7). Printed after the catalog because a
         // container the catalog routes is deliberately not listed twice.
         let routed = catalog.routedContainerIDs
+        // Only containers the app can actually open: a container whose layouts the renderer cannot
+        // select is dropped by `setupAuxiliaryContainers` and never reaches the menu, and a probe
+        // reading the raw topology reported it as offered anyway (B26, LOBE).
+        let openable = containers.filter { WasabiSceneRenderer.primaryLayout(of: $0.object) != nil }
         print("RENDER-DUMP skin windows: "
-              + "\(containers.filter { WinampModernContainerTopology.isListedInWindowMenu($0) && !routed.contains($0.id.lowercased()) }.map(WinampModernContainerTopology.displayName))")
+              + "\(openable.filter { WinampModernContainerTopology.isListedInWindowMenu($0) && !routed.contains($0.id.lowercased()) }.map(WinampModernContainerTopology.displayName))")
+        for dropped in containers where WasabiSceneRenderer.primaryLayout(of: dropped.object) == nil {
+            print("RENDER-DUMP dropped container: \(dropped.id) (no layout)")
+        }
 
         // Written beside the PNGs so a dump can be read without the console scrollback.
         let sidecar = [

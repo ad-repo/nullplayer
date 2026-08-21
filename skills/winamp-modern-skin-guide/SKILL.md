@@ -52,6 +52,7 @@ concept; read the one your symptom points at, not all of them.
 | A hosted surface (library/video/vis) stays on screen over another tab, or comes back dead, after its holder went away and returned | [reference/components.md](reference/components.md) — *Unmounting is not teardown* |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
 | A window the skin opens with itself does not open, or opens in the wrong place (`default_visible`, `default_x`/`default_y`) | [reference/components.md](reference/components.md) |
+| A whole container — or a whole skin — is missing, and its layouts are named something other than `normal` | [reference/components.md](reference/components.md) — *Which layout a container opens in* |
 | A toolbar button on a playlist/visualization/video window does nothing (`PE_*`, `VIS_*`, `VID_*`, `CB_*`) | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the host-action families, and the three that are inert on purpose |
 | An auxiliary window draws once then freezes; a script's `onTimer` changes nothing on screen | [reference/components.md](reference/components.md) |
 | Teardown crash, leak, or mode-switch breakage | [reference/components.md](reference/components.md) |
@@ -110,6 +111,7 @@ verbatim; it just lives in a reference file now.
 | `onTextChanged` is how a skin learns a host readout moved | [reference/scripting.md](reference/scripting.md) |
 | The equalizer tells the skin it moved | [reference/scripting.md](reference/scripting.md) |
 | The keyboard is a string, and a borderless window has to ask for it | [reference/scripting.md](reference/scripting.md) |
+| Which layout a container opens in | [reference/components.md](reference/components.md) |
 | `TOGGLE`'s parameter is a component **or a container id** | [reference/components.md](reference/components.md) |
 | `default_visible="1"` — the windows a skin opens with itself | [reference/components.md](reference/components.md) |
 | Component hosting | [reference/components.md](reference/components.md) |

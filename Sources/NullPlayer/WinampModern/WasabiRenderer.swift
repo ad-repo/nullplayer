@@ -526,6 +526,18 @@ final class WasabiSceneRenderer {
         }
     }
 
+    /// The layout a container opens in: the one named `normal`, else its **first declared** layout.
+    /// Winamp's own rule, and the reason Lobe's Colour Themes window (six layouts, `about1`…`about6`,
+    /// none of them `normal`) used to be unreachable — the initializer threw and the host dropped the
+    /// whole container. `WinampModernContainerTopology.normalLayout` picks by the same rule, so the
+    /// window the topology measures is the window this renderer draws.
+    static func primaryLayout(of container: WasabiObject) -> WasabiObject? {
+        let layouts = container.children.filter {
+            $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
+        }
+        return layouts.first { $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame } ?? layouts.first
+    }
+
     init(loadedSkin: WinampModernLoadedSkin, host: WinampModernHost, containerID: String = "main",
          clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
         self.loadedSkin = loadedSkin
@@ -539,13 +551,9 @@ final class WasabiSceneRenderer {
         guard let container = loadedSkin.runtime.graph.roots.first(where: {
             $0.typeName.caseInsensitiveCompare("container") == .orderedSame &&
             $0.xmlID?.caseInsensitiveCompare(containerID) == .orderedSame
-        }), let layout = container.children.first(where: {
-            $0.typeName.caseInsensitiveCompare("layout") == .orderedSame &&
-            ($0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame ||
-             container.children.filter { $0.typeName.caseInsensitiveCompare("layout") == .orderedSame }.count == 1)
-        }) else {
+        }), let layout = Self.primaryLayout(of: container) else {
             throw WalFailure(WalDiagnostic(.malformedXML,
-                                           "Winamp Modern skin has no '\(containerID)'/normal container layout."))
+                                           "Winamp Modern skin has no '\(containerID)' container layout."))
         }
         self.container = container
         self.layout = layout

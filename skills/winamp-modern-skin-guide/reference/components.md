@@ -101,6 +101,28 @@ Every `.wal` window is `.borderless`, which changes what AppKit will do for you:
   — stacked under the main window, clamped to the screen — and never repositioned again, so a window
   the user has moved stays where they put it (`placedAuxiliaryWindows`). Phase 24
 
+#### Which layout a container opens in
+
+`WasabiSceneRenderer.primaryLayout(of:)` — the layout named `normal`, else the container's **first
+declared** one, which is Winamp's rule. `WinampModernContainerTopology.normalLayout` picks the same
+way, so the geometry the topology reports and the scene the renderer draws are the same window.
+
+It used to be `normal` *or* the sole layout when a container declared exactly one, and anything else
+threw out of the initializer. `setupAuxiliaryContainers` answered that with a bare `continue`, and
+the main window's own renderer answered it with the load-failure placeholder — so a skin whose player
+offers several named shapes did not load **at all**. Six containers in the 31-skin corpus were
+affected (B26, 2026-08-21): BLAKK's `main` (`boombox`/`remote`/`stick`) and Ebonite_2_1's `main`
+(six, starting `full`) — both whole skins — LOBE's `Color Themes` (six `about*` pages carrying its
+43-theme picker), and the wasabi standard `Component` shell in Anexa, Sony_Walkman and boom.
+
+Two rules came out of it:
+
+- a container that still cannot be opened records a `WalDiagnostic` (warning,
+  `container '<id>' has no window and is unreachable`) instead of vanishing;
+- `isListedInWindowMenu` rejects a `name` beginning with `:` — a Wasabi string-table reference we do
+  not resolve. The standard `Component` shell is `name=":componenttitle"`, and making it openable
+  otherwise puts an empty frame under that name in three skins' **Skin Windows** menu.
+
 #### Where a surface lives
 
 `WinampModernSurfaceCoordinator` is the single answer, for menus, skin buttons, and restore alike:
