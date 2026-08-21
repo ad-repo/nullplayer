@@ -9,6 +9,8 @@ final class CavaView: NSView {
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
     private var cachedRenderer: SkinRenderer?
+    private var hostedContext: WinampModernHostedSurfaceContext?
+    private var hostedStyle: WinampModernSurfaceStyle?
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
         SkinElements.SpectrumWindow.Layout.self
@@ -58,6 +60,8 @@ final class CavaView: NSView {
             name: .connectedWindowHighlightDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
     }
 
     func startRendering() {
@@ -89,6 +93,7 @@ final class CavaView: NSView {
     }
 
     private func contentAreaRect() -> NSRect {
+        if hostedContext != nil { return bounds }
         let titleHeight = WindowManager.shared.hideTitleBars ? 0 : chromeLayout.titleBarHeight
         return NSRect(
             x: chromeLayout.leftBorder + 2,
@@ -102,6 +107,13 @@ final class CavaView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let contentRect = contentAreaRect()
 
+        if hostedContext != nil {
+            NSColor.black.setFill()
+            bounds.fill()
+            drawCavaContent(in: bounds)
+            return
+        }
+
         // Content-only fast path for 60 Hz animation ticks: `onNeedsDisplay` only dirties the content
         // rect, so repaint just the bars and skip re-resolving the skin, allocating a SkinRenderer,
         // and redrawing the whole chrome. Mirrors ModernCavaView's animation-rect early-out.
@@ -111,8 +123,6 @@ final class CavaView: NSView {
             drawCavaContent(in: contentRect)
             return
         }
-
-        let renderer = currentRenderer()
 
         NSColor.black.setFill()
         bounds.fill()
@@ -125,14 +135,27 @@ final class CavaView: NSView {
         if WindowManager.shared.hideTitleBars {
             context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
         }
-        renderer.drawSpectrumAnalyzerWindowChromeOverlay(
-            in: context,
-            bounds: bounds,
-            isActive: window?.isKeyWindow ?? true,
-            pressedButton: pressedButton,
-            controlScale: WindowManager.shared.playlistChromeScale,
-            title: "CAVA"
-        )
+        if let style = WindowManager.shared.winampModernSurfaceStyle {
+            WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+                in: context,
+                bounds: bounds,
+                metrics: .spectrumFamily,
+                isActive: window?.isKeyWindow ?? true,
+                isClosePressed: pressedButton == .close,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "CAVA",
+                fillBackground: false
+            )
+        } else {
+            currentRenderer().drawSpectrumAnalyzerWindowChromeOverlay(
+                in: context,
+                bounds: bounds,
+                isActive: window?.isKeyWindow ?? true,
+                pressedButton: pressedButton,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "CAVA"
+            )
+        }
         context.restoreGState()
 
         if isHighlighted {
@@ -149,6 +172,10 @@ final class CavaView: NSView {
             highColor: presenter.highGradientColor,
             mode: presenter.mode
         )
+    }
+
+    @objc private func winampModernThemeDidChange() {
+        needsDisplay = true
     }
 
     private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
@@ -177,7 +204,7 @@ final class CavaView: NSView {
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToSkinCoordinates(viewPoint)
 
-        if hitTestCloseButton(at: point) {
+        if hostedContext == nil, hitTestCloseButton(at: point) {
             pressedButton = .close
             needsDisplay = true
             return
@@ -187,6 +214,8 @@ final class CavaView: NSView {
             presenter.toggleMode()
             return
         }
+
+        guard hostedContext == nil else { return }
 
         if hitTestTitleBar(at: point) {
             isDraggingWindow = true
@@ -205,6 +234,7 @@ final class CavaView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
         var origin = window.frame.origin
@@ -214,6 +244,7 @@ final class CavaView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if isDraggingWindow, let window {
             isDraggingWindow = false
@@ -223,6 +254,12 @@ final class CavaView: NSView {
             window?.close()
         }
         pressedButton = nil
+        needsDisplay = true
+    }
+
+    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
+        hostedContext = context
+        autoresizingMask = [.width, .height]
         needsDisplay = true
     }
 
@@ -237,5 +274,24 @@ final class CavaView: NSView {
             isHighlighted = newValue
             needsDisplay = true
         }
+    }
+}
+
+extension CavaView: WinampModernHostedCavaSurface {
+    var view: NSView { self }
+
+    func applyPalette(_ style: WinampModernSurfaceStyle) {
+        hostedStyle = style
+        needsDisplay = true
+    }
+
+    func applySkinScale(_ scale: CGFloat) { needsDisplay = true }
+    func resume() { startRendering() }
+    func suspend() { stopRendering() }
+    func unmountFromHolder() { removeFromSuperview() }
+    func prepareForUITeardown() {
+        stopRendering()
+        removeFromSuperview()
+        hostedContext = nil
     }
 }

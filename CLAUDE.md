@@ -99,6 +99,13 @@ Sources/NullPlayer/
 3. Register in `WindowManager.swift`
 4. Add a provider protocol in `App/` if it has shared classic/modern behavior
 
+For a NullPlayer-owned window that should inherit `.wal` standard-frame chrome, use the generic
+hosted-window path instead: add one `WinampModernHostedWindowRegistry` entry and make the existing
+content view conform to `WinampModernHostedSurface`. Keep its standalone controller as the immediate
+fallback. Do not add `np.*` GUIDs to the Winamp component registry or synthesize these containers at
+skin-load time; they materialize lazily on first show and preserve their registry geometry (including
+larger feature windows such as PeppyMeter).
+
 ### Modifying skin rendering (classic)
 1. Check sprite coordinates in `SkinElements.swift`
 2. Rendering logic in `SkinRenderer.swift`

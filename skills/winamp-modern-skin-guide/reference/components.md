@@ -219,6 +219,38 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
   EQ control); a skin that draws its own equalizer is matched as embedded or declared first and never
   reaches synthesis.
 
+#### NullPlayer-owned hosted windows are lazy
+
+Spectrum, Cava, Flow, PeppyMeter, Audio Analysis, and Waveform use a second, typed window catalog.
+They are application features, not Winamp component GUIDs, so they must never be added to
+`WinampModernComponentRegistry` or to load-time component synthesis.
+
+- `WinampModernHostedWindowRegistry` is the only production table for identity, title, geometry,
+  hard minimum/maximum size, center-stack policy, and content construction. A new application-owned
+  window needs one registry entry plus a `WinampModernHostedSurface` conformance on its existing
+  content view; it does not need a feature branch in the synthesizer, main controller, or materializer.
+- Loading a skin records only a `skinFrame` or `classicFallback` route for each id. It creates no
+  graph objects, renderers, adapters, or `NSWindow`s. This is deliberately different from eager
+  skin-authored auxiliary containers, whose scripts may address them during `onScriptLoaded`.
+- The first show/toggle/restore request asks `WinampModernHostedWindowMaterializer` to instantiate
+  one trusted subtree in the existing runtime. The container is marked
+  `nullplayer_synthesized="1"`, has the synthetic host source path, and holds exactly one registered
+  `guid:np.<id>` token. All three provenance checks are required; the same token written by a skin is
+  unknown and inert.
+- Close hides and retains the instance. Reopen reuses it; UI Size changes resize only materialized
+  instances; skin/mode teardown destroys them once. If request-time construction fails, the partial
+  graph/window is rolled back and the existing standalone controller opens immediately.
+- The hosted surface is chromeless: the Wasabi standard frame owns drag, close, resize, keyboard,
+  and artwork. The same existing feature view draws its shared `.wal`-palette fallback chrome only
+  when it remains inside the standalone controller.
+- Window size is per registry entry and then clamped by the selected skin frame's hard resize limits.
+  Center-stack sizing is a preference inside those bounds, not a replacement geometry; PeppyMeter
+  therefore retains its larger authored height instead of collapsing to the spectrum-family size.
+
+Materialized hosted windows join `WindowManager`'s managed-window graph for snapping, docking,
+always-on-top, ordering, Compact Mode, state capture, and orphan checks. Unopened route descriptors
+never enter that graph and have zero native-window footprint.
+
 #### Container-scoped layout callbacks
 
 One skin, one runtime, several windows: `layoutSwitchRequested`/`layoutResizeRequested` carry the
@@ -633,4 +665,3 @@ player.
 
 The other 23 declare no visualization container, and NullPlayer's own window serves them exactly as
 before.
-

@@ -8,12 +8,14 @@ final class PeppyMeterView: NSView {
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
     private(set) var isFullscreen = false
+    private var hostedContext: WinampModernHostedSurfaceContext?
+    private var hostedPresenter: PeppyMeterPresenter?
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
         SkinElements.SpectrumWindow.Layout.self
     }
 
-    private var presenter: PeppyMeterPresenter? { controller?.presenter }
+    private var presenter: PeppyMeterPresenter? { controller?.presenter ?? hostedPresenter }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -40,10 +42,12 @@ final class PeppyMeterView: NSView {
             name: .connectedWindowHighlightDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
     }
 
     private func contentAreaRect() -> NSRect {
-        if isFullscreen { return bounds }
+        if isFullscreen || hostedContext != nil { return bounds }
         let titleHeight = WindowManager.shared.hideTitleBars ? 0 : chromeLayout.titleBarHeight
         let rect = NSRect(
             x: chromeLayout.leftBorder,
@@ -58,6 +62,12 @@ final class PeppyMeterView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
         let contentRect = contentAreaRect()
+        if hostedContext != nil {
+            NSColor.black.setFill()
+            bounds.fill()
+            if let presenter { drawMeterContent(in: bounds, presenter: presenter, context: context) }
+            return
+        }
         // Fast path: a content-only redraw (driven by requestMeterRedraw) repaints just the
         // meter and returns before the isHighlighted tint below. Skip it while highlighted so
         // the connected-window tint isn't wiped out of the content area on every VU tick.
@@ -75,9 +85,6 @@ final class PeppyMeterView: NSView {
                 drawMeterContent(in: bounds, presenter: presenter, context: context)
             }
         } else {
-            let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-            let renderer = SkinRenderer(skin: skin)
-
             NSColor.black.setFill()
             bounds.fill()
 
@@ -91,14 +98,28 @@ final class PeppyMeterView: NSView {
             if WindowManager.shared.hideTitleBars {
                 context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
             }
-            renderer.drawSpectrumAnalyzerWindowChromeOverlay(
-                in: context,
-                bounds: bounds,
-                isActive: window?.isKeyWindow ?? true,
-                pressedButton: pressedButton,
-                controlScale: WindowManager.shared.playlistChromeScale,
-                title: "PEPPYMETER"
-            )
+            if let style = WindowManager.shared.winampModernSurfaceStyle {
+                WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+                    in: context,
+                    bounds: bounds,
+                    metrics: .spectrumFamily,
+                    isActive: window?.isKeyWindow ?? true,
+                    isClosePressed: pressedButton == .close,
+                    controlScale: WindowManager.shared.playlistChromeScale,
+                    title: "PEPPYMETER",
+                    fillBackground: false
+                )
+            } else {
+                let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+                SkinRenderer(skin: skin).drawSpectrumAnalyzerWindowChromeOverlay(
+                    in: context,
+                    bounds: bounds,
+                    isActive: window?.isKeyWindow ?? true,
+                    pressedButton: pressedButton,
+                    controlScale: WindowManager.shared.playlistChromeScale,
+                    title: "PEPPYMETER"
+                )
+            }
             context.restoreGState()
         }
 
@@ -126,6 +147,10 @@ final class PeppyMeterView: NSView {
     }
 
     func skinDidChange() {
+        needsDisplay = true
+    }
+
+    @objc private func winampModernThemeDidChange() {
         needsDisplay = true
     }
 
@@ -159,6 +184,7 @@ final class PeppyMeterView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         guard !isFullscreen else { return }
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToSkinCoordinates(viewPoint)
@@ -176,6 +202,7 @@ final class PeppyMeterView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         guard !isFullscreen else { return }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
@@ -186,6 +213,7 @@ final class PeppyMeterView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         guard !isFullscreen else { return }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if isDraggingWindow, let window {
@@ -206,7 +234,9 @@ final class PeppyMeterView: NSView {
             toggleRandom: #selector(toggleRandom(_:)),
             toggleFullscreen: #selector(toggleFullscreen(_:)),
             close: #selector(closeWindow(_:)),
-            isFullscreen: controller?.isFullscreen ?? false
+            isFullscreen: hostedContext != nil
+                ? (hostedContext?.nativeWindow()?.styleMask.contains(.fullScreen) ?? false)
+                : (controller?.isFullscreen ?? false)
         )
     }
 
@@ -220,11 +250,11 @@ final class PeppyMeterView: NSView {
     }
 
     @objc private func toggleFullscreen(_ sender: Any?) {
-        controller?.toggleFullscreen()
+        if let hostedContext { hostedContext.requestFullscreen() } else { controller?.toggleFullscreen() }
     }
 
     @objc private func closeWindow(_ sender: Any?) {
-        window?.close()
+        if let hostedContext { hostedContext.requestClose() } else { window?.close() }
     }
 
     @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
@@ -235,4 +265,32 @@ final class PeppyMeterView: NSView {
             needsDisplay = true
         }
     }
+
+    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
+        hostedContext = context
+        let presenter = PeppyMeterPresenter()
+        presenter.onNeedsDisplay = { [weak self] in self?.requestMeterRedraw() }
+        hostedPresenter = presenter
+        autoresizingMask = [.width, .height]
+        needsDisplay = true
+    }
+}
+
+extension PeppyMeterView: WinampModernHostedFullscreenSurface {
+    var view: NSView { self }
+    func applyPalette(_ style: WinampModernSurfaceStyle) { needsDisplay = true }
+    func applySkinScale(_ scale: CGFloat) { needsDisplay = true }
+    func resume() {
+        hostedPresenter?.start()
+        needsDisplay = true
+    }
+    func suspend() { hostedPresenter?.stop() }
+    func unmountFromHolder() { removeFromSuperview() }
+    func prepareForUITeardown() {
+        suspend()
+        hostedPresenter = nil
+        hostedContext = nil
+        removeFromSuperview()
+    }
+    func toggleFullscreen() { hostedContext?.requestFullscreen() }
 }

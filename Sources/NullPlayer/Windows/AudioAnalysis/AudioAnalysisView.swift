@@ -15,6 +15,9 @@ final class AudioAnalysisView: NSView {
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
+    private var hostedContext: WinampModernHostedSurfaceContext?
+    private var hostedConsumerCoordinator: AudioAnalysisConsumerCoordinator?
+    private var hostedStyle: WinampModernSurfaceStyle?
 
     var selectedPane: Int { model.selectedPane }
 
@@ -43,7 +46,7 @@ final class AudioAnalysisView: NSView {
         setAccessibilityLabel("NullPlayer Audio Analyzer")
 
         let content = AudioAnalysisContentView(model: model) { [weak self] pane in
-            self?.controller?.setVisiblePane(pane)
+            self?.setVisiblePane(pane)
         }
         let hostingController = NSHostingController(rootView: content)
         hostingController.view.autoresizingMask = []
@@ -57,9 +60,12 @@ final class AudioAnalysisView: NSView {
             name: .connectedWindowHighlightDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
     }
 
     private func contentAreaRect() -> NSRect {
+        if hostedContext != nil { return bounds }
         let titleHeight = WindowManager.shared.hideTitleBars ? 0 : chromeLayout.titleBarHeight
         return NSRect(
             x: chromeLayout.leftBorder,
@@ -80,23 +86,39 @@ final class AudioAnalysisView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-        let renderer = SkinRenderer(skin: skin)
-
+        if hostedContext != nil {
+            (hostedStyle?.background ?? NSColor.black).setFill()
+            bounds.fill()
+            return
+        }
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         if WindowManager.shared.hideTitleBars {
             context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
         }
-        renderer.drawSpectrumAnalyzerWindow(
-            in: context,
-            bounds: bounds,
-            isActive: window?.isKeyWindow ?? true,
-            pressedButton: pressedButton,
-            controlScale: WindowManager.shared.playlistChromeScale,
-            title: "AUDIO ANALYZER"
-        )
+        if let style = WindowManager.shared.winampModernSurfaceStyle {
+            WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+                in: context,
+                bounds: bounds,
+                metrics: .spectrumFamily,
+                isActive: window?.isKeyWindow ?? true,
+                isClosePressed: pressedButton == .close,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "AUDIO ANALYZER",
+                fillBackground: true
+            )
+        } else {
+            let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+            SkinRenderer(skin: skin).drawSpectrumAnalyzerWindow(
+                in: context,
+                bounds: bounds,
+                isActive: window?.isKeyWindow ?? true,
+                pressedButton: pressedButton,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "AUDIO ANALYZER"
+            )
+        }
         context.restoreGState()
 
         if isHighlighted {
@@ -106,6 +128,10 @@ final class AudioAnalysisView: NSView {
     }
 
     func skinDidChange() {
+        needsDisplay = true
+    }
+
+    @objc private func winampModernThemeDidChange() {
         needsDisplay = true
     }
 
@@ -142,6 +168,7 @@ final class AudioAnalysisView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if hitTestCloseButton(at: point) {
             pressedButton = .close
@@ -165,6 +192,7 @@ final class AudioAnalysisView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
         var origin = window.frame.origin
@@ -174,6 +202,7 @@ final class AudioAnalysisView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if isDraggingWindow, let window {
             isDraggingWindow = false
@@ -207,7 +236,7 @@ final class AudioAnalysisView: NSView {
     }
 
     @objc private func closeWindow(_ sender: Any?) {
-        window?.close()
+        if let hostedContext { hostedContext.requestClose() } else { window?.close() }
     }
 
     @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
@@ -217,5 +246,49 @@ final class AudioAnalysisView: NSView {
             isHighlighted = newValue
             needsDisplay = true
         }
+    }
+
+    private func setVisiblePane(_ index: Int) {
+        if let hostedConsumerCoordinator {
+            hostedConsumerCoordinator.setVisiblePane(index)
+        } else {
+            controller?.setVisiblePane(index)
+        }
+    }
+
+    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
+        hostedContext = context
+        hostedConsumerCoordinator = AudioAnalysisConsumerCoordinator()
+        autoresizingMask = [.width, .height]
+        layoutContent()
+        needsDisplay = true
+    }
+}
+
+extension AudioAnalysisView: WinampModernHostedSurface {
+    var view: NSView { self }
+    func applyPalette(_ style: WinampModernSurfaceStyle) {
+        hostedStyle = style
+        appearance = NSAppearance(named: style.prefersDarkAppearance ? .darkAqua : .aqua)
+        needsDisplay = true
+    }
+    func applySkinScale(_ scale: CGFloat) {
+        layoutContent()
+        needsDisplay = true
+    }
+    func resume() {
+        setRenderingPaused(false)
+        hostedConsumerCoordinator?.setVisiblePane(selectedPane)
+    }
+    func suspend() {
+        setRenderingPaused(true)
+        hostedConsumerCoordinator?.deregisterAll()
+    }
+    func unmountFromHolder() { removeFromSuperview() }
+    func prepareForUITeardown() {
+        suspend()
+        hostedConsumerCoordinator = nil
+        hostedContext = nil
+        removeFromSuperview()
     }
 }

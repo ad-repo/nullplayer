@@ -24,10 +24,14 @@ enum WasabiSurfaceSynthesizer {
         let synthesizedContainers: [WinampModernComponentKind: String]
         /// Why a synthesizable surface got no window, per surface. These become classic fallbacks.
         let unavailable: [WinampModernComponentKind: String]
+        /// Routes for app-owned windows. These are descriptors, not synthesized graph containers.
+        let hostedWindows: WinampModernHostedWindowCatalog
         let diagnostics: [WalDiagnostic]
 
-        static func unchanged(_ document: WalExpandedXMLDocument) -> Result {
-            Result(document: document, synthesizedContainers: [:], unavailable: [:], diagnostics: [])
+        static func unchanged(_ document: WalExpandedXMLDocument,
+                              hostedWindows: WinampModernHostedWindowCatalog) -> Result {
+            Result(document: document, synthesizedContainers: [:], unavailable: [:],
+                   hostedWindows: hostedWindows, diagnostics: [])
         }
     }
 
@@ -71,9 +75,10 @@ enum WasabiSurfaceSynthesizer {
                            inventory: WinampModernSurfaceInventory,
                            limits: WalXMLLimits = .production) -> Result {
         let kinds = inventory.synthesizableKinds
-        guard !kinds.isEmpty else { return .unchanged(document) }
-
         let definitions = groupDefinitions(in: document.roots)
+        let hostedWindows = hostedWindowCatalog(frame: usableFrame(in: definitions))
+        guard !kinds.isEmpty else { return .unchanged(document, hostedWindows: hostedWindows) }
+
         var appended: [WalXMLNode] = []
         var synthesized: [WinampModernComponentKind: String] = [:]
         var unavailable: [WinampModernComponentKind: String] = [:]
@@ -118,13 +123,15 @@ enum WasabiSurfaceSynthesizer {
 
         guard !appended.isEmpty else {
             return Result(document: document, synthesizedContainers: [:],
-                          unavailable: unavailable, diagnostics: diagnostics)
+                          unavailable: unavailable, hostedWindows: hostedWindows,
+                          diagnostics: diagnostics)
         }
         return Result(document: WalExpandedXMLDocument(roots: document.roots + appended,
                                                        visitedPaths: document.visitedPaths,
                                                        diagnostics: document.diagnostics + diagnostics),
                       synthesizedContainers: synthesized,
                       unavailable: unavailable,
+                      hostedWindows: hostedWindows,
                       diagnostics: diagnostics)
     }
 
@@ -144,6 +151,24 @@ enum WasabiSurfaceSynthesizer {
     private enum FrameSelection {
         case success(Frame)
         case failure(String)
+    }
+
+    private static func hostedWindowCatalog(frame: FrameSelection)
+        -> WinampModernHostedWindowCatalog {
+        let route: WinampModernHostedWindowRoute
+        switch frame {
+        case .success(let frame):
+            route = .skinFrame(WinampModernHostedFrameDescriptor(
+                groupIdentifier: frame.groupIdentifier,
+                xuiTag: frame.xuiTag,
+                hasArtwork: frame.hasArtwork
+            ))
+        case .failure(let reason):
+            route = .classicFallback(reason: reason)
+        }
+        return WinampModernHostedWindowCatalog(routes: Dictionary(
+            uniqueKeysWithValues: WinampModernHostedWindowRegistry.all.map { ($0.id, route) }
+        ))
     }
 
     /// Prefer a status bar, then no status bar, then a static frame — but only accept one the skin

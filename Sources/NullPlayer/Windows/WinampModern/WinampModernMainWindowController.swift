@@ -18,6 +18,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private var skinView: WinampModernMainView?
     private var host: WinampModernAudioEngineHost?
     private var componentBridge: WinampModernComponentBridge?
+    private var hostedWindowMaterializer: WinampModernHostedWindowMaterializer?
     private var auxiliaryContainers: [AuxiliaryContainer] = []
     /// Containers whose window has been given a position. Placement happens once, on first show, so
     /// re-opening a window the user has moved never yanks it back.
@@ -186,6 +187,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // After `start()`: the catalog is reconciled against the containers that actually opened,
             // and against the holders the skin's own scripts built while starting.
             makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
+            setupHostedWindowMaterializer(loaded: loaded, host: host, scripts: scripts,
+                                          componentBridge: componentBridge)
             revealEmbeddedLibraryAtStartup()
             // The host-bound readouts get their opening value here — the queue is usually already
             // populated by now — and a slow poll keeps them honest through playlist edits.
@@ -420,6 +423,95 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// when a fallback window should keep its own defaults rather than guess at a theme.
     var currentPalette: WasabiPalette? { skinView?.renderer.palette }
 
+    // MARK: - NullPlayer-hosted windows
+
+    private func setupHostedWindowMaterializer(loaded: WinampModernLoadedSkin,
+                                               host: WinampModernHost,
+                                               scripts: WinampModernScriptRuntime,
+                                               componentBridge: WinampModernComponentBridge) {
+        componentBridge.hostedWindowSurfaceContextProvider = { [weak self] id in
+            WinampModernHostedSurfaceContext(
+                audioEngine: WindowManager.shared.audioEngine,
+                nativeWindow: { [weak self] in self?.hostedWindow(ifMaterialized: id) },
+                requestClose: { [weak self] in self?.hideHostedWindow(id) },
+                requestFullscreen: { [weak self] in
+                    self?.hostedWindow(ifMaterialized: id)?.toggleFullScreen(nil)
+                }
+            )
+        }
+        hostedWindowMaterializer = WinampModernHostedWindowMaterializer(
+            loadedSkin: loaded,
+            host: host,
+            scripts: scripts,
+            componentHost: componentBridge,
+            skinScale: { [weak self] in self?.skinScale ?? 1 },
+            classicFallback: { id, showOnly in
+                WindowManager.shared.showClassicHostedWindowForWinampModern(id, showOnly: showOnly)
+            },
+            instanceDidMaterialize: { [weak self] instance in
+                guard let self else { return }
+                viewsByContainer[instance.view.containerID] = instance.view
+                instance.view.surfaceToggleRequested = { [weak self] kind in
+                    guard let coordinator = self?.surfaceCoordinator, coordinator.handles(kind) else {
+                        return false
+                    }
+                    coordinator.toggleSurface(kind)
+                    return true
+                }
+            },
+            instanceWillTeardown: { [weak self] instance in
+                self?.viewsByContainer.removeValue(forKey: instance.view.containerID)
+            },
+            visibilityDidChange: { id, visible, frame in
+                WindowManager.shared.hostedWindowVisibilityDidChange(
+                    id: id, visible: visible, transitionFrame: frame)
+            }
+        )
+    }
+
+    func handlesHostedWindow(_ id: WinampModernHostedWindowID) -> Bool {
+        hostedWindowMaterializer?.handles(id) == true
+    }
+
+    @discardableResult
+    func showHostedWindow(_ id: WinampModernHostedWindowID, frame: NSRect? = nil) -> Bool {
+        hostedWindowMaterializer?.show(id, frame: frame) == true
+    }
+
+    @discardableResult
+    func toggleHostedWindow(_ id: WinampModernHostedWindowID) -> Bool {
+        hostedWindowMaterializer?.toggle(id) == true
+    }
+
+    func hideHostedWindow(_ id: WinampModernHostedWindowID) {
+        hostedWindowMaterializer?.hide(id)
+    }
+
+    func isHostedWindowVisible(_ id: WinampModernHostedWindowID) -> Bool {
+        hostedWindowMaterializer?.isVisible(id) == true
+    }
+
+    func hostedWindow(ifMaterialized id: WinampModernHostedWindowID) -> NSWindow? {
+        hostedWindowMaterializer?.nativeWindow(ifMaterialized: id)
+    }
+
+    func hostedWindow(materializing id: WinampModernHostedWindowID) -> NSWindow? {
+        hostedWindowMaterializer?.nativeWindow(materializing: id)
+    }
+
+    func hostedWindowSurface(_ id: WinampModernHostedWindowID) -> WinampModernHostedSurface? {
+        componentBridge?.currentHostedWindowSurface(id: id)
+    }
+
+    var materializedHostedWindows: [WinampModernHostedWindowMaterializer.MaterializedWindow] {
+        hostedWindowMaterializer?.materializedWindows ?? []
+    }
+
+    /// Already-created skin-owned windows only. Reading this never materializes a hosted window.
+    var materializedAuxiliaryWindows: [NSWindow] {
+        auxiliaryContainers.map(\.window)
+    }
+
     private func makeSurfaceCoordinator(loaded: WinampModernLoadedSkin,
                                         scripts: WinampModernScriptRuntime) {
         let hosted = Set(auxiliaryContainers.map(\.containerID))
@@ -471,8 +563,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // `TOGGLE <container-id>`: the skin's own windows, addressed by name. Case-insensitive
         // because a skin writes the id as it likes and its own container declaration is the match.
         let toggleContainer: (String) -> Bool = { [weak self] id in
-            guard let self,
-                  let matchedID = Self.matchingContainerID(id,
+            guard let self else { return false }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
+                _ = hostedWindowMaterializer?.toggle(hostedID)
+                return true
+            }
+            guard let matchedID = Self.matchingContainerID(id,
                                                            in: auxiliaryContainers.map(\.containerID)),
                   let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
             else { return false }
@@ -487,9 +584,18 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // request is idempotent on purpose: the skin also calls `show()` from timers, and acting on
         // one that asks for the state the window is already in would re-front it 30 times a second.
         scripts.containerVisibilityRequested = { [weak self] id, visible in
-            guard let self,
-                  let matchedID = Self.matchingContainerID(id,
-                                                           in: auxiliaryContainers.map(\.containerID)),
+            guard let self else { return }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
+                if visible {
+                    _ = hostedWindowMaterializer?.show(hostedID)
+                } else {
+                    hostedWindowMaterializer?.hide(hostedID)
+                }
+                return
+            }
+            guard let matchedID = Self.matchingContainerID(
+                id, in: auxiliaryContainers.map(\.containerID)),
                   let container = auxiliaryContainers.first(where: { $0.containerID == matchedID }),
                   container.window.isVisible != visible
             else { return }
@@ -499,9 +605,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // window, not by the graph attribute — `setAuxiliaryWindow` and the close button both move a
         // window without writing it.
         scripts.containerVisibilityQuery = { [weak self] id in
-            guard let self,
-                  let matchedID = Self.matchingContainerID(id,
-                                                           in: auxiliaryContainers.map(\.containerID)),
+            guard let self else { return nil }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
+                return hostedWindowMaterializer?.isVisible(hostedID)
+            }
+            guard let matchedID = Self.matchingContainerID(
+                id, in: auxiliaryContainers.map(\.containerID)),
                   let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
             else { return nil }
             return container.window.isVisible
@@ -517,6 +627,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                mainID.caseInsensitiveCompare(id) == .orderedSame {
                 return view.window?.isKeyWindow ?? false
             }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               let window = hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) {
+                return window.isKeyWindow
+            }
             guard let matchedID = Self.matchingContainerID(id,
                                                            in: auxiliaryContainers.map(\.containerID)),
                   let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
@@ -527,6 +641,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     static func matchingContainerID(_ requestedID: String, in containerIDs: [String]) -> String? {
         containerIDs.first { $0.caseInsensitiveCompare(requestedID) == .orderedSame }
+    }
+
+    private static func matchingHostedWindowID(_ requestedID: String)
+        -> WinampModernHostedWindowID? {
+        WinampModernHostedWindowID.allCases.first {
+            $0.containerIdentifier.caseInsensitiveCompare(requestedID) == .orderedSame
+        }
     }
 
     /// Show the library in the skin's own window at launch, instead of waiting for the user to pick
@@ -1168,6 +1289,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             container.view.setFrameSize(size)
             container.view.needsDisplay = true
         }
+        hostedWindowMaterializer?.applySkinScale(skinScale)
         applyLayoutConstraints()
         skinView?.needsDisplay = true
     }
@@ -1286,6 +1408,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private func tearDownSkin() {
         // A scale the outgoing skin asked for is not owed to the incoming one.
         pendingUIScaleRequest = nil
+        hostedWindowMaterializer?.teardown()
+        hostedWindowMaterializer = nil
         // Auxiliary views share the main view's script runtime + host, so tear them down first
         // (they only release their own renderer); the main view then tears down the shared runtime.
         for container in auxiliaryContainers {
@@ -1312,6 +1436,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // The visualization engine stops with the skin that asked for it: an OpenGL context and a
         // display link left running behind a torn-down window is a frame a second nobody sees (B20a).
         componentBridge?.releaseVisualizationSurface()
+        componentBridge?.releaseHostedWindowSurfaces()
         skinView?.teardown()
         skinView = nil
         host?.endVisualizationConsumption()

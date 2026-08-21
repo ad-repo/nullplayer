@@ -13,6 +13,9 @@ final class WinampModernMainView: NSView {
     /// Live visualization surfaces by holder id — the skin's AVS window, filled with the host's own
     /// visualization engine rather than the engine-drawn analyzer (B20a).
     private var visualizationSurfaces: [WasabiObjectID: WinampModernVisualizationSurface] = [:]
+    /// Live synthesized host-window surfaces by holder id. The bridge may hand the same adapter back
+    /// when a holder returns; this dictionary tracks only the holders present in this scene right now.
+    private var hostedWindowSurfaces: [WasabiObjectID: WinampModernHostedSurface] = [:]
 
     /// UI Size, as a multiplier on the skin's own pixel grid. The scene is always laid out in skin
     /// pixels — the scale is applied once at the drawing boundary and undone once at the input
@@ -24,6 +27,7 @@ final class WinampModernMainView: NSView {
             for surface in librarySurfaces.values { surface.applySkinScale(skinScale) }
             for surface in videoSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in visualizationSurfaces.values { surface.applySkinScale(skinScale) }
+            for surface in hostedWindowSurfaces.values { surface.applySkinScale(skinScale) }
             invalidateRectCaches()
             needsLayout = true
             needsDisplay = true
@@ -51,6 +55,7 @@ final class WinampModernMainView: NSView {
     private var tracking: NSTrackingArea?
     private var animationTimer: Timer?
     private(set) var isTornDown = false
+    private var sceneIsVisible = false
     var canvasSizeDidChange: ((CGSize) -> Void)?
     /// Returns true if the skin provides a separate native window for the kind and it was toggled.
     var componentWindowToggleRequested: ((WinampModernComponentKind) -> Bool)?
@@ -234,6 +239,7 @@ final class WinampModernMainView: NSView {
     /// their Layer FX on there, and its speaker cabinets start their timer there — so a window shown
     /// with `orderFront` alone (an AppKit call the graph never hears about) leaves the scene frozen.
     func setSceneVisible(_ visible: Bool) {
+        sceneIsVisible = visible
         scripts.notifyContainerVisibility(containerID: containerID, visible: visible)
         if visible {
             updateAnimationTimer()
@@ -242,7 +248,25 @@ final class WinampModernMainView: NSView {
             // never asked again. This is the ask (B20a).
             layoutSubtreeIfNeeded()
             for surface in visualizationSurfaces.values { surface.resumeRendering() }
+            for surface in hostedWindowSurfaces.values { surface.resume() }
             needsDisplay = true
+        } else {
+            for surface in hostedWindowSurfaces.values { surface.suspend() }
+        }
+    }
+
+    /// Visibility of host-owned consumers is stricter than Wasabi window visibility: an occluded or
+    /// miniaturized native window is still logically shown to the skin, but its timers/display links
+    /// must stop until pixels can be seen again.
+    func setHostedContentActive(_ active: Bool) {
+        for surface in hostedWindowSurfaces.values {
+            if active { surface.resume() } else { surface.suspend() }
+        }
+    }
+
+    func hasHostedWindowSurface(_ id: WinampModernHostedWindowID) -> Bool {
+        renderer.componentHolders().contains { holder in
+            holder.hostedWindowID == id && hostedWindowSurfaces[holder.object.stableID] != nil
         }
     }
 
@@ -283,6 +307,8 @@ final class WinampModernMainView: NSView {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
         for surface in videoSurfaces.values { surface.applyPalette(renderer.palette) }
         for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }
+        let style = WinampModernSurfaceStyle(palette: renderer.palette)
+        for surface in hostedWindowSurfaces.values { surface.applyPalette(style) }
         NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
         needsDisplay = true
     }
@@ -590,6 +616,25 @@ final class WinampModernMainView: NSView {
             surface.unmountFromHolder()
             videoSurfaces[id] = nil
         }
+
+        var liveHostedWindows: Set<WasabiObjectID> = []
+        let hostedStyle = WinampModernSurfaceStyle(palette: renderer.palette)
+        for holder in renderer.componentHolders() {
+            guard case .hostWindow(let id) = holder.surfaceID else { continue }
+            liveHostedWindows.insert(holder.object.stableID)
+            guard hostedWindowSurfaces[holder.object.stableID] == nil,
+                  let surface = componentHost?.makeHostedWindowSurface(id: id) else { continue }
+            hostedWindowSurfaces[holder.object.stableID] = surface
+            surface.applySkinScale(skinScale)
+            surface.applyPalette(hostedStyle)
+            addSubview(surface.view)
+            if sceneIsVisible { surface.resume() }
+        }
+        for (id, surface) in hostedWindowSurfaces where !liveHostedWindows.contains(id) {
+            surface.suspend()
+            surface.unmountFromHolder()
+            hostedWindowSurfaces[id] = nil
+        }
     }
 
     /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
@@ -637,6 +682,11 @@ final class WinampModernMainView: NSView {
             // The picture is a child window parked on that box, and a child window follows its
             // parent's moves but not a resize of the box inside it.
             surface.updateOutputPlacement()
+        }
+        for holder in renderer.componentHolders() {
+            guard case .hostWindow = holder.surfaceID,
+                  let surface = hostedWindowSurfaces[holder.object.stableID] else { continue }
+            surface.view.frame = viewRect(fromSkin: holder.frame)
         }
     }
 
@@ -1078,6 +1128,8 @@ final class WinampModernMainView: NSView {
         videoSurfaces.removeAll()
         for surface in visualizationSurfaces.values { surface.prepareForUITeardown() }
         visualizationSurfaces.removeAll()
+        for surface in hostedWindowSurfaces.values { surface.prepareForUITeardown() }
+        hostedWindowSurfaces.removeAll()
         // Auxiliary container views share the skin's single script runtime and host; only the
         // main (script-driving) view tears those down. Every view tears down its own renderer.
         if drivesScripts { scripts.teardown() } else { scripts.removeAuxiliaryRepaintSink(owner: self) }

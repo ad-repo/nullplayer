@@ -969,11 +969,19 @@ final class WasabiSceneRenderer {
         sceneNodes().compactMap { node in
             guard WinampModernComponentRegistry.isHolderElement(node.object.typeName) else { return nil }
             guard isVisible(node.object) else { return nil }
-            guard let kind = Self.componentKind(of: node.object) else { return nil }
-            if kind == .other, let diagnostic = Self.unknownComponentDiagnostic(for: node.object) {
+            guard var surfaceID = Self.surfaceID(of: node.object) else { return nil }
+            // The source/attribute/token checks prevent ordinary XML spoofing. The runtime identity
+            // closes the remaining edge: after a host content group is registered, skin MAKI must
+            // not be able to instantiate it beneath a lookalike container of its own.
+            if case .hostWindow = surfaceID,
+               !loadedSkin.runtime.isTrustedHostedHolder(node.object) {
+                surfaceID = .component(.other)
+            }
+            if surfaceID.componentKind == .other,
+               let diagnostic = Self.unknownComponentDiagnostic(for: node.object) {
                 loadedSkin.runtime.record(diagnostic)
             }
-            return WinampModernComponentHolder(object: node.object, kind: kind, frame: node.frame)
+            return WinampModernComponentHolder(object: node.object, surfaceID: surfaceID, frame: node.frame)
         }
     }
 
@@ -984,12 +992,18 @@ final class WasabiSceneRenderer {
     /// The kind a holder element hosts. `<component param="guid:…">` is the third holder form (the
     /// one mmd3/CornerAmp/Winamp Modern actually use for their playlist and library content), and it
     /// names its component in `param` rather than in `hold`.
+    static func surfaceID(of object: WasabiObject) -> WinampModernSurfaceID? {
+        guard let reference = componentReference(of: object) else { return nil }
+        if let hosted = hostedWindowID(for: object, reference: reference) {
+            return .hostWindow(hosted)
+        }
+        // A holder that names something unrecognizable stays in the scene as an inert `.other`
+        // component: an unknown GUID must never fall through to a host surface it did not ask for.
+        return .component(WinampModernComponentRegistry.kind(for: reference) ?? .other)
+    }
+
     static func componentKind(of object: WasabiObject) -> WinampModernComponentKind? {
-        let reference = componentReference(of: object)
-        guard let reference else { return nil }
-        // A holder that names something unrecognizable stays in the scene as an inert `.other` frame:
-        // an unknown GUID must never fall through to a host surface it did not ask for.
-        return WinampModernComponentRegistry.kind(for: reference) ?? .other
+        surfaceID(of: object)?.componentKind
     }
 
     /// The raw component reference a holder declares, in the order Wasabi reads them for that element.
@@ -1011,6 +1025,31 @@ final class WasabiSceneRenderer {
         return object.attributes["id"].flatMap {
             WinampModernComponentRegistry.kindFromHolderIdentifier($0) != nil ? $0 : nil
         }
+    }
+
+    private static func hostedWindowID(for object: WasabiObject, reference: String)
+        -> WinampModernHostedWindowID? {
+        guard object.source.path == WasabiSurfaceSynthesizer.sourcePath else { return nil }
+        guard let container = enclosingContainer(of: object),
+              container.attributes[WinampModernContainerTopology.synthesizedAttribute] == "1"
+        else { return nil }
+        for id in WinampModernHostedWindowID.allCases {
+            if reference == "guid:np.\(id.rawValue)" {
+                return WinampModernHostedWindowRegistry.entry(id: id)?.id
+            }
+        }
+        return nil
+    }
+
+    private static func enclosingContainer(of object: WasabiObject) -> WasabiObject? {
+        var node: WasabiObject? = object
+        while let current = node {
+            if current.typeName.caseInsensitiveCompare("container") == .orderedSame {
+                return current
+            }
+            node = current.parent
+        }
+        return nil
     }
 
     private static func unknownComponentDiagnostic(for object: WasabiObject) -> WalDiagnostic? {

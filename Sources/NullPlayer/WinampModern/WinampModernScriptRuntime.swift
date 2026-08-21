@@ -608,6 +608,26 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         deliverXUIParams(forSubtreeOf: root)
     }
 
+    /// Start a subtree inserted by the host after global skin startup. The ordering is the same as
+    /// any runtime-created group: object-owned `onScriptLoaded`, then XUI params. Global scripts are
+    /// already running and are deliberately not restarted.
+    func startTrustedHostedWindowScripts(beneath root: WasabiObject) throws {
+        guard root.typeName.caseInsensitiveCompare("container") == .orderedSame,
+              root.source.path == WasabiSurfaceSynthesizer.sourcePath,
+              root.attributes[WinampModernContainerTopology.synthesizedAttribute] == "1"
+        else {
+            throw WalFailure(WalDiagnostic(.unsupportedScriptCapability,
+                                           "Refused to start an untrusted hosted-window subtree.",
+                                           location: root.source))
+        }
+        if let layout = root.children.first(where: {
+            $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
+        }) {
+            activeLayoutByContainer[root.stableID] = layout.stableID
+        }
+        try startScripts(addedBeneath: root)
+    }
+
     @discardableResult
     func dispatchSystem(event: String, arguments: [MakiValue] = []) throws -> Int {
         if recordsDispatchedEventsForTesting {

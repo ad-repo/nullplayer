@@ -118,6 +118,7 @@ verbatim; it just lives in a reference file now.
 | The window layer these views sit in | [reference/components.md](reference/components.md) |
 | Where a surface lives | [reference/components.md](reference/components.md) |
 | Synthesizing a missing window | [reference/components.md](reference/components.md) |
+| NullPlayer-owned hosted windows are lazy | [reference/components.md](reference/components.md) |
 | Container-scoped layout callbacks | [reference/components.md](reference/components.md) |
 | Resize, and why a skin needs it | [reference/components.md](reference/components.md) |
 | Colours and hosted AppKit content | [reference/components.md](reference/components.md) |
@@ -168,6 +169,9 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Keyboard accelerator names | `WinampModernKeyAccelerator.swift` |
 | `AudioEngine` component bridge | `Windows/WinampModern/WinampModernComponentBridge.swift` |
 | Surface routing | `Windows/WinampModern/WinampModernSurfaceCoordinator.swift` |
+| Application-owned hosted-window registry | `WinampModernHostedWindows.swift` |
+| Lazy hosted-window materializer + surface contract | `Windows/WinampModern/WinampModernHostedWindowMaterializer.swift`, `…HostedWindowSurface.swift` |
+| Shared `.wal` fallback chrome | `WinampModernChrome.swift` |
 | Embedded library surface | `Windows/WinampModern/WinampModernLibrarySurfaceView.swift` |
 
 Design records and per-phase handoffs: `docs/winamp-modern/` — see its `INDEX.md`.

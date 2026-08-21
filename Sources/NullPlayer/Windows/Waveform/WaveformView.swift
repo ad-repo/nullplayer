@@ -6,8 +6,11 @@ class WaveformView: BaseWaveformView {
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
+    private var hostedContext: WinampModernHostedSurfaceContext?
+    private var hostedStyle: WinampModernSurfaceStyle?
 
     override var waveformRect: NSRect {
+        if hostedContext != nil { return bounds }
         let titleHeight = SkinElements.WaveformWindow.Layout.titleBarHeight
         let leftBorder = SkinElements.WaveformWindow.Layout.leftBorder
         let rightBorder = SkinElements.WaveformWindow.Layout.rightBorder
@@ -24,6 +27,20 @@ class WaveformView: BaseWaveformView {
     }
 
     override var waveformColors: WaveformRenderColors {
+        if let style = hostedStyle {
+            return WaveformRenderColors(
+                background: style.background,
+                backgroundMode: .opaque,
+                backgroundOpacity: 1,
+                contentOpacity: 1,
+                waveform: style.text,
+                playedWaveform: style.currentText,
+                cuePoint: style.dimText,
+                playhead: style.selectionText,
+                text: style.text,
+                selection: style.selectionBackground
+            )
+        }
         let transparent = WindowManager.shared.isWaveformTransparentBackgroundEnabled()
         return WaveformRenderColors(
             background: NSColor.black,
@@ -48,6 +65,8 @@ class WaveformView: BaseWaveformView {
         setAccessibilityLabel("NullPlayer Waveform")
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -59,6 +78,8 @@ class WaveformView: BaseWaveformView {
         setAccessibilityLabel("NullPlayer Waveform")
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
     }
 
     deinit {
@@ -87,21 +108,38 @@ class WaveformView: BaseWaveformView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
-        let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-        let renderer = SkinRenderer(skin: skin)
+        if hostedContext != nil {
+            drawWaveform(in: context)
+            return
+        }
+
         let isActive = window?.isKeyWindow ?? true
 
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
-        renderer.drawSpectrumAnalyzerWindow(
-            in: context,
-            bounds: bounds,
-            isActive: isActive,
-            pressedButton: pressedClose ? .close : nil,
-            controlScale: WindowManager.shared.playlistChromeScale,
-            title: "WAVEFORM"
-        )
+        if let style = WindowManager.shared.winampModernSurfaceStyle {
+            WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+                in: context,
+                bounds: bounds,
+                metrics: .waveform,
+                isActive: isActive,
+                isClosePressed: pressedClose,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "WAVEFORM",
+                fillBackground: true
+            )
+        } else {
+            let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+            SkinRenderer(skin: skin).drawSpectrumAnalyzerWindow(
+                in: context,
+                bounds: bounds,
+                isActive: isActive,
+                pressedButton: pressedClose ? .close : nil,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "WAVEFORM"
+            )
+        }
         context.restoreGState()
 
         drawWaveform(in: context)
@@ -121,8 +159,16 @@ class WaveformView: BaseWaveformView {
         }
     }
 
+    @objc private func winampModernThemeDidChange() {
+        needsDisplay = true
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if hostedContext != nil {
+            if waveformRect.contains(point) { beginWaveformDrag(at: point) }
+            return
+        }
         if closeButtonRect().contains(point) {
             pressedClose = true
             needsDisplay = true
@@ -190,5 +236,31 @@ class WaveformView: BaseWaveformView {
             width: 9,
             height: 9
         )
+    }
+
+    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
+        hostedContext = context
+        autoresizingMask = [.width, .height]
+        needsDisplay = true
+    }
+}
+
+extension WaveformView: WinampModernHostedWaveformSurface {
+    var view: NSView { self }
+    func applyPalette(_ style: WinampModernSurfaceStyle) {
+        hostedStyle = style
+        needsDisplay = true
+    }
+    func applySkinScale(_ scale: CGFloat) { needsDisplay = true }
+    func resume() {
+        if currentTrack != nil { reloadWaveform(force: false) }
+    }
+    func suspend() { stopLoadingForHide() }
+    func unmountFromHolder() { removeFromSuperview() }
+    func prepareForUITeardown() {
+        stopLoadingForHide()
+        stopAppearanceObservation()
+        hostedContext = nil
+        removeFromSuperview()
     }
 }

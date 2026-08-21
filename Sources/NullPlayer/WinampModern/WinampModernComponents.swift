@@ -105,8 +105,17 @@ enum WinampModernComponentRegistry {
 /// frame resolved in the active scene (skin coordinates, top-left origin).
 struct WinampModernComponentHolder {
     let object: WasabiObject
-    let kind: WinampModernComponentKind
+    let surfaceID: WinampModernSurfaceID
     let frame: CGRect
+
+    /// Legacy accessor for the real Winamp components already routed through this type. Hosted
+    /// NullPlayer windows are not components, so they report `.other` here until their dedicated
+    /// call sites switch to `surfaceID`.
+    var kind: WinampModernComponentKind { componentKind ?? .other }
+
+    var componentKind: WinampModernComponentKind? { surfaceID.componentKind }
+
+    var hostedWindowID: WinampModernHostedWindowID? { surfaceID.hostedWindowID }
 }
 
 // MARK: - Host adapter seam
@@ -242,6 +251,10 @@ protocol WinampModernComponentHost: AnyObject {
     /// visualization output exists in this session.
     func makeVisualizationSurface() -> WinampModernVisualizationSurface?
 
+    /// A synthesized `.wal` host window owned by NullPlayer rather than by a real Winamp component.
+    /// `nil` until that hosted-window id has a runtime adapter implementation.
+    func makeHostedWindowSurface(id: WinampModernHostedWindowID) -> WinampModernHostedSurface?
+
     /// Fallback for a component the skin does not embed: surface it through the classic
     /// WindowManager window instead of a skin-owned holder.
     func toggleClassicWindow(for kind: WinampModernComponentKind)
@@ -251,6 +264,7 @@ extension WinampModernComponentHost {
     func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
     func makeVideoSurface() -> WinampModernVideoSurface? { nil }
     func makeVisualizationSurface() -> WinampModernVisualizationSurface? { nil }
+    func makeHostedWindowSurface(id: WinampModernHostedWindowID) -> WinampModernHostedSurface? { nil }
     /// A host with no selection model of its own keeps the single anchor it already had.
     func playlistSetSelection(_ rows: Set<Int>) { playlistSelect(row: rows.min() ?? -1) }
     /// Highest row first, so each removal cannot shift the rows still to come.

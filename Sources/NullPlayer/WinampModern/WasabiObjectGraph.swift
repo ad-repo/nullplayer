@@ -207,6 +207,26 @@ final class WasabiObjectGraph {
         return lines.joined(separator: "\n")
     }
 
+    /// Remove one runtime-created tree completely. This is intentionally graph-owned so a failed
+    /// trusted materialization cannot leave promoted roots or stale id lookups behind.
+    func discardSubtree(_ root: WasabiObject) {
+        guard !isTornDown, objectsByID[root.stableID] === root else { return }
+        var ids: [WasabiObjectID] = []
+        func collect(_ object: WasabiObject) {
+            ids.append(object.stableID)
+            for child in object.children { collect(child) }
+        }
+        collect(root)
+        root.parent?.removeChild(root)
+        detachRoot(root)
+        root.teardownRecursively()
+        for id in ids {
+            objectsByID[id] = nil
+            invalidated[id] = nil
+        }
+        mutationGeneration &+= 1
+    }
+
     func teardown() {
         guard !isTornDown else { return }
         // Include detached/orphaned objects held by callers, not only the current root forest.

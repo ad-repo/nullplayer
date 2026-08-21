@@ -27,6 +27,7 @@ class SpectrumView: NSView {
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
+    private var hostedContext: WinampModernHostedSurfaceContext?
     
     /// Observer for spectrum data notifications
     private var spectrumObserver: NSObjectProtocol?
@@ -70,6 +71,8 @@ class SpectrumView: NSView {
                                                name: .visClassicProfileCommand, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
         WindowManager.shared.audioEngine.addSpectrumConsumer("spectrumView")
     }
     
@@ -99,6 +102,7 @@ class SpectrumView: NSView {
         if isFullscreen {
             return bounds
         }
+        if hostedContext != nil { return bounds }
         
         // Content area inside the chrome
         let titleHeight = WindowManager.shared.hideTitleBars ? CGFloat(0) : Layout.titleBarHeight
@@ -156,10 +160,12 @@ class SpectrumView: NSView {
             context.fill(bounds)
             return
         }
+        if hostedContext != nil {
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(bounds)
+            return
+        }
         
-        // Use current skin
-        let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-        let renderer = SkinRenderer(skin: skin)
         let isActive = window?.isKeyWindow ?? true
         
         // Flip coordinate system to match skin's top-down coordinates
@@ -172,11 +178,26 @@ class SpectrumView: NSView {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
 
-        // Draw window chrome with an explicit title over the skin's decorative rails.
-        renderer.drawSpectrumAnalyzerWindow(in: context, bounds: bounds, isActive: isActive,
-                                            pressedButton: pressedButton,
-                                            controlScale: WindowManager.shared.playlistChromeScale,
-                                            title: "SPECTRUM ANALYZER")
+        if let style = WindowManager.shared.winampModernSurfaceStyle {
+            WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+                in: context,
+                bounds: bounds,
+                metrics: .spectrumFamily,
+                isActive: isActive,
+                isClosePressed: pressedButton == .close,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "SPECTRUM ANALYZER",
+                fillBackground: true
+            )
+        } else {
+            let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+            SkinRenderer(skin: skin).drawSpectrumAnalyzerWindow(
+                in: context, bounds: bounds, isActive: isActive,
+                pressedButton: pressedButton,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "SPECTRUM ANALYZER"
+            )
+        }
         
         context.restoreGState()
 
@@ -238,6 +259,10 @@ class SpectrumView: NSView {
         spectrumAnalyzerView?.skinDidChange()
         needsDisplay = true
     }
+
+    @objc private func winampModernThemeDidChange() {
+        needsDisplay = true
+    }
     
     func setFullscreen(_ enabled: Bool) {
         isFullscreen = enabled
@@ -268,6 +293,12 @@ class SpectrumView: NSView {
     func startRendering() {
         // Restart the Metal display link when window becomes visible
         spectrumAnalyzerView?.startDisplayLink()
+    }
+
+    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
+        hostedContext = context
+        autoresizingMask = [.width, .height]
+        updateSpectrumFrame()
     }
     
     // MARK: - Hit Testing
@@ -303,6 +334,11 @@ class SpectrumView: NSView {
 
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
+
+        if hostedContext != nil {
+            if event.clickCount == 2 { cycleQualityMode() }
+            return
+        }
         
         // Check close button
         if hitTestCloseButton(at: skinPoint) {
@@ -405,13 +441,19 @@ class SpectrumView: NSView {
 
         switch event.keyCode {
         case 53: // Escape - close window or exit fullscreen
-            if isFullscreen {
+            if let hostedContext {
+                hostedContext.requestClose()
+            } else if isFullscreen {
                 controller?.toggleFullscreen()
             } else {
                 window?.close()
             }
         case 3: // F key - toggle fullscreen
-            controller?.toggleFullscreen()
+            if let hostedContext {
+                hostedContext.requestFullscreen()
+            } else {
+                controller?.toggleFullscreen()
+            }
         case 123: // Left arrow - previous style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
                 cycleFlameStyle(forward: false)
@@ -787,5 +829,22 @@ class SpectrumView: NSView {
     override func layout() {
         super.layout()
         updateSpectrumFrame()
+    }
+}
+
+extension SpectrumView: WinampModernHostedSurface {
+    var view: NSView { self }
+    func applyPalette(_ style: WinampModernSurfaceStyle) { needsDisplay = true }
+    func applySkinScale(_ scale: CGFloat) {
+        updateSpectrumFrame()
+        needsDisplay = true
+    }
+    func resume() { startRendering() }
+    func suspend() { stopRendering() }
+    func unmountFromHolder() { removeFromSuperview() }
+    func prepareForUITeardown() {
+        stopRendering()
+        removeFromSuperview()
+        hostedContext = nil
     }
 }

@@ -13,6 +13,8 @@ final class NetworkMonitorView: NSView {
     private let renderState = NetworkMonitorRenderState()
     private var animationTimer: Timer?
     private var direction = NetworkMonitorDirection.load()
+    private var hostedContext: WinampModernHostedSurfaceContext?
+    private var hostedMonitor: NetworkThroughputMonitor?
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
         SkinElements.SpectrumWindow.Layout.self
@@ -44,9 +46,12 @@ final class NetworkMonitorView: NSView {
             name: .connectedWindowHighlightDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
     }
 
     private func contentAreaRect() -> NSRect {
+        if hostedContext != nil { return bounds }
         let titleHeight = WindowManager.shared.hideTitleBars ? 0 : chromeLayout.titleBarHeight
         return NSRect(
             x: chromeLayout.leftBorder + 2,
@@ -61,13 +66,17 @@ final class NetworkMonitorView: NSView {
         let contentRect = contentAreaRect()
         let animationRect = contentAnimationRect(from: contentRect)
 
+        if hostedContext != nil {
+            NSColor.black.setFill()
+            bounds.fill()
+            drawNetworkContent(in: bounds, clippedTo: bounds)
+            return
+        }
+
         if !isHighlighted && animationRect.contains(dirtyRect) {
             drawNetworkContent(in: contentRect, clippedTo: animationRect)
             return
         }
-
-        let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-        let renderer = SkinRenderer(skin: skin)
 
         NSColor.black.setFill()
         bounds.fill()
@@ -80,14 +89,28 @@ final class NetworkMonitorView: NSView {
         if WindowManager.shared.hideTitleBars {
             context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
         }
-        renderer.drawSpectrumAnalyzerWindowChromeOverlay(
-            in: context,
-            bounds: bounds,
-            isActive: window?.isKeyWindow ?? true,
-            pressedButton: pressedButton,
-            controlScale: WindowManager.shared.playlistChromeScale,
-            title: "FLOW"
-        )
+        if let style = WindowManager.shared.winampModernSurfaceStyle {
+            WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+                in: context,
+                bounds: bounds,
+                metrics: .spectrumFamily,
+                isActive: window?.isKeyWindow ?? true,
+                isClosePressed: pressedButton == .close,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "FLOW",
+                fillBackground: false
+            )
+        } else {
+            let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+            SkinRenderer(skin: skin).drawSpectrumAnalyzerWindowChromeOverlay(
+                in: context,
+                bounds: bounds,
+                isActive: window?.isKeyWindow ?? true,
+                pressedButton: pressedButton,
+                controlScale: WindowManager.shared.playlistChromeScale,
+                title: "FLOW"
+            )
+        }
         context.restoreGState()
 
         if isHighlighted {
@@ -120,6 +143,10 @@ final class NetworkMonitorView: NSView {
     }
 
     func skinDidChange() {
+        needsDisplay = true
+    }
+
+    @objc private func winampModernThemeDidChange() {
         needsDisplay = true
     }
 
@@ -176,7 +203,7 @@ final class NetworkMonitorView: NSView {
     override func mouseDown(with event: NSEvent) {
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToSkinCoordinates(viewPoint)
-        if hitTestCloseButton(at: point) {
+        if hostedContext == nil, hitTestCloseButton(at: point) {
             pressedButton = .close
             needsDisplay = true
             return
@@ -185,6 +212,7 @@ final class NetworkMonitorView: NSView {
             toggleDirection()
             return
         }
+        guard hostedContext == nil else { return }
         if hitTestTitleBar(at: point) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
@@ -202,6 +230,7 @@ final class NetworkMonitorView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
         var origin = window.frame.origin
@@ -211,6 +240,7 @@ final class NetworkMonitorView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard hostedContext == nil else { return }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if isDraggingWindow, let window {
             isDraggingWindow = false
@@ -224,7 +254,11 @@ final class NetworkMonitorView: NSView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        controller?.refreshInterfaces()
+        if let hostedMonitor {
+            interfaces = hostedMonitor.availableInterfaces()
+        } else {
+            controller?.refreshInterfaces()
+        }
         let menu = NSMenu()
         if !interfaces.isEmpty {
             let selectedName = snapshot?.interface?.name
@@ -263,16 +297,26 @@ final class NetworkMonitorView: NSView {
     }
 
     @objc private func cycleInterface(_ sender: Any?) {
-        controller?.cycleInterface()
+        if let hostedMonitor {
+            hostedMonitor.cycleInterface()
+            interfaces = hostedMonitor.availableInterfaces()
+        } else {
+            controller?.cycleInterface()
+        }
     }
 
     @objc private func selectInterface(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
-        controller?.selectInterface(named: name)
+        if let hostedMonitor {
+            hostedMonitor.setSelectedInterface(name)
+            interfaces = hostedMonitor.availableInterfaces()
+        } else {
+            controller?.selectInterface(named: name)
+        }
     }
 
     @objc private func closeWindow(_ sender: Any?) {
-        window?.close()
+        if let hostedContext { hostedContext.requestClose() } else { window?.close() }
     }
 
     @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
@@ -282,5 +326,39 @@ final class NetworkMonitorView: NSView {
             isHighlighted = newValue
             needsDisplay = true
         }
+    }
+
+    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
+        hostedContext = context
+        let monitor = NetworkThroughputMonitor()
+        monitor.onUpdate = { [weak self] snapshot in
+            DispatchQueue.main.async { self?.snapshot = snapshot }
+        }
+        hostedMonitor = monitor
+        interfaces = monitor.availableInterfaces()
+        autoresizingMask = [.width, .height]
+        needsDisplay = true
+    }
+}
+
+extension NetworkMonitorView: WinampModernHostedSurface {
+    var view: NSView { self }
+    func applyPalette(_ style: WinampModernSurfaceStyle) { needsDisplay = true }
+    func applySkinScale(_ scale: CGFloat) { needsDisplay = true }
+    func resume() {
+        hostedMonitor?.start()
+        if let hostedMonitor { interfaces = hostedMonitor.availableInterfaces() }
+        startAnimationTimer()
+    }
+    func suspend() {
+        hostedMonitor?.stop()
+        stopAnimationTimer()
+    }
+    func unmountFromHolder() { removeFromSuperview() }
+    func prepareForUITeardown() {
+        suspend()
+        hostedMonitor = nil
+        hostedContext = nil
+        removeFromSuperview()
     }
 }

@@ -22,6 +22,7 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     private var librarySurface: WinampModernLibrarySurface?
     private var videoSurface: WinampModernVideoSurface?
     private var visualizationSurface: WinampModernVisualizationSurface?
+    private var hostedWindowSurfaces: [WinampModernHostedWindowID: WinampModernHostedSurface] = [:]
     /// The visualization surface if one has been created, without creating one.
     var currentVisualizationSurface: WinampModernVisualizationSurface? { visualizationSurface }
     /// The video surface if one has been created, without creating one.
@@ -29,6 +30,12 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     /// The surface if one has been created, without creating one — session restore must not
     /// instantiate a browser for a skin that never asked for it.
     var currentLibrarySurface: WinampModernLibrarySurface? { librarySurface }
+    /// A future `WindowManager` route must be able to inspect a hosted adapter without creating it.
+    func currentHostedWindowSurface(id: WinampModernHostedWindowID) -> WinampModernHostedSurface? {
+        hostedWindowSurfaces[id]
+    }
+    var hostedWindowSurfaceContextProvider: ((WinampModernHostedWindowID)
+        -> WinampModernHostedSurfaceContext)?
 
     init(engine: AudioEngine) {
         self.engine = engine
@@ -222,6 +229,25 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     func releaseVisualizationSurface() {
         visualizationSurface?.prepareForUITeardown()
         visualizationSurface = nil
+    }
+
+    // MARK: - Hosted windows
+
+    func makeHostedWindowSurface(id: WinampModernHostedWindowID) -> WinampModernHostedSurface? {
+        if let surface = hostedWindowSurfaces[id] { return surface }
+        guard let definition = WinampModernHostedWindowRegistry.entry(id: id),
+              let makeSurface = definition.makeSurface,
+              let context = hostedWindowSurfaceContextProvider?(id) else { return nil }
+        let surface = makeSurface(context)
+        hostedWindowSurfaces[id] = surface
+        return surface
+    }
+
+    /// Hosted views own terminal teardown. The bridge only releases its cache afterwards so an
+    /// adapter cannot receive `prepareForUITeardown()` twice during a skin switch.
+    func releaseHostedWindowSurfaces() {
+        hostedWindowSurfaces.removeAll()
+        hostedWindowSurfaceContextProvider = nil
     }
 
     // MARK: - Classic-window fallback

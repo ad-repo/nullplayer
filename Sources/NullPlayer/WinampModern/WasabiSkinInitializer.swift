@@ -319,6 +319,7 @@ final class WasabiSkinRuntime {
     private var postLoadDiagnostics: [WalDiagnostic] = []
     private var postLoadDiagnosticKeys: Set<String> = []
     private static let maximumPostLoadDiagnostics = 256
+    private var trustedHostedContainerIDs: Set<WasabiObjectID> = []
 
     /// Every diagnostic this skin has produced, load-time first.
     var diagnostics: [WalDiagnostic] { loadDiagnostics + postLoadDiagnostics }
@@ -338,6 +339,30 @@ final class WasabiSkinRuntime {
     /// Set by `WasabiSkinInitializer`, which owns the expansion machinery (type registry, object
     /// limits, script path resolution).
     var instantiateGroup: ((_ identifier: String, _ parent: WasabiObject) throws -> WasabiObject)?
+
+    /// Trusted, host-only request-time window growth. Unlike `instantiateGroup`, this closure is not
+    /// reachable from MAKI and accepts only the typed NullPlayer hosted-window description.
+    var instantiateHostedWindow: ((WinampModernHostedWindowInstantiation) throws -> WasabiObject)?
+
+    func isTrustedHostedHolder(_ object: WasabiObject) -> Bool {
+        var node: WasabiObject? = object
+        while let current = node {
+            if current.typeName.caseInsensitiveCompare("container") == .orderedSame {
+                return trustedHostedContainerIDs.contains(current.stableID)
+            }
+            node = current.parent
+        }
+        return false
+    }
+
+    func discardHostedWindow(_ root: WasabiObject) {
+        trustedHostedContainerIDs.remove(root.stableID)
+        graph.discardSubtree(root)
+    }
+
+    fileprivate func registerHostedWindow(_ root: WasabiObject) {
+        trustedHostedContainerIDs.insert(root.stableID)
+    }
 
     init(resources: WalResourceRegistry, types: WasabiTypeRegistry, graph: WasabiObjectGraph,
          scriptBindings: [WasabiScriptBinding], completedPasses: [WasabiInitializationPass],
@@ -459,7 +484,93 @@ final class WasabiSkinInitializer {
             try instantiateGroupAtRuntime(identifier: identifier, parent: parent,
                                           graph: graph, types: types, createdCount: &createdCount)
         }
+        runtime.instantiateHostedWindow = { [self] request in
+            let root = try instantiateHostedWindowAtRuntime(request, graph: graph, types: types,
+                                                            createdCount: &createdCount)
+            runtime.registerHostedWindow(root)
+            return root
+        }
         return runtime
+    }
+
+    private func instantiateHostedWindowAtRuntime(
+        _ request: WinampModernHostedWindowInstantiation,
+        graph: WasabiObjectGraph,
+        types: WasabiTypeRegistry,
+        createdCount: inout Int
+    ) throws -> WasabiObject {
+        let id = request.definition.id
+        let location = WalSourceLocation(path: WasabiSurfaceSynthesizer.sourcePath)
+        let holder = WalXMLNode(name: "component", attributes: [
+            "id": "\(id.contentGroupIdentifier).surface",
+            "param": id.holderReference,
+            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+        ], location: location)
+        types.register(WasabiGroupDefinition(
+            identifier: id.contentGroupIdentifier,
+            xuiTag: nil,
+            inheritedGroup: nil,
+            embeddedXUITag: nil,
+            defaultAttributes: [:],
+            templateChildren: [holder],
+            source: location
+        ))
+        try types.validateInheritance()
+
+        var layoutAttributes: [String: String] = [
+            "id": "normal",
+            "default_w": String(Int(request.definition.defaultSize.width)),
+            "default_h": String(Int(request.definition.defaultSize.height)),
+            "minimum_w": String(Int(request.definition.minimumSize.width)),
+            "minimum_h": String(Int(request.definition.minimumSize.height)),
+        ]
+        if let maximum = request.definition.maximumSize {
+            if maximum.width.isFinite { layoutAttributes["maximum_w"] = String(Int(maximum.width)) }
+            if maximum.height.isFinite { layoutAttributes["maximum_h"] = String(Int(maximum.height)) }
+        }
+        let frame = WalXMLNode(name: request.frame.xuiTag, attributes: [
+            "id": "\(id.contentGroupIdentifier).frame",
+            "content": id.contentGroupIdentifier,
+            "componentname": request.definition.title,
+            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+        ], location: location)
+        let layout = WalXMLNode(name: "layout", attributes: layoutAttributes,
+                                location: location, children: [frame])
+        let containerNode = WalXMLNode(name: "container", attributes: [
+            "id": id.containerIdentifier,
+            "name": request.definition.title,
+            "default_visible": "0",
+            WinampModernContainerTopology.synthesizedAttribute: "1",
+        ], location: location, children: [layout])
+
+        let rootsBefore = Set(graph.roots.map(\.stableID))
+        var pendingScripts: [PendingScript] = []
+        var pendingMetaCommands: [PendingMetaCommand] = []
+        do {
+            try createObjects(from: [containerNode], parent: nil, graph: graph, types: types,
+                              pendingScripts: &pendingScripts,
+                              pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: [], createdCount: &createdCount,
+                              documentOrder: [:], enclosingOrder: nil)
+            applyMetaCommands(pendingMetaCommands)
+            let bindings = try bindScripts(pendingScripts)
+            for (pending, binding) in zip(pendingScripts, bindings) {
+                pending.owner?.addScriptBinding(binding)
+            }
+            guard let root = graph.roots.first(where: {
+                !rootsBefore.contains($0.stableID) && $0.xmlID == id.containerIdentifier
+            }) else {
+                throw WalFailure(WalDiagnostic(.malformedXML,
+                                               "Hosted window '\(id.rawValue)' created no container.",
+                                               location: location))
+            }
+            return root
+        } catch {
+            for root in graph.roots where !rootsBefore.contains(root.stableID) {
+                graph.discardSubtree(root)
+            }
+            throw error
+        }
     }
 
     /// Expand `identifier`'s groupdef beneath `parent` after load, binding any scripts it declares
