@@ -18,17 +18,17 @@ visualization component; Lobe declares neither a `<vis>` box nor an AVS holder).
 draws and all ten bands plus preamp follow the host.
 
 It **was** input that was broken. B27 fixed ten of the thirteen dead controls and the reporter
-confirmed live 2026-08-21 that they all work. One whole window is still missing (B26).
+confirmed live 2026-08-21 that they all work. The one whole window that was missing is back (B26).
 
 ## What is knowingly missing
 
-- **The About / Colour Themes / manual window does not exist.** Its container declares six layouts
-  (`about1`…`about6`) and none is named `normal`, so `WasabiSceneRenderer.init` throws and
-  `setupAuxiliaryContainers` silently `continue`s past it. The skin's 43-theme picker, its
-  `colorthemes_switch` button and its four manual pages are unreachable by every route: no window, no
-  **Skin Windows** entry, and the player's `CT` button decodes its `TOGGLE param="Color Themes"`
-  correctly and finds nothing to toggle. Winamp uses the container's *first* layout when none is
-  named `normal`.
+- ~~**The About / Colour Themes / manual window does not exist.**~~ — **closed by B26**
+  (2026-08-21). Its container declares six layouts (`about1`…`about6`) and none is named `normal`, so
+  `WasabiSceneRenderer.init` threw and `setupAuxiliaryContainers` silently `continue`d past it: the
+  43-theme picker, the `colorthemes_switch` button and the four manual pages were unreachable by
+  every route. A container with no `normal` layout now opens in its **first** one, Winamp's rule, and
+  all six pages render (the picker lists 43). Its **Skin Windows** entry reads *LOBE* — the
+  container's own `name`. Live verification of the `CT` button and Switch is still owed.
 - ~~**13 of 23 main-window controls are dead where a user aims.**~~ — **closed by B27**
   (2026-08-21, confirmed live). Lobe draws every button as a glassy disc whose maximum alpha is
   **79/255**, with the glyph engraved at alpha **3**, and the hit test required `alpha > 8`, so a
@@ -37,9 +37,17 @@ confirmed live 2026-08-21 that they all work. One whole window is still missing 
   `ml`, `Repeat`, `Shuffle`, `Crossfade`. **This skin is the diagnosis** — see
   [reference/rendering.md](../reference/rendering.md); `toggle-always-on-top` uses the same artwork
   and always worked, because `rectrgn="1"` skips the test, and that is the control experiment.
-- **The seek dial is live on the ring's left and right, dead at its centre, top and bottom** — the
-  13 frames of `seeker.png` are all transparent there, so this survives `alpha > 0` and is arguably
-  faithful. Undecided.
+- **The seek dial and the volume strip work as of B30** (2026-08-21), reported live as "the volume
+  and seek sliders do not work". Neither is a `<slider>`: each is an `<AnimatedLayer>` inside a placed
+  group (`seeker` at 210,10 · `cb` at 273,66) whose script samples a `Map` at
+  `x - anim.getLeft(), y - anim.getTop()`. We handed the handler the **canvas** point, so the dial
+  sampled (213, 26) of a 48×35 map — zero everywhere — and both controls drove 0. Mouse events now
+  carry the receiver's **parent-relative** point. Measured: a click at canvas (240, 51) reads
+  `getValue(3, 16) = 205` → `seekTo(196.9)` on a 245 s track and the skin's own ticker reads
+  *Seek 3:16 / 4:05 (80%)*; (320, 114) on the volume strip reads 61 → *Vol 23%*.
+- **The seek dial is live on the ring, dead at its centre, top and bottom** — the 13 frames of
+  `seeker.png` are all transparent there, so this survives `alpha > 0`. Faithful: the ring is the
+  control, and it is what the script's map is drawn for.
 - **The thinger's `cb_prev`/`cb_next` arrows stay unhittable at rest, correctly** — see the traps
   below.
 - ~~**The visualization window opens 1200 pt tall.**~~ — **closed by B28** (2026-08-21). Lobe
@@ -60,10 +68,13 @@ confirmed live 2026-08-21 that they all work. One whole window is still missing 
 
 ## Traps this skin sets
 
-- **`compatibility level=degraded` is a lie here.** 198 of its 233 findings are
-  `groups/duplicateIdentifier`, every one from Lobe including `player-elements.xml` from both
-  `player.xml` and `eq.xml` (and `components-elements.xml` from both `about.xml` and `components.xml`).
-  That is ordinary Winamp practice. Do not read the level as a symptom on this skin.
+- ~~**`compatibility level=degraded` is a lie here.**~~ — **the count is honest as of B29**
+  (2026-08-21). 198 of its 233 findings were `groups/duplicateIdentifier`, every one from Lobe
+  including `player-elements.xml` from both `player.xml` and `eq.xml` (and `components-elements.xml`
+  from both `about.xml` and `components.xml`) — ordinary Winamp practice. A redefinition now warns
+  only when it actually *differs*, and the skin measures **38 findings, 3 of them duplicates**. The
+  **level** is still `degraded`, and correctly: the remaining 38 are missing bitmaps and two skipped
+  includes, and `.full` means zero findings. Read the findings, not the level.
 - **`CLICKABLE` under-reports on Lobe.** It lists only objects a script *also* hooks the mouse on, so
   plain markup buttons — `Close`, `minimize`, `opacscale` — never appear even though they are dead.
   It reported 7; the real count is 13. Drive `RENDER_CLICK` at each control's centre instead.
@@ -75,10 +86,14 @@ confirmed live 2026-08-21 that they all work. One whole window is still missing 
   because Lobe marks all of them `ghost="1"`, which `object(at:)` honours before the alpha test. A
   skin that decorates a control with a non-ghost faint overlay is the regression vector for B27, and
   `WasabiRenderer.swift` — every non-ghost `layer` is interactive — is the other half of it. **The
-  31-skin `CLICKABLE` before/after sweep that would settle this has not been run** (B27, open).
-- **`RENDER-DUMP skin windows: ["LOBE"]` over-reports.** It reads the raw container topology; the
-  app's menu is built from `auxiliaryContainers`, which this container never enters. Same family as
-  B16 — a blind probe making a real defect look absent.
+  corpus `CLICKABLE` before/after sweep has now been run** (2026-08-21): 28 skins, 231 layouts,
+  124 → 111 rejected-but-scripted objects and **zero rises**, so the vector does not occur in the
+  corpus. LOBE itself accounts for two of the three falls (`main/normal` 7 → 1, `main/switch` 4 → 0).
+- ~~**`RENDER-DUMP skin windows: ["LOBE"]` over-reports.**~~ — **closed by B26.** It read the raw
+  container topology while the app's menu is built from `auxiliaryContainers`, which this container
+  never entered; same family as B16, a blind probe making a real defect look absent. The probe now
+  applies the same "can a renderer open this?" gate and prints `RENDER-DUMP dropped container:` for
+  what it excludes — and this container is no longer excluded.
 - The thinger's `cb_prev`/`cb_next` arrows measure as unhittable, and that is **correct**: at rest the
   whole thinger group sits at z-order 10–11, behind `metalbg` at 68. It is a drawer `sliding2.maki`
   slides out.

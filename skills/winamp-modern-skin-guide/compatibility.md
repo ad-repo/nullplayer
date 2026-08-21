@@ -132,7 +132,10 @@ configurator that way; all three were built, rendered and ordered out, with no r
 
 Measured: Defix → `SPEAKER 1`, `SPEAKER 2`, `Skin Settings`; mmd3 → `ColorThemes`; cPro-Bento →
 `Widgets Manager`; CornerAmp Redux → `Color Themes`; T800 → `Quadhelix Home`; stock Winamp Modern →
-none. The harness prints the list as `RENDER-DUMP skin windows:`. Phase 27.
+none. The harness prints the list as `RENDER-DUMP skin windows:` — gated, since B26, by whether a
+renderer can actually open the container, with the excluded ones printed as `RENDER-DUMP dropped
+container:`. A container whose `name` is an unresolved string-table reference (`:componenttitle`,
+the wasabi standard `Component` shell in three skins) is not listed. Phase 27, B26.
 
 `default_visible="1"` **is honoured** as of Phase 40 — a skin that expects one of these open at load
 (Defix's configurator and playlist editor; 10 containers in 8 of the 17 skins) starts with it on

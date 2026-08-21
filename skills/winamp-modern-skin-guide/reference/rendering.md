@@ -39,6 +39,8 @@ the intended target's own artwork alpha before theorising about z-order. When lo
 threshold, check the skin's hover/pressed overlays: they sit directly above the control and are often
 opaque, and what keeps them out of the way is `ghost="1"`, which `object(at:)` honours first.
 
+**The gate this change needed, and its result.** Lowering a hit-test floor moves no pixels, so no render sweep applies; the regression vector is the opposite direction — a non-ghost layer with faint-but-non-zero alpha drawn *above* a control, which used to let a click through and now takes it. `WINAMP_MODERN_RENDER_CLICKABLE=1` across the installed corpus at both floors settles it: **28 skins, 231 layouts, 124 → 111** rejected-but-scripted objects and **zero rises anywhere** (2026-08-21). A *fall* is the fix working — LOBE `main/normal` 7 → 1, `main/switch` 4 → 0, micro 7 → 4. Run it that way for any future change to `object(at:)`.
+
 Two rules about *which* objects may claim a point:
 
 - **A container has no region of its own — its children supply one.** A `group` (or `layout`) is
