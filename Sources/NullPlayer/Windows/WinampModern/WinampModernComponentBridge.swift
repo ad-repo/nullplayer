@@ -181,6 +181,17 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         return surface
     }
 
+    /// An independent library surface for a `<browser>` element, pre-set to the Data tab (B19).
+    /// NOT cached — each call creates a fresh surface. The view layer owns and tears down each one.
+    func makeBrowserSurface() -> WinampModernLibrarySurface? {
+        let surface = WinampModernLibrarySurfaceView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300),
+            skinScale: { [weak self] in self?.skinScaleProvider?() ?? 1 },
+            presentLinkSheet: { [weak self] in self?.linkSheetPresenter?() })
+        surface.browseModeRawValue = 8 // PlexBrowseMode.history (Data tab)
+        return surface
+    }
+
     /// Release the embedded browser. The view layer tears the surface down first; this only drops the
     /// bridge's own reference, and is safe to call twice.
     func releaseLibrarySurface() {

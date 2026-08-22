@@ -1195,6 +1195,93 @@ final class WinampModernPhase13Tests: XCTestCase {
         }
     }
 
+    // MARK: - B19 Browser element discovery
+
+    func testIsBrowserElementMatchesPlainBrowser() {
+        XCTAssertTrue(WasabiSceneRenderer.isBrowserElement(
+            makeStubObject(typeName: "Browser")))
+        XCTAssertTrue(WasabiSceneRenderer.isBrowserElement(
+            makeStubObject(typeName: "browser")))
+        XCTAssertTrue(WasabiSceneRenderer.isBrowserElement(
+            makeStubObject(typeName: "BROWSER")))
+    }
+
+    func testIsBrowserElementMatchesWinampBrowser() {
+        XCTAssertTrue(WasabiSceneRenderer.isBrowserElement(
+            makeStubObject(typeName: "Winamp:Browser")))
+        XCTAssertTrue(WasabiSceneRenderer.isBrowserElement(
+            makeStubObject(typeName: "winamp:browser")))
+    }
+
+    func testIsBrowserElementRejectsNonBrowser() {
+        XCTAssertFalse(WasabiSceneRenderer.isBrowserElement(
+            makeStubObject(typeName: "group")))
+        XCTAssertFalse(WasabiSceneRenderer.isBrowserElement(
+            makeStubObject(typeName: "windowholder")))
+        XCTAssertFalse(WasabiSceneRenderer.isBrowserElement(
+            makeStubObject(typeName: "component")))
+        XCTAssertFalse(WasabiSceneRenderer.isBrowserElement(
+            makeStubObject(typeName: "layer")))
+    }
+
+    func testBrowserNodesFindsPlainBrowser() throws {
+        let renderer = try makeRenderer(layout: """
+        <Browser id="myBrowser" x="0" y="30" w="0" h="-30" relatw="1" relath="1"/>
+        """)
+        let browsers = renderer.browserNodes()
+        XCTAssertEqual(browsers.count, 1)
+        XCTAssertEqual(browsers.first?.object.xmlID, "myBrowser")
+    }
+
+    func testBrowserNodesFindsWinampBrowser() throws {
+        let renderer = try makeRenderer(layout: """
+        <Winamp:Browser id="cproBrowser" x="0" y="26" w="0" h="-26" relatw="1" relath="1"/>
+        """)
+        let browsers = renderer.browserNodes()
+        XCTAssertEqual(browsers.count, 1)
+        XCTAssertEqual(browsers.first?.object.xmlID, "cproBrowser")
+    }
+
+    func testBrowserNodesFindsHiddenBrowser() throws {
+        let renderer = try makeRenderer(layout: """
+        <group id="tab" visible="0" fitparent="1">
+          <Browser id="hiddenBrowser" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+        </group>
+        """)
+        let browsers = renderer.browserNodes()
+        XCTAssertEqual(browsers.count, 1, "layoutNodes() should find browsers inside hidden groups")
+        XCTAssertEqual(browsers.first?.object.xmlID, "hiddenBrowser")
+    }
+
+    func testBrowserVisibilityTracksParentGroup() throws {
+        let renderer = try makeRenderer(layout: """
+        <group id="tab" visible="0" fitparent="1">
+          <Browser id="tabBrowser" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+        </group>
+        """)
+        let browsers = renderer.browserNodes()
+        XCTAssertEqual(browsers.count, 1)
+        XCTAssertFalse(renderer.isBrowserVisible(browsers[0].object),
+                       "browser inside visible='0' group should not be in the scene")
+    }
+
+    func testBrowserNodesDoesNotMatchHolderElements() throws {
+        let renderer = try makeRenderer(layout: """
+        <windowholder id="wh" x="0" y="0" w="100" h="100" hold="guid:{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}"/>
+        <component id="comp" x="0" y="0" w="100" h="100" param="guid:{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}"/>
+        """)
+        let browsers = renderer.browserNodes()
+        XCTAssertEqual(browsers.count, 0,
+                       "holder elements should not be matched as browser elements")
+    }
+
+    private func makeStubObject(typeName: String) -> WasabiObject {
+        let graph = WasabiObjectGraph()
+        addTeardownBlock { graph.teardown() }
+        return graph.makeObject(typeName: typeName, attributes: [:],
+                                source: WalSourceLocation(path: "test", line: 0, column: 0))
+    }
+
     // MARK: - Helpers
 
     private func makeRenderer(layout: String) throws -> WasabiSceneRenderer {

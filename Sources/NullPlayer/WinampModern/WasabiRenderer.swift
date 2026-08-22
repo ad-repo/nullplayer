@@ -989,6 +989,31 @@ final class WasabiSceneRenderer {
         componentHolders().reversed().first { $0.frame.contains(point) }
     }
 
+    // MARK: - Browser element discovery
+
+    /// Every `<browser>` element in the layout, visible or not (B19). These are NOT component
+    /// holders — they bypass `isHolderElement` (which gates the draw path and hit testing) and have
+    /// their own independent surface lifecycle so they don't compete with the bridge's cached
+    /// library surface. `layoutNodes()` is used instead of `sceneNodes()` so surfaces are created
+    /// eagerly for browser elements inside initially-hidden tab groups; the view layer toggles each
+    /// surface's `isHidden` from the scene set.
+    func browserNodes() -> [(object: WasabiObject, frame: CGRect)] {
+        layoutNodes().compactMap { node in
+            guard Self.isBrowserElement(node.object) else { return nil }
+            return (object: node.object, frame: node.frame)
+        }
+    }
+
+    static func isBrowserElement(_ object: WasabiObject) -> Bool {
+        let lower = object.typeName.lowercased()
+        return lower == "browser" || lower == "winamp:browser"
+    }
+
+    /// Whether a `<browser>` element is currently visible in the scene (all ancestors visible).
+    func isBrowserVisible(_ object: WasabiObject) -> Bool {
+        sceneNodes().contains { $0.object === object }
+    }
+
     /// The kind a holder element hosts. `<component param="guid:…">` is the third holder form (the
     /// one mmd3/CornerAmp/Winamp Modern actually use for their playlist and library content), and it
     /// names its component in `param` rather than in `hold`.

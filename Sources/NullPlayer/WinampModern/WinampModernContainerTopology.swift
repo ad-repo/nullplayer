@@ -173,7 +173,7 @@ enum WinampModernContainerTopology {
 
     /// Winamp's embedded web browser anywhere under the container.
     private static func containsBrowser(_ object: WasabiObject) -> Bool {
-        if object.typeName.caseInsensitiveCompare("browser") == .orderedSame { return true }
+        if WasabiSceneRenderer.isBrowserElement(object) { return true }
         return object.children.contains(where: containsBrowser)
     }
 

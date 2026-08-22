@@ -241,6 +241,11 @@ protocol WinampModernComponentHost: AnyObject {
     // Library — a live host surface embedded at the skin-provided frame, or nil when unavailable.
     func makeLibrarySurface() -> WinampModernLibrarySurface?
 
+    /// An independent library surface for a `<browser>` element, pre-set to the Data tab. Unlike
+    /// `makeLibrarySurface()` this is NOT cached — each `<browser>` element gets its own surface,
+    /// so it never competes with the real library holder for the bridge's single cached instance.
+    func makeBrowserSurface() -> WinampModernLibrarySurface?
+
     /// Video — the same shape as the library's, and for the same reason: the skin draws a window
     /// around a box it cannot fill, and only the host can put the picture in it. `nil` when no video
     /// output exists in this session.
@@ -262,6 +267,7 @@ protocol WinampModernComponentHost: AnyObject {
 
 extension WinampModernComponentHost {
     func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
+    func makeBrowserSurface() -> WinampModernLibrarySurface? { nil }
     func makeVideoSurface() -> WinampModernVideoSurface? { nil }
     func makeVisualizationSurface() -> WinampModernVisualizationSurface? { nil }
     func makeHostedWindowSurface(id: WinampModernHostedWindowID) -> WinampModernHostedSurface? { nil }

@@ -16,6 +16,9 @@ final class WinampModernMainView: NSView {
     /// Live synthesized host-window surfaces by holder id. The bridge may hand the same adapter back
     /// when a holder returns; this dictionary tracks only the holders present in this scene right now.
     private var hostedWindowSurfaces: [WasabiObjectID: WinampModernHostedSurface] = [:]
+    /// Independent library surfaces for `<browser>` elements (B19). Each is non-cached and pre-set
+    /// to the Data tab, completely independent from the bridge's cached library surface.
+    private var browserSurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
 
     /// UI Size, as a multiplier on the skin's own pixel grid. The scene is always laid out in skin
     /// pixels — the scale is applied once at the drawing boundary and undone once at the input
@@ -28,6 +31,7 @@ final class WinampModernMainView: NSView {
             for surface in videoSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in visualizationSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in hostedWindowSurfaces.values { surface.applySkinScale(skinScale) }
+            for surface in browserSurfaces.values { surface.applySkinScale(skinScale) }
             invalidateRectCaches()
             needsLayout = true
             needsDisplay = true
@@ -305,6 +309,7 @@ final class WinampModernMainView: NSView {
     /// can have one of each open at the same time.
     private func themeDidChange() {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
+        for surface in browserSurfaces.values { surface.applyPalette(renderer.palette) }
         for surface in videoSurfaces.values { surface.applyPalette(renderer.palette) }
         for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }
         let style = WinampModernSurfaceStyle(palette: renderer.palette)
@@ -509,7 +514,9 @@ final class WinampModernMainView: NSView {
         // Creating and adding subviews from inside `draw` is a re-entrant view-hierarchy mutation
         // during a draw cycle; reconciliation belongs here, and drawing only draws.
         reconcileHostedSurfaces()
-        layoutHostedSubviews()
+        let browsers = renderer.browserNodes()
+        reconcileBrowserSurfaces(browsers)
+        layoutHostedSubviews(browsers: browsers)
         cachedHolders = nil
     }
 
@@ -642,6 +649,35 @@ final class WinampModernMainView: NSView {
 
     private var cachedHolders: [WinampModernComponentHolder]?
 
+    /// Create/remove independent library surfaces for `<browser>` elements (B19). Each browser gets
+    /// its own non-cached surface pre-set to the Data tab, so it never competes with the bridge's
+    /// cached library surface that the real `<windowholder>` uses.
+    ///
+    /// Surfaces are created eagerly for ALL browser elements (including hidden tab groups) so they
+    /// are ready when a MAKI script toggles the parent visible. The view's `isHidden` tracks the
+    /// element's scene visibility.
+    private func reconcileBrowserSurfaces(_ browsers: [(object: WasabiObject, frame: CGRect)]) {
+        guard !isTornDown else { return }
+        var live: Set<WasabiObjectID> = []
+        for browser in browsers {
+            let id = browser.object.stableID
+            live.insert(id)
+            if browserSurfaces[id] == nil {
+                guard let surface = componentHost?.makeBrowserSurface() else { continue }
+                surface.applySkinScale(skinScale)
+                surface.applyPalette(renderer.palette)
+                addSubview(surface.view)
+                browserSurfaces[id] = surface
+            }
+            let visible = renderer.isBrowserVisible(browser.object)
+            browserSurfaces[id]?.view.isHidden = !visible
+        }
+        for (id, surface) in browserSurfaces where !live.contains(id) {
+            surface.unmountFromHolder()
+            browserSurfaces[id] = nil
+        }
+    }
+
     /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
     /// hand the picture over before showing the skin's video window, and to size that window from
     /// the stream's own dimensions for `VID_1X` / `VID_2X`.
@@ -671,7 +707,7 @@ final class WinampModernMainView: NSView {
 
     /// Position live host surfaces at their skin-provided holder frames, converting from top-left
     /// skin coordinates to the view's bottom-left ones. Positioning only — nothing is created here.
-    private func layoutHostedSubviews() {
+    private func layoutHostedSubviews(browsers: [(object: WasabiObject, frame: CGRect)]) {
         guard !isTornDown else { return }
         let holders = cachedHolders ?? renderer.componentHolders()
         for holder in holders where holder.kind == .library {
@@ -693,6 +729,10 @@ final class WinampModernMainView: NSView {
             guard case .hostWindow = holder.surfaceID,
                   let surface = hostedWindowSurfaces[holder.object.stableID] else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)
+        }
+        for browser in browsers {
+            guard let surface = browserSurfaces[browser.object.stableID] else { continue }
+            surface.view.frame = viewRect(fromSkin: browser.frame)
         }
     }
 
@@ -766,8 +806,8 @@ final class WinampModernMainView: NSView {
             let subs = self.subviews
                 .map { "\(type(of: $0))\($0.frame)hidden=\($0.isHidden ? 1 : 0)" }
                 .joined(separator: " | ")
-            NSLog("WinampModern HOLDERS after %@: lib=%d vid=%d vis=%d holders=[%@] subviews=[%@]",
-                  tag, self.librarySurfaces.count, self.videoSurfaces.count,
+            NSLog("WinampModern HOLDERS after %@: lib=%d brw=%d vid=%d vis=%d holders=[%@] subviews=[%@]",
+                  tag, self.librarySurfaces.count, self.browserSurfaces.count, self.videoSurfaces.count,
                   self.visualizationSurfaces.count, holders, subs)
         }
     }
@@ -1136,6 +1176,8 @@ final class WinampModernMainView: NSView {
         visualizationSurfaces.removeAll()
         for surface in hostedWindowSurfaces.values { surface.prepareForUITeardown() }
         hostedWindowSurfaces.removeAll()
+        for surface in browserSurfaces.values { surface.prepareForUITeardown() }
+        browserSurfaces.removeAll()
         // Auxiliary container views share the skin's single script runtime and host; only the
         // main (script-driving) view tears those down. Every view tears down its own renderer.
         if drivesScripts { scripts.teardown() } else { scripts.removeAuxiliaryRepaintSink(owner: self) }

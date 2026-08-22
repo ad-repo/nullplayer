@@ -665,3 +665,61 @@ player.
 
 The other 23 declare no visualization container, and NullPlayer's own window serves them exactly as
 before.
+
+## `<browser>` — embedded library Data tab (B19)
+
+A `<browser>` element in a `.wal` skin hosts a live library browser pre-set to the **Data tab**
+(PlexBrowseMode.history, rawValue 8). It is a completely separate lifecycle from the component holder
+system — `<browser>` is NOT added to `isHolderElement` (doing so breaks fills, hit tests, and
+competes for the bridge's cached library surface).
+
+### The typeName trap
+
+The XML element is `<Browser>` in most skins (Defix, Bio-Nid, Itemskin, etc.) but ClassicPro engine
+skins (cPro-Bento) use `<Winamp:Browser>`. The object graph stores the typeName as-is from the XML,
+so cPro-Bento's browser object has `typeName = "Winamp:Browser"`, not `"Browser"`.
+`WasabiSceneRenderer.isBrowserElement()` matches both: `browser` and `winamp:browser`
+(case-insensitive). **This was the root cause of six failed attempts** — every approach that checked
+only for `typeName == "browser"` silently missed cPro-Bento's browser element, and cPro-Bento was
+the primary test skin.
+
+### Why `layoutNodes()`, not `sceneNodes()`
+
+Browser elements are typically inside a tab group that starts `visible="0"` (cPro-Bento's
+`centro.browser`, Defix's `wdh.browser`). A MAKI script toggles visibility when the user clicks the
+tab button. `sceneNodes()` filters by visibility — so a browser inside a hidden tab never appears in
+it until the tab is first shown. If surfaces were only created from `sceneNodes()`, the first tab
+switch would find no surface, and the layout would run before any surface existed.
+
+`browserNodes()` uses `layoutNodes()` (which includes hidden elements) to discover ALL browser
+elements eagerly and create surfaces for all of them at first layout. Each surface's
+`view.isHidden` tracks whether the element is currently visible in `sceneNodes()`, so the surface
+is ready the moment the tab becomes visible.
+
+### Independent surfaces
+
+Each `<browser>` gets its own **non-cached** `WinampModernLibrarySurface` via
+`componentHost.makeBrowserSurface()`. This is deliberate:
+
+- `makeLibrarySurface()` is **cached** per bridge — one instance per skin, reused across layout
+  switches. If browser elements claimed this cached surface, the real `<windowholder>` library
+  holder would go blank (the bridge has only one to give).
+- `makeBrowserSurface()` creates a fresh surface each call, pre-set to browse mode 8 (Data tab).
+  The view layer owns them in a `browserSurfaces: [WasabiObjectID: WinampModernLibrarySurface]`
+  dictionary and tears them down in `teardown()`.
+
+### The `SC:UpdateSystem` browser
+
+cPro-Bento also has `<browser id="brw">` inside an `SC:UpdateSystem` XUI widget in the main
+container. This is Winamp's update-check widget, not a content tab. It creates a browser surface
+(which is harmless — the widget is typically offscreen or zero-sized), but since `isBrowserVisible()`
+checks the scene set, the surface's view stays hidden.
+
+### Files
+
+- `WasabiRenderer.swift` — `isBrowserElement()`, `browserNodes()`, `isBrowserVisible()`
+- `WinampModernComponents.swift` — `makeBrowserSurface()` protocol method
+- `WinampModernComponentBridge.swift` — `makeBrowserSurface()` implementation (non-cached)
+- `WinampModernMainView.swift` — `browserSurfaces`, `reconcileBrowserSurfaces()`,
+  `layoutHostedSubviews(browsers:)`
+- `WinampModernContainerTopology.swift` — `containsBrowser()` uses `isBrowserElement()`
