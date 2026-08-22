@@ -131,6 +131,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// installed by the main view, so comparing against the main window's space put every tab's
     /// hit somewhere else entirely. `nil` when no window renders the object (the headless harness).
     var mousePositionInObjectSpaceRequested: ((WasabiObject) -> CGPoint?)?
+    /// A container's alpha changed via `container.setAlpha(v)`. The host maps this to window alpha
+    /// so notifier fade animations are visible.
+    var containerAlphaChanged: ((String, CGFloat) -> Void)?
     /// Whether the equalizer is on, for `System.getEQ()`.
     var equalizerEnabledRequested: (() -> Bool)?
     /// One EQ band, on MAKI's −127…127 scale (MMD3's bass/treble knobs read and write the bands).
@@ -290,6 +293,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // script calls it: none in the corpus does, but the arity has to be declared for the
         // dispatch either way.
         "onkeydown": 1,
+        "onshownotification": 0,
         "onscriptunloading": 0
     ]
 
@@ -626,6 +630,51 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             activeLayoutByContainer[root.stableID] = layout.stableID
         }
         try startScripts(addedBeneath: root)
+    }
+
+    func setNotifierText(title: String, artist: String, album: String) {
+        guard let container = findRoot(type: "container", xmlID: "notifier") else { return }
+        let layouts = container.children.filter {
+            $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
+        }
+        for layout in layouts {
+            setTextInSubtree(layout, id: "title", text: title)
+            setTextInSubtree(layout, id: "artist", text: artist)
+            setTextInSubtree(layout, id: "album", text: album)
+            setTextInSubtree(layout, id: "plentry", text: "")
+            setTextInSubtree(layout, id: "nexttrack", text: "")
+            setTextInSubtree(layout, id: "endofplayback", text: "")
+            ensureTextHeight(layout)
+            _ = layout.setAttribute("w", value: "350")
+        }
+        let height = CGFloat(Int32(layouts.first?.attributes["h"] ?? "80") ?? 80)
+        layoutResizeRequested?(container.stableID, CGSize(width: 350, height: height))
+        noteGeometryChange()
+        notifyGraphDidMutate()
+    }
+
+    private func ensureTextHeight(_ root: WasabiObject) {
+        if root.typeName.caseInsensitiveCompare("text") == .orderedSame {
+            let h = Double(root.attributes["h"] ?? "0") ?? 0
+            if h <= 0 {
+                let fontSize = Double(root.attributes["fontsize"] ?? "13") ?? 13
+                _ = root.setAttribute("h", value: String(Int(ceil(fontSize * 1.4))))
+            }
+        }
+        for child in root.children { ensureTextHeight(child) }
+    }
+
+    private func setTextInSubtree(_ root: WasabiObject, id: String, text: String) {
+        if let xmlID = root.xmlID,
+           root.typeName.caseInsensitiveCompare("text") == .orderedSame,
+           (xmlID.caseInsensitiveCompare(id) == .orderedSame ||
+            xmlID.lowercased().hasPrefix(id.lowercased() + ".")) {
+            _ = root.setAttribute("text", value: text)
+            _ = root.setAttribute("default", value: text)
+            _ = root.setAttribute(WasabiTextMetrics.scriptAlternateTextKey, value: "")
+            notifyObjectDidMutate(root)
+        }
+        for child in root.children { setTextInSubtree(child, id: id, text: text) }
     }
 
     @discardableResult
@@ -1600,6 +1649,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // `extern AlbumArtLayer.isLoading()`. Defix's playlist window polls it every tick, and
             // the miss aborted that whole `ontimer` handler continuously.
             "isloading": .init(argumentCount: 0, returnKind: .boolean),
+            "refresh": .init(argumentCount: 0, returnKind: .null),
             "getvolume": .init(argumentCount: 0, returnKind: .integer),
             "setvolume": .init(argumentCount: 1, returnKind: .null),
             "seekto": .init(argumentCount: 1, returnKind: .null),
@@ -2070,7 +2120,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getplayitemmetadatastring":
             switch arguments[0].stringValue.lowercased() {
             case "title": return .string(host.trackTitle)
-            case "artist", "album": return .string(host.trackInfo)
+            case "artist": return .string(host.trackArtist)
+            case "album": return .string(host.trackAlbum)
             default: return .string("")
             }
         case "getstatus":
@@ -2397,8 +2448,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "isvisible": return .boolean(effectiveVisibility(of: object))
         case "isactive": return .boolean(isActive(object))
         case "setalpha":
-            _ = object.setAttribute("alpha", value: String(max(0, min(255, arguments[0].integerValue))))
+            let clamped = max(0, min(255, arguments[0].integerValue))
+            _ = object.setAttribute("alpha", value: String(clamped))
             notifyObjectDidMutate(object)
+            if object.typeName.caseInsensitiveCompare("container") == .orderedSame,
+               let id = object.xmlID {
+                containerAlphaChanged?(id, CGFloat(clamped) / 255.0)
+            }
             return .null
         case "getalpha": return .integer(Int32(object.attributes["alpha"] ?? "255") ?? 255)
         case "setenabled":
@@ -2469,6 +2525,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             guard let point = mousePositionInObjectSpaceRequested?(object),
                   let frame = resolvedGeometryRequested?(object)?.frame else { return .boolean(false) }
             return .boolean(frame.contains(point))
+        case "refresh":
+            notifyObjectDidMutate(object)
+            return .null
         // `AlbumArtLayer.isLoading()`. Only an `<AlbumArt>` has a fetch to wait on; any other
         // receiver is honestly not loading anything.
         case "isloading":

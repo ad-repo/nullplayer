@@ -55,6 +55,7 @@ concept; read the one your symptom points at, not all of them.
 | A whole container — or a whole skin — is missing, and its layouts are named something other than `normal` | [reference/components.md](reference/components.md) — *Which layout a container opens in* |
 | A toolbar button on a playlist/visualization/video window does nothing (`PE_*`, `VIS_*`, `VID_*`, `CB_*`) | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the host-action families, and the three that are inert on purpose |
 | An auxiliary window draws once then freezes; a script's `onTimer` changes nothing on screen | [reference/components.md](reference/components.md) |
+| Notifier toast doesn't show, shows wrong text, ghost default text, title invisible | [reference/components.md](reference/components.md) §*Notifier — track-change toast* |
 | Teardown crash, leak, or mode-switch breakage | [reference/components.md](reference/components.md) |
 | A ClassicPro (`.wal` + NSIS engine) skin misbehaves | [reference/classicpro.md](reference/classicpro.md) |
 | **How do I see what the engine is doing?** Probes, env vars, dumps | [reference/harness.md](reference/harness.md) |
@@ -125,6 +126,7 @@ verbatim; it just lives in a reference file now.
 | Repaint routes are per-window, and scripts are not | [reference/components.md](reference/components.md) |
 | Teardown order | [reference/components.md](reference/components.md) |
 | Mode integration | [reference/components.md](reference/components.md) |
+| Notifier — track-change toast | [reference/components.md](reference/components.md) |
 | ClassicPro engine | [reference/classicpro.md](reference/classicpro.md) |
 | An `<animatedlayer>` is one frame, not one sheet | [reference/rendering.md](reference/rendering.md) |
 | Debugging a skin | [reference/harness.md](reference/harness.md) |

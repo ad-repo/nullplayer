@@ -47,11 +47,10 @@ the stock Winamp Modern skin's `Pledit` + `winamp.albumart`, Ujola Cat's `PLEdit
 - **Two suppressions**, recorded in the skin's diagnostics rather than silently dropped
   (`defaultVisibilitySuppression`), and neither of them blocks the window — the menu, a skin button and
   the skin's own script still open it:
-  - **`hostManagedTransient`** — a `notifier` or `tooltip` container. Winamp's track-change toaster is
-    driven by a host subsystem we do not implement, so honouring Love is War Miku's
-    `<container id="notifier" default_visible="1">` leaves a popup reading *"Nothing / Next track"* on
-    screen for the whole session. Matched on the id, which is the only name Wasabi gives these (there
-    is no notifier GUID) — and scoped to auto-opening, so a mis-match costs nothing visible.
+  - **`hostManagedTransient`** — a `notifier` or `tooltip` container. Matched on the id, which is the
+    only name Wasabi gives these (there is no notifier GUID) — scoped to auto-opening only, so a
+    mis-match costs nothing visible. The notifier *is* host-driven: `showNotifier(for:)` opens it on
+    each track change (see [Notifier — track-change toast](#notifier--track-change-toast) below).
   - **`emptyBrowser`** — a container holding a `<browser url=…>`. The engine is sandboxed and loads no
     network content, so Rika's and T800's 860×704 "HOME" window would open as an empty frame.
 
@@ -728,3 +727,121 @@ checks the scene set, the surface's view stays hidden.
 - `WinampModernMainView.swift` — `browserSurfaces`, `reconcileBrowserSurfaces()`,
   `layoutHostedSubviews(browsers:)`
 - `WinampModernContainerTopology.swift` — `containsBrowser()` uses `isBrowserElement()`
+
+## Notifier — track-change toast
+
+A `.wal` skin's `<container id="notifier">` is a floating toast popup that appears when the track
+changes. Winamp Modern, Love is War Miku, and cPro-Bento all ship one. The notifier is **host-driven**:
+the host triggers it on track change, sets the text content, and auto-dismisses it — the skin's MAKI
+scripts handle fade animation but do not reliably set text (the bytecode's condition check fails in the
+`onTimer` handler body, so the timer-based text-setting chain does nothing).
+
+### How it works — end to end
+
+1. **Detection.** During `setupAuxiliaryContainers`, any container whose lowercased id is `"notifier"`
+   or starts with `"notifier."` is tagged `isNotifier = true` and `noActivation = true`. Its window
+   gets `level = .floating` and `hidesOnDeactivate = false` so the toast appears over other apps and
+   survives app-deactivation.
+
+2. **Suppression.** `WinampModernContainerTopology.defaultVisibilitySuppression` returns
+   `.hostManagedTransient` for notifier containers, preventing them from auto-opening with the skin.
+   Without this, a notifier with `default_visible="1"` would sit on screen reading its XML default
+   text ("Nothing / Next track / Nithin Sawhney / Prophesy") for the entire session.
+
+3. **Trigger.** `WinampModernMainWindowController.updateTrackInfo(_:)` calls `showNotifier(for:)` when
+   a non-nil track is passed. This is the same path that fires `ontitlechange` to MAKI scripts (via
+   `skinView?.updateTrackInfo()`), so the notifier appears on every track change.
+
+4. **Text setting.** `showNotifier` dispatches `onshownotification` to MAKI **first** (so the skin's
+   scripts run their setup/animation), then calls `scripts.setNotifierText(title:artist:album:)` to
+   **override** the text with the actual track info. The override-after-dispatch order ensures the
+   host's values win over anything the MAKI scripts set (or fail to set).
+
+5. **`setNotifierText` internals.** This method on `WinampModernScriptRuntime`:
+   - Finds the `<container id="notifier">` root in the object graph.
+   - Iterates all layouts (typically `normal` and `desktopalpha`).
+   - For each layout, walks the subtree with `setTextInSubtree` to set text on `title`, `artist`,
+     `album`, and to clear `plentry`, `nexttrack`, and `endofplayback`.
+   - Calls `ensureTextHeight` to fix 0-height text elements (see below).
+   - Resizes the layout to 350px wide via `setAttribute("w", "350")`.
+   - Fires `layoutResizeRequested` to update the renderer's canvas and window size.
+   - Calls `noteGeometryChange()` + `notifyGraphDidMutate()` to invalidate the scene cache and
+     trigger a full redraw.
+
+6. **Display.** After text is set, `showNotifier` resets `window.alphaValue = 1`, shows the window
+   via `setAuxiliaryWindow(id:, visible: true, activate: false)` (which uses `orderFrontRegardless()`
+   for `noActivation` containers — no focus steal), and forces `needsDisplay = true`.
+
+7. **Positioning.** The notifier is placed at the bottom-right of the screen with a 12pt margin
+   (in `place()`, gated on `container.isNotifier`), unless the skin specifies `default_x`/`default_y`.
+
+8. **Auto-dismiss.** A 5-second `Timer` hides the notifier. On a new track change, the timer is
+   invalidated and restarted — so rapid track changes keep the notifier visible with the latest info.
+
+9. **Fade animation.** MAKI scripts can call `container.setAlpha(n)` to animate the notifier's
+   opacity. The `containerAlphaChanged` callback on `WinampModernScriptRuntime` is wired to update
+   `window.alphaValue` for any container (notifier included), converting the 0–255 Wasabi alpha to
+   0.0–1.0.
+
+### The shadow element problem
+
+Winamp Modern's notifier uses an unusual technique for text shadows: the XML comment says *"I know
+this is an unusual way to get text shadow — but it creates a much better effect than the shadow
+params."* Each `<text>` element has `shadow="1" shadowcolor="notifier.bright" shadowx="1" shadowy="1"`
+attributes. The engine does not render these attributes directly. Instead, during groupdef expansion
+the engine synthesizes paired text elements with IDs like `title.shadow`, `artist.shadow` — each
+drawn 1px below its sibling, in the shadow colour, to create the shadow effect.
+
+`setTextInSubtree` must therefore match not only the exact id (`"title"`) but also any text element
+whose id starts with the target + `"."` (e.g. `"title.shadow"`). It also sets both the `text` and
+`default` attributes, because the renderer resolves content as `text ?? default` — leaving `default`
+at its XML value ("Nithin Sawhney") causes ghost text when the new `text` value is shorter.
+
+### The zero-height text problem
+
+The notifier groupdef defines `<text id="title" w="0" relatw="1" fontsize="17">` with no `h`
+attribute. The geometry resolver defaults missing `h` to 0, and the renderer clips to the frame rect
+(`context.clip(to: frame)`), so a 0-height text element is invisible. `ensureTextHeight` walks the
+subtree after text is set and gives any 0-height text element a height of `ceil(fontSize * 1.4)`.
+This only runs on the notifier's text elements (called from `setNotifierText`), not globally.
+
+### The layout-width problem
+
+The notifier's `<groupdef id="notifier.text">` is placed inside each layout at `x="75" w="-95"
+relatw="1"`. With the layout's declared `w="128"`, the text group is only `128 - 95 = 33` px wide —
+too narrow for any useful text. `setNotifierText` overrides the layout width to 350 and fires
+`layoutResizeRequested` to resize the renderer's canvas, view, and window to match. The background
+`<grid>` stretches to fill (`fitparent="1"`) and the `relatw="1"` text group recalculates to
+`350 - 95 = 255` px.
+
+### `getPlayItemMetaDataString` — per-field metadata
+
+MAKI scripts use `System.getPlayItemMetaDataString("artist")` etc. to read track metadata. The
+implementation dispatches on the string key:
+- `"title"` → `host.trackTitle`
+- `"artist"` → `host.trackArtist`
+- `"album"` → `host.trackAlbum`
+
+`trackArtist` and `trackAlbum` are properties on `WinampModernHost`, with defaults of `""` and live
+implementations on `WinampModernAudioEngineHost` reading `engine.currentTrack?.artist` and
+`.album`. These were added alongside the notifier — earlier, both keys incorrectly returned the
+combined `host.trackInfo` string.
+
+### `onshownotification` system event
+
+Registered in `dispatchableEventArity` with arity 0. Dispatched to all MAKI programs via
+`.system` target. The skin's notifier script typically uses this to start a fade-in animation
+timer. The host dispatches it, but the text is set by the host *after* the dispatch, so the MAKI
+handler's text-setting (which doesn't work anyway) is overridden.
+
+### Files
+
+- `WinampModernMainWindowController.swift` — `AuxiliaryContainer.isNotifier`, `noActivation`,
+  `showNotifier(for:)`, `notifierDismissTimer`, notifier detection in `setupAuxiliaryContainers`,
+  bottom-right positioning in `place()`, `containerAlphaChanged` wiring
+- `WinampModernScriptRuntime.swift` — `setNotifierText(title:artist:album:)`,
+  `setTextInSubtree(_:id:text:)`, `ensureTextHeight(_:)`, `containerAlphaChanged` callback,
+  `onshownotification` in `dispatchableEventArity`, `refresh` no-op
+- `WinampModernHost.swift` — `trackArtist`, `trackAlbum` protocol properties and implementations
+- `WinampModernContainerTopology.swift` — `.hostManagedTransient` suppression for notifier containers
+- `WasabiTextMetrics.swift` — `content(of:host:)` resolves `text ?? default` for text elements

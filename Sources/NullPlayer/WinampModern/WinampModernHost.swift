@@ -14,6 +14,8 @@ protocol WinampModernHost: AnyObject {
     var shuffleEnabled: Bool { get set }
     var repeatEnabled: Bool { get set }
     var trackTitle: String { get }
+    var trackArtist: String { get }
+    var trackAlbum: String { get }
     var trackInfo: String { get }
     /// What a song ticker shows — Winamp's playlist display title, i.e. "Artist - Title".
     var trackDisplayTitle: String { get }
@@ -63,6 +65,8 @@ extension WinampModernHost {
     }
     var isArtworkLoading: Bool { false }
     var vuLevels: (left: Double, right: Double) { (0, 0) }
+    var trackArtist: String { "" }
+    var trackAlbum: String { "" }
     var trackDisplayTitle: String { trackTitle }
     var bitrateKbps: Int { 0 }
     var sampleRateHz: Int { 0 }
@@ -176,6 +180,8 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         set { engine.repeatEnabled = newValue }
     }
     var trackTitle: String { engine.currentTrack?.title ?? "" }
+    var trackArtist: String { engine.currentTrack?.artist ?? "" }
+    var trackAlbum: String { engine.currentTrack?.album ?? "" }
     var trackDisplayTitle: String {
         guard let track = engine.currentTrack else { return "" }
         guard let artist = track.artist, !artist.isEmpty else { return track.title }

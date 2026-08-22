@@ -48,6 +48,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         /// `default_x`/`default_y`, in skin pixels with y downward. `nil` when the skin says nothing,
         /// which is when the window is stacked under whatever is already on screen instead.
         let defaultOffset: CGPoint?
+        /// A track-change toast popup (`<container id="notifier">`). Shown by the host on track
+        /// change; the skin's MAKI scripts handle fade animation and auto-dismiss.
+        let isNotifier: Bool
+        /// `noactivation="1"`: the window must not steal focus when shown.
+        let noActivation: Bool
     }
 
     /// Every container this controller hosts, main included, addressed the way a script addresses it.
@@ -365,6 +370,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                         + "the skin: \(suppression.reason).",
                     severity: .warning))
             }
+            let lowID = info.id.lowercased()
+            let isNotifier = lowID == "notifier" || lowID.hasPrefix("notifier.")
+            let noActivation = info.object.attributes["noactivation"] == "1" || isNotifier
+            if isNotifier {
+                auxWindow.level = .floating
+                auxWindow.hidesOnDeactivate = false
+            }
             auxiliaryContainers.append(AuxiliaryContainer(
                 window: auxWindow, view: view, kind: info.kind, containerID: info.id,
                 displayName: WinampModernContainerTopology.displayName(of: info),
@@ -372,7 +384,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 opensByDefault: info.opensByDefault && suppression == nil,
                 defaultOffset: info.defaultOrigin.map {
                     CGPoint(x: $0.x - playerOrigin.x, y: $0.y - playerOrigin.y)
-                }))
+                },
+                isNotifier: isNotifier,
+                noActivation: noActivation))
             viewsByContainer[view.containerID] = view
         }
     }
@@ -928,6 +942,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             place(container)
             if activate {
                 container.window.makeKeyAndOrderFront(nil)
+            } else if container.noActivation {
+                container.window.orderFrontRegardless()
             } else {
                 container.window.orderFront(nil)
             }
@@ -1059,6 +1075,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // top-left, at the current UI Size, with the skin's downward y flipped into AppKit's.
             origin = Self.arrangedOrigin(playerFrame: anchor, size: size, offset: offset,
                                          scale: skinScale)
+        } else if container.isNotifier, let screen = (window?.screen ?? NSScreen.main)?.visibleFrame {
+            origin = NSPoint(x: screen.maxX - size.width - 12,
+                             y: screen.minY + 12)
         } else {
             // The skin says nothing: stack under whatever it already has on screen, so opening the
             // playlist and then the library does not put one on top of the other.
@@ -1125,6 +1144,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 if let geometry = view.renderer.resolvedGeometry(of: object) { return geometry }
             }
             return nil
+        }
+        scripts.containerAlphaChanged = { [weak self] id, alpha in
+            guard let self else { return }
+            if id.caseInsensitiveCompare("main") == .orderedSame {
+                self.window?.alphaValue = alpha
+            } else if let aux = self.auxiliaryContainers.first(where: { $0.containerID == id }) {
+                aux.window.alphaValue = alpha
+            }
         }
         // Same ownership question, answered for the cursor: the window that can place the object is
         // the window whose pixel space its rect is in, so that is the one asked where the mouse is.
@@ -1332,6 +1359,27 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func updateTrackInfo(_ track: Track?) {
         skinView?.updateTrackInfo()
         refreshBoundText()
+        if let track { showNotifier(for: track) }
+    }
+
+    private var notifierDismissTimer: Timer?
+
+    private func showNotifier(for track: Track) {
+        guard let container = auxiliaryContainers.first(where: { $0.isNotifier }),
+              let scripts = skinView?.scripts else { return }
+        _ = try? scripts.dispatchSystem(event: "onshownotification")
+        scripts.setNotifierText(title: track.title,
+                                artist: track.artist ?? "",
+                                album: track.album ?? "")
+        container.window.alphaValue = 1
+        setAuxiliaryWindow(id: container.containerID, visible: true, activate: false)
+        container.view.needsDisplay = true
+        notifierDismissTimer?.invalidate()
+        notifierDismissTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) {
+            [weak self] _ in
+            guard let self else { return }
+            self.setAuxiliaryWindow(id: container.containerID, visible: false, activate: false)
+        }
     }
     func updateVideoTrackInfo(title: String, artworkTrack: Track?) { skinView?.updateTrackInfo() }
     func clearVideoTrackInfo() { skinView?.updateTrackInfo() }

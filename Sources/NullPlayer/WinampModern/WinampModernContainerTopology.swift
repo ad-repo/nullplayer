@@ -69,7 +69,7 @@ enum WinampModernDefaultVisibilitySuppression: String {
     var reason: String {
         switch self {
         case .hostManagedTransient:
-            return "it is a host-managed notifier/tooltip window, and NullPlayer has no notifier"
+            return "it is a host-managed notifier/tooltip — the host triggers it on track change"
         case .emptyBrowser:
             return "its content is a <browser>, which the sandboxed engine does not load"
         }
