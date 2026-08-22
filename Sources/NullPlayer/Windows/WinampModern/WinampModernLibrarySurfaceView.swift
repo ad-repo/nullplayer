@@ -19,6 +19,8 @@ final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
         browser = PlexBrowserView(embeddedFrame: frame, skinScale: skinScale,
                                   presentLinkSheet: presentLinkSheet)
         browser.autoresizingMask = [.width, .height]
+        browser.wantsLayer = true
+        browser.layer?.masksToBounds = true
     }
 
     var browseModeRawValue: Int {

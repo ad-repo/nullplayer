@@ -1167,6 +1167,16 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(embedded.searchBarHeight, classic.searchBarHeight)
     }
 
+    func testLibrarySurfaceViewClipsContentToItsBounds() {
+        let surface = WinampModernLibrarySurfaceView(
+            frame: NSRect(x: 0, y: 0, width: 200, height: 100),
+            skinScale: { 1 }, presentLinkSheet: { })
+        let view = surface.view
+        XCTAssertTrue(view.wantsLayer, "the browser must be layer-backed for clipping")
+        XCTAssertEqual(view.layer?.masksToBounds, true,
+                       "the browser must clip to its holder frame so content cannot bleed into the titlebar")
+    }
+
     /// A stub surface that records what it was told, with no live browser behind it.
     private final class StubLibrarySurface: WinampModernLibrarySurface {
         let view = NSView(frame: .zero)
