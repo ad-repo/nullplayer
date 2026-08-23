@@ -34,44 +34,69 @@ struct WasabiBitmap {
     }
 }
 
-/// A colour-theme adjustment, as per-channel **multipliers**.
+/// A colour-theme adjustment: a per-channel amount plus the model it is applied under.
 ///
 /// A `<gammagroup value="r,g,b">` carries three signed values in −4096…4096 where **0 means "leave
-/// this channel alone"**, so the channel factor is `(4096 + v) / 4096` — 4096 doubles a channel, −4096
-/// zeroes it. Reading the value as an additive bias instead (`v / 4096` added to the channel) pushes
-/// every midtone toward white, which is exactly what made MMD3's display render as a washed-out pastel
-/// instead of a saturated orange on black.
+/// this channel alone"**. The stored `red`/`green`/`blue` are that raw amount normalized to −1…1;
+/// `additive` picks how it combines with a pixel, and that choice belongs to the skin, not to us:
+///
+/// - `boost="0"`, or the attribute omitted → **multiply**, `channel × (1 + amount)`. This tints real
+///   artwork without washing it out. Every group in Anexa is `boost="0"`, and so are MMD3's
+///   `Backgrounds`/`Display`/`Buttons` — an additive model there pushed midtones toward white and
+///   rendered MMD3's display as washed-out pastel instead of saturated orange on black.
+/// - `boost` non-zero → **add**, `channel + amount`. This is how a skin recolors a black template.
+///   Anaheim Player 01 marks 57 of its 65 groups `boost="1"`, its themed bitmaps are pure black with
+///   only an alpha mask, and every `<color>` in its `studio-colors.xml` is `0,0,0`; under the
+///   multiplicative model 0 × anything stays 0, which is black text on a black window. Stock
+///   `winampmodern566` draws the same line — `boost="0"` on `Backgrounds`, `boost="1"` on exactly the
+///   groups whose source colour is `0,0,0` (`wasabi.button.text`, `wasabi.list.column.text`,
+///   `drawer.color.text.dark`) and on the hover-glow bitmaps.
+///
+/// MMD3 and Itemskin also ship `boost="2"`; its precise difference from `boost="1"` is unknown, so it
+/// is treated as additive too — both appear on the same label groups, and either beats multiplying.
 struct WasabiGammaTransform: Equatable {
+    /// Per-channel amount normalized to −1…1 (the XML value over 4096). 0 leaves a channel alone
+    /// under both models.
     let red: CGFloat
     let green: CGFloat
     let blue: CGFloat
     let grayscale: Bool
+    /// `true` when the skin asked for the offset model via a non-zero `boost`.
+    let additive: Bool
 
     static let identity = WasabiGammaTransform(red: 0, green: 0, blue: 0, grayscale: false)
-    var isIdentity: Bool { self == .identity }
+    /// A zero amount is a no-op under *either* model, so the `additive` flag does not enter into it.
+    var isIdentity: Bool { red == 0 && green == 0 && blue == 0 && !grayscale }
 
     /// Build from the raw XML attributes of one `<gammagroup>`.
     ///
     /// `gray` is a mode, not a flag — MMD3 uses both `gray="1"` and `gray="2"` — so any non-zero value
-    /// desaturates. `boost` only widens the permitted range in Winamp; the multiplier form already
-    /// carries values past 1 unclamped, so it needs no separate filter.
+    /// desaturates. `boost` is likewise a mode; see the type comment for what each value selects.
     init(value: String, gray: String?, boost: String?) {
         let components = value.split(separator: ",")
             .map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
         let padded = (components + [0, 0, 0]).prefix(3).map { $0 }
-        self.red = padded[0] / 4096.0
-        self.green = padded[1] / 4096.0
-        self.blue = padded[2] / 4096.0
+        let limit: CGFloat = 4096
+        self.red = padded[0] / limit
+        self.green = padded[1] / limit
+        self.blue = padded[2] / limit
         let grayMode = Int(Double(gray ?? "0") ?? 0)
         self.grayscale = grayMode != 0
-        _ = boost
+        let boostMode = Int(Double(boost ?? "0") ?? 0)
+        self.additive = boostMode != 0
     }
 
-    init(red: CGFloat, green: CGFloat, blue: CGFloat, grayscale: Bool) {
+    init(red: CGFloat, green: CGFloat, blue: CGFloat, grayscale: Bool, additive: Bool = false) {
         self.red = red
         self.green = green
         self.blue = blue
         self.grayscale = grayscale
+        self.additive = additive
+    }
+
+    /// One channel through this group. `channel` and the result are both 0…1.
+    func apply(_ channel: CGFloat, amount: CGFloat) -> CGFloat {
+        additive ? channel + amount : channel * (1 + amount)
     }
 }
 
@@ -412,13 +437,22 @@ final class WasabiResourceCache {
         if transform.grayscale {
             output = output.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
         }
-        // Add per-channel offset; alpha is left alone so the theme never dissolves a sprite's mask.
-        output = output.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
-            "inputBiasVector": CIVector(x: transform.red, y: transform.green, z: transform.blue, w: 0)
-        ])
+        // Offset or scale each channel per the group's `boost` mode; alpha is left alone so the theme
+        // never dissolves a sprite's mask.
+        if transform.additive {
+            output = output.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
+                "inputBiasVector": CIVector(x: transform.red, y: transform.green, z: transform.blue, w: 0)
+            ])
+        } else {
+            output = output.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1 + transform.red, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: 1 + transform.green, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 1 + transform.blue, w: 0)
+            ])
+        }
         return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: output.extent) ?? image
     }
 
@@ -2473,8 +2507,8 @@ final class WasabiSceneRenderer {
         return NSColor(red: red, green: green, blue: blue, alpha: base.alphaComponent)
     }
 
-    /// One colour through a `<gammagroup>`: desaturate first if the group asks, then add per-channel
-    /// offset — the same order the bitmap and `<color>` paths use.
+    /// One colour through a `<gammagroup>`: desaturate first if the group asks, then offset or scale
+    /// each channel per its `boost` mode — the same order the bitmap and `<color>` paths use.
     private static func themed(red: CGFloat, green: CGFloat, blue: CGFloat,
                                gamma: WasabiGammaTransform) -> (CGFloat, CGFloat, CGFloat) {
         var (red, green, blue) = (red, green, blue)
@@ -2482,9 +2516,9 @@ final class WasabiSceneRenderer {
             let luminance = red * 0.299 + green * 0.587 + blue * 0.114
             (red, green, blue) = (luminance, luminance, luminance)
         }
-        return (max(0, min(1, red + gamma.red)),
-                max(0, min(1, green + gamma.green)),
-                max(0, min(1, blue + gamma.blue)))
+        return (max(0, min(1, gamma.apply(red, amount: gamma.red))),
+                max(0, min(1, gamma.apply(green, amount: gamma.green))),
+                max(0, min(1, gamma.apply(blue, amount: gamma.blue))))
     }
 
     /// The sibling whose value a bare `<ProgressGrid>` shows: the slider drawn over the same rect.
@@ -3007,9 +3041,9 @@ final class WasabiSceneRenderer {
             let luminance = values[0] * 0.299 + values[1] * 0.587 + values[2] * 0.114
             values = [luminance, luminance, luminance]
         }
-        let r = values[0] / 255 + gamma.red
-        let g = values[1] / 255 + gamma.green
-        let b = values[2] / 255 + gamma.blue
+        let r = gamma.apply(values[0] / 255, amount: gamma.red)
+        let g = gamma.apply(values[1] / 255, amount: gamma.green)
+        let b = gamma.apply(values[2] / 255, amount: gamma.blue)
         return NSColor(red: max(0, min(1, r)), green: max(0, min(1, g)),
                        blue: max(0, min(1, b)), alpha: 1)
     }

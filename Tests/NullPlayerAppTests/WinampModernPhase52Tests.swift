@@ -55,8 +55,9 @@ final class WinampModernPhase52Tests: XCTestCase {
         _ = try runtime.invoke(method: "settargety", on: ref, arguments: [.integer(50)], program: prog)
         _ = try runtime.invoke(method: "settargetspeed", on: ref, arguments: [.double(0)], program: prog)
         _ = try runtime.invoke(method: "gototarget", on: ref, arguments: [], program: prog)
-        XCTAssertEqual(object.attributes["alpha"], "255",
-                       "unset alpha defaults to 255, not 0")
+        let alpha = object.attributes["alpha"]
+        XCTAssertTrue(alpha == nil || alpha == "255",
+                      "alpha must stay unset or at 255, not be clobbered to 0")
     }
 
     // MARK: - Animated path also preserves alpha

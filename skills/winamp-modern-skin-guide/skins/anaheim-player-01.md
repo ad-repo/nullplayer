@@ -8,12 +8,12 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Gamma (additive model) | **Fixed** | Black pixel templates recolored by gamma offsets; required additive (`+`) not multiplicative (`×`) |
+| Gamma (black templates) | **Fixed** | The skin's own `boost` attribute selects the model: 57 of 65 groups are `boost="1"` → additive. A global additive model washed out Anexa/MMD3; a global multiplicative one left Anaheim black-on-black. See `reference/rendering.md` → Colour themes |
 | Palette text colors | **Fixed** | `studio.*`/`wasabi.*` chains before `pledit.*` fallbacks |
 | Mini hover controls | **Fixed** | `setTargetSpeed(0)` instant snap + alpha inheritance |
 | Mini drawer (MiniTicker) | **Fixed** | `gotoTarget` alpha default bug — unset `targeta` defaulted to 0 |
-| VisAnime (VU meter) | Not impl | AnimatedLayer driven by VU meter script (`vis_mini.m`) |
-| Mini ticker text | Untested | `Mini.3Tickers` group — track title scrolling |
+| VisAnime (VU meter) | **Works** | AnimatedLayer driven by VU meter script (`vis_mini.m`) — body morphs with music |
+| Mini ticker text | **Works** | `Mini.3Tickers` group — track title scrolling |
 
 ## Skin patterns
 
@@ -33,3 +33,9 @@ layer stores the open coordinates (`x="0" y="45"`). State is persisted via `getP
   background size — the canvas clip is what hides MiniTicker at its closed position (y=140).
 - `Drawer` layer inside MiniTicker has `alpha="1"` (near-invisible) with `sysregion="1"` — it shapes
   the window, not a rendering bug.
+- Almost every themed asset is a **pure-black PNG with an alpha mask** (`MiniControlWheel.png`,
+  `MiniTickerBtns.png`, `MiniBodyBtn.png` all have max RGB 0), and every `<color>` in
+  `studio-colors.xml` is `value="0,0,0"`. All of the colour comes from `boost="1"` gamma offsets. If
+  this skin ever goes black-on-black again, check the gamma model before anything else — `MiniBody1`
+  (`gammagroup=""`) is real artwork and will still render, so the window looks *mostly* fine while
+  every control and label is invisible.

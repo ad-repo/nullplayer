@@ -9,12 +9,14 @@ final class WinampModernPhase10Tests: XCTestCase {
 
     // MARK: - Colour themes
 
-    /// `<gammagroup value="r,g,b">` is a per-channel **additive offset** normalized to ±1: 0 leaves a
-    /// channel alone, +4096 adds 1.0, −4096 subtracts 1.0. Skins like Anaheim Player 01 use black pixel
-    /// templates recolored entirely by gamma; a multiplicative model left them black.
-    func testGammaGroupValueIsAnAdditiveOffset() {
+    /// `<gammagroup value="r,g,b">` carries a per-channel amount normalized to −1…1, and `boost` picks
+    /// how it is applied: absent or `0` multiplies (`channel × (1 + amount)`), non-zero adds. A zero
+    /// amount is a no-op under either model.
+    func testGammaGroupParsesAmountAndBoostMode() {
         let neutral = WasabiGammaTransform(value: "0,0,0", gray: nil, boost: nil)
         XCTAssertTrue(neutral.isIdentity, "0,0,0 must change nothing at all.")
+        XCTAssertTrue(WasabiGammaTransform(value: "0,0,0", gray: nil, boost: "1").isIdentity,
+                      "A zero amount is identity under the additive model too.")
 
         let tinted = WasabiGammaTransform(value: "4096,-4096,2048", gray: nil, boost: nil)
         XCTAssertEqual(tinted.red, 1.0, accuracy: 0.001)
@@ -24,6 +26,97 @@ final class WinampModernPhase10Tests: XCTestCase {
         // `gray` is a mode, not a flag — MMD3 ships both gray="1" and gray="2".
         XCTAssertTrue(WasabiGammaTransform(value: "0,0,0", gray: "2", boost: nil).grayscale)
         XCTAssertFalse(WasabiGammaTransform(value: "0,0,0", gray: "0", boost: nil).grayscale)
+    }
+
+    /// `boost` is the additive/multiplicative switch, and it is a mode rather than a flag: MMD3 and
+    /// Itemskin ship `boost="2"` alongside `boost="1"` on the same label groups, so any non-zero value
+    /// selects the offset model. (`boost="2"`'s real difference from `1` is unknown; additive is
+    /// strictly closer than multiplying.)
+    ///
+    /// The corpus splits cleanly along this attribute, which is why the model cannot be chosen
+    /// globally: every group in Anexa is `boost="0"` and needs the multiplier, while Anaheim Player 01
+    /// marks 57 of its 65 groups `boost="1"` and needs the offset — its themed bitmaps are pure black
+    /// with only an alpha mask, so multiplying leaves them black.
+    func testBoostSelectsTheAdditiveModel() {
+        XCTAssertFalse(WasabiGammaTransform(value: "2048,0,0", gray: nil, boost: nil).additive,
+                       "A missing boost is the multiplicative default — MMD3 omits it entirely.")
+        XCTAssertFalse(WasabiGammaTransform(value: "2048,0,0", gray: nil, boost: "0").additive)
+        XCTAssertTrue(WasabiGammaTransform(value: "2048,0,0", gray: nil, boost: "1").additive)
+        XCTAssertTrue(WasabiGammaTransform(value: "2048,0,0", gray: nil, boost: "2").additive)
+
+        let scaling = WasabiGammaTransform(value: "2048,0,0", gray: nil, boost: "0")
+        XCTAssertEqual(scaling.apply(0, amount: scaling.red), 0, accuracy: 0.001,
+                       "Multiplying can never lift a black channel off zero.")
+        XCTAssertEqual(scaling.apply(0.4, amount: scaling.red), 0.6, accuracy: 0.001)
+
+        let offsetting = WasabiGammaTransform(value: "2048,0,0", gray: nil, boost: "1")
+        XCTAssertEqual(offsetting.apply(0, amount: offsetting.red), 0.5, accuracy: 0.001,
+                       "Adding is what recolors a black-template skin such as Anaheim Player 01.")
+        XCTAssertEqual(offsetting.apply(0.4, amount: offsetting.red), 0.9, accuracy: 0.001)
+    }
+
+    /// The `<color>` path obeys `boost` too, and it is the one that decides whether a skin's
+    /// sub-windows are readable. This is Anaheim's `studio-colors.xml` in miniature: every colour is
+    /// declared `value="0,0,0"` and gets all of its contrast from `boost="1"` offsets, so under the
+    /// multiplicative model the list text and the surface it sits on both resolve to black — the
+    /// black-on-black playlist and library that made the skin unusable.
+    func testBoostOneColorsStayLegibleAgainstTheirBackground() throws {
+        let loaded = try WinampModernSkinLoader().load(from: try makeArchive(xml: """
+        <WasabiXML>
+          <gammaset id="1. black">
+            <gammagroup id="text" value="1216,2048,3808" gray="0" boost="1"/>
+            <gammagroup id="Base" value="-3136,-3040,-2944" gray="0" boost="1"/>
+          </gammaset>
+          <color id="studio.list.text" value="0,0,0" gammagroup="text"/>
+          <color id="wasabi.edit.background" value="0,0,0" gammagroup="Base"/>
+          <container id="main"><layout id="normal" w="100" h="100"/></container>
+        </WasabiXML>
+        """))
+        defer { loaded.teardown() }
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: RenderHost())
+        defer { renderer.teardown() }
+        let palette = renderer.palette
+
+        func component(_ color: NSColor) -> (CGFloat, CGFloat, CGFloat) {
+            let c = color.usingColorSpace(.deviceRGB) ?? color
+            return (c.redComponent, c.greenComponent, c.blueComponent)
+        }
+        // Black source + positive offsets: a light blue, exactly the offsets the group declares.
+        let (tr, tg, tb) = component(palette.listText)
+        XCTAssertEqual(tr, 1216.0 / 4096, accuracy: 0.01)
+        XCTAssertEqual(tg, 2048.0 / 4096, accuracy: 0.01)
+        XCTAssertEqual(tb, 3808.0 / 4096, accuracy: 0.01)
+
+        // Black source + negative offsets clamps back to black — the dark surface the skin intends.
+        let (br, _, bb) = component(palette.contentBackground)
+        XCTAssertEqual(br, 0, accuracy: 0.01)
+        XCTAssertEqual(bb, 0, accuracy: 0.01)
+
+        XCTAssertGreaterThan(tb - bb, 0.5,
+                             "Text must stay legible against the surface it sits on; multiplying "
+                             + "collapses both to black.")
+    }
+
+    /// The same group under `boost="1"` offsets instead, so the red channel is lifted off zero and the
+    /// sprite turns yellow. This is what makes Anaheim Player 01's black-template bitmaps visible.
+    func testBoostOneGammaOffsetsPixels() throws {
+        let xml = """
+        <WasabiXML>
+          <elements>
+            <gammaset id="only"><gammagroup id="Test" value="2048,0,0" boost="1"/></gammaset>
+            <bitmap id="band.green" file="sheet.png" x="0" y="4" w="16" h="4" gammagroup="Test"/>
+          </elements>
+          <container id="Main">
+            <layout id="normal" w="16" h="16">
+              <layer id="green" image="band.green" x="0" y="0" w="16" h="16"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let pixels = try render(xml: xml, size: CGSize(width: 16, height: 16))
+        // CIColorMatrix works in linear space; the 0.5 bias maps to ~188 after sRGB encoding.
+        assertColor(pixels, x: 8, y: 8, equals: [188, 255, 0],
+                    "an offsetting gamma adds red to a green sprite, producing yellow")
     }
 
     /// The default colour theme is the **first gammaset in the document**, which skins name freely
@@ -49,12 +142,13 @@ final class WinampModernPhase10Tests: XCTestCase {
                        "The theme list keeps document order, as Winamp's ColorThemes list does.")
     }
 
-    /// Gamma is additive: a red-only offset on a pure-green sprite adds red to it, producing yellow.
-    func testColorThemeAddsOffsetsToPixels() throws {
+    /// A `boost="0"` group scales, so a red-channel gamma on a pure-green sprite leaves it green —
+    /// there is no red to scale. This is the Anexa case: real artwork tinted, never washed out.
+    func testBoostZeroGammaScalesPixels() throws {
         let xml = """
         <WasabiXML>
           <elements>
-            <gammaset id="only"><gammagroup id="Test" value="2048,0,0"/></gammaset>
+            <gammaset id="only"><gammagroup id="Test" value="2048,0,0" boost="0"/></gammaset>
             <bitmap id="band.green" file="sheet.png" x="0" y="4" w="16" h="4" gammagroup="Test"/>
           </elements>
           <container id="Main">
@@ -65,30 +159,37 @@ final class WinampModernPhase10Tests: XCTestCase {
         </WasabiXML>
         """
         let pixels = try render(xml: xml, size: CGSize(width: 16, height: 16))
-        // CIColorMatrix works in linear space; the 0.5 bias maps to ~188 after sRGB encoding.
-        assertColor(pixels, x: 8, y: 8, equals: [188, 255, 0],
-                    "a red-channel gamma adds red to a green sprite, producing yellow")
+        // Red starts at 0, ×1.5 stays 0. Green stays 255 (×1). Blue stays 0 (×1).
+        assertColor(pixels, x: 8, y: 8, equals: [0, 255, 0],
+                    "a scaling gamma cannot introduce red into a pure-green sprite")
     }
 
-    /// Black pixels (0,0,0) become visible under a positive gamma offset — the core Anaheim scenario.
-    func testBlackPixelsBecomeVisibleUnderPositiveGamma() throws {
-        let xml = """
-        <WasabiXML>
-          <elements>
-            <gammaset id="only"><gammagroup id="Test" value="2048,1024,3072"/></gammaset>
-            <bitmap id="band.red" file="sheet.png" x="0" y="0" w="16" h="4" gammagroup="Test"/>
-          </elements>
-          <container id="Main">
-            <layout id="normal" w="16" h="16">
-              <layer id="dark" image="band.red" x="0" y="0" w="16" h="16"/>
-            </layout>
-          </container>
-        </WasabiXML>
-        """
-        let pixels = try render(xml: xml, size: CGSize(width: 16, height: 16))
-        // Red band (255,0,0) + offset (0.5, 0.25, 0.75) in linear space, then sRGB-encoded.
-        assertColor(pixels, x: 8, y: 8, equals: [255, 137, 225],
-                    "gamma adds offsets to each channel, making dark channels visible")
+    /// A red band (255,0,0) under a three-channel gamma, both ways round: scaling brightens only the
+    /// channel that already has signal, offsetting lifts all three.
+    func testBoostDecidesWhetherDarkChannelsLightUp() throws {
+        func xml(boost: String) -> String {
+            """
+            <WasabiXML>
+              <elements>
+                <gammaset id="only"><gammagroup id="Test" value="2048,1024,3072" boost="\(boost)"/></gammaset>
+                <bitmap id="band.red" file="sheet.png" x="0" y="0" w="16" h="4" gammagroup="Test"/>
+              </elements>
+              <container id="Main">
+                <layout id="normal" w="16" h="16">
+                  <layer id="band" image="band.red" x="0" y="0" w="16" h="16"/>
+                </layout>
+              </container>
+            </WasabiXML>
+            """
+        }
+        // (255,0,0) × (1.5, 1.25, 1.75): R clamps to 255, G and B have nothing to scale.
+        assertColor(try render(xml: xml(boost: "0"), size: CGSize(width: 16, height: 16)),
+                    x: 8, y: 8, equals: [255, 0, 0],
+                    "zero channels stay zero under multiplication")
+        // (255,0,0) + (0.5, 0.25, 0.75) in linear space, then sRGB-encoded.
+        assertColor(try render(xml: xml(boost: "1"), size: CGSize(width: 16, height: 16)),
+                    x: 8, y: 8, equals: [255, 137, 225],
+                    "offsets make dark channels visible")
     }
 
     // MARK: - Animated layers

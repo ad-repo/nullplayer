@@ -65,6 +65,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         let startAlpha: Double
         let speed: Double
         var lastTick: Double
+        let hasTargetX: Bool
+        let hasTargetY: Bool
+        let hasTargetW: Bool
+        let hasTargetH: Bool
+        let hasTargetA: Bool
     }
 
     let loadedSkin: WinampModernLoadedSkin
@@ -3269,13 +3274,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         let id = object.stableID
         cancelTargetAnimation(objectID: id)
 
+        let hasX = object.attributes["targetx"] != nil
+        let hasY = object.attributes["targety"] != nil
+        let hasW = object.attributes["targetw"] != nil
+        let hasH = object.attributes["targeth"] != nil
+        let hasA = object.attributes["targeta"] != nil
+
         let rawSpeed = Double(object.attributes["targetspeed"] ?? "0.5") ?? 0.5
         if rawSpeed <= 0 {
-            _ = object.setAttribute("x", value: object.attributes["targetx"] ?? object.attributes["x"] ?? "0")
-            _ = object.setAttribute("y", value: object.attributes["targety"] ?? object.attributes["y"] ?? "0")
-            _ = object.setAttribute("w", value: object.attributes["targetw"] ?? object.attributes["w"] ?? "0")
-            _ = object.setAttribute("h", value: object.attributes["targeth"] ?? object.attributes["h"] ?? "0")
-            _ = object.setAttribute("alpha", value: object.attributes["targeta"] ?? object.attributes["alpha"] ?? "255")
+            if hasX { _ = object.setAttribute("x", value: object.attributes["targetx"]!) }
+            if hasY { _ = object.setAttribute("y", value: object.attributes["targety"]!) }
+            if hasW { _ = object.setAttribute("w", value: object.attributes["targetw"]!) }
+            if hasH { _ = object.setAttribute("h", value: object.attributes["targeth"]!) }
+            if hasA { _ = object.setAttribute("alpha", value: object.attributes["targeta"]!) }
             _ = object.setAttribute("goingtotarget", value: "0")
             notifyGraphDidMutate()
             _ = try? dispatch(object: object, event: "ontargetreached")
@@ -3289,14 +3300,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         let ca = Double(object.attributes["alpha"] ?? "255") ?? 255
         let state = TargetAnimationState(
             currentX: cx, currentY: cy, currentW: cw, currentH: ch, currentAlpha: ca,
-            targetX: targetAttr(object, "targetx", fallback: "x"),
-            targetY: targetAttr(object, "targety", fallback: "y"),
-            targetW: targetAttr(object, "targetw", fallback: "w"),
-            targetH: targetAttr(object, "targeth", fallback: "h"),
-            targetAlpha: object.attributes["targeta"].flatMap(Double.init) ?? ca,
+            targetX: hasX ? (Double(object.attributes["targetx"]!) ?? cx) : cx,
+            targetY: hasY ? (Double(object.attributes["targety"]!) ?? cy) : cy,
+            targetW: hasW ? (Double(object.attributes["targetw"]!) ?? cw) : cw,
+            targetH: hasH ? (Double(object.attributes["targeth"]!) ?? ch) : ch,
+            targetAlpha: hasA ? (Double(object.attributes["targeta"]!) ?? ca) : ca,
             startX: cx, startY: cy, startW: cw, startH: ch, startAlpha: ca,
             speed: speed,
-            lastTick: ProcessInfo.processInfo.systemUptime
+            lastTick: ProcessInfo.processInfo.systemUptime,
+            hasTargetX: hasX, hasTargetY: hasY, hasTargetW: hasW, hasTargetH: hasH, hasTargetA: hasA
         )
 
         if animationReached(state) {
@@ -3341,18 +3353,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         state.currentH = lerp(state.currentH, state.targetH)
         state.currentAlpha = lerp(state.currentAlpha, state.targetAlpha)
 
-        _ = object.setAttribute("x", value: String(Int(state.currentX.rounded())))
-        _ = object.setAttribute("y", value: String(Int(state.currentY.rounded())))
-        _ = object.setAttribute("w", value: String(Int(state.currentW.rounded())))
-        _ = object.setAttribute("h", value: String(Int(state.currentH.rounded())))
-        _ = object.setAttribute("alpha", value: String(Int(state.currentAlpha.rounded())))
+        if state.hasTargetX { _ = object.setAttribute("x", value: String(Int(state.currentX.rounded()))) }
+        if state.hasTargetY { _ = object.setAttribute("y", value: String(Int(state.currentY.rounded()))) }
+        if state.hasTargetW { _ = object.setAttribute("w", value: String(Int(state.currentW.rounded()))) }
+        if state.hasTargetH { _ = object.setAttribute("h", value: String(Int(state.currentH.rounded()))) }
+        if state.hasTargetA { _ = object.setAttribute("alpha", value: String(Int(state.currentAlpha.rounded()))) }
 
         if animationReached(state) {
-            _ = object.setAttribute("x", value: String(Int(state.targetX)))
-            _ = object.setAttribute("y", value: String(Int(state.targetY)))
-            _ = object.setAttribute("w", value: String(Int(state.targetW)))
-            _ = object.setAttribute("h", value: String(Int(state.targetH)))
-            _ = object.setAttribute("alpha", value: String(Int(state.targetAlpha)))
+            if state.hasTargetX { _ = object.setAttribute("x", value: String(Int(state.targetX))) }
+            if state.hasTargetY { _ = object.setAttribute("y", value: String(Int(state.targetY))) }
+            if state.hasTargetW { _ = object.setAttribute("w", value: String(Int(state.targetW))) }
+            if state.hasTargetH { _ = object.setAttribute("h", value: String(Int(state.targetH))) }
+            if state.hasTargetA { _ = object.setAttribute("alpha", value: String(Int(state.targetAlpha))) }
             activeTargetAnimations.removeValue(forKey: objectID)
             timers.cancel(id: targetTimerID(for: objectID))
             _ = object.setAttribute("goingtotarget", value: "0")

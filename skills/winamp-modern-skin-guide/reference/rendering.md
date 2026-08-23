@@ -451,12 +451,30 @@ scene becoming invisible, and a skin that lights its console button from that wi
 #### Colour themes (`gammaset` / `gammagroup`)
 
 A theme is a set of per-channel adjustments keyed by `gammagroup` id, which bitmaps and `<color>`
-resources opt into with `gammagroup="…"`. Two rules, both of which cost MMD3 its entire look when
-they were wrong:
+resources opt into with `gammagroup="…"`. Three rules:
 
-- The value triplet is a **multiplier**, `(4096 + v) / 4096` — 0 means "leave this channel alone".
-  Treating it as an additive bias (`v / 4096` added) pushes every midtone toward white; MMD3's amber
-  display rendered as washed-out pastel.
+- The value triplet is a per-channel **amount** normalized to −1…1 (`v / 4096`); 0 means "leave this
+  channel alone" under either model below.
+- **`boost` picks the model, and the skin is the authority.** There is no single right answer here —
+  picking one globally always breaks the other half of the corpus:
+  - `boost="0"` or the attribute omitted → **multiply**, `channel × (1 + amount)`. Tints real artwork
+    without washing it out. Every group in **Anexa** is `boost="0"`, as are MMD3's `Backgrounds` /
+    `Display` / `Buttons` (which carry no `boost` at all) — forcing those additive pushes midtones
+    toward white and renders MMD3's amber display as washed-out pastel.
+  - `boost` non-zero → **add**, `channel + amount`. This is how a skin recolours a black template.
+    **Anaheim Player 01** marks 57 of its 65 groups `boost="1"`; its themed bitmaps
+    (`MiniControlWheel.png`, `MiniTickerBtns.png`, `MiniBodyBtn.png`) are pure black with only an
+    alpha mask, and every `<color>` in its `studio-colors.xml` is `value="0,0,0"`. Multiplied, 0 stays
+    0 — black text on black sub-windows and hover controls that never appear.
+
+  Stock `winampmodern566` draws the same line inside one skin: `boost="0"` on `Backgrounds`,
+  `boost="1"` on exactly the groups whose source colour is `0,0,0` (`wasabi.button.text`,
+  `wasabi.list.column.text`, `drawer.color.text.dark`) plus the hover-glow bitmaps.
+
+  `boost` is a mode, not a flag — MMD3 and Itemskin ship `boost="2"` alongside `boost="1"`, on the
+  same label groups. Its exact difference from `1` is **unknown**; it is treated as additive, which is
+  strictly closer than multiplying. If a skin surfaces a `boost="2"` defect, that is the thing to
+  revisit.
 - The **default** theme is the first gammaset in the document (skins name it freely — "clean | orange
   (default)"), not the alphabetically first name.
 

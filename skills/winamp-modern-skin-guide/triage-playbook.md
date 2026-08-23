@@ -271,6 +271,18 @@ actually contains; sprite-sheet dimensions versus declared frame counts (an `ani
 count is arithmetic on its sheet); which bitmaps opt into which `gammagroup`. This is where Class C
 lives, and `RENDER_BITMAPS`' `missing=` already reports it per layout.
 
+For a colour complaint specifically, two greps settle in seconds what running the skin cannot tell you
+apart — whether an asset carries its own colour or is a template the theme paints:
+
+```bash
+unzip -p skin.wal '*.xml' | grep -o 'boost="[^"]*"' | sort | uniq -c   # which gamma model it wants
+python3 -c "from PIL import Image; im=Image.open('skin/player/x.png').convert('RGBA'); \
+  px=[q for q in im.getdata() if q[3]>16]; print(max(max(q[:3]) for q in px))"   # 0 = black template
+```
+
+A skin whose themed PNGs come back max-RGB **0** gets *all* of its colour from gamma offsets, and its
+`<color>` resources will be `value="0,0,0"` to match. Anaheim Player 01 is the type specimen.
+
 **4. What some skins hand you outright.**
 The ClassicPro engine ships its MAKI **`.m` sources** beside the bytecode — read the script that owns
 the feature rather than inferring its semantics. Many archives ship a `screenshot.png` (the author's
