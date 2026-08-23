@@ -172,6 +172,28 @@ final class WinampModernPhase5Tests: XCTestCase {
         XCTAssertEqual(bridge.playlistSnapshot().rows.count, 3)
     }
 
+    /// The selection bar is the "now playing" marker in every skin whose palette names no distinct
+    /// current-row colour, so it has to follow playback across a track change.
+    func testPlaylistSelectionFollowsCurrentTrack() throws {
+        let engine = AudioEngine()
+        let placeholder = URL(string: "about:blank")!
+        engine.setPlaylistTracks((0..<4).map { Track(url: placeholder, title: "Song \($0)") })
+        let bridge = WinampModernComponentBridge(engine: engine)
+
+        // No current track: the user's own selection is left where it is.
+        bridge.playlistSelect(row: 1)
+        XCTAssertNil(bridge.playlistFollowCurrentTrack())
+        XCTAssertEqual(bridge.playlistSnapshot().selectedIndex, 1)
+
+        engine.playTrack(at: 3)
+        XCTAssertEqual(bridge.playlistFollowCurrentTrack(), 3)
+        let snapshot = bridge.playlistSnapshot()
+        XCTAssertEqual(snapshot.selectedIndex, 3)
+        XCTAssertEqual(snapshot.selectedRows, [3])
+        XCTAssertTrue(snapshot.isSelected(3))
+        XCTAssertFalse(snapshot.isSelected(1))
+    }
+
     // MARK: - Phase 26 album artwork host
 
     func testAlbumArtworkIsNilWithoutACurrentTrack() {

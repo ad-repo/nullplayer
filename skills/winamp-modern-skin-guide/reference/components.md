@@ -78,6 +78,15 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
   `PE_REM`'s Crop work on (`playlistSetSelection` / `playlistRemoveRows`). A click collapses both to
   one row. Both new calls have protocol defaults over the single-row ones, so a host without a
   selection model of its own — every test fake — still conforms.
+- **The selection bar follows playback.** On every track change the controller's `updateTrackInfo`
+  calls `playlistFollowCurrentTrack()` and then `revealPlaylistRow` on every container view (the
+  playlist holder usually lives in an auxiliary `pledit` window, not the player), matching what the
+  classic and modern playlist views do from `.audioTrackDidChange`. Without it the bar sat on the row
+  the user last clicked while playback moved on — and in skins whose palette names no
+  `pledit.text.current` (mmd3) the bar is the *only* now-playing marker, so an advance looked like
+  nothing happened at all. Relatedly, `drawPlaylistComponent` only lets `palette.currentText` win over
+  a selected row's `selectionText` when the skin actually named a current colour; `currentText` falls
+  back to `listText`, which is exactly the colour the selection background is drawn to avoid.
 
 There is **one** script runtime and **one** component host per loaded skin, shared by the main window
 and every auxiliary container window. Only the main view (`drivesScripts: true`) owns the *global*

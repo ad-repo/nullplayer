@@ -67,6 +67,20 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         selectedRows = [row]
     }
 
+    /// Move the selection onto the playing track, the way the classic and modern playlists do on
+    /// `.audioTrackDidChange`: the drawn selection bar *is* the "now playing" indicator in skins
+    /// whose palette names no distinct current-row colour, so leaving it behind on the previous row
+    /// made every advance look like nothing had happened. Returns the row so the caller can scroll
+    /// it into view, `nil` when there is no current track.
+    @discardableResult
+    func playlistFollowCurrentTrack() -> Int? {
+        let index = engine.currentIndex
+        guard index >= 0, index < engine.playlist.count else { return nil }
+        selectedRow = index
+        selectedRows = [index]
+        return index
+    }
+
     func playlistSetSelection(_ rows: Set<Int>) {
         let valid = rows.filter { $0 >= 0 && $0 < engine.playlist.count }
         selectedRows = valid

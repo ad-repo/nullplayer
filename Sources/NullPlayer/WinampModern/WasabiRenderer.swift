@@ -2730,7 +2730,11 @@ final class WasabiSceneRenderer {
                 context.setFillColor(palette.selectionBackground.cgColor)
                 context.fill(rowRect)
             }
-            let color = row.isCurrent ? palette.currentText
+            // A current row keeps its own colour over the selection bar, as Winamp's playlist does —
+            // but only when the skin actually named one. `currentText` falls back to `listText`, and
+            // list text over the selection background is what `selectionText` exists to avoid.
+            let hasCurrentColor = palette.currentText != palette.listText
+            let color = row.isCurrent && (hasCurrentColor || !selected) ? palette.currentText
                 : (selected ? palette.selectionText : palette.listText)
             let label = "\(index + 1). \(row.title)"
             drawSurfaceText(label, in: rowRect.insetBy(dx: 3, dy: 1), color: color,

@@ -1358,8 +1358,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     func updateTrackInfo(_ track: Track?) {
         skinView?.updateTrackInfo()
+        followCurrentTrackInPlaylist()
         refreshBoundText()
         if let track { showNotifier(for: track) }
+    }
+
+    /// The drawn playlist's selection bar follows playback across a track change, and scrolls the new
+    /// row into view — the same thing the classic and modern playlist views do from
+    /// `.audioTrackDidChange`. The bar lives in whichever container embeds the playlist holder, which
+    /// is usually an auxiliary `pledit` window rather than the player, so this goes to every view.
+    private func followCurrentTrackInPlaylist() {
+        guard let row = componentBridge?.playlistFollowCurrentTrack() else { return }
+        for view in viewsByContainer.values where !view.isTornDown {
+            view.revealPlaylistRow(row)
+        }
     }
 
     private var notifierDismissTimer: Timer?
