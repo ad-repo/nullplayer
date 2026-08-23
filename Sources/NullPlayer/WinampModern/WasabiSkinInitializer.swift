@@ -431,7 +431,9 @@ final class WasabiSkinInitializer {
         var passes: [WasabiInitializationPass] = []
         let resources = WalResourceRegistry()
         var validatedImages: Set<String> = []
-        try registerResources(in: document.roots, registry: resources, validatedImages: &validatedImages)
+        var undecodableImages: Set<String> = []
+        try registerResources(in: document.roots, registry: resources,
+                              validatedImages: &validatedImages, undecodableImages: &undecodableImages)
         passes.append(.resourceRegistration)
 
         let types = WasabiTypeRegistry()
@@ -603,7 +605,8 @@ final class WasabiSkinInitializer {
     }
 
     private func registerResources(in nodes: [WalXMLNode], registry: WalResourceRegistry,
-                                   validatedImages: inout Set<String>) throws {
+                                   validatedImages: inout Set<String>,
+                                   undecodableImages: inout Set<String>) throws {
         // `gammagroup` is deliberately absent: its `id` is scoped to the enclosing `<gammaset>`, not
         // the global resource namespace, so registering it made every colour theme after the first
         // "replace" the previous theme's groups (MMD3 declares 83 themes → 1404 bogus duplicate-id
@@ -631,14 +634,37 @@ final class WasabiSkinInitializer {
                     do {
                         let resolved = try resolveSkinResource(rawFile, source: node.location).logicalPath
                         logicalFile = resolved
-                        if (kind == "bitmap" || kind == "cursor" || kind == "bitmapfont"),
-                           validatedImages.insert(resolved).inserted {
-                            try validateImage(at: resolved, source: node.location)
+                        if kind == "bitmap" || kind == "cursor" || kind == "bitmapfont" {
+                            // A dud file two `<bitmap>`s share degrades both, not just the first to
+                            // reach it — without the memo the second would keep a `logicalFile` the
+                            // renderer can never decode.
+                            guard !undecodableImages.contains(resolved) else {
+                                throw Self.undecodableImage(resolved, node.location)
+                            }
+                            if validatedImages.insert(resolved).inserted {
+                                do {
+                                    try validateImage(at: resolved, source: node.location)
+                                } catch let failure as WalFailure
+                                    where failure.diagnostics.allSatisfy({ $0.code == .invalidImageResource }) {
+                                    undecodableImages.insert(resolved)
+                                    throw failure
+                                }
+                            }
                         }
                     } catch let failure as WalFailure
                         where (kind == "bitmap" || kind == "cursor" || kind == "bitmapfont"
                                 || kind == "truetypefont")
-                            && failure.diagnostics.allSatisfy({ $0.code == .resourceMissing }) {
+                            && failure.diagnostics.allSatisfy({
+                                $0.code == .resourceMissing
+                                    // A file that exists but is not a decodable image is a content
+                                    // problem, not a security one, and the renderer already answers
+                                    // `nil` for it safely. The Big Bento Modern Windows 10 edition
+                                    // ships a **zero-byte** `window/no_alb_art_shade.png`, and one
+                                    // dud PNG failed the whole skin — it would not load at all.
+                                    // `.imageDimensionsExceeded` stays fatal: that one is the bound.
+                                    || ($0.code == .invalidImageResource && kind != "truetypefont")
+                            }) {
+                        let undecodable = failure.diagnostics.contains { $0.code == .invalidImageResource }
                         // Real skins and the ClassicPro engine declare optional bitmaps whose image
                         // files aren't shipped; Winamp tolerates this and simply draws nothing.
                         // A `truetypefont` is tolerated for the same reason and was not: Rika
@@ -653,7 +679,16 @@ final class WasabiSkinInitializer {
                         // A bitmap font that does not resolve as a path is the *identifier* form, not
                         // a missing file, so it is not worth a warning — the renderer resolves it
                         // through the registry and only a genuinely unknown id draws nothing.
-                        if kind != "bitmapfont" {
+                        if undecodable {
+                            // The path *did* resolve, so drop it: a registered `logicalFile` the
+                            // renderer cannot decode would have it retry the decode on every draw.
+                            // An id that resolved to a dud file is worth a warning even for a
+                            // bitmap font, where a plain miss is not.
+                            logicalFile = nil
+                            registry.warn(WalDiagnostic(.invalidImageResource,
+                                "Bitmap resource '\(rawFile)' is not a decodable image; it will not render.",
+                                severity: .warning, location: node.location))
+                        } else if kind != "bitmapfont" {
                             registry.warn(WalDiagnostic(.resourceMissing,
                                 "Optional \(kind) resource '\(rawFile)' is missing; it will not render.",
                                 severity: .warning, location: node.location))
@@ -668,8 +703,16 @@ final class WasabiSkinInitializer {
                     source: node.location
                 ))
             }
-            try registerResources(in: node.children, registry: registry, validatedImages: &validatedImages)
+            try registerResources(in: node.children, registry: registry,
+                                  validatedImages: &validatedImages,
+                                  undecodableImages: &undecodableImages)
         }
+    }
+
+    private static func undecodableImage(_ path: String, _ source: WalSourceLocation) -> WalFailure {
+        WalFailure(WalDiagnostic(.invalidImageResource,
+                                 "Image resource '\(path)' has no valid image metadata.",
+                                 location: source))
     }
 
     private func validateImage(at path: String, source: WalSourceLocation) throws {
@@ -679,7 +722,7 @@ final class WasabiSkinInitializer {
               let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
               let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
               width > 0, height > 0 else {
-            throw WalFailure(WalDiagnostic(.invalidImageResource, "Image resource '\(path)' has no valid image metadata.", location: source))
+            throw Self.undecodableImage(path, source)
         }
         let (pixels, overflow) = width.multipliedReportingOverflow(by: height)
         guard !overflow,

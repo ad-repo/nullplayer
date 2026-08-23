@@ -9,10 +9,14 @@ Fixed logical mounts only — the skin never sees a real path:
 | Logical path | Backed by |
 |--------------|-----------|
 | `/Skins/<sanitized-name>/` | the `.wal` archive |
+| `/Skins/<other skin>/` | another **installed** `.wal`, mounted lazily — see *Sibling skin mounts* |
 | `/Plugins/classicPro/engine/` | the imported ClassicPro engine, when installed |
 | `/System/` | code-supplied defaults via `WinampModernAdditionalMount` |
 
-Path variables: `@WINAMPPATH@`, `@SKINPATH@`, `@COLORTHEMESPATH@`, `@DEFAULTSKINPATH@`. Windows
+Path variables: `@WINAMPPATH@`, `@SKINPATH@`, `@COLORTHEMESPATH@`, `@DEFAULTSKINPATH@`,
+`@SKINSPATH@` (= `/Skins`, the skins *collection* root — the whole Big Bento Modern family writes
+`@SKINSPATH@\<Skin Name>\xml\player.xml`, 420 occurrences in the 36-skin corpus and all of them in
+that family). Windows
 separators, `.`, and `..` are normalized; a path escaping `/` is a hard error. A `*` wildcard is
 allowed **only** in the final include component and returns sorted, deterministic results.
 
@@ -28,6 +32,42 @@ resolves inside `@SKINPATH@`. An include that climbs into another mount — the 
 above — still fails the load, because that one means *the engine is not installed*, and a skin that
 loads and draws almost nothing is worse than a named error. Cycles, depth, expansion limits, path
 escapes and unresolved variables are all unchanged: still hard errors.
+
+### Sibling skin mounts
+
+An **overlay skin** is written against another skin: its own archive ships only what it changes and
+it pulls the rest out of the base skin's directory by name through `@SKINSPATH@`. Both *Light*
+editions of Big Bento Modern are overlays — 6 of the 8 includes in their `skin.xml` come from the
+base archive, only `color-presets.xml` and `system-colors.xml` are their own — which is exactly how a
+one-palette variant ships as a 300 KB archive.
+
+So the VFS mounts a sibling **lazily**: when a path lands under `/Skins/<name>/…` that **no mount
+already owns**, `WalVirtualFileSystem.mountSiblingIfNeeded` asks `siblingMountResolver` for it and
+mounts what comes back at `/Skins/<name>`. `WinampModernSkinLoader` installs that closure; it looks
+in the directory holding the archive being loaded first (so a `.wal` opened from `~/Downloads`, or by
+the render-dump harness, finds the sibling next to it), then in
+`WinampModernSkinImporter.defaultDestinationDirectory()`, matching `safeMountName(basename)`
+case-insensitively — a *sanitized* name comparison, never a host path built from a skin-supplied
+string.
+
+- **The skin's own self-references never reach the resolver.** Big Bento writes
+  `@SKINSPATH@\Big Bento Modern\…` 159 times for its *own* files; its own mount owns those paths, so
+  the "no mount owns it" gate short-circuits every one. Do not add a self-mount special case.
+- **Bounded** (security-model rule 2): at most **4** sibling archives per load (`entryLimitExceeded`
+  past it), each opened with the same `archiveLimits` as the main skin, and a name the resolver
+  answers `nil` for is memoized so a hostile skin cannot force one directory scan per reference.
+  No cycle detection is needed — a name is mounted at most once and include cycles are caught by
+  `WalXMLDocumentLoader`.
+- **A missing base names itself.** `missingRequiredMount` — *"This skin requires the skin 'X' to be
+  installed."* — is deliberately **not** `resourceMissing`, so it bypasses both tolerance blocks that
+  would otherwise swallow it into a half-loaded skin (the missing-include warning above, and
+  `resolveSkinResource`'s `@SKINPATH@` fallback). Same rule as the ClassicPro engine: *the thing you
+  need is not installed* stays a named, hard failure. There is deliberately **no** renamed-archive
+  leniency: falling back to the current skin's mount would silently draw an overlay against the wrong
+  artwork.
+
+The contract this puts on the user: **the installed filename must match the skin name the overlay
+asks for.** `Big Bento Modern.wal` renamed is `Big Bento Modern Light` failing to load.
 
 ### Initialization passes
 
@@ -80,6 +120,15 @@ Group semantics worth knowing:
     seeding (its destinations are the skin's own groupdefs), `wasabiStandardLibraryXUITags` *after*
     (its destinations are the shells). Both only fill an *unclaimed* tag, so a skin's own `xuitag=`
     always wins.
+
+**An undecodable image degrades; an oversized one still fails.** A `<bitmap>`/`<cursor>`/
+`<bitmapfont>` whose file *exists* but has no valid image metadata registers **without** its
+`logicalFile` and records an `invalidImageResource` **warning** — the renderer already answers `nil`
+for an image it cannot decode, on every path. The Big Bento Modern Windows 10 edition ships a
+zero-byte `window/no_alb_art_shade.png`, and that one dud PNG failed the *whole* skin. The memo is
+per resolved path, so a second `<bitmap>` naming the same dud file degrades too. `validateImage`
+itself is unchanged and `imageDimensionsExceeded` stays a hard error: that one is the *bound*, not a
+content problem, and so is every traversal/escape/variable failure.
 
 ### Retained graph and coordinates
 

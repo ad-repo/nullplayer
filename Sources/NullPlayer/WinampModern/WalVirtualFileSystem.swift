@@ -57,9 +57,24 @@ final class WalVirtualFileSystem {
     private var mounts: [Mount] = []
     private var variables: [String: String] = [:]
 
+    /// Resolves an installed skin *by mount name* into a provider, so an overlay skin can reach the
+    /// base skin it is written against. Nil means "no such skin is installed".
+    var siblingMountResolver: ((String) throws -> WalResourceProvider?)?
+    /// Names the resolver has already answered `nil` for. Memoized so a hostile skin cannot force a
+    /// directory scan per reference.
+    private var failedSiblingNames: Set<String> = []
+    private var lazySiblingMountCount = 0
+    /// Security-model bound: a skin may pull in at most this many sibling archives per load.
+    private static let maximumLazySiblingMounts = 4
+
     init() {
         variables["WINAMPPATH"] = "/"
         variables["DEFAULTSKINPATH"] = "/Skins/Default"
+        // Winamp's skins *collection* root. Skins write `@SKINSPATH@\<Skin Name>\xml\player.xml`,
+        // both to reach their own files and — for overlay skins such as the Big Bento Modern Light
+        // editions — to reach the base skin they are written against. Every loaded skin is mounted
+        // at `/Skins/<name>`, so `/Skins` is exactly that collection root.
+        variables["SKINSPATH"] = "/Skins"
     }
 
     convenience init(skinName: String, skin: WalResourceProvider) throws {
@@ -128,6 +143,11 @@ final class WalVirtualFileSystem {
         let directoryRaw = String(normalizedRaw.dropLast(last.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let directory = try resolve(directoryRaw.isEmpty ? "." : directoryRaw,
                                     relativeTo: sourcePath, location: location, mustExist: false).logicalPath
+        // A wildcard include into another installed skin has to see that skin's entries, so the
+        // sibling is mounted before `allLogicalPaths()` is filtered.
+        if mountedResource(for: directory) == nil {
+            try mountSiblingIfNeeded(for: directory, location: location)
+        }
         let foldedDirectory = Self.fold(directory == "/" ? "/" : directory + "/")
         let matches = allLogicalPaths().filter { path in
             let foldedPath = Self.fold(path)
@@ -166,8 +186,50 @@ final class WalVirtualFileSystem {
         }.sorted()
     }
 
+    /// Mounts an installed sibling skin the moment a path reaches into `/Skins/<Other Skin>/…` that
+    /// no mount owns, and throws `.missingRequiredMount` naming the skin when none is installed.
+    ///
+    /// Called **only** when no mount already owns the path, so the loaded skin's own
+    /// `@SKINSPATH@\<its own name>\…` self-references resolve through the mount it already has and
+    /// never reach the resolver. Returns whether a new mount was added.
+    @discardableResult
+    private func mountSiblingIfNeeded(for canonical: String, location: WalSourceLocation?) throws -> Bool {
+        guard let siblingMountResolver else { return false }
+        let components = canonical.split(separator: "/").map(String.init)
+        guard components.count >= 2, Self.fold(components[0]) == Self.fold("Skins"),
+              let name = try? Self.safeMountComponent(components[1]) else { return false }
+        let root = "/Skins/\(name)"
+        let foldedRoot = Self.fold(root)
+        // A mount can own the root itself without owning any path *under* it (a wildcard include
+        // naming the mount directory), and re-mounting it would be a case collision.
+        guard !mounts.contains(where: { $0.foldedRoot == foldedRoot }) else { return false }
+        guard !failedSiblingNames.contains(foldedRoot) else { throw Self.missingMount(name, location) }
+        guard lazySiblingMountCount < Self.maximumLazySiblingMounts else {
+            throw WalFailure(WalDiagnostic(
+                .entryLimitExceeded,
+                "A skin may reference at most \(Self.maximumLazySiblingMounts) other installed skins.",
+                location: location))
+        }
+        guard let provider = try siblingMountResolver(name) else {
+            failedSiblingNames.insert(foldedRoot)
+            throw Self.missingMount(name, location)
+        }
+        try mount(provider, at: root)
+        lazySiblingMountCount += 1
+        return true
+    }
+
+    private static func missingMount(_ name: String, _ location: WalSourceLocation?) -> WalFailure {
+        WalFailure(WalDiagnostic(.missingRequiredMount,
+                                 "This skin requires the skin '\(name)' to be installed.",
+                                 location: location))
+    }
+
     private func canonicalExistingPath(_ logicalPath: String, location: WalSourceLocation?) throws -> String {
         let canonical = try Self.canonicalize(logicalPath, relativeToDirectory: "/", location: location)
+        if mountedResource(for: canonical) == nil {
+            try mountSiblingIfNeeded(for: canonical, location: location)
+        }
         guard let (mount, relative) = mountedResource(for: canonical),
               let providerPath = mount.provider.canonicalPath(for: relative) else {
             throw WalFailure(WalDiagnostic(.resourceMissing, "Logical resource '\(canonical)' was not found in any mounted provider.", location: location))

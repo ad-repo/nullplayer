@@ -41,10 +41,16 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 - `.wal` (ZIP) with `skin.xml` at the archive root, or under exactly one wrapper directory
 - Case-insensitive lookup with original spelling retained for diagnostics
 - Windows path separators; `.` and `..` normalization; `@WINAMPPATH@`, `@SKINPATH@`,
-  `@COLORTHEMESPATH@`, `@DEFAULTSKINPATH@`
+  `@COLORTHEMESPATH@`, `@DEFAULTSKINPATH@`, `@SKINSPATH@` (= `/Skins`)
 - `<include>` / `<elementinclude>` expansion, including a `*` glob in the **final** path component
   (sorted, deterministic)
 - Cross-mount climbs into the ClassicPro engine mount
+- **Overlay skins**: `@SKINSPATH@\<Other Skin>\…` lazily mounts that installed `.wal` (≤ 4 per load).
+  A base skin that is not installed fails with `missingRequiredMount`, which *names the skin to
+  install*. The installed filename must match the name the overlay asks for. See
+  `reference/loading.md` → *Sibling skin mounts*
+- A `<bitmap>`/`<cursor>`/`<bitmapfont>` file that is present but undecodable (a zero-byte PNG)
+  degrades to a warning and draws nothing; oversized images still fail
 
 **Rejected** (typed diagnostic, never a crash)
 

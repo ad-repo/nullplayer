@@ -38,6 +38,7 @@ concept; read the one your symptom points at, not all of them.
 | Symptom / question | Read |
 |---|---|
 | Skin fails to load, mounts wrong, `@VARS@` unresolved, include/glob trouble | [reference/loading.md](reference/loading.md) |
+| Skin says it needs another skin installed; an overlay/`Light` edition; `@SKINSPATH@` | [reference/loading.md](reference/loading.md) → *Sibling skin mounts* |
 | Object is in the wrong place, y flipped, window collapsed to nothing | [reference/loading.md](reference/loading.md) |
 | A button is dead under the mouse; clipping, dragging, region trouble | [reference/rendering.md](reference/rendering.md) + [reference/harness.md](reference/harness.md) |
 | Something draws wrong, missing, mis-clipped, wrong colour, wrong font, wrong text | [reference/rendering.md](reference/rendering.md) |

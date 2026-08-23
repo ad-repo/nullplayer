@@ -35,6 +35,11 @@ enum WalDiagnosticCode: String, Codable {
     case resourceMissing
     case resourceEscapesVFS
     case unresolvedPathVariable
+    /// The skin reaches into `@SKINSPATH@\<Other Skin>\…` — it is an overlay written against another
+    /// skin — and that skin is not installed. Deliberately *not* `.resourceMissing`, so it bypasses
+    /// the tolerance blocks that would otherwise swallow it into a half-loaded skin: "the thing you
+    /// need is not installed" stays a named, hard failure that tells the user what to install.
+    case missingRequiredMount
     case includeCycle
     case includeDepthExceeded
     case xmlDepthExceeded

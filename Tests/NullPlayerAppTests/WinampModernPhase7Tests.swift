@@ -304,18 +304,34 @@ final class WinampModernPhase7Tests: XCTestCase {
     }
 
     func testMalformedImageResourceDegradesInsteadOfCrashing() throws {
-        // A bitmap whose file is present but is not a valid image must not hard-fail the load.
+        // A bitmap whose file is present but is not a valid image must not hard-fail the load: the
+        // Big Bento Modern Windows 10 edition ships a zero-byte `window/no_alb_art_shade.png` and
+        // one dud PNG kept the whole skin from loading. The resource registers *without* a
+        // `logicalFile` — the renderer looks one up and safely draws nothing — plus a warning.
         var garbage = Data(count: 64)
         for index in 0..<garbage.count { garbage[index] = UInt8(truncatingIfNeeded: index &* 7) }
-        do {
+        for (name, data) in ["junk.png": garbage, "empty.png": Data()] {
             let runtime = try initialize(
-                xml: "<WasabiXML><bitmap id=\"bg\" file=\"junk.png\"/></WasabiXML>",
-                resources: ["junk.png": garbage])
-            // If it loads, the invalid image must be recorded as a diagnostic, not silently ideal.
-            XCTAssertFalse(runtime.diagnostics.isEmpty)
-        } catch let failure as WalFailure {
-            // A typed invalid-image failure is also acceptable (bounded, non-crashing).
-            XCTAssertEqual(failure.diagnostics.first?.code, .invalidImageResource)
+                xml: "<WasabiXML><bitmap id=\"bg\" file=\"\(name)\"/><bitmap id=\"bg2\" file=\"\(name)\"/></WasabiXML>",
+                resources: [name: data])
+            XCTAssertEqual(runtime.diagnostics.map(\.code), [.invalidImageResource, .invalidImageResource])
+            XCTAssertEqual(runtime.diagnostics.map(\.severity), [.warning, .warning])
+            // Both references degrade, not just the first one to reach the file.
+            for identifier in ["bg", "bg2"] {
+                XCTAssertNil(runtime.resources.definition(identifier: identifier)?.logicalFile)
+            }
+        }
+    }
+
+    func testOversizedImageResourceStillFailsTheLoad() throws {
+        // The dimension limit is a *bound*, not a content problem, so it stays fatal.
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
+        var limits = WasabiResourceLimits.production
+        limits.maximumImageWidth = 0
+        XCTAssertThrowsError(try initialize(
+            xml: "<WasabiXML><bitmap id=\"bg\" file=\"big.png\"/></WasabiXML>",
+            resources: ["big.png": png], resourceLimits: limits)) { error in
+            XCTAssertEqual((error as? WalFailure)?.diagnostics.first?.code, .imageDimensionsExceeded)
         }
     }
 
@@ -375,13 +391,14 @@ final class WinampModernPhase7Tests: XCTestCase {
         }
     }
 
-    private func initialize(xml: String, resources: [String: Data] = [:]) throws -> WasabiSkinRuntime {
+    private func initialize(xml: String, resources: [String: Data] = [:],
+                            resourceLimits: WasabiResourceLimits = .production) throws -> WasabiSkinRuntime {
         var allResources = resources
         allResources["skin.xml"] = Data(xml.utf8)
         let provider = try WalMemoryResourceProvider(resources: allResources)
         let vfs = try WalVirtualFileSystem(skinName: "Synthetic", skin: provider)
         let document = try WalXMLDocumentLoader(vfs: vfs).load(entryPath: "/Skins/Synthetic/skin.xml")
-        return try WasabiSkinInitializer(vfs: vfs).initialize(document: document)
+        return try WasabiSkinInitializer(vfs: vfs, resourceLimits: resourceLimits).initialize(document: document)
     }
 
     private func makeArchive(xml: String, script: Data?) throws -> URL {

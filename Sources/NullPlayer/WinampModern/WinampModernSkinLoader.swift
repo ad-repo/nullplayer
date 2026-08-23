@@ -81,6 +81,9 @@ final class WinampModernSkinLoader {
                 provider: try engineStore.provider(limits: archiveLimits)))
         }
         for mount in mounts { try vfs.mount(mount.provider, at: mount.logicalRoot) }
+        vfs.siblingMountResolver = { [archiveLimits] name in
+            try Self.installedSkin(named: name, near: archiveURL, limits: archiveLimits)
+        }
         let entryPath = "/Skins/\(mountName)/\(archive.skinXMLPath)"
         let loaded = try WalXMLDocumentLoader(vfs: vfs, limits: xmlLimits).load(entryPath: entryPath)
         // Take stock of the skin's declared surfaces and append windows for the ones it leaves out,
@@ -97,6 +100,32 @@ final class WinampModernSkinLoader {
         return WinampModernLoadedSkin(archive: archive, vfs: vfs, document: document, runtime: runtime,
                                       configuration: WinampModernConfiguration(namespace: mountName),
                                       surfaceInventory: inventory, surfaceSynthesis: synthesis)
+    }
+
+    /// Finds the installed `.wal` whose mount name is `name` — the overlay skins (Big Bento Modern
+    /// Light and the Windows 10 Light edition) pull most of their includes out of the base skin's
+    /// directory by name. The archive's own directory is searched first so a `.wal` opened from
+    /// `~/Downloads`, or by the render-dump harness, finds the sibling sitting next to it.
+    ///
+    /// Matching is done on the *sanitized* mount name, case-insensitively, so no string the skin
+    /// supplies is ever turned into a host path.
+    private static func installedSkin(named name: String, near archiveURL: URL,
+                                      limits: WalArchiveLimits) throws -> WalResourceProvider? {
+        let wanted = name.lowercased()
+        var searched: Set<String> = []
+        for directory in [archiveURL.deletingLastPathComponent(),
+                          WinampModernSkinImporter.defaultDestinationDirectory()] {
+            guard searched.insert(directory.standardizedFileURL.path).inserted else { continue }
+            let contents = (try? FileManager.default.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil)) ?? []
+            for candidate in contents where candidate.pathExtension.lowercased() == "wal" {
+                let mountName = safeMountName(candidate.deletingPathExtension().lastPathComponent)
+                guard mountName.lowercased() == wanted,
+                      candidate.standardizedFileURL != archiveURL.standardizedFileURL else { continue }
+                return try WalArchive(url: candidate, limits: limits)
+            }
+        }
+        return nil
     }
 
     private static func safeMountName(_ name: String) -> String {

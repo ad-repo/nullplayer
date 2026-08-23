@@ -213,6 +213,89 @@ final class WinampModernPhase2Tests: XCTestCase {
         }, .xmlDepthExceeded)
     }
 
+    // MARK: - `@SKINSPATH@` and sibling skin mounts
+
+    func testSkinsPathResolvesThroughTheSkinsOwnMountWithoutConsultingTheResolver() throws {
+        let skin = try WalMemoryResourceProvider(resources: [
+            "skin.xml": Data(),
+            "xml/player.xml": Data("player".utf8)
+        ])
+        let vfs = try WalVirtualFileSystem(skinName: "Big Bento Modern", skin: skin)
+        var resolverCalls: [String] = []
+        vfs.siblingMountResolver = { name in resolverCalls.append(name); return nil }
+
+        // The self-reference form 159 of Big Bento's own includes use.
+        let resolved = try vfs.resolve("@SKINSPATH@\\Big Bento Modern\\xml\\player.xml",
+                                       relativeTo: "/Skins/Big Bento Modern/skin.xml")
+        XCTAssertEqual(resolved.logicalPath, "/Skins/Big Bento Modern/xml/player.xml")
+        XCTAssertEqual(resolverCalls, [], "The skin's own mount already owns the path.")
+    }
+
+    func testAnOverlaySkinMountsItsBaseSkinFromTheDirectoryBesideIt() throws {
+        let directory = temporaryDirectory()
+        _ = try makeArchive([
+            TestEntry("skin.xml", data: Data("<WasabiXML/>".utf8)),
+            TestEntry("xml/part.xml", data: Data("<layer id=\"fromBase\"/>".utf8)),
+            TestEntry("xml/glob.xml", data: Data("<layer id=\"globbed\"/>".utf8))
+        ], filename: "Base Skin.wal", in: directory)
+
+        let overlayXML = """
+        <WasabiXML>
+        <include file="@SKINSPATH@\\Base Skin\\xml\\part.xml"/>
+        <include file="@SKINSPATH@\\Base Skin\\xml\\g*.xml"/>
+        </WasabiXML>
+        """
+        let overlayURL = try makeArchive([TestEntry("skin.xml", data: Data(overlayXML.utf8))],
+                                         filename: "Overlay Skin.wal", in: directory)
+
+        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: overlayURL)
+        XCTAssertEqual(loaded.document.visitedPaths, [
+            "/Skins/Overlay Skin/skin.xml",
+            "/Skins/Base Skin/xml/part.xml",
+            "/Skins/Base Skin/xml/glob.xml"
+        ])
+        XCTAssertEqual(loaded.document.roots.first?.children.map { $0.attribute("id") ?? "" },
+                       ["fromBase", "globbed"])
+        loaded.teardown()
+    }
+
+    func testAnAbsentSiblingSkinFailsByNameAndIsNotScannedTwice() throws {
+        let skin = try WalMemoryResourceProvider(resources: ["skin.xml": Data()])
+        let vfs = try WalVirtualFileSystem(skinName: "Light", skin: skin)
+        var resolverCalls: [String] = []
+        vfs.siblingMountResolver = { name in resolverCalls.append(name); return nil }
+
+        for _ in 0..<3 {
+            do {
+                _ = try vfs.resolve("@SKINSPATH@\\Big Bento Modern\\xml\\player.xml",
+                                    relativeTo: "/Skins/Light/skin.xml")
+                XCTFail("Expected the missing base skin to fail the load")
+            } catch let failure as WalFailure {
+                XCTAssertEqual(failure.diagnostics.map(\.code), [.missingRequiredMount])
+                XCTAssertEqual(failure.diagnostics.first?.message,
+                               "This skin requires the skin 'Big Bento Modern' to be installed.")
+            }
+        }
+        XCTAssertEqual(resolverCalls, ["Big Bento Modern"], "Misses are memoized, not re-scanned.")
+    }
+
+    func testLazySiblingMountsAreBounded() throws {
+        let skin = try WalMemoryResourceProvider(resources: ["skin.xml": Data()])
+        let vfs = try WalVirtualFileSystem(skinName: "Greedy", skin: skin)
+        vfs.siblingMountResolver = { _ in
+            try WalMemoryResourceProvider(resources: ["part.xml": Data("part".utf8)])
+        }
+
+        for index in 0..<4 {
+            let resolved = try vfs.resolve("@SKINSPATH@\\Sibling \(index)\\part.xml",
+                                           relativeTo: "/Skins/Greedy/skin.xml")
+            XCTAssertEqual(resolved.logicalPath, "/Skins/Sibling \(index)/part.xml")
+        }
+        XCTAssertEqual(errorCode {
+            try vfs.resolve("@SKINSPATH@\\Sibling 4\\part.xml", relativeTo: "/Skins/Greedy/skin.xml")
+        }, .entryLimitExceeded)
+    }
+
     // MARK: - Initialization and retained graph
 
     func testInitializationPassesProduceDeterministicGraphSnapshot() throws {
@@ -399,8 +482,9 @@ final class WinampModernPhase2Tests: XCTestCase {
         return try WasabiSkinInitializer(vfs: vfs).initialize(document: document)
     }
 
-    private func makeArchive(_ entries: [TestEntry], filename: String = "fixture.wal") throws -> URL {
-        let directory = temporaryDirectory()
+    private func makeArchive(_ entries: [TestEntry], filename: String = "fixture.wal",
+                             in directory: URL? = nil) throws -> URL {
+        let directory = directory ?? temporaryDirectory()
         let url = directory.appendingPathComponent(filename)
         let archive = try Archive(url: url, accessMode: .create)
         for entry in entries {
