@@ -509,8 +509,15 @@ final class WinampModernMainView: NSView {
         return renderer.containsVisiblePixel(at: skin) ? self : nil
     }
 
+    /// Called at the top of every layout pass, before surfaces reconcile. The controller uses it to
+    /// re-check embedded-page exclusivity: a skin script can open its tab on its own timer, *after*
+    /// the reveal that forced a different page open, and a reveal-time check cannot see a page that
+    /// does not exist yet.
+    var willReconcileSurfaces: (() -> Void)?
+
     override func layout() {
         super.layout()
+        willReconcileSurfaces?()
         // Creating and adding subviews from inside `draw` is a re-entrant view-hierarchy mutation
         // during a draw cycle; reconciliation belongs here, and drawing only draws.
         reconcileHostedSurfaces()
@@ -1234,12 +1241,24 @@ final class WinampModernMainView: NSView {
         // strip is a layer whose script owns the drag, and dragging the window off it loses the drag.
         if object.attributes["move"] == "0" { return false }
         let type = object.typeName.lowercased()
+        // `move="1"` is the skin *affirmatively* naming a drag handle, and it says so on far more
+        // than groups: across the 30 installed skins it appears 981 times on 14 different element
+        // types — `rect` 233, `text` 66, `grid` 36 — and honouring it only on `<group>` (421) left
+        // the other 560 declarations doing nothing. Big Bento Modern is the measured case: its
+        // titlebar is `<grid … move="1">` over a `<rect id="vic_mover" move="1" fitparent="1">`, so
+        // the window could only be dragged by whatever bare background happened to be topmost under
+        // the pointer — which is why it went undraggable after a trip through shade mode and back.
+        //
+        // A control is excluded even when it says `move="1"`: a button that both acts and drags
+        // would swallow its own click, and the skins that declare it (17 of the 981) are relying on
+        // Winamp's press-and-hold distinction, which this hit test does not model.
+        if object.attributes["move"] == "1", !Self.controlTypes.contains(type) { return true }
         // The layout is the window's own background. A skin that paints the whole frame there and
         // hangs only controls off it (T800) otherwise has nothing to drag by at all.
         if type == "layout" { return true }
         // A bare group has no artwork of its own, so a click reaching one landed on the background it
-        // covers; `move="1"` is the skin declaring that background a drag handle (MMD3's main group).
-        if type == "group" { return object.attributes["move"] == "1" }
+        // covers, and without `move="1"` above the skin has not offered it as a handle.
+        if type == "group" { return false }
         // A layer a script hooks the mouse on is a control, not a handle — the same thing `move="0"`
         // says explicitly, for the skins that do not bother to say it. Love is War Miku's invisible
         // `visual.trigger` is one: dragging the window off it would eat the click that cycles the
@@ -1252,6 +1271,13 @@ final class WinampModernMainView: NSView {
 
     private static let mouseEvents = ["onleftbuttondown", "onleftbuttonup", "onleftclick",
                                       "ondoubleclick", "onrightbuttondown"]
+
+    /// Element types whose press belongs to the control, not to the window — `move="1"` on one of
+    /// these is not taken as a drag handle.
+    private static let controlTypes: Set<String> = [
+        "button", "togglebutton", "nstatesbutton", "wasabi:button", "slider", "menu", "list",
+        "component", "browser", "edit", "editbox"
+    ]
 
     /// Show a script-built menu at the mouse and answer the command id the user picked (0 = nothing).
     ///

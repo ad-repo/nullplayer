@@ -131,6 +131,42 @@ Two rules came out of it:
   not resolve. The standard `Component` shell is `name=":componenttitle"`, and making it openable
   otherwise puts an empty frame under that name in three skins' **Skin Windows** menu.
 
+#### Revealing an embedded surface: the script gets the last word, not the first
+
+`revealEmbeddedSurface` sends the skin `System.onGetCancelComponent(guid, true)` and falls back to
+Wasabi's `windowholder autoopen="1"` — walking up from the holder and un-hiding its ancestors — when
+the scene still has no visible holder of that kind (B23, cPro-Bento, whose script *has* handlers but
+declines to switch at startup).
+
+**That fallback test is synchronous, and a script is not.** Big Bento Modern is the case that showed
+it (B38.2). Its component pages are siblings — `sui.components` holds seven `<group … visible="0"/>`,
+one per tab — and at launch a restored session revealed both a playlist and a library. All four
+reveals legitimately fell through to the fallback, because at the instant each ran the tab genuinely
+was not open; we forced the library page visible; and roughly **0.6 s later** `suicore.maki` opened
+the playlist tab it had decided on all along, with no idea a second page was open. Two lists, one
+area, drawn on top of each other.
+
+Two rules, and the second is the one that matters:
+
+- `openHolders` reverts what **it** previously forced when it opens a different page. Never anything
+  the script set — that path returns early — and a shared ancestor survives because it is in the new
+  chain's set.
+- Exclusivity is re-checked on **every layout pass**, and always resolves the same way: **the page we
+  forced yields to the page the skin opened.** A reveal-time check cannot see a page that does not
+  exist yet, so there is no instant at which checking once is sufficient.
+
+Two holders count as competing pages only when their paths diverge at **siblings that each carry an
+explicit `visible` attribute**. That is the shape of a tab page and not of ordinary structure: Big
+Bento's `wdh.pl` and `wdh.ml` are siblings under `sui.components` and both declare `visible="0"`,
+while the top bar's own visualization holder diverges from them at `player.mainframe.big`, which
+declares no `visible` at all — so the meter in the header is left alone while the tab switches.
+
+`WINAMP_MODERN_DEBUG_HOLDERS=1` is how all of this was read, and it is the only way: none of it
+reproduces headlessly, because the harness sets no component host. It now also logs after each
+reveal, not only after a click. The line that named the bug was a holder list containing
+`library#wdh.ml2` **and** `playlist#wdh.playlist` at once; the fix is confirmed by the same line
+containing exactly one content page.
+
 #### Where a surface lives
 
 `WinampModernSurfaceCoordinator` is the single answer, for menus, skin buttons, and restore alike:

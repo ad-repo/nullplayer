@@ -13,6 +13,21 @@ A missing method aborts only the script event that hit it — the rest of the sk
 and the failure is collected into the compatibility report. It cannot be finer-grained than that:
 call sites carry no argument count, so without a signature the stack cannot be unwound.
 
+**"Only the event that hit it" is not a small blast radius when the event is `onScriptLoaded`.** A
+skin does its wiring there: a script that aborts on its third line never places the widgets its last
+forty lines position. Big Bento Modern (B36/B37) is the worst measured case — one unimplemented
+method, `System.getSettingsPath()`, appeared near the top of 23 of its `onScriptLoaded` handlers
+(the skin probes `<settings>/WACUP_Tools/koopa.ini` to see whether it is running under WACUP), and
+those 23 aborts were the single cause of *five separately reported rendering defects*: a menu bar
+whose five items drew on top of each other, an album-art panel that stayed black, empty time
+readouts, a WACUP logo drawn over the Winamp one, and a search panel that never hid itself.
+
+The lesson for triage: when several unrelated-looking surfaces in one skin are all wrong,
+`RENDER_SCRIPTS=1` and read the `failed=` column **before** measuring any of them. Five symptoms with
+one cause is the normal shape here, not the exception — and each of the five would otherwise have
+been chased as a widget-layout bug. Implementing `getSettingsPath` then surfaced three more methods
+that had been masked behind it (`getAutoHeight`, `getGuid`, `scrollToPercent`); expect to iterate.
+
 A program the parser cannot read at all is dropped the same way (Phase 35): `WinampModernScriptRuntime`
 records its diagnostic and keeps the programs it *could* read, rather than failing the skin. One
 unreadable script used to cost the whole skin — which is how `Overdrive_2` stayed invisible after its
@@ -228,19 +243,33 @@ from a subroutine whose only caller is `onTextChanged`. Reading the disassembly 
 look like `onTimer` work — the two handlers are adjacent, and `op25` is a **call** into the shared
 block, not a jump within one handler. Undispatched, the whole readout was unreachable code.
 
-#### One handler per (object, event)
+#### Two handlers for one event: a repeat runs once, two *different* bodies both run
 
-`MakiProgram.dispatchBindings` keeps the **last** binding a program declares for a given
-(variable, event) pair; `bindings` keeps them all, for the harness. Winamp registers a script's
-handlers into a per-object event map, so a second declaration of the same pair replaces the first —
-and a compiled skin can carry the duplicate. Defix's `MAIN_LAYOUT_1` declares `ConfBT2.onLeftClick()`
-**twice**, byte for byte, both bodies ending in that round button's assigned target.
+A program can declare the same (object, event) pair twice, and what to do about it depends entirely
+on whether the two bodies are the same handler.
 
-Running both fired the button's whole action twice per click, and because the action is a *toggle*
-the two cancelled: the playlist window flashed open and shut on every press, and an open one refused
-to close. **The render harness could not see it** — it owns no windows, so the doubled toggle
-measured as one clean `CLICK action:` line. It was found by driving the click in the running app with
-`WINAMP_MODERN_DEBUG_CLICK` + `WINAMP_MODERN_CALL_TRACE`.
+`MakiProgram.dispatchBindings` keeps every binding **except** one whose body repeats an earlier body
+for the same (variable, event) pair; `bindings` keeps them all, for the harness. Bodies are compared
+by shape: a body runs from its entry point to the next entry point the program declares, jump targets
+are taken relative to the entry point, and **variable indices are renumbered by first appearance**,
+because the compiler gives each copy of a repeated handler its own temporaries.
+
+- **The repeat.** Defix's `MAIN_LAYOUT_1` declares `ConfBT2.onLeftClick()` **twice** — the same 125
+  instructions reading the same config string, one copy through `v586` and the other through `v591`.
+  Running both fired the button's whole action twice per click, and because the action is a *toggle*
+  the two cancelled: the playlist window flashed open and shut on every press, and an open one
+  refused to close. **The render harness could not see it** — it owns no windows, so the doubled
+  toggle measured as one clean `CLICK action:` line. It was found by driving the click in the running
+  app with `WINAMP_MODERN_DEBUG_CLICK` + `WINAMP_MODERN_CALL_TRACE`.
+- **The two real handlers.** Big Bento's `mcvcore` declares `System.onScriptLoaded()` twice with
+  bodies that have nothing in common: the first finds every object of the Multi Content View and
+  decides which of the album-art and visualization panes to show, the second starts a timer. The
+  earlier "keep the last binding" rule shadowed the first, so **every** object variable in that
+  script stayed null, both panes stayed in the scene, and the visualization box drew black over the
+  cover art (B38.4). One skin's rule had silently become the other skin's bug.
+
+`WINAMP_MODERN_RENDER_SCRIPTS=bindings` prints `@<entry point>` and `(shadowed)` per binding, which is
+how the two shapes are told apart without reading bytecode.
 
 #### `PlEdit` — the playlist-editor API
 

@@ -31,6 +31,15 @@ protocol WinampModernHost: AnyObject {
     var bitrateKbps: Int { get }
     var sampleRateHz: Int { get }
     var channelCount: Int { get }
+    /// What `System.getDecoderName()` answers — Winamp names the input plugin that is decoding the
+    /// current track ("Nullsoft MPEG Audio Decoder"), and skins print it as a *Decoder* readout. The
+    /// honest equivalent here is the format NullPlayer is decoding, so the string is a codec name.
+    /// Empty when nothing is loaded, which renders as the skin's own placeholder.
+    var decoderName: String { get }
+    /// The playing item's own location — what `getPlayItemMetaDataString("filename")` answers, and
+    /// the string skins then hand to `getPath()`/`getExtension()` for a *File path* or *Format*
+    /// readout. Display only: nothing in the seam opens a path a script hands back.
+    var trackPath: String { get }
     var albumArtwork: CGImage? { get }
     /// Whether the cover for the current track is still being fetched — what an `<AlbumArt>` asks
     /// with `isLoading()`. Answered truthfully rather than stubbed: a skin that polls it from a
@@ -88,6 +97,8 @@ extension WinampModernHost {
     var bitrateKbps: Int { 0 }
     var sampleRateHz: Int { 0 }
     var channelCount: Int { 0 }
+    var decoderName: String { "" }
+    var trackPath: String { "" }
     func revealInFinder(_ path: String) {}
     func openExternally(_ path: String) {}
 
@@ -218,6 +229,30 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     var bitrateKbps: Int { engine.currentTrack?.bitrate ?? 0 }
     var sampleRateHz: Int { engine.currentTrack?.sampleRate ?? 0 }
     var channelCount: Int { engine.currentTrack?.channels ?? 0 }
+
+    /// The codec, from the track's own extension — the only thing available without opening the file
+    /// again, and the same thing Winamp's readout is really telling the user. A stream with no
+    /// recognisable extension answers with its scheme's transport ("HTTP Stream"), which is what the
+    /// Decoder line says in Winamp for a radio station.
+    var decoderName: String {
+        guard let url = engine.currentTrack?.url else { return "" }
+        let named = Self.codecNames[url.pathExtension.lowercased()]
+        if let named { return named }
+        return url.isFileURL ? url.pathExtension.uppercased() : "HTTP Stream"
+    }
+
+    var trackPath: String {
+        guard let url = engine.currentTrack?.url else { return "" }
+        return url.isFileURL ? url.path : url.absoluteString
+    }
+
+    private static let codecNames: [String: String] = [
+        "mp3": "MPEG Audio", "m4a": "AAC", "aac": "AAC", "mp4": "AAC", "m4b": "AAC",
+        "flac": "FLAC", "ogg": "Vorbis", "oga": "Vorbis", "opus": "Opus",
+        "wav": "PCM Wave", "aiff": "AIFF", "aif": "AIFF", "caf": "Core Audio",
+        "wma": "Windows Media", "ape": "Monkey's Audio", "wv": "WavPack", "alac": "ALAC",
+    ]
+
     var trackInfo: String {
         guard let track = engine.currentTrack else { return "" }
         return [track.artist, track.album].compactMap { value in

@@ -186,6 +186,33 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
         }
 
+        // WINAMP_MODERN_RENDER_TEXT=1 polls the host-bound text objects the way the running window
+        // does, so `onTextChanged` — the handler a skin hangs its whole per-track readout logic off —
+        // fires here too. Nothing else in the harness drives it: the poll lives in the window
+        // controller, so every `onTextChanged` in the corpus measured as an unreached handler and a
+        // skin whose readouts are written only from it read as a skin with no readouts (B38.3).
+        if env["WINAMP_MODERN_RENDER_TEXT"] != nil {
+            let previousObserver = runtime.dispatchObserver
+            var reached = 0
+            runtime.dispatchObserver = { event, program, failure in
+                guard event == "ontextchanged" else { return }
+                reached += 1
+                print("TEXT handler -> \((program.source.path as NSString).lastPathComponent)"
+                      + " owner=\(program.ownerID.flatMap(loaded.runtime.graph.object(withID:))?.xmlID ?? "-")"
+                      + (failure == nil ? "" : " !FAILED: "
+                         + failure!.diagnostics.map(\.message).joined(separator: "; ")))
+            }
+            runtime.refreshBoundText()
+            runtime.dispatchObserver = previousObserver
+            print("TEXT ontextchanged handlers=\(reached)")
+            for object in loaded.runtime.graph.allObjectsUnordered
+            where runtime.hasBinding(for: object, event: "ontextchanged") {
+                print("TEXT bound \(object.typeName)#\(object.xmlID ?? "-")"
+                      + " display=\(object.attributes["display"] ?? "-")"
+                      + " text=\(WasabiTextMetrics.content(of: object, host: host))")
+            }
+        }
+
         // WINAMP_MODERN_RENDER_KEY=<accelerator>[,<accelerator>] presses keys at the skin the way the
         // window does — `System.onKeyDown("alt+g")` — and reports the handlers each one reached, in
         // order, plus whether any of them ran MAKI's `complete;` (which is what tells the view to
@@ -408,7 +435,14 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         case .dynamic: bound = "dynamic"
                         }
                     }
+                    // The entry point tells two same-named bindings apart. A program may declare the
+                    // same (object, event) twice with *different* bodies — Big Bento's `mcvcore`
+                    // declares `System.onScriptLoaded` for its layout routine and again for a timer
+                    // — and which body a dispatch reaches is then the whole question.
                     print("SCRIPT   bind \(event) v\(binding.variableIndex) -> \(bound)"
+                          + " @\(binding.instructionIndex) body=\(program.bodyHash(of: binding))"
+                          + (program.dispatchBindings.contains { $0.instructionIndex == binding.instructionIndex
+                              && $0.variableIndex == binding.variableIndex } ? "" : " (shadowed)")
                           + (variable.isClass ? " (class, \(variable.classMembers.count) members)" : ""))
                 }
                 // ClassicPro addresses other scripts by walking `getParent()` a fixed number of times

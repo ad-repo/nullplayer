@@ -469,9 +469,32 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return Int32(clamping: Int(metrics.width(of: object, text: text).rounded(.up)))
     }
 
+    /// `getAutoHeight()` — the vertical twin of `autoWidth(of:)`, resolved from the same three
+    /// sources in the same order (a named source object, a declared `h`, the artwork). Big Bento
+    /// Modern's album-art script asks for both together (`getAutoWidth()` then `getAutoHeight()` on
+    /// the cover layer) to keep the picture's aspect ratio, so answering one and aborting on the
+    /// other took the whole cover panel's `onScriptLoaded` down with it.
+    private func autoHeight(of object: WasabiObject) -> Int32 {
+        if let sourceID = object.attributes["autoheightsource"],
+           let source = descendant(of: object, xmlID: sourceID), source !== object {
+            return autoHeight(of: source)
+        }
+        if let explicit = object.attributes["h"], let height = Int32(explicit), height > 0 { return height }
+        if let imageID = object.attributes["image"], let height = bitmapHeight(identifier: imageID) {
+            return height
+        }
+        // A single line in the font the renderer would draw with. Text objects are the only other
+        // thing that has an intrinsic height at all; everything else honestly has none.
+        let type = object.typeName.lowercased()
+        guard type == "text" || type == "songticker" else { return 0 }
+        return Int32(clamping: Int(metrics.lineHeight(of: object).rounded(.up)))
+    }
+
     /// Pixel width of a declared bitmap. Uses the resource's explicit `w` when the declaration crops
     /// a sprite sheet, otherwise reads the image header (no full decode) for whole-file bitmaps.
     private func bitmapWidth(identifier: String) -> Int32? { bitmapSize(identifier: identifier)?.width }
+
+    private func bitmapHeight(identifier: String) -> Int32? { bitmapSize(identifier: identifier)?.height }
 
     private func bitmapSize(identifier: String) -> (width: Int32, height: Int32)? {
         let key = identifier.lowercased()
@@ -1646,6 +1669,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "settext": .init(argumentCount: 1, returnKind: .null),
             "gettext": .init(argumentCount: 0, returnKind: .string),
             "getautowidth": .init(argumentCount: 0, returnKind: .integer),
+            "getautoheight": .init(argumentCount: 0, returnKind: .integer),
+            // `getTextWidth()` — how wide the string this object *currently shows* draws. Distinct
+            // from `getAutoWidth()`, which is how wide the object wants to be: a skin compares the
+            // two (`if (t.getWidth() < t.getTextWidth()) t.hide(); else t.show();`) to decide whether
+            // a caption fits its box. Big Bento Modern does exactly that from `onTextChanged`, so
+            // the method was missing on the one handler that runs at every track change.
+            "gettextwidth": .init(argumentCount: 0, returnKind: .integer),
+            // `GuiObject.getGuid()` — the component GUID an object was declared with, "" for the
+            // objects that carry none (which is most of them).
+            "getguid": .init(argumentCount: 0, returnKind: .string),
             // The playlist *widget's* own "scroll to the playing entry", as against `PlEdit`'s
             // `showCurrentlyPlayingTrack`. Itemskin and micro reach it through `findObject` on their
             // playlist object, so it is a GUI method with a receiver, not a System one. Unique in the
@@ -1700,6 +1733,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "setscale": .init(argumentCount: 1, returnKind: .null),
             "getscale": .init(argumentCount: 0, returnKind: .float),
             "setredraw": .init(argumentCount: 1, returnKind: .null),
+            // `scrollToPercent(pct)` on a scrolling group. Arity 1, result discarded — pinned by the
+            // bytecode (`v103.scrollToPercent(v119)` followed by `op2`).
+            "scrolltopercent": .init(argumentCount: 1, returnKind: .null),
             "setregionfrommap": .init(argumentCount: 3, returnKind: .null),
             "setmode": .init(argumentCount: 1, returnKind: .null),
             "play": .init(argumentCount: 0, returnKind: .null),
@@ -1844,6 +1880,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // readout, in the middle of the main layout's `onScriptLoaded` — so refusing it took the
             // rest of that handler, and the whole display area, down with it.
             "getextension": .init(argumentCount: 1, returnKind: .string),
+            // `getPath(filename)` — the *directory* half, the way `getExtension` is the tail. Pure
+            // string work on a string the host already handed out: it opens nothing and reaches no
+            // filesystem. Big Bento's file-info panel prints it as the track's folder, and the corpus
+            // always calls it on the playing item.
+            "getpath": .init(argumentCount: 1, returnKind: .string),
+            // …and its complement, the leaf. `getPath` + `removePath` is how a skin splits an item
+            // into "folder" and "file" for two separate readouts.
+            "removepath": .init(argumentCount: 1, returnKind: .string),
             "translate": .init(argumentCount: 1, returnKind: .string),
             "getprivateint": .init(argumentCount: 3, returnKind: .integer),
             "setprivateint": .init(argumentCount: 3, returnKind: .null),
@@ -1887,6 +1931,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getcurapptop": .init(argumentCount: 0, returnKind: .integer),
             "getruntimeversion": .init(argumentCount: 0, returnKind: .integer),
             "getskinname": .init(argumentCount: 0, returnKind: .string),
+            // `System.getSettingsPath()` — where the player keeps its own configuration. Arity 0,
+            // pinned by the bytecode (`v82 = v67.getSettingsPath() + "/WACUP_Tools/koopa.ini"`, then
+            // a `File.load`/`exists` pair): the string is only ever concatenated with a filename and
+            // probed. Missing it aborted 23 of Big Bento Modern's `onScriptLoaded` handlers.
+            "getsettingspath": .init(argumentCount: 0, returnKind: .string),
             "getcolortheme": .init(argumentCount: 0, returnKind: .string),
             "setcolortheme": .init(argumentCount: 1, returnKind: .null),
             "getnumcolorthemes": .init(argumentCount: 0, returnKind: .integer),
@@ -1895,6 +1944,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getplayitemdisplaytitle": .init(argumentCount: 0, returnKind: .string),
             "getplayitemmetadatastring": .init(argumentCount: 1, returnKind: .string),
             "getplayitemstring": .init(argumentCount: 0, returnKind: .string),
+            // `System.getDecoderName(item)` — the input plugin decoding the named item. Counted from
+            // the call site, which is `getDecoderName(getPlayItemString())`: one argument, a string
+            // back. Big Bento's file-info panel fills its *Decoder* line from it, in the same
+            // `onSetVisible` that fills every other line, so the whole panel stayed empty without it.
+            "getdecodername": .init(argumentCount: 1, returnKind: .string),
             "getstatus": .init(argumentCount: 0, returnKind: .integer),
             "getsonginfotext": .init(argumentCount: 0, returnKind: .string),
             "isvideo": .init(argumentCount: 0, returnKind: .boolean),
@@ -1911,6 +1965,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "istransparencysafe": .init(argumentCount: 0, returnKind: .boolean),
             "islayoutanimationsafe": .init(argumentCount: 0, returnKind: .boolean),
             "hasvideosupport": .init(argumentCount: 0, returnKind: .boolean),
+            // The playing video's native size. Zero is the honest answer here for the same reason
+            // `hasVideoSupport` is false — there is no video component behind a `.wal` holder — and it
+            // is also what Winamp answers for an audio track, which is the case skins branch on.
+            "getidealvideowidth": .init(argumentCount: 0, returnKind: .integer),
+            "getidealvideoheight": .init(argumentCount: 0, returnKind: .integer),
             "lockui": .init(argumentCount: 0, returnKind: .null),
             "unlockui": .init(argumentCount: 0, returnKind: .null),
             "hidenamedwindow": .init(argumentCount: 1, returnKind: .null),
@@ -2159,6 +2218,21 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 .split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? ""
             guard let dot = name.lastIndex(of: "."), dot != name.startIndex else { return .string("") }
             return .string(String(name[name.index(after: dot)...]))
+        case "getpath":
+            // The other half of the same split, and the same two separators. The trailing one is
+            // dropped, as Winamp drops it: `getPath("C:\Music\a.mp3")` is `C:\Music`. A bare name
+            // with no separator at all has no directory, and answers empty.
+            let value = arguments[0].stringValue
+            guard let separator = value.lastIndex(where: { $0 == "/" || $0 == "\\" }) else {
+                return .string("")
+            }
+            return .string(String(value[value.startIndex..<separator]))
+        case "removepath":
+            let value = arguments[0].stringValue
+            guard let separator = value.lastIndex(where: { $0 == "/" || $0 == "\\" }) else {
+                return .string(value)
+            }
+            return .string(String(value[value.index(after: separator)...]))
         case "translate": return .string(arguments[0].stringValue)
         case "getprivateint":
             return .integer(loadedSkin.configuration.integer(section: arguments[0].stringValue,
@@ -2252,6 +2326,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .null
         case "getruntimeversion": return .integer(5)
         case "getskinname": return .string(preferenceNamespace)
+        // The player's own settings directory. Winamp answers its install/profile folder and skins
+        // build sibling paths from it to sniff for another player's files — Big Bento Modern probes
+        // `<settings>/WACUP_Tools/koopa.ini` to decide whether it is running under WACUP. Answering
+        // NullPlayer's Application Support folder is the honest reply: the probe misses, the skin
+        // takes its "not WACUP" branch, and the handler runs to the end. `File.exists()` is a
+        // sandboxed `false` regardless, so nothing here widens what a script can read.
+        case "getsettingspath":
+            return .string(WinampModernSkinImporter.defaultDestinationDirectory()
+                .deletingLastPathComponent().path)
         case "getcolortheme": return .string(activeThemeRequested?() ?? "Default")
         case "setcolortheme":
             _ = themeSwitchRequested?(arguments[0].stringValue)
@@ -2269,6 +2352,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case "title": return .string(host.trackTitle)
             case "artist": return .string(host.trackArtist)
             case "album": return .string(host.trackAlbum)
+            // The key the file-info panels ask for after the three tags: the item's own location,
+            // which they then split with `getPath`/`getExtension` into a folder and a format.
+            case "filename": return .string(host.trackPath)
             default: return .string("")
             }
         case "getstatus":
@@ -2278,6 +2364,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case .stopped: return .integer(0)
             }
         case "getsonginfotext": return .string(host.songInfoText)
+        // The argument names an item, but every call site in the corpus passes the *current* one, and
+        // the host only knows what it is decoding now — so the answer is about the playing track.
+        case "getdecodername": return .string(host.decoderName)
         case "isvideo", "isvideofullscreen", "iskeydown", "isminimized", "isnamedwindowvisible":
             return .boolean(false)
         // Not in the group above on purpose — see the signature. Under the headless harness there is
@@ -2293,6 +2382,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // was refused, the strip was never laid out and its Album Art and Video tabs sat on top of
         // each other at the x both are declared at.
         case "hasvideosupport": return .boolean(false)
+        case "getidealvideowidth", "getidealvideoheight": return .integer(0)
         case "lockui", "unlockui", "hidenamedwindow": return .null
         case "navigateurl", "navigateurlbrowser": return .null // Sandboxed: no script-driven navigation.
         case "newgroup":
@@ -2567,6 +2657,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "gettext": return .string(WasabiTextMetrics.content(of: object, host: host))
         case "getautowidth":
             return .integer(autoWidth(of: object))
+        case "getautoheight":
+            return .integer(autoHeight(of: object))
+        case "gettextwidth":
+            // Measured with the font the renderer draws with, and through the same content
+            // resolution — a `display=` binding, a songticker's implicit title, `setAlternateText` —
+            // so the answer is about the string on screen rather than the XML literal.
+            return .integer(Int32(clamping: Int(metrics.width(
+                of: object, text: WasabiTextMetrics.content(of: object, host: host)).rounded(.up))))
+        case "getguid":
+            return .string(object.attributes["guid"] ?? "")
         case "resize":
             for (key, value) in zip(["x", "y", "w", "h"], arguments) {
                 _ = object.setAttribute(key, value: String(value.integerValue))
@@ -2850,6 +2950,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "setredraw":
             // A redraw hint (`widgetsManager` throttles its list while populating). The renderer
             // repaints from the graph, so there is no suspended-drawing state to honour.
+            return .null
+        case "scrolltopercent":
+            // Park a scrolling group at a percentage of its travel. We render no scroll offset for a
+            // group, so there is nothing to move — but the method has to *exist*: Big Bento Modern
+            // calls it from the `onScriptLoaded` that also lays out its config pages and the SUI's
+            // equalizer tab, and an unsupported method aborts the whole handler.
             return .null
         case "navigateurl":
             // The object form: a `<browser>`'s own navigation, as against `System.navigateUrl`.

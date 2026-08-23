@@ -1689,7 +1689,15 @@ final class WasabiSceneRenderer {
         let cell = font.ascender - font.descender
         let inset = max(0, WasabiTextMetrics.verticalAlignment(of: object)
             .offset(cell: cell, in: frame.height))
-        let drawFrame = frame.offsetBy(dx: 0, dy: -inset)
+        // `offsetx`/`offsety` shift the *string* inside its own box without moving the box — so the
+        // object still measures and hit-tests where it was declared, and its parent still clips it
+        // where it was. Big Bento Modern's SUI tab labels are the measured case: `offsetx="35"` puts
+        // the label clear of the 40px icon, which in the icons-only tab mode (a 40px-wide strip) is
+        // also what pushes it entirely outside the clip. Ignoring the attribute drew every tab's
+        // caption straight over its own icon.
+        let offsetX = CGFloat(Double(object.attributes["offsetx"] ?? "0") ?? 0)
+        let offsetY = CGFloat(Double(object.attributes["offsety"] ?? "0") ?? 0)
+        let drawFrame = frame.offsetBy(dx: offsetX, dy: -inset - offsetY)
 
         context.saveGState()
         context.clip(to: frame)

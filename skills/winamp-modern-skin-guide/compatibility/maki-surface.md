@@ -161,6 +161,18 @@ By area:
 - **`System.getExtension(path)`** — the extension of a filename, without the dot, from the last path
   component (Windows separators included). Defix reads it off the playing item for its format readout.
   Phase 25
+- **`System.getPath(path)` / `System.removePath(path)`** — the directory half and the leaf half of a
+  path, the way `getExtension` is the tail. Pure string work on a string the host already handed out
+  (Windows separators included); neither opens anything or reaches the filesystem. B38
+- **`System.getDecoderName(item)`** — Winamp names the *input plugin* decoding the item; the honest
+  equivalent here is the codec NullPlayer is decoding, from the track's own extension
+  (`WinampModernHost.decoderName`), with "HTTP Stream" for a stream that has none. Skins print it as a
+  *Decoder* readout. B38
+- **`System.getPlayItemMetaDataString("filename")`** — the playing item's location
+  (`WinampModernHost.trackPath`). Display only: nothing in the seam opens a path a script hands back,
+  and the file-info panels immediately split it with `getPath`/`getExtension`. B38
+- **`System.getIdealVideoWidth()` / `getIdealVideoHeight()`** — **0**, for the same reason
+  `hasVideoSupport` is false, and also what Winamp answers for an audio track. B38
 - **`System.hasVideoSupport()`** — **false**. A `.wal` video holder gets the neutral backing every
   unhosted component kind gets, so a skin that asks is told the truth and lays itself out without a
   video tab. Phase 25
@@ -378,13 +390,13 @@ opens under its tab, measured with `RENDER_CLICK`, which prints the point the me
 |---|---|---|
 | `parser_addCallback` / `parser_start` / `parser_destroy` | 5 / 4 / 4 | `XmlDoc` callback parsing — the optional `classicpro.xml` extras |
 | `enqueueFile` | 5 | the skin adding files to the queue |
-| `getTextWidth` | 4 | a script measuring a string itself rather than through `getAutoWidth` |
+| ~~`getTextWidth`~~ | 4 | implemented in B38 — a script measuring a string itself rather than through `getAutoWidth` |
 | `playTrack` / `clear` | 3 / 3 | script-driven playlist control |
 | `getItemLabel` / `getAttributeName` | 3 / 3 | Guilist accessors — the skin's own list widgets draw empty |
 | `getItemFocused` / `setSubItem` | 2 / 2 | the same |
 | `getMonitorWidth` / `getMonitorHeight` | 2 / 2 | monitor bounds for placement |
 | `getComponentName` | 2 | naming a hosted component |
-| `getDecoderName` / `deleteByPos` | 1 / 1 | minor |
+| ~~`getDecoderName`~~ / `deleteByPos` | 1 / 1 | `getDecoderName` implemented in B38; `deleteByPos` minor |
 
 Across the whole engine (every container, not just the main window) the list also carries the
 `Winamp:Browser` events, `setClipboardText` (8) and `shutdown` (1). The `fx_*` family was on this list

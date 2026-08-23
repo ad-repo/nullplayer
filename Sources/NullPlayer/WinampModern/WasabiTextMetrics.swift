@@ -228,12 +228,24 @@ final class WasabiTextMetrics {
 
     private static func bound(_ object: WasabiObject, host: WinampModernHost) -> String {
         switch object.attributes["display"]?.lowercased() {
-        case "time":
-            let seconds = max(0, Int(host.currentTime))
-            return String(format: "%d:%02d", seconds / 60, seconds % 60)
+        // `time` and `timeelapsed` are the same value under two spellings; both are live in the
+        // corpus (64 and 4 declarations respectively).
+        case "time", "timeelapsed": return clock(host.currentTime, on: object)
+        case "songlength": return clock(host.duration, on: object)
         // Winamp's "song name" is the playlist's display title — "Artist - Title" — which is exactly
-        // what a skin puts in its main display, and what `songticker` shows.
+        // what a skin puts in its main display, and what `songticker` shows. `songtitle` is the
+        // *title alone*, which is a different field: Big Bento Modern's main display is
+        // `display="SONGTITLE"` with the artist on its own line beside it.
         case "songname": return host.trackDisplayTitle
+        case "songtitle": return host.trackTitle
+        case "songartist", "artistname": return host.trackArtist
+        case "songalbum": return host.trackAlbum
+        // Both are bare numbers next to a `KBPS` / `KHZ` label the skin draws itself, so the sample
+        // rate is in kHz rather than Hz — Big Bento Modern gives its `Frequency` readout 35 pixels,
+        // which fits "44" and not "44100".
+        case "songbitrate": return host.bitrateKbps > 0 ? String(host.bitrateKbps) : ""
+        case "songsamplerate":
+            return host.sampleRateHz > 0 ? String(Int((Double(host.sampleRateHz) / 1000).rounded())) : ""
         // `songinfo` is the **stream info** line, not the artist/album: `songinfo.maki` reads this
         // object's own text back and tokenises it looking for `kbps`, `khz` and the channel words,
         // which is the only way MMD3's KBPS/KHZ fields are ever filled in.
@@ -245,6 +257,18 @@ final class WasabiTextMetrics {
             let literal = object.attributes["text"] ?? object.attributes["default"] ?? ""
             return resolvePlaceholder(literal, on: object)
         }
+    }
+
+    /// A playback time in the form a clock readout draws it. `timerhours="1"` asks for an `h:mm:ss`
+    /// field once the value passes an hour — without it a long set or a podcast reads as `93:20`,
+    /// and the skin sized the box for `1:33:20`.
+    private static func clock(_ time: TimeInterval, on object: WasabiObject) -> String {
+        let total = max(0, Int(time.isFinite ? time : 0))
+        let (hours, minutes, seconds) = (total / 3600, (total / 60) % 60, total % 60)
+        if hours > 0, isEnabled(object.attributes["timerhours"]) {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", total / 60, seconds)
     }
 
     /// Wasabi's title-bar placeholders. A standard frame's title is
@@ -291,5 +315,22 @@ final class WasabiTextMetrics {
             return pitch.width(of: text) + padding
         }
         return (text as NSString).size(withAttributes: [.font: font]).width + padding
+    }
+
+    /// Height of one line of the object's text, in skin pixels — the vertical answer to `width(of:)`,
+    /// and what a script's `getAutoHeight()` reads. A bitmap font's atlas states its own cell height;
+    /// everything else is the drawing font's line height.
+    func lineHeight(of object: WasabiObject) -> CGFloat {
+        if let fontID = object.attributes["font"],
+           let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
+           definition.kind == "bitmapfont" {
+            let charHeight = Double(definition.attributes["charheight"] ?? "") ?? 0
+            let spacing = Double(definition.attributes["vspacing"] ?? "0") ?? 0
+            if charHeight > 0 { return CGFloat(charHeight + spacing) }
+        }
+        let size = Self.pointSize(of: object)
+        let font = font(identifier: object.attributes["font"], size: size,
+                        traits: Self.traits(of: object)) ?? NSFont.systemFont(ofSize: size)
+        return ceil(font.ascender - font.descender + font.leading)
     }
 }

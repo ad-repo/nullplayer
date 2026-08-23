@@ -112,8 +112,17 @@ object the hit test returned:
 
 - the **`layout`** itself — the window's own background. A skin that paints its whole frame there and
   hangs nothing but controls off it (T800) has no other handle, and without this it cannot be moved.
-- a bare **`group`** with `move="1"` — a group has no artwork, so a click reaching one landed on the
-  background it covers, and `move="1"` is the skin calling that background a handle.
+- **anything carrying `move="1"`** that is not a control. This is the skin *affirmatively* naming a
+  handle, and it says so on far more than groups: across the 30 installed skins `move="1"` appears
+  **981 times on 14 element types** — `group` 421, `rect` 233, `layer` 151, `text` 66, `grid` 36,
+  `grouplist` 34 — and honouring it only on `<group>` left 560 declarations doing nothing. Big Bento
+  Modern is the measured case: its titlebar is `<grid … move="1">` over a
+  `<rect id="vic_mover" move="1" fitparent="1">`, so the window could only be dragged wherever a bare
+  background happened to be topmost, and it went **undraggable after a trip through shade mode and
+  back** as the topmost object under the pointer changed.
+  Controls are excluded even when they say `move="1"` (17 of the 981 do): a button that both acts and
+  drags would swallow its own click. Winamp distinguishes those by press-and-hold, which this hit
+  test does not model — see `WinampModernMainView.controlTypes`.
 - a **`layer`** with no `action` — *unless a script hooks a mouse event on it*, which makes it a
   control rather than a handle (the same thing `move="0"` says explicitly, for the skins that do not
   bother to say it). Dragging the window off an invisible trigger eats the click it exists for.
@@ -290,9 +299,43 @@ because `songinfo.maki` reads a text object back out and tokenises it:
    they are different things: promoting the declared one to an override pinned MMD3's whole display
    to its shipped placeholder, "updating songticker", for the entire session.
 
-`display=` values: `time`, `songname` → `trackDisplayTitle` ("Artist - Title", which is what Winamp's
-song name is), `songinfo` → `songInfoText` — the **stream info** line, not the artist/album. See
-[Track metadata](#track-metadata-the-skins-actually-read) for why the shape of that string matters.
+A script measures the same strings two ways, and the difference matters: **`getAutoWidth()`** is how
+wide the object *wants to be* (a named `autowidthsource`, else a declared `w`, else its artwork, else
+its text), while **`getTextWidth()`** is how wide the string it currently shows actually draws. Skins
+compare them — `if (t.getWidth() < t.getTextWidth()) t.hide(); else t.show();` — to decide whether a
+caption fits. `getAutoHeight()` is `getAutoWidth`'s vertical twin, resolved from the same three
+sources plus a one-line font height for text.
+
+`display=` values, all of them measured demand from the installed corpus:
+
+| Binding | Answers | Note |
+|---|---|---|
+| `time`, `timeelapsed` | `currentTime` as `m:ss` | the same value under two spellings; both ship |
+| `songlength` | `duration` as `m:ss` | |
+| `songname` | `trackDisplayTitle` | "Artist - Title" — what Winamp calls the song *name* |
+| `songtitle` | `trackTitle` | the title **alone**, a different field from `songname` |
+| `songartist`, `artistname` | `trackArtist` | |
+| `songalbum` | `trackAlbum` | |
+| `songbitrate` | `bitrateKbps` | a bare number; the skin draws its own `KBPS` label |
+| `songsamplerate` | `sampleRateHz` in **kHz** | Big Bento gives the field 35px — "44", never "44100" |
+| `songinfo` | `songInfoText` | the **stream info** line, not the artist/album |
+| `PE_Info` | the playlist status line | matched by `display=` *or* `id=` — see above |
+
+`timerhours="1"` on a clock readout widens it to `h:mm:ss` past the hour; without it a 93-minute set
+reads `93:20` in a box the skin sized for `1:33:20`.
+
+Everything else falls through to `text`/`default`, which is what makes an unmapped binding degrade to
+the placeholder the skin ships rather than to a blank. See
+[Track metadata](#track-metadata-the-skins-actually-read) for why the shape of `songinfo` matters.
+
+#### `offsetx` / `offsety` move the string, not the box
+
+A `<text>` can shift its own drawing without moving its rect. The box still measures, hit-tests and
+**clips** where it was declared, so a large enough offset pushes the string entirely out of view —
+which is not a degenerate case but the mechanism a skin uses. Big Bento Modern's SUI tab captions are
+`offsetx="35"`: in the icons+text tab mode that clears the 40px icon, and in the icons-only mode
+(a 40px-wide strip) the same 35 puts the caption outside the clip. Ignoring the attribute drew every
+tab's caption straight over its own icon.
 
 #### A `cfgattrib` control has no `action` — the binding *is* what it does
 

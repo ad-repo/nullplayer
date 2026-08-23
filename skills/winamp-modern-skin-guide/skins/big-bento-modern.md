@@ -13,10 +13,13 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Loading | **Fixed (B35)** | All four failed outright before B35 — see the three root causes below |
-| Rendering | **Works** | 80–82 bitmaps resolve in `main/normal`, 19–20 in `main/shade`; 38 scenes across the four |
+| Rendering | **Fixed (B36/B37)** | 80–82 bitmaps resolve in `main/normal`, 19–20 in `main/shade`; 38 scenes across the four |
+| Menu bar | **Fixed (B36)** | File/Play/Options/View/Help are placed by `mainmenu.maki`, not by a widget rule |
+| Display readouts | **Fixed (B37)** | `TIMEELAPSED` / `SONGLENGTH` / `SONGTITLE` / `SONGSAMPLERATE` are bound |
+| SUI tab strip | **Fixed (B37)** | `offsetx` on the captions is honoured, so icons-only mode clips them away |
 | Overlay (`Light`) palette | **Works** | The Light editions render in their own light palette against the base skin's artwork |
 | Album-art panel (W10 edition) | **Degrades** | Its `window/no_alb_art_shade.png` is zero bytes; that one placeholder draws nothing |
-| Scripts | **Partial** | `getsettingspath` and `scrolltopercent` are unimplemented, which is why all four still report `unsupported` although they draw |
+| Scripts | **Partial** | `instantiate` is unimplemented, which is why all four still report `unsupported` although they draw |
 
 ## The family is two skins and two overlays
 
@@ -66,8 +69,101 @@ alone would have left two of the four still dead.
   because their palette comes from `color-presets.xml` / `system-colors.xml` and the gamma model.
   Do not "fix" this by flipping `resolveSkinResource`'s order without a full corpus sweep — the
   relative-first order exists for authored subfolders.
-- **The `unsupported` compatibility level is about MAKI, not loading.** `getsettingspath` and
-  `scrolltopercent` are recorded as errors; the skin loads and draws regardless.
+- **The `unsupported` compatibility level is about MAKI, not loading.** `instantiate` is recorded as
+  an error; the skin loads and draws regardless.
+- **`searchresults/normal` draws 0 nodes, and that is correct.** Before B37 it painted the author's
+  placeholder banner ("Results found: 22 items") because `playlistpro.maki` aborted before it could
+  hide the panel. The container is `default_visible="0"` and only appears on a playlist search.
 - `main/normal`'s missing-bitmap list is mostly deliberate placeholder ids (`none`, `null`,
   `player.button.pause.normal.null`, `window.background.hidden`, `show.sui.tabs.invisible`) — the
   skin's own way of drawing nothing. They are not a defect.
+
+## B36/B37 — why five separate symptoms had one cause
+
+Five things were reported wrong on screen after B35 made the skin loadable: the menu bar drew its
+five items on top of each other, the album-art panel was black, the two time readouts were empty
+(a lone `/` between them), a WACUP logo was drawn over the Winamp one in shade mode, and the search
+panel showed a placeholder banner. All five were the same failure.
+
+`RENDER_SCRIPTS=1` reports it in one line per script:
+
+```
+SCRIPT player-normal-group.xml owner=group#player.titlebar … ran=onscriptloaded
+  failed=onscriptloaded: Winamp Modern runtime does not support method 'getsettingspath'.
+```
+
+**23 of the skin's `onScriptLoaded` handlers aborted on `System.getSettingsPath()`** — the skin
+builds `<settings>/WACUP_Tools/koopa.ini` and probes for it to decide whether it is running under
+WACUP, and it does this near the top of nearly every script. Each abort took the rest of that
+handler with it, and the rest of the handler is where the widgets get placed.
+
+The menu bar is the clearest case, and the one that misled the first diagnosis. `player.mainmenu`'s
+own comment says it:
+
+```xml
+<!-- Note: Most of the items in this group are placed by script -->
+```
+
+`mainmenu.maki` measures each label with `getAutoWidth()` and lays the five `<Menu>` objects out
+left to right. Nothing in the `Menu` widget self-sizes, and nothing needs to — B36's proposed
+`prev`/`next` chain-placement rule would have been the wrong fix for a working script that never
+ran. Once `getSettingsPath` answered, the five went to x = 190 / 231 / 277 / 350 / 400 on their own.
+
+Implementing it surfaced three more methods that had been masked behind it — `getAutoHeight`,
+`getGuid` and `scrollToPercent` — each aborting a further handler. Expect that cascade.
+
+The readouts were a second, independent cause: the `display=` table knew only `time` / `songname` /
+`songinfo` / `PE_Info`, and this skin asks for `TIMEELAPSED`, `SONGLENGTH`, `SONGTITLE` and
+`SONGSAMPLERATE`. Unmapped bindings fell through to the literal `text=`, which is empty here.
+
+The SUI tab captions were a third: they are `offsetx="35"`, which we ignored, so every caption drew
+over its own icon instead of being clipped away by the 40px icons-only strip.
+
+## B38 — what live QA found that no probe could
+
+Three of these do not reproduce in the render harness at all, and two were diagnosed purely from the
+app's own `#if DEBUG` logging. Worth knowing before reaching for `RENDER_PROBE` on this skin again.
+
+- **Undraggable after shade → normal.** The titlebar is `<grid … move="1">` over
+  `<rect id="vic_mover" move="1" fitparent="1">`, and we honoured `move="1"` on `<group>` only, so
+  the window was draggable by accident — wherever bare background happened to be topmost — and shade
+  mode changed which object that was. See `reference/rendering.md` → *Dragging the window*.
+- **Playlist and media library drawn on top of each other at launch.** The skin's script opens its
+  tab on its own timer, ~0.6 s *after* our reveals, so a reveal-time exclusivity check can never see
+  the page it needs to yield to. See `reference/components.md` → *Revealing an embedded surface*.
+  `WINAMP_MODERN_DEBUG_HOLDERS=1` is the only probe that shows it.
+- **`getTextWidth`** aborted `onTextChanged` — the handler that runs on every track change. Only two
+  objects in the skin declare it, both `display="PE_Info"`, so it is invisible headlessly until the
+  harness has a queue: `WINAMP_MODERN_RENDER_TEXT=1 WINAMP_MODERN_RENDER_PLAYLIST=6`.
+
+- **The visualization box drawn black over the album art (B38.4)** — and with it every other thing
+  `mcvcore` was supposed to do. It *does* reproduce headlessly. The skin decides between the two
+  panes from four config attributes it registers itself (`{6A619628-…}` *File Info* / *Playlist Info*
+  / *Visualization&nbsp;&nbsp;* / *Multi-tools*, then `{8D3829F9-…}` *Visualization&nbsp;* /
+  *Album Art*), and at the defaults it takes the album-art-only branch and hides
+  `info.component.vis`. That branch is in `mcvcore`'s **first** `System.onScriptLoaded()`, and the
+  script declares a **second** one — so the "keep the last binding per (object, event)" rule shadowed
+  it and none of it ran. See `reference/scripting.md` → *Two handlers for one event*. The same fix
+  restores the rest of the Multi Content View: `info.component.infodisplay` is laid out (it had been
+  sitting at its markup `x=80 w=0`), and `info.component.coverflow` — full-window-width and also
+  meant to be hidden — leaves the scene.
+- **The file-info panel then stayed empty**, because its `onSetVisible` — which fills every line of it
+  — aborted on **`getDecoderName`**, and behind that on `getPath`, `getIdealVideoWidth` and
+  `removePath` in turn. Four methods, one handler, the cascade B36/B37 warned to expect. This is the
+  rest of B38.3: implementing `getTextWidth` unblocked `onTextChanged`, and unblocking `mcvcore`
+  exposed the next handler in the same panel.
+
+**B38.5 is not a defect.** `player.mainframe.big` is `from="left"`, so the divider is anchored to the
+left edge and the right pane absorbs every extra pixel — which is what Wasabi's `from` means, what
+the skin's own `maxwidth="-300"` ("always leave 300 for the other pane") is written for, and what the
+skin's script asks for when it calls `setPosition(434)` against its `minwidth="434"`. The window is
+wide because the layout declares `w="1536" h="878"` as its **default** size. cPro-Bento's
+`centro.mainframe` is the same attribute the other way round (`from="right" width="200"`, its
+playlist column fixed and the left side growing) and confirms the reading. The oversized song title
+is the skin's own `fontsize="48"` in a 237px `InfoDisplay`; nothing in the corpus writes `fontsize`
+except `playlistpro.maki`, so no script is meant to shrink it.
+
+**Still open:** `instantiate` — `Group.instantiate(groupdef_id, index)`, which builds a groupdef
+instance into a group at runtime. It gates the config window's nine option pages and the SUI's
+equalizer tab; nothing else in the skin needs it. It is a real engine capability (script-time graph
+construction), not an arity question, and deserves its own item.

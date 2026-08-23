@@ -261,14 +261,14 @@ final class WinampModernPhase42Tests: XCTestCase {
         XCTAssertEqual(renderer.playlistScrollOffsetForTesting, 2, "an index off the end moves nothing")
     }
 
-    // MARK: - 6. One handler per (object, event)
+    // MARK: - 6. A repeated handler runs once; two different handlers both run
 
     /// A live defect found while verifying this phase, and not a playlist one: Defix's
-    /// `MAIN_LAYOUT_1` declares `ConfBT2.onLeftClick()` **twice**, byte for byte. Running both fired
-    /// that round button's whole assigned action twice per click, and because the action is a
-    /// *toggle* the two cancelled — the playlist window flashed open and shut on every press, and an
-    /// open one refused to close. Winamp registers one handler per (object, event), so the later
-    /// declaration is the one that stands.
+    /// `MAIN_LAYOUT_1` declares `ConfBT2.onLeftClick()` **twice**, the same 125 instructions reading
+    /// the same config string through two sets of temporaries. Running both fired that round
+    /// button's whole assigned action twice per click, and because the action is a *toggle* the two
+    /// cancelled — the playlist window flashed open and shut on every press, and an open one refused
+    /// to close. A repeat of a handler's body is a compile artifact, so it is dropped.
     ///
     /// The render harness could not see this: it owns no windows, so the doubled toggle measured as
     /// one clean action. It was found by driving the click in the running app.
@@ -279,8 +279,21 @@ final class WinampModernPhase42Tests: XCTestCase {
         XCTAssertEqual(program.bindings.count, 2, "both declarations survive the parse")
         XCTAssertEqual(program.dispatchBindings.count, 1, "only one is dispatched")
         XCTAssertEqual(program.dispatchBindings.first?.instructionIndex,
-                       program.bindings.last?.instructionIndex,
-                       "the later declaration is the one that stands")
+                       program.bindings.first?.instructionIndex,
+                       "the first of the repeats is the one that stands")
+    }
+
+    /// The other half of that rule, and B38.4: two handlers for the same (object, event) whose
+    /// **bodies differ** are two real handlers and both run. Big Bento Modern's `mcvcore` declares
+    /// `System.onScriptLoaded()` twice — once to find every object of the Multi Content View and
+    /// pick which of the album-art and visualization panes to show, once to start a timer. Dropping
+    /// the first left both panes in the scene, the visualization box drawn black over the cover.
+    func testTwoDifferentBodiesForOneEventBothRun() throws {
+        let program = try MakiBytecodeParser().parse(Self.divergentHandlerScript(),
+                                                     source: WalSourceLocation(path: "two-bodies.maki"))
+
+        XCTAssertEqual(program.bindings.count, 2)
+        XCTAssertEqual(program.dispatchBindings.count, 2, "different bodies are different handlers")
     }
 
     /// …while two handlers for *different* events, or for different objects, both stand.
@@ -410,10 +423,18 @@ final class WinampModernPhase42Tests: XCTestCase {
         makeScript(methodNames: ["onleftclick", "onrightclick"], bindings: [(0, 0, 0), (0, 1, 1)])
     }
 
+    /// The same object and the same event twice, over a body long enough for the two handlers to
+    /// differ: the first is one `return`, the second is two — the shape Big Bento's `mcvcore` ships.
+    private static func divergentHandlerScript() -> Data {
+        makeScript(methodNames: ["onscriptloaded"], bindings: [(0, 0, 0), (0, 0, 1)],
+                   instructionCount: 3)
+    }
+
     /// A minimal modern-layout program: one class, `methodNames` methods on it, one object variable,
     /// and the given `(variable, method, byteOffset)` bindings over a body of two bare `return`s.
     private static func makeScript(methodNames: [String],
-                                   bindings: [(UInt32, UInt32, UInt32)]) -> Data {
+                                   bindings: [(UInt32, UInt32, UInt32)],
+                                   instructionCount: Int = 2) -> Data {
         var data = Data([0x46, 0x47])
         func u8(_ value: UInt8) { data.append(value) }
         func u16(_ value: UInt16) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
@@ -433,9 +454,9 @@ final class WinampModernPhase42Tests: XCTestCase {
         u32(0)          // no constants
         u32(UInt32(bindings.count))
         for (variable, method, offset) in bindings { u32(variable); u32(method); u32(offset) }
-        // Two bare `return`s (opcode 33), so each binding lands on a real instruction boundary.
-        u32(2)
-        u8(33); u8(33)
+        // Bare `return`s (opcode 33), so each binding lands on a real instruction boundary.
+        u32(UInt32(instructionCount))
+        for _ in 0..<instructionCount { u8(33) }
         return data
     }
 

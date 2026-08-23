@@ -65,7 +65,7 @@ concept; read the one your symptom points at, not all of them.
 | **How do I see what the engine is doing?** Probes, env vars, dumps | [reference/harness.md](reference/harness.md) |
 | A GUI-only report, and no probe reproduces it | [reference/harness.md](reference/harness.md) — *Debugging a live defect* |
 | **A whole skin is dead / "none of it works"** — start at the abort, not the symptom | [reference/harness.md](reference/harness.md) — *The order that made Phase 33 cheap* |
-| **What should I work on next?** | `TASKS.md` — the **only** backlog (gitignored, local, deliberately so). The former tracked copy `docs/winamp-modern/open-items.md` was deleted 2026-08-23; do not recreate it |
+| **What should I work on next?** | `TASKS.md` for the engine, **`BENTO_TASKS.md`** for the Big Bento Modern family (`BB*`, split out 2026-08-23 when it had grown to four sections). Those two files are the **whole** backlog, and both are tracked in git (they were gitignored until 2026-08-23). The old third copy `docs/winamp-modern/open-items.md` was deleted 2026-08-23; do not recreate it |
 | A meter/needle/cone runs but barely moves | [reference/harness.md](reference/harness.md) — histogram the frames it uses |
 | **I changed the renderer — what proves I broke nothing?** | [reference/harness.md](reference/harness.md) — *The golden images*, then the 17-skin sweep for real artwork |
 | What Wasabi markup is supported at all? | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
@@ -138,7 +138,7 @@ verbatim; it just lives in a reference file now.
 | Debugging a skin | [reference/harness.md](reference/harness.md) |
 | The order that made Phase 33 cheap | [reference/harness.md](reference/harness.md) |
 | The golden images | [reference/harness.md](reference/harness.md) |
-| What is open right now, ranked | `TASKS.md` (the only backlog); [triage-playbook.md](triage-playbook.md) §4b keeps B1–B10's ranking as history |
+| What is open right now, ranked | `TASKS.md` + `BENTO_TASKS.md` (together, the whole backlog); [triage-playbook.md](triage-playbook.md) §4b keeps B1–B10's ranking as history |
 
 ## Where things live
 

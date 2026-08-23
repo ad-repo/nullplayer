@@ -162,6 +162,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 self?.presentEmbeddedLibraryLinkSheet()
             }
             skinView = view
+            view.willReconcileSurfaces = { [weak self] in self?.enforceEmbeddedPageExclusivity() }
             view.canvasSizeDidChange = { [weak self] size in
                 // A layout switch swaps the active layout, and with it the limits this window obeys.
                 self?.resizeWindow(to: size, reason: "canvasSizeDidChange")
@@ -723,11 +724,80 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             #endif
             return true
         }
-        let opened = Self.openHolders(for: kind, in: scripts.loadedSkin.runtime.graph)
+        let opened = openHolders(for: kind, in: scripts.loadedSkin.runtime.graph)
+        closeDisplacedPages(revealing: kind)
         #if DEBUG
         NSLog("WinampModern reveal %@ guid=%@ handlers=%d opened=%d", kind.rawValue, guid, handled, opened)
+        skinView?.logHolders(tag: "reveal \(kind.rawValue)")
         #endif
         return handled > 0 || opened > 0
+    }
+
+    /// Showing one embedded page closes the page it displaces.
+    ///
+    /// In a `singleWindowSUI` skin the component pages are **siblings**: Big Bento Modern's
+    /// `sui.components` holds seven `<group … visible="0"/>`, one per tab, and exactly one is on
+    /// screen at a time. Nothing in `revealEmbeddedSurface` knew that, so a session restoring both a
+    /// playlist and a library window revealed both and drew the two lists on top of each other
+    /// (reported live 2026-08-23; `HOLDERS after reveal library` listed `library#wdh.ml2` **and**
+    /// `playlist#wdh.playlist` at once).
+    ///
+    /// This runs after **both** opening routes — the skin's own `onGetCancelComponent` handler and
+    /// our `autoopen` fallback — because the two alternate: the first round of reveals went through
+    /// the fallback and the second through the script, so a fix that lived inside `openHolders`
+    /// corrected the first round and was bypassed by the second.
+    ///
+    /// Two holders count as competing pages only when their paths diverge at **siblings that each
+    /// carry an explicit `visible` attribute**. That is what a tab page looks like and what ordinary
+    /// structure does not: Big Bento's `wdh.pl` and `wdh.ml` are siblings under `sui.components` and
+    /// both declare `visible="0"`, while the top bar's own visualization holder diverges from them at
+    /// `player.mainframe.big`, which declares no `visible` at all — so the meter in the header is
+    /// left alone while the tab is switched.
+    private func closeDisplacedPages(revealing kind: WinampModernComponentKind) {
+        guard let renderer = skinView?.renderer else { return }
+        let holders = renderer.componentHolders()
+        guard let incoming = holders.first(where: { $0.kind == kind }) else { return }
+        let incomingChain = Self.ancestorChain(of: incoming.object)
+        var closed = false
+        for holder in holders where holder.kind != kind {
+            guard let page = Self.displacedPage(showing: incomingChain,
+                                                hiding: Self.ancestorChain(of: holder.object))
+            else { continue }
+            closed = page.setAttribute("visible", value: "0") || closed
+        }
+        if closed { skinView?.needsDisplay = true }
+    }
+
+    /// The object and every ancestor above it, nearest first.
+    private static func ancestorChain(of object: WasabiObject) -> [WasabiObject] {
+        var chain: [WasabiObject] = []
+        var node: WasabiObject? = object
+        var depth = 0
+        while let current = node, depth < 64 {
+            chain.append(current)
+            node = current.parent
+            depth += 1
+        }
+        return chain
+    }
+
+    /// The page to hide, when two holders' paths diverge at explicitly-toggled siblings. `nil` when
+    /// one chain contains the other (the same page, not two) or the divergence is ordinary structure.
+    private static func displacedPage(showing incoming: [WasabiObject],
+                                      hiding outgoing: [WasabiObject]) -> WasabiObject? {
+        let incomingIDs = Set(incoming.map(\.stableID))
+        // Deepest node on the outgoing path that is not shared with the incoming one, and its
+        // counterpart on the incoming path — the two must be children of the same parent.
+        guard let branchIndex = outgoing.lastIndex(where: { !incomingIDs.contains($0.stableID) })
+        else { return nil }
+        let outgoingBranch = outgoing[branchIndex]
+        guard let parent = outgoingBranch.parent,
+              let incomingBranch = incoming.first(where: { $0.parent === parent }),
+              incomingBranch !== outgoingBranch,
+              outgoingBranch.attributes["visible"] != nil,
+              incomingBranch.attributes["visible"] != nil
+        else { return nil }
+        return outgoingBranch
     }
 
     /// Whether the player's current scene already shows a holder for this surface.
@@ -745,11 +815,25 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// script here; the holder itself opens. So do we: reveal the hidden ancestors between an
     /// `autoopen` holder of this kind and its layout, and nothing else.
     ///
+    /// **Opening one page must close the page we opened before it.** In a `singleWindowSUI` skin the
+    /// component pages are siblings that all ship `visible="0"` — Big Bento Modern's `sui.components`
+    /// holds seven, one per tab — and the skin's own script shows exactly one. This fallback forces a
+    /// chain visible without knowing about the other six, so a session that restored both a playlist
+    /// and a library window revealed both and drew the two on top of each other (reported live,
+    /// 2026-08-23; the launch log reads `reveal library … opened=1` / `reveal playlist … opened=4` /
+    /// `reveal library … opened=1`).
+    ///
+    /// The fix is deliberately narrow: we revert **only what we ourselves forced**, and only the
+    /// parts of it that are not on the chain we are about to open. Anything the skin's script made
+    /// visible is untouched — that case returns early at `hasVisibleHolder` and never reaches here —
+    /// and a shared ancestor of both chains stays open because it is in the new chain's set.
+    ///
     /// Returns how many holders were opened.
     @discardableResult
-    private static func openHolders(for kind: WinampModernComponentKind,
-                                    in graph: WasabiObjectGraph) -> Int {
+    private func openHolders(for kind: WinampModernComponentKind,
+                             in graph: WasabiObjectGraph) -> Int {
         var opened = 0
+        var forced: [WasabiObject] = []
         func isAutoOpen(_ object: WasabiObject) -> Bool {
             switch object.attributes["autoopen"]?.lowercased() {
             case "1", "true", "yes": return true
@@ -764,7 +848,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 while let current = node, depth < 64 {
                     if current.typeName.caseInsensitiveCompare("layout") == .orderedSame { break }
                     switch current.attributes["visible"]?.lowercased() {
-                    case "0", "false", "no": _ = current.setAttribute("visible", value: "1")
+                    case "0", "false", "no":
+                        _ = current.setAttribute("visible", value: "1")
+                        forced.append(current)
                     default: break
                     }
                     node = current.parent
@@ -775,7 +861,60 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             for child in object.children { visit(child) }
         }
         for root in graph.roots { visit(root) }
+        guard opened > 0 else { return 0 }
+        let nowOpen = Set(forced.map(\.stableID))
+        var reverted: [String] = []
+        for previous in forcedVisibleHolderChain where !nowOpen.contains(previous.stableID) {
+            _ = previous.setAttribute("visible", value: "0")
+            reverted.append(previous.xmlID ?? "-")
+        }
+        #if DEBUG
+        NSLog("WinampModern openHolders %@: forced=[%@] reverted=[%@]", kind.rawValue,
+              forced.map { $0.xmlID ?? "-" }.joined(separator: ","),
+              reverted.joined(separator: ","))
+        #endif
+        forcedVisibleHolderChain = forced
         return opened
+    }
+
+    /// The objects `openHolders` last forced from `visible="0"` to `"1"`, so the next call can put
+    /// back the ones it is displacing. Only ever holds objects this controller set itself.
+    private var forcedVisibleHolderChain: [WasabiObject] = []
+
+    /// **The skin's script gets the last word on which tab is showing.**
+    ///
+    /// `revealEmbeddedSurface` gives the script first refusal and falls back to `autoopen` when the
+    /// scene still has no holder of that kind — but that test is synchronous, and a script can open
+    /// its tab on its own timer. Big Bento Modern does: at launch its four reveal calls all fall
+    /// through to the fallback (the tab is genuinely not open *yet*), we force the library page
+    /// visible, and ~0.6s later `suicore.maki` opens the playlist tab it had decided on all along.
+    /// The script has no idea we opened a second page, so both stayed on screen and the two lists
+    /// drew on top of each other.
+    ///
+    /// So the rule is re-checked on every layout pass, and it always resolves the same way: **the
+    /// page we forced yields to the page the skin opened.** Only pages this controller forced are
+    /// ever closed, and only when a competing sibling page — same parent, both carrying an explicit
+    /// `visible` attribute, the shape of a tab page — is open beside it.
+    func enforceEmbeddedPageExclusivity() {
+        guard !forcedVisibleHolderChain.isEmpty, let renderer = skinView?.renderer else { return }
+        let ours = Set(forcedVisibleHolderChain.map(\.stableID))
+        var closed = false
+        for holder in renderer.componentHolders() {
+            let chain = Self.ancestorChain(of: holder.object)
+            // A holder standing on a page we forced is ours; it cannot displace itself.
+            guard !chain.contains(where: { ours.contains($0.stableID) }) else { continue }
+            for page in forcedVisibleHolderChain
+            where page.attributes["visible"] == "1" && page.parent != nil {
+                let rival = chain.first { $0.parent === page.parent && $0 !== page
+                                          && $0.attributes["visible"] != nil }
+                guard rival != nil else { continue }
+                closed = page.setAttribute("visible", value: "0") || closed
+            }
+        }
+        if closed {
+            forcedVisibleHolderChain.removeAll { $0.attributes["visible"] != "1" }
+            skinView?.needsDisplay = true
+        }
     }
 
     /// The skin's embedded library surface, for browse-mode save/restore. Nil until a holder for it

@@ -203,15 +203,26 @@ final class MakiProgram {
     let methods: [MakiMethod]
     let variables: [MakiVariable]
     let bindings: [MakiBinding]
-    /// The bindings an event dispatch actually runs: **one handler per (object, event)**, the last
-    /// one the program declares.
+    /// The bindings an event dispatch actually runs: every handler a program declares for an
+    /// (object, event) pair, minus the ones whose **body is a byte-for-byte repeat** of an earlier
+    /// handler for the same pair.
     ///
-    /// Winamp registers a script's handlers into a per-object event map, so declaring the same pair
-    /// twice leaves one entry. A compiled skin can carry the duplicate: Defix's `MAIN_LAYOUT_1`
-    /// declares `ConfBT2.onLeftClick()` **twice**, byte for byte, both bodies reading `MainBtn2` and
-    /// both ending in the round button's assigned target. Running both fired that whole action twice
-    /// per click, and because the action is a *toggle* the two cancelled — the user saw the playlist
-    /// window flash open and shut again, and saw an open one refuse to close.
+    /// Two different rules were needed here and only the duplicate-body one is safe.
+    ///
+    /// Defix's `MAIN_LAYOUT_1` declares `ConfBT2.onLeftClick()` **twice**, both bodies reading
+    /// `MainBtn2` and both ending in the round button's assigned target. Running both fired that
+    /// whole action twice per click, and because the action is a *toggle* the two cancelled — the
+    /// user saw the playlist window flash open and shut again, and saw an open one refuse to close.
+    ///
+    /// Keeping only the *last* binding per pair fixed that and broke Big Bento Modern, whose
+    /// `mcvcore` declares `System.onScriptLoaded()` twice with **different** bodies: the first finds
+    /// every object in the Multi Content View and decides which of the album-art and visualization
+    /// panes to show, the second only starts a timer. Shadowing the first left both panes in the
+    /// scene, the visualization box drawn black over the cover art (B38.4).
+    ///
+    /// So a repeat body is a compile artifact and is dropped; two distinct bodies are two real
+    /// handlers and both run, which is also what the reference interpreter does. Jump targets are
+    /// absolute, so they are compared relative to each body's own entry point.
     let dispatchBindings: [MakiBinding]
     let instructions: [MakiInstruction]
     let source: WalSourceLocation
@@ -226,20 +237,72 @@ final class MakiProgram {
         self.methods = methods
         self.variables = variables
         self.bindings = bindings
-        var lastByPair: [String: Int] = [:]
-        for (offset, binding) in bindings.enumerated() where methods.indices.contains(binding.methodIndex) {
-            lastByPair["\(binding.variableIndex)/\(methods[binding.methodIndex].name)"] = offset
+        // A handler's body runs from its entry point to the next entry point the program declares —
+        // the compiler lays them out contiguously — or to the end of the instruction stream.
+        let entryPoints = Set(bindings.map(\.instructionIndex)).sorted()
+        func body(from start: Int) -> ArraySlice<MakiInstruction> {
+            let end = entryPoints.first { $0 > start } ?? instructions.count
+            guard start >= 0, start <= end, end <= instructions.count else { return [] }
+            return instructions[start..<end]
         }
-        self.dispatchBindings = bindings.enumerated()
-            .filter { offset, binding in
-                guard methods.indices.contains(binding.methodIndex) else { return true }
-                return lastByPair["\(binding.variableIndex)/\(methods[binding.methodIndex].name)"] == offset
-            }
-            .map(\.element)
+        var seenBodies: Set<String> = []
+        self.dispatchBindings = bindings.filter { binding in
+            guard methods.indices.contains(binding.methodIndex) else { return true }
+            let signature = "\(binding.variableIndex)/\(methods[binding.methodIndex].name)/"
+                + Self.bodySignature(body(from: binding.instructionIndex),
+                                     relativeTo: binding.instructionIndex)
+            return seenBodies.insert(signature).inserted
+        }
         self.instructions = instructions
         self.source = source
         self.ownerID = ownerID
         self.parameter = parameter
+    }
+
+    /// A handler body reduced to a comparable string — the *shape* of the handler, independent of
+    /// where it was emitted and which slots it happened to be given.
+    ///
+    /// Two things are normalised, and both are needed to recognise a repeated handler:
+    ///
+    /// - **Jump targets** are absolute instruction indices, so a repeat's jumps point at its own
+    ///   copy. They are taken relative to the body's entry point.
+    /// - **Variable indices** are renumbered by first appearance inside the body. The compiler gives
+    ///   each copy of a repeated handler its own temporaries (Defix's two `ConfBT2.onLeftClick`
+    ///   bodies are the same 125 instructions reading the same config string, one through `v586` and
+    ///   the other through `v591`), so comparing raw slots calls two copies of one handler different.
+    ///
+    /// The cost of the second normalisation is that two handlers differing *only* in which variable
+    /// they read compare equal. That is deliberate: it is precisely the repeated-handler shape, and
+    /// a real second handler for the same (object, event) — Big Bento's `mcvcore` — differs in far
+    /// more than a slot number.
+    static func bodySignature(_ body: ArraySlice<MakiInstruction>, relativeTo start: Int) -> String {
+        var rankByVariable: [Int: Int] = [:]
+        func rank(_ index: Int) -> Int {
+            if let existing = rankByVariable[index] { return existing }
+            let next = rankByVariable.count
+            rankByVariable[index] = next
+            return next
+        }
+        return body.map { step -> String in
+            switch step.argument {
+            case .none: return "\(step.opcode)"
+            case .variable(let index): return "\(step.opcode)v\(rank(index))"
+            case .method(let index): return "\(step.opcode)m\(index)"
+            case .type(let index): return "\(step.opcode)t\(index)"
+            case .instruction(let target): return "\(step.opcode)j\(target - start)"
+            case .valueKind(let kind, let guid): return "\(step.opcode)k\(kind)\(guid ?? "")"
+            }
+        }.joined(separator: ",")
+    }
+
+    /// A stable short hash of one binding's body — what the duplicate-body rule above compares, in a
+    /// form a probe can print next to two same-named bindings.
+    func bodyHash(of binding: MakiBinding) -> Int {
+        let entryPoints = Set(bindings.map(\.instructionIndex)).sorted()
+        let start = binding.instructionIndex
+        let end = entryPoints.first { $0 > start } ?? instructions.count
+        guard start >= 0, start <= end, end <= instructions.count else { return 0 }
+        return abs(Self.bodySignature(instructions[start..<end], relativeTo: start).hashValue % 100_000)
     }
 
     /// Winamp's `PopupMenu`, as its class table stores it. Only used to recognise the one class the
@@ -744,7 +807,12 @@ final class MakiInterpreter {
                (program.parameter ?? "").lowercased().contains(needle)
                 || program.source.path.lowercased().contains(needle) {
                 Self.traceBudget -= 1
-                print("MAKI \(instructionPointer): op\(instruction.opcode) "
+                // The program tag matters as much as the instruction: a needle like a XUI parameter
+                // matches several programs at once, and their instruction indices interleave into one
+                // stream that reads as a single program taking impossible jumps.
+                print("MAKI [\((program.source.path as NSString).lastPathComponent)"
+                      + "#\(program.parameter ?? "-")/\(program.instructions.count)] "
+                      + "\(instructionPointer): op\(instruction.opcode) "
                       + "top=\(stack.last.map { $0.value.stringValue } ?? "-") "
                       + "under=\(stack.count > 1 ? stack[stack.count - 2].value.stringValue : "-")")
             }
