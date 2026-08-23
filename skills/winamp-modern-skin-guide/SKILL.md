@@ -48,6 +48,8 @@ concept; read the one your symptom points at, not all of them.
 | A host-fed readout never updates (`onTextChanged`) | [reference/scripting.md](reference/scripting.md) |
 | An EQ readout follows the skin's own slider but not a preset, the menu bar or another window | [reference/scripting.md](reference/scripting.md) — *The equalizer tells the skin it moved* |
 | A keyboard shortcut the skin declares does nothing (`onKeyDown`, `alt+g`, `ctrl+w`) | [reference/scripting.md](reference/scripting.md) — *The keyboard is a string, and a borderless window has to ask for it* |
+| **A toggle works but never looks on** — a lamp, an `activeimage`, a word in the display that should brighten | [reference/rendering.md](reference/rendering.md) — *`onActivate`*: the indicator's event, and a `cfgattrib`-bound control keeps no `activated` of its own |
+| Shuffle / repeat / crossfade disagree with the menu bar, or a skin's crossfade button drives nothing | [reference/rendering.md](reference/rendering.md) — *Some `cfgattrib` values are the host's*: `WinampModernConfigBridge`, and why one setting must not have two homes |
 | A slider drags but nothing happens, or its readout never appears | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the action families, and `onSetPosition` on a drag |
 | Playlist / EQ / library / video surface missing, empty, or in the wrong window | [reference/components.md](reference/components.md) |
 | A hosted surface (library/video/vis) stays on screen over another tab, or comes back dead, after its holder went away and returned | [reference/components.md](reference/components.md) — *Unmounting is not teardown* |
@@ -94,6 +96,8 @@ verbatim; it just lives in a reference file now.
 | A bitmap font's `file=` is an id **or** a path | [reference/rendering.md](reference/rendering.md) |
 | What a `<text>` shows | [reference/rendering.md](reference/rendering.md) |
 | A `cfgattrib` control has no `action` — the binding *is* what it does | [reference/rendering.md](reference/rendering.md) |
+| Some `cfgattrib` values are the **host's**, not the skin's — and a bound control keeps no state of its own | [reference/rendering.md](reference/rendering.md) |
+| `onActivate` — how a skin shows that a toggle is on | [reference/rendering.md](reference/rendering.md) |
 | `<AlbumArt>` needs a host that actually has the cover | [reference/rendering.md](reference/rendering.md) |
 | `alpha` belongs to the object, not to one kind of drawing | [reference/rendering.md](reference/rendering.md) |
 | An image param is a *load*, and a failed load changes nothing | [reference/rendering.md](reference/rendering.md) |
@@ -162,6 +166,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Colour theme picker (`<ColorThemes:List>`) | `WasabiColorThemeList.swift`, `WasabiRenderer.swift` |
 | Style for NullPlayer-drawn surfaces | `WinampModernSurfaceStyle.swift` |
 | EQ action decoding | `WinampModernEQActions.swift` |
+| `cfgattrib` values that are host state | `WinampModernConfigBridge.swift` |
 | Balance (`PAN`) unit conversion | `WinampModernPanAction.swift` |
 | Diagnostics | `WalDiagnostics.swift` |
 | Compatibility report | `WinampModernCompatibilityReport.swift` |

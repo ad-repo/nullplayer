@@ -328,6 +328,67 @@ one `setData`, five windows' `STANDARDFRAME` scripts each re-reading the id and 
 slices. Dispatching to the caller alone repainted the configurator's own background and left the
 player, both speaker cabinets, the playlist and the library wearing the old artwork (Phase 45).
 
+##### Some `cfgattrib` values are the **host's**, not the skin's — and a bound control keeps no state of its own
+
+Most bindings address skin-private preferences, and those live in `WinampModernConfiguration`. Four
+do not: they are Winamp's own playback options, which the skin merely *draws*. Measured across the
+30 installed skins they are also by far the most common bindings there are —
+`{45F3F7C1-…};Repeat` ×52, `;Shuffle` ×50, `{FC3EAF78-…};Enable crossfading` ×32,
+`{F1239F09-…};Crossfade time` ×12 — so `WinampModernConfigBridge` maps exactly those to
+`WinampModernHost` (`shuffleEnabled`, `repeatEnabled`, `crossfadeEnabled`, `crossfadeSeconds`, the
+last two backed by `AudioEngine`'s Sweet Fades). Everything it does not name still goes to the
+skin's namespace.
+
+**Storing one of these in the skin's namespace as well gives one setting two homes**, and they drift
+the moment either side moves. Shuffle was stored twice — the attribute, plus `host.shuffleEnabled`
+toggled by an `xmlID == "shuffle"` case in the view — so one click flipped it twice and came back
+where it started. Keep the `xmlID` route for skins that bind *nothing* (boom draws shuffle and
+repeat with `activeimage` artwork and no `cfgattrib` at all), but only in the `else` of the binding.
+
+Two reads have to answer from the binding rather than from the object, and each one was a defect:
+
+- **`getActivated()`**. For a bound control the stored preference *is* the activation — that is why
+  `toggleActivation` refuses these and never writes `activated`. Answering from the attribute
+  reported every bound button as off forever.
+- **`getPosition()`** on a bound *slider*, in its own `low…high` unit. mmd3 seeds its crossfade
+  readout with `slidercb.onSetPosition(slidercb.getPosition())` at load.
+
+And a bound slider's **drag** is in that unit too, not Winamp's 0…255. Every explicitly-ranged
+slider in the corpus is one of these: five crossfade sliders cut `high="20"`, and Anaheim's
+`brightness.adjust` at `low="-4096" high="4096"`, which had been handed a 0…255 that meant nothing
+to the script reading it. Skin markup is untrusted, so a bridged number is clamped into the range
+the app itself offers (`WinampModernConfigBridge.crossfadeSecondsRange`) rather than accepted as
+given — and because the control reads its position back from the host, the readout shows the clamped
+value instead of lying about a duration the engine never took.
+
+##### `onActivate` — how a skin shows that a toggle is on
+
+Wasabi raises `onActivate(int activated)` whenever a button's activation changes, whoever changed
+it. It is **not** `onToggle`: skins hang their *indicator* off this one, and it had no dispatch site
+in the engine at all, so no `.wal` skin could show a toggle's state. mmd3's Crossfade/Shuffle/Repeat
+buttons use the same bitmap for `image` and `activeImage` on purpose — the indication is entirely
+six `ghost="1"` layers whose alpha `playertools.m` sets as `activated * 255` from `getActivated()`
+at load and from `onActivate` thereafter. Every probe showed the buttons working and the skin
+looking dead, because `RENDER_PROBE` read `activated=0` and `alpha=0` on a script that had run
+clean. 8 of the 30 installed skins declare a handler.
+
+Dispatch it from all three places activation can move — `toggleActivation`, `setActivated` (never
+`setActivatedNoCallback`, which exists precisely to stay silent), and a `cfgattrib` write — and for
+the last, to **every** object bound to that attribute: a skin declares the same switch once per
+layout, and its indicators are per-layout too.
+
+**A setting can also move from outside the skin**, and a `.wal` indicator is written once and never
+polled — so a shuffle toggled in NullPlayer's own Playback menu left mmd3's lamp on the old state,
+the same drift arriving by a different road. `WinampModernMainWindowController` observes
+`.audioPlaybackOptionsChanged` and calls `refreshBridgedConfigState()`, which re-raises `onActivate`
+(and `onSetPosition` for a bound slider) for a bridged value that actually moved. It caches the
+settled value on the skin's own write too, so one click is still one event.
+
+> The sweep earned its keep here. Making the crossfade slider report a real position pushed
+> multipass's arithmetic onto `MakiValue.integerValue`'s `Int32(clamping: Int64(value))`, whose
+> `Int64(_:)` **traps** on the infinity MAKI's unchecked `/` produces — a trap on skin input, which
+> the security model forbids. A pre-existing engine bug that nothing had reached before.
+
 > Not every attribute a skin registers appears in its own configurator. Defix's songticker mode
 > (`Disable`/`Modern`/`Classic Songticker Scrolling`) is registered with `newAttribute` for **Winamp's**
 > preferences dialog and appears nowhere in its own Skin Settings window. The host's

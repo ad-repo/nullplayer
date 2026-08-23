@@ -530,6 +530,12 @@ final class WasabiSceneRenderer {
     /// Reads a `cfgattrib`-bound control's current value. Supplied by the script runtime, which owns
     /// the configuration store; nil in a renderer built without one (the pixel tests).
     var configStateProvider: ((WasabiObject) -> Bool)?
+    /// The raw integer behind a `cfgattrib` binding, in the control's own unit — what a **slider**
+    /// bound to an attribute stands at. Separate from `configStateProvider` because a lamp and a
+    /// number are different questions about the same binding: mmd3's crossfade slider names
+    /// `Crossfade time`, and reading its seconds as a truth value would light an `activeimage`.
+    /// Nil in a renderer built without a script runtime (the pixel tests).
+    var configValueProvider: ((WasabiObject) -> Int32?)?
     /// Visualization holders the view layer has put a live engine into (B20a). The renderer paints
     /// their boxes black and leaves the drawing to it.
     var hostedVisualizationHolders: Set<WasabiObjectID> = []
@@ -2238,7 +2244,11 @@ final class WasabiSceneRenderer {
         } else {
             let low = Double(object.attributes["low"] ?? "0") ?? 0
             let high = Double(object.attributes["high"] ?? "255") ?? 255
-            let value = Double(object.attributes["value"] ?? "0") ?? 0
+            // A `cfgattrib`-bound slider stands where the *setting* stands, not where the last drag
+            // left a local copy — so the thumb follows a crossfade length changed from NullPlayer's
+            // own Fade Duration menu, and a value the host clamped shows the clamped position.
+            let value = configValueProvider?(object).map(Double.init)
+                ?? Double(object.attributes["value"] ?? "0") ?? 0
             normalized = high == low ? 0 : CGFloat((value - low) / (high - low))
         }
         return max(0, min(1, normalized))

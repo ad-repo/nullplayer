@@ -14,6 +14,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     /// Repaints every `.wal` window when a track's cover finishes loading.
     private var artworkObserver: NSObjectProtocol?
+    /// Tells the skin when shuffle, repeat or crossfade moved from outside it.
+    private var playbackOptionsObserver: NSObjectProtocol?
     private var loadedSkin: WinampModernLoadedSkin?
     private var skinView: WinampModernMainView?
     private var host: WinampModernAudioEngineHost?
@@ -77,6 +79,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 self?.skinView?.needsDisplay = true
                 self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
             }
+        // Shuffle, repeat and crossfade are the host's, and the skin only draws them — so a change
+        // made in NullPlayer's own Playback menu has to reach the skin the way a click on its own
+        // button does. A `.wal` indicator is written once from `onActivate`, never polled, so
+        // without this mmd3's lamp kept showing the state before the menu was used.
+        playbackOptionsObserver = NotificationCenter.default.addObserver(
+            forName: .audioPlaybackOptionsChanged, object: nil, queue: .main) { [weak self] _ in
+                self?.skinView?.scripts.refreshBridgedConfigState()
+                self?.skinView?.needsDisplay = true
+                self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+            }
         #if DEBUG
         if let localPath = UserDefaults.standard.string(forKey: "winampModernSkinPath"),
            !localPath.isEmpty {
@@ -137,6 +149,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // Every renderer asks the one runtime for a `cfgattrib` control's state, so a switch in
             // the settings window and the control it mirrors in another window always agree.
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
+            renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
             renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge)
@@ -336,6 +349,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             renderer.componentHost = componentBridge
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
+            renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
             renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge, drivesScripts: false)
@@ -1508,6 +1522,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     deinit {
         if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
+        if let playbackOptionsObserver { NotificationCenter.default.removeObserver(playbackOptionsObserver) }
         tearDownSkin()
     }
 }

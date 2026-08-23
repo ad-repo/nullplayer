@@ -58,6 +58,19 @@ For each of the three fixtures:
       every click that was not over the transport)
 - [ ] mmd3: the animated display in the middle is **unobstructed** — no spectrum bars painted over it
       in its animated modes; the drawer's analyzer and oscilloscope buttons still switch it
+- [ ] mmd3: click **Crossfade / Shuffle / Repeat** (the three round buttons top-left) — each lights
+      the small **lamp** beside it *and* brightens its word in the display, and clicking again puts
+      both back. The buttons use one bitmap for on and off on purpose, so the lamp and the word are
+      the whole indication (B32)
+- [ ] mmd3: **the other direction** — toggle **Playback ▸ Shuffle** (and ▸ Repeat) from the menu bar
+      and watch the skin: the lamp and word must follow. A `.wal` indicator is written once from
+      `onActivate` and never polled, so this is a different code path from the click above and the
+      one still unverified in the GUI at the time B32 landed
+- [ ] mmd3: the Crossfade button turns **Sweet Fades** on — check **Playback ▸ Sweet Fades** shows
+      it ticked — and the **crossfade slider in the EQ drawer** moves its seconds readout. Drag it to
+      the far right: it pins at **10s**, not 20, because the skin's declared range is clamped into
+      the one the Fade Duration menu offers. Changing **Playback ▸ Sweet Fades ▸ Fade Duration**
+      should move the skin's slider and readout too
 - [ ] Miku: the display's text sits **inside** the box — the song line above the seek bar with a gap,
       the big time readout in Arial Bold with steady digit columns and neither string overflowing its
       slot (Phase 23: `fontsize` is a pixel height, `font="Arial"` is a system family, text is centred

@@ -649,6 +649,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
             // value was — nine indicators reading OFF against three settings that ship as 1, which is
             // a blind instrument reporting a defect the app does not have (Phase 45).
             renderer.configStateProvider = { [weak runtime] in runtime?.configValue(of: $0) ?? false }
+            renderer.configValueProvider = { [weak runtime] in runtime?.configInteger(of: $0) }
             // The same synthetic queue the scripts see, so the drawn playlist panel is no longer the
             // empty box the harness has always produced (§2's documented blind spot).
             renderer.componentHost = playlistHost

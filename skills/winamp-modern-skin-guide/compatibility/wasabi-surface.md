@@ -46,6 +46,17 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   moves the skin's slider and two stacked balance sliders cannot show different positions.
   `WinampModernPanAction` owns both directions of the −1…+1 ↔ 0…1 conversion. Balance is deliberately
   not persisted, so the slider starts centred each launch
+- **`cfgattrib` with no `action`** (Phase 45, B32) — the binding *is* the command, on a togglebutton
+  and on a slider alike. Four of these address **host state** rather than skin storage and go through
+  `WinampModernConfigBridge` to `WinampModernHost`: `{45F3F7C1-…};Shuffle` and `;Repeat`,
+  `{FC3EAF78-…};Enable crossfading`, `{F1239F09-…};Crossfade time` (the last two are Sweet Fades, the
+  seconds clamped into the range the app's own Fade Duration menu offers). By a wide margin the most
+  common bindings in the corpus — 52 / 50 / 32 / 12 declarations across the 30 installed skins.
+  A bound control keeps **no state of its own**: `getActivated()` and `getPosition()` both answer
+  from the binding, the drag writes it in the control's own `low…high`, and the thumb and the
+  `activeimage` are drawn from it — so shuffle changed from the menu bar and the skin's own lamp can
+  never disagree. Everything the bridge does not name stays in the skin's namespace, and a skin that
+  binds nothing but names its button `Shuffle`/`Repeat` (boom) still works off the id
 - **`VIS_*` / `PE_*` / `VID_*`** (Phase 39) — the host-action families a skin puts on a toolbar
   button. Measured: **108 declarations in 11 of the 17 skins** (`VIS_*` 27 in 5, `PE_*` 39 in 7,
   `VID_*` 28 in 5, `CB_*` 14 in 4). Decoded in one place, `WinampModernHostAction`:

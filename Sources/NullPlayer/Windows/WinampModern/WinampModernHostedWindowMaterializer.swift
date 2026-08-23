@@ -177,6 +177,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                                                    containerID: id.containerIdentifier)
             renderer.componentHost = componentHost
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
+            renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
             renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
             let createdView = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                                    componentHost: componentHost,

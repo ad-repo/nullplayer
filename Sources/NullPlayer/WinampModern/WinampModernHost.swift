@@ -13,6 +13,13 @@ protocol WinampModernHost: AnyObject {
     var balance: Double { get set }
     var shuffleEnabled: Bool { get set }
     var repeatEnabled: Bool { get set }
+    /// Crossfading between tracks — NullPlayer's Sweet Fades. Winamp's own option, which a skin
+    /// draws rather than owns, so it is reached through `WinampModernConfigBridge` from the
+    /// `cfgattrib` binding and never stored in the skin's namespace.
+    var crossfadeEnabled: Bool { get set }
+    /// How long that crossfade runs, in whole seconds — the unit Winamp's sliders are cut in
+    /// (mmd3 prints the position straight into its readout). Writes are clamped by the bridge.
+    var crossfadeSeconds: Int { get set }
     var trackTitle: String { get }
     var trackArtist: String { get }
     var trackAlbum: String { get }
@@ -64,6 +71,16 @@ extension WinampModernHost {
         set {}
     }
     var isArtworkLoading: Bool { false }
+    // A host with no crossfade to drive (the render harness, a test double) reads it off and
+    // swallows the write, the way `balance` does — the skin's lamp and slider still draw.
+    var crossfadeEnabled: Bool {
+        get { false }
+        set {}
+    }
+    var crossfadeSeconds: Int {
+        get { Int(WinampModernConfigBridge.crossfadeSecondsRange.lowerBound) }
+        set {}
+    }
     var vuLevels: (left: Double, right: Double) { (0, 0) }
     var trackArtist: String { "" }
     var trackAlbum: String { "" }
@@ -178,6 +195,17 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     var repeatEnabled: Bool {
         get { engine.repeatEnabled }
         set { engine.repeatEnabled = newValue }
+    }
+    var crossfadeEnabled: Bool {
+        get { engine.sweetFadeEnabled }
+        set { engine.sweetFadeEnabled = newValue }
+    }
+    /// Whole seconds, because that is the unit a skin's crossfade slider is cut in. The engine keeps
+    /// a `TimeInterval`, so a fractional duration set from NullPlayer's own menu reads back rounded
+    /// rather than truncated — a 2.5 s setting shows the skin 3, not 2.
+    var crossfadeSeconds: Int {
+        get { Int(engine.sweetFadeDuration.rounded()) }
+        set { engine.sweetFadeDuration = TimeInterval(newValue) }
     }
     var trackTitle: String { engine.currentTrack?.title ?? "" }
     var trackArtist: String { engine.currentTrack?.artist ?? "" }

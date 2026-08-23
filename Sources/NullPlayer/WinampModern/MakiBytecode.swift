@@ -97,7 +97,18 @@ enum MakiValue {
         switch self {
         case .integer(let value): return value
         case .boolean(let value): return value ? 1 : 0
-        case .float(let value), .double(let value): return Int32(clamping: Int64(value))
+        // `clamping:` guards the Int32 step but **not** the `Int64(value)` inside it, which traps on
+        // an infinity or a NaN — and MAKI's `/` is IEEE division with no zero check, so any skin
+        // that divides by a value that happens to be zero reaches here with ±inf. That is a trap on
+        // skin input, which the engine's security model does not allow (failures are typed). NaN
+        // reads as 0, the way `Int32("nan")` does on the string branch.
+        case .float(let value), .double(let value):
+            if value.isNaN { return 0 }
+            // Compared as Double before converting: a finite 1e300 traps `Int64(_:)` just as an
+            // infinity does, so the range check has to happen in the wider type.
+            if value >= Double(Int32.max) { return .max }
+            if value <= Double(Int32.min) { return .min }
+            return Int32(value.rounded(.towardZero))
         case .string(let value): return Int32(value) ?? 0
         case .null, .object: return 0
         }

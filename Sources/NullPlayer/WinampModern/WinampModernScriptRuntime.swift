@@ -284,6 +284,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "onrightclick": 0,
         "ontargetreached": 0,
         "ontoggle": 1,
+        // `onActivate`'s companion. One argument, read off every handler in the corpus — mmd3,
+        // BLAKK, Ebonite, boom, impulse and Styx all open theirs with a single integer store.
+        "onactivate": 1,
         // `onAction` is Wasabi's generic message channel, and scripts *send* on it as well as
         // receive: ClassicPro's menu bar posts itself `update_menu`, and the drawer registers its
         // widgets with the widget manager, both by calling the event as a method.
@@ -897,7 +900,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// The current value of a `cfgattrib`-bound control, for the renderer's active-state decision.
     func configValue(of object: WasabiObject) -> Bool {
         guard let binding = Self.configBinding(of: object) else { return false }
+        // A number is not a lamp: mmd3's crossfade *slider* names `Crossfade time`, and reading its
+        // seconds as truthiness would light an `activeimage` for any non-zero duration.
+        if let bridged = WinampModernConfigBridge.attribute(section: binding.section, key: binding.key) {
+            guard bridged.isFlag else { return false }
+            return WinampModernConfigBridge.value(of: bridged, host: host) != 0
+        }
         return loadedSkin.configuration.integer(section: binding.section, key: binding.key, default: 0) != 0
+    }
+
+    /// The raw integer behind a `cfgattrib` binding — the lamps' 0/1 and the sliders' own unit —
+    /// from the host for a bridged attribute and from the skin's namespace for its own.
+    func configInteger(of object: WasabiObject) -> Int32? {
+        guard let binding = Self.configBinding(of: object) else { return nil }
+        return configInteger(section: binding.section, key: binding.key)
+    }
+
+    private func configInteger(section: String, key: String) -> Int32 {
+        if let bridged = WinampModernConfigBridge.attribute(section: section, key: key) {
+            return WinampModernConfigBridge.value(of: bridged, host: host)
+        }
+        return loadedSkin.configuration.integer(section: section, key: key, default: 0)
     }
 
     /// Flip a `cfgattrib`-bound control and tell the skin, returning false when it is not bound.
@@ -915,9 +938,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     @discardableResult
     func toggleConfigAttribute(of object: WasabiObject) -> Bool {
         guard let binding = Self.configBinding(of: object) else { return false }
-        let flipped = loadedSkin.configuration.integer(section: binding.section, key: binding.key,
-                                                       default: 0) != 0 ? "0" : "1"
+        let flipped = configInteger(section: binding.section, key: binding.key) != 0 ? "0" : "1"
         setConfigAttribute(section: binding.section, key: binding.key, value: flipped)
+        return true
+    }
+
+    /// Write a `cfgattrib`-bound **slider** from a drag, mapping 0…1 through the control's own
+    /// `low…high`, and returning false when it is not bound.
+    ///
+    /// The unit is the slider's, not Winamp's 0…255: mmd3's crossfade slider is cut `high="20"` and
+    /// its readout prints the position as seconds, so handing it a 0…255 would have shown "255s".
+    @discardableResult
+    func setConfigAttribute(of object: WasabiObject, normalized: CGFloat) -> Bool {
+        guard let binding = Self.configBinding(of: object) else { return false }
+        let low = Double(object.attributes["low"] ?? "0") ?? 0
+        let high = Double(object.attributes["high"] ?? "255") ?? 255
+        let value = Int32((low + Double(max(0, min(1, normalized))) * (high - low)).rounded())
+        guard configInteger(section: binding.section, key: binding.key) != value else { return true }
+        setConfigAttribute(section: binding.section, key: binding.key, value: String(value))
         return true
     }
 
@@ -944,14 +982,97 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // The state is flipped *before* the notification, because that is what the handler reads:
         // multipass's `onToggle` asks the button `getActivated()` rather than trusting its argument.
         _ = try? dispatch(object: object, event: "ontoggle", arguments: [.boolean(activated)])
+        notifyActivated(object, activated: activated)
         return true
+    }
+
+    /// `onActivate(int activated)` — Wasabi raises it whenever a button's activation changes,
+    /// whoever changed it, and it is separate from `onToggle`: skins hang their *indicator* off this
+    /// one. mmd3's three lamps and the three words in its display are `setAlpha(activated * 255)`
+    /// from nothing else, so with no dispatch site at all no `.wal` skin could show a toggle's state.
+    private func notifyActivated(_ object: WasabiObject, activated: Bool) {
+        _ = try? dispatch(object: object, event: "onactivate", arguments: [.boolean(activated)])
+    }
+
+    /// The last value each bridged attribute was seen at, so a refresh only tells the skin about a
+    /// setting that actually moved. Four entries — one per `WinampModernConfigBridge.Attribute`.
+    private var lastBridgedValues: [String: Int32] = [:]
+
+    /// Tell the skin that one of Winamp's playback options moved from **outside** it — NullPlayer's
+    /// own Playback menu, a keyboard shortcut, a restored session.
+    ///
+    /// Without this the bridge is only half a fix: `configValue` would answer correctly the next
+    /// time anything asked, but mmd3's lamps are not polled — their alpha is written once, from
+    /// `onActivate`, and a shuffle toggled in the menu bar left the skin showing the old state.
+    /// That is the same drift two copies of the setting used to cause, arriving by a different road.
+    func refreshBridgedConfigState() {
+        var moved = false
+        for attribute in WinampModernConfigBridge.Attribute.allCases {
+            let value = WinampModernConfigBridge.value(of: attribute, host: host)
+            let cacheKey = "\(attribute.section);\(attribute.key)"
+            let previous = lastBridgedValues.updateValue(value, forKey: cacheKey)
+            // First sight seeds the cache without notifying: the skin read the value itself at load
+            // (mmd3's `getActivated()` / `getPosition()` init), and an event for a change that never
+            // happened would be a lie about what the person just did.
+            guard let previous, previous != value else { continue }
+            notifyActivationChanged(section: attribute.section, key: attribute.key)
+            notifyPositionChanged(section: attribute.section, key: attribute.key, value: value)
+            moved = true
+        }
+        if moved { notifyGraphDidMutate() }
+    }
+
+    /// A bound **slider** learns the same news through `onSetPosition` — that is where mmd3 prints
+    /// its crossfade readout, and a duration changed from the Fade Duration menu has to reach it.
+    private func notifyPositionChanged(section: String, key: String, value: Int32) {
+        for object in loadedSkin.runtime.graph.allObjectsUnordered
+        where object.typeName.caseInsensitiveCompare("slider") == .orderedSame {
+            guard let binding = Self.configBinding(of: object),
+                  binding.section.caseInsensitiveCompare(section) == .orderedSame,
+                  binding.key.caseInsensitiveCompare(key) == .orderedSame else { continue }
+            _ = try? dispatch(object: object, event: "onsetposition", arguments: [.integer(value)])
+        }
+    }
+
+    /// Tell every control bound to `{section};key` that its activation moved.
+    ///
+    /// Bounded by the graph: this walks the objects that already exist, and a skin cannot declare
+    /// more of them at runtime than `newGroup`'s own ceiling allows.
+    private func notifyActivationChanged(section: String, key: String) {
+        let activated = configInteger(section: section, key: key) != 0
+        for object in loadedSkin.runtime.graph.allObjectsUnordered {
+            guard let binding = Self.configBinding(of: object),
+                  binding.section.caseInsensitiveCompare(section) == .orderedSame,
+                  binding.key.caseInsensitiveCompare(key) == .orderedSame else { continue }
+            notifyActivated(object, activated: activated)
+        }
     }
 
     /// Write one configuration attribute and tell the skin — the single write route, shared by a
     /// `cfgattrib` control the skin drew itself and by the host's own settings list (Phase 27.3).
     /// A second route would let the two disagree about whether the skin was notified.
     func setConfigAttribute(section: String, key: String, value: String) {
-        loadedSkin.configuration.setString(value, section: section, key: key)
+        // A bridged attribute is Winamp's own playback option, and the host owns it. Writing it to
+        // the skin's namespace as well would give one setting two homes that drift apart — a shuffle
+        // toggled from the menu bar leaving the skin's lamp dark, and vice versa.
+        if let bridged = WinampModernConfigBridge.attribute(section: section, key: key) {
+            WinampModernConfigBridge.setValue(Int32(value) ?? (value.isEmpty ? 0 : 1),
+                                              of: bridged, host: host)
+            // The engine will post its options-changed notification for this very write, and
+            // `refreshBridgedConfigState` must not read it back as news and raise `onActivate` a
+            // second time for one click. Recording the settled value here is what makes the two
+            // routes idempotent with each other.
+            lastBridgedValues["\(bridged.section);\(bridged.key)"] =
+                WinampModernConfigBridge.value(of: bridged, host: host)
+        } else {
+            loadedSkin.configuration.setString(value, section: section, key: key)
+        }
+        // Wasabi's togglebutton raises `onActivate` when its activation changes, and for a
+        // config-bound button the attribute *is* that activation — so the write is the change. Every
+        // object bound to this attribute hears it, because a skin declares the same switch once per
+        // layout: mmd3's Crossfade button exists in `normal`, `shade` and `shade2`, and its
+        // indicator layers are per-layout too.
+        notifyActivationChanged(section: section, key: key)
         for (id, state) in dynamicObjects {
             guard case .configAttribute(let attributeSection, let attributeKey) = state.role,
                   attributeSection.caseInsensitiveCompare(section) == .orderedSame,
@@ -2491,12 +2612,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             _ = object.setAttribute("activated", value: arguments[0].truthy ? "1" : "0")
             notifyObjectDidMutate(object)
             _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(arguments[0].truthy)])
+            notifyActivated(object, activated: arguments[0].truthy)
             return .null
         case "setactivatednocallback":
             _ = object.setAttribute("activated", value: arguments[0].truthy ? "1" : "0")
             notifyObjectDidMutate(object)
             return .null
-        case "getactivated": return .boolean(object.attributes["activated"] == "1")
+        // For a `cfgattrib`-bound control the stored preference **is** the activation — the button
+        // keeps no second copy, which is why `toggleActivation` refuses these. Answering from the
+        // `activated` attribute instead reported every such button as off forever, and mmd3's whole
+        // crossfade/shuffle/repeat indicator set is `alpha = 255 * getActivated()` at load.
+        case "getactivated":
+            if Self.configBinding(of: object) != nil { return .boolean(configValue(of: object)) }
+            return .boolean(object.attributes["activated"] == "1")
         // The graph type, which is the XML tag the object was declared with (`layer`, `button`,
         // `togglebutton`, `slider`, …) — what a script comparing `strUpper(getClassName())` against
         // "LAYER" is asking for.
@@ -2571,7 +2699,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             notifyGraphDidMutate()
             _ = try dispatch(object: object, event: "onsetposition", arguments: [arguments[0]])
             return .null
-        case "getposition": return .integer(Int32(object.attributes["value"] ?? object.attributes["position"] ?? "0") ?? 0)
+        // Same rule as `getactivated`: for a bound control the setting *is* the position, and the
+        // `value` attribute is not a second copy of it. mmd3 seeds its crossfade readout with
+        // `slidercb.onSetPosition(slidercb.getPosition())` at load, which read 0 whatever the
+        // stored duration was.
+        case "getposition":
+            if let value = configInteger(of: object) { return .integer(value) }
+            return .integer(Int32(object.attributes["value"] ?? object.attributes["position"] ?? "0") ?? 0)
+        case "setposition" where Self.configBinding(of: object) != nil:
+            if let binding = Self.configBinding(of: object) {
+                setConfigAttribute(section: binding.section, key: binding.key,
+                                   value: String(arguments[0].integerValue))
+            }
+            _ = try dispatch(object: object, event: "onsetposition", arguments: [arguments[0]])
+            return .null
         case "setposition":
             // Only an actual change notifies, as in Wasabi. Skins pair sliders that write each
             // other's position from their own `onSetPosition`; notifying unconditionally turns that
@@ -2683,14 +2824,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // A button bound to a config attribute (`cfgattrib="{GUID};Name"`) reports that
             // attribute's value; the GUID is the section key, exactly as `getItemByGuid` uses it.
             // Unbound objects fall back to their own toggle state.
-            if let attribute = object.attributes["cfgattrib"] {
-                let parts = attribute.components(separatedBy: ";")
-                if parts.count >= 2 {
-                    return .integer(loadedSkin.configuration.integer(section: parts[0],
-                                                                     key: parts[1...].joined(separator: ";"),
-                                                                     default: 0))
-                }
-            }
+            if let value = configInteger(of: object) { return .integer(value) }
             return .integer(Int32(object.attributes["value"] ?? "") ?? (object.attributes["activated"] == "1" ? 1 : 0))
         case "setscale":
             // "Scale all my windows to this." Answered by the host's UI Size, and only from a

@@ -1325,6 +1325,12 @@ final class WinampModernMainView: NSView {
             // The balance slider. The engine's unit is −1…+1 and the slider's is 0…1; both
             // conversions live in `WinampModernPanAction` so the thumb cannot disagree with the drag.
             host.balance = WinampModernPanAction.balance(normalized: normalized)
+        } else if object.attributes["action"] == nil,
+                  scripts.setConfigAttribute(of: object, normalized: normalized) {
+            // A slider bound to a `cfgattrib` carries no action — the binding *is* what it drives.
+            // mmd3's `sCrossfade` (`high="20"`) is the crossfade length, and four other skins spell
+            // the same control the same way.
+            WindowManager.shared.refreshWinampModernSurfaces()
         } else {
             switch object.attributes["action"]?.lowercased() {
             case "seek": host.seek(to: host.duration * normalized)
@@ -1339,11 +1345,19 @@ final class WinampModernMainView: NSView {
         needsDisplay = true
     }
 
-    /// Record a slider's 0…255 position and dispatch `onSetPosition` — but only when the integer
-    /// position actually moved, which is what Wasabi does and what keeps a pair of sliders that write
-    /// each other's position from their own handler out of an endless round trip.
+    /// Record a slider's position and dispatch `onSetPosition` — but only when the integer position
+    /// actually moved, which is what Wasabi does and what keeps a pair of sliders that write each
+    /// other's position from their own handler out of an endless round trip.
+    ///
+    /// The position is in the slider's **own** `low…high` unit, which defaults to Winamp's 0…255 and
+    /// so is unchanged for every action-driven slider in the corpus. It matters for the two kinds
+    /// that declare a range: a crossfade slider is cut `high="20"` and mmd3 prints the argument
+    /// straight into its readout as seconds, and Anaheim's brightness slider is `low="-4096"
+    /// high="4096"` and was being handed a 0…255 that meant nothing to the script reading it.
     private func notePosition(_ normalized: CGFloat, on object: WasabiObject) {
-        let position = Int32((normalized * 255).rounded())
+        let low = Double(object.attributes["low"] ?? "0") ?? 0
+        let high = Double(object.attributes["high"] ?? "255") ?? 255
+        let position = Int32((low + Double(normalized) * (high - low)).rounded())
         guard object.attributes["value"] != String(position) else { return }
         _ = object.setAttribute("value", value: String(position))
         _ = try? scripts.dispatch(object: object, event: "onsetposition",
@@ -1364,13 +1378,23 @@ final class WinampModernMainView: NSView {
             // A `cfgattrib`-bound control carries no `action`: the binding *is* what it does. Defix's
             // whole settings window is built this way, so without it every switch in that window
             // moved nothing.
+            // Shuffle, repeat and crossfade reach the host from *inside* this call:
+            // `WinampModernConfigBridge` makes their attributes the host's own state, so for a bound
+            // button the write **is** the toggle, and the `xmlID` route below must not run as well —
+            // doing both flipped each of them twice and left the skin's lamp disagreeing with the
+            // engine.
             if scripts.toggleConfigAttribute(of: object) {
                 WindowManager.shared.refreshWinampModernSurfaces()
-            }
-            switch object.xmlID?.lowercased() {
-            case "shuffle": host.shuffleEnabled.toggle()
-            case "repeat": host.repeatEnabled.toggle()
-            default: break
+            } else {
+                // A skin that draws the buttons and binds nothing (boom names its artwork
+                // `Player.shuffle-Selected` and declares no `cfgattrib` at all) still has to work,
+                // and its id is the only thing that says what the button is for. The renderer reads
+                // the same host flags back through the matching `id ==` case in `resolvedBitmapID`.
+                switch object.xmlID?.lowercased() {
+                case "shuffle": host.shuffleEnabled.toggle()
+                case "repeat": host.repeatEnabled.toggle()
+                default: break
+                }
             }
         }
         updatePlaybackState()
