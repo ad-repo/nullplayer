@@ -47,6 +47,26 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// cap is what stops a script appending in a loop from growing without bound.
     private static let maximumListItems = 4_096
 
+    private struct TargetAnimationState {
+        var currentX: Double
+        var currentY: Double
+        var currentW: Double
+        var currentH: Double
+        var currentAlpha: Double
+        var targetX: Double
+        var targetY: Double
+        var targetW: Double
+        var targetH: Double
+        var targetAlpha: Double
+        let startX: Double
+        let startY: Double
+        let startW: Double
+        let startH: Double
+        let startAlpha: Double
+        let speed: Double
+        var lastTick: Double
+    }
+
     let loadedSkin: WinampModernLoadedSkin
     let host: WinampModernHost
     let timers: MakiTimerService
@@ -224,6 +244,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private var nextPopupID: UInt64 = 1
     private var popupCommands: [UInt64: [PopupEntry]] = [:]
     private var dynamicObjects: [UInt64: DynamicObjectState] = [:]
+    private var activeTargetAnimations: [WasabiObjectID: TargetAnimationState] = [:]
     private var activeLayoutByContainer: [WasabiObjectID: WasabiObjectID] = [:]
     private let preferenceNamespace: String
 
@@ -2617,18 +2638,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "settargetw": return setTarget("targetw", object: object, value: arguments[0])
         case "settargeth": return setTarget("targeth", object: object, value: arguments[0])
         case "settargeta": return setTarget("targeta", object: object, value: arguments[0])
-        case "settargetspeed": return setTarget("targetspeed", object: object, value: arguments[0])
-        case "gototarget":
-            for (target, actual) in [("targetx", "x"), ("targety", "y"), ("targetw", "w"),
-                                     ("targeth", "h"), ("targeta", "alpha")] {
-                if let value = object.attributes[target] { _ = object.setAttribute(actual, value: value) }
-            }
-            _ = object.setAttribute("goingtotarget", value: "0")
-            notifyGraphDidMutate()
-            _ = try dispatch(object: object, event: "ontargetreached")
+        case "settargetspeed":
+            _ = object.setAttribute("targetspeed", value: String(arguments[0].doubleValue))
             return .null
-        case "reversetarget", "canceltarget":
+        case "gototarget":
+            startTargetAnimation(object: object)
+            return .null
+        case "canceltarget":
+            cancelTargetAnimation(objectID: object.stableID)
             _ = object.setAttribute("goingtotarget", value: "0")
+            return .null
+        case "reversetarget":
+            reverseTargetAnimation(object: object)
             return .null
         case "isgoingtotarget": return .boolean(object.attributes["goingtotarget"] == "1")
         case "sendaction":
@@ -3236,6 +3257,140 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return .null
     }
 
+    private func targetTimerID(for objectID: WasabiObjectID) -> UInt64 {
+        objectID.rawValue | 0x8000_0000_0000_0000
+    }
+
+    private func targetAttr(_ object: WasabiObject, _ key: String, fallback: String) -> Double {
+        Double(object.attributes[key] ?? object.attributes[fallback] ?? "0") ?? 0
+    }
+
+    private func startTargetAnimation(object: WasabiObject) {
+        let id = object.stableID
+        cancelTargetAnimation(objectID: id)
+
+        let rawSpeed = Double(object.attributes["targetspeed"] ?? "0.5") ?? 0.5
+        if rawSpeed <= 0 {
+            _ = object.setAttribute("x", value: object.attributes["targetx"] ?? object.attributes["x"] ?? "0")
+            _ = object.setAttribute("y", value: object.attributes["targety"] ?? object.attributes["y"] ?? "0")
+            _ = object.setAttribute("w", value: object.attributes["targetw"] ?? object.attributes["w"] ?? "0")
+            _ = object.setAttribute("h", value: object.attributes["targeth"] ?? object.attributes["h"] ?? "0")
+            _ = object.setAttribute("alpha", value: object.attributes["targeta"] ?? object.attributes["alpha"] ?? "255")
+            _ = object.setAttribute("goingtotarget", value: "0")
+            notifyGraphDidMutate()
+            _ = try? dispatch(object: object, event: "ontargetreached")
+            return
+        }
+        let speed = min(1.0, rawSpeed)
+        let cx = Double(object.attributes["x"] ?? "0") ?? 0
+        let cy = Double(object.attributes["y"] ?? "0") ?? 0
+        let cw = Double(object.attributes["w"] ?? "0") ?? 0
+        let ch = Double(object.attributes["h"] ?? "0") ?? 0
+        let ca = Double(object.attributes["alpha"] ?? "255") ?? 255
+        let state = TargetAnimationState(
+            currentX: cx, currentY: cy, currentW: cw, currentH: ch, currentAlpha: ca,
+            targetX: targetAttr(object, "targetx", fallback: "x"),
+            targetY: targetAttr(object, "targety", fallback: "y"),
+            targetW: targetAttr(object, "targetw", fallback: "w"),
+            targetH: targetAttr(object, "targeth", fallback: "h"),
+            targetAlpha: object.attributes["targeta"].flatMap(Double.init) ?? ca,
+            startX: cx, startY: cy, startW: cw, startH: ch, startAlpha: ca,
+            speed: speed,
+            lastTick: ProcessInfo.processInfo.systemUptime
+        )
+
+        if animationReached(state) {
+            _ = object.setAttribute("goingtotarget", value: "0")
+            notifyGraphDidMutate()
+            _ = try? dispatch(object: object, event: "ontargetreached")
+            return
+        }
+
+        _ = object.setAttribute("goingtotarget", value: "1")
+        activeTargetAnimations[id] = state
+
+        let timerID = targetTimerID(for: id)
+        _ = try? timers.schedule(id: timerID, period: 1.0 / 60.0) { [weak self] in
+            self?.tickTargetAnimation(objectID: id)
+        }
+    }
+
+    /// Winamp applies `targetspeed` as an exponential ease factor per ~20 ms timer tick.
+    /// Scale to real elapsed time so the animation looks the same at any frame rate.
+    private static let wasabiTargetTickPeriod: Double = 0.020
+
+    private func tickTargetAnimation(objectID: WasabiObjectID) {
+        guard var state = activeTargetAnimations[objectID] else { return }
+        guard let object = loadedSkin.runtime.graph.object(withID: objectID) else {
+            cancelTargetAnimation(objectID: objectID)
+            return
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let dt = max(0.001, now - state.lastTick)
+        state.lastTick = now
+        let factor = 1 - pow(1 - state.speed, dt / Self.wasabiTargetTickPeriod)
+
+        func lerp(_ current: Double, _ target: Double) -> Double {
+            current + (target - current) * factor
+        }
+
+        state.currentX = lerp(state.currentX, state.targetX)
+        state.currentY = lerp(state.currentY, state.targetY)
+        state.currentW = lerp(state.currentW, state.targetW)
+        state.currentH = lerp(state.currentH, state.targetH)
+        state.currentAlpha = lerp(state.currentAlpha, state.targetAlpha)
+
+        _ = object.setAttribute("x", value: String(Int(state.currentX.rounded())))
+        _ = object.setAttribute("y", value: String(Int(state.currentY.rounded())))
+        _ = object.setAttribute("w", value: String(Int(state.currentW.rounded())))
+        _ = object.setAttribute("h", value: String(Int(state.currentH.rounded())))
+        _ = object.setAttribute("alpha", value: String(Int(state.currentAlpha.rounded())))
+
+        if animationReached(state) {
+            _ = object.setAttribute("x", value: String(Int(state.targetX)))
+            _ = object.setAttribute("y", value: String(Int(state.targetY)))
+            _ = object.setAttribute("w", value: String(Int(state.targetW)))
+            _ = object.setAttribute("h", value: String(Int(state.targetH)))
+            _ = object.setAttribute("alpha", value: String(Int(state.targetAlpha)))
+            activeTargetAnimations.removeValue(forKey: objectID)
+            timers.cancel(id: targetTimerID(for: objectID))
+            _ = object.setAttribute("goingtotarget", value: "0")
+            notifyGraphDidMutate()
+            _ = try? dispatch(object: object, event: "ontargetreached")
+        } else {
+            activeTargetAnimations[objectID] = state
+            notifyGraphDidMutate()
+        }
+    }
+
+    private func animationReached(_ state: TargetAnimationState) -> Bool {
+        abs(state.currentX - state.targetX) < 0.5 &&
+        abs(state.currentY - state.targetY) < 0.5 &&
+        abs(state.currentW - state.targetW) < 0.5 &&
+        abs(state.currentH - state.targetH) < 0.5 &&
+        abs(state.currentAlpha - state.targetAlpha) < 0.5
+    }
+
+    private func cancelTargetAnimation(objectID: WasabiObjectID) {
+        activeTargetAnimations.removeValue(forKey: objectID)
+        timers.cancel(id: targetTimerID(for: objectID))
+    }
+
+    private func reverseTargetAnimation(object: WasabiObject) {
+        let id = object.stableID
+        if var state = activeTargetAnimations[id] {
+            state.targetX = state.startX
+            state.targetY = state.startY
+            state.targetW = state.startW
+            state.targetH = state.startH
+            state.targetAlpha = state.startAlpha
+            activeTargetAnimations[id] = state
+        } else {
+            startTargetAnimation(object: object)
+        }
+    }
+
     /// Bind the host-provided singletons a program declares but never assigns.
     ///
     /// `std.mi` declares `PlEdit` the same way it declares `System`: a global object the host owns
@@ -3290,6 +3445,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         resolvedGeometryRequested = nil
         mousePositionInObjectSpaceRequested = nil
         geometryDidSettle = nil
+        activeTargetAnimations.removeAll()
         timers.teardown()
         interpreter.teardown()
         host.endVisualizationConsumption()

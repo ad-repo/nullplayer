@@ -670,7 +670,7 @@ final class WinampModernPhase13Tests: XCTestCase {
                     Int((converted.greenComponent * 255).rounded()),
                     Int((converted.blueComponent * 255).rounded())]
         }
-        XCTAssertEqual(rgb(palette.listText), [10, 20, 30], "no pledit.text, so studio.list.text wins")
+        XCTAssertEqual(rgb(palette.listText), [10, 20, 30], "studio.list.text is the native Wasabi ID")
         XCTAssertEqual(rgb(palette.currentText), [10, 20, 30], "current text falls back to list text")
         XCTAssertEqual(rgb(palette.selectionBackground), [40, 50, 60])
         XCTAssertEqual(rgb(palette.treeText), [70, 80, 90])

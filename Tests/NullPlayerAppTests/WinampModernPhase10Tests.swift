@@ -9,17 +9,17 @@ final class WinampModernPhase10Tests: XCTestCase {
 
     // MARK: - Colour themes
 
-    /// `<gammagroup value="r,g,b">` is a per-channel **multiplier** around 1: 0 leaves a channel
-    /// alone, +4096 doubles it, −4096 zeroes it. Read as an additive bias (the previous behaviour) it
-    /// pushed every midtone toward white — MMD3's display rendered as washed-out pastel.
-    func testGammaGroupValueIsAChannelMultiplier() {
+    /// `<gammagroup value="r,g,b">` is a per-channel **additive offset** normalized to ±1: 0 leaves a
+    /// channel alone, +4096 adds 1.0, −4096 subtracts 1.0. Skins like Anaheim Player 01 use black pixel
+    /// templates recolored entirely by gamma; a multiplicative model left them black.
+    func testGammaGroupValueIsAnAdditiveOffset() {
         let neutral = WasabiGammaTransform(value: "0,0,0", gray: nil, boost: nil)
         XCTAssertTrue(neutral.isIdentity, "0,0,0 must change nothing at all.")
 
         let tinted = WasabiGammaTransform(value: "4096,-4096,2048", gray: nil, boost: nil)
-        XCTAssertEqual(tinted.red, 2, accuracy: 0.001)
-        XCTAssertEqual(tinted.green, 0, accuracy: 0.001)
-        XCTAssertEqual(tinted.blue, 1.5, accuracy: 0.001)
+        XCTAssertEqual(tinted.red, 1.0, accuracy: 0.001)
+        XCTAssertEqual(tinted.green, -1.0, accuracy: 0.001)
+        XCTAssertEqual(tinted.blue, 0.5, accuracy: 0.001)
 
         // `gray` is a mode, not a flag — MMD3 ships both gray="1" and gray="2".
         XCTAssertTrue(WasabiGammaTransform(value: "0,0,0", gray: "2", boost: nil).grayscale)
@@ -49,9 +49,8 @@ final class WinampModernPhase10Tests: XCTestCase {
                        "The theme list keeps document order, as Winamp's ColorThemes list does.")
     }
 
-    /// A theme scales the channels it is given. On a pure green sprite, a red-only gamma must change
-    /// nothing (0 × anything is 0); the additive form lifted red to 128 and turned it yellow.
-    func testColorThemeScalesPixelsRatherThanBiasingThem() throws {
+    /// Gamma is additive: a red-only offset on a pure-green sprite adds red to it, producing yellow.
+    func testColorThemeAddsOffsetsToPixels() throws {
         let xml = """
         <WasabiXML>
           <elements>
@@ -66,8 +65,30 @@ final class WinampModernPhase10Tests: XCTestCase {
         </WasabiXML>
         """
         let pixels = try render(xml: xml, size: CGSize(width: 16, height: 16))
-        assertColor(pixels, x: 8, y: 8, equals: [0, 255, 0],
-                    "a red-channel gamma must leave a sprite with no red in it alone")
+        // CIColorMatrix works in linear space; the 0.5 bias maps to ~188 after sRGB encoding.
+        assertColor(pixels, x: 8, y: 8, equals: [188, 255, 0],
+                    "a red-channel gamma adds red to a green sprite, producing yellow")
+    }
+
+    /// Black pixels (0,0,0) become visible under a positive gamma offset — the core Anaheim scenario.
+    func testBlackPixelsBecomeVisibleUnderPositiveGamma() throws {
+        let xml = """
+        <WasabiXML>
+          <elements>
+            <gammaset id="only"><gammagroup id="Test" value="2048,1024,3072"/></gammaset>
+            <bitmap id="band.red" file="sheet.png" x="0" y="0" w="16" h="4" gammagroup="Test"/>
+          </elements>
+          <container id="Main">
+            <layout id="normal" w="16" h="16">
+              <layer id="dark" image="band.red" x="0" y="0" w="16" h="16"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let pixels = try render(xml: xml, size: CGSize(width: 16, height: 16))
+        // Red band (255,0,0) + offset (0.5, 0.25, 0.75) in linear space, then sRGB-encoded.
+        assertColor(pixels, x: 8, y: 8, equals: [255, 137, 225],
+                    "gamma adds offsets to each channel, making dark channels visible")
     }
 
     // MARK: - Animated layers

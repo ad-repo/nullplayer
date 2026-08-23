@@ -49,7 +49,7 @@ struct WasabiPalette: Equatable {
             }
             return fallbackColor
         }
-        let listText = first(["pledit.text", "studio.list.text", "wasabi.list.text"],
+        let listText = first(["studio.list.text", "wasabi.list.text", "pledit.text"],
                              default: listTextFallback)
         let selectionBackground = first(["studio.list.item.selected",
                                          "wasabi.list.text.selected.background",
@@ -57,7 +57,7 @@ struct WasabiPalette: Equatable {
                                         default: selectionBackgroundFallback)
         return WasabiPalette(
             listText: listText,
-            currentText: first(["pledit.text.current", "wasabi.list.text.current"], default: listText),
+            currentText: first(["wasabi.list.text.current", "pledit.text.current"], default: listText),
             selectionText: first(["studio.list.item.selected.fg", "wasabi.list.text.selected"],
                                  default: listText),
             selectionBackground: selectionBackground,

@@ -47,7 +47,7 @@ struct WasabiGammaTransform: Equatable {
     let blue: CGFloat
     let grayscale: Bool
 
-    static let identity = WasabiGammaTransform(red: 1, green: 1, blue: 1, grayscale: false)
+    static let identity = WasabiGammaTransform(red: 0, green: 0, blue: 0, grayscale: false)
     var isIdentity: Bool { self == .identity }
 
     /// Build from the raw XML attributes of one `<gammagroup>`.
@@ -59,10 +59,9 @@ struct WasabiGammaTransform: Equatable {
         let components = value.split(separator: ",")
             .map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
         let padded = (components + [0, 0, 0]).prefix(3).map { $0 }
-        let limit: CGFloat = 4096
-        self.red = max(0, (limit + padded[0]) / limit)
-        self.green = max(0, (limit + padded[1]) / limit)
-        self.blue = max(0, (limit + padded[2]) / limit)
+        self.red = padded[0] / 4096.0
+        self.green = padded[1] / 4096.0
+        self.blue = padded[2] / 4096.0
         let grayMode = Int(Double(gray ?? "0") ?? 0)
         self.grayscale = grayMode != 0
         _ = boost
@@ -413,11 +412,12 @@ final class WasabiResourceCache {
         if transform.grayscale {
             output = output.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
         }
-        // Scale each channel; alpha is left alone so the theme never dissolves a sprite's mask.
+        // Add per-channel offset; alpha is left alone so the theme never dissolves a sprite's mask.
         output = output.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: transform.red, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: transform.green, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: transform.blue, w: 0)
+            "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
+            "inputBiasVector": CIVector(x: transform.red, y: transform.green, z: transform.blue, w: 0)
         ])
         return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: output.extent) ?? image
     }
@@ -481,6 +481,8 @@ struct WasabiSceneNode {
     /// The box this node resolved against. Only the protective-minimum probe reads it: a child that
     /// escapes this rect is an object whose parent has become too small to hold it.
     let parentFrame: CGRect
+    /// Product of ancestor alphas (0…1). Groups with alpha < 255 multiply into their children.
+    let inheritedAlpha: CGFloat
 }
 
 final class WasabiSceneRenderer {
@@ -793,7 +795,8 @@ final class WasabiSceneRenderer {
         let bitmapID = resolvedBitmapID(for: node.object, pressed: false, hovered: false)
         guard bitmapID != node.bitmapID else { return node }
         return WasabiSceneNode(object: node.object, frame: node.frame, clip: node.clip,
-                               bitmapID: bitmapID, parentFrame: node.parentFrame)
+                               bitmapID: bitmapID, parentFrame: node.parentFrame,
+                               inheritedAlpha: node.inheritedAlpha)
     }
 
     /// Drop the memoized scene. Needed only for the inputs the graph's own generation cannot see.
@@ -1281,7 +1284,7 @@ final class WasabiSceneRenderer {
 
     private func append(object: WasabiObject, frame parentFrame: CGRect, clip parentClip: CGRect,
                         into nodes: inout [WasabiSceneNode], isRoot: Bool = false,
-                        includingHidden: Bool = false) {
+                        includingHidden: Bool = false, inheritedAlpha: CGFloat = 1) {
         guard includingHidden || isVisible(object) else { return }
         let bitmapID = resolvedBitmapID(for: object, pressed: false, hovered: false)
         var intrinsic = resources.bitmap(identifier: bitmapID).map {
@@ -1337,11 +1340,13 @@ final class WasabiSceneRenderer {
         if !includingHidden, !resolved.isEmpty, !resolved.intersects(parentClip) { return }
         let clip = parentClip.intersection(resolved.isEmpty ? parentClip : resolved)
         nodes.append(WasabiSceneNode(object: object, frame: resolved, clip: parentClip,
-                                     bitmapID: bitmapID, parentFrame: isRoot ? resolved : parentFrame))
+                                     bitmapID: bitmapID, parentFrame: isRoot ? resolved : parentFrame,
+                                     inheritedAlpha: inheritedAlpha))
         let childClip = clipsChildren(object) || isFramePane(object) ? clip : parentClip
+        let childAlpha = inheritedAlpha * Self.alphaFraction(of: object)
         for child in object.children {
             append(object: child, frame: resolved, clip: childClip, into: &nodes,
-                   includingHidden: includingHidden)
+                   includingHidden: includingHidden, inheritedAlpha: childAlpha)
         }
     }
 
@@ -1426,7 +1431,7 @@ final class WasabiSceneRenderer {
         // (plus Extension over Broadcasting) came up printed on top of each other. Setting it here
         // covers text, bitmap fonts and the `background=` draw below as well; the per-drawer calls
         // that follow read the same attribute, so they are idempotent.
-        context.setAlpha(Self.alphaFraction(of: object))
+        context.setAlpha(Self.alphaFraction(of: object) * node.inheritedAlpha)
 
         if let background = object.attributes["background"],
            let bitmap = resources.bitmap(identifier: background) {
@@ -1531,7 +1536,6 @@ final class WasabiSceneRenderer {
 
     private func draw(_ bitmap: WasabiBitmap, object: WasabiObject,
                       frame: CGRect, context: CGContext) {
-        context.setAlpha(Self.alphaFraction(of: object))
         let tileX = object.attributes["tile"] == "1" || object.attributes["tilex"] == "1"
         let tileY = object.attributes["tile"] == "1" || object.attributes["tiley"] == "1"
         if tileX || tileY {
@@ -2091,11 +2095,8 @@ final class WasabiSceneRenderer {
             let byte = WinampModernScriptRuntime.visByte(forMagnitude: peak)
             return max(0, min(1, CGFloat(byte) / 255))
         }
-        // The `<vis>`'s own `alpha`, which only bitmap drawing honoured. Rika's 50 is half the point
-        // of the effect.
         context.saveGState()
         defer { context.restoreGState() }
-        context.setAlpha(Self.alphaFraction(of: object))
         switch WasabiVisualizationMode(attribute: object.attributes["mode"]) {
         case .off:
             return
@@ -2245,7 +2246,6 @@ final class WasabiSceneRenderer {
         }
 
         context.saveGState()
-        context.setAlpha(Self.alphaFraction(of: object))
         context.clip(to: filled)
         // The caps keep their own size and the middle takes everything between them, which is what
         // makes a one-pixel `middle` stretch across the whole elapsed span.
@@ -2328,7 +2328,6 @@ final class WasabiSceneRenderer {
 
         let tiles = object.attributes["tile"] == "1"
         context.saveGState()
-        context.setAlpha(Self.alphaFraction(of: object))
         var y = frame.minY
         for (row, rowHeight) in rows.enumerated() {
             var x = frame.minX
@@ -2358,7 +2357,6 @@ final class WasabiSceneRenderer {
         let color = objectColor(object.attributes["color"] ?? "255,255,255",
                                gammaGroup: object.attributes["gammagroup"])
         context.saveGState()
-        context.setAlpha(Self.alphaFraction(of: object))
         // Winamp's default is an outline; the engine writes `filled="1"` wherever it wants a fill and
         // `filled="0"` wherever it wants the border, so neither case is guessed at.
         if ["1", "true", "yes"].contains(object.attributes["filled"]?.lowercased() ?? "0") {
@@ -2431,7 +2429,6 @@ final class WasabiSceneRenderer {
         let end = CGPoint(x: frame.minX + coordinate("gradient_x2") * frame.width,
                           y: frame.minY + coordinate("gradient_y2") * frame.height)
         context.saveGState()
-        context.setAlpha(Self.alphaFraction(of: object))
         context.clip(to: frame)
         context.drawLinearGradient(gradient, start: start, end: end,
                                    options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
@@ -2476,8 +2473,8 @@ final class WasabiSceneRenderer {
         return NSColor(red: red, green: green, blue: blue, alpha: base.alphaComponent)
     }
 
-    /// One colour through a `<gammagroup>`: desaturate first if the group asks, then scale each
-    /// channel — the same order the bitmap and `<color>` paths use.
+    /// One colour through a `<gammagroup>`: desaturate first if the group asks, then add per-channel
+    /// offset — the same order the bitmap and `<color>` paths use.
     private static func themed(red: CGFloat, green: CGFloat, blue: CGFloat,
                                gamma: WasabiGammaTransform) -> (CGFloat, CGFloat, CGFloat) {
         var (red, green, blue) = (red, green, blue)
@@ -2485,9 +2482,9 @@ final class WasabiSceneRenderer {
             let luminance = red * 0.299 + green * 0.587 + blue * 0.114
             (red, green, blue) = (luminance, luminance, luminance)
         }
-        return (max(0, min(1, red * gamma.red)),
-                max(0, min(1, green * gamma.green)),
-                max(0, min(1, blue * gamma.blue)))
+        return (max(0, min(1, red + gamma.red)),
+                max(0, min(1, green + gamma.green)),
+                max(0, min(1, blue + gamma.blue)))
     }
 
     /// The sibling whose value a bare `<ProgressGrid>` shows: the slider drawn over the same rect.
@@ -3010,9 +3007,9 @@ final class WasabiSceneRenderer {
             let luminance = values[0] * 0.299 + values[1] * 0.587 + values[2] * 0.114
             values = [luminance, luminance, luminance]
         }
-        let r = values[0] / 255 * gamma.red
-        let g = values[1] / 255 * gamma.green
-        let b = values[2] / 255 * gamma.blue
+        let r = values[0] / 255 + gamma.red
+        let g = values[1] / 255 + gamma.green
+        let b = values[2] / 255 + gamma.blue
         return NSColor(red: max(0, min(1, r)), green: max(0, min(1, g)),
                        blue: max(0, min(1, b)), alpha: 1)
     }

@@ -356,3 +356,26 @@ the skin whatever window is focused, as in Winamp. See [compatibility/maki-surfa
 
 Drive it with `WINAMP_MODERN_RENDER_KEY` (harness) or `WINAMP_MODERN_DEBUG_KEY` (the app) — see
 [harness.md](harness.md).
+
+### gotoTarget animation
+
+`setTargetX/Y/W/H/A` + `setTargetSpeed` + `gotoTarget()` animates an object toward its target
+values using exponential ease-out (`factor = 1 - pow(1 - speed, dt / 0.020)`, frame-rate-independent
+against Winamp's 20ms tick). Implemented in `startTargetAnimation` / `tickTargetAnimation` in
+`WinampModernScriptRuntime.swift`.
+
+**speed = 0 means instant.** Skins use `setTargetSpeed(0)` for snap-to-target (Anaheim's hover
+controls: speed=0 to show, speed=0.5 to fade). The code checks `rawSpeed <= 0` at the top and snaps
+immediately — copy targets to actuals, fire `ontargetreached`, no timer.
+
+**Unset target properties stay at their current value.** When a script calls `gotoTarget` without
+setting `setTargetA`, the target alpha must be the object's current alpha, not 0. `targetAttr`
+defaults to `"0"` (correct for x/y/w/h) but wrong for alpha (would fade everything to invisible).
+The fix: `targetAlpha` uses `object.attributes["targeta"].flatMap(Double.init) ?? ca` where `ca` is
+the current alpha (defaulting to 255). The speed=0 snap path already handled this correctly with
+`?? object.attributes["alpha"] ?? "255"`.
+
+**Alpha inheritance cascades to children.** `WasabiSceneNode.inheritedAlpha` propagates through the
+scene tree during `append()`. The main `draw` method sets `context.setAlpha(alphaFraction *
+inheritedAlpha)` once; per-drawer methods must NOT override it with their own `setAlpha` call or the
+inheritance is lost.
