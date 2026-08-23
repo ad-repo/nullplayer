@@ -473,8 +473,22 @@ resources opt into with `gammagroup="…"`. Three rules:
 
   `boost` is a mode, not a flag — MMD3 and Itemskin ship `boost="2"` alongside `boost="1"`, on the
   same label groups. Its exact difference from `1` is **unknown**; it is treated as additive, which is
-  strictly closer than multiplying. If a skin surfaces a `boost="2"` defect, that is the thing to
-  revisit.
+  strictly closer than multiplying, and a spot-check of MMD3 (2026-08-23) turned up nothing visibly
+  wrong. Do not re-derive the probe if this comes up again:
+
+  - MMD3's heaviest `boost="2"` user is `MainLabel` → `label11.png`, the **"MMD3 / WINAMP-PLAYER"
+    wordmark** at the top of the main window (`player-normal.xml` `mslabel11`, x=156 y=4), in 51 of
+    83 themes. It proves nothing: the value there is `-4000,-4000,-4000` on a stencil that is already
+    black, so both models render it black.
+  - The **only clean A/B** is `CoverLabel` at value `3000,3000,3000`, identical `gray`, differing only
+    in boost: `silver1 | xblue` is `boost="1"`, the `xbox | orange`/`blue`/`pink`/`red`/`yellow`
+    family is `boost="2"`. It draws the drawer headings — `label7` "EQualizer MMD3" (EQ drawer),
+    `label9` "VISualization MMD3" (VIS drawer), `label10` "COLORThemes" (ColorThemes drawer), all
+    pure-black stencils. Open a drawer, switch between those two themes: we render both at the same
+    mid-grey, so a brightness difference in real Winamp is the tell.
+  - Secondary probe: `DisplayLabel` under `silver3 | slategray`/`slateblue`/`skyblue` or `xbox | blue`
+    — `displaylabels.png` (the STEREO/MONO and play/pause/stop glyphs in the main display) is the one
+    `boost="2"` target that is bright artwork (avg RGB 200), where the two models diverge most.
 - The **default** theme is the first gammaset in the document (skins name it freely — "clean | orange
   (default)"), not the alphabetically first name.
 
