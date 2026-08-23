@@ -117,12 +117,12 @@ step 3 answers.
 
 ## 4b. What is open right now, ranked (2026-08-20)
 
-The live list is **`TASKS.md`** (local, gitignored) — that is where new items go.
-**`docs/winamp-modern/open-items.md`** is the tracked copy of the reasoning behind B1–B23a and was
-**frozen there on 2026-08-21**; do not add to it. It was compiled
-by walking every unchecked item left after Phase 33, verifying each against the code, and closing what
-had already been fixed or answered. It is ordered by **bang for buck** — corpus impact ÷ effort. The
-head of it, so a reader of this file does not have to go looking:
+The live list is **`TASKS.md`** (local, gitignored) — that is the **only** backlog, and where new
+items go. There was once a tracked copy at `docs/winamp-modern/open-items.md` holding the ranked
+reasoning behind B1–B23a; it was **deleted on 2026-08-23** after an audit confirmed nothing in it was
+unique (B19 shipped as `ea4d9472`, B22 as `df9d1028`, and B23a moved to `TASKS.md`). Do not recreate
+it. The table below is the head of that ranking, kept here as history so a reader does not have to go
+looking — it is ordered by **bang for buck**, corpus impact ÷ effort:
 
 | # | Open item | Reach |
 |---|---|---|

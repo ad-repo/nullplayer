@@ -2,14 +2,14 @@
 
 - **Date:** 2026-08-20
 - **Branch:** `feat/winamp-modern` (~69 commits ahead of `main`)
-- **Phases completed:** 0A/0B, then 2–33 — **all closed.** What is still open is one ranked list:
-  [open-items.md](open-items.md)
+- **Phases completed:** 0A/0B, then 2–33 — **all closed.** What is still open is one list:
+  `TASKS.md` at the repo root (local, gitignored, and the only backlog)
 - **Audience:** anyone picking this up, reviewing it, or deciding whether it ships
 
 This is the orientation document; `skills/winamp-modern-skin-guide/triage-playbook.md` is the process
 for working the long tail beyond the measured skins (17 are installed locally, and as of Phase 35 all
-17 load — `Itemskin.wal` and `Overdrive_2.wal`, which used to fail outright, were the top item in
-[open-items.md](open-items.md)). The durable technical reference is
+17 load — `Itemskin.wal` and `Overdrive_2.wal`, which used to fail outright, were the top item on
+that list). The durable technical reference is
 `skills/winamp-modern-skin-guide/` — SKILL.md is a router over `reference/` topic files, alongside
 compatibility.md, skins.md → `skins/<skin>.md`, and manual-qa-checklist.md. The per-phase records are
 in `docs/winamp-modern/`; [INDEX.md](INDEX.md) lists them and resolves any pointer they make into the
@@ -252,8 +252,8 @@ the trademark question and item 2 above are the ones worth ten minutes of a real
 5. Do the 17-skin render sweep (clock pinned) for any renderer change until that sweep is automated —
    and diff it against *itself* first: one skin (Anexa's shade layout) renders differently run-to-run
    on an unchanged build, so a raw difference is not automatically a regression.
-6. **Take work from [open-items.md](open-items.md), top down.** It is the compiled, ranked backlog;
-   the prose below it in this section is history and may name work that has since been done.
+6. **Take work from `TASKS.md`, top down.** It is the only backlog; the prose below it in this
+   section is history and may name work that has since been done.
 
 **Layer FX is done.** Phase 28 made every Defix display style move; Phase 29 closed the two
 complaints about *how* it moved, and both were host problems rather than skin ones — a pre-scaled
@@ -266,7 +266,7 @@ See `docs/winamp-modern/phase-29-handoff.md`.
 its handoff carries the open list and the debugging method that found them
 (`docs/winamp-modern/phase-30-handoff.md`).
 
-**The highest-value next work is now [open-items.md](open-items.md)**, which supersedes the paragraph
+**The highest-value next work is now in `TASKS.md`**, which supersedes the paragraph
 that used to sit here — that one was written at Phase 30, and several of its items (the Layer FX
 follow-ups, the auxiliary-window repaint hooks, `getVisBand`'s scale) have since landed. One thing
 from it survives in that file's ranking: **the `<vis>` analyzer's linear scale** (B13 — the third

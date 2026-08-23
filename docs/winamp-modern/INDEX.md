@@ -60,9 +60,10 @@ available lesson in how to debug this subsystem.
 
 ## Not a phase handoff
 
-- [open-items.md](open-items.md) — **everything still open, ranked by bang for buck.** Compiled after
-  Phase 33 from every unchecked item left across the phase history. Start here when you are deciding
-  what to do next; `TASKS.md` is a local, gitignored mirror of it.
+- **`TASKS.md`** (repo root, local, gitignored) — **everything still open.** It is the only backlog;
+  start there when deciding what to do next. A tracked copy once lived here as `open-items.md`,
+  compiled after Phase 33 and ranked by bang for buck; it was deleted on 2026-08-23 once an audit
+  confirmed nothing in it was unique. `triage-playbook.md` §4b keeps the head of its ranking.
 - [state-of-the-engine.md](state-of-the-engine.md) — orientation for someone arriving cold: what was
   built, component-by-component status, **what is not verified**, and the reverse-engineering /
   provenance analysis.
