@@ -25,6 +25,8 @@
 | Settings-page scrolling | **Fixed (BB19)** | Seven stacked faults — see below. Confirmed live |
 | Header analyzers | **Fixed (B43)** | The `main.vis.group` butterfly; `fliph`/`flipv` were ignored, so it drew as two identical blocks. Confirmed live |
 | Seek bar (W10 editions) | **Blank** | The skin's own `waveseeker.rounder.bg` covers it; cause unmeasured |
+| File-info panel content | **Fixed (B39)** | The 17 `Bento:InfoLine` objects drew the song title on every line; a script's `setText` now beats their `display="SONGNAME"`. Confirmed live |
+| File-info panel *fields* | **Partial (B46)** | Only Title / Artist / Album / File Path fill. `getPlayItemMetaDataString` answers four keys, so Year, Genre, Track #, Disc, Album Artist, Composer, Publisher, Decoder, Comment, BPM and Rating come back empty and `fileinfo.maki` hides those lines — even though all are ticked in **… → File Info Components** |
 | Divider position | **Fixed (B44)** | A divider the *user* drags now survives a relaunch, so the header analyzers stay visible. The skin's own `setPosition(434)` default is untouched. Confirmed live |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
@@ -140,6 +142,19 @@ Two things to know before touching this area again:
   slider that starts un-set opens every page at its own end.
 
 ## Traps
+
+- **The "Victhor trick" makes `display=` a lie on 17 objects.** Every `Bento:InfoLine` declares
+  `display="SONGNAME"` *only* so `ticker="1"` works — the author says so in the markup
+  (`xml/player-normal-mcv.xml:378`) — and `fileinfo.m` supplies the real content with `setText()`.
+  Read the binding as the content and the whole panel is the song title 17 times over (B39). The
+  precedence rule that settles it is general: [reference/scripting.md](../reference/scripting.md) →
+  *What a text object shows*.
+
+- **Everything in … → File Info Components is ticked by default, and that is the skin, not us.**
+  The submenu is built from `newAttribute` registrations whose shipped default is `"1"` for every
+  `Show …` item (only *Visualization*, *Scroll text if it doesn't fit* and *Hide File Info background*
+  default to `"0"`). A line that is ticked and still absent is a **missing metadata key**, not a
+  broken toggle — see B46.
 
 - **There are *three* `winamp.albumart*` objects, and only one pair is the duplicate.** The Multi
   Content View holds the real cover plus an oversized dimmed backdrop behind the panel

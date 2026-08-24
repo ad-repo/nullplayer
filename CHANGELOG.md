@@ -18,6 +18,19 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: file-info panels no longer repeat the song title on every line** — Big
+  Bento Modern's track panel showed the same title stacked over and over instead of the track's
+  details. The skin fills each of those lines from its own script, but tags every one of them with a
+  playback binding as a trick to make the text scroll; nullPlayer honoured the binding and threw the
+  script's text away, so all seventeen lines drew the title. The script now wins — the panel shows
+  Title, Artist, Album and File Path in their own rows — while a script that clears its text hands the
+  line back to the binding, which is how a skin lays a temporary readout over the song ticker while
+  you drag the volume or seek and then restores the title a moment later. That behaviour is unchanged
+  in the thirteen skins that use it, and clock scripts that deliberately draw the old Winamp `00:00`
+  time format over the built-in timer (micro, Ebonite) now work for the first time. **Still missing
+  from those panels:** Year, Genre, Track #, Disc, Album Artist, Composer, Publisher, Decoder,
+  Comment, BPM and Song Rating, which are ticked in the skin's own menu but ask nullPlayer for track
+  fields it does not yet hand to skins.
 - **Winamp 5.x modern skins: a skin with one unfinished line of markup no longer refuses to load
   entirely** — Shield_Amp was the only skin of the thirty tested that would not open at all. One of
   its files ends without closing a tag it opened, which is the skin author's slip, but Winamp itself

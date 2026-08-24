@@ -194,7 +194,13 @@ By area:
   *Decoder* readout. B38
 - **`System.getPlayItemMetaDataString("filename")`** — the playing item's location
   (`WinampModernHost.trackPath`). Display only: nothing in the seam opens a path a script hands back,
-  and the file-info panels immediately split it with `getPath`/`getExtension`. B38
+  and the file-info panels immediately split it with `getPath`/`getExtension`. B38.
+  **Only four keys are answered** — `title`, `artist`, `album`, `filename`; everything else returns
+  `""`, which a file-info panel reads as "this field is empty" and hides the line. B46
+- **`<object>.setText(s)`** — a **non-empty** value outranks the object's `display=` binding, and
+  `setText("")` hands it back. Winamp has no precedence here at all (there the binding *writes* the
+  text), so this rule is what stands in for that; the full order and why an override never expires are
+  in [reference/scripting.md](../reference/scripting.md) → *What a text object shows*. B39
 - **`System.getIdealVideoWidth()` / `getIdealVideoHeight()`** — **0**, for the same reason
   `hasVideoSupport` is false, and also what Winamp answers for an audio track. B38
 - **`System.hasVideoSupport()`** — **false**. A `.wal` video holder gets the neutral backing every

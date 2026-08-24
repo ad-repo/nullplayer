@@ -292,6 +292,45 @@ scrolls by default. `ticker="bounce"` slides to the end and back; any other enab
 continuously and is drawn twice with a gap so it never blanks between cycles. Both the TrueType and
 bitmap-font paths share `tickerMotion(for:overflow:textWidth:)`.
 
+#### What a text object shows: `setText` beats `display=`, and `setText("")` gives it back
+
+Four things can answer for one `<text>`, and the order between them is the whole rule.
+`WasabiTextMetrics.content(of:host:)` resolves it, and every reader goes through that one function —
+the renderer, `getText()`, `getTextWidth()`, `getAutoWidth()`:
+
+1. **The playlist status line** (`id="PE_Info"` or `display="PE_Info"`) — always the host's line.
+2. **`setAlternateText`**, while it is non-empty.
+3. **`setText`**, while it is non-empty.
+4. **`display=`**, else the XML `text`/`default` literal, else `alternatetext` as a placeholder.
+
+Rule 3 is the one that is easy to get wrong, because in Winamp there is no precedence at all: a
+`display=` binding *writes* the object's text when its value changes, so whatever was written last is
+what shows. Resolving the binding live on every draw instead — which is what this engine does — makes
+the binding win forever unless a script's write is allowed to outrank it. **B39** was that bug. Big
+Bento Modern declares `display="SONGNAME"` on all 17 of its `Bento:InfoLine` objects *purely so
+`ticker="1"` works*, says so in the markup (the "Victhor trick", `xml/player-normal-mcv.xml:378`), and
+fills each line from `fileinfo.m`; every line drew the song title, which reads on screen as a repeated
+title rather than as a broken panel.
+
+**The revert half is not optional, and it is the commoner pattern.** A sweep of the 36 installed skins
+found 13 that call `setText` on a display-bound object, and most are a transient readout laid over the
+songticker — MMD3's SEEK/VOLUME/BASS/TREBLE, Styx's and Ebonite's seek and volume overlays,
+BLAKK's stick — taken back down with `setText("")` a moment later.
+
+**A non-empty override stands until the script clears it — it does not expire when the bound value
+moves.** That is deliberate and the corpus decided it: micro's `oldtimer.m` overrides a
+`display="time"` timer every 20 ms to draw the old Winamp `00:00` format, and Ebonite's `clock.m` puts
+a wall clock over the same binding while stopped. An expiry-on-change would flicker both between two
+formats. Nothing gets pinned to a stale value in exchange, because every non-reverting writer in the
+corpus rewrites on the next track change (Anaheim's `metadata.m`, Nokia's `display.m`, both from
+`onTitleChange`).
+
+The override lives on `WasabiTextMetrics.scriptTextKey` — its own key, not a Wasabi attribute name —
+for the same reason `scriptAlternateTextKey` does: a skin must not be able to declare an override in
+markup, where `text=` keeps its own meaning as the literal an unbound object draws. `setText` writes
+the XML attribute too, so anything reading it directly (a `<Wasabi:Button>` label) still follows the
+script.
+
 #### `onTextChanged` is how a skin learns a host readout moved
 
 Winamp's `Text` raises `onTextChanged(newtext)` whenever its content changes, and skins use it as the

@@ -106,7 +106,20 @@ These three came out of the Big Bento Modern header/settings research on 2026-08
 `BENTO_TASKS.md` because none of them is Bento-specific** — Bento is only where they were found.
 The Bento-only findings from the same pass are `BB6`–`BB15` there.
 
-- [ ] **B39. A script's `setText()` must beat the object's `display=` binding.** Big Bento Modern
+- [x] **B39. A script's `setText()` must beat the object's `display=` binding. Done 2026-08-24,
+      confirmed live.** The override lives on `WasabiTextMetrics.scriptTextKey`, resolved in
+      `content(of:host:)` after `setAlternateText` and before the binding; `setText` writes it
+      alongside the XML `text` attribute, so a `<Wasabi:Button>` label still follows the script and a
+      skin still cannot declare an override in markup. **The corpus sweep ran** (all 36 installed
+      skins, XML `display=` objects cross-referenced against every `setText` receiver in the shipped
+      `.m` sources): 13 skins affected, and it settled the one open design question — a non-empty
+      override **does not expire** when the bound value moves, because micro's `oldtimer.m` and
+      Ebonite's `clock.m` both hold a different clock format over a `display="time"` binding and an
+      expiry would flicker them. Every non-reverting writer in the corpus rewrites on track change.
+      Durable detail: `reference/scripting.md` → *What a text object shows*,
+      `compatibility/maki-surface.md`, and the skin's own file. Tests:
+      `WinampModernPhase64Tests`. The original report follows.
+      Big Bento Modern
       draws the same song title on four stacked lines, and the skin's author documents the mechanism
       in the markup (`xml/player-normal-mcv.xml:378`):
       ```xml
@@ -132,6 +145,29 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       so a skin cannot declare it in markup.
       **Sweep the corpus for every object carrying both a `display=` and a script `setText` before
       landing this** — it changes what any such object draws, in every skin, not just this one.
+
+- [ ] **B46. `getPlayItemMetaDataString` answers four keys, so most of a file-info panel stays
+      blank.** Found by B39's live QA on 2026-08-24: with the `setText` precedence fixed, Big Bento's
+      panel fills Title, Artist, Album and File Path and nothing else — even though **… → File Info
+      Components** shows Year, Genre, Track #, Disc, Album Artist, Composer, Publisher, Decoder,
+      Comment, BPM and Song Rating all ticked (the skin's own `newAttribute` defaults are `"1"` for
+      every one of them; the menu is right, the data is missing).
+      `WinampModernScriptRuntime.swift:2448` answers `title`, `artist`, `album`, `filename` and
+      returns `""` for everything else; `fileinfo.maki` reads an empty field as "nothing to show" and
+      hides that line, so a dozen enabled components are invisible. **Engine-wide, not Bento** — any
+      skin's file-info surface asks for the same keys.
+      The data mostly exists but not on the path the host adapter uses: `Track` carries only `genre`,
+      while `MediaLibrary.MediaItem` has `albumArtist`, `trackNumber`, `discNumber`, `year`,
+      `composer`, `comment`, `bpm`, `grouping`, `musicalKey`, `isrc` and `copyright`. So the work is a
+      library lookup by URL behind `WinampModernHost`, plus `contentType`/bitrate for *Decoder*
+      (`getDecoderName` already answers a codec name — reuse it rather than inventing a second
+      answer). Two are expected to stay empty and should be **said** to stay empty rather than faked:
+      **Publisher**, which is not stored, and **Song Rating**, where Bento wants Winamp's 0–5 star
+      field and our Plex/Subsonic rating is a different concept (`getCurrentTrackRating` already
+      answers 0 for the same reason).
+      Decide first: a **streaming** track (radio, Plex, Jellyfin, Emby) has no library row. Answering
+      empty and letting the lines hide is the honest default and matches what Winamp does with a
+      shoutcast stream; falling back to whatever the server sent is the alternative. Not settled.
 
 - [ ] **B40. Global browser routing remains denied, and that is why some skin buttons "do nothing".**
       `System.navigateUrl` / `System.navigateUrlBrowser` remain null-returning no-ops. The object-level

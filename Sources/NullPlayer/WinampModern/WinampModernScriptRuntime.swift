@@ -742,6 +742,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             xmlID.lowercased().hasPrefix(id.lowercased() + ".")) {
             _ = root.setAttribute("text", value: text)
             _ = root.setAttribute("default", value: text)
+            _ = root.setAttribute(WasabiTextMetrics.scriptTextKey, value: text)
             _ = root.setAttribute(WasabiTextMetrics.scriptAlternateTextKey, value: "")
             notifyObjectDidMutate(root)
         }
@@ -2797,6 +2798,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .null
         case "settext":
             _ = object.setAttribute("text", value: arguments[0].stringValue)
+            // Written to its own key as well, because a non-empty value has to beat the object's
+            // `display=` binding — see `WasabiTextMetrics.scriptTextKey`. Empty writes through as
+            // empty, which is exactly the revert a skin means by `setText("")`.
+            _ = object.setAttribute(WasabiTextMetrics.scriptTextKey, value: arguments[0].stringValue)
             // `setText` is also how a skin takes an alternate text back down: MMD3's ticker timer
             // fires `setText("")` a second after a `setAlternateText("VOLUME: 40%")` and expects the
             // song title back.

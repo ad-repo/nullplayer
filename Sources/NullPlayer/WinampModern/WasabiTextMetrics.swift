@@ -215,6 +215,16 @@ final class WasabiTextMetrics {
         // same name is a different thing: a placeholder for "nothing to show". Treating the two as one
         // value pinned MMD3's display to its shipped placeholder, "updating songticker", forever.
         if let override = object.attributes[scriptAlternateTextKey], !override.isEmpty { return override }
+        // A script's `setText` beats the object's `display=` binding, which is how Winamp behaves:
+        // there the binding *writes* the object's text when its value changes, so whatever was
+        // written last is what shows. Skins rely on both halves. Big Bento Modern gives all 17 of its
+        // `Bento:InfoLine` objects `display="SONGNAME"` **purely so `ticker="1"` works**
+        // ("Victhor trick", `xml/player-normal-mcv.xml:378`) and fills each one from `fileinfo.m`;
+        // resolving the binding first drew the song title on every line. The revert half is the
+        // commoner pattern — a transient readout over the songticker (MMD3's VOLUME/BASS/TREBLE,
+        // Styx's and Ebonite's seek and volume overlays, micro's `oldtimer.m` clock over
+        // `display="time"`) that is taken back down with `setText("")`.
+        if let override = object.attributes[scriptTextKey], !override.isEmpty { return override }
         let resolved = bound(object, host: host)
         if resolved.isEmpty, let placeholder = object.attributes["alternatetext"], !placeholder.isEmpty {
             return placeholder
@@ -225,6 +235,12 @@ final class WasabiTextMetrics {
     /// Where `setAlternateText` keeps its value — deliberately not the XML `alternatetext` attribute.
     /// Not a Wasabi attribute name, so a skin cannot declare it.
     static let scriptAlternateTextKey = "nullplayer.script.alternatetext"
+
+    /// Where `setText` keeps its value, for the same reason: a skin must not be able to declare an
+    /// override in markup. The XML `text=` attribute keeps its own meaning — the literal an unbound
+    /// object draws — and `setText` writes it too, so anything reading the attribute directly (a
+    /// `<Wasabi:Button>` label) still follows the script.
+    static let scriptTextKey = "nullplayer.script.text"
 
     private static func bound(_ object: WasabiObject, host: WinampModernHost) -> String {
         switch object.attributes["display"]?.lowercased() {
