@@ -42,7 +42,7 @@
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
 - Original UI skin system, with many skins included. Its open JSON format makes custom skins easy to create
 - Original-Metal — a hi-fi faceplate look with seven brushed-metal finishes (Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, Copper)
-- Switch between Classic, Modern, and Metal live, with no restart — playback, casting, and the open playlist continue uninterrupted while the windows rebuild
+- Switch between Classic, Original, and Original-Metal live, with no restart — playback, casting, and the open playlist continue uninterrupted while the windows rebuild
 - Original Spenctrum analysis visualization system
 - Audio Analysis window — Friture-style multi-pane analyzer with a live oscilloscope, stereo peak/RMS level meters, and a scrolling Metal spectrogram (Viridis colormap)
 - Cava spectrum analyzer — a cava-style bar spectrum in a dedicated window and in the main-window display, with mono/stereo modes, skin-following gradient and metallic color presets, and configurable bars, smoothing, and bass tilt
@@ -51,7 +51,7 @@
 - Album art visualization system with user selected effects
 - Original and Original-Metal modes with a 21-band EQ, Classic mode with a standard 10-band EQ
 - Reference Tuning for pitch-shifting local playback and HTTP streams to a different reference frequency, with 432 Hz, 440 Hz, and custom source/target Hz options
-- Compact Mode — collapse to a single menu-bar app (Dock icon hidden, status-bar item) showing the Library Browser with an embedded mini player bar; works in both classic and modern UI
+- Compact Mode — collapse to a single menu-bar app (Dock icon hidden, status-bar item) showing the Library Browser with an embedded mini player bar; works with Classic, Original, and Original-Metal
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (VLCKit/libVLC)

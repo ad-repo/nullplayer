@@ -92,7 +92,7 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
   and fast response tuned for transient-heavy material.
 - Invalid mode/preset strings are ignored safely at runtime and logged.
 - If a mode requires a missing shader, the requested mode is ignored.
-- The waveform window has one shared `Transparent Background` toggle across classic and modern UI.
+- The waveform window has one shared `Transparent Background` toggle across Classic and Original-family UI.
 - Its default is auto-enabled only for bundled glass skins: `SmoothGlass`, `SeaGlass`, and `BloodGlass`.
 - Imported/custom modern skins default this toggle off unless the user enables it.
 

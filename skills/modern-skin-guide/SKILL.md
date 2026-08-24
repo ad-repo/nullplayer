@@ -5,7 +5,7 @@ description: Modern skin engine, skin.json schema, element catalog, and custom s
 
 # Modern Skin Creation Guide
 
-This guide covers creating custom skins for NullPlayer's modern UI mode.
+This guide covers creating custom skins for NullPlayer's Original UI mode. The implementation retains the `modern` name internally for compatibility.
 
 ## Overview
 
@@ -246,7 +246,7 @@ The simplest skin is just a `skin.json` with palette colors:
 
 All elements render programmatically using the palette colors.
 
-Metal mode uses the same modern skin engine but a separate family namespace (`.metal` render style, `metalSkinName` key, user skins under `MetalSkins`). Its appearance is **code-driven, not palette-driven**: every metal skin draws the same surfaces, with per-finish colors supplied by a `MetalMaterial` preset (`ModernSkin/MetalMaterial.swift`).
+Original-Metal mode uses the same modern skin engine but a separate family namespace (`.metal` render style, `metalSkinName` key, user skins under `MetalSkins`). Its appearance is **code-driven, not palette-driven**: every metal skin draws the same surfaces, with per-finish colors supplied by a `MetalMaterial` preset (`ModernSkin/MetalMaterial.swift`).
 
 Seven built-in metal finishes ship in code (`ModernSkinLoader.createBuiltInMetalSkin(named:)`, listed by `builtInMetalSkinNames`): **Brushed Steel** (default), **Aluminum**, **Gunmetal**, **Anodized Black**, **Brass**, **Bronze**, **Copper**. They appear automatically in the Skins → Original-Metal menu and load by name (path-nil `SkinInfo`).
 

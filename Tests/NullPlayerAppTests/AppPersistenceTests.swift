@@ -10,6 +10,13 @@ final class AppPersistenceTests: XCTestCase {
         XCTAssertEqual(ModernSkinFamily.metal.displayName, "Original-Metal")
     }
 
+    func testOriginalBrandingPreservesCompatibilityIdentifiers() {
+        XCTAssertEqual(PlayerUIMode.modern.rawValue, "modern")
+        XCTAssertEqual(PlayerUIMode.metal.rawValue, "metal")
+        XCTAssertEqual(ModernSkinFamily.modern.skinNameKey, "modernSkinName")
+        XCTAssertEqual(ModernSkinFamily.metal.skinNameKey, "metalSkinName")
+    }
+
     func testFullEditionUsesExistingKeysAndHasNoForcedMode() {
         XCTAssertEqual(AppPersistence.key("savedAppState"), "savedAppState")
         XCTAssertEqual(AppPersistence.key("MainWindowFrame"), "MainWindowFrame")

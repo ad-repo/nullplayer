@@ -8,7 +8,7 @@ This guide walks you through creating custom skins for NullPlayer's Original UI 
 
 ## Two Approaches
 
-There are two ways to skin NullPlayer's modern UI:
+There are two ways to skin NullPlayer's Original UI (called `modern` internally):
 
 1. **Palette-only (JSON only)** -- Define colors, fonts, and effects in a single `skin.json` file. All UI elements are drawn programmatically using your color palette. This is the fastest way to create a skin and what the bundled "NeonWave" skin uses.
 
@@ -334,7 +334,7 @@ The `elementBlur` multiplier scales the glow halos on individual UI elements (se
 
 **Performance note**: Glow uses Metal GPU shaders. Set `"enabled": false` if you want maximum performance or a flat aesthetic.
 
-### Window Chrome (Modern UI)
+### Window Chrome (Original UI)
 
 ```json
 "window": {
@@ -887,7 +887,7 @@ Place your skin folder in:
 
 Then right-click the player and select your skin from **Skins > Original**.
 
-Skin changes take effect immediately -- no restart needed. However, if you're switching from Classic Mode to Modern Mode (or vice versa), NullPlayer will prompt you to restart.
+Skin changes and switches between Classic, Original, and Original-Metal take effect immediately -- no restart needed.
 
 ### Packaging for Distribution
 
