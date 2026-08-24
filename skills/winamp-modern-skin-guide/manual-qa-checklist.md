@@ -221,9 +221,11 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
       closed it; closing it remains remembered per skin
 - [ ] Click links, scroll, select/copy text, and submit a form; a `target=_blank` link stays in the
       same skin browser and does not create another window
-- [ ] Press **⌘L**, enter a full HTTPS URL, and press Return; repeat with a bare domain; Escape closes
-      the field without navigating
-- [ ] Press **⌘L**, enter ordinary words, and confirm DuckDuckGo results load in the same browser
+- [ ] The search/address field remains visible above the page; enter a full HTTPS URL and press
+      Return, then repeat with a bare domain. **⌘L** focuses/selects the field and Escape returns focus
+      to the page without navigating
+- [ ] Enter ordinary words in the search/address field and confirm DuckDuckGo results load in the
+      same browser
 - [ ] Right-click and exercise Back, Forward, Reload, Stop, Search or Enter Address, and Open Page in
       Default Browser; disabled history commands must not act
 - [ ] Switch away from the browser tab/layout and back: page, scroll position, form state, and history

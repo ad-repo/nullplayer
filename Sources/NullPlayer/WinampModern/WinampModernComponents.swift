@@ -322,6 +322,18 @@ protocol WinampModernLibrarySurface: AnyObject {
 struct WinampModernBrowserRequest: Equatable {
     let address: String
     let sourceLogicalPath: String
+
+    /// Wasabi browsers use both spellings in the wild. `url` is the current location and wins when
+    /// supplied; ClassicPro's `<Winamp:Browser>` commonly supplies only `home`. An addressless
+    /// browser opens the host-owned start page rather than presenting an unexplained empty surface.
+    static func initial(attributes: [String: String],
+                        sourceLogicalPath: String) -> WinampModernBrowserRequest {
+        let address = [attributes["url"], attributes["home"]]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? "about:blank"
+        return WinampModernBrowserRequest(address: address,
+                                          sourceLogicalPath: sourceLogicalPath)
+    }
 }
 
 /// The platform-neutral handle for Winamp's embedded web browser. WebKit remains in the AppKit

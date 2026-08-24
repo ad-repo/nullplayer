@@ -671,10 +671,9 @@ final class WinampModernMainView: NSView {
             let id = browser.object.stableID
             live.insert(id)
             if browserSurfaces[id] == nil {
-                let markupRequest = browser.object.attributes["url"].map {
-                    WinampModernBrowserRequest(address: $0,
-                                               sourceLogicalPath: browser.object.source.path)
-                }
+                let markupRequest = WinampModernBrowserRequest.initial(
+                    attributes: browser.object.attributes,
+                    sourceLogicalPath: browser.object.source.path)
                 let request = pendingBrowserRequests.removeValue(forKey: id) ?? markupRequest
                 guard let surface = componentHost?.makeBrowserSurface(initialRequest: request) else { continue }
                 surface.applySkinScale(skinScale)

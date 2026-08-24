@@ -7,8 +7,8 @@
 - **Winamp 5.x modern skins: embedded browser windows and tabs work** — `<Browser>` and
   `<Winamp:Browser>` controls now host an isolated WebKit browser instead of a Media Library view or
   an empty pane. Links, forms, JavaScript, back/forward through WebKit, and skin-script navigation all
-  work; `⌘L` or the browser context menu opens a search/address field, and plain text searches
-  DuckDuckGo. Each browser uses nonpersistent site data, popup windows/downloads/application schemes
+  work; a visible search/address field opens URLs or searches DuckDuckGo, and `⌘L` focuses it.
+  Each browser uses nonpersistent site data, popup windows/downloads/application schemes
   are blocked, and skin-local pages are served only through the read-only WAL virtual filesystem rather
   than exposed as host file URLs. Browser windows that declare `default_visible="1"` can open with
   their skin now that their content is usable.

@@ -83,9 +83,9 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   Untick `Disable` as well. Do not "fix" the ticker code for this, and do not add a host heuristic to
   guess the group — Winamp shows the same three checkboxes.
 - **Its `<Browser>` explorer tab** — the Explorer tab's content is a `<Browser>` control (Winamp
-  embeds Internet Explorer and points it at a file path). The tab switches and its chrome draws; the
-  browser pane itself is empty, and hosting a real web view for untrusted skin content is outside the
-  sandbox this engine is built on.
+  embeds Internet Explorer and points it at a file path). The tab switches and hosts NullPlayer's
+  policy-gated WebKit surface, with a permanently visible search/address field. Skin-local paths are
+  resolved only through the WAL VFS; remote HTTP(S) pages never gain host filesystem access.
 - **Layer FX — all eight display styles animate as of Phase 28** (live runs: 2026-08-18 *P-402 VU and
   Technics VU work, all others are frozen* → 2026-08-19 *they are all working*). The two that always
   worked are `<animatedlayer>` frame strips (`LAYOUT1/LVL/`) driven by `gotoFrame`; every other one is

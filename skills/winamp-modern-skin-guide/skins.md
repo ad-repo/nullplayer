@@ -45,7 +45,7 @@ loads that program at all, because their playlist windows are ours. The other tw
 container).** 10 containers in 8 of the 17 skins: Defix `Config` + `pledit` · winampmodern566 `Pledit`
 + `winamp.albumart` · Ujola Cat `PLEdit` + `ujolaCat` · ZDL `EQ` + `thinger` · Overdrive_2 `Pledit` ·
 Love is War Miku `notifier` (**suppressed** — host-managed transient) · Rika and T800 `Warp Browser`
-(**suppressed** — empty `<browser>`). The other nine skins declare it nowhere.
+(**opened** — real embedded browser). The other nine skins declare it nowhere.
 
 **Video windows, measured (Phase 47 / B20, `VIDEO holder` in the render dump).** **15 of the 33
 measured skins** declare a `<container>` for the video component, and all of them now host the real

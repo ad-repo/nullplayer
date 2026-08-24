@@ -10,13 +10,14 @@ import Foundation
 @MainActor
 final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
                                                    WKNavigationDelegate, WKUIDelegate,
-                                                   NSTextFieldDelegate {
+                                                   NSSearchFieldDelegate {
     static let localScheme = "wal-skin-resource"
     static let maximumLocalResourceBytes = 16 * 1_024 * 1_024
+    static let locationBarHeight: CGFloat = 34
 
     private let webView: WinampModernBrowserWebView
     private let locationBar = NSView(frame: .zero)
-    private let locationField = NSTextField(frame: .zero)
+    private let locationField = NSSearchField(frame: .zero)
     private var pendingRequest: WinampModernBrowserRequest?
     private var isSurfaceVisible = false
     private var isTornDown = false
@@ -42,10 +43,10 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
         locationBar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         locationBar.layer?.borderColor = NSColor.separatorColor.cgColor
         locationBar.layer?.borderWidth = 1
-        locationBar.isHidden = true
         addSubview(locationBar)
 
         locationField.placeholderString = "Search or enter website"
+        locationField.setAccessibilityLabel("Browser search or address")
         locationField.delegate = self
         locationField.font = .systemFont(ofSize: 13)
         locationField.focusRingType = .default
@@ -57,10 +58,11 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
 
     override func layout() {
         super.layout()
-        webView.frame = bounds
-        let barHeight: CGFloat = 34
+        let barHeight = min(Self.locationBarHeight, bounds.height)
+        webView.frame = NSRect(x: 0, y: 0, width: bounds.width,
+                               height: max(0, bounds.height - barHeight))
         locationBar.frame = NSRect(x: 0, y: max(0, bounds.height - barHeight),
-                                   width: bounds.width, height: min(barHeight, bounds.height))
+                                   width: bounds.width, height: barHeight)
         locationField.frame = locationBar.bounds.insetBy(dx: 6, dy: 5)
     }
 
@@ -118,8 +120,6 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
     @objc func presentLocationField() {
         guard !isTornDown else { return }
         locationField.stringValue = webView.url?.absoluteString ?? ""
-        locationBar.isHidden = false
-        needsLayout = true
         window?.makeFirstResponder(locationField)
         locationField.currentEditor()?.selectAll(nil)
     }
@@ -159,7 +159,6 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
     }
 
     private func dismissLocationField() {
-        locationBar.isHidden = true
         window?.makeFirstResponder(webView)
     }
 
@@ -239,6 +238,25 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
+        presentNavigationFailure(error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!,
+                 withError error: Error) {
+        // A server can accept the connection and then fail after WebKit has committed the
+        // navigation. ClassicPro's historical skinconsortium.com home currently does exactly that;
+        // handling only provisional failures leaves WebKit's unexplained default white page.
+        presentNavigationFailure(error)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let url = webView.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+            return
+        }
+        locationField.stringValue = url.absoluteString
+    }
+
+    private func presentNavigationFailure(_ error: Error) {
         let nsError = error as NSError
         guard nsError.code != NSURLErrorCancelled else { return }
         loadMessagePage(title: "Page unavailable", message: error.localizedDescription)

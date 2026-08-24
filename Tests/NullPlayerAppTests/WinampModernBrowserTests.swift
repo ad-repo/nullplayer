@@ -4,6 +4,49 @@ import XCTest
 
 @MainActor
 final class WinampModernBrowserTests: XCTestCase {
+    func testInitialMarkupAddressPrefersURLThenClassicProHome() {
+        let source = "/Plugins/classicPro/engine/xui/CentroSUI/_v1/CentroSUI.xml"
+
+        XCTAssertEqual(WinampModernBrowserRequest.initial(
+            attributes: ["url": "https://current.example/", "home": "https://home.example/"],
+            sourceLogicalPath: source
+        ), WinampModernBrowserRequest(address: "https://current.example/",
+                                      sourceLogicalPath: source))
+
+        XCTAssertEqual(WinampModernBrowserRequest.initial(
+            attributes: ["url": "  ", "home": "http://www.skinconsortium.com/"],
+            sourceLogicalPath: source
+        ), WinampModernBrowserRequest(address: "http://www.skinconsortium.com/",
+                                      sourceLogicalPath: source))
+    }
+
+    func testAddresslessMarkupGetsTheBuiltInBrowserHome() {
+        let request = WinampModernBrowserRequest.initial(
+            attributes: [:], sourceLogicalPath: "/Skins/Test/skin.xml")
+
+        XCTAssertEqual(request.address, "about:blank")
+        XCTAssertEqual(WinampModernBrowserSurfaceView.destination(for: request, vfs: nil), .home)
+    }
+
+    func testBrowserAlwaysShowsSearchFieldAboveWebContent() throws {
+        let surface = WinampModernBrowserSurfaceView(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 200), vfs: nil)
+        surface.layoutSubtreeIfNeeded()
+
+        let webView = try XCTUnwrap(surface.subviews.compactMap { $0 as? WKWebView }.first)
+        let bar = try XCTUnwrap(surface.subviews.first { view in
+            view.subviews.contains(where: { $0 is NSSearchField })
+        })
+        let field = try XCTUnwrap(bar.subviews.compactMap { $0 as? NSSearchField }.first)
+
+        XCTAssertFalse(bar.isHidden)
+        XCTAssertEqual(field.placeholderString, "Search or enter website")
+        XCTAssertEqual(bar.frame.height, WinampModernBrowserSurfaceView.locationBarHeight)
+        XCTAssertEqual(webView.frame.maxY, bar.frame.minY)
+        XCTAssertEqual(webView.frame.height,
+                       surface.bounds.height - WinampModernBrowserSurfaceView.locationBarHeight)
+    }
+
     func testRemoteHTTPAndHTTPSAreAllowed() {
         for address in ["https://example.com/path", "http://example.com/legacy"] {
             let request = WinampModernBrowserRequest(address: address,

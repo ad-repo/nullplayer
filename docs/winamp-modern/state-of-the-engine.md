@@ -159,8 +159,9 @@ want of Layer FX, which Phase 29 shipped). It has one home:
   repaint hooks — a mutation in a speaker window repaints the *main* view — which is the likeliest
   reason they would still look dead (`docs/winamp-modern/phase-29-handoff.md` §4).
 - (Auxiliary `default_visible="1"` **is honoured as of Phase 40** — as a default the user's own choice
-  overrides, placed by the skin's `default_x`/`default_y`; a notifier and a `<browser>` window are
-  suppressed with a recorded reason. The playlist ADD/REM/SEL/MISC/LIST menus, and the
+  overrides, placed by the skin's `default_x`/`default_y`; only host-managed notifier/tooltip windows
+  are suppressed, while browser windows open with a real WebKit surface. The playlist
+  ADD/REM/SEL/MISC/LIST menus, and the
   visualization and video toolbars beside them, are **implemented as of Phase 39** — 108 button
   declarations across 11 of the 17 skins; `VID_1X`/`2X`, `VID_TV` and `CB_*` are accepted and inert
   with a recorded reason.)

@@ -41,6 +41,11 @@ synthesized and nothing left to the classic fallback.
   script → `CproTabs` → `CentroSUI.onAction("show_tab")`. It re-lays itself out on resize and drops to
   short labels (`LIB`/`PLE`/…) when the sheet is narrower than 50px per tab, which is its own
   behaviour, not a defect. Phase 24; see the trap below about §15.6.
+- **The Browser tab seeds its real web view from `home=`.** ClassicPro's v1 `CentroSUI.xml` declares
+  `<Winamp:Browser id="cpro.browser" home="http://www.skinconsortium.com/">`, not `url=`. Both markup
+  spellings are accepted. The historical site currently accepts a connection but returns an empty
+  reply, so the tab shows *Page unavailable* rather than WebKit's otherwise-blank white failure page;
+  ⌘L remains available for a new address.
 - **The Video tab plays video** (B23) — the skin embeds the video component in its tab sheet
   (`centro.windowholder.video`) and collapses its standalone `Video` container to a 1×1 stub, so
   until the embedded-video route existed the tab was an empty box and every film opened NullPlayer's

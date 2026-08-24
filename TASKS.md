@@ -133,10 +133,11 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       **Sweep the corpus for every object carrying both a `display=` and a script `setText` before
       landing this** — it changes what any such object draws, in every skin, not just this one.
 
-- [ ] **B40. `System.navigateUrl` is denied silently, and that is why skin buttons "do nothing".**
-      `case "navigateurl", "navigateurlbrowser": return .null` (`WinampModernScriptRuntime.swift:2387`)
-      and the object-level form at `:2960`, the latter denied *quietly on purpose* so the calling
-      handler does not abort. The cost is that a skin's whole web-facing feature set presents as dead
+- [ ] **B40. Global browser routing remains denied, and that is why some skin buttons "do nothing".**
+      `System.navigateUrl` / `System.navigateUrlBrowser` remain null-returning no-ops. The object-level
+      `<browser>.navigateUrl` form now routes to that object's policy-gated WebKit surface, but global
+      calls and `sui.sendAction("browser_search", …)` still need an explicit destination. The cost is
+      that part of a skin's web-facing feature set presents as dead
       controls: Big Bento Modern alone has **92 `navigateUrl` call sites**, and its two magnifier
       buttons are the lyrics finder (Google/Bing) and the YouTube search
       (`fileinfo_lyrics_finder.m`).
@@ -148,10 +149,9 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       choice. So the shape is: honour that attribute — external goes to `NSWorkspace`, internal goes
       to the in-app web view — rather than inventing a blanket rule. Keep the first-use confirmation
       for the external path; the URL is skin-chosen.
-      **Blocked on / sequenced after the WebKit work** (2026-08-23): the user is adding a `WKWebView`
-      surface for all browser windows and tabs *before* the Bento items, and `navigateUrlBrowser` and
-      `sui.sendAction("browser_search", …)` both want that view as their destination. Do not
-      implement B40 first — decide it once the internal target exists.
+      **The WebKit prerequisite is complete** (2026-08-23): browser windows and tabs now provide the
+      internal target. B40 is therefore unblocked, but still needs the skin's internal-vs-default
+      browser setting and an explicit route to the intended browser object.
       One smaller piece of the same surface, independent of the browser work: `ML_SendTo` (Big
       Bento's `sendTo` button) is not in `WinampModernHostActions.swift` at all — wire it or mark it
       explicitly `.inert` with a reason, the way `CB_*` and `VID_TV` are.

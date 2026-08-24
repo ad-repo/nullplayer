@@ -182,6 +182,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Lazy hosted-window materializer + surface contract | `Windows/WinampModern/WinampModernHostedWindowMaterializer.swift`, `…HostedWindowSurface.swift` |
 | Shared `.wal` fallback chrome | `WinampModernChrome.swift` |
 | Embedded library surface | `Windows/WinampModern/WinampModernLibrarySurfaceView.swift` |
+| Embedded web browser | `Windows/WinampModern/WinampModernBrowserSurfaceView.swift` |
 
 Design records and per-phase handoffs: `docs/winamp-modern/` — see its `INDEX.md`.
 

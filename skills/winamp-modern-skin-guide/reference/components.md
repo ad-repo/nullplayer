@@ -728,8 +728,16 @@ CSS, script, image and font resources are served from `WalVirtualFileSystem` thr
 `wal-skin-resource:` scheme; `file:`, `javascript:`, `data:`, downloads, popup windows, and
 application URL schemes are rejected. An allowed popup navigation is kept inside the same browser
 surface. The browser exposes no JavaScript-to-native message bridge. `command-L` and
-the WebKit context menu open a host-owned search/address field; non-address text searches DuckDuckGo.
+the WebKit context menu focus a host-owned search/address field that remains visible above the page;
+non-address text searches DuckDuckGo.
 The user may explicitly open the current HTTP(S) page in the default browser from that menu.
+
+Initial navigation accepts Wasabi's two markup forms: a non-empty `url=` wins, then `home=` is the
+fallback used by ClassicPro's `<Winamp:Browser>`. With neither, the surface opens NullPlayer's local
+search/start page. This selection happens before lazy loading, so a hidden or zero-sized browser still
+makes no request until it becomes visible. Both provisional and post-commit navigation failures show
+the compact *Page unavailable* screen; handling only the former leaves WebKit's default white page
+when an old server accepts a connection and then returns no response.
 
 Security policy is centralized and headlessly tested in `WinampModernBrowserTests`: WebKit uses a
 nonpersistent data store, media autoplay requires a user gesture, downloads are denied, and camera

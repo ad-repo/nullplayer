@@ -80,27 +80,16 @@ might be the key to understand what this skin can do."* That is right. These are
 not stock Winamp, and most of what they can do is switched on from a config surface that is inert
 today. **BB7** is the item that unlocks it.
 
-**Sequencing, decided 2026-08-23: do not start this backlog until the web view works in other
-skins.** A separate effort is adding a real `WKWebView` behind all browser windows and tabs, and the
-gate is not "it landed" but "it is working elsewhere in the corpus" — Bento is a bad first test for
-it, since this family's own web surface is the reader rather than a plain tab. It is upstream of `B40`
-(`navigateUrl` / `browser_search` need an internal destination before that policy can be settled) and
-it touches this family directly — Big Bento declares a genuine
+**The WebKit sequencing gate is satisfied (2026-08-23).** Browser windows and tabs now host a real,
+ephemeral `WKWebView`, with a visible search/address field, policy-gated navigation, `url=`/`home=`
+initialization and VFS-only local resources. This gives `B40` and the reader's `browser_search` an
+internal destination, but their global/action routing remains separate work. Big Bento declares a genuine
 `<Browser id="browserpro.browser" … url=""/>` in `reader.xml:90`, with a `reader.mode` two-state
 button toggling *Web Reader ↔ Internet Browser*, an *Open in Default Browser* button, and a
-`browserpro` provider-list container. Three facts that effort will want and that this pass
-established:
-- **There is no `WKWebView` anywhere in `Sources/NullPlayer` today** — it is greenfield.
-- **The `<Browser>` seam already exists and is not a web view.** `WasabiSceneRenderer.isBrowserElement`
-  (`WasabiRenderer.swift:1050`) matches both `browser` and `winamp:browser`, `browserNodes()` uses
-  `layoutNodes()` so it finds browsers inside hidden tabs, and
-  `WinampModernMainView.reconcileBrowserSurfaces` (`:666`) creates and hides them — but
-  `makeBrowserSurface()` (`WinampModernComponentBridge.swift:200`) returns a **library** surface, the
-  Data tab. That is correct for the skin B19 was fixed against and wrong for a real browser, so the
-  surface *kind* is the thing to split, not the plumbing. B19's typeName lesson is in
-  `reference/components.md` → *`<browser>` — embedded library Data tab (B19)*.
-- **Bento's SUI browser tab is commented out** (`player-normal-sui.xml:4`), so the reachable web
-  surface in this family is the reader, not a tab.
+`browserpro` provider-list container. The remaining reader gap is its list/action machinery, not the
+web surface itself. cPro-Bento's engine-one SUI also has a reachable v1 Browser tab whose
+`<Winamp:Browser home="http://www.skinconsortium.com/">` now initializes correctly; that historical
+server currently returns an empty reply, which the surface reports as *Page unavailable*.
 `BB11`'s `getItemLabel` is the same reader's list, so it may fall out of that work rather than this
 backlog.
 
