@@ -39,7 +39,7 @@ enum WasabiFrame {
     }
 
     /// `true` when the divider is vertical (a `left`/`right` split), `false` for `top`/`bottom`.
-    private static func isVerticalDivider(_ object: WasabiObject) -> Bool {
+    static func isVerticalDivider(_ object: WasabiObject) -> Bool {
         object.attributes["left"] != nil || object.attributes["right"] != nil
     }
 

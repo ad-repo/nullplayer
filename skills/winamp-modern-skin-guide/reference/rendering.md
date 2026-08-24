@@ -245,6 +245,76 @@ ordinary group left the library tree, the playlist and the tab strip out of the 
 - A divider pushed flush with an edge (`setPosition(0)`, how ClassicPro closes its side view) offers
   no grab strip, so a closed split cannot be reopened by dragging where it used to be.
 
+##### Where the user left the divider survives a relaunch — where the *skin* put it does not (B44, 2026-08-24)
+
+Nothing a `.wal` skin's own state amounted to used to survive a quit. The graph is reseeded from the
+markup every load and the skin's scripts then re-run their own `setPosition`, so a splitter dragged
+wide came back narrow. It stayed invisible for the whole B35–BB22 run because of what it hides: Big
+Bento's header analyzers (B43) live past the divider's default column, so on a fresh launch nobody had
+ever seen them.
+
+The rule is narrow on purpose. **Only a drag is stored** — `persistFramePosition(of:)` is called from
+mouse-up and from nowhere else. A script moving its own splitter is the *author's* layout speaking:
+Bento's `setPosition(434)` with `from="left"` genuinely ships "narrow player, wide playlist" and pins
+the left pane at 434 however large the window grows, and there is no clamping bug on our side to fix.
+Storing that would freeze the opening layout into a preference the user never expressed, and
+overriding it outright is not ours to do. This is also why it is **not** a `WasabiSkinQuirks` entry:
+that file's bar is *arithmetic the skin gets wrong, derivable from the skin's own numbers*, and this
+fails both halves.
+
+- Stored in the skin's existing namespaced configuration (`WinampModernConfiguration`, the same store
+  behind `setPrivateInt`) under section `@nullplayer.frames`, keyed **`container-id/frame-id`**. Those
+  are the two names that survive a reload; `stableID` is a per-load counter and would address a
+  different object next launch. A frame with no `id` is skipped rather than given a positional key a
+  markup edit would silently reassign.
+- `-1` is the "never dragged" sentinel, because **`0` is a legal stored position**: ClassicPro closes
+  its side view with `setPosition(0)` and a user may leave it closed.
+- Restored from `layoutNodes()`, not `sceneNodes()` — Wasabi lays a hidden object out anyway, and a
+  splitter inside a drawer that happened to be shut at quit still has a position the user set.
+- **Also restored on every layout activation**, not only at launch: `persistableFrames()` sees the
+  *active* layout only, so a divider dragged in a layout the user switched to later was stored and
+  then never put back (B44a).
+- The stored offset is **re-clamped against the box as it is now**. A negative `maxwidth` is measured
+  from the far edge, so an offset that was legal in a wide window is out of bounds in a narrow one.
+- **The ordering trap, and it is the whole difficulty.** The skin's `setPosition` runs at load, so a
+  restore has to land after the scripts settle or it is simply stomped — the same trap B38.2 hit. Each
+  view restores its own splitters in `scriptsDidStart()`, *before* the seeding resize dispatch, so a
+  script whose state is only assigned in `onResize` is told the geometry the user actually left. That
+  is enough when the skin calls `setPosition` from `onScriptLoaded`, which is the common case and
+  Bento's. It is **not** enough when the call comes from a timer, so the window controller re-asserts
+  once at 1.0s — comfortably past the 700 ms one-shot Bento's own `mcvcore` starts (BB9). The
+  re-assert **re-reads the store** rather than replaying what it restored, so a divider dragged inside
+  that first second is not pulled back to where the window opened.
+
+##### What else the host remembers about a skin, and what it must not (B44a, 2026-08-24)
+
+The splitter is one entry in a short list, and the list is short for a reason: **a skin's own
+preferences already survive on their own.** `setPrivateInt`/`setPrivateString` and `cfgattrib` write
+straight into the same namespaced store, so anything a skin chose to remember about itself already
+works. What the *engine* owns is only what lives in the object graph, which is rebuilt from the markup
+on every load. All of it is collected in `WinampModernSkinState`:
+
+| State | Section | Key | Written when |
+|---|---|---|---|
+| A `<Wasabi:Frame>`'s divider offset | `@nullplayer.frames` | `container-id/frame-id` | mouse-up on the divider |
+| Which layout a container is on (shade) | `@nullplayer.layouts` | `container-id` | a `SWITCH` on a control the user clicked |
+| Whether one of the skin's windows is open | `@nullplayer.windows` | `container-id` | a menu item, a skin button, a close box |
+
+Two things are deliberately **not** in it. The active colour theme is already persisted by
+`WasabiColorThemeList` under `appearance/theme` — check before duplicating it. And a window's frame on
+screen belongs to the *player's* window rather than to the skin, so it goes through `AppStateManager`
+with everything else the app restores (with `clampRestoredFrame`, R1).
+
+The write points are the whole design. **Every one of them is a user gesture**, and a script's
+`setPosition`, `switchToLayout` or `hide()` writes nothing — that is the skin describing *this* run.
+The layout entry is the one where the distinction takes care: a `SWITCH` click action is a control the
+user pressed, while `scripts.layoutSwitchRequested` is the skin's own `switchToLayout` and is
+ambiguous (a skin switches its own layout both at load and from its own click handlers), so only the
+former records. Restoring a layout is also the one entry **not** re-asserted a second later the way a
+divider is: switching layout resizes the window and rebuilds the scene, and doing that a second after
+launch would read as the player flinching, so a skin that switches its own layout from a timer keeps
+the last word.
+
 ##### What outranks a splitter on its own grab strip (BB21, 2026-08-24)
 
 "The cursor changes but it drags the whole window" is the signature of this one, and it is a hit-test

@@ -151,7 +151,11 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   objects off-layout to hide them, and their art must not leak into the window
 - Animated, N-state, ticker, album-art, and visualization elements
 - Layout/shade switching, resize constraints, alpha-shaped window regions
-- Namespaced per-skin configuration persistence
+- Namespaced per-skin configuration persistence, including the state the **engine** owns rather than
+  the skin (`WinampModernSkinState`, B44/B44a): a splitter's divider offset, which layout a container
+  is on (so a window left shaded comes back shaded), and whether one of the skin's own windows is
+  open. Every one is written from a **user gesture only** — a script's `setPosition`/`switchToLayout`/
+  `hide()` is the author's default and is never recorded
 - Aliases and meta-commands
 - `<Wasabi:Frame>` / `<frame>` splitters: the frame instantiates the groups named by
   `left`/`right` (vertical divider) or `top`/`bottom` (horizontal) and lays them out either side of
@@ -159,7 +163,11 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   `getPosition`/`setPosition` are that offset. The divider is **draggable**: its grab strip takes the
   resize cursor and a drag rewrites `position`, bounded by `minwidth`/`maxwidth` (which skins spell
   that way for both orientations, and which are measured from the far edge when negative —
-  ClassicPro's `maxwidth="-224"` means "always leave 224px for the other pane")
+  ClassicPro's `maxwidth="-224"` means "always leave 224px for the other pane"). **A divider the user
+  drags is remembered across launches** (B44) under `@nullplayer.frames` / `container-id/frame-id` in
+  the skin's own namespace; a divider only the *skin* moved is not, so an author's default layout still opens as
+  written. Restored in `scriptsDidStart()` and re-asserted once at 1.0s, because the skin's own
+  `setPosition` may come from a timer
 - Auto-sizing from text: a group with `autowidthsource="<id>"` takes the width of the descendant it
   names, and a `<text>` with no `w` takes its own content's width. `getAutoWidth()` measures with the
   object's real font (bitmap-font pitch or Core Text) plus `leftpadding`/`rightpadding`, so a skin

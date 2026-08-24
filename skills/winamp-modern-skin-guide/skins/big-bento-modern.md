@@ -25,6 +25,7 @@
 | Settings-page scrolling | **Fixed (BB19)** | Seven stacked faults — see below. Confirmed live |
 | Header analyzers | **Fixed (B43)** | The `main.vis.group` butterfly; `fliph`/`flipv` were ignored, so it drew as two identical blocks. Confirmed live |
 | Seek bar (W10 editions) | **Blank** | The skin's own `waveseeker.rounder.bg` covers it; cause unmeasured |
+| Divider position | **Fixed (B44)** | A divider the *user* drags now survives a relaunch, so the header analyzers stay visible. The skin's own `setPosition(434)` default is untouched. Confirmed live |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
 ## The family is two skins and two overlays
@@ -208,8 +209,10 @@ speeds — so the header's visualization is configured from the pages BB7 unlock
 is shown only above **730px of player width**, and `player.mainframe.big` is `from="left"` with the
 skin's script calling `setPosition(434)` — which pins the left pane at 434 **at every window size**,
 because the right pane absorbs all the extra. So the header analyzers are invisible until the divider
-is dragged, no probe can reach them (`RENDER_SIZE` widens the canvas, not the pane), and the position
-is not persisted (B44), so every relaunch hides them again.
+is dragged, and no probe can reach them (`RENDER_SIZE` widens the canvas, not the pane). Until B44 the
+position was not persisted either, so every relaunch hid them again; a divider the user has dragged
+now comes back where they left it, but the **first** sight of these analyzers still costs a drag —
+that is the skin's own default and is deliberately not overridden.
 
 ## BB9 — the Multi Content View's three visualization placements
 

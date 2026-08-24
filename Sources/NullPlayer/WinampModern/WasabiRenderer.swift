@@ -1047,6 +1047,84 @@ final class WasabiSceneRenderer {
             || object.attributes[WasabiClickGesture.right.actionAttribute] != nil
     }
 
+    /// Every `<Wasabi:Frame>` in this scene that is a real two-pane splitter and carries an `id`,
+    /// with the box its position is measured in — the frames whose divider can be saved and restored
+    /// **by name** across launches (B44).
+    ///
+    /// `layoutNodes()`, not `sceneNodes()`: Wasabi lays a hidden object out anyway, and a splitter
+    /// inside a closed drawer still has a position the user set. Restoring only what is painted would
+    /// lose it for any skin whose drawer happened to be shut at quit.
+    func persistableFrames() -> [(object: WasabiObject, id: String, frame: CGRect)] {
+        layoutNodes().compactMap { node in
+            guard WasabiFrame.isFrame(node.object),
+                  WasabiFrame.paneIdentifiers(of: node.object).count == 2,
+                  let id = node.object.xmlID, !id.isEmpty else { return nil }
+            return (node.object, id, node.frame)
+        }
+    }
+
+    /// Put every splitter in this scene back where the user dragged it (B44). Returns whether
+    /// anything actually moved, so a caller can skip the resize dispatch and the repaint.
+    ///
+    /// Idempotent and safe to run more than once: it re-reads the store each time, so a drag that
+    /// happens between two passes wins the second one as well. A frame the user has never touched has
+    /// nothing stored and is left entirely to the skin.
+    @discardableResult
+    func restorePersistedFramePositions() -> Bool {
+        guard let containerID = container.xmlID else { return false }
+        var moved = false
+        for frame in persistableFrames() {
+            guard let stored = WinampModernSkinState.framePosition(container: containerID,
+                                                                   frame: frame.id,
+                                                                   in: loadedSkin.configuration)
+            else { continue }
+            // Re-clamp against the box as it is *now*: the window may have been resized since, and a
+            // frame's `maxwidth="-300"` is measured from the far edge, so yesterday's legal offset can
+            // be out of bounds today.
+            let extent = WasabiFrame.isVerticalDivider(frame.object) ? frame.frame.width
+                                                                     : frame.frame.height
+            let clamped = WasabiFrame.clampedPosition(stored, extent: extent, object: frame.object)
+            moved = WasabiFrame.setPosition(clamped, on: frame.object) || moved
+        }
+        return moved
+    }
+
+    /// Remember where the user left a divider (B44). Only a **drag** calls this: a script moving its
+    /// own splitter is the skin's default speaking, and storing that would freeze the author's opening
+    /// layout into a preference the user never expressed.
+    func persistFramePosition(of object: WasabiObject) {
+        guard let containerID = container.xmlID,
+              let id = object.xmlID, !id.isEmpty else { return }
+        WinampModernSkinState.setFramePosition(WasabiFrame.position(of: object),
+                                               container: containerID, frame: id,
+                                               in: loadedSkin.configuration)
+    }
+
+    // MARK: - Layout persistence (B44a)
+
+    /// The layout the user last switched this container to, if it still exists in the skin. Checked
+    /// against the container's own children so a renamed or removed layout in an updated skin is
+    /// ignored rather than throwing on activation.
+    var rememberedLayoutID: String? {
+        guard let containerID = container.xmlID,
+              let stored = WinampModernSkinState.layout(container: containerID,
+                                                        in: loadedSkin.configuration),
+              stored.caseInsensitiveCompare(activeLayoutID) != .orderedSame,
+              container.children.contains(where: {
+                  $0.typeName.caseInsensitiveCompare("layout") == .orderedSame &&
+                  $0.xmlID?.caseInsensitiveCompare(stored) == .orderedSame
+              }) else { return nil }
+        return stored
+    }
+
+    /// Remember the layout this container is on. Called for a `SWITCH` the **user** clicked and for
+    /// nothing else — a script's `switchToLayout` is the skin describing this run.
+    func persistActiveLayout() {
+        guard let containerID = container.xmlID else { return }
+        WinampModernSkinState.setLayout(activeLayoutID, container: containerID,
+                                        in: loadedSkin.configuration)
+    }
+
     func frameDivider(at point: CGPoint) -> WasabiObject? {
         frameDividers().reversed().first { $0.rect.contains(point) }?.object
     }

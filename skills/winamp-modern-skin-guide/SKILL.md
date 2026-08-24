@@ -47,6 +47,8 @@ concept; read the one your symptom points at, not all of them.
 | Slow, stuttering, CPU high, repaint storm | [reference/performance.md](reference/performance.md) |
 | **The UI hangs or runs at a few fps** — and `RENDER_TIME` says the frame is fine | [reference/harness.md](reference/harness.md) — *Profiling the running app*: `sample` the process; `RENDER_TIME` measures `renderer.draw` and nothing else |
 | **A splitter shows a resize cursor but drags the window instead** | [reference/rendering.md](reference/rendering.md) — *What outranks a splitter on its own grab strip* |
+| **A splitter (or any skin-owned state) forgets where the user put it on relaunch** | [reference/rendering.md](reference/rendering.md) — *Where the user left the divider survives a relaunch*: only a **drag** is stored, and the restore has to land after the scripts settle |
+| **Deciding whether some new piece of skin state should persist** | [reference/rendering.md](reference/rendering.md) — *What else the host remembers about a skin, and what it must not*: the skin's own prefs already persist; only graph-owned state needs saving, and only from a user gesture |
 | A `{0000000A}` visualization slot shows the wrong thing, or only one of several works | [reference/components.md](reference/components.md) — *`{0000000A}` is a plugin host*: it is not "MilkDrop's box", and one holder per skin gets the engine |
 | A script does nothing, wrong arity, unknown method, script-built UI missing | [reference/scripting.md](reference/scripting.md) |
 | A host-fed readout never updates (`onTextChanged`) | [reference/scripting.md](reference/scripting.md) |
@@ -171,6 +173,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Retained object graph | `WasabiObjectGraph.swift` |
 | Coordinates / anchors | `WasabiGeometry.swift` |
 | `<Wasabi:Frame>` splitter | `WasabiFrame.swift` |
+| What the host remembers about a skin between launches (B44/B44a) | `WinampModernSkinState.swift` |
 | Fonts + text measurement (shared) | `WasabiTextMetrics.swift` |
 | Resource cache + scene renderer | `WasabiRenderer.swift` |
 | MAKI parser + interpreter | `MakiBytecode.swift` |

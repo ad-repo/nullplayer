@@ -73,8 +73,8 @@ so the numbers do not collide: **B39** (`setText` vs `display=` — the repeated
 **B40** (`navigateUrl` policy and `ML_SendTo` — the dead lyrics/video buttons), and
 **B41** (`getMonitorWidth`/`getMonitorHeight`). Two more were added on 2026-08-24 from the header
 analyzer discovery below: **B43** (`fliph`/`flipv` ignored engine-wide) and **B44** (skin-scoped
-persistence of skin config, whose first slice is the divider position). Bento is only where they were
-found. The `BB`
+persistence of skin config, whose first slice — the divider position — is now done). Bento is only
+where they were found. The `BB`
 numbers below run contiguously `BB6`–`BB15`; the plan file used a different provisional numbering for
 the same items, so cite these, not the plan's.
 
@@ -165,8 +165,9 @@ backlog.
       `WinampModernVisualizationHolder` at all — these are real `<vis>` elements the renderer draws
       itself. Two things came out of it, both engine-wide and both in `TASKS.md`: **B43**
       (`fliph`/`flipv` were ignored, so the intended mirrored butterfly drew as two identical blocks
-      with a seam) and **B44** (the divider position is not persisted, which is the only reason this
-      went undiscovered for the whole B35–BB22 run).
+      with a seam) and **B44** (the divider position was not persisted, which is the only reason this
+      went undiscovered for the whole B35–BB22 run; a dragged divider now survives a relaunch, though
+      the skin's own narrow default still hides the group until the first drag).
       `visualizer.maki` also registers an **`Alt Visualizer`** setting that swaps the pair for
       `main.vis.group.alt` — a single 252px analyzer plus reflection — along with `Visualizer Mode`,
       `Show Peaks`, `Visualizer show Lines` and the two falloff speeds. Both groups are placed with no

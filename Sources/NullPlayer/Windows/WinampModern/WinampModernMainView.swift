@@ -210,6 +210,11 @@ final class WinampModernMainView: NSView {
     func activateLayout(id: String) -> Bool {
         guard (try? renderer.activateLayout(id: id)) != nil else { return false }
         invalidateRectCaches()
+        // A different layout is a different subtree with its own splitters, and `persistableFrames()`
+        // only ever sees the active one — so without this a divider dragged in the shade layout would
+        // be stored and then never restored (B44a). Placed after `activateLayout`, which has already
+        // set the new canvas size the offsets are clamped against.
+        renderer.restorePersistedFramePositions()
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
         // A different layout is a different scene, so nothing carries over: every object in it hears
@@ -278,10 +283,25 @@ final class WinampModernMainView: NSView {
     }
 
     func scriptsDidStart() {
+        // Before the seeding dispatch, so a script whose state is only assigned in `onResize` is told
+        // the geometry the user actually left behind rather than the skin's default and then a
+        // correction (B44).
+        restorePersistedFramePositions()
         dispatchResize(seeding: true)
         // A skin turns Layer FX on from `onScriptLoaded`, so only now can this scene know whether it
         // has a warped layer to keep repainting.
         updateAnimationTimer()
+    }
+
+    // MARK: - Splitter persistence (B44)
+
+    /// Put every splitter back where the user dragged it. The scene state itself lives on the
+    /// renderer, which already owns the container id and the skin's configuration store; this is the
+    /// window layer's handle on it, and the one place that knows the view may be torn down.
+    @discardableResult
+    func restorePersistedFramePositions() -> Bool {
+        guard !isTornDown else { return false }
+        return renderer.restorePersistedFramePositions()
     }
 
     /// Tell whatever moved that it moved, after a change this view did not itself cause — a script
@@ -969,7 +989,12 @@ final class WinampModernMainView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
-        if draggedDivider != nil { draggedDivider = nil; return }
+        if let draggedDivider {
+            // Where the user let go is the position that outlives the session (B44).
+            renderer.persistFramePosition(of: draggedDivider)
+            self.draggedDivider = nil
+            return
+        }
         if pressedEQHolder != nil { pressedEQHolder = nil; needsDisplay = true; return }
         let releasedOver = renderer.object(at: point)
         // The drag session is closed **before** any action runs. A titlebar mousetrap is both a drag
@@ -1533,7 +1558,10 @@ final class WinampModernMainView: NSView {
         case "NEXT": host.next()
         case "EJECT": host.openFiles()
         case "SWITCH":
-            if let parameter { activateLayout(id: parameter) }
+            // The user clicked a control that switches layout — a titlebar shade button, a
+            // `dblclickaction="SWITCH;shade"` mousetrap. That is a decision about how they want this
+            // window, so it outlives the session; a script's own `switchToLayout` does not (B44a).
+            if let parameter, activateLayout(id: parameter) { renderer.persistActiveLayout() }
         // The window commands every skin puts on its titlebar. T800 draws all three (minimize,
         // shade-switch, close) as 4×5px buttons on the machine's chest. The fallbacks are for a view
         // with no controller over it (tests): never `performClose`, which a borderless window ignores.

@@ -190,6 +190,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             wireContainerCallbacks(scripts: scripts)
             try scripts.start()
+            // After `start()`, so the skin's own `switchToLayout` at load has already had its say and
+            // this is the last word: a window the user left shaded comes back shaded (B44a). Before
+            // `scriptsDidStart()`, so the seeding resize dispatch describes the layout that is
+            // actually up rather than the one it replaced.
+            restoreRememberedLayouts()
             // Immediately after `start()` — so after `onScriptLoaded` and XUI param delivery, and
             // before the first `updatePlaybackState()` can send `onPlay`: every scene tells its scripts
             // their geometry once. A script whose state is only assigned in `onResize` has none of it
@@ -214,6 +219,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // populated by now — and a slow poll keeps them honest through playlist edits.
             refreshBoundText()
             startBoundTextPolling()
+            scheduleFramePositionReassert()
             #if DEBUG
             // `WINAMP_MODERN_DEBUG_CLICK=x,y[;x,y…]` drives clicks at skin points a few seconds after
             // launch — the only way to reproduce a click-path defect that lives in the *window* layer,
@@ -689,6 +695,51 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// second code path to keep in step. Only for a skin that actually embeds the library: one that
     /// declares its own library window, or falls back to the classic one, is left alone so nothing
     /// pops open a window at launch.
+    // MARK: - Splitter persistence (B44)
+
+    /// How long after `start()` the restored divider positions are asserted a second time.
+    ///
+    /// Every view restores its own splitters inside `scriptsDidStart`, which is enough when the skin
+    /// calls `setPosition` from `onScriptLoaded` — the common case, and Big Bento's. It is *not*
+    /// enough when the call comes from a timer instead: Bento's own `mcvcore` starts a 700 ms one-shot
+    /// from its second `onScriptLoaded` body, and the same ordering trap took out B38.2's reveals. One
+    /// late re-assert settles it, comfortably past that timer.
+    private static let framePositionReassertDelay: TimeInterval = 1.0
+
+    private func scheduleFramePositionReassert() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.framePositionReassertDelay) { [weak self] in
+            self?.reassertPersistedFramePositions()
+        }
+    }
+
+    /// Put each container back on the layout the user last switched it to (B44a).
+    ///
+    /// Only when the skin still declares that layout and is not already on it, so a renamed layout in
+    /// an updated skin is ignored rather than throwing. Unlike a divider this is **not** re-asserted a
+    /// second later: switching layout resizes the window and rebuilds the scene, and doing that a
+    /// second after launch would read as the player flinching. A skin that switches its own layout
+    /// from a timer keeps the last word here, which is the safer way round.
+    private func restoreRememberedLayouts() {
+        for view in ([skinView].compactMap { $0 } + auxiliaryContainers.map(\.view)) {
+            guard let remembered = view.renderer.rememberedLayoutID else { continue }
+            view.activateLayout(id: remembered)
+        }
+    }
+
+    /// Re-apply the stored positions once the scripts have settled. Deliberately re-reads the store
+    /// rather than replaying what was restored at start, so a divider the user drags inside that first
+    /// second is not pulled back to where it was when the window opened. A no-op when nothing moved
+    /// it, which is what happens on every skin whose splitters the user has never touched.
+    private func reassertPersistedFramePositions() {
+        for view in ([skinView].compactMap { $0 } + auxiliaryContainers.map(\.view)) {
+            guard view.restorePersistedFramePositions() else { continue }
+            view.dispatchResizeIfChanged()
+            view.needsLayout = true
+            view.needsDisplay = true
+            view.window?.invalidateCursorRects(for: view)
+        }
+    }
+
     private func revealEmbeddedLibraryAtStartup() {
         guard let coordinator = surfaceCoordinator, coordinator.isEmbedded(.library) else { return }
         coordinator.showSurface(.library)
@@ -1131,11 +1182,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     // MARK: - `default_visible` (Phase 40, B6)
 
-    /// The section a container's remembered open/closed state lives in, inside the *skin's own*
-    /// namespaced configuration — so two skins that both declare a `Config` window do not share one
-    /// answer, and nothing here reaches arbitrary preferences.
-    private static let windowVisibilitySection = "@nullplayer.windows"
-
     /// Open the windows the skin declares as `default_visible="1"`.
     ///
     /// Winamp opens these *with* the skin: Defix's configurator is on screen the moment its skin
@@ -1169,19 +1215,21 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         remembered ?? opensByDefault
     }
 
-    /// What the user last did with this window, or `nil` when they have never said.
+    /// What the user last did with this window, or `nil` when they have never said. Stored in the
+    /// *skin's own* namespaced configuration alongside the rest of the host-owned skin state
+    /// (`WinampModernSkinState`), so two skins that both declare a `Config` window do not share one
+    /// answer and nothing here reaches arbitrary preferences.
     private func rememberedContainerVisibility(id: String) -> Bool? {
         guard let configuration = loadedSkin?.configuration else { return nil }
-        let stored = configuration.integer(section: Self.windowVisibilitySection, key: id, default: -1)
-        return stored < 0 ? nil : stored != 0
+        return WinampModernSkinState.windowIsVisible(container: id, in: configuration)
     }
 
     /// Record an explicit user decision — a menu item, a skin button, a close box. Script-driven
     /// `show()`/`hide()` and the startup default deliberately do **not** write here: a skin that
     /// opens one of its own windows from a timer is describing this run, not the next one.
     private func rememberContainerVisibility(id: String, visible: Bool) {
-        loadedSkin?.configuration.setInteger(visible ? 1 : 0,
-                                             section: Self.windowVisibilitySection, key: id)
+        guard let configuration = loadedSkin?.configuration else { return }
+        WinampModernSkinState.setWindowIsVisible(visible, container: id, in: configuration)
     }
 
     /// Close / Minimize as Winamp means them, wired to every window this skin owns.

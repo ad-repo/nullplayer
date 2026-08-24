@@ -221,6 +221,65 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       `7zz`, and check the extracted directory count against the skin count. Landed in
       `reference/harness.md`.
 
+- [x] **B44. Skin-scoped persistence of skin config — first slice done 2026-08-24, confirmed live.**
+      The splitter position is the slice that landed; the item as filed is wider than it and the rest
+      stays open (see the follow-up below). Nothing a `.wal` skin's own state amounted to survived a
+      relaunch: every launch reseeds the graph from the markup and then re-runs the skin's own
+      `setPosition`, so Big Bento's player/playlist divider dragged wide came back narrow.
+      **The rule, and it is the whole design: only a drag is stored.** `persistFramePosition(of:)` is
+      called from mouse-up and nowhere else. A script moving its own splitter is the *author's* layout
+      speaking — Bento's `setPosition(434)` with `from="left"` genuinely ships "narrow player, wide
+      playlist" and there is no clamping bug on our side — so that is left exactly as written. Not a
+      `WasabiSkinQuirks` entry: that file's bar is *arithmetic the skin gets wrong, derivable from the
+      skin's own numbers*, and this fails both halves.
+      Stored in the skin's existing namespaced `WinampModernConfiguration` (the store behind
+      `setPrivateInt`) under section `@frame`, keyed `container-id/frame-id` — the two names that
+      survive a reload, where `stableID` is a per-load counter. `-1` is the "never dragged" sentinel
+      because **`0` is a legal position** (ClassicPro closes its side view with `setPosition(0)`).
+      Restored from `layoutNodes()` so a splitter in a shut drawer is not lost, and re-clamped against
+      the box *as it is now*, since a negative `maxwidth` is measured from the far edge.
+      **The ordering trap was the difficulty**, and it is the same one B38.2 hit: the skin's own
+      `setPosition` runs at load, so a restore before it is simply stomped. Each view restores in
+      `scriptsDidStart()` *before* the seeding resize dispatch, and the controller re-asserts once at
+      1.0s for the case where the skin's call comes from a timer instead (Bento's `mcvcore` starts a
+      700 ms one-shot, BB9). The re-assert **re-reads the store** rather than replaying, so a drag
+      inside that first second is not pulled back.
+      Rule: `reference/rendering.md` → *Where the user left the divider survives a relaunch — where the
+      skin put it does not*. `swift test` 1125 pass (10 new, `WinampModernPhase62Tests`).
+
+- [x] **B44a. The rest of skin-scoped persistence. Measured and closed 2026-08-24 — the list is
+      shorter than it looked.** The framing that settles it: **a skin's own preferences already
+      survive**. `setPrivateInt`/`setPrivateString` and `cfgattrib` write straight into the same
+      namespaced store, so anything a skin chose to remember about itself has always worked. Only what
+      lives in the **object graph** needs saving, because that is what is rebuilt from the markup on
+      every load — and that is a three-row table, now collected in `WinampModernSkinState`:
+
+      | State | Section | Written when |
+      |---|---|---|
+      | A `<Wasabi:Frame>`'s divider offset | `@nullplayer.frames` | mouse-up on the divider (B44) |
+      | Which layout a container is on (shade) | `@nullplayer.layouts` | a `SWITCH` the user clicked (new) |
+      | Whether one of the skin's windows is open | `@nullplayer.windows` | a menu item, skin button or close box (already existed, Phase 40/B6) |
+
+      Two candidates were **dropped after measuring**, and both were already done elsewhere: the
+      active colour theme is persisted by `WasabiColorThemeList` under `appearance/theme`, and a
+      window's frame on screen belongs to the *player's* window rather than to the skin, so it goes
+      through `AppStateManager` with `clampRestoredFrame` (R1). A `<ColorThemes:List>` row selection is
+      transient — applying it is what matters, and applying goes through the theme.
+      **Two things actually changed.** *Layout persistence* is new: a window left shaded comes back
+      shaded, restored right after `scripts.start()` so the skin's own `switchToLayout` has had its say
+      first. Deliberately **not** re-asserted at 1.0s the way a divider is — switching layout resizes
+      the window and rebuilds the scene, and doing that a second after launch would read as the player
+      flinching. And a **gap in B44's own slice** is fixed: `persistableFrames()` sees the active
+      layout only, so a divider dragged in a layout the user switched to later was stored and then
+      never put back; `activateLayout` now restores that layout's own splitters.
+      The window-visibility code moved onto the shared store unchanged (same section string, so no
+      stored state is orphaned), and B44's section was renamed `@frame` → `@nullplayer.frames` to match
+      it. **That last one resets a divider dragged before this landed, once.**
+      Rules: `reference/rendering.md` → *What else the host remembers about a skin, and what it must
+      not*. `swift test` 1131 pass (16 in `WinampModernPhase62Tests`).
+      **Confirmed live by the user, 2026-08-24** — the shade round trip, the splitter in a non-default
+      layout, and the negative case (skins never touched open unchanged).
+
 ### Tier 2
 
 - [ ] **B33. An unclosed tag at EOF kills the whole skin.** `Shield_Amp` is the only skin of the 30
