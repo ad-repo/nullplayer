@@ -344,15 +344,15 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Place in `~/Library/Application Support/NullPlayer/Skins/` for auto-discovery
 - Bundled skins: Silver (default), Classic, Dark, Light
 
-### Modern UI Mode
-- **Skins > Modern/Classic > Switch to…** to change UI mode
+### Original UI Mode
+- **Skins > Original/Classic > Switch to…** to change UI mode
 - Switches **live, with no restart** — only the mode-dependent window layer is rebuilt; audio, casting, the video player, and playlist/seek/play state continue uninterrupted. Picking a specific modern or classic skin while in the other mode also switches live.
-- Modern skins use `skin.json` format
-- Portable modern skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Modern > Load Skin...**
-- Bundled modern skins: NeonWave (default), Skulls
+- Original skins use `skin.json` format
+- Portable Original skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Original > Load Skin...**
+- Bundled Original skins: NeonWave (default), Skulls
 
 ### UI Size Mode
-- **Modern/Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
+- **Original/Original-Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
 - **Classic UI**: choose context menu -> **UI Size** or use the classic size control to enlarge
 - Scales all windows to the selected percentage
 - Persists across same-mode restarts; a saved session from a different UI mode starts at 100% with default window geometry

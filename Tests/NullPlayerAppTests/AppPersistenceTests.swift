@@ -3,6 +3,13 @@ import XCTest
 @testable import NullPlayer
 
 final class AppPersistenceTests: XCTestCase {
+    func testSkinFamilyDisplayNamesUseOriginalBranding() {
+        XCTAssertEqual(PlayerUIMode.modern.displayName, "Original")
+        XCTAssertEqual(PlayerUIMode.metal.displayName, "Original-Metal")
+        XCTAssertEqual(ModernSkinFamily.modern.displayName, "Original")
+        XCTAssertEqual(ModernSkinFamily.metal.displayName, "Original-Metal")
+    }
+
     func testFullEditionUsesExistingKeysAndHasNoForcedMode() {
         XCTAssertEqual(AppPersistence.key("savedAppState"), "savedAppState")
         XCTAssertEqual(AppPersistence.key("MainWindowFrame"), "MainWindowFrame")

@@ -248,7 +248,7 @@ All elements render programmatically using the palette colors.
 
 Metal mode uses the same modern skin engine but a separate family namespace (`.metal` render style, `metalSkinName` key, user skins under `MetalSkins`). Its appearance is **code-driven, not palette-driven**: every metal skin draws the same surfaces, with per-finish colors supplied by a `MetalMaterial` preset (`ModernSkin/MetalMaterial.swift`).
 
-Seven built-in metal finishes ship in code (`ModernSkinLoader.createBuiltInMetalSkin(named:)`, listed by `builtInMetalSkinNames`): **Brushed Steel** (default), **Aluminum**, **Gunmetal**, **Anodized Black**, **Brass**, **Bronze**, **Copper**. They appear automatically in the Skins → Metal menu and load by name (path-nil `SkinInfo`).
+Seven built-in metal finishes ship in code (`ModernSkinLoader.createBuiltInMetalSkin(named:)`, listed by `builtInMetalSkinNames`): **Brushed Steel** (default), **Aluminum**, **Gunmetal**, **Anodized Black**, **Brass**, **Bronze**, **Copper**. They appear automatically in the Skins → Original-Metal menu and load by name (path-nil `SkinInfo`).
 
 Display vs. chrome contrast: the main-window time/track panels and EQ curve graph render on a backlit-green LCD (`material.displayFill`); text on the LCD uses `material.lcdInk` (dark in every finish), while on-chrome text uses the skin palette `text`/`textDim`/`dataColor` (light on dark finishes, dark on light). `timeColor`/`marqueeColor` stay dark for all finishes since they sit on the green LCD. EQ faders use a brightness value ramp (`material.faderLow`/`faderMid`/`faderHigh`), not a hue scale.
 
@@ -294,9 +294,9 @@ Users place `.nsz` files or folders in:
 
 ### Selecting a Skin
 
-Right-click the player → **Skins** → **Modern** → choose from the list (or use **Load Skin...** to import a `.nsz` bundle).
+Right-click the player → **Skins** → **Original** → choose from the list (or use **Load Skin...** to import a `.nsz` bundle).
 
-Skin changes take effect immediately. Switching between Classic, Modern, and Metal mode happens live in-process.
+Skin changes take effect immediately. Switching between the Classic, Original, and Original-Metal displays happens live in-process. Their internal mode identifiers remain `classic`, `modern`, and `metal` for compatibility.
 
 ## Multi-Window Support
 
