@@ -2,25 +2,51 @@ import SwiftUI
 
 /// A GitHub-style contribution heatmap of daily listening activity over the trailing year.
 ///
-/// Rendered as a self-contained light "card" with the exact GitHub contribution palette so it looks
-/// identical in every skin (it deliberately does NOT adopt the surrounding skin colors). Each cell's
-/// shade tracks the minutes listened that calendar day.
+/// Rendered as a self-contained card using a light or dark GitHub-style contribution palette based
+/// on the surrounding skin's appearance. Each cell's shade tracks the minutes listened that day.
 struct ContributionHeatmapView: View {
     @ObservedObject var agent: PlayHistoryAgent
     @State private var model: HeatmapModel
+    @Environment(\.colorScheme) private var colorScheme
 
-    // MARK: GitHub palette (fixed, skin-independent)
-    private enum Palette {
-        static let l0     = Color(red: 235/255, green: 237/255, blue: 240/255) // #ebedf0
-        static let l1     = Color(red: 155/255, green: 233/255, blue: 168/255) // #9be9a8
-        static let l2     = Color(red:  64/255, green: 196/255, blue:  99/255) // #40c463
-        static let l3     = Color(red:  48/255, green: 161/255, blue:  78/255) // #30a14e
-        static let l4     = Color(red:  33/255, green: 110/255, blue:  57/255) // #216e39
-        static let card   = Color.white                                        // #ffffff
-        static let border = Color(red: 208/255, green: 215/255, blue: 222/255) // #d0d7de
-        static let text   = Color(red:  31/255, green:  35/255, blue:  40/255) // #1f2328
-        static let label  = Color(red:  89/255, green:  99/255, blue: 110/255) // #59636e
+    // MARK: GitHub-style adaptive palette
+    private struct Palette {
+        let l0: Color
+        let l1: Color
+        let l2: Color
+        let l3: Color
+        let l4: Color
+        let card: Color
+        let border: Color
+        let text: Color
+        let label: Color
+
+        static let light = Palette(
+            l0: Color(red: 235/255, green: 237/255, blue: 240/255),
+            l1: Color(red: 155/255, green: 233/255, blue: 168/255),
+            l2: Color(red: 64/255, green: 196/255, blue: 99/255),
+            l3: Color(red: 48/255, green: 161/255, blue: 78/255),
+            l4: Color(red: 33/255, green: 110/255, blue: 57/255),
+            card: .white,
+            border: Color(red: 208/255, green: 215/255, blue: 222/255),
+            text: Color(red: 31/255, green: 35/255, blue: 40/255),
+            label: Color(red: 89/255, green: 99/255, blue: 110/255)
+        )
+
+        static let dark = Palette(
+            l0: Color(red: 22/255, green: 27/255, blue: 34/255),
+            l1: Color(red: 14/255, green: 68/255, blue: 41/255),
+            l2: Color(red: 0/255, green: 109/255, blue: 50/255),
+            l3: Color(red: 38/255, green: 166/255, blue: 65/255),
+            l4: Color(red: 57/255, green: 211/255, blue: 83/255),
+            card: Color(red: 13/255, green: 17/255, blue: 23/255),
+            border: Color(red: 48/255, green: 54/255, blue: 61/255),
+            text: Color(red: 240/255, green: 246/255, blue: 252/255),
+            label: Color(red: 139/255, green: 148/255, blue: 158/255)
+        )
     }
+
+    private var palette: Palette { colorScheme == .dark ? .dark : .light }
 
     private let cellSize: CGFloat = 11
     private let gap: CGFloat = 3
@@ -47,13 +73,13 @@ struct ContributionHeatmapView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(ContributionHeatmapFormatting.headingText(minutes: model.totalMinutes))
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(Palette.text)
+                .foregroundColor(palette.text)
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
             if !model.hasActivity {
                 Text("No listening activity yet.")
                     .font(.system(size: 12))
-                    .foregroundColor(Palette.label)
+                    .foregroundColor(palette.label)
                     .padding(12)
             } else {
                 ScrollViewReader { proxy in
@@ -86,8 +112,8 @@ struct ContributionHeatmapView: View {
                     .padding(.bottom, 10)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.card))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 8).fill(palette.card))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(palette.border, lineWidth: 1))
     }
 
     private func monthRow(_ model: HeatmapModel) -> some View {
@@ -97,7 +123,7 @@ struct ContributionHeatmapView: View {
                 ForEach(model.monthLabels, id: \.col) { label in
                     Text(label.text)
                         .font(.system(size: 10))
-                        .foregroundColor(Palette.label)
+                        .foregroundColor(palette.label)
                         .offset(x: CGFloat(label.col) * colWidth)
                 }
             }
@@ -110,7 +136,7 @@ struct ContributionHeatmapView: View {
             ForEach(0..<7, id: \.self) { row in
                 Text(weekdayLabel(row))
                     .font(.system(size: 9))
-                    .foregroundColor(Palette.label)
+                    .foregroundColor(palette.label)
                     .frame(width: weekdayLabelWidth, height: cellSize, alignment: .leading)
             }
         }
@@ -127,13 +153,13 @@ struct ContributionHeatmapView: View {
     private func legend() -> some View {
         HStack(spacing: 4) {
             Spacer()
-            Text("Less").font(.system(size: 10)).foregroundColor(Palette.label)
+            Text("Less").font(.system(size: 10)).foregroundColor(palette.label)
             ForEach(0..<5, id: \.self) { level in
                 RoundedRectangle(cornerRadius: 2)
                     .fill(color(for: level))
                     .frame(width: cellSize, height: cellSize)
             }
-            Text("More").font(.system(size: 10)).foregroundColor(Palette.label)
+            Text("More").font(.system(size: 10)).foregroundColor(palette.label)
         }
     }
 
@@ -150,11 +176,11 @@ struct ContributionHeatmapView: View {
 
     private func color(for level: Int) -> Color {
         switch level {
-        case 1:  return Palette.l1
-        case 2:  return Palette.l2
-        case 3:  return Palette.l3
-        case 4:  return Palette.l4
-        default: return Palette.l0
+        case 1:  return palette.l1
+        case 2:  return palette.l2
+        case 3:  return palette.l3
+        case 4:  return palette.l4
+        default: return palette.l0
         }
     }
 
