@@ -18,8 +18,9 @@ Part of [compatibility.md](../compatibility.md). The enforced bounds a skin cann
   - `openFile` — open an **existing** file with the default app
   - `findFiles` — bounded no-op returning −1, so callers early-return
 
-  All gate on a real, existing, non-URL, non-`~` path. Skins cannot navigate URLs, launch
-  executables, or reach arbitrary paths.
+  All gate on a real, existing, non-URL, non-`~` path. Skins cannot launch executables or reach
+  arbitrary paths. Embedded `<browser>` navigation is a separate, WebKit-confined capability and
+  never passes through these native methods.
 - **Version gate.** `WinampVersionCheck` sees a build number past the `2405` gate, so `load.xml`
   *branches* past its update warning rather than being hard-blocked. Install/update/download prompts
   are inert.
@@ -49,6 +50,7 @@ All enforced; exceeding one produces a typed `WalDiagnostic`, never a crash or a
 | MAKI stack values | 1,000,000 |
 | Active timers | 256 |
 | Timer period | ≥ 8 ms, ≤ 120 Hz |
+| Embedded browser VFS response | 16 MiB |
 
 ## Verification status
 
@@ -57,6 +59,11 @@ path; initialization pass order and graph snapshots; geometry/anchor rules; MAKI
 budget aborts; fuzzing of the archive, XML, group-expansion, MAKI-parser, and VM paths (bounded
 outcome, no trap or hang); stress (timer caps, 50× rapid load/teardown, malformed images, 2,000
 groupdefs); teardown completeness; live four-mode switching.
+
+Embedded browser policy is also verified headlessly: exact scheme allowlisting, forged private-origin
+rejection, VFS traversal/host-path rejection, download denial, nonpersistent WebKit storage, gated
+media playback, safe search handling, and object-scoped MAKI routing. Camera and microphone requests
+are denied unconditionally in the WebKit delegate and remain part of the manual security pass.
 
 **Verified by rendering** (2026-08-15/16, `WinampModernRenderDumpTests` against user-supplied
 archives, plus a manual GUI pass): Winamp Modern and cPro-Bento both render their frames and controls;

@@ -44,15 +44,16 @@ the stock Winamp Modern skin's `Pledit` + `winamp.albumart`, Ujola Cat's `PLEdit
   (`arrangedOrigin`). Winamp Modern's playlist at `default_x="354"` lands beside the player and its
   album art under that. A container that declares neither is stacked under whatever is already on
   screen, as every auxiliary window was before.
-- **Two suppressions**, recorded in the skin's diagnostics rather than silently dropped
+- **One suppression**, recorded in the skin's diagnostics rather than silently dropped
   (`defaultVisibilitySuppression`), and neither of them blocks the window — the menu, a skin button and
   the skin's own script still open it:
   - **`hostManagedTransient`** — a `notifier` or `tooltip` container. Matched on the id, which is the
     only name Wasabi gives these (there is no notifier GUID) — scoped to auto-opening only, so a
     mis-match costs nothing visible. The notifier *is* host-driven: `showNotifier(for:)` opens it on
     each track change (see [Notifier — track-change toast](#notifier--track-change-toast) below).
-  - **`emptyBrowser`** — a container holding a `<browser url=…>`. The engine is sandboxed and loads no
-    network content, so Rika's and T800's 860×704 "HOME" window would open as an empty frame.
+
+  Browser-only containers are not suppressed: their real, policy-gated WebKit surface opens when
+  `default_visible="1"`, subject to the same remembered user choice.
 
 ### Component hosting
 
@@ -715,12 +716,29 @@ player.
 The other 23 declare no visualization container, and NullPlayer's own window serves them exactly as
 before.
 
-## `<browser>` — embedded library Data tab (B19)
+## `<browser>` — embedded WebKit browser
 
-A `<browser>` element in a `.wal` skin hosts a live library browser pre-set to the **Data tab**
-(PlexBrowseMode.history, rawValue 8). It is a completely separate lifecycle from the component holder
-system — `<browser>` is NOT added to `isHolderElement` (doing so breaks fills, hit tests, and
-competes for the bridge's cached library surface).
+A `<browser>` element in a `.wal` skin hosts a real `WKWebView`. It is a completely separate
+lifecycle from the component holder system — `<browser>` is NOT added to `isHolderElement` (doing so
+breaks fills and hit tests). Each instance has an ephemeral website data store, so cookies, caches,
+and local storage do not persist across a skin session.
+
+The allowed navigation surface is deliberately narrow: HTTP and HTTPS are accepted; skin-local HTML,
+CSS, script, image and font resources are served from `WalVirtualFileSystem` through the private
+`wal-skin-resource:` scheme; `file:`, `javascript:`, `data:`, downloads, popup windows, and
+application URL schemes are rejected. An allowed popup navigation is kept inside the same browser
+surface. The browser exposes no JavaScript-to-native message bridge. `command-L` and
+the WebKit context menu open a host-owned search/address field; non-address text searches DuckDuckGo.
+The user may explicitly open the current HTTP(S) page in the default browser from that menu.
+
+Security policy is centralized and headlessly tested in `WinampModernBrowserTests`: WebKit uses a
+nonpersistent data store, media autoplay requires a user gesture, downloads are denied, and camera
+and microphone requests are always denied. Only the exact internally-generated
+`wal-skin-resource://resource/…` shape is admitted, with each response capped at 16 MiB. A skin cannot
+forge that scheme through XML or MAKI; initial addresses accept only HTTP(S), while local paths must
+resolve inside the read-only WAL VFS. Host paths, traversal, credentials/ports on the private origin,
+and unsafe address-bar schemes are covered by synthetic tests. `System.navigateUrl` and calls on
+non-browser objects never reach the surface.
 
 ### The typeName trap
 
@@ -745,33 +763,37 @@ elements eagerly and create surfaces for all of them at first layout. Each surfa
 `view.isHidden` tracks whether the element is currently visible in `sceneNodes()`, so the surface
 is ready the moment the tab becomes visible.
 
-### Independent surfaces
+### Independent surfaces and lazy loading
 
-Each `<browser>` gets its own **non-cached** `WinampModernLibrarySurface` via
+Each `<browser>` gets its own **non-cached** `WinampModernBrowserSurface` via
 `componentHost.makeBrowserSurface()`. This is deliberate:
 
-- `makeLibrarySurface()` is **cached** per bridge — one instance per skin, reused across layout
-  switches. If browser elements claimed this cached surface, the real `<windowholder>` library
-  holder would go blank (the bridge has only one to give).
-- `makeBrowserSurface()` creates a fresh surface each call, pre-set to browse mode 8 (Data tab).
-  The view layer owns them in a `browserSurfaces: [WasabiObjectID: WinampModernLibrarySurface]`
-  dictionary and tears them down in `teardown()`.
+- Browser history and page state belong to the individual browser object, not to the Media Library
+  component or another browser tab.
+- The view layer owns the surfaces in a
+  `browserSurfaces: [WasabiObjectID: WinampModernBrowserSurface]` dictionary and tears them down with
+  the skin runtime.
+- Browser objects inside hidden tab groups are discovered eagerly so they can receive early MAKI
+  navigation, but no page is loaded until the object is visible with a nonzero frame.
+- `<browser>.navigateUrl(url)` routes by `WasabiObjectID` to that surface. A request during
+  `onScriptLoaded` is buffered until the first layout. The global `System.navigateUrl` methods remain
+  denied.
 
 ### The `SC:UpdateSystem` browser
 
 cPro-Bento also has `<browser id="brw">` inside an `SC:UpdateSystem` XUI widget in the main
-container. This is Winamp's update-check widget, not a content tab. It creates a browser surface
-(which is harmless — the widget is typically offscreen or zero-sized), but since `isBrowserVisible()`
-checks the scene set, the surface's view stays hidden.
+container. This is Winamp's update-check widget, not a content tab. It creates a browser surface but
+does not load while it remains offscreen, hidden, or zero-sized.
 
 ### Files
 
 - `WasabiRenderer.swift` — `isBrowserElement()`, `browserNodes()`, `isBrowserVisible()`
 - `WinampModernComponents.swift` — `makeBrowserSurface()` protocol method
 - `WinampModernComponentBridge.swift` — `makeBrowserSurface()` implementation (non-cached)
+- `WinampModernBrowserSurfaceView.swift` — WebKit policy, search/address UI, VFS scheme handler
 - `WinampModernMainView.swift` — `browserSurfaces`, `reconcileBrowserSurfaces()`,
   `layoutHostedSubviews(browsers:)`
-- `WinampModernContainerTopology.swift` — `containsBrowser()` uses `isBrowserElement()`
+- `WinampModernScriptRuntime.swift` — object-scoped `navigateUrl` command route
 
 ## Notifier — track-change toast
 

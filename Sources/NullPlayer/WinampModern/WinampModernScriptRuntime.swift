@@ -122,6 +122,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// loading the host defers the request rather than resizing windows that do not exist yet.
     var uiScaleRequested: ((CGFloat) -> Void)?
     var actionRequested: ((String, String?) -> Void)?
+    /// The object form of `navigateUrl`: only the addressed `<browser>` may navigate. Global
+    /// `System.navigateUrl` remains inert and cannot launch an application or arbitrary URL.
+    var browserNavigationRequested: ((WasabiObjectID, String) -> Void)?
     /// A script showing or hiding a **container** is asking for its *window*, not just for an
     /// attribute on the graph. Defix's SUI is reachable only this way: its four round PL/EQ/ML/VD
     /// buttons send the skin's own `opentab` action, and `skin.xml`'s `onAction` answers it with
@@ -2958,9 +2961,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // equalizer tab, and an unsupported method aborts the whole handler.
             return .null
         case "navigateurl":
-            // The object form: a `<browser>`'s own navigation, as against `System.navigateUrl`.
-            // Denied for the same reason — a skin script does not get to drive the network — but
-            // denied *quietly*, because refusing the method aborts the handler that called it.
+            // A browser object may drive only its own embedded, policy-gated WebKit surface. Calls
+            // on any other GUI object stay quietly inert so an untrusted skin cannot turn a generic
+            // object reference into a network primitive.
+            if WasabiSceneRenderer.isBrowserElement(object) {
+                browserNavigationRequested?(object.stableID, arguments[0].stringValue)
+            }
             return .null
         case let name where name.hasPrefix("fx_"):
             // The layer warp itself: `invokeLayerFX` writes the configuration and `fx_update()` is
@@ -3690,6 +3696,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         layoutResizeRequested = nil
         uiScaleRequested = nil
         actionRequested = nil
+        browserNavigationRequested = nil
         themeNamesRequested = nil
         activeThemeRequested = nil
         themeSwitchRequested = nil

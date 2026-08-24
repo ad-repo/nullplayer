@@ -61,17 +61,10 @@ enum WinampModernDefaultVisibilitySuppression: String {
     /// Love is War Miku ships `<container id="notifier" default_visible="1" nomenu="1">`, and opening
     /// it at load leaves a popup reading "Nothing / Next track" on screen for the whole session.
     case hostManagedTransient
-    /// A window whose content is Winamp's embedded **web browser** (`<browser url=…>`). The engine is
-    /// sandboxed and loads no network content, so Rika's and T800's 860×704 "HOME" window opens as an
-    /// empty frame. A window with nothing in it is worse than one the user opens deliberately.
-    case emptyBrowser
-
     var reason: String {
         switch self {
         case .hostManagedTransient:
             return "it is a host-managed notifier/tooltip — the host triggers it on track change"
-        case .emptyBrowser:
-            return "its content is a <browser>, which the sandboxed engine does not load"
         }
     }
 }
@@ -154,8 +147,8 @@ enum WinampModernContainerTopology {
     }
 
     /// Whether `default_visible="1"` should be *acted on* for this container, and why not when it
-    /// should not. `nil` means "open it", which is the answer for every container in the corpus that
-    /// is neither a notifier nor an empty browser frame.
+    /// should not. `nil` means "open it"; embedded browser windows are usable and follow the same
+    /// default-visibility rule as any other ordinary container.
     static func defaultVisibilitySuppression(of info: WinampModernContainerInfo)
         -> WinampModernDefaultVisibilitySuppression? {
         guard info.opensByDefault, !info.isMainPlayer else { return nil }
@@ -167,14 +160,7 @@ enum WinampModernContainerTopology {
             || identifier.hasPrefix(transient + ".") {
             return .hostManagedTransient
         }
-        if containsBrowser(info.object) { return .emptyBrowser }
         return nil
-    }
-
-    /// Winamp's embedded web browser anywhere under the container.
-    private static func containsBrowser(_ object: WasabiObject) -> Bool {
-        if WasabiSceneRenderer.isBrowserElement(object) { return true }
-        return object.children.contains(where: containsBrowser)
     }
 
     /// The container's own display name, which is what the menu shows.

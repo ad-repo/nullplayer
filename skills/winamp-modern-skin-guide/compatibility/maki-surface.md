@@ -235,8 +235,9 @@ By area:
   non-empty. Literals never raise it. This is the only signal some skins take that a host readout is
   worth re-reading: Defix writes its playlist `Items:`/`Time:` from a subroutine whose sole caller is
   this handler. Polled from the window controller's host-state hooks plus a 1 Hz beat. Phase 30
-- **`<object>.navigateUrl(url)`** — the `<browser>` form of `System.navigateUrl`. Denied like it, but
-  **quietly**: refusing the method would abort the handler that called it. Phase 25
+- **`<browser>.navigateUrl(url)`** — navigates only the addressed embedded browser through the host's
+  scheme policy. A call on a non-browser GUI object is quietly inert. `System.navigateUrl` remains
+  denied and cannot launch an application or choose a browser object.
 - **`System.getVisBand(channel, band)`** — one spectrum band as a vis byte (0…255), the unit
   `getLeftVUMeter`/`getRightVUMeter` already answer in and the one meter artwork is cut for. `std.mi`
   documents the band range as **0…75**, so a request is resampled into whatever band count the host's
@@ -431,8 +432,8 @@ across the engine but never reached at startup):
 > looks implemented. `newgroup` hid there and cost the entire Winamp Modern window body. Omit the
 > signature instead of stubbing.
 - `messagebox` — denied (no arbitrary modal host UI)
-- `navigateurl` — sandboxed no-op
+- `System.navigateUrl` / `System.navigateUrlBrowser` — sandboxed no-ops; the object-scoped browser
+  form is implemented separately
 - `newgroup` — **implemented**: expands a registered groupdef as a child of the calling script's group, and starts the scripts the new subtree declares (bounded by the load-time object budget and `maximumRuntimePrograms`)
 - Popup menus use an inert command model with an injected presenter
 - `getPublicInt`/`setPublicInt` are per-skin namespaced, not truly app-global
-

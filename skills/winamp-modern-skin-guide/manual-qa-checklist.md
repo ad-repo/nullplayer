@@ -97,9 +97,9 @@ For each of the three fixtures:
       widths, not stacked as narrow stubs at the left edge (Phase 25: a skin-level `<scripts>` block
       loads last, after the XUI params its layout maths reads)
 - [ ] Defix: the SUI tab strip switches — Media Library shows the embedded library, Visualization the
-      vis component, Explorer its (empty) `<Browser>` pane. Switch back and forth several times: the
-      skin gates the transition on a timer, so a strip where only the *first* click works is a real
-      regression. Record anything else that is empty
+      vis component, Explorer its live `<Browser>` pane. Switch back and forth several times: the
+      browser page, scroll position, and history must survive, and a strip where only the *first*
+      click works is a real regression
 - [ ] Defix: the four round buttons under the display **all** respond (they are `rectrgn` outline
       icons; a click through a gap used to fall past them onto the panel behind). What each one does
       is configurable per profile, so check they act, not that they act on a particular surface
@@ -212,6 +212,28 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
 - [ ] CoverFlow and history hosting behave as they do in the classic window
 - [ ] Switch tabs/layouts away and back — the browser is torn down and rebuilt without leaking tasks
 - [ ] Browse mode is remembered across a quit and relaunch
+
+**Embedded web browser**
+
+- [ ] Defix Explorer, Rika HOME, and T800 HOME show a real page rather than the Media Library or an
+      empty frame; a dead historical URL shows the compact *Page unavailable* result
+- [ ] A browser window marked `default_visible="1"` opens with the skin unless the user previously
+      closed it; closing it remains remembered per skin
+- [ ] Click links, scroll, select/copy text, and submit a form; a `target=_blank` link stays in the
+      same skin browser and does not create another window
+- [ ] Press **⌘L**, enter a full HTTPS URL, and press Return; repeat with a bare domain; Escape closes
+      the field without navigating
+- [ ] Press **⌘L**, enter ordinary words, and confirm DuckDuckGo results load in the same browser
+- [ ] Right-click and exercise Back, Forward, Reload, Stop, Search or Enter Address, and Open Page in
+      Default Browser; disabled history commands must not act
+- [ ] Switch away from the browser tab/layout and back: page, scroll position, form state, and history
+      survive; switching skins destroys the old browser and its nonpersistent cookies/site storage
+- [ ] A skin-local HTML page loads its relative CSS, JavaScript, image, and font resources from the
+      WAL; it never exposes a `file:` URL
+- [ ] Attempts to navigate to `file:`, `javascript:`, `data:`, or an application URL scheme remain in
+      the current page; downloads and popup windows do not appear
+- [ ] A page requesting camera or microphone access receives no prompt and no device access
+- [ ] Hidden/offscreen/zero-sized update browsers make no request until they become visibly usable
 
 **Fallback surfaces are the skin's colours, not a classic skin's (Phase 16)**
 

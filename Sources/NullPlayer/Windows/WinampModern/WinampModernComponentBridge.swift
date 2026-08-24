@@ -9,6 +9,7 @@ import NullPlayerCore
 /// windows (the Phase 1 auxiliary-window policy) rather than failing.
 final class WinampModernComponentBridge: WinampModernComponentHost {
     private let engine: AudioEngine
+    private let browserVFS: WalVirtualFileSystem?
     private let eqLayout = EQConfiguration.classic10
     private var selectedRow = -1
     /// The multi-row selection `PE_SEL`/`PE_REM` work on. `selectedRow` is its anchor — a plain click
@@ -37,8 +38,9 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     var hostedWindowSurfaceContextProvider: ((WinampModernHostedWindowID)
         -> WinampModernHostedSurfaceContext)?
 
-    init(engine: AudioEngine) {
+    init(engine: AudioEngine, browserVFS: WalVirtualFileSystem? = nil) {
         self.engine = engine
+        self.browserVFS = browserVFS
     }
 
     // MARK: - Playlist
@@ -195,14 +197,13 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         return surface
     }
 
-    /// An independent library surface for a `<browser>` element, pre-set to the Data tab (B19).
-    /// NOT cached — each call creates a fresh surface. The view layer owns and tears down each one.
-    func makeBrowserSurface() -> WinampModernLibrarySurface? {
-        let surface = WinampModernLibrarySurfaceView(
-            frame: NSRect(x: 0, y: 0, width: 400, height: 300),
-            skinScale: { [weak self] in self?.skinScaleProvider?() ?? 1 },
-            presentLinkSheet: { [weak self] in self?.linkSheetPresenter?() })
-        surface.browseModeRawValue = 8 // PlexBrowseMode.history (Data tab)
+    /// One non-persistent WebKit instance per `<browser>` object. The view layer owns it; the bridge
+    /// supplies only the loaded skin's read-only VFS for local HTML and related resources.
+    @MainActor
+    func makeBrowserSurface(initialRequest: WinampModernBrowserRequest?) -> WinampModernBrowserSurface? {
+        let surface = WinampModernBrowserSurfaceView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300), vfs: browserVFS)
+        if let initialRequest { surface.navigate(initialRequest) }
         return surface
     }
 

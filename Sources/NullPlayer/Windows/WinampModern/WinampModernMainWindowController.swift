@@ -43,8 +43,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let displayName: String
         let isListedInWindowMenu: Bool
         /// `default_visible="1"`: this window opens with the skin unless the user has since closed
-        /// it (Phase 40, B6). Already net of the suppressions — a notifier and an empty browser frame
-        /// arrive here as `false`, with the reason recorded in the skin's diagnostics.
+        /// it (Phase 40, B6). Already net of the notifier/tooltip suppression, whose reason is
+        /// recorded in the skin's diagnostics.
         let opensByDefault: Bool
         /// Where the skin's own arrangement puts this window, **relative to the player's** own
         /// `default_x`/`default_y`, in skin pixels with y downward. `nil` when the skin says nothing,
@@ -142,7 +142,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         do {
             let loaded = try WinampModernSkinLoader().load(from: url)
             let host = WinampModernAudioEngineHost(engine: WindowManager.shared.audioEngine)
-            let componentBridge = WinampModernComponentBridge(engine: WindowManager.shared.audioEngine)
+            let componentBridge = WinampModernComponentBridge(engine: WindowManager.shared.audioEngine,
+                                                               browserVFS: loaded.vfs)
             let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
             renderer.componentHost = componentBridge
             let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
@@ -1274,6 +1275,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         scripts.layoutResizeRequested = { [weak self] container, size in
             self?.viewsByContainer[container]?.applyCanvasResize(size)
+        }
+        scripts.browserNavigationRequested = { [weak self] objectID, address in
+            guard let self else { return }
+            for view in viewsByContainer.values where view.navigateBrowser(objectID: objectID,
+                                                                            address: address) {
+                return
+            }
         }
         // `layout.setScale(f)` — the skin asking for every window at a different size. It is
         // answered by the one UI Size system rather than by a scale of the skin's own: the view

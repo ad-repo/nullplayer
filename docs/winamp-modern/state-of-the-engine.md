@@ -59,8 +59,10 @@ Fuzzed at the archive, XML, group-expansion, MAKI-parse and VM levels for bounde
 
 The security posture is the strongest part of the work and should stay that way: **the skin is
 untrusted input.** No host filesystem access, everything bounded (24 enforced limits, from archive
-entries to MAKI stack values), failures typed rather than fatal. Scripts cannot navigate URLs, launch
-executables, open modal UI, reach arbitrary paths, or touch the network.
+entries to MAKI stack values), failures typed rather than fatal. Scripts cannot launch executables,
+open modal UI, reach arbitrary host paths, or perform general network requests. An actual
+`<Browser>` object is the narrow exception: it owns one ephemeral, scheme-gated WebKit surface;
+global navigation calls remain denied.
 
 ### Wasabi object model + geometry — **Solid**
 
@@ -90,8 +92,7 @@ single biggest process gap in the subsystem.
 
 Known rendering gaps: Winamp Modern's config/EQ drawer area (`player.main` and `player.normal.drawer`
 overlap at y≈17), body-less `wasabi.*` shells (`wasabi.panel`, `wasabi.objectframe.group`), `valign`
-(text always vertically centres), `<Browser>` (Defix's Explorer tab draws nothing — an embedded web
-view for untrusted skin content is outside the sandbox and no one has decided to build it), and the
+(text always vertically centres), and the
 corners of Layer FX nothing measured has asked for — `fx_setBgFx(1)` (warping the backdrop),
 `fx_onGetPixelA` (alpha) and `fx_onFrame`/`fx_setSpeed` as a host-driven clock are accepted and inert.
 The warp itself works (Phase 28–29).

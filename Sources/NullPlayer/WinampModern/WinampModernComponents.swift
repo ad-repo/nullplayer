@@ -241,10 +241,11 @@ protocol WinampModernComponentHost: AnyObject {
     // Library — a live host surface embedded at the skin-provided frame, or nil when unavailable.
     func makeLibrarySurface() -> WinampModernLibrarySurface?
 
-    /// An independent library surface for a `<browser>` element, pre-set to the Data tab. Unlike
-    /// `makeLibrarySurface()` this is NOT cached — each `<browser>` element gets its own surface,
-    /// so it never competes with the real library holder for the bridge's single cached instance.
-    func makeBrowserSurface() -> WinampModernLibrarySurface?
+    /// A real web surface for one `<browser>` element. It is deliberately independent from the
+    /// cached Media Library surface: a skin may declare several browser tabs, each with its own
+    /// history, page state, and lifecycle.
+    @MainActor
+    func makeBrowserSurface(initialRequest: WinampModernBrowserRequest?) -> WinampModernBrowserSurface?
 
     /// Video — the same shape as the library's, and for the same reason: the skin draws a window
     /// around a box it cannot fill, and only the host can put the picture in it. `nil` when no video
@@ -267,7 +268,8 @@ protocol WinampModernComponentHost: AnyObject {
 
 extension WinampModernComponentHost {
     func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
-    func makeBrowserSurface() -> WinampModernLibrarySurface? { nil }
+    @MainActor
+    func makeBrowserSurface(initialRequest: WinampModernBrowserRequest?) -> WinampModernBrowserSurface? { nil }
     func makeVideoSurface() -> WinampModernVideoSurface? { nil }
     func makeVisualizationSurface() -> WinampModernVisualizationSurface? { nil }
     func makeHostedWindowSurface(id: WinampModernHostedWindowID) -> WinampModernHostedSurface? { nil }
@@ -312,6 +314,26 @@ protocol WinampModernLibrarySurface: AnyObject {
     /// already closed and never removed the view at all — cPro-Bento's browser then sat on top of
     /// every other tab (Media Library → Playlist → Media Library → Playlist).
     func unmountFromHolder()
+}
+
+/// A browser address supplied by a particular object in the retained graph. `sourceLogicalPath`
+/// lets the host resolve a relative page through the read-only WAL VFS without ever manufacturing a
+/// host `file:` URL.
+struct WinampModernBrowserRequest: Equatable {
+    let address: String
+    let sourceLogicalPath: String
+}
+
+/// The platform-neutral handle for Winamp's embedded web browser. WebKit remains in the AppKit
+/// bridge; the skin engine sees only typed navigation and lifecycle operations.
+@MainActor
+protocol WinampModernBrowserSurface: AnyObject {
+    var view: NSView { get }
+    func navigate(_ request: WinampModernBrowserRequest)
+    func setVisible(_ visible: Bool)
+    func applySkinScale(_ scale: CGFloat)
+    func unmountFromHolder()
+    func prepareForUITeardown()
 }
 
 /// The host's video output, placed over a `.wal` skin's video box.

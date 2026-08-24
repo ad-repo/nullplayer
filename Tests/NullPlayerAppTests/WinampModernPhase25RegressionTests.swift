@@ -161,26 +161,37 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
                        19 * CGFloat(WasabiTextMetrics.pixelHeightToPointSize))
     }
 
-    /// Navigation is denied, and denied *quietly* — the sandbox refuses the URL, and the handler that
-    /// asked carries on. `System.hasVideoSupport()` is false for the same reason a `.wal` video
-    /// holder gets the neutral backing: nothing behind it yet (backlog B20).
-    func testNavigationIsDeniedQuietlyAndVideoSupportIsFalse() throws {
+    /// Global navigation remains denied, while the object form is routed only to the addressed
+    /// embedded browser. Both answer quietly so the calling handler continues.
+    func testOnlyBrowserObjectNavigationIsRoutedAndVideoSupportIsFalse() throws {
         let (runtime, program) = try makeRuntimeAndProgram()
-        let browser = try object(named: "plain", in: runtime)
+        let browser = try object(named: "testBrowser", in: runtime)
+        var routed: (WasabiObjectID, String)?
+        runtime.browserNavigationRequested = { routed = ($0, $1) }
 
         let system = try runtime.invoke(method: "navigateUrl", on: MakiObjectReference(.system),
                                         arguments: [.string("https://example.com")], program: program)
-        let object = try runtime.invoke(method: "navigateUrl",
-                                        on: MakiObjectReference(.gui(browser.stableID)),
-                                        arguments: [.string("https://example.com")], program: program)
+        let browserResult = try runtime.invoke(method: "navigateUrl",
+                                               on: MakiObjectReference(.gui(browser.stableID)),
+                                               arguments: [.string("https://example.com")], program: program)
+        let routedBrowser = routed
+        let nonBrowser = try object(named: "caption", in: runtime)
+        _ = try runtime.invoke(method: "navigateUrl",
+                               on: MakiObjectReference(.gui(nonBrowser.stableID)),
+                               arguments: [.string("https://attacker.invalid")], program: program)
         let video = try runtime.invoke(method: "hasVideoSupport", on: MakiObjectReference(.system),
                                        arguments: [], program: program)
 
         if case .null = system {} else { XCTFail("System.navigateUrl must answer null, got \(system)") }
-        if case .null = object {} else { XCTFail("<browser>.navigateUrl must answer null, got \(object)") }
+        if case .null = browserResult {} else {
+            XCTFail("<browser>.navigateUrl must answer null, got \(browserResult)")
+        }
+        XCTAssertEqual(routedBrowser?.0, browser.stableID)
+        XCTAssertEqual(routedBrowser?.1, "https://example.com")
+        XCTAssertEqual(routed?.0, routedBrowser?.0, "a non-browser object must not route navigation")
+        XCTAssertEqual(routed?.1, routedBrowser?.1, "a non-browser object must not route navigation")
         XCTAssertFalse(video.truthy)
-        XCTAssertTrue(runtime.loadedSkin.runtime.diagnostics.isEmpty,
-                      "a denied navigation is not a skin defect to report")
+        XCTAssertTrue(runtime.loadedSkin.runtime.diagnostics.isEmpty)
     }
 
     // MARK: - 25.4 Load order: a skin-level `<scripts>` block runs last
@@ -290,6 +301,7 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
           <layer id="over"    image="sprite.red" alpha="900"/>
           <layer id="under"   image="sprite.red" alpha="-40"/>
           <text  id="caption" text="abc" x="0" y="8" w="40" h="12" fontsize="9"/>
+          <browser id="testBrowser" visible="0"/>
         </layout>
       </container>
     </WasabiXML>

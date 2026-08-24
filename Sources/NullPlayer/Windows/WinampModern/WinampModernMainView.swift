@@ -16,9 +16,12 @@ final class WinampModernMainView: NSView {
     /// Live synthesized host-window surfaces by holder id. The bridge may hand the same adapter back
     /// when a holder returns; this dictionary tracks only the holders present in this scene right now.
     private var hostedWindowSurfaces: [WasabiObjectID: WinampModernHostedSurface] = [:]
-    /// Independent library surfaces for `<browser>` elements (B19). Each is non-cached and pre-set
-    /// to the Data tab, completely independent from the bridge's cached library surface.
-    private var browserSurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
+    /// Independent WebKit surfaces for `<browser>` elements. Each is non-cached and keeps its own
+    /// history, completely independent from the bridge's cached Media Library surface.
+    private var browserSurfaces: [WasabiObjectID: WinampModernBrowserSurface] = [:]
+    /// MAKI may navigate a browser from `onScriptLoaded`, before AppKit has performed the first
+    /// layout. Keep the last request per object and apply it when reconciliation creates the view.
+    private var pendingBrowserRequests: [WasabiObjectID: WinampModernBrowserRequest] = [:]
 
     /// UI Size, as a multiplier on the skin's own pixel grid. The scene is always laid out in skin
     /// pixels — the scale is applied once at the drawing boundary and undone once at the input
@@ -309,7 +312,6 @@ final class WinampModernMainView: NSView {
     /// can have one of each open at the same time.
     private func themeDidChange() {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
-        for surface in browserSurfaces.values { surface.applyPalette(renderer.palette) }
         for surface in videoSurfaces.values { surface.applyPalette(renderer.palette) }
         for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }
         let style = WinampModernSurfaceStyle(palette: renderer.palette)
@@ -656,9 +658,8 @@ final class WinampModernMainView: NSView {
 
     private var cachedHolders: [WinampModernComponentHolder]?
 
-    /// Create/remove independent library surfaces for `<browser>` elements (B19). Each browser gets
-    /// its own non-cached surface pre-set to the Data tab, so it never competes with the bridge's
-    /// cached library surface that the real `<windowholder>` uses.
+    /// Create/remove independent web surfaces for `<browser>` elements. They remain eagerly
+    /// instantiated for hidden tab groups, but do not perform their initial load until visible.
     ///
     /// Surfaces are created eagerly for ALL browser elements (including hidden tab groups) so they
     /// are ready when a MAKI script toggles the parent visible. The view's `isHidden` tracks the
@@ -670,19 +671,56 @@ final class WinampModernMainView: NSView {
             let id = browser.object.stableID
             live.insert(id)
             if browserSurfaces[id] == nil {
-                guard let surface = componentHost?.makeBrowserSurface() else { continue }
+                let markupRequest = browser.object.attributes["url"].map {
+                    WinampModernBrowserRequest(address: $0,
+                                               sourceLogicalPath: browser.object.source.path)
+                }
+                let request = pendingBrowserRequests.removeValue(forKey: id) ?? markupRequest
+                guard let surface = componentHost?.makeBrowserSurface(initialRequest: request) else { continue }
                 surface.applySkinScale(skinScale)
-                surface.applyPalette(renderer.palette)
                 addSubview(surface.view)
                 browserSurfaces[id] = surface
+            } else if browserSurfaces[id]?.view.superview !== self,
+                      let view = browserSurfaces[id]?.view {
+                addSubview(view)
             }
             let visible = renderer.isBrowserVisible(browser.object)
-            browserSurfaces[id]?.view.isHidden = !visible
+            browserSurfaces[id]?.setVisible(visible)
+            if visible, let request = pendingBrowserRequests.removeValue(forKey: id) {
+                browserSurfaces[id]?.navigate(request)
+            }
         }
+        var deleted: [WasabiObjectID] = []
         for (id, surface) in browserSurfaces where !live.contains(id) {
-            surface.unmountFromHolder()
-            browserSurfaces[id] = nil
+            if renderer.loadedSkin.runtime.graph.object(withID: id) == nil {
+                surface.prepareForUITeardown()
+                deleted.append(id)
+            } else {
+                // An inactive layout still owns this object. Unmount without destroying its WebKit
+                // history; reconciliation reattaches the same surface if that layout returns.
+                surface.setVisible(false)
+                surface.unmountFromHolder()
+            }
         }
+        for id in deleted { browserSurfaces[id] = nil }
+    }
+
+    /// Route object-scoped MAKI navigation to this scene. A request before first layout is buffered;
+    /// a request for an object owned by another container returns false so the controller can ask
+    /// that container's view instead.
+    @discardableResult
+    func navigateBrowser(objectID: WasabiObjectID, address: String) -> Bool {
+        guard !isTornDown,
+              let object = renderer.loadedSkin.runtime.graph.object(withID: objectID),
+              owns(object), WasabiSceneRenderer.isBrowserElement(object) else { return false }
+        let request = WinampModernBrowserRequest(address: address,
+                                                 sourceLogicalPath: object.source.path)
+        if let surface = browserSurfaces[objectID] { surface.navigate(request) }
+        else {
+            pendingBrowserRequests[objectID] = request
+            needsLayout = true
+        }
+        return true
     }
 
     /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
@@ -1185,6 +1223,7 @@ final class WinampModernMainView: NSView {
         hostedWindowSurfaces.removeAll()
         for surface in browserSurfaces.values { surface.prepareForUITeardown() }
         browserSurfaces.removeAll()
+        pendingBrowserRequests.removeAll()
         // Auxiliary container views share the skin's single script runtime and host; only the
         // main (script-driving) view tears those down. Every view tears down its own renderer.
         if drivesScripts { scripts.teardown() } else { scripts.removeAuxiliaryRepaintSink(owner: self) }

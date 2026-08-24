@@ -102,10 +102,9 @@ final class WinampModernPhase40Tests: XCTestCase {
 
     // MARK: - What is not opened, and why
 
-    /// Two windows in the corpus declare the attribute and must **not** be acted on, because what
-    /// they hold is not something NullPlayer can fill. Both stay openable by every other route; they
-    /// simply do not appear uninvited, and the skin's diagnostics say why.
-    func testANotifierAndAnEmptyBrowserFrameAreNotOpenedWithTheSkin() throws {
+    /// Host-managed transient windows remain suppressed, while a browser-only window is now useful
+    /// and may honor the skin's default. Suppression never affects explicit open routes.
+    func testNotifierIsSuppressedButAWorkingBrowserWindowMayOpenWithTheSkin() throws {
         let loaded = try makeSkin(xml: """
         <WasabiXML>
           <container id="main"><layout id="normal" w="275" h="116"/></container>
@@ -131,13 +130,11 @@ final class WinampModernPhase40Tests: XCTestCase {
         }
 
         XCTAssertEqual(suppression("notifier"), .hostManagedTransient)
-        XCTAssertEqual(suppression("Warp Browser"), .emptyBrowser,
-                       "a <browser> anywhere under the container, however deeply nested")
+        XCTAssertNil(suppression("Warp Browser"),
+                     "a working embedded browser no longer suppresses its declared window")
         XCTAssertNil(suppression("Pledit"), "an ordinary window the skin ships open")
         XCTAssertNil(suppression("main"), "the player is not a suppression case at all")
-        for suppression in [WinampModernDefaultVisibilitySuppression.hostManagedTransient, .emptyBrowser] {
-            XCTAssertFalse(suppression.reason.isEmpty, "every suppression has to say why")
-        }
+        XCTAssertFalse(WinampModernDefaultVisibilitySuppression.hostManagedTransient.reason.isEmpty)
     }
 
     // MARK: - Where the window opens

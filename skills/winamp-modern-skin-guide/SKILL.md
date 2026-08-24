@@ -222,8 +222,10 @@ The skin is **untrusted input**. Three rules hold everywhere and must not be rel
    `WalDiagnostic`s with a `WalSourceLocation` (`logical-path:line:column`). A Swift trap or a hang on
    skin input is a bug — the fuzz tests in `WinampModernPhase7Tests` exist to catch exactly that.
 
-Scripts cannot navigate URLs, launch executables, open modal UI, reach arbitrary paths, or touch the
-network. `messagebox` is denied; `navigateurl` is a no-op.
+Scripts cannot launch executables, open modal UI, reach arbitrary host paths, or make general host
+network requests. The one narrow exception is an actual `<browser>` object's `navigateUrl`: it may
+navigate only its own ephemeral, policy-gated WebKit surface. `System.navigateUrl` and
+`System.navigateUrlBrowser` remain no-ops, and `messagebox` remains denied.
 
 
 ## Rules for extending this subsystem

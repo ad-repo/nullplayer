@@ -166,6 +166,7 @@ let package = Package(
                 .unsafeFlags(["-F", "Frameworks"]),
             ],
             linkerSettings: [
+                .linkedFramework("WebKit"),
                 .unsafeFlags([
                     "-L", "Frameworks",
                     "-L", "/opt/homebrew/lib",
