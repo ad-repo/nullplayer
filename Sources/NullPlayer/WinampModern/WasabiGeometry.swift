@@ -48,22 +48,7 @@ struct WasabiGeometrySpec: Equatable {
                   !raw.isEmpty else { return nil }
             return Double(raw)
         }
-        func flag(_ key: String) -> Bool {
-            guard let raw = attributes[key.lowercased()]?
-                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
-            if raw == "true" || raw == "yes" { return true }
-            // Winamp reads these with `atoi`, so the test is **non-zero**, not "== 1". Skins ship
-            // other numbers and mean nothing special by them: Big Bento Modern's dimmed album-art
-            // backdrop is `relatw="2"`, Ebonite_2_1's warped images are `relatw="2"` (including a
-            // `w="0" relatw="2"` group, which is the ordinary fill-the-parent idiom and the case that
-            // rules out reading the number as a percentage), and The_Nokia_5220's two bars are
-            // `relatw="5"`. Read as `== 1` all of those fell back to absolute geometry, which is how
-            // an oversized backdrop came out as a small crisp second copy of the cover.
-            //
-            // A non-numeric value still reads false, which is also `atoi`'s answer and the one two
-            // skins depend on: corneramp_redux and Shield_Amp ship a literal `relatw="%"`.
-            return Self.leadingInteger(raw) != 0
-        }
+        func flag(_ key: String) -> Bool { Self.flag(attributes[key.lowercased()]) }
         x = number("x") ?? 0
         y = number("y") ?? 0
         width = number("w")
@@ -72,6 +57,28 @@ struct WasabiGeometrySpec: Equatable {
         relativeY = flag("relaty")
         relativeWidth = flag("relatw")
         relativeHeight = flag("relath")
+    }
+
+    /// A Wasabi boolean attribute, read the way Winamp reads one.
+    ///
+    /// Winamp reads these with `atoi`, so the test is **non-zero**, not "== 1". Skins ship other
+    /// numbers and mean nothing special by them: Big Bento Modern's dimmed album-art backdrop is
+    /// `relatw="2"`, Ebonite_2_1's warped images are `relatw="2"` (including a `w="0" relatw="2"`
+    /// group, which is the ordinary fill-the-parent idiom and the case that rules out reading the
+    /// number as a percentage), and The_Nokia_5220's two bars are `relatw="5"`. Read as `== 1` all
+    /// of those fell back to absolute geometry, which is how an oversized backdrop came out as a
+    /// small crisp second copy of the cover.
+    ///
+    /// A non-numeric value still reads false, which is also `atoi`'s answer and the one two skins
+    /// depend on: corneramp_redux and Shield_Amp ship a literal `relatw="%"`.
+    ///
+    /// Shared with the renderer's `fliph`/`flipv`, which are the same kind of flag on the same
+    /// attribute table and must not grow a second, subtly different reading of "1".
+    static func flag(_ value: String?) -> Bool {
+        guard let raw = value?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+        if raw == "true" || raw == "yes" { return true }
+        return leadingInteger(raw) != 0
     }
 
     /// `atoi`'s number: the leading signed integer, or 0 when there is not one. Deliberately not

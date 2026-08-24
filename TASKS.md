@@ -180,6 +180,47 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       is not a percentage. Landed in `reference/loading.md` → *Retained graph and coordinates*.
       `swift test` 1067 pass, 8 new in `WinampModernPhase56Tests`; corpus sweep pixel-diffed.
 
+- [x] **B43. `fliph` / `flipv` were ignored engine-wide. Fixed 2026-08-24, confirmed live.**
+      Neither attribute appeared anywhere in `Sources/`. Found live on Big Bento Modern, where the
+      header analyzer group is a **butterfly**: `main.vis` (`fliph="1"`) and `main.vis2` sit side by
+      side at 144px each so the two meet low-frequency-to-low-frequency in the middle, with
+      `main.vis.mirror` / `main.vis.mirror2` (`flipv="1" alpha="110" ghost="1"`) as a dimmed 10px
+      reflection under each. Ignored, that drew two identical copies with a seam and two reflections
+      that were not reflected — reported as *"another bug is there are 2 of them"*, and the two **are**
+      the skin's intent.
+      Implemented at the one seam every kind of drawing passes through
+      (`WasabiRenderer.draw(_ node:…)` → `applyFlip`), not in the bitmap path: the attribute belongs to
+      the object, not to one way of filling it — the same lesson `alpha` taught in the two lines above
+      it. Deliberately **after** both clips, so a flipped object cannot escape its box and a region
+      mask stays where its author put it. `WasabiGeometrySpec.flag(_:)` was extracted from the
+      initializer's closure so the flips read `"1"` exactly as `relat*` does (B42) rather than growing
+      a second interpretation.
+      Corpus: **all 16 declarations are on `<vis>`** and nothing else — Big Bento Modern + its Windows
+      10 edition (4 each, inherited by both Light overlays), Styx (4, a 2×2 quad covering all four
+      flip combinations — the strongest test case), multipass (2), Enkera (1),
+      Nullsoft.Winamp.2000.SP4.Lite (1). So the general implementation costs no extra blast radius
+      today, but a `<layer fliph="1">` is legal Wasabi and would have silently drawn unflipped.
+      **Not verifiable headlessly:** Styx's quad is in a closed drawer, and Bento's group is gated
+      behind `visualizer.maki`'s 730px player width — which `from="left"` pins at 434 at every window
+      size (see B44), so no probe can reach either. Confirmed on screen by the user instead.
+      `swift test` 1115 pass (11 new, `WinampModernPhase61Tests`), asserting the property that makes
+      this safe: a flip is an **involution about the object's own frame**, so it cannot translate
+      content out of its box.
+      **Sweep: 290 images, 288 identical.** Anexa's `main-shade` is the known nondeterministic one.
+      The other is a *correct* change and worth reading before it is mistaken for a regression:
+      `Nullsoft.Winamp.2000.SP4.Lite`'s `xml/video.xml` declares the **same** `<vis id="shade.vis">`
+      **twice** in the identical box — same colours, `mode="2" oscstyle="lines"` — with the second
+      carrying `flipv="1"`. That is the classic Winamp mirrored scope, a trace and its reflection
+      about the centre line. Ignoring the flag made the two coincide exactly, so it drew as one thin
+      trace (mean vertical span 4.6px); mirrored, the pair spans 12.5px and reads as the intended
+      symmetric double trace. Same idea as Bento's header, reached by a different route.
+      **Method lesson, and it nearly cost a false regression:** this skin is an **NSIS** archive, not
+      a zip, so the `unzip`-based corpus text scan skipped it silently — 35 skins in, 34 directories
+      out — and it was the *one* skin the first scan claimed had no flip declarations while being the
+      one image in the sweep that changed. A corpus scan that shells out to `unzip` under-reports; use
+      `7zz`, and check the extracted directory count against the skin count. Landed in
+      `reference/harness.md`.
+
 ### Tier 2
 
 - [ ] **B33. An unclosed tag at EOF kills the whole skin.** `Shield_Amp` is the only skin of the 30

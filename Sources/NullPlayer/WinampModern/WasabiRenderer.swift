@@ -1602,6 +1602,7 @@ final class WasabiSceneRenderer {
         // covers text, bitmap fonts and the `background=` draw below as well; the per-drawer calls
         // that follow read the same attribute, so they are idempotent.
         context.setAlpha(effectiveAlpha)
+        applyFlip(of: object, frame: node.frame, context: context)
 
         if let background = object.attributes["background"],
            let bitmap = resources.bitmap(identifier: background) {
@@ -1658,6 +1659,48 @@ final class WasabiSceneRenderer {
                            pressed: pressed == object.stableID)
         }
         context.restoreGState()
+    }
+
+    /// Mirror an object's content inside its own box, for `fliph` / `flipv`.
+    ///
+    /// The reflection is about the object's **own frame**, so a flipped object occupies exactly the
+    /// rect it declares — only what is painted inside it turns around. Applied here, at the one seam
+    /// every kind of drawing passes through, rather than in the bitmap path: the attribute belongs to
+    /// the *object*, not to one way of filling it, which is the same lesson `alpha` taught two lines
+    /// above. In the installed corpus all 15 declarations happen to be on `<vis>` (Big Bento Modern
+    /// and its Windows 10 edition, Styx, Enkera, multipass), so nothing else moves today — but a
+    /// `<layer fliph="1">` is legal Wasabi and would have silently drawn unflipped.
+    ///
+    /// Deliberately after both clips: `node.clip` and a region mask are set in the unflipped space,
+    /// so an object cannot escape its box by mirroring, and a region map stays where its author put
+    /// it. Children are their own scene nodes and are unaffected — flipping a `<group>` turns its own
+    /// background around, not the objects inside it, which is what Wasabi does.
+    ///
+    /// Big Bento Modern's header is what this is for: `main.vis` (`fliph="1"`) and `main.vis2` sit
+    /// side by side, 144px each, so the two analyzers meet low-frequency-to-low-frequency in the
+    /// middle and read as one symmetric butterfly. Below them `main.vis.mirror` / `main.vis.mirror2`
+    /// are `flipv="1" alpha="110" ghost="1"`, a dimmed 10px reflection. Ignoring the flags drew two
+    /// identical copies with a seam down the middle and two reflections that were not reflected.
+    private func applyFlip(of object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard let transform = Self.flipTransform(of: object, frame: frame) else { return }
+        context.concatenate(transform)
+    }
+
+    /// The mirror an object's `fliph` / `flipv` ask for, or `nil` when it asks for neither.
+    ///
+    /// Split out from the drawing call so the arithmetic can be asserted without a window: the
+    /// defining property is that a flip is an **involution about the frame** — it maps `minX` to
+    /// `maxX` and back, so applying it twice is the identity and the object still covers exactly the
+    /// rect it declares. The flags are read with `WasabiGeometrySpec.flag`, so `fliph="2"` flips for
+    /// the same `atoi` reason `relatw="2"` is relative (B42).
+    static func flipTransform(of object: WasabiObject, frame: CGRect) -> CGAffineTransform? {
+        let horizontal = WasabiGeometrySpec.flag(object.attributes["fliph"])
+        let vertical = WasabiGeometrySpec.flag(object.attributes["flipv"])
+        guard horizontal || vertical else { return nil }
+        // x' = (minX + maxX) - x sends minX to maxX and back, which is the mirror about the frame.
+        return CGAffineTransform(translationX: horizontal ? frame.minX + frame.maxX : 0,
+                                 y: vertical ? frame.minY + frame.maxY : 0)
+            .scaledBy(x: horizontal ? -1 : 1, y: vertical ? -1 : 1)
     }
 
     /// Clip one object to the region a script gave it, if any.

@@ -23,6 +23,7 @@
 | Seek bar (base editions) | **Fixed (BB12)** | `hold="none"` was painting an inert-component slab over it. Confirmed live |
 | Seeking | **Fixed (BB16)** | `seek.maki` hides its own only seek slider on mouse-up; the stranded-control rule undoes it |
 | Settings-page scrolling | **Fixed (BB19)** | Seven stacked faults — see below. Confirmed live |
+| Header analyzers | **Fixed (B43)** | The `main.vis.group` butterfly; `fliph`/`flipv` were ignored, so it drew as two identical blocks. Confirmed live |
 | Seek bar (W10 editions) | **Blank** | The skin's own `waveseeker.rounder.bg` covers it; cause unmeasured |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
@@ -179,6 +180,36 @@ general and lives in [reference/rendering.md](../reference/rendering.md) → *Wh
 on its own grab strip*. This also gates the header analyzer: `visualizer.maki`'s `onResize` shows the
 six `<vis>` boxes in `main.vis.group` only above 730px of player width (`.alt`: 705), and that width
 *is* this divider — so before it could be dragged, those six boxes could never appear.
+
+## The header analyzer group — a fourth visualization placement (B43, 2026-08-24)
+
+Not one of BB9's three `{0000000A}` holders, and not routed by `WinampModernVisualizationHolder` at
+all: these are real `<vis>` elements the renderer draws itself. `player-normal-group.xml:172` places
+two alternatives in the header beside the transport buttons, and `visualizer.maki` hides whichever is
+not chosen:
+
+| group | box | contents |
+|---|---|---|
+| `main.vis.group` | 288×60 at `x=436` | `main.vis` (`fliph="1"`) + `main.vis2`, 144×30 each, over `main.vis.mirror` / `main.vis.mirror2` (`flipv="1" alpha="110" ghost="1"`), 144×10 each |
+| `main.vis.group.alt` | 300×60 at `x=446` | `main.vis.alt` 252×30 + `main.vis.mirror.alt` 252×10 — a single analyzer |
+
+The default pair is a **butterfly**: the left box is mirrored, so both analyzers' low frequencies meet
+in the centre and the two read as one symmetric figure with a dimmed reflection beneath. Before B43
+the flags were ignored and it drew as two identical blocks with a seam — reported as *"another bug is
+there are 2 of them"*, and the two are the skin's intent. The `.alt` group is the "only one of them"
+arrangement, and it is a **setting**, not a defect to code around.
+
+`visualizer.maki` registers those settings itself: **`Alt Visualizer`**, `Visualizer Mode`,
+`Visualizer show Peaks`, `Visualizer show Lines`, `Visualizer analyzer coloring` and the two falloff
+speeds — so the header's visualization is configured from the pages BB7 unlocked. The script's own
+`hide()` of the unchosen group runs correctly.
+
+**Why nobody saw this for the whole B35–BB22 run**, and the thing to know before hunting it: the group
+is shown only above **730px of player width**, and `player.mainframe.big` is `from="left"` with the
+skin's script calling `setPosition(434)` — which pins the left pane at 434 **at every window size**,
+because the right pane absorbs all the extra. So the header analyzers are invisible until the divider
+is dragged, no probe can reach them (`RENDER_SIZE` widens the canvas, not the pane), and the position
+is not persisted (B44), so every relaunch hides them again.
 
 ## BB9 — the Multi Content View's three visualization placements
 

@@ -512,6 +512,42 @@ their alphas — Defix does it with Kbps / KHz / Channels and again with Extensi
 while only the bitmap paths honoured it, all of them printed on top of each other. `setAlpha` writes
 the same attribute, so the script path needs nothing of its own.
 
+#### `fliph` / `flipv` mirror the content inside the object's own box (B43, 2026-08-24)
+
+Same shape of rule as `alpha` above, and it was missing for the same reason: both attributes were
+ignored **engine-wide** — neither string appeared anywhere in `Sources/`. They are applied once per
+scene node, at the seam every kind of drawing passes through, not in the bitmap path, because the
+attribute belongs to the *object* rather than to one way of filling it.
+
+The reflection is about the object's **own frame**, which makes it an *involution*: it maps `minX` to
+`maxX` and back, so applying it twice is the identity and a flipped object still covers exactly the
+rect it declares. Nothing about hit testing or layout changes when a skin turns one around. Two
+placement details matter:
+
+- **After both clips.** `node.clip` and any region mask are set in the unflipped space, so an object
+  cannot escape its box by mirroring and a region map stays where its author put it.
+- **Children are their own scene nodes**, so flipping a `<group>` turns its own background around and
+  leaves the objects inside it alone.
+
+Read the flags with `WasabiGeometrySpec.flag`, the same `atoi(value) != 0` reader `relat*` uses — a
+second, subtly different reading of `"1"` in the renderer is exactly the bug that cost a session on
+Big Bento's album art (B42).
+
+**What skins use it for is a mirrored pair drawn as one figure.** All 16 declarations in the corpus
+are on `<vis>`:
+
+| skin | declarations | what it builds |
+|---|---|---|
+| Big Bento Modern, + Windows 10 edition | 4 each (inherited by both Light overlays) | the header **butterfly**: `main.vis` (`fliph="1"`) beside `main.vis2`, 144px each, so the two meet low-frequency-to-low-frequency in the middle, over two `flipv="1"` reflection strips |
+| Styx | 4 | a 2×2 quad covering all four combinations — a kaleidoscope, and the best test case in the corpus |
+| multipass | 2 | `player.vis.2b` / `player.vis.4b`, reflections |
+| Enkera | 1 | `nvis2` |
+| Nullsoft.Winamp.2000.SP4.Lite | 1 | the **same** `<vis id="shade.vis">` declared **twice in the identical box**, the second `flipv="1"` — the classic Winamp mirrored scope |
+
+That last one is the pattern to recognise: two identical declarations in one box are not a skin bug
+and not a double draw, they are a trace and its reflection. Ignored, the pair coincides exactly and
+reads as a single thin line.
+
 #### An image param is a *load*, and a failed load changes nothing
 
 `setXmlParam("image", …)` (and `bitmap`, `background`, the button/slider state images) only takes

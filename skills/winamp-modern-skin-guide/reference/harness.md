@@ -116,6 +116,21 @@ that changes the right attributes but nothing on screen is a renderer gap.
 > there: Defix's `CONF` button (`action="TOGGLE" param="Config"`) opens its Skin Settings window,
 > confirmed live 2026-08-19, while measuring as stone dead headlessly.
 
+> **A corpus text scan must extract NSIS skins too, or it silently under-reports (B43).** A `.wal` is
+> *usually* a zip and *sometimes* an NSIS installer, and `unzip` fails on the latter without stopping
+> the loop — so a `for f in *.wal; do unzip …; done` scan quietly produces one directory fewer than
+> there are skins, and every `grep` over the result is wrong in a way nothing announces. Use `7zz`,
+> which reads both, and **check the extracted directory count against the skin count** before
+> trusting a "the corpus declares this N times" claim.
+>
+> This is not hypothetical: B43's first scan reported 15 `fliph`/`flipv` declarations across 5 skins
+> and concluded the change could not reach anything else. The one skin it missed —
+> `Nullsoft.Winamp.2000.SP4.Lite`, the only NSIS archive of the 35 — was then the *one* image in the
+> sweep that changed, and it read exactly like a regression in a skin the change had no business
+> touching. The tell that saved it was the opposite of the usual one: the diff was **reproducible in
+> isolation with matched defaults hygiene on both builds**, so it was real, and the scan was what was
+> wrong. Re-extracting with `7zz` found a 16th declaration and the "regression" was the fix working.
+
 > **Compare the sweep by pixels, not by PNG bytes.** A dump can hash differently on every run of the
 > *same* build while being pixel-identical — the encoder, not the renderer. One unexplained hash in a
 > 21-skin sweep is worth two minutes of checking before it is worth a bisect (Phase 45).

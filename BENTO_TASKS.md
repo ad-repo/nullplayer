@@ -71,7 +71,10 @@ verified against source; where something is unmeasured it says so.
 **Three findings from this pass are engine-wide and live in `TASKS.md`, not here** — the `B*` series,
 so the numbers do not collide: **B39** (`setText` vs `display=` — the repeated song title),
 **B40** (`navigateUrl` policy and `ML_SendTo` — the dead lyrics/video buttons), and
-**B41** (`getMonitorWidth`/`getMonitorHeight`). Bento is only where they were found. The `BB`
+**B41** (`getMonitorWidth`/`getMonitorHeight`). Two more were added on 2026-08-24 from the header
+analyzer discovery below: **B43** (`fliph`/`flipv` ignored engine-wide) and **B44** (skin-scoped
+persistence of skin config, whose first slice is the divider position). Bento is only where they were
+found. The `BB`
 numbers below run contiguously `BB6`–`BB15`; the plan file used a different provisional numbering for
 the same items, so cite these, not the plan's.
 
@@ -155,6 +158,22 @@ backlog.
       info` correctly at `x=3` / `x=195` / `x=370` when both are ticked. Open question recorded when
       the choice was made: with **Show file info** still ticked the track text would sit over the
       bars, unless the spectrum takes only what is left after it.
+      **A fourth placement exists, and nobody knew — found live by the user 2026-08-24.** Widening the
+      player pane reveals `main.vis.group` in the **header**, beside the transport buttons: a
+      288×60 group of four `<vis>` boxes at `x=436`, declared in `player-normal-group.xml:255`. It is
+      not one of BB9's three `{0000000A}` holders and is not routed by
+      `WinampModernVisualizationHolder` at all — these are real `<vis>` elements the renderer draws
+      itself. Two things came out of it, both engine-wide and both in `TASKS.md`: **B43**
+      (`fliph`/`flipv` were ignored, so the intended mirrored butterfly drew as two identical blocks
+      with a seam) and **B44** (the divider position is not persisted, which is the only reason this
+      went undiscovered for the whole B35–BB22 run).
+      `visualizer.maki` also registers an **`Alt Visualizer`** setting that swaps the pair for
+      `main.vis.group.alt` — a single 252px analyzer plus reflection — along with `Visualizer Mode`,
+      `Show Peaks`, `Visualizer show Lines` and the two falloff speeds. Both groups are placed with no
+      `visible=`, and the script hides whichever is not chosen; that hide is running correctly. So the
+      header's own visualization has a settings surface already, which is BB7/BB10 territory rather
+      than new work here. **Do not fold the header into BB9's side-by-side layout question** — it is a
+      separate placement with its own script and its own config.
       **Corrections to what this entry used to say:** the defaults *are* reachable and the plumbing
       *does* work; an embedded `<component>` in the player body **does** get a surface — that question
       is closed; BB7 and B40 are not involved; and **the skin ships no `.m` sources at all**, so the

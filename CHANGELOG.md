@@ -20,6 +20,15 @@
 
 - **Winamp 5.x modern skins: the window is no longer sluggish** — Big Bento Modern's player window took over 230 milliseconds to draw a single frame, which is a handful of frames a second, and it got dramatically worse the moment anything was playing. Six separate causes, none of them the thing being blamed. Artwork the skin had made fully transparent was still being drawn at full cost — one invisible layer covering the whole window accounted for a fifth of every frame on its own. Backgrounds large enough to fill the window were just too big for the cache that exists to stop them being rescaled, so the most expensive image in the window was re-scaled sixty times a second. Repeating background patterns were being stamped one tile at a time, up to eight thousand times a frame. The spectrum analyser asked for a redraw every time new audio arrived, far faster than the screen can show one. And two internal lookups — one on every playback tick, one behind every measurement a skin's own scripts make — were searching the entire skin from scratch each time. A full repaint now takes 37 milliseconds instead of 238.
 
+- **Winamp 5.x modern skins: mirrored visualisers are mirrored again** — skins build a symmetric
+  display out of two visualisers, one of them flipped, so the pair reads as a single figure: Big Bento
+  Modern's header analyser is a butterfly whose two halves meet in the middle, with a dimmed
+  upside-down reflection underneath, and the Winamp 2000 skin's video window draws an oscilloscope
+  together with its own reflection. nullPlayer ignored the flip entirely, so the halves came out as two
+  identical blocks with a seam down the middle, the reflections were not reflected, and the mirrored
+  scope collapsed into a single thin line. Six skins are affected, including Styx, Enkera and
+  multipass.
+
 - **Winamp 5.x modern skins: you can drag Big Bento Modern's panel divider again** — the seam between the player and the info panel showed a resize cursor but moved the whole window instead of resizing anything, so the display area was stuck at whatever width it opened at. The skin lays an invisible sheet over its entire window to catch clicks, and that sheet was outranking the divider underneath it. Invisible layers and plain window-drag surfaces no longer win over a splitter's own grab strip; real controls that cross it, like a tab strip, still do. Widening the panel this way also reveals the skin's own analyser display, which had never been reachable.
 
 - **Winamp 5.x modern skins: a skin's visualisation panel can show a spectrum analyser** — Winamp's visualisation slot shows whichever visualiser is selected, and its own default is a spectrum analyser, but nullPlayer always filled every such panel with ProjectM/Geiss/Tripex, so an analyser there was simply unreachable. Wide, letterbox-shaped panels — which is what a skin uses for an analyser — now draw one, coloured from the skin's own palette with falling peak caps, while the larger square panels keep the full visualiser. A skin that declares several of these panels no longer leaves all but one of them blank.
