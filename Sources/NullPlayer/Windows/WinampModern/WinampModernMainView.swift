@@ -1042,13 +1042,31 @@ final class WinampModernMainView: NSView {
             needsDisplay = true
             return
         }
-        guard let holder = renderer.componentHolder(at: point), holder.kind == .playlist,
-              let rowCount = componentHost?.playlistSnapshot().rows.count else {
+        if let holder = renderer.componentHolder(at: point), holder.kind == .playlist,
+           let rowCount = componentHost?.playlistSnapshot().rows.count {
+            guard delta != 0 else { return }
+            renderer.scrollPlaylist(byRows: delta, rowCount: rowCount, in: holder.frame)
+            needsDisplay = true
+            return
+        }
+        // Everything else the wheel can reach belongs to the skin, and it asks for it on the
+        // **layout** rather than on a control: all 84 `onMouseWheel*` bindings across the five corpus
+        // skins that declare them land on `layout#normal` or `layout#shade`, and each script decides
+        // whether the turn was meant for it with `isMouseOverRect()`. Big Bento Modern declares
+        // `config_vscrollbars` nine times over — once per settings page — so nine handlers run per
+        // notch and eight of them correctly do nothing. Without this dispatch the settings pages had
+        // no working scroll at all and anything past the fold was unreachable.
+        guard delta != 0 else {
             super.scrollWheel(with: event)
             return
         }
-        guard delta != 0 else { return }
-        renderer.scrollPlaylist(byRows: delta, rowCount: rowCount, in: holder.frame)
+        let handlers = (try? scripts.dispatch(object: renderer.layout,
+                                              event: delta < 0 ? "onmousewheelup" : "onmousewheeldown",
+                                              arguments: [.integer(1), .integer(3)])) ?? 0
+        guard handlers > 0 else {
+            super.scrollWheel(with: event)
+            return
+        }
         needsDisplay = true
     }
 
@@ -1373,7 +1391,7 @@ final class WinampModernMainView: NSView {
     private func updateSlider(_ object: WasabiObject, point: CGPoint) {
         guard object.typeName.caseInsensitiveCompare("slider") == .orderedSame,
               let frame = renderer.frame(of: object), frame.width > 0, frame.height > 0 else { return }
-        let vertical = object.attributes["orientation"]?.lowercased() == "vertical"
+        let vertical = WasabiSceneRenderer.isVerticalOrientation(object)
         let value = vertical ? 1 - (point.y - frame.minY) / frame.height
                              : (point.x - frame.minX) / frame.width
         let normalized = max(0, min(1, value))

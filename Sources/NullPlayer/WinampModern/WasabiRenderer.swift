@@ -858,6 +858,9 @@ final class WasabiSceneRenderer {
     /// hidden when it closes, and the only thing that can bring it back is its own `onResize` deciding
     /// the pane is wide again (`if (w < 10) hide() else show()`). Resolving geometry only for what is
     /// on screen made that unreachable — closing the playlist hid it permanently.
+    /// `layoutNodes()` for the harness: the geometry probe has to see inside a closed tab.
+    func layoutNodesForTesting() -> [WasabiSceneNode] { layoutNodes() }
+
     private func layoutNodes() -> [WasabiSceneNode] {
         let rootRect = CGRect(origin: .zero, size: canvasSize)
         var nodes: [WasabiSceneNode] = []
@@ -1085,6 +1088,14 @@ final class WasabiSceneRenderer {
         for key in keys {
             if let value = object.attributes[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !value.isEmpty {
+                // `none` is not an unknown component — it is Wasabi for "this holder holds nothing",
+                // and a holder that holds nothing must draw nothing. Falling through to `.other`
+                // painted an opaque slab of the palette's content colour over whatever the skin had
+                // drawn underneath: Big Bento's `wdh.waveseeker` (its WACUP-only waveform seeker)
+                // sits directly over the seek bar, which is why the seek bar was a solid black bar.
+                // Answering nil here also stops the id heuristic below, which is a *fallback* for a
+                // holder that names nothing at all, not for one that explicitly names nothing.
+                if value.caseInsensitiveCompare("none") == .orderedSame { return nil }
                 return value
             }
         }
@@ -1384,10 +1395,67 @@ final class WasabiSceneRenderer {
                                      inheritedAlpha: inheritedAlpha))
         let childClip = clipsChildren(object) || isFramePane(object) ? clip : parentClip
         let childAlpha = inheritedAlpha * Self.alphaFraction(of: object)
+        // A container a script has scrolled lays its children out against a box shifted *up* by the
+        // offset; the clip stays on the unscrolled box, so content leaves through the top and arrives
+        // from the bottom exactly as it should. Doing it here rather than at draw time is what makes
+        // hit testing follow for free — `object(at:)` walks these same nodes, so a control scrolled
+        // halfway up the page is clickable where it is drawn and nowhere else.
+        let childFrame = resolved.offsetBy(dx: 0, dy: -scrollOffset(of: object, frame: resolved))
         for child in object.children {
-            append(object: child, frame: resolved, clip: childClip, into: &nodes,
+            append(object: child, frame: childFrame, clip: childClip, into: &nodes,
                    includingHidden: includingHidden, inheritedAlpha: childAlpha)
         }
+    }
+
+    /// Is this control laid out along the vertical axis?
+    ///
+    /// Skins spell it **both** ways and mean the same thing. Across the installed corpus: 158 slider
+    /// declarations say `vertical`, and **49 say `v`** (either case), in 8 skins — Big Bento Modern
+    /// ×4, Anexa, Enkera, Lobe and the Nokia 5220. Testing only for the long spelling made every one
+    /// of those 49 a *horizontal* control, with two consequences that look nothing like each other:
+    /// the thumb was drawn along the wrong axis, and — worse — a drag read its value from the
+    /// pointer's **x** across a bar 16px wide, so the position snapped to one end instead of
+    /// tracking the mouse. That is why Big Bento Modern's settings pages could not be scrolled by
+    /// dragging their scrollbar (BB19).
+    static func isVerticalOrientation(_ object: WasabiObject) -> Bool {
+        switch object.attributes["orientation"]?.lowercased() {
+        case "v", "vertical": return true
+        default: return false
+        }
+    }
+
+    /// The scroll attribute a script writes through `scrollToPercent`, as a percentage of travel.
+    static let scrollPercentKey = "nullplayer.script.scrollpercent"
+
+    /// How far this container's contents have been scrolled, in skin pixels.
+    ///
+    /// The travel is whatever the children overflow their container by, so a page whose content fits
+    /// never moves however hard a skin scrolls it — which is what keeps a short settings page still
+    /// while a long one scrolls, with no per-page configuration.
+    private func scrollOffset(of object: WasabiObject, frame: CGRect) -> CGFloat {
+        guard let raw = object.attributes[Self.scrollPercentKey], let percent = Double(raw),
+              percent > 0, frame.height > 0 else { return 0 }
+        let travel = max(0, contentHeight(of: object, in: frame) - frame.height)
+        guard travel > 0 else { return 0 }
+        return CGFloat(min(100, max(0, percent)) / 100) * travel
+    }
+
+    /// How tall this container's content is, measured from its own direct children.
+    ///
+    /// Deliberately one level deep and intrinsic-free: the case this serves is a `<GroupList>` whose
+    /// entries a script stacked with `instantiate` (BB7), and those carry declared heights. A child
+    /// sized only by its artwork measures as its declared box here, which can under-report the
+    /// travel — extend this if a skin turns up that scrolls bitmap-sized content.
+    private func contentHeight(of object: WasabiObject, in frame: CGRect) -> CGFloat {
+        let box = WasabiRect(x: Double(frame.minX), y: Double(frame.minY),
+                             width: Double(frame.width), height: Double(frame.height))
+        var maxY = frame.minY
+        for child in object.children where isVisible(child) {
+            let resolved = child.geometry.resolve(in: box, intrinsicSize: .zero)
+            guard resolved.width >= 0, resolved.height >= 0 else { continue }
+            maxY = max(maxY, CGFloat(resolved.y + resolved.height))
+        }
+        return maxY - frame.minY
     }
 
     /// Draw a `CGImage` into the flipped (top-left origin) skin space `draw(in:)` establishes.
@@ -2554,7 +2622,7 @@ final class WasabiSceneRenderer {
                               : object.attributes["thumb"]
         guard let thumb = resources.bitmap(identifier: thumbID) else { return }
         let clamped = normalizedValue(of: object)
-        let vertical = object.attributes["orientation"]?.lowercased() == "vertical"
+        let vertical = Self.isVerticalOrientation(object)
         let thumbWidth = CGFloat(thumb.width)
         let thumbHeight = CGFloat(thumb.height)
         let thumbFrame: CGRect

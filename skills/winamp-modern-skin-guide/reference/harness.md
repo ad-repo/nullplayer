@@ -44,7 +44,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_CLICK_EVENTS=<event>[,<event>]` | narrow `RENDER_CLICK` to the events a *plain* click sends (`onleftbuttondown,onleftbuttonup`). The default is all seven, which includes the double-click and both right-button halves — so a skin that hangs a command off one of those makes an ordinary click unreadable: cPro-Bento's tab strip maximizes the window from its `onLeftButtonDblClk`, and every probe of a tab click reported that expansion as if the click had caused it |
 | `WINAMP_MODERN_RENDER_CLICK_WATCH=<id>,<id>` | where those objects ended up after the click, changed or not — for "it opened, but in the wrong place" |
 | `WINAMP_MODERN_RENDER_SIZE=<W>x<H>` | resize the layout (clamped, as a drag is) before measuring, so a defect can be reproduced at the user's window size. It resizes the *canvas* only — the app dispatches `onResize` on a real drag, so pair it with `RENDER_EVENTS=onresize` (applied after the resize) or a script-driven layout stays at its old width |
-| `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **`onresize` first** for any ClassicPro skin: much of its state is only ever assigned there |
+| `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **`onresize` first** for any ClassicPro skin: much of its state is only ever assigned there. `onmousewheelup`/`onmousewheeldown` are addressed at the **layout** with two arguments (where every corpus binding lands) — but they call `dispatch` directly rather than going through the view, and `isMouseOverRect` answers `false` with no window, so a `handlers=` count proves the bindings and the arity, **not** that anything scrolled |
 | `WINAMP_MODERN_RENDER_SCRIPTS=1` (or `=bindings`) | per program: owner, source, declared handlers, which events actually **ran**, and which failed with what. `=bindings` adds what every handler is bound to *right now*, its entry point (`@<index>`), whether the dispatcher **shadows** it as a repeat of an earlier body, and each script group's ancestor chain. The entry point is what tells two same-named bindings apart: a program may declare one (object, event) pair twice with *different* bodies, and which body a dispatch reaches is then the whole question |
 | `WINAMP_MODERN_RENDER_DISASM=<method>` | the instructions around every call site of a method — how an unknown **arity** is settled, by counting the net pushes between the receiver and the call |
 | `WINAMP_MODERN_RENDER_DISASM=@<source>` | the **whole** listing for every program whose path matches: each handler's entry point, every instruction, constants and method names resolved. Variable values are read *after* the run, so a `vN=null` at a `findObject` is a lookup that failed. This is how Winamp Modern's titlebar layout was recovered — an arity fits in an 8-instruction window, a layout routine does not |
@@ -63,6 +63,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_CONFIG=<section>;<key>=<value>[\|…]` | write skin configuration **before** the scripts start — where the app reads it from, since the value is persisted. How a stored option the skin reads at load (a background id, a page index) is set without a GUI. Note it *stays* set for later runs. **It cannot select a display style**: Defix reads its own private copy (`CurVuVis`) at load and only writes it from `onDataChanged`, so a value seeded here is simply ignored — that is what `RENDER_SET` is for |
 | `WINAMP_MODERN_RENDER_SET=<section>;<key>=<value>[\|…]` | write a registered setting **after** the skin is up, through `setConfigAttribute` — the exact route the host's Skin Settings window takes. Prints `SET handler <key> -> <script>` per handler reached and `SET [<section>] <key> = <value> handlers=<n>`. The only headless way to pick one of a skin's display styles or songticker modes and see what it draws. Expect a *cascade* of handler lines where the setting is one of a radio group: Defix's style handler switches the other seven off, and each of those is another `onDataChanged`. Phase 45's addition |
 | `WINAMP_MODERN_RENDER_TIME=<frames>` (+ `_SCALE=2`, `_CLIP=1`) | ms/frame for a full repaint. `_SCALE=2` is the number that matters — it is the Retina backing store the app actually pays for; `_CLIP=1` measures the same frame clipped to the warped layers' rects. Defix, after Phase 29's pre-scaled artwork cache: **3.5 ms at 2×** idle, 5.4 ms with both reels warping, 4.4 ms clipped (it was 19.3 / 6.9 when every bitmap was resampled to the backing scale on every frame) |
+| `WINAMP_MODERN_RENDER_GEOMETRY=<id>[,<id>]` | the resolved box of a named object and of its direct children, **including hidden ones**, with each child's declared `y`/`h`/`low`/`high`/`value`, the container's scroll percentage, and the **content / box / travel** it adds up to. `RENDER_PROBE` walks the visible scene, so anything inside a closed tab measures as absent — Big Bento Modern's settings pages live in one, and *"is this content taller than its box?"*, the whole question behind a scrollbar, could not be asked at all without this |
 | `WINAMP_MODERN_DRAW_PROFILE=1` | per-object draw cost, top 8 — which node costs the frame, without a sampling profiler |
 | `WINAMP_MODERN_FX_TRACE=1` | every `fx_*` call with its receiver: which layers a skin warps, and **when** it switches them on |
 | `WINAMP_MODERN_CALL_TRACE=1` | every MAKI method call with its arguments and result |
@@ -392,6 +393,32 @@ band draws at ~15%.
 
 **Any host number handed to skin artwork must be in the unit the artwork is cut for.** Winamp's meter
 values are vis bytes on a logarithmic sweep; a linear magnitude × 255 is the recurring mistake.
+
+### Ask for the live trace **first**, not fourth
+
+A GUI-only report on a scripted control cost **five** rebuild-and-retest rounds before anyone looked
+at a `CALL-TRACE` log, and the log then named the cause in one line. The rounds were spent reading
+source and reasoning about which hop *might* be broken; every one of those guesses was a real defect,
+and none of them was the one the user was hitting.
+
+```sh
+WINAMP_MODERN_CALL_TRACE=1 ./scripts/kill_build_run.sh > /tmp/x.log 2>&1
+```
+
+Then read the **arguments**, not just the call names. The scrollbar case was settled by a histogram:
+
+```sh
+grep -oE "scrolltopercent\([-0-9]+\)" /tmp/x.log | sort | uniq -c
+```
+
+`setposition(113) → scrolltopercent(-14)`, then `118 → -19`, then `123 → -24`. The chain was running
+perfectly and every number was out of range — a `high="100"` slider being stepped past its own end,
+against a script computing `99 - position`. No amount of reading the engine would have shown that,
+because nothing in the engine was failing.
+
+**Two habits this is the cheap version of.** Ask for the trace after the *first* failed retest, not
+the fourth. And when a trace shows a handler running, check what it is being *handed* before
+concluding the handler is fine — a method being called proves nothing; its arguments are the finding.
 
 ### When a fix changes nothing on screen, look for the *next* fault
 

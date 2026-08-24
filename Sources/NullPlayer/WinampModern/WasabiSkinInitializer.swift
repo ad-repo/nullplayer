@@ -990,6 +990,37 @@ final class WasabiSkinInitializer {
             // (this group, that id) is what the lookup above already resolved.
             if embeddedParent !== object, let tag = embeddedXUITag {
                 _ = object.setAttribute("nullplayer.embedxui", value: tag.lowercased())
+                // The wrapper *is* the control, so the range it declares is the **embedded** object's
+                // range — a `<SC:VScrollBar low="0" high="100">` wrapping a bare `<slider>` means that
+                // slider counts 0…100, not Winamp's default 0…255.
+                //
+                // Measured, from a live trace of Big Bento Modern's settings scrollbar: its up button
+                // does `slider.setPosition(slider.getPosition() + 5)` on the **inner** slider, and the
+                // page computes `scrollToPercent(99 - position)`. On the 0…255 default the positions
+                // ran 113 → 118 → 123 → 128, so the percentage was *negative every time* and the page
+                // clamped back to the top on every press: the bar moved, and nothing scrolled (BB19).
+                // Only the range is carried across; geometry, identity and appearance belong to the
+                // wrapper, and forwarding those would move the control inside its own group.
+                for key in ["low", "high"] where embeddedParent.attributes[key] == nil {
+                    if let value = attributes[key] { _ = embeddedParent.setAttribute(key, value: value) }
+                }
+                // A **vertical** slider starts at the top of its travel, which is `high` — not at the
+                // zero a missing value would otherwise read as. Only one that drives nothing itself
+                // (no `action`, so no host value to take) and states a range is seeded; a seek or
+                // volume slider is told its position by the host and must not be pre-empted.
+                //
+                // Measured: each of Big Bento Modern's settings pages opens by reading its
+                // scrollbar's position and calling `scrollToPercent(99 - position)`. Read as 0 that
+                // is *99% — the bottom*, and seven of the skin's nine pages launched scrolled to the
+                // end of themselves. Seeding the attribute rather than special-casing the getter
+                // keeps the thumb, the hit test and the script's arithmetic on one number.
+                if embeddedParent.typeName.caseInsensitiveCompare("slider") == .orderedSame,
+                   WasabiSceneRenderer.isVerticalOrientation(embeddedParent),
+                   embeddedParent.attributes["action"] == nil,
+                   embeddedParent.attributes["value"] == nil,
+                   let high = embeddedParent.attributes["high"] {
+                    _ = embeddedParent.setAttribute("value", value: high)
+                }
             }
             try createObjects(from: instanceChildren, parent: embeddedParent, graph: graph, types: types,
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,

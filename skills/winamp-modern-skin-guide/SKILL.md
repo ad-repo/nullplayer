@@ -54,6 +54,12 @@ concept; read the one your symptom points at, not all of them.
 | A slider drags but nothing happens, or its readout never appears | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the action families, and `onSetPosition` on a drag |
 | Playlist / EQ / library / video surface missing, empty, or in the wrong window | [reference/components.md](reference/components.md) |
 | A hosted surface (library/video/vis) stays on screen over another tab, or comes back dead, after its holder went away and returned | [reference/components.md](reference/components.md) — *Unmounting is not teardown* |
+| **A flat slab of one colour covers artwork that should be there** — a seek bar, a display panel | [reference/components.md](reference/components.md) — *Component hosting*: an `.other` holder fills its rect, and `hold="none"` means the holder holds nothing |
+| **A control works once and then cannot be clicked again**, or a seek bar vanishes after one drag | [reference/scripting.md](reference/scripting.md) — *A layout must not be left with no way to seek*: a script's `hide()` can strand an action, and an invisible object is not hit-testable |
+| **The mouse wheel does nothing** — a settings page, drawer or custom list will not scroll | [reference/scripting.md](reference/scripting.md) — *The mouse wheel is a layout event, and it carries two arguments* |
+| **A vertical slider will not drag**, its thumb slides the wrong way, or an EQ shows no curve | [reference/rendering.md](reference/rendering.md) — *A skin spells the axis two ways, and `"v"` is not a typo* |
+| A scrollbar moves but its page does not, or a control's position reads 0 however far it is dragged | [reference/scripting.md](reference/scripting.md) — *`embed_xui` — the wrapper **is** the control* |
+| **A GUI-only report on a scripted control** — where do I even start? | [reference/harness.md](reference/harness.md) — *Ask for the live trace first, not fourth* |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
 | A window the skin opens with itself does not open, or opens in the wrong place (`default_visible`, `default_x`/`default_y`) | [reference/components.md](reference/components.md) |
 | A whole container — or a whole skin — is missing, and its layouts are named something other than `normal` | [reference/components.md](reference/components.md) — *Which layout a container opens in* |
@@ -62,6 +68,7 @@ concept; read the one your symptom points at, not all of them.
 | Notifier toast doesn't show, shows wrong text, ghost default text, title invisible | [reference/components.md](reference/components.md) §*Notifier — track-change toast* |
 | Teardown crash, leak, or mode-switch breakage | [reference/components.md](reference/components.md) |
 | A ClassicPro (`.wal` + NSIS engine) skin misbehaves | [reference/classicpro.md](reference/classicpro.md) |
+| A **WACUP**-era skin: should we claim to be WACUP, why a branch is dead, a plugin surface that never appears | [reference/wacup.md](reference/wacup.md) — the answer is *no*, with the measurement |
 | **How do I see what the engine is doing?** Probes, env vars, dumps | [reference/harness.md](reference/harness.md) |
 | A GUI-only report, and no probe reproduces it | [reference/harness.md](reference/harness.md) — *Debugging a live defect* |
 | **A whole skin is dead / "none of it works"** — start at the abort, not the symptom | [reference/harness.md](reference/harness.md) — *The order that made Phase 33 cheap* |
@@ -118,6 +125,11 @@ verbatim; it just lives in a reference file now.
 | `onTextChanged` is how a skin learns a host readout moved | [reference/scripting.md](reference/scripting.md) |
 | The equalizer tells the skin it moved | [reference/scripting.md](reference/scripting.md) |
 | The keyboard is a string, and a borderless window has to ask for it | [reference/scripting.md](reference/scripting.md) |
+| The mouse wheel is a *layout* event, and it carries two arguments | [reference/scripting.md](reference/scripting.md) |
+| `embed_xui` — the wrapper **is** the control, and must not keep a second copy of its value | [reference/scripting.md](reference/scripting.md) |
+| Scrolling: `scrollToPercent` is a viewport offset, not a layout change | [reference/scripting.md](reference/scripting.md) |
+| A skin spells the axis two ways, and `"v"` is not a typo | [reference/rendering.md](reference/rendering.md) |
+| Ask for the live trace first, not fourth | [reference/harness.md](reference/harness.md) |
 | Which layout a container opens in | [reference/components.md](reference/components.md) |
 | `TOGGLE`'s parameter is a component **or a container id** | [reference/components.md](reference/components.md) |
 | `default_visible="1"` — the windows a skin opens with itself | [reference/components.md](reference/components.md) |
@@ -134,6 +146,7 @@ verbatim; it just lives in a reference file now.
 | Mode integration | [reference/components.md](reference/components.md) |
 | Notifier — track-change toast | [reference/components.md](reference/components.md) |
 | ClassicPro engine | [reference/classicpro.md](reference/classicpro.md) |
+| WACUP-era skins | [reference/wacup.md](reference/wacup.md) |
 | An `<animatedlayer>` is one frame, not one sheet | [reference/rendering.md](reference/rendering.md) |
 | Debugging a skin | [reference/harness.md](reference/harness.md) |
 | The order that made Phase 33 cheap | [reference/harness.md](reference/harness.md) |

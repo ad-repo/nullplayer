@@ -20,6 +20,10 @@
 | Overlay (`Light`) palette | **Works** | The Light editions render in their own light palette against the base skin's artwork |
 | Album-art panel (W10 edition) | **Degrades** | Its `window/no_alb_art_shade.png` is zero bytes; that one placeholder draws nothing |
 | Config pages + EQ tab | **Fixed (BB7)** | `GroupList.instantiate` builds them; `getApplicationPath` was the domino behind it |
+| Seek bar (base editions) | **Fixed (BB12)** | `hold="none"` was painting an inert-component slab over it. Confirmed live |
+| Seeking | **Fixed (BB16)** | `seek.maki` hides its own only seek slider on mouse-up; the stranded-control rule undoes it |
+| Settings-page scrolling | **Fixed (BB19)** | Seven stacked faults — see below. Confirmed live |
+| Seek bar (W10 editions) | **Blank** | The skin's own `waveseeker.rounder.bg` covers it; cause unmeasured |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
 ## The family is two skins and two overlays
@@ -67,7 +71,79 @@ Two facts worth keeping:
   why the surface fact lives in `compatibility/maki-surface.md` rather than here. Whether Ebonite's
   own picker now works is **unmeasured**.
 
+## BB12 — the seek bar was a solid black bar
+
+`wdh.waveseeker` is a `<windowholder … autoopen="0" hold="none"/>` the skin reserves for WACUP's
+integrated Waveform Seeker, and it sits directly on top of the seek bar's grid and progress fill.
+`hold="none"` was read as an *unknown component*, which is the `.other` branch — an opaque fill of
+the palette's content colour across the holder's whole rect. `RENDER_PROBE=main/normal` named it in
+one line, `HOLDERS main/normal: other@wdh.waveseeker(16, 123, 414, 34)`, against a black slab
+measured at exactly that rect. The rule is in `reference/components.md`; the corpus scan says this
+holder is the only `hold="none"` in the 36 installed skins.
+
+Making the bar visible immediately exposed **BB16**: one press-release on it runs
+`seeker.ghost.hide()` from `seek.maki`'s `onLeftButtonUp`, whose `onSetVisible` mirror then hides
+`progressbar` and `player.seek.bg` too — and with the slider invisible nothing over the bar is
+hit-testable, so seeking stopped working until a track change re-showed it. That defect is **older
+than this fix** (it reproduces at `HEAD`); the slab was hiding the bar in both states. Fixed by the
+stranded-control rule in `reference/scripting.md` → *A layout must not be left with no way to seek*.
+
+**Do not "fix" the duplicate `findObject` by reading it as a skin bug and special-casing this
+family.** Defix Hi-END runs the identical script and is fine; the difference is that Big Bento
+declares its fallback `<Slider id="seeker">` as `visible="0" ghost="1"` while Defix leaves its
+visible. The rule keys on that — whether the layout still has a visible carrier for the action.
+
+Two things to know before re-measuring this area:
+
+- **The header renders correctly headlessly**, and the titlebar art really is a flat four-colour
+  dark gradient — the hamburger, the bolt, the WINAMP logo and all five menu items draw and are
+  placed. Whatever the live report is about, it is not a missing bitmap in the dump. BB4's rule
+  applies: measure it in the running app.
+- **The Windows 10 editions' seek bar is still blank, and for a different reason.** They ship
+  `<layer id="waveseeker.rounder.bg" image="songticker.background.center2" … visible="1"/>`
+  (the base ships the same layer `visible="0"`), an opaque wash over the whole bar. `seek.maki` —
+  `owner=group#player.layout`, the handler set `onenterarea,onleavearea,onleftbuttondown,`
+  `onleftbuttonup,onscriptloaded,onsetfinalposition,onsetposition,onsetvisible` — runs its
+  `onScriptLoaded` **clean** (`failed=-`) and does not hide it. Cause unmeasured; do not guess one.
+  This is why the fix above changed only the two base variants' images in the corpus sweep.
+
+## BB19 — the settings pages could not be scrolled
+
+Seven independent faults, stacked, each hiding the next. Recorded in full because the *shape* is the
+lesson: five of them were found and fixed one at a time, each looking like "the" fix, and the page
+stayed dead until the last one landed.
+
+| # | Fault | Where the rule now lives |
+|---|---|---|
+| 1 | The wheel was never dispatched to any skin | `reference/scripting.md` → *The mouse wheel is a layout event* |
+| 2 | `scrollToPercent` was an accepted no-op | `reference/scripting.md` → *Scrolling* |
+| 3 | Value events did not cross the `embed_xui` seam | `reference/scripting.md` → *`embed_xui`* |
+| 4 | The wrapper's `low`/`high` never reached the embedded slider (so it ran 0…255) | same |
+| 5 | `setPosition` did not clamp, so the up button walked past `high` for ever | same |
+| 6 | **`orientation="v"` was read as horizontal** — the drag took its value from the pointer's *x* across a 16px bar | `reference/rendering.md` → *A skin spells the axis two ways* |
+| 7 | The wrapper and its embedded slider kept **two** values, so the page read `0` whatever the bar did | `reference/scripting.md` → *`embed_xui`* |
+
+Fault 6 is the one that made the bar undraggable, and it reaches **8 skins** — Anexa, Enkera, Lobe
+and The_Nokia_5220 as well. Their equalizers could never draw a curve; ten band sliders all slid
+sideways inside their own columns.
+
+Two things to know before touching this area again:
+
+- **The pages are only scrollable at small window sizes.** Each carries a `scrollbars.param` text
+  (400, 650, 1980 …) that the script compares against the available height, showing its scrollbar
+  only when the page needs one. At 1536×878 most pages fit and `travel` is genuinely `0`; use
+  `WINAMP_MODERN_RENDER_GEOMETRY=grplst` with `RENDER_SIZE` to see a real one.
+- **`getPosition()` on `vscroll` is the number everything hangs off.** The page computes
+  `scrollToPercent(99 - position)`, so `position = 0` means *scroll to the bottom* — which is why a
+  slider that starts un-set opens every page at its own end.
+
 ## Traps
+
+- **There are *three* `winamp.albumart*` objects, and only one pair is the duplicate.** The Multi
+  Content View holds the real cover plus an oversized dimmed backdrop behind the panel
+  (`info.component.albumbg`, `xml/player-normal-mcv.xml:920`, `relatw="2" relath="2" alpha="100"`) —
+  that pair was B42. The third, `winamp.albumart2` in `info.component.cover2`, is the **SUI playlist
+  tab's** cover and is entirely legitimate. Do not read it as a fourth copy.
 
 - **`@SKINPATH@` and `@SKINSPATH@` mean different things here, and the skin uses both on purpose.**
   Base XML that an overlay is meant to *override* is pulled with `@SKINPATH@` — the **loaded** skin's

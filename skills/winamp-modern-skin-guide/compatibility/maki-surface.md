@@ -329,8 +329,12 @@ By area:
 | `onResize` | yes (Phase 24) | a canvas change, a layout activation, a divider drag, **and whenever a script's own mutation moves something** (it settles once as the outermost event unwinds); plus one seeding pass after `start()`. Only objects whose own box moved, each with its own parent-relative `(x, y, w, h)`. **Not** from a UI Size change, which moves only the drawing boundary |
 | `onPlay` / `onStop` / `onPause` / `onResume` | yes (pause/resume Phase 24) | an explicit transition table: stopped→playing sends `onPlay`, paused→playing `onResume`, playing→paused `onPause`. Never both `onPlay` and `onResume` for one resume |
 | `onTitleChange` | yes (Phase 24) | per track, not per redraw — scripts reset per-track state from it |
-| `onSetVisible` | yes (Phase 24) | from `show`/`hide`, on the object whose visibility actually changed |
+| `onSetVisible` | yes (Phase 24) | from `show`/`hide`, on the object whose visibility actually changed. A `hide()` that would leave a layout with no visible control for a positional host action is undone when the event settles, and the restore dispatches `onSetVisible(1)` — see `reference/scripting.md` → *A layout must not be left with no way to seek* |
+| `scrollToPercent` | yes | a viewport offset on the container's children, `0` = top; travel is whatever the children overflow by. See `reference/scripting.md` → *Scrolling* |
+| `getPosition` / `setPosition` | yes | on an `embed_xui` wrapper they address the **embedded control**, and `setPosition` clamps to a declared `low…high` — see `reference/scripting.md` → *`embed_xui`* |
+| `onTimer` | yes | from the timer's own tick, **and as a method** — `Timer.onTimer()` is "run the body now". The dynamic-object receiver was added 2026-08-24; the GUI and `System` receivers already had it |
 | `onLeftButtonDblClk` | yes (Phase 24) | `mouseDown` with `clickCount == 2` |
+| `onMouseWheelUp` / `onMouseWheelDown` | yes | **two** arguments, dispatched at the **layout** — see `reference/scripting.md` → *The mouse wheel is a layout event*. NullPlayer's own colour-theme list and playlist holder take the wheel first |
 | mouse down/up/click/move, `onEnterArea`/`onLeaveArea`, `onRightButtonUp` | yes | with the click's x/y |
 | `onVolumeChanged` | yes | `setVolume`, and any change made outside the skin |
 | `onPostedPosition`, `onSetPosition`, `onTargetReached`, `onAction`, `onEqFreqChanged`, `onGetCancelComponent` | yes | — |

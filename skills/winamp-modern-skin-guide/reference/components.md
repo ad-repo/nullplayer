@@ -69,6 +69,18 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
 - Three element types are holders: `<windowholder hold=…>`, `<componentbucket>`, and
   `<component param=…>` (`isHolderElement`). The last is what separate-window skins use for their real
   content — mmd3's `pledit-normal.xml`, Winamp Modern's `ml-normal.xml`.
+- **`hold="none"` is not an unknown component — it is "this holder holds nothing", and it must draw
+  nothing.** A holder naming a GUID we do not recognize falls through to `.other`, which fills its
+  whole rect with the palette's content colour so an unrecognized surface is visibly inert rather
+  than invisibly absent. Reading `none` that way put an opaque slab over the artwork underneath: Big
+  Bento Modern's `wdh.waveseeker` — the box it reserves for WACUP's integrated Waveform Seeker, a
+  plugin we do not have — sits directly on the seek bar, which is why the seek bar rendered as a
+  solid black bar (BB12). `componentReference` therefore answers nil for `none`, on all three holder
+  forms, case-insensitively, and **without falling through to the id heuristic** — that fallback is
+  for a holder that names nothing at all, not for one that explicitly names nothing. The narrow
+  reading matters: the same element also carries `autoopen="0"`, which would have explained the
+  symptom equally well and is on real, wanted holders elsewhere in the corpus (micro's playlist,
+  Defix's SUI), so honouring *that* would have blanked surfaces that work today.
 - `WinampModernContainerTopology.analyze` classifies each container: a real visible window or an
   SUI-collapsed stub (1×1 / `window-overrides` invisible), its `kind` (from its own `component=`
   GUID), its layout's `minimumSize`/`maximumSize`, and whether NullPlayer synthesized it.

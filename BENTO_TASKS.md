@@ -95,105 +95,29 @@ backlog.
 
 ### Tier 1 — reported defects
 
-- [x] **BB7. `Group.instantiate(groupdef, count)` — supersedes and corrects BB1. Done 2026-08-23.**
-      Implemented as a `GroupList` method plus the vertical stacking a groupdef cannot carry (each
-      entry spans the list's width and sits below the sum of the earlier entries' declared heights),
-      bounded at 64 per call. The cascade behind it was **`getApplicationPath`** — with the pages
-      finally built, the Localization page's script ran for the first time and aborted on it — so that
-      is implemented too, as a string only: `File.load`/`exists` and `System.navigateUrl` are already
-      inert, so the skin's `/Lang/*.wlz` probes correctly find nothing.
-      **Big Bento Modern now reports `degraded`, not `unsupported`, with no failing handler anywhere
-      in the skin.** `swift test` 1050 pass (9 new, `WinampModernPhase54Tests`); corpus render sweep
-      pixel-diffed against `HEAD`. Landed in `reference/scripting.md` →
-      *`GroupList.instantiate`*, `compatibility/maki-surface.md`, and the skin's own file.
-      **Live QA: the equalizer tab is confirmed on screen by the user (2026-08-23).** Its symptom was
-      the clean signature of this defect — `info.component.eq` declares the EQ-ON / AUTO / PRESETS
-      bar directly in XML, and *everything above it* (the spline, the ten bands, preamp, balance,
-      crossfade) is the `GroupList`, so the tab drew a preset picker and nothing else. Note this is a
-      **tab, not a window**: an SUI skin has no separate EQ window to open, which is why "I don't see
-      a way to show the EQ" and "I see the EQ icon" are the same surface.
-      **The config pages are confirmed live too (2026-08-23)** — all eight `instantiate`-built pages
-      have their content, stacked without overlap: Appearance, Window Sizing, Notifications, Multi
-      Content View, Web Content, Color Themes, Localization, and *About the skin*. Note for anyone
-      re-measuring: **three of the eleven pages never used this mechanism** (Songticker,
-      Visualization, Playlist are declared inline) and are a built-in control group.
-      Three things BB1 got wrong, from the MAKI source (`scripts/config_vscrollbars.m:47`, in the
-      author's own comment):
-      ```maki
-      Group g1 = grplst.instantiate(param, 1); // "1" here is the amount of times the group
-      Group g2 = grplst.instantiate(param2, 1); //  will be instantiated
-      ```
-      The second argument is a **count**, not an index. The receiver is a **`GroupList`**, not a
-      plain `Group`. And there are **two** call sites in **one** script — `config_vscrollbars.maki`
-      is the only file in the skin that mentions `instantiate` at all. BB1's "nine call sites" are
-      nine *declarations of that same script* (`config.xml` ×8 + `player-normal-sui.xml` ×1), each
-      with its own `param="part1;part2"`.
-      **The engine already does the hard part.** `newGroup` and `newGroupAsLayout`
-      (`WinampModernScriptRuntime.swift:2388`, `:2413`) both go through
-      `loadedSkin.runtime.instantiateGroup` → `instantiateGroupAtRuntime`
-      (`WasabiSkinInitializer.swift:580`), which expands a groupdef under an arbitrary parent, runs
-      `applyMetaCommands`, binds the subtree's scripts and defers their start via
-      `pendingRuntimeGroups` so a script never runs before its group is attached. Runtime graph
-      construction, the layout pass and teardown are solved — which is exactly the thing BB1 said
-      had to be decided first. What is left is the `Group`/`GroupList`-side method, the loop over
-      `count`, and whatever `<grouplist>` needs to be a receiver.
-      Unblocks the config window's **nine option pages** and the SUI's **equalizer tab** in one go,
-      and is why all four variants still report compatibility level `unsupported` although they draw.
+- [x] **BB7. `GroupList.instantiate(groupdef, count)` — supersedes and corrects BB1. Done
+      2026-08-23.** Built the config window's option pages and the SUI equalizer tab, which drew empty
+      because the skin declares them as empty `<GroupList>`s and inserts their content by script.
+      `getApplicationPath` was the domino behind it. Took the four variants from `unsupported` to
+      `degraded`. **Confirmed live** — the EQ tab and all eight `instantiate`-built pages.
+      Durable detail: `reference/scripting.md` → *`GroupList.instantiate`*,
+      `compatibility/maki-surface.md`, and the skin's own file (which records the arity correction,
+      the two call sites, and the three inline pages that make a control group).
 
-- [x] **BB8. `ColorMgr.getGammaSet(name).apply()` — the 77-theme colour picker does nothing.
-      Done 2026-08-24.** Bound by class GUID exactly as this entry prescribed, and the corpus scan it
-      asked for was worth running: `getGammaSet` is on `ColorMgr`
-      (`ff35e2ae…` → `aee235ff498febd1e0d7af961a54d4da`), `apply` is on `GammaSet`
-      (`b94d020d…` → `0d024db942d09574b526c7b887f9f153`), and across the installed corpus `apply`
-      appears on **that class alone** — so the collision this entry feared does not exist today, and
-      the gate is what keeps it from existing tomorrow. **`ColorMgr` is not Bento-only: Ebonite_2_1
-      reaches the catalog the same way**, so the surface fact lives in `compatibility/maki-surface.md`
-      rather than the skin's file.
-      Verified end to end against the real skin before any test was written: driving three theme
-      buttons' `onLeftClick` moved the catalog `* Default` → `* Default | Darker` → `* Default | Green`
-      (the first click answering `false` because that theme was already active, which is correct).
-      `swift test` 1058 pass, 8 new in `WinampModernPhase55Tests`; corpus sweep pixel-diffed.
-      **Not verified live** — the picker is on the Color Themes config page, which now has content
-      (BB7) but has not been clicked in the running app.
-      Original entry follows.
-      `config_color_themes_switcher.m` applies a theme with
-      `ctbg01 = ColorMgr.getGammaSet(ctname); ctbg01.apply();` — **77 call sites** in that file and 77
-      more in `config_color_themes_switcher_light.m`, one per shipped theme
-      (`xml/color-presets.xml`, ~2998 lines, 34 gammagroups each). None of `ColorMgr`, `getGammaSet`
-      or `apply` exists in the runtime (all grep to 0 in `WinampModernScriptRuntime.swift`).
-      The destination already does: `WasabiColorThemeCatalog` (`WasabiRenderer.swift:103`) holds the
-      sets and tracks `activeTheme`, and `System.setColorTheme` routes through `themeSwitchRequested`
-      (`:2339`). So this is a **binding** job, not a rendering one.
-      **Bind `ColorMgr` by class GUID, not by method name** — `MakiClassGUID.runtimeBound` /
-      `seedHostSingletons`, the pattern `PlEdit` uses. `apply` is exactly the kind of short name that
-      belongs to several classes, and registering it by name would re-declare it with the wrong arity
-      and desynchronise the interpreter's stack in unrelated skins. See `reference/scripting.md` →
-      *`PlEdit` — the playlist-editor API*, which records that failure mode. Check first whether any
-      other corpus skin reaches the catalog this way.
+- [x] **BB8. `ColorMgr.getGammaSet(name).apply()` — the 77-theme colour picker. Done 2026-08-24.**
+      Bound by class GUID, not by method name; verified end to end against the real skin before any
+      test. Not Bento-only — Ebonite_2_1 reaches the catalog the same way, so the surface fact lives
+      in `compatibility/maki-surface.md` and the binding mechanics in `reference/scripting.md` →
+      *Binding a host singleton by class GUID*. **Not verified live** — the page has content (BB7)
+      but has not been clicked in the running app.
 
-- [x] **BB6. The album art is drawn twice. Cause found and fixed 2026-08-24 — as `B42` in
-      `TASKS.md`, because it is not a Bento defect.** It was the **first** of this entry's three
-      unmeasured candidates: `relatw`/`relath` greater than 1. Not as a *multiplier*, though — the
-      flags are `atoi(value) != 0`, and `WasabiGeometry` accepted only `1`/`true`/`yes`, so
-      `relatw="2"` fell back to **absolute** geometry and the oversized dimmed backdrop drew at its
-      literal `99×100`: a small crisp second copy of the cover, beside the real one. The other two
-      candidates (ghost/alpha, `centerobject.maki`) were not involved.
-      Live QA supplied the one fact that made it findable — the user reported the pane was in **File
-      Info** mode, which left exactly one object it could be. Reached 5 skins beyond this family; see
-      B42 for the corpus and for why reading the number as a percentage is wrong.
-      **Not yet confirmed live**, which is the whole lesson of BB4 — check that the backdrop is now
-      an oversized dimmed wash behind the panel and that only one crisp cover remains.
-      Original entry follows.
-
-- [ ] **BB6 (original). The album art is drawn twice.** `info.component.albumbg`
-      (`xml/player-normal-mcv.xml:920`) holds a **second** `winamp.albumart` at `relatw="2"
-      relath="2"` with `alpha="100"` — an oversized, dimmed backdrop meant to sit behind the panel,
-      centred by `centerobject.maki`. On screen it is a small crisp copy to the right of the real
-      cover instead. Three candidates, none measured yet: `relatw`/`relath` greater than 1 as a
-      *multiplier* of the parent, the ghost/alpha not being applied, and `centerobject.maki`'s
-      positioning. **Measure before theorising** — `WINAMP_MODERN_RENDER_PROBE=main/normal` plus
-      `WINAMP_MODERN_RENDER_BITMAPS=1`. Note there is a third, legitimate `winamp.albumart2` in
-      `info.component.cover2` used by the SUI playlist tab; do not confuse it for the duplicate.
+- [x] **BB6. The album art is drawn twice. Fixed 2026-08-24 — as `B42` in `TASKS.md`, because it
+      is not a Bento defect.** The cause was `relatw`/`relath` greater than 1 falling back to absolute
+      geometry, so the oversized dimmed backdrop drew at its literal `99×100` as a small crisp second
+      copy. Reached 5 skins beyond this family. Rule: `reference/loading.md` → the `relat*` flags are
+      `atoi(value) != 0`. The three-`albumart` trap this entry warned about is in the skin's own file.
+      **Not yet confirmed live** (BB4's lesson): check the backdrop is now a dimmed wash behind the
+      panel with one crisp cover.
 
 - [ ] **BB9. The visualization pane is missing — probably a setting the user cannot reach.**
       `mcvcore.m` picks the MCV's pane from config attributes it registers itself (`ic_fileinfo`,
@@ -210,6 +134,73 @@ backlog.
       **player body** — as against a dedicated container — get a visualization surface from us at all?
       That is the same shape as the open **B23a** (BLAKK) in `TASKS.md`, and both **B23a** and **B16**
       warn that our holder probes go blind on exactly this case. Fix the probe first.
+
+- [x] **BB12. The header strip and the seek bar — measured 2026-08-24. The seek bar is fixed; the
+      header did not reproduce.** The seek bar was a solid black bar because `wdh.waveseeker` — a
+      `<windowholder … hold="none"/>` sitting on top of it — was read as an *unknown* component and
+      painted an inert slab. `none` means the holder holds nothing. Rule: `reference/components.md` →
+      *Component hosting*; the skin's own file records the rect and the corpus scan.
+      **The header did not reproduce headlessly** — the dump draws the hamburger, bolt, WINAMP logo
+      and all five menu items, and the titlebar art really is a flat four-colour gradient. Neither
+      BB3 nor an unresolved frame bitmap is involved. **This half stays open as a live question**:
+      re-measure in the running app before filing any cause.
+      **The Windows 10 editions' seek bar is still blank, separately** — they ship
+      `waveseeker.rounder.bg` as `visible="1"` where the base ships it `visible="0"`, an opaque wash,
+      and `seek.maki` runs clean without hiding it. Cause unmeasured; do not guess one.
+      `swift test` 1074 pass (7 new, `WinampModernPhase57Tests`); 288-image sweep, 285 identical.
+      **Confirmed live by the user, 2026-08-24.**
+
+- [x] **BB16. One click on the seek bar hid it, and then it could not be clicked again. Fixed
+      2026-08-24.** Reported live right after BB12 made the bar visible. **Pre-existing, not caused by
+      BB12** — it reproduces identically at `HEAD`; the slab had been hiding the bar in *both* states.
+      `seek.maki` hides its own only seek slider on mouse-up and mirrors the trough and fill to it, so
+      one press-release took the whole bar out — and an invisible object is not hit-testable, so
+      seeking stopped working until a track change.
+      Fixed by a **stranded-control rule** that keys on the layout, not the skin: a `hide()` leaving a
+      layout with no visible control for a positional host action is undone when the event settles.
+      Defix runs the identical script and does not trip it. Rule, its three deliberate properties, and
+      why stock Winamp Modern is unaffected: `reference/scripting.md` → *A layout must not be left
+      with no way to seek*. A second gap fixed in the same path — `Timer.onTimer()` called as a method
+      — is in the same file → *An event handler is also a method, on every kind of receiver*.
+      `swift test` 1082 pass (8 new, `WinampModernPhase58Tests`); 288-image sweep, 287 identical.
+      **Confirmed live by the user, 2026-08-24.**
+
+- [x] **BB17. Should there be a "WACUP skin" concept with its own engine branching? Measured
+      2026-08-24 — no.** Closed rather than left open so it is not re-proposed. The finding is durable
+      and lives in the skill: **[reference/wacup.md](skills/winamp-modern-skin-guide/reference/wacup.md)**
+      — how a skin probes for WACUP, why we answer truthfully, what the 69 references in this family
+      actually gate (branding), and why the WACUP-only *surfaces* are gated on ordinary settings
+      rather than on the dialect.
+
+- [ ] **BB18. Host a real waveform seeker at `wdh.waveseeker`.** Blocked by the skin, not by us:
+      `Use integrated Waveform Seeker` is never registered on a non-WACUP host, so a surface hosted
+      there is inert. Needs a design for offering the capability without impersonating WACUP.
+      Detail — the setting, the driving script, the measurement, and what NullPlayer already has to
+      host it — in **[reference/wacup.md](skills/winamp-modern-skin-guide/reference/wacup.md)** →
+      *The trap*.
+
+- [x] **BB19. The settings pages could not be scrolled. Fixed 2026-08-24, confirmed live.**
+      **Seven independent faults, stacked** — the table and the durable rules are in the skin's own
+      file (`skins/big-bento-modern.md` → *BB19*) and in `reference/scripting.md` /
+      `reference/rendering.md`. In short: the wheel never reached a skin; `scrollToPercent` was a
+      no-op; the `embed_xui` seam carried neither the value events nor the declared range; the wrapper
+      and its embedded slider kept two separate values; `setPosition` never clamped; and
+      **`orientation="v"` was read as horizontal**, so a drag took its value from the pointer's *x*
+      across a 16px bar.
+      **That last one reaches 8 skins** — Anexa, Enkera, Lobe and The_Nokia_5220 as well as this
+      family — whose equalizers could never draw a curve. Verified by driving a −120…+120 sweep
+      through `RENDER_EQ`: the thumbs now trace it.
+      New probe: `WINAMP_MODERN_RENDER_GEOMETRY=<id>` — the resolved box of a named object and its
+      children *including hidden ones*, with content/box/travel. The settings pages live in a closed
+      tab, so no existing probe could see them at all.
+      `swift test` 1096 pass (15 new across `WinampModernPhase59Tests`); 288-image corpus sweep — 284
+      identical, 3 changed and inspected (Anexa's and Lobe's equalizers, cPro-Bento's widget manager,
+      all now drawing their vertical sliders on the right axis), plus Anexa's nondeterministic
+      `main-shade`.
+      **The method lesson is the durable one and it is in `reference/harness.md` → *Ask for the live
+      trace first, not fourth*:** five rebuild-and-retest rounds were spent reasoning about which hop
+      might be broken, and one `CALL-TRACE` histogram named the cause immediately.
+
 
 ### Tier 2 — the settings surfaces themselves
 
@@ -235,15 +226,6 @@ backlog.
       Scope which of those lists are actually reachable in our host before implementing any of it —
       the reader may not be.
 
-- [ ] **BB12. The header strip and the seek bar — unexplained, needs a measurement pass.** Two things
-      in the user's screenshot that no probe has been pointed at yet, and neither has a filed cause:
-      the header strip is flat with no titlebar artwork, and the seek bar under the time readout is a
-      solid black bar. Candidates for the first include the **BB3** bitmap-override trap and a frame
-      bitmap that simply is not resolving; for the second, a missing background bitmap or an
-      unsupported attribute. `WINAMP_MODERN_RENDER_PROBE=main/normal` +
-      `WINAMP_MODERN_RENDER_BITMAPS=1`, diffed against the skin's own artwork. **Do not file a cause
-      for either until it is measured** — this subsystem has produced three wrong diagnoses from
-      unmeasured reasoning already (B36 is the worst of them).
 
 ### Tier 3 — real gaps, no reported symptom
 

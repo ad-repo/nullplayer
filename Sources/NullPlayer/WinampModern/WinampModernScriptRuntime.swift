@@ -317,6 +317,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // `onTitleChange` body is the same idiom `onSetPosition` already had.
         "onresize": 4,
         "onsetvisible": 1,
+        // The wheel. **Two** arguments, not one — read off two independent skins' bytecode (Big Bento
+        // Modern's `config_vscrollbars` at `@638` and cPro-Bento's `centro.multidrawer` at `@1091`
+        // both open with two `op3` stores), which is the corroboration a guessed arity needs. Wasabi
+        // documents them as `(clicks, lines)`; neither corpus consumer *reads* them, both simply relay
+        // them as `sendAction`'s `p1`/`p2`, so the names are taken from the API rather than measured.
+        "onmousewheelup": 2,
+        "onmousewheeldown": 2,
+        // `Timer.onTimer()` called as a method is "run the body now rather than at the next tick".
+        // Zero arguments — Winamp's timer event carries none, and every handler in the corpus opens
+        // with no store. Big Bento Modern's songticker uses it to restore the song title the moment
+        // a seek preview is cancelled instead of a beat later.
+        "ontimer": 0,
         "onpause": 0,
         "onresume": 0,
         "ontitlechange": 1,
@@ -883,6 +895,21 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// `setActivated` and `setActivatedNoCallback` is *whether the event went out at all*, and with no
     /// script bound to `onToggle` there is nothing else in the graph that can show it. Off in the app
     /// because timers dispatch continuously and this would grow without bound.
+    /// Run `body` as though it were the body of one dispatched event, so everything that settles when
+    /// an event unwinds — the `onResize` pass, the stranded-control rule — settles **once** at the end
+    /// rather than after each individual call. Tests only; the real path is `dispatch`.
+    func withSimulatedEventForTesting(_ body: () throws -> Void) rethrows {
+        let key = ScriptEventKey(target: .system, event: "__test__", scope: [])
+        let inserted = eventsBeingDispatched.insert(key).inserted
+        defer {
+            if inserted {
+                eventsBeingDispatched.remove(key)
+                settleGeometryIfNeeded()
+            }
+        }
+        try body()
+    }
+
     var recordsDispatchedEventsForTesting = false
     private(set) var dispatchedEventsForTesting: [(object: String, event: String)] = []
 
@@ -899,6 +926,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // forwarding lifecycle or data events would fire a handler twice for one occurrence.
         if Self.embeddedXUIForwardedEvents.contains(event) {
             for owner in embeddingOwners(of: object) {
+                if recordsDispatchedEventsForTesting {
+                    // Recorded here as well as above, or a test watching for the forward sees nothing
+                    // and reads a working seam as a broken one.
+                    dispatchedEventsForTesting.append((owner.xmlID ?? owner.typeName, event.lowercased()))
+                }
                 handled += try dispatch(target: MakiObjectReference(.gui(owner.stableID)),
                                         event: event, arguments: arguments)
             }
@@ -914,9 +946,29 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         containerVisibilityRequested?(id, visible)
     }
 
+    /// A slider position held inside the `low…high` the object declares. Untouched when it declares
+    /// neither, so nothing that never stated a range changes behaviour.
+    private static func clampedSliderPosition(_ value: Int32, of object: WasabiObject) -> Int32 {
+        let lowText = object.attributes["low"]
+        let highText = object.attributes["high"]
+        guard lowText != nil || highText != nil else { return value }
+        let low = Int32(lowText ?? "") ?? 0
+        let high = Int32(highText ?? "") ?? 255
+        guard low <= high else { return value }
+        return min(high, max(low, value))
+    }
+
     private static let embeddedXUIForwardedEvents: Set<String> = [
         "onleftbuttondown", "onleftbuttonup", "onleftclick", "onleftbuttondblclk",
-        "onrightbuttondown", "onrightbuttonup", "onrightclick", "onenterarea", "onleavearea"
+        "onrightbuttondown", "onrightbuttonup", "onrightclick", "onenterarea", "onleavearea",
+        // The slider's *value* events belong to the embedding too, and for the same reason as the
+        // pointer's: a `<groupdef embed_xui="slider">` **is** a slider to anyone holding the group, so
+        // a script that binds `onSetPosition` to the group is asking about the embedded control.
+        // Big Bento Modern's scrollbar is exactly this shape — `SC:VScrollBar` wraps a `<slider>` and
+        // the up/down buttons nudge the *inner* one (`cscrollbar.maki`), while the settings page binds
+        // its `onSetPosition` to the **outer** `vscroll`. Without the forward the page never learned
+        // the bar had moved, so the buttons and the drag both lit up and scrolled nothing (BB19).
+        "onsetposition", "onsetfinalposition", "onpostedposition"
     ]
 
     /// The `{GUID};Name` pair a control is bound to, or `nil` when it is not config-bound.
@@ -1197,11 +1249,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private func settleGeometryIfNeeded() {
         // Never mid-draw: a Layer FX callback runs inside a repaint, and settling geometry from there
         // would re-solve the scene while it is being painted.
-        guard geometryMayHaveChanged, !isSettlingGeometry, !isEvaluatingLayerFX,
-              let geometryDidSettle else { return }
-        geometryMayHaveChanged = false
+        guard !isSettlingGeometry, !isEvaluatingLayerFX else { return }
         isSettlingGeometry = true
         defer { isSettlingGeometry = false }
+        // Before the resize pass, and independently of whether a scene is listening: the stranding
+        // rule is about the graph, and a headless load has no `geometryDidSettle` to hang it off.
+        // A restore here marks the geometry dirty again, so the pass below sees the restored state.
+        settleStrandedControls()
+        guard geometryMayHaveChanged, let geometryDidSettle else { return }
+        geometryMayHaveChanged = false
         geometryDidSettle()
     }
 
@@ -2900,8 +2956,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // `slidercb.onSetPosition(slidercb.getPosition())` at load, which read 0 whatever the
         // stored duration was.
         case "getposition":
-            if let value = configInteger(of: object) { return .integer(value) }
-            return .integer(Int32(object.attributes["value"] ?? object.attributes["position"] ?? "0") ?? 0)
+            let readFrom = embeddedControl(of: object) ?? object
+            if let value = configInteger(of: readFrom) { return .integer(value) }
+            return .integer(Int32(readFrom.attributes["value"] ?? readFrom.attributes["position"] ?? "0") ?? 0)
         case "setposition" where Self.configBinding(of: object) != nil:
             if let binding = Self.configBinding(of: object) {
                 setConfigAttribute(section: binding.section, key: binding.key,
@@ -2913,11 +2970,21 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // Only an actual change notifies, as in Wasabi. Skins pair sliders that write each
             // other's position from their own `onSetPosition`; notifying unconditionally turns that
             // into an endless round trip.
-            let position = String(arguments[0].integerValue)
-            guard object.attributes["value"] != position else { return .null }
-            _ = object.setAttribute("value", value: position)
-            notifyObjectDidMutate(object)
-            _ = try dispatch(object: object, event: "onsetposition", arguments: [arguments[0]])
+            // Clamped to the range the slider declares, as Wasabi does. A skin that steps a slider
+            // relative to itself — `slider.setPosition(slider.getPosition() + 5)`, which is how every
+            // scrollbar's up/down button in the corpus works — otherwise walks straight off the end
+            // and never comes back, and whatever reads the position is handed a number outside the
+            // unit it was cut for. Only a declared range clamps: an object that states neither `low`
+            // nor `high` is left exactly as it was.
+            let target = embeddedControl(of: object) ?? object
+            let position = String(Self.clampedSliderPosition(arguments[0].integerValue, of: target))
+            guard target.attributes["value"] != position else { return .null }
+            _ = target.setAttribute("value", value: position)
+            notifyObjectDidMutate(target)
+            // Dispatched at the control that actually moved; `embeddedXUIForwardedEvents` carries it
+            // back up to the wrapper, so a script bound to either one hears it exactly once.
+            _ = try dispatch(object: target, event: "onsetposition",
+                             arguments: [.integer(Int32(position) ?? arguments[0].integerValue)])
             return .null
         case "setmode":
             _ = object.setAttribute("mode", value: arguments[0].stringValue)
@@ -3048,10 +3115,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // repaints from the graph, so there is no suspended-drawing state to honour.
             return .null
         case "scrolltopercent":
-            // Park a scrolling group at a percentage of its travel. We render no scroll offset for a
-            // group, so there is nothing to move — but the method has to *exist*: Big Bento Modern
-            // calls it from the `onScriptLoaded` that also lays out its config pages and the SUI's
-            // equalizer tab, and an unsupported method aborts the whole handler.
+            // Park a scrolling container at a percentage of its travel: `0` is the top, `100` the
+            // bottom, and the renderer turns it into an offset applied to the children (see
+            // `WasabiSceneRenderer.scrollOffset`). Every route a user has ends here — Big Bento
+            // Modern's settings pages drive it from the scrollbar's drag (`onSetPosition`), from its
+            // up/down buttons (`cscrollbar.maki` nudges the slider by 5), and from the wheel — so
+            // while this was an accepted no-op *nothing* scrolled, by any means, and everything below
+            // the fold on a settings page was unreachable (BB19).
+            let percent = max(0, min(100, arguments[0].doubleValue))
+            _ = object.setAttribute(WasabiSceneRenderer.scrollPercentKey, value: String(percent))
+            noteGeometryChange()
+            notifyObjectDidMutate(object)
             return .null
         case "navigateurl":
             // A browser object may drive only its own embedded, policy-gated WebKit surface. Calls
@@ -3200,6 +3274,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private func invokeDynamic(method: String, id: UInt64, arguments: [MakiValue],
                                program: MakiProgram) throws -> MakiValue {
         guard var state = dynamicObjects[id] else { return .null }
+        // A script may call one of *this* object's event handlers as a method, exactly as it may a
+        // GUI object's or `System`'s (the two routes above). For a `Timer` that is the "run the
+        // timer's body now, don't wait for the next tick" idiom: Big Bento Modern's songticker
+        // answers `sendAction("cancelinfo")` — which `seek.maki` posts on every mouse-up and on
+        // `onSetFinalPosition` — with `timer.onTimer()`, and without this the whole `onAction`
+        // handler aborted there, leaving the ticker stuck on its `Seek: 1:13/4:05 (30%)` preview.
+        if Self.dispatchableEventArity[method] != nil {
+            _ = try dispatch(target: MakiObjectReference(.dynamic(id)), event: method,
+                             arguments: arguments)
+            return method == "onaction" ? .integer(0) : .null
+        }
         switch method {
         // `GammaSet.apply()` — switch to the theme this object names, through the one route
         // `System.setColorTheme` already uses. A theme the skin does not ship is refused by the
@@ -3421,6 +3506,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
     }
 
+    /// The control a `<groupdef embed_xui="…">` wrapper speaks for.
+    ///
+    /// The wrapper **is** that control, so its value has to be one number and not two. Big Bento
+    /// Modern's scrollbar is the case that proves it: `cscrollbar.maki` moves the *inner* `<slider>`
+    /// from the up/down buttons, while the settings page reads `vscroll.getPosition()` on the
+    /// **wrapper**. Kept apart, the two drifted permanently — the page read 0 however far the bar had
+    /// been moved, and opened every settings page scrolled to its own bottom (BB19).
+    private func embeddedControl(of object: WasabiObject) -> WasabiObject? {
+        guard let id = object.attributes["nullplayer.embedxui"] else { return nil }
+        return descendant(of: object, xmlID: id)
+    }
+
     private func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
         if root.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame { return root }
         for child in root.children {
@@ -3577,6 +3674,82 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// layer over it (`read.bg.left image="player.left.alt"`) and asking whether that layer is
     /// invalid; answering "valid" for a skin that ships no `mainframe_lr.png` made `player.maki`
     /// swap the window frame over to bitmaps that do not exist, punching holes in the window.
+    // MARK: - A layout must not be left with no way to seek
+
+    /// Objects a script hid during this event that carry a *positional* host action, checked once the
+    /// event unwinds (see `settleStrandedControls`).
+    private var strandingCandidates: Set<WasabiObjectID> = []
+
+    /// The host actions this rule protects, and why it is only these.
+    ///
+    /// A **positional** control — the seek bar — has no paired counterpart to swap with, so a layout
+    /// that ends an event with none of them visible has lost the only way to perform that action and
+    /// cannot get it back: an invisible object is not hit-testable, so nothing can re-show it. That is
+    /// not true of transport buttons, which skins swap constantly (`play.hide(); pause.show()`), and
+    /// including those would restore a PLAY button every time a track started. The set is
+    /// demand-driven — extend it when a measured skin strands another action, not on principle.
+    private static let strandableActions: Set<String> = ["SEEK"]
+
+    private static func strandableAction(of object: WasabiObject) -> String? {
+        guard let action = object.attributes["action"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
+              strandableActions.contains(action) else { return nil }
+        return action
+    }
+
+    /// Undo a hide that left a layout with no visible control for a positional action.
+    ///
+    /// Checked at **settle** rather than vetoed at the `hide()` itself, because a skin that swaps one
+    /// control for another writes `a.hide(); b.show();` — at the moment of the hide, `b` is still
+    /// hidden, so a call-time veto would refuse a perfectly good swap and leave both on screen. By the
+    /// time the outermost event unwinds, `b` is up and the rule correctly does nothing.
+    ///
+    /// Big Bento Modern is the measured case (BB16). `seek.maki` binds every one of its handlers to
+    /// `seeker.ghost` and its `onLeftButtonUp` calls `hide()` on that same object — a duplicate
+    /// `findObject("seeker.ghost")` where stock Winamp Modern's script reaches for a *readout* that
+    /// does not exist in the layout, making the call a no-op on null there. The skin then mirrors
+    /// `progressbar` and `player.seek.bg` to the seeker's visibility from `onSetVisible`, so one
+    /// press-release took the whole seek bar with it and seeking stopped working until a track change.
+    /// Restoring through `setVisible` rather than by writing the attribute is deliberate: the
+    /// `onSetVisible(1)` it dispatches is what puts the trough and the fill back, so the skin's own
+    /// mirror undoes itself.
+    ///
+    /// Defix runs the identical script and never reaches this: its `<Slider id="seeker">` stays
+    /// visible, so the action still has a carrier. That is the difference the rule keys on — a
+    /// capability of the layout, not the identity of the skin.
+    private func settleStrandedControls() {
+        guard !strandingCandidates.isEmpty else { return }
+        let candidates = strandingCandidates
+        strandingCandidates.removeAll()
+        for id in candidates {
+            guard let object = loadedSkin.runtime.graph.object(withID: id),
+                  let action = Self.strandableAction(of: object),
+                  !isVisible(object) else { continue }
+            guard let layout = ancestor(of: object, type: "layout") else { continue }
+            guard !layoutHasVisibleControl(for: action, in: layout, excluding: object) else { continue }
+            _ = try? setVisible(object, true)
+        }
+    }
+
+    /// Is any object under `layout` carrying `action` visible all the way up to the layout?
+    private func layoutHasVisibleControl(for action: String, in layout: WasabiObject,
+                                         excluding object: WasabiObject) -> Bool {
+        var found = false
+        func walk(_ node: WasabiObject, visibleSoFar: Bool) {
+            if found { return }
+            let visible = visibleSoFar && isVisible(node)
+            if visible, node !== object, Self.strandableAction(of: node) == action {
+                found = true
+                return
+            }
+            // A hidden subtree can still contain the carrier the skin is *about* to reveal, but it is
+            // not one today; recursing with `visible` false keeps that honest without losing the walk.
+            for child in node.children { walk(child, visibleSoFar: visible) }
+        }
+        for child in layout.children { walk(child, visibleSoFar: true) }
+        return found
+    }
+
     private func isInvalid(_ object: WasabiObject) -> Bool {
         guard let imageID = object.attributes["image"] ?? object.attributes["bitmap"] else { return false }
         guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: imageID),
@@ -3590,6 +3763,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// request a container needs, in the order Wasabi does them.
     private func setVisible(_ object: WasabiObject, _ visible: Bool) throws -> MakiValue {
         let changed = object.setAttribute("visible", value: visible ? "1" : "0")
+        if changed, !visible, Self.strandableAction(of: object) != nil {
+            strandingCandidates.insert(object.stableID)
+        }
         if changed { noteGeometryChange() }
         notifyGraphDidMutate()
         if changed {

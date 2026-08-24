@@ -315,6 +315,124 @@ from a subroutine whose only caller is `onTextChanged`. Reading the disassembly 
 look like `onTimer` work — the two handlers are adjacent, and `op25` is a **call** into the shared
 block, not a jump within one handler. Undispatched, the whole readout was unreachable code.
 
+#### The mouse wheel is a *layout* event, and it carries two arguments
+
+`onMouseWheelUp` / `onMouseWheelDown` are how a skin scrolls anything it draws itself — a settings
+page, a drawer, a custom list. Two measured facts, both easy to get wrong:
+
+- **The arity is two, not one.** Read off two independent skins' bytecode: Big Bento Modern's
+  `config_vscrollbars` (`@638`) and cPro-Bento's `centro.multidrawer` (`@1091`) both open with two
+  `op3` stores. Wasabi documents them as `(clicks, lines)`; neither corpus consumer *reads* them —
+  both relay them straight into `sendAction`'s `p1`/`p2` — so the names come from the API and the
+  count comes from the bytecode. A wrong arity is the one error the interpreter cannot recover from.
+- **The binding is on the layout, not on the control under the pointer.** All **84** `onMouseWheel*`
+  bindings across the five corpus skins that declare them land on `layout#normal` or `layout#shade`.
+  Each script then decides whether the turn was meant for it with `isMouseOverRect()` — which reads
+  the live pointer position, so it needs a window and answers `false` headlessly. Big Bento declares
+  `config_vscrollbars` **nine times**, once per settings page, so nine handlers run per notch and
+  eight correctly do nothing. Dispatching to the object under the pointer reaches none of them.
+
+`WinampModernMainView.scrollWheel` therefore handles NullPlayer's own surfaces first (the colour-theme
+list, the playlist holder) and then dispatches to `renderer.layout`, treating a nonzero handler count
+as consumed. Before that the wheel never reached a skin at all and Big Bento's settings pages had no
+working scroll — everything below the fold was unreachable (BB19).
+
+> **`WINAMP_MODERN_RENDER_EVENTS=onmousewheelup` measures half of this and no more.** It calls
+> `dispatch` itself, so it proves the bindings exist, the arity unwinds and nothing aborts — it does
+> **not** go through the view, and `isMouseOverRect` is false with no window. A nonzero count is not
+> a working scrollbar.
+
+#### `embed_xui` — the wrapper **is** the control, and must not keep a second copy of its value
+
+A `<groupdef embed_xui="slider">` wraps a control and speaks for it. Three things follow, and Big
+Bento Modern's settings scrollbar needed all three before it would scroll at all (BB19) — each was
+broken on its own, and each fix looked like it had done nothing until the next one landed:
+
+- **The range declared on the wrapper is the embedded control's range.**
+  `<SC:VScrollBar low="0" high="100">` around a bare `<slider>` means that slider counts 0…100. Left
+  on Winamp's 0…255 default, every number the skin read was on the wrong scale: the page computes
+  `scrollToPercent(99 - position)`, and positions of 113/118/123 made that *negative on every press*.
+- **`getPosition`/`setPosition` on the wrapper address the embedded control.** The skin's up/down
+  buttons move the **inner** `<slider>` (`cscrollbar.maki`) while the page reads the **wrapper**
+  (`vscroll.getPosition()`). Two objects with two values drift permanently — the page read `0`
+  however far the bar had been dragged.
+- **Value events cross the seam.** `onSetPosition`/`onSetFinalPosition`/`onPostedPosition` are
+  forwarded to the embedding owner alongside the pointer set, so a script bound to either one hears
+  the control move exactly once.
+
+Two related rules that fell out of the same investigation:
+
+- **`setPosition` clamps to the declared `low…high`.** Every scrollbar in the corpus steps its slider
+  relative to itself (`setPosition(getPosition() + 5)`); unclamped, the up button walks off the end
+  and never comes back. A slider that declares *neither* bound is left alone — Anaheim's brightness
+  slider is `low="-4096" high="4096"` and must not be fenced into 0…255.
+- **A vertical slider driving nothing of its own starts at `high`**, the top of its travel. Read as
+  `0`, Big Bento's pages opened by computing `scrollToPercent(99 - 0)` — 99%, their own bottom — and
+  seven of its nine settings pages launched scrolled to the end of themselves. Only a slider with no
+  `action` is seeded; a seek or volume slider is told its position by the host.
+
+#### Scrolling: `scrollToPercent` is a viewport offset, not a layout change
+
+`scrollToPercent(p)` parks a container's contents at `p`% of their travel — `0` is the top — and the
+renderer turns it into an offset applied to the children when the scene nodes are **built**, so
+drawing, clipping and hit testing all follow from one place (a control scrolled halfway up the page
+is clickable where it is drawn and nowhere else). Travel is whatever the children overflow the
+container by, so a page whose content fits never moves however hard a skin scrolls it — one rule
+serves a long settings page and a short one with no per-page configuration.
+
+Every route a user has ends at this one call: the scrollbar's drag (`onSetPosition`), its up/down
+buttons, and the wheel. While it was an accepted no-op, *nothing* scrolled by any means.
+
+#### A layout must not be left with no way to seek
+
+A script's `hide()` can strand the user. An invisible object is not hit-testable, so a layout that
+ends an event with **no visible control carrying a positional host action** has lost that action and
+cannot get it back — nothing is left to click in order to re-show anything.
+
+`settleStrandedControls` undoes exactly that hide. Three things about its shape are load-bearing:
+
+- **It settles, it does not veto.** A skin that swaps one control for another writes
+  `a.hide(); b.show();`, and at the moment of the hide `b` is still hidden — a call-time veto would
+  refuse a perfectly good swap and leave both on screen. The check runs where `onResize` already
+  settles, once the outermost event unwinds, by which time `b` is up.
+- **It restores through `setVisible`, not by writing the attribute.** The `onSetVisible(1)` that
+  dispatches is what puts a skin's *mirrored* objects back. Big Bento mirrors `progressbar` and
+  `player.seek.bg` to its seeker's visibility, so the skin's own mirror undoes itself.
+- **Only positional actions** (`SEEK` today). Transport buttons are swapped constantly
+  (`play.hide(); pause.show()`) and have a paired counterpart; a seek bar has none. Protecting `PLAY`
+  would restore a play button every time a track started. Extend the set when a measured skin strands
+  another action, not on principle.
+
+The measured case is Big Bento Modern (BB16). `seek.maki` binds all seven handlers to
+`Slider#seeker.ghost` and its `onLeftButtonUp` calls `hide()` on that same object — a duplicate
+`findObject("seeker.ghost")` where **stock Winamp Modern's** version of the same script reaches for a
+*readout* (`player.seekbar.pos`) that does not exist in the layout, so the call is a no-op on null
+there. One press-release took the whole seek bar out and seeking stopped working until a track change.
+**Defix Hi-END runs the identical script and never trips the rule**, because its `<Slider id="seeker">`
+stays visible and still carries the action — which is the point: the rule keys on a property of the
+*layout*, not on which skin it is.
+
+#### An event handler is also a method, on every kind of receiver
+
+A script may **call** one of its own event handlers instead of waiting for the event, and the corpus
+does this constantly — ClassicPro's `beat.m` re-solves its geometry with `frameGroup.onResize(0, 0,
+w, h)`, its `eq.m` labels the bands by calling `System.onEqFreqChanged(freqmode)`. `dispatchableEventArity`
+is the table of names this is allowed for, and it is explicit because an unknown arity would
+desynchronise the interpreter's stack.
+
+The table is consulted on **three** receivers, and all three have to be wired or the idiom fails on
+whichever one is missing: a GUI object, `System`, and a **dynamic** object — the runtime-created
+`Timer` / `Map` / `Region` / config family. The dynamic route was the one that was missing.
+
+`Timer.onTimer()` is the common case: *run the timer's body now, don't wait for the next tick*. Big
+Bento Modern's songticker answers `sendAction("cancelinfo")` — which `seek.maki` posts on every
+mouse-up and on `onSetFinalPosition` — with exactly that call, to put the song title back the instant
+a seek preview ends. Unimplemented, the call threw and took the **whole** `onAction` handler with it,
+so the ticker stayed stuck on `Seek: 1:13/4:05 (30%)`. The tell in the click probe is a chain ending
+`… -> player-normal-group.xml.onaction!FAILED` with an `unsupportedScriptCapability` finding naming an
+`on*` method — an unsupported *event name* in that list means a missing dispatch route, not a missing
+feature.
+
 #### Two handlers for one event: a repeat runs once, two *different* bodies both run
 
 A program can declare the same (object, event) pair twice, and what to do about it depends entirely

@@ -206,6 +206,11 @@ ordinary group left the library tree, the playlist and the tab strip out of the 
 - `left`/`right` → vertical divider; `top`/`bottom` → horizontal. The pair present decides the axis;
   `orientation=` is written both ways (`vertical`, `v`, `h`) and is not trusted on its own.
 - `from` is the edge the divider is measured from (`left`/`top`/`right`/`bottom`, often abbreviated).
+  **The pane *opposite* `from` absorbs any extra width**, which routinely reads as a defect on a
+  wide window: Big Bento's `from="left"` pins the divider near the left edge and lets the
+  right-hand playlist-info pane take the rest, and its `maxwidth="-300"` says so out loud.
+  cPro-Bento is the same attribute the other way round (`from="right" width="200"`), which
+  confirms the reading. Check `from` before calling a lopsided split wrong.
 - The offset is seeded from `width`/`height` and thereafter owned by the `position` attribute, which
   `setPosition()` writes. **On a frame, `getPosition`/`setPosition` are the divider offset**, not a
   slider value — ClassicPro closes its side view with `setPosition(0)` and asks `getPosition()==0`.
@@ -485,6 +490,30 @@ panelling off the player, both speakers, the playlist and the library.
 - **`tile`/`tilex`/`tiley`**: repeat the bitmap instead. Bento-style frames tile their
   top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
   edges leave a visible seam grid.
+
+#### A skin spells the axis two ways, and `"v"` is not a typo
+
+`orientation` decides whether a slider's thumb travels up or across, and skins write it **both** ways
+for the same thing. Across the installed corpus:
+
+| Spelling | Slider declarations |
+|---|---|
+| `vertical` | 158 |
+| `v` / `V` | **49**, in 8 skins |
+| `horizontal` | 21 |
+
+Testing for `== "vertical"` therefore made 49 of them *horizontal* — Big Bento Modern ×4, Anexa,
+Enkera, Lobe and The_Nokia_5220. It produced two symptoms that look unrelated:
+
+- **The thumb drew along the wrong axis.** Anexa's, Lobe's and cPro-Bento's equalizers could never
+  show a curve: ten band sliders whose thumbs all slid sideways within their own column.
+- **A drag read the wrong coordinate.** `updateSlider` took its value from the pointer's **x** across
+  a bar 16px wide, so the position snapped to one end rather than following the mouse — which is what
+  made Big Bento Modern's settings scrollbar impossible to drag (BB19).
+
+`WasabiSceneRenderer.isVerticalOrientation` is the single answer; use it rather than comparing the
+attribute. Note `<ProgressGrid>` has its **own** vocabulary for this (`up`/`down`/`left`/`right`, the
+edge it grows from) and is deliberately not folded in.
 
 #### `<ProgressGrid>` — the bar's *filled* part
 

@@ -738,6 +738,35 @@ final class WinampModernRenderDumpTests: XCTestCase {
                       + "declared=\(Int(declared.width))x\(Int(declared.height)), "
                       + "max=\(Int(maximum.width))x\(Int(maximum.height))")
                 // WINAMP_MODERN_RENDER_PROBE=<container>/<layout> dumps that scene's node list.
+                // WINAMP_MODERN_RENDER_GEOMETRY=<id>[,<id>] — the resolved box of a named object and
+                // of its direct children, **including hidden ones**. `RENDER_PROBE` walks the visible
+                // scene, so anything inside a closed tab measures as absent: Big Bento's settings
+                // pages live in one, and "is this content taller than its box?" — the whole question
+                // behind a scrollbar — could not be asked at all without this.
+                if let wanted = env["WINAMP_MODERN_RENDER_GEOMETRY"] {
+                    let ids = Set(wanted.lowercased().split(separator: ",")
+                        .map { $0.trimmingCharacters(in: .whitespaces) })
+                    let all = renderer.layoutNodesForTesting()
+                    for node in all where ids.contains(node.object.xmlID?.lowercased() ?? "") {
+                        print("GEOM \(node.object.typeName)#\(node.object.xmlID ?? "-") "
+                              + "frame=\(node.frame) clip=\(node.clip) "
+                              + "visible=\(node.object.attributes["visible"] ?? "-") "
+                              + "scroll=\(node.object.attributes[WasabiSceneRenderer.scrollPercentKey] ?? "-") "
+                              + "children=\(node.object.children.count)")
+                        var extent = node.frame.minY
+                        for child in node.object.children {
+                            let box = all.first { $0.object === child }
+                            let declared = "y=\(child.attributes["y"] ?? "-") h=\(child.attributes["h"] ?? "-") "
+                                + "low=\(child.attributes["low"] ?? "-") high=\(child.attributes["high"] ?? "-") "
+                                + "value=\(child.attributes["value"] ?? "-")"
+                            if let box { extent = max(extent, box.frame.maxY) }
+                            print("GEOM   child \(child.typeName)#\(child.xmlID ?? "-") "
+                                  + "frame=\(box.map { "\($0.frame)" } ?? "not laid out") \(declared)")
+                        }
+                        print("GEOM   content=\(extent - node.frame.minY) box=\(node.frame.height) "
+                              + "travel=\(max(0, extent - node.frame.minY - node.frame.height))")
+                    }
+                }
                 if env["WINAMP_MODERN_RENDER_PROBE"] == "\(info.id)/\(layoutID)" {
                     for node in renderer.sceneNodes() {
                         print("PROBE \(node.object.typeName) id=\(node.object.xmlID ?? "-") "
@@ -1194,6 +1223,22 @@ final class WinampModernRenderDumpTests: XCTestCase {
             let handled = (try? runtime.dispatchSystem(
                 event: event, arguments: [.integer(Int32((host.volume * 255).rounded()))])) ?? -1
             print("EVENT \(event) -> \(handled)")
+        case "onmousewheelup", "onmousewheeldown":
+            // Addressed to the **layout**, which is where every corpus binding for these lands, and
+            // with two arguments (both `op3` stores at the handler's entry, in two independent skins).
+            //
+            // Two things this deliberately cannot show, both of which live in the window layer:
+            // the skins gate the turn on `isMouseOverRect()` and the harness owns no window, so that
+            // answers `false` for every page; and this calls `dispatch` itself rather than going
+            // through `WinampModernMainView.scrollWheel`, so it says nothing about whether the wheel
+            // is *wired* to the skin at all. A `handlers=` count here means "the bindings exist, the
+            // arity unwinds, and nothing aborts" — not "something scrolled". Reading it as a working
+            // scrollbar is exactly the blind-instrument mistake this file warns about elsewhere; that
+            // half only measures in the running app.
+            let handled = (try? runtime.dispatch(object: renderer.layout, event: event,
+                                                 arguments: [.integer(1), .integer(3)])) ?? -1
+            print("EVENT \(event) -> \(handled) handlers on layout#\(renderer.layout.xmlID ?? "-") "
+                  + "(isMouseOverRect answers false headlessly — no window)")
         default:
             print("EVENT \(event): no harness target/arity — add one to `drive(event:…)`")
         }
