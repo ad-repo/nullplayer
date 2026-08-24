@@ -353,6 +353,14 @@ Phase 16 all of those painted with `SkinRenderer` sprites, the 5×6 bitmap font,
 `skin.playlistColors` from whatever `.wsz` was selected: a foreign UI coloured by a skin the user is
 not looking at.
 
+- **Every palette role is normalised to `deviceRGB` in `WasabiPalette.init`, and no colour path here
+  may vend `.white`/`.black`.** Those AppKit singletons are *greyscale* colours, and
+  `redComponent`/`greenComponent`/`blueComponent` on a non-RGB colour raises an
+  `NSException` — from inside `drawRect`, which means the process aborts with no Swift error to
+  catch. Consumers read the channels directly (the library's star rating dims `accentTextColor`,
+  `WinampModernSurfaceStyle` blends roles), so the conversion happens once at the palette instead of
+  at ~7 call sites. `WasabiRenderer.unparseableColor` is the RGB white a malformed or missing colour
+  resource resolves to; that path is exactly how the ART-button crash reached a greyscale colour.
 - Chrome roles (`barBackground`, `border`, `divider`, `dimText`, `pressedFill`) are **blends of the
   roles the skin declared**, never fixed greys — real skins declare three of the seven, and the blend
   is what makes the chrome move the right way on a light skin as well as a dark one.

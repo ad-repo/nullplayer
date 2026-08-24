@@ -59,8 +59,11 @@ final class WinampModernPhase16Tests: XCTestCase {
     /// selection, and chrome roles that are visible against it rather than a fixed grey.
     func testChromeRolesAreDerivedFromWhateverTheSkinDeclared() {
         let style = WinampModernSurfaceStyle(palette: .fallback)
-        XCTAssertEqual(style.background, WasabiPalette.contentBackgroundFallback)
-        XCTAssertEqual(style.text, WasabiPalette.listTextFallback)
+        // Compared in device RGB on both sides: the palette normalises every role into that space so
+        // the surfaces can read its channels without trapping, which changes the colour's identity
+        // but not the colour.
+        XCTAssertEqual(style.background, WasabiPalette.contentBackgroundFallback.usingColorSpace(.deviceRGB))
+        XCTAssertEqual(style.text, WasabiPalette.listTextFallback.usingColorSpace(.deviceRGB))
 
         // Every derived role must sit strictly between the two ends it was blended from, or it is
         // either invisible against the background or indistinguishable from the text.
@@ -71,6 +74,24 @@ final class WinampModernPhase16Tests: XCTestCase {
         }
         XCTAssertLessThan(Self.brightness(style.dimText), Self.brightness(style.text),
                           "secondary text must read as secondary")
+    }
+
+    /// Reading a role's channels must never trap. `.white`/`.black` — what a skin with a missing or
+    /// unparseable colour resource resolves to — are greyscale colours, and the library's star
+    /// rating dims the text colour by reading `redComponent` straight off it.
+    func testPaletteRolesAreReadableComponentWise() {
+        let greyscale = WasabiPalette(listText: .white, currentText: .black, selectionText: .white,
+                                      selectionBackground: .black, contentBackground: .white,
+                                      treeText: .black, treeSelection: .white)
+        for role in [greyscale.listText, greyscale.currentText, greyscale.selectionText,
+                     greyscale.selectionBackground, greyscale.contentBackground,
+                     greyscale.treeText, greyscale.treeSelection] {
+            XCTAssertEqual(role.colorSpace.colorSpaceModel, .rgb,
+                           "every palette role must live in an RGB space")
+            _ = role.redComponent + role.greenComponent + role.blueComponent
+        }
+        let style = WinampModernSurfaceStyle(palette: greyscale)
+        _ = style.text.redComponent
     }
 
     /// The same derivation on a *light* skin has to move the other way. A fixed grey chrome would be

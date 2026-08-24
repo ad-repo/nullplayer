@@ -3199,8 +3199,12 @@ class PlexBrowserView: NSView {
     /// The colour the classic sheet's text is drawn in — sampled from `text.bmp` normally, taken
     /// from the `.wal` palette inside a modern skin (Phase 16). Used by the callers that tint their
     /// own glyphs rather than going through `drawScaledSkinText`.
+    ///
+    /// Always in an RGB space: several callers dim it by reading `redComponent` and friends, which
+    /// *raise* on a greyscale or catalog colour rather than returning anything.
     private func accentTextColor(_ renderer: SkinRenderer) -> NSColor {
-        winampModernStyle?.text ?? renderer.skinTextColor()
+        let color = winampModernStyle?.text ?? renderer.skinTextColor()
+        return color.usingColorSpace(.deviceRGB) ?? WasabiPalette.listTextFallback
     }
 
     /// Helper to draw scaled skin text (green)

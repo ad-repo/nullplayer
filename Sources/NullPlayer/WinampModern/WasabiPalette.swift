@@ -26,7 +26,33 @@ struct WasabiPalette: Equatable {
     /// one, which is what real skins expect when they declare a partial set.
     static let listTextFallback = NSColor(red: 0, green: 1, blue: 0, alpha: 1)
     static let selectionBackgroundFallback = NSColor(red: 0, green: 0, blue: 0.78, alpha: 1)
-    static let contentBackgroundFallback = NSColor.black
+    static let contentBackgroundFallback = NSColor(red: 0, green: 0, blue: 0, alpha: 1)
+
+    /// Every role is stored in device RGB, whatever the caller passed in.
+    ///
+    /// The surfaces painted from this palette read the channels directly — the star rating dims the
+    /// text colour, `WinampModernSurfaceStyle` blends roles into chrome — and `redComponent` and
+    /// friends **raise** on a colour that is not in an RGB space. `.white`, `.black`, and anything
+    /// AppKit vends as a greyscale tagged pointer are exactly that, and they reach here from a skin
+    /// whose colour resource is missing or unparseable. Converting once, here, means no consumer has
+    /// to defend itself.
+    init(listText: NSColor, currentText: NSColor, selectionText: NSColor,
+         selectionBackground: NSColor, contentBackground: NSColor,
+         treeText: NSColor, treeSelection: NSColor) {
+        self.listText = Self.rgb(listText)
+        self.currentText = Self.rgb(currentText)
+        self.selectionText = Self.rgb(selectionText)
+        self.selectionBackground = Self.rgb(selectionBackground)
+        self.contentBackground = Self.rgb(contentBackground)
+        self.treeText = Self.rgb(treeText)
+        self.treeSelection = Self.rgb(treeSelection)
+    }
+
+    /// Conversion only fails for a pattern colour, which has no single component value to give; a
+    /// skin cannot declare one, so the opaque-black substitute is unreachable in practice.
+    private static func rgb(_ color: NSColor) -> NSColor {
+        color.usingColorSpace(.deviceRGB) ?? NSColor(deviceRed: 0, green: 0, blue: 0, alpha: 1)
+    }
 
     /// Exactly what `make` produces for a skin that declares no colours at all.
     static let fallback = WasabiPalette(

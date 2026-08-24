@@ -3110,9 +3110,14 @@ final class WasabiSceneRenderer {
         return definition.attributes["color"]
     }
 
+    /// Every colour this file hands out is component-readable RGB — never `.white`/`.black`, which
+    /// AppKit vends as greyscale tagged pointers whose `redComponent` *raises*. Callers that tint
+    /// their own glyphs (the library's star rating, for one) read the channels directly.
+    static let unparseableColor = NSColor(red: 1, green: 1, blue: 1, alpha: 1)
+
     private static func color(_ raw: String) -> NSColor {
         let values = raw.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-        guard values.count >= 3 else { return .white }
+        guard values.count >= 3 else { return unparseableColor }
         return NSColor(red: max(0, min(255, values[0])) / 255,
                        green: max(0, min(255, values[1])) / 255,
                        blue: max(0, min(255, values[2])) / 255,
@@ -3124,7 +3129,7 @@ final class WasabiSceneRenderer {
               let declared = Self.declaredColor(of: definition) else { return Self.color(raw) }
         let base = declared
         var values = base.split(separator: ",").map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 255) }
-        guard values.count >= 3 else { return .white }
+        guard values.count >= 3 else { return Self.unparseableColor }
         let gamma = themes.transform(group: definition.attributes["gammagroup"]) ?? .identity
         if gamma.grayscale {
             // Same order as the bitmap path: desaturate, then tint.
