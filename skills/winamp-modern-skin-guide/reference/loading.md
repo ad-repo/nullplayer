@@ -151,6 +151,26 @@ encoded in `WasabiGeometry`:
 - `w=-120 relatw=1` → `parent.width - 120`
 - same for Y/height; missing dimensions use the intrinsic size
 
+**The `relat*` flags are `atoi(value) != 0`, not `== 1`.** Skins ship other numbers and mean nothing
+by them beyond "relative": Big Bento Modern's dimmed album-art backdrop is `relatw="2" relath="2"`,
+Ebonite_2_1 has six declarations at `relatw="2"`, and The_Nokia_5220 has two at `relatw="5"`. Read as
+`== 1` every one of those silently fell back to **absolute** geometry — which is how Big Bento's
+oversized backdrop came out as a *small crisp second copy of the album cover* beside the real one, a
+defect that reads as "the album art is drawn twice" and sends you looking at the album-art code.
+
+Two traps in the same attribute:
+
+- **Do not read the number as a percentage.** It fits the values that first suggest it — Bento's
+  `99`/`100`, Ebonite's `85`/`93` — and then breaks on Ebonite's own `group w="0" h="0" relatw="2"`,
+  where 0% collapses the group but the plain relative reading gives the ordinary fill-the-parent
+  idiom, and on `relatw="5"`, which is not a percentage at all. Enumerate the whole corpus before
+  believing a mechanism derived from two skins.
+- **A non-numeric value must stay absolute**, because that is also `atoi`'s answer and two skins
+  depend on it: corneramp_redux and Shield_Amp ship a literal `relatw="%"`.
+
+Use `atoi` semantics (leading integer), not `Int(_:)`, which refuses a trailing character and would
+send `"1px"` down the opposite branch from the one Winamp takes.
+
 > **Gotcha:** the Y flip to AppKit's bottom-left happens exactly **once**, at the Core Graphics
 > drawing boundary in `WasabiSceneRenderer` (and once at the event boundary in `WinampModernMainView`).
 > Never store flipped coordinates back into the graph, and never insert AppKit types into graph objects.

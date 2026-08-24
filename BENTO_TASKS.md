@@ -171,7 +171,21 @@ backlog.
       *`PlEdit` — the playlist-editor API*, which records that failure mode. Check first whether any
       other corpus skin reaches the catalog this way.
 
-- [ ] **BB6. The album art is drawn twice.** `info.component.albumbg`
+- [x] **BB6. The album art is drawn twice. Cause found and fixed 2026-08-24 — as `B42` in
+      `TASKS.md`, because it is not a Bento defect.** It was the **first** of this entry's three
+      unmeasured candidates: `relatw`/`relath` greater than 1. Not as a *multiplier*, though — the
+      flags are `atoi(value) != 0`, and `WasabiGeometry` accepted only `1`/`true`/`yes`, so
+      `relatw="2"` fell back to **absolute** geometry and the oversized dimmed backdrop drew at its
+      literal `99×100`: a small crisp second copy of the cover, beside the real one. The other two
+      candidates (ghost/alpha, `centerobject.maki`) were not involved.
+      Live QA supplied the one fact that made it findable — the user reported the pane was in **File
+      Info** mode, which left exactly one object it could be. Reached 5 skins beyond this family; see
+      B42 for the corpus and for why reading the number as a percentage is wrong.
+      **Not yet confirmed live**, which is the whole lesson of BB4 — check that the backdrop is now
+      an oversized dimmed wash behind the panel and that only one crisp cover remains.
+      Original entry follows.
+
+- [ ] **BB6 (original). The album art is drawn twice.** `info.component.albumbg`
       (`xml/player-normal-mcv.xml:920`) holds a **second** `winamp.albumart` at `relatw="2"
       relath="2"` with `alpha="100"` — an oversized, dimmed backdrop meant to sit behind the panel,
       centred by `centerobject.maki`. On screen it is a small crisp copy to the right of the real

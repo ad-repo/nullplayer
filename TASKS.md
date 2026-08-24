@@ -164,6 +164,22 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       number here would put a skin's own arithmetic in a different space from everything else it
       measures.
 
+- [x] **B42. `relat*` is `atoi(value) != 0`, not `== 1`. Done 2026-08-24.** `WasabiGeometry`'s flag
+      reader accepted only `1`/`true`/`yes`, so every other number fell back to **absolute** geometry.
+      Found live on Big Bento Modern, where it reads as *the album cover drawn twice*: the dimmed
+      oversized backdrop in `info.component.albumbg` is `w="99" h="100" relatw="2" relath="2"`, and
+      read as absolute it draws at a literal 99×100 — a small crisp second copy beside the real
+      cover. Filed as BB6 against the album-art code; the cause was three layers away, in the
+      geometry parser.
+      Corpus: Big Bento Modern + its Windows 10 edition (1 declaration each, inherited by both Light
+      overlays through the base's XML), Ebonite_2_1 (6), The_Nokia_5220 (2). corneramp_redux and
+      Shield_Amp ship a literal `relatw="%"`, which `atoi` reads as 0 and which therefore stays
+      absolute — unchanged.
+      **A percentage reading is wrong**, though it fits Bento's `99`/`100` and Ebonite's `85`/`93`:
+      Ebonite's own `group w="0" h="0" relatw="2"` would collapse to nothing at 0%, and `relatw="5"`
+      is not a percentage. Landed in `reference/loading.md` → *Retained graph and coordinates*.
+      `swift test` 1067 pass, 8 new in `WinampModernPhase56Tests`; corpus sweep pixel-diffed.
+
 ### Tier 2
 
 - [ ] **B33. An unclosed tag at EOF kills the whole skin.** `Shield_Amp` is the only skin of the 30
