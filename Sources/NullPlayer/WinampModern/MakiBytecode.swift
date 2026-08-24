@@ -29,11 +29,21 @@ enum MakiClassGUID {
     /// Winamp's `PlEdit`, the playlist-editor singleton — `{345BEEBC-0229-4921-90BE-6CB6A49A79D9}`.
     static let playlistEditor = "345beebc49210229b66cbe90d9799aa4"
 
+    /// Winamp's `ColorMgr`, the colour-theme manager — a second system-flagged global beside
+    /// `System`, and the receiver of `getGammaSet(name)`.
+    static let colorManager = "aee235ff498febd1e0d7af961a54d4da"
+
+    /// The `GammaSet` object `ColorMgr.getGammaSet` answers with; `apply()` is declared on it.
+    /// Gating that name by class matters more than it looks: `apply` is exactly the sort of short
+    /// verb several classes could declare, and registering it globally would give every one of them
+    /// this arity. Measured across the installed corpus it appears on this class alone.
+    static let gammaSet = "0d024db942d09574b526c7b887f9f153"
+
     /// Host singletons the **runtime** binds by class, and which the parser must therefore leave
     /// alone. Deliberately a carve-out rather than an allow-list of one: a system-flagged global of
     /// any other class keeps the System object it has always been given, so nothing that worked
     /// before this became a null receiver.
-    static let runtimeBound: Set<String> = [playlistEditor]
+    static let runtimeBound: Set<String> = [playlistEditor, colorManager]
 
     static func canonical(_ raw: String) -> String {
         guard raw.count == 32 else { return raw.lowercased() }
@@ -57,6 +67,10 @@ final class MakiObjectReference: Hashable {
         /// addressed by class GUID rather than by anything in the skin's graph. Seeded into every
         /// program's `PlEdit` variable at parse time, exactly as `System` is seeded into variable 0.
         case playlistEditor
+        /// Winamp's `ColorMgr` — the colour-theme manager, seeded the same way `PlEdit` is. Big
+        /// Bento Modern's 77-theme picker and Ebonite's own switcher both reach the catalog through
+        /// it.
+        case colorManager
         case gui(WasabiObjectID)
         case popupMenu(UInt64)
         case dynamic(UInt64)

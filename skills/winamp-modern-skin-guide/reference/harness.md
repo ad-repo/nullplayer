@@ -127,6 +127,17 @@ that changes the right attributes but nothing on screen is a renderer gap.
 >
 > **Anexa's `main-shade` is genuinely nondeterministic**, not just an encoder artifact: two runs of
 > the same binary differ in the pixels around `(47, 38)-(75, 64)`. Discount it in a sweep.
+>
+> **Reset the xctest defaults domain before a before/after sweep, and take both halves of the pair
+> without running anything else in between.** Skin configuration persists in that domain (see above),
+> so *any* probe run between the two halves contaminates the second one — and a probe that calls
+> `runtime.start()` is enough on its own, because a skin's `onScriptLoaded` writes configuration.
+> This has produced a false regression: a `ColorMgr` pass whose "after" sweep was taken downstream of
+> a corpus-wide probe reported changed images in a skin the change could not touch, and the diff read
+> exactly like a real defect — **no new diagnostic, no failed handler, and reproducible against the
+> stale baseline** (two runs of the same binary agreed with each other, which is the check that
+> normally separates a real change from noise, and it passed). The tell is a skin changing that the
+> change has no mechanism to reach. `defaults delete com.apple.dt.xctest.tool`, then re-run.
 
 > **A click is driven when the loop reaches its container, so the clicked container is dumped
 > first.** The dump walks containers in declaration order and drives `RENDER_CLICK` inside that walk;

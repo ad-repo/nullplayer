@@ -19,7 +19,8 @@
 | SUI tab strip | **Fixed (B37)** | `offsetx` on the captions is honoured, so icons-only mode clips them away |
 | Overlay (`Light`) palette | **Works** | The Light editions render in their own light palette against the base skin's artwork |
 | Album-art panel (W10 edition) | **Degrades** | Its `window/no_alb_art_shade.png` is zero bytes; that one placeholder draws nothing |
-| Scripts | **Partial** | `instantiate` is unimplemented, which is why all four still report `unsupported` although they draw |
+| Config pages + EQ tab | **Fixed (BB7)** | `GroupList.instantiate` builds them; `getApplicationPath` was the domino behind it |
+| Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
 ## The family is two skins and two overlays
 
@@ -51,6 +52,21 @@ what `missingRequiredMount` says, by name. `@SKINSPATH@` usage: base 159, W10 16
 Three independent causes with one symptom: *this skin does not load at all*. Fixing any one of them
 alone would have left two of the four still dead.
 
+## BB8 — the 77-theme colour picker
+
+The Color Themes config page lists all 77 of the skin's `<gammaset>`s as buttons; each reads its own
+label and runs `ColorMgr.getGammaSet(label).apply()`. None of `ColorMgr`, `getGammaSet` or `apply`
+existed, so all 77 handlers aborted and the page did nothing. Confirmed live 2026-08-24.
+
+Two facts worth keeping:
+
+- **`ColorMgr` is a second system-flagged global beside `System`**, with its own class GUID, and it is
+  bound by class the way `PlEdit` is. The mechanics — and the four ways to get a class binding wrong —
+  are in `reference/scripting.md` → *Binding a host singleton by class GUID*.
+- **This is not Bento-only.** Ebonite_2_1 reaches the theme catalog through `ColorMgr` too, which is
+  why the surface fact lives in `compatibility/maki-surface.md` rather than here. Whether Ebonite's
+  own picker now works is **unmeasured**.
+
 ## Traps
 
 - **`@SKINPATH@` and `@SKINSPATH@` mean different things here, and the skin uses both on purpose.**
@@ -69,8 +85,9 @@ alone would have left two of the four still dead.
   because their palette comes from `color-presets.xml` / `system-colors.xml` and the gamma model.
   Do not "fix" this by flipping `resolveSkinResource`'s order without a full corpus sweep — the
   relative-first order exists for authored subfolders.
-- **The `unsupported` compatibility level is about MAKI, not loading.** `instantiate` is recorded as
-  an error; the skin loads and draws regardless.
+- **The compatibility level is about MAKI, not loading.** Until BB7 the level read `unsupported`
+  purely because `instantiate` was recorded as an error; the skin loaded and drew regardless. It is
+  `degraded` now, on warnings alone.
 - **`searchresults/normal` draws 0 nodes, and that is correct.** Before B37 it painted the author's
   placeholder banner ("Results found: 22 items") because `playlistpro.maki` aborted before it could
   hide the panel. The container is `default_visible="0"` and only appears on a playlist search.
@@ -163,7 +180,44 @@ playlist column fixed and the left side growing) and confirms the reading. The o
 is the skin's own `fontsize="48"` in a 237px `InfoDisplay`; nothing in the corpus writes `fontsize`
 except `playlistpro.maki`, so no script is meant to shrink it.
 
-**Still open:** `instantiate` — `Group.instantiate(groupdef_id, index)`, which builds a groupdef
-instance into a group at runtime. It gates the config window's nine option pages and the SUI's
-equalizer tab; nothing else in the skin needs it. It is a real engine capability (script-time graph
-construction), not an arity question, and deserves its own item.
+## BB7 — the nine config pages and the equalizer tab were never built
+
+`config_vscrollbars.maki` is declared **nine** times (`config.xml` ×8, `player-normal-sui.xml` ×1),
+each with its own `param="part1;part2;<height>"`, and it contains the skin's only two `instantiate`
+call sites. Every one of those nine pages is an empty `<GroupList>` plus a scrollbar in XML; all of
+the actual options live in `…part1` / `…part2` groupdefs the script expands into the list. Without
+the method the handler aborted at its first call and the pages had no content — and that single
+recorded error is the whole reason all four variants reported `unsupported` while drawing fine.
+
+Three things the first reading of this got wrong, all settled from the bytecode (and from the
+author's own comment, `Group g1 = grplst.instantiate(param, 1); // "1" here is the amount of times`):
+the second argument is a **count**, not an index; the receiver is a `GroupList`, not a plain group;
+and the "nine call sites" are nine *declarations of one script*, not nine calls. The engine already
+did the hard part — `instantiateGroup` / `pendingRuntimeGroups`, built for `newGroup` — so what was
+missing was the list-side method and the vertical stacking a groupdef cannot carry. See
+`reference/scripting.md` → *`GroupList.instantiate`*.
+
+Behind it, the cascade this skin always produces: with the pages finally built, the Localization
+page's own script ran for the first time and aborted on **`getApplicationPath`**, which it uses to
+probe for Winamp's `/Lang/*.wlz` language packs. Implemented; the probes correctly find nothing.
+
+Compatibility level after: **degraded**, on warnings alone, with no failing handler anywhere in the
+skin. Neither surface is a hidden-window question a probe can answer — both are **tabs**, so no
+headless dump renders them and live QA is the only instrument.
+
+**The equalizer tab was confirmed live (2026-08-23), and its symptom is worth keeping** as the clean
+signature of this defect: `info.component.eq` declares the EQ-ON / AUTO / PRESETS bar directly in
+markup, and *everything above it* — the spline, the ten bands, preamp, balance, crossfade — is the
+`GroupList`. So the tab drew **a preset picker and nothing else**. A skin whose surface is one strip
+of real controls over an empty expanse is the shape to look for. (It is also why "I don't see a way
+to show the EQ" and "I see the EQ icon" describe the same thing here: an SUI skin has no separate
+equalizer *window*.)
+
+**The config pages were confirmed live in the same pass.** They are the **Skin Settings** tab, the
+bottom button of the same left strip as the Equalizer, and its left-hand menu has ten entries plus
+*About the skin*. All eight `instantiate`-built pages have their content and stack without overlap.
+Worth knowing before re-measuring: **three of the eleven pages are declared inline and never used
+this mechanism** — Songticker, Visualization and Playlist — so they are a free control group for any
+future defect in this area. Two things on those pages that are *not* BB7: the Color Themes list will
+not switch a theme (**BB8**, `ColorMgr` unbound), and the Multi Content View page is where BB9's
+unreachable visualization switch lives.

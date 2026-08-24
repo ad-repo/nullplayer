@@ -158,6 +158,78 @@ tabI.init(tabHolder);              // moved where it actually belongs
   on the stack, so the re-entrancy guard is keyed by dispatch scope as well as by (target, event) —
   otherwise the outer dispatch swallows it and every runtime-created control comes up unbound.
 
+#### `GroupList.instantiate` — the list that builds its own entries
+
+The **other** runtime expansion, and a different receiver from `System.newGroup`:
+
+```maki
+Group g1 = grplst.instantiate(param, 1);   // "1" here is the amount of times the group
+Group g2 = grplst.instantiate(param2, 1);  //  will be instantiated
+```
+
+That comment is the author's own, in Big Bento Modern's `config_vscrollbars.m`. Three things it
+settles, each of which a first reading of the call site got wrong: the second argument is a **count**,
+not an index; the receiver is a `<GroupList>`, not a plain group; and the result is usually *not used*
+— the call is made for its side effect on the list.
+
+A `<GroupList>` is a **vertical stack**, and the two things a groupdef cannot carry have to be stamped
+onto each entry as it is added:
+
+- **Width.** The entries declare `h=` and no `w=` at all, because the list is expected to size them.
+  Left at its markup geometry an entry is zero-width — and its own contents, which are relative to it
+  (`w="-203" relatw="1"`), are *negative*, not small. Each entry is set to `x="0" w="0" relatw="1"`.
+- **Top.** Every entry would otherwise land at `y=0` and cover the one before it. The offset is the
+  sum of the earlier entries' **declared** heights. Declared, not resolved: they are stacked before
+  any layout pass has run, so a resolved frame exists for at most what is already on screen, and it is
+  the declared number the author sizes the page around — the same number the page's scrollbar script
+  compares its `param`'s third token against to decide whether to show itself at all.
+
+Everything else is `newGroup`'s machinery unchanged: `instantiateGroup` does the expansion, the new
+subtree's scripts wait in `pendingRuntimeGroups` and start on attachment, and the count is bounded
+(64) on top of the shared object budget because it is skin input.
+
+**This is how a WACUP-era skin ships its options.** Big Bento Modern's nine config pages and its SUI
+equalizer tab are each an empty `<GroupList>` plus a scrollbar in XML; every control on them lives in
+a `…part1` / `…part2` groupdef that one script expands here. Before the method existed the pages had
+no content and the whole four-variant family reported compatibility level `unsupported` although it
+drew perfectly well. Expect a cascade behind it (`getApplicationPath` was the next domino): a page
+that has never been built has scripts that have never run.
+
+#### Binding a host singleton by class GUID
+
+`System` is not the only global a skin's `std.mi` declares. `PlEdit` (the playlist editor) and
+`ColorMgr` (the colour-theme manager) are system-flagged globals of their *own* classes, and the
+engine binds them by class GUID rather than by the names they answer to. Four things make that work,
+and each of them is a way to get it silently wrong:
+
+1. **`MakiClassGUID.runtimeBound` is a carve-out, not an allow-list.** The parser seeds a
+   system-flagged global with the `System` object *unless* its class is in that set, in which case it
+   leaves it null for `seedHostSingletons` to fill. Forget the carve-out and the global keeps the
+   System object: every call on it falls through to `invokeSystem`, reports the method unsupported,
+   and aborts the handler.
+2. **The stored constant is the canonical form; the *input* is the raw one.** `signature(for:classGUID:)`
+   receives the class table's raw value and folds it itself. `MakiClassGUID.canonical` is an
+   **involution** — folding an already-folded constant hands back the raw form — so comparing against
+   a pre-folded value matches nothing, and matches nothing *quietly*.
+3. **The GUID the interpreter passes is the method's *declaring* class**, not the receiver
+   variable's. That is what makes a short verb bindable at all: `apply` can be given an arity because
+   it is gated to `GammaSet`, and a method of the same name on another class still gets `nil`.
+4. **Gate the name even when the corpus says it is unique today.** `apply` appears on exactly one
+   class across the installed skins; registering it globally would still be wrong, because a wrong
+   arity is the one error the interpreter cannot recover from — it leaves values on the stack and
+   desynchronises everything after the call. Fail-closed costs one handler; a wrong arity costs the
+   rest of the program.
+
+To find the GUID: dump `program.classes` and the `isSystem`/`isGlobal` variables of a program that
+calls the method. The class table is binary, so `strings` on the `.maki` shows the method names and
+never the GUIDs.
+
+`ColorMgr.getGammaSet(name)` hands back a `GammaSet` carrying only that name; `apply()` on it routes
+through `themeSwitchRequested` — the same route `System.setColorTheme` already takes, deliberately,
+so the two cannot disagree about the active theme. A name the skin does not ship is answered with the
+object anyway and `apply()` is inert: refusing at `getGammaSet` would abort the caller's whole
+handler over one bad name.
+
 #### Rotary controls: `Map`
 
 A `Map` is a bitmap the script samples rather than draws: `getValue(x, y)` returns the pixel value at

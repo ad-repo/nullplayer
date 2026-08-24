@@ -32,6 +32,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         /// ClassicPro reads exactly one value from one (`eq.m` asks whether the EQ uses classic or
         /// ISO frequencies before it labels the bands).
         case configGroup(section: String)
+        /// A `GammaSet` — one named colour theme, handed back by `ColorMgr.getGammaSet(name)` and
+        /// carrying only that name until `apply()` asks for it. Unlike `Map`/`Region`/`XmlDoc` this
+        /// role is settled at *creation*, because the object never comes from a bare `new`.
+        case gammaSet(name: String)
     }
 
     private struct DynamicObjectState {
@@ -1653,6 +1657,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
            let signature = Self.playlistEditorSignatures[method.lowercased()] {
             return signature
         }
+        // The colour-theme pair, both gated by their **declaring** class — which is what the
+        // interpreter passes here, and the reason `apply` can be given an arity at all. Registering
+        // either name globally would hand its arity to every class that happens to declare the same
+        // verb, and a wrong argument count is the one error the interpreter cannot recover from: it
+        // leaves values on the stack and desynchronises everything after the call. See
+        // `reference/scripting.md` → *`PlEdit`*, which records that failure mode.
+        switch classGUID.map(Self.canonicalGUID) {
+        case MakiClassGUID.colorManager where method.caseInsensitiveCompare("getgammaset") == .orderedSame:
+            return .init(argumentCount: 1, returnKind: .object)
+        case MakiClassGUID.gammaSet where method.caseInsensitiveCompare("apply") == .orderedSame:
+            return .init(argumentCount: 0, returnKind: .null)
+        default:
+            break
+        }
         let signatures: [String: MakiMethodSignature] = [
             "getcontainer": .init(argumentCount: 1, returnKind: .object),
             "newdynamiccontainer": .init(argumentCount: 1, returnKind: .object),
@@ -1939,6 +1957,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // a `File.load`/`exists` pair): the string is only ever concatenated with a filename and
             // probed. Missing it aborted 23 of Big Bento Modern's `onScriptLoaded` handlers.
             "getsettingspath": .init(argumentCount: 0, returnKind: .string),
+            // `System.getApplicationPath()` — where the *player* is installed, as against
+            // `getSettingsPath`'s where it keeps its configuration. Arity 0, pinned by the bytecode
+            // (`getApplicationPath() + "/Lang/Winamp-es-us.wlz"`, then a `File.load`/`exists`/
+            // `getSize` probe). Big Bento's Localization page is built entirely out of those probes.
+            "getapplicationpath": .init(argumentCount: 0, returnKind: .string),
             "getcolortheme": .init(argumentCount: 0, returnKind: .string),
             "setcolortheme": .init(argumentCount: 1, returnKind: .null),
             "getnumcolorthemes": .init(argumentCount: 0, returnKind: .integer),
@@ -1987,6 +2010,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "popatxy": .init(argumentCount: 2, returnKind: .integer),
             "newgroup": .init(argumentCount: 1, returnKind: .object),
             "newgroupaslayout": .init(argumentCount: 1, returnKind: .object),
+            // `GroupList.instantiate(groupdef, count)` — the *list's* own expansion, as against
+            // `System.newGroup`. The second argument is a **count**, not an index; the author's own
+            // comment in `config_vscrollbars.m` says so, and the bytecode agrees
+            // (`v103.instantiate(v121:"…part1", v6:1)`, receiver + two pushes, result assigned).
+            "instantiate": .init(argumentCount: 2, returnKind: .object),
             "init": .init(argumentCount: 1, returnKind: .null),
             // Paint order within the parent. ClassicPro raises a tab while it is being dragged along
             // the strip, and the missing method aborted the whole drag handler.
@@ -2077,6 +2105,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return try invokeSystem(method: method, arguments: arguments, program: program)
         case .playlistEditor:
             return invokePlaylistEditor(method: method, arguments: arguments)
+        case .colorManager:
+            return try invokeColorManager(method: method, arguments: arguments, program: program)
         case .gui(let objectID):
             guard let object = loadedSkin.runtime.graph.object(withID: objectID) else { return .null }
             return try invokeGUI(method: method, object: object, arguments: arguments, program: program)
@@ -2102,7 +2132,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             dynamicObjects.removeValue(forKey: id)
         case .popupMenu(let id):
             popupCommands.removeValue(forKey: id)
-        case .system, .playlistEditor, .gui:
+        case .system, .playlistEditor, .colorManager, .gui:
             break // Not script-owned; a skin cannot delete the graph out from under the renderer.
         }
     }
@@ -2338,6 +2368,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getsettingspath":
             return .string(WinampModernSkinImporter.defaultDestinationDirectory()
                 .deletingLastPathComponent().path)
+        // The directory the player itself sits in, which is what Winamp answers. Handing back a
+        // string is not filesystem access and does not become any: every route a skin has from here
+        // is already sandboxed — `File.load`/`exists` are a no-op and a constant `false`,
+        // `System.navigateUrl` is inert, and `openFile`/`exploreFile` take an arbitrary skin-authored
+        // string anyway. What the callers are actually doing is probing for Winamp's own `/Lang`
+        // packs and its plugin folder; those probes correctly find nothing here, and the branch the
+        // skin takes on that is the truthful one.
+        case "getapplicationpath": return .string(Bundle.main.bundleURL.deletingLastPathComponent().path)
         case "getcolortheme": return .string(activeThemeRequested?() ?? "Default")
         case "setcolortheme":
             _ = themeSwitchRequested?(arguments[0].stringValue)
@@ -2498,6 +2536,37 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
     }
 
+    // MARK: - ColorMgr (the colour-theme manager)
+
+    /// `ColorMgr`, Winamp's colour-theme manager. The whole surface the corpus reaches is one
+    /// method: `getGammaSet(name)` hands back the named theme, and `apply()` on that switches to it.
+    ///
+    /// The theme itself is not built here. `WasabiColorThemeCatalog` already holds every `<gammaset>`
+    /// the skin declared and tracks the active one, and `System.setColorTheme` already routes a
+    /// switch through `themeSwitchRequested` — so this is a *binding* job, not a rendering one, and
+    /// it deliberately lands on the same route rather than a second one that could disagree with it.
+    ///
+    /// A name the skin does not ship is answered with the object anyway, and `apply()` on it is a
+    /// no-op: the catalog rejects the switch. Refusing here instead would abort the caller's whole
+    /// handler over one missing theme.
+    /// **Unknown methods fall through to `System`, and that is not a convenience — it is what keeps
+    /// this change from being a regression.** Before `ColorMgr` was bound, the parser seeded a global
+    /// of this class with the *System* object, so every call a skin made on it went to
+    /// `invokeSystem`. Winamp declares `getColorTheme` / `setColorTheme` / `getNumColorThemes` /
+    /// `enumColorThemes` on `ColorMgr` as well, and this runtime answers all four on `System` — so
+    /// handling `getGammaSet` alone and returning null for the rest would silently take those four
+    /// away from any skin that reaches them through its `ColorMgr` global. Binding a singleton must
+    /// only ever *add* to what its receiver could already do.
+    private func invokeColorManager(method: String, arguments: [MakiValue],
+                                    program: MakiProgram) throws -> MakiValue {
+        switch method {
+        case "getgammaset":
+            return dynamicValue(role: .gammaSet(name: arguments[0].stringValue))
+        default:
+            return try invokeSystem(method: method, arguments: arguments, program: program)
+        }
+    }
+
     // MARK: - PlEdit (the playlist editor)
 
     /// What every playlist read answers from. The component host is the live queue; the text
@@ -2618,6 +2687,30 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let index = Int(arguments[0].integerValue)
             guard object.children.indices.contains(index) else { return .null }
             return objectValue(object.children[index])
+        // `GroupList.instantiate(groupdef, count)` — the *list's* own expansion, as against
+        // `System.newGroup`. Big Bento Modern builds all nine of its config pages and the SUI's
+        // equalizer tab this way: the page's XML holds an empty `<GroupList>` and a scrollbar, and
+        // every option on it lives in a `…part1` / `…part2` groupdef the script expands here. That
+        // is why the whole family reported `unsupported` although it drew.
+        case "instantiate":
+            guard let instantiate = loadedSkin.runtime.instantiateGroup else { return .null }
+            let identifier = arguments[0].stringValue
+            // The count is skin input, so it is bounded here as well as by the shared object budget
+            // `instantiateGroupAtRuntime` counts against. Nothing measured asks for more than one.
+            let count = min(max(Int(arguments[1].integerValue), 0), Self.maximumGroupListInstances)
+            var instantiated: WasabiObject?
+            for _ in 0..<count {
+                let child = try instantiate(identifier, object)
+                stackInGroupList(child, list: object)
+                // The subtree's scripts start on attachment, exactly as `newGroup`'s do.
+                pendingRuntimeGroups.append(child)
+                instantiated = child
+            }
+            if instantiated != nil {
+                noteGeometryChange()
+                notifyGraphDidMutate()
+            }
+            return objectValue(instantiated)
         case "getid": return .string(object.xmlID ?? "")
         case "getparent": return objectValue(object.parent)
         case "getparentlayout": return objectValue(ancestor(of: object, type: "layout"))
@@ -3108,6 +3201,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                program: MakiProgram) throws -> MakiValue {
         guard var state = dynamicObjects[id] else { return .null }
         switch method {
+        // `GammaSet.apply()` — switch to the theme this object names, through the one route
+        // `System.setColorTheme` already uses. A theme the skin does not ship is refused by the
+        // catalog and the call is simply inert.
+        case "apply":
+            guard case .gammaSet(let name) = state.role else { return .null }
+            _ = themeSwitchRequested?(name)
+            return .null
         case "loadmap":
             state.role = .map(bitmapID: arguments[0].stringValue, source: program.source)
             dynamicObjects[id] = state
@@ -3277,6 +3377,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case .region(let clip): return .string(clip.mapID)
             case .xmlDocument: return .string("")
             case .configGroup(let section): return .string(section)
+            case .gammaSet(let name): return .string(name)
             case .generic: return .string("dynamic_\(id)")
             }
         case "init", "callme", "ondatachanged": return .null
@@ -3355,6 +3456,43 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private func resolvedFrame(of object: WasabiObject) -> CGRect? {
         guard let geometry = resolvedGeometryRequested?(object) else { return nil }
         return geometry.frame.offsetBy(dx: -geometry.parent.minX, dy: -geometry.parent.minY)
+    }
+
+    /// How many instances one `instantiate` call may add. The corpus's only caller asks for 1.
+    private static let maximumGroupListInstances = 64
+
+    /// Wasabi's `<GroupList>` is a **vertical stack**: each instance spans the list's width and sits
+    /// below the ones already in it. Two things follow, and both have to be stamped onto the child
+    /// here because a groupdef carries neither.
+    ///
+    /// *Width.* The part groupdefs declare `h=` and no `w=` at all, so a child left at its markup
+    /// geometry is zero-width and draws nothing — its own contents are relative to it
+    /// (`w="-203" relatw="1"`), which is a negative box, not a small one.
+    ///
+    /// *Top.* Both parts would otherwise land at `y=0` and cover each other. The offset is the sum of
+    /// the heights the earlier siblings declare, which is the number the author writes the groupdef's
+    /// `h=` for (Big Bento's pages are 223+220, 243+251, …) — and the same number the page's
+    /// scrollbar script compares its `param`'s third token against to decide whether to show itself.
+    ///
+    /// Anything that is not a `GroupList` keeps whatever geometry it was instantiated with.
+    private func stackInGroupList(_ child: WasabiObject, list: WasabiObject) {
+        guard list.typeName.caseInsensitiveCompare("grouplist") == .orderedSame else { return }
+        var top = 0.0
+        for sibling in list.children where sibling !== child { top += stackedHeight(of: sibling) }
+        _ = child.setAttribute("x", value: "0")
+        _ = child.setAttribute("relatx", value: "0")
+        _ = child.setAttribute("y", value: String(Int(top.rounded())))
+        _ = child.setAttribute("relaty", value: "0")
+        _ = child.setAttribute("w", value: "0")
+        _ = child.setAttribute("relatw", value: "1")
+    }
+
+    /// The vertical room one list entry takes. The declared `h=` is the authority — the entries are
+    /// stacked before any layout pass has run, so a resolved frame exists for at most the ones
+    /// already on screen, and mixing the two units would stack the second entry against the first
+    /// one's *scene* height rather than the height the author sized the list around.
+    private func stackedHeight(of object: WasabiObject) -> Double {
+        max(0, Double(object.attributes["h"] ?? "") ?? 0)
     }
 
     /// A resolved coordinate when the scene could supply one, and the markup's own value otherwise.
@@ -3662,10 +3800,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// bound unconditionally — which also corrects the parser's older guess for any archive that
     /// predates the class check there.
     private static func seedHostSingletons(in program: MakiProgram) {
-        for variable in program.variables
-        where variable.declaredKind == .object
-            && variable.classGUID.map(canonicalGUID) == MakiClassGUID.playlistEditor {
-            variable.value = .object(MakiObjectReference(.playlistEditor))
+        for variable in program.variables where variable.declaredKind == .object {
+            switch variable.classGUID.map(canonicalGUID) {
+            case MakiClassGUID.playlistEditor:
+                variable.value = .object(MakiObjectReference(.playlistEditor))
+            case MakiClassGUID.colorManager:
+                variable.value = .object(MakiObjectReference(.colorManager))
+            default:
+                continue
+            }
         }
     }
 

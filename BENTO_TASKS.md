@@ -16,11 +16,11 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
 
 ## Open
 
-- [ ] **BB1. `instantiate` — superseded by BB7, which corrects it.** Read **BB7** instead. This entry
+- [x] **BB1. `instantiate` — superseded by BB7, which corrects it.** Read **BB7** instead. This entry
       described the method as `instantiate(groupdef_id, index)` with "nine call sites" and called it
       a real engine capability rather than an arity question. The MAKI source says otherwise on all
       three counts (2026-08-23), and the engine already does the part this entry assumed was
-      missing. The number is kept, not reused, so the correction is traceable.
+      missing. The number is kept, not reused, so the correction is traceable. Closed with BB7.
 
 - [ ] **BB2. The embedded library tab is unstyled** (was B37.5). The SUI tab below the player shows
       NullPlayer's own source bar and monospace tab row (`Source: Local Files`,
@@ -95,9 +95,30 @@ backlog.
 
 ### Tier 1 — reported defects
 
-- [ ] **BB7. `Group.instantiate(groupdef, count)` — supersedes and corrects BB1.** Three things BB1
-      got wrong, from the MAKI source (`scripts/config_vscrollbars.m:47`, in the author's own
-      comment):
+- [x] **BB7. `Group.instantiate(groupdef, count)` — supersedes and corrects BB1. Done 2026-08-23.**
+      Implemented as a `GroupList` method plus the vertical stacking a groupdef cannot carry (each
+      entry spans the list's width and sits below the sum of the earlier entries' declared heights),
+      bounded at 64 per call. The cascade behind it was **`getApplicationPath`** — with the pages
+      finally built, the Localization page's script ran for the first time and aborted on it — so that
+      is implemented too, as a string only: `File.load`/`exists` and `System.navigateUrl` are already
+      inert, so the skin's `/Lang/*.wlz` probes correctly find nothing.
+      **Big Bento Modern now reports `degraded`, not `unsupported`, with no failing handler anywhere
+      in the skin.** `swift test` 1050 pass (9 new, `WinampModernPhase54Tests`); corpus render sweep
+      pixel-diffed against `HEAD`. Landed in `reference/scripting.md` →
+      *`GroupList.instantiate`*, `compatibility/maki-surface.md`, and the skin's own file.
+      **Live QA: the equalizer tab is confirmed on screen by the user (2026-08-23).** Its symptom was
+      the clean signature of this defect — `info.component.eq` declares the EQ-ON / AUTO / PRESETS
+      bar directly in XML, and *everything above it* (the spline, the ten bands, preamp, balance,
+      crossfade) is the `GroupList`, so the tab drew a preset picker and nothing else. Note this is a
+      **tab, not a window**: an SUI skin has no separate EQ window to open, which is why "I don't see
+      a way to show the EQ" and "I see the EQ icon" are the same surface.
+      **The config pages are confirmed live too (2026-08-23)** — all eight `instantiate`-built pages
+      have their content, stacked without overlap: Appearance, Window Sizing, Notifications, Multi
+      Content View, Web Content, Color Themes, Localization, and *About the skin*. Note for anyone
+      re-measuring: **three of the eleven pages never used this mechanism** (Songticker,
+      Visualization, Playlist are declared inline) and are a built-in control group.
+      Three things BB1 got wrong, from the MAKI source (`scripts/config_vscrollbars.m:47`, in the
+      author's own comment):
       ```maki
       Group g1 = grplst.instantiate(param, 1); // "1" here is the amount of times the group
       Group g2 = grplst.instantiate(param2, 1); //  will be instantiated
@@ -119,7 +140,22 @@ backlog.
       Unblocks the config window's **nine option pages** and the SUI's **equalizer tab** in one go,
       and is why all four variants still report compatibility level `unsupported` although they draw.
 
-- [ ] **BB8. `ColorMgr.getGammaSet(name).apply()` — the 77-theme colour picker does nothing.**
+- [x] **BB8. `ColorMgr.getGammaSet(name).apply()` — the 77-theme colour picker does nothing.
+      Done 2026-08-24.** Bound by class GUID exactly as this entry prescribed, and the corpus scan it
+      asked for was worth running: `getGammaSet` is on `ColorMgr`
+      (`ff35e2ae…` → `aee235ff498febd1e0d7af961a54d4da`), `apply` is on `GammaSet`
+      (`b94d020d…` → `0d024db942d09574b526c7b887f9f153`), and across the installed corpus `apply`
+      appears on **that class alone** — so the collision this entry feared does not exist today, and
+      the gate is what keeps it from existing tomorrow. **`ColorMgr` is not Bento-only: Ebonite_2_1
+      reaches the catalog the same way**, so the surface fact lives in `compatibility/maki-surface.md`
+      rather than the skin's file.
+      Verified end to end against the real skin before any test was written: driving three theme
+      buttons' `onLeftClick` moved the catalog `* Default` → `* Default | Darker` → `* Default | Green`
+      (the first click answering `false` because that theme was already active, which is correct).
+      `swift test` 1058 pass, 8 new in `WinampModernPhase55Tests`; corpus sweep pixel-diffed.
+      **Not verified live** — the picker is on the Color Themes config page, which now has content
+      (BB7) but has not been clicked in the running app.
+      Original entry follows.
       `config_color_themes_switcher.m` applies a theme with
       `ctbg01 = ColorMgr.getGammaSet(ctname); ctbg01.apply();` — **77 call sites** in that file and 77
       more in `config_color_themes_switcher_light.m`, one per shipped theme

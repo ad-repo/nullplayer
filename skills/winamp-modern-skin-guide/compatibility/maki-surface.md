@@ -100,6 +100,30 @@ By area:
   be typed `layout`: `resize` on a layout is a *window* resize. No `owner=` falls back to the calling
   script's own layout; a caller with no layout above it (a `skin.xml`-level script) answers null.
   Phase 33 — this one method's absence aborted multipass's entire startup
+- **`ColorMgr.getGammaSet(name)` → `GammaSet.apply()`** — the colour-theme picker. Bound **by class
+  GUID**, the way `PlEdit` is: `ColorMgr` is a second system-flagged global beside `System`, and
+  `apply` is gated to `GammaSet` so a same-named method on another class still gets no arity. A
+  binding job, not a rendering one — `WasabiColorThemeCatalog` already held the sets and
+  `System.setColorTheme` already had the switch route, and `apply()` lands on that same route so the
+  two cannot disagree. An unknown theme name yields the object anyway and `apply()` is inert, because
+  refusing at `getGammaSet` would abort the caller's whole handler. Demand: Big Bento Modern's 77
+  themes ×2 files, **and Ebonite_2_1**, which is why this is not a Bento-only item. BB8
+- **`GroupList.instantiate(groupdef, count)`** — the *list's* own expansion, the second argument a
+  **count** and not an index (the author of Big Bento Modern says so in his own comment, and the
+  bytecode agrees). A `<GroupList>` is a vertical stack, so each entry is stamped with the two things
+  a groupdef cannot carry: it spans the list's width (`x="0" w="0" relatw="1"` — the entries declare no
+  `w=` and would otherwise be zero-wide, with negative contents) and it sits below the sum of the
+  earlier entries' **declared** heights. Anything that is not a `GroupList` keeps the geometry
+  `newGroup` would have given it. Bounded at 64 per call on top of the shared object budget. This is
+  how a WACUP-era skin ships its options: Big Bento's nine config pages and its SUI equalizer tab are
+  each an empty list plus a scrollbar in XML, and every control on them arrives through this call —
+  which is why all four variants reported `unsupported` while drawing perfectly. BB7
+- **`System.getApplicationPath()`** — where the *player* is installed, as against `getSettingsPath`'s
+  where it keeps its configuration. A string, not a capability: every route onward is already
+  sandboxed (`File.load`/`exists` are a no-op and a constant `false`, `System.navigateUrl` is inert),
+  so a skin probing for Winamp's `/Lang/*.wlz` packs correctly finds nothing and takes its
+  "not installed" branch. The domino behind `instantiate` — with the config pages finally built, the
+  Localization page's own script ran and aborted here. BB7
 - **`ToggleButton.setActivatedNoCallback(bool)`** — `setActivated` without the `onToggle` it would
   otherwise send. A skin uses it to follow state it is already reacting to; the plain setter there
   re-enters its own notification. Phase 33

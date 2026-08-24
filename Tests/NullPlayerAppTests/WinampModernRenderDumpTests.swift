@@ -431,6 +431,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             let object = loaded.runtime.graph.object(withID: id)
                             bound = "\(object?.typeName ?? "?")#\(object?.xmlID ?? "-")"
                         case .playlistEditor: bound = "PlEdit"
+                        case .colorManager: bound = "ColorMgr"
                         case .popupMenu: bound = "PopupMenu"
                         case .dynamic: bound = "dynamic"
                         }
