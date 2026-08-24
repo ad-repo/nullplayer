@@ -113,6 +113,30 @@ final class WinampModernRenderDumpTests: XCTestCase {
                          UIScaleLevel.nearest(toScaleFactor: factor).rawValue))
         }
 
+        // Every container's renderer, built **before** `start()` and asked in turn — the app is the
+        // model here (`wireContainerCallbacks` installs this closure before `scripts.start()` and
+        // consults every container's view). Installed inside the per-container loop instead, as it
+        // used to be, it is absent for the whole of `onScriptLoaded` — and skins do nearly all of
+        // their layout there, so every `getWidth`/`getLeft`/`getGuiW` fell back to the raw markup
+        // attribute: `0` for a `w="0" relatw="1"` group, `-7` for a `w="-7"` one. Big Bento's
+        // visualizer measured `getwidth() -> 0` headlessly against `346` in the app, and the harness
+        // then agreed with the symptom for the wrong reason (BB20).
+        let dumpClock = Double(env["WINAMP_MODERN_RENDER_CLOCK"] ?? "") ?? 0
+        var renderersByContainer: [String: WasabiSceneRenderer] = [:]
+        for info in WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph) {
+            guard let renderer = try? WasabiSceneRenderer(loadedSkin: loaded, host: host,
+                                                          containerID: info.id,
+                                                          clock: { dumpClock }) else { continue }
+            renderersByContainer[info.id] = renderer
+        }
+        let allRenderers = Array(renderersByContainer.values)
+        runtime.resolvedGeometryRequested = { object in
+            for renderer in allRenderers {
+                if let geometry = renderer.resolvedGeometry(of: object) { return geometry }
+            }
+            return nil
+        }
+
         try runtime.start()
 
         if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
@@ -667,16 +691,13 @@ final class WinampModernRenderDumpTests: XCTestCase {
         for info in orderedContainers {
             // A fixed clock makes ticker/animation frames reproducible; set
             // WINAMP_MODERN_RENDER_CLOCK to a different value to capture a later frame.
-            let clock = Double(env["WINAMP_MODERN_RENDER_CLOCK"] ?? "") ?? 0
-            guard let renderer = try? WasabiSceneRenderer(loadedSkin: loaded, host: host,
-                                                          containerID: info.id, clock: { clock }) else {
+            // The renderer the scripts have been answering geometry from since before `start()` — the
+            // same instance, not a second one, or the scene the skin laid itself out against is not
+            // the scene that gets dumped.
+            guard let renderer = renderersByContainer[info.id] else {
                 print("RENDER-DUMP \(info.id): no renderable normal layout")
                 continue
             }
-            // Scripts ask this renderer where its objects landed, exactly as the app's window layer
-            // does — without it `getWidth()` on a relatively-sized object answers its raw attribute
-            // and the skin lays itself out against a negative number.
-            runtime.resolvedGeometryRequested = { object in renderer.resolvedGeometry(of: object) }
             // Layer FX, as the app wires it — so a warped layer is warped in the dumped PNG too.
             renderer.layerFXProvider = { [weak runtime] in runtime?.layerFXMesh(for: $0) }
             // A `cfgattrib` control's state *is* the stored preference, and both app paths wire this.
@@ -697,10 +718,9 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 lastFrames = Dictionary(renderer.resizeTargets().map { ($0.object.stableID, $0.frame) },
                                         uniquingKeysWith: { _, latest in latest })
             }
-            defer {
-                runtime.resolvedGeometryRequested = nil
-                runtime.geometryDidSettle = nil
-            }
+            // `resolvedGeometryRequested` stays installed — it belongs to the whole run now, not to
+            // one container's turn in the loop.
+            defer { runtime.geometryDidSettle = nil }
             for layoutID in renderer.availableLayoutIDs {
                 _ = try? renderer.activateLayout(id: layoutID)
                 // WINAMP_MODERN_RENDER_SIZE=WxH measures the scene at the *user's* window size rather

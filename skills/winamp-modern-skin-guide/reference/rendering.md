@@ -196,6 +196,25 @@ Three rules, all of them measured on Ujola Cat, all of them engine-wide:
 `colorbandpeak` is the falling cap over each bar, held at the running max and decayed a fixed amount
 per draw, and painted in the band's own colour when the skin declares no peak colour.
 
+#### The analyzer a `<component>` box draws (BB9, 2026-08-24)
+
+A `{0000000A}` holder that the view layer has *not* filled with the host's engine draws a spectrum
+analyzer — see [components.md](components.md) for which holders those are. It is no longer a
+placeholder: the slot's default content in Winamp *is* an analyzer.
+
+`drawVisualizationBars` has **no `<vis>` element** to take its styling from, and deliberately borrows
+none:
+
+- **Band count comes from the box** (~1 band per 6pt, clamped to the tap's own resolution), not from a
+  donor's `bandwidth`. Borrowing was tried and is wrong — `bandwidth="wide"` is 19 bands, sized for
+  that skin's own 144px box, and 19 bands across a 1400px pane is a row of slabs.
+- **Colours come from `WasabiPalette`** — the same route every other NullPlayer-owned surface inside a
+  `.wal` takes, so a colour-theme switch recolours it with everything else. Bars are a vertical
+  gradient from `listText` down toward `contentBackground`; peak caps are `listText`.
+- Whole-pixel bar slots and the `<vis>` analyzer's falling caps and decay, sharing the same
+  `analyzerPeaks` store — a `<component>` holder and a `<vis>` are different objects, so the keys
+  cannot collide.
+
 #### `<Wasabi:Frame>` — the splitter that builds its own children
 
 Most objects are declared where they appear. A frame is not: it **names** two groups and instantiates
@@ -225,6 +244,28 @@ ordinary group left the library tree, the playlist and the tab strip out of the 
   (`maxwidth="-224"` = "always leave 224px for the other pane"). `jump` (snapping) is not honoured.
 - A divider pushed flush with an edge (`setPosition(0)`, how ClassicPro closes its side view) offers
   no grab strip, so a closed split cannot be reopened by dragging where it used to be.
+
+##### What outranks a splitter on its own grab strip (BB21, 2026-08-24)
+
+"The cursor changes but it drags the whole window" is the signature of this one, and it is a hit-test
+question, not a frame question. A grab strip spans the full height of its frame, so it crosses
+whatever the skin laid over that column — cPro's tab strip runs straight through the 8px seam, and a
+control the user can see must always win. The old rule was simply "the divider claims the click when
+`object(at:)` is nil", and that is too generous: Big Bento Modern covers **every pixel of its window**
+with `<layer id="player.resizer.disable" move="1" alpha="0">` plus four alpha-0
+`player.mainframe.grabber.mousetrap*` layers laid directly on the seam. The splitter never claimed a
+single press, so every drag moved the window while `resetCursorRects` promised a resize.
+
+`renderer.objectOverridingDivider(at:)` is the rule instead. Two things do **not** outrank a splitter:
+
+- **an object the user cannot see** (`alpha="0"`) — a mousetrap, not a control;
+- **a surface whose only interactivity is `move="1"`** — window dragging, which is exactly the gesture
+  a splitter exists to reinterpret over its own strip. An object that also carries an action, or is a
+  button or a slider, keeps its claim.
+
+It applies only inside a divider's grab rect. Big Bento's own `mousetrap3`/`mousetrap4` are
+`alpha="255"` and sit *above and below* the strip, so they are untouched — check a blocking layer's
+alpha and rect before widening this rule.
 
 #### Text width is a layout input, not just a drawing detail
 

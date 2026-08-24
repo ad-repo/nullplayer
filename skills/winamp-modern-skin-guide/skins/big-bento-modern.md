@@ -171,6 +171,47 @@ Two things to know before touching this area again:
   `player.button.pause.normal.null`, `window.background.hidden`, `show.sui.tabs.invisible`) — the
   skin's own way of drawing nothing. They are not a defect.
 
+## BB21 — the splitter that resizes the display area (fixed 2026-08-24, confirmed live)
+
+"The cursor changes but it drags the whole window." The `player.mainframe.big` divider could not be
+grabbed because the skin covers every pixel with alpha-0 `move="1"` layers. The rule that fixes it is
+general and lives in [reference/rendering.md](../reference/rendering.md) → *What outranks a splitter
+on its own grab strip*. This also gates the header analyzer: `visualizer.maki`'s `onResize` shows the
+six `<vis>` boxes in `main.vis.group` only above 730px of player width (`.alt`: 705), and that width
+*is* this divider — so before it could be dragged, those six boxes could never appear.
+
+## BB9 — the Multi Content View's three visualization placements
+
+The skin declares three `{0000000A}` holders: the SUI Visualization tab (`wdh.vis.object`), the mini
+pane (`info.component.vis`, 186×185) and the stretched pane (`info.component.vis.full`, full width ×
+147). How they are routed is general and lives in
+[reference/components.md](../reference/components.md).
+
+**The trap, and it cost a session: `mcvcore` clobbers its own load-time layout.** The script declares
+`System.onScriptLoaded()` **twice**. The first body reads the stored MCV page and lays the panel out
+— for the Visualization page that means hiding the cover, the mini vis, the file info and the song
+ticker and showing the stretched pane. The second body starts a **700 ms one-shot** whose `onTimer`
+shows the file-info panes again *unconditionally*, with no reference to which page is current. At
+launch that timer is the last word, so the stretched pane and the file-info panes all end up visible
+and drawn over each other; flipping the same setting by hand afterwards gives the correct exclusive
+layout, because by then the one-shot has fired and stopped itself.
+
+Two things measured while chasing it, both worth not re-deriving:
+
+- **The timer dispatch is correct.** Traced with `sample`-grade instrumentation on every `onTimer`
+  match: the 700 ms timer matches exactly one binding, its own. Do not go looking for a mis-bound
+  timer.
+- **Do not "fix" this by running only the first `onScriptLoaded` body.** It was tried. The second body
+  is where `mcvcore`'s *width-driven layout* lives (`getwidth()` branches, the `x`/`w` writes,
+  `set_maxwidth`), so dropping it takes the panel's sizing out — the main layout built 177 nodes and
+  `set_maxwidth` never ran, against 188 nodes and `sendaction(set_maxwidth,…,-194)` with both bodies.
+  The corpus sweep was clean (287/288) and it still broke the skin, which is the lesson: **a sweep
+  measures the default state, and this skin's defect lives in a non-default one.**
+
+Open: the user wants cover, mini vis and the stretched spectrum visible **side by side**. The skin
+does not do that — `info.component.vis.full` is declared `w="0" relatw="1"` and its layout routine
+hides the others — so that is a NullPlayer-side layout override, not a skin behaviour to restore.
+
 ## B36/B37 — why five separate symptoms had one cause
 
 Five things were reported wrong on screen after B35 made the skin loadable: the menu bar drew its

@@ -45,6 +45,9 @@ concept; read the one your symptom points at, not all of them.
 | **Text or controls are black-on-black, or a colour theme washes out** — and "fixing" one skin breaks another | [reference/rendering.md](reference/rendering.md) — *Colour themes*: the additive/multiplicative model is per-`<gammagroup>`, chosen by its own `boost`. Never pick one globally |
 | Animation frozen, needle/reel not turning, layer stuck on one frame | [reference/rendering.md](reference/rendering.md) |
 | Slow, stuttering, CPU high, repaint storm | [reference/performance.md](reference/performance.md) |
+| **The UI hangs or runs at a few fps** — and `RENDER_TIME` says the frame is fine | [reference/harness.md](reference/harness.md) — *Profiling the running app*: `sample` the process; `RENDER_TIME` measures `renderer.draw` and nothing else |
+| **A splitter shows a resize cursor but drags the window instead** | [reference/rendering.md](reference/rendering.md) — *What outranks a splitter on its own grab strip* |
+| A `{0000000A}` visualization slot shows the wrong thing, or only one of several works | [reference/components.md](reference/components.md) — *`{0000000A}` is a plugin host*: it is not "MilkDrop's box", and one holder per skin gets the engine |
 | A script does nothing, wrong arity, unknown method, script-built UI missing | [reference/scripting.md](reference/scripting.md) |
 | A host-fed readout never updates (`onTextChanged`) | [reference/scripting.md](reference/scripting.md) |
 | An EQ readout follows the skin's own slider but not a preset, the menu bar or another window | [reference/scripting.md](reference/scripting.md) — *The equalizer tells the skin it moved* |

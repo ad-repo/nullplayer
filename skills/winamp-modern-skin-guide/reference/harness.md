@@ -243,6 +243,38 @@ What they do **not** cover: the window layer. A defect that only exists once a s
 still needs `WINAMP_MODERN_DEBUG_CLICK` in the running app. Nor do they replace the 17-skin sweep for
 a change against real artwork — they catch the *mechanism* regressing under it.
 
+### The harness answers geometry from *before* `start()` (fixed 2026-08-24, BB20)
+
+`WinampModernRenderDumpTests` used to install `runtime.resolvedGeometryRequested` inside its
+per-container loop, long after `try runtime.start()`. Skins do nearly all of their layout in
+`onScriptLoaded`, so for the whole of it every `getWidth`/`getLeft`/`getGuiW` fell back to the raw
+markup attribute — `0` for a `w="0" relatw="1"` group, `-7` for a `w="-7"` one. Big Bento Modern's
+visualizer measured `getwidth() -> 0` headlessly against `346` in the app, and the harness **agreed
+with the symptom for the wrong reason**, which is worse than disagreeing with it.
+
+The app is the model: `wireContainerCallbacks` installs the closure *before* `scripts.start()` and
+consults every container's renderer in turn. The harness now builds a renderer per container up
+front, installs a closure that asks each of them, and the dump loop **reuses those same instances** —
+a second renderer would mean the scene the skin laid itself out against is not the scene that gets
+dumped. If you see a probe report a negative or zero width for a relatively-sized object, check this
+wiring before believing it.
+
+### Profiling the *running app*
+
+`RENDER_TIME` measures `renderer.draw` and nothing else, so it cannot see a cost in `layout()`, in a
+script's geometry reads, or on the playback tick. For "the UI is slow" or "it hangs", sample the
+process:
+
+```sh
+sample $(pgrep -f '.build/arm64-apple-macosx/debug/NullPlayer') 6 -file /tmp/np-sample.txt
+```
+
+Read the **Main Thread** tree and aggregate the `(in NullPlayer)` frames by subtree cost. Note the
+idle share first — a profile that is 43% idle is telling you the app is *not* CPU-bound and the
+question is what limits the repaint, not what the repaint costs. Two full graph walks were found this
+way that no headless probe could have shown; see
+[performance.md](performance.md) → *Profile the process, don't reason about the frame*.
+
 ### Driving a click in the *running app*
 
 `WINAMP_MODERN_DEBUG_CLICK=[<container>@]<x>,<y>[;…]` (DEBUG builds) clicks skin points a few seconds

@@ -31,6 +31,75 @@ is a function of the graph; its **bitmap** is not — play/pause artwork, the sh
 the EQ buttons and every `cfgattrib` switch are resolved from the host and the config store, so a
 memoized node has its image re-resolved on the way out.
 
+#### Profile the process, don't reason about the frame (2026-08-24)
+
+`WINAMP_MODERN_RENDER_TIME` measures **`renderer.draw` and nothing else**. A report of "1–2 fps" was
+chased through the draw path twice before anyone sampled the app, and the two largest costs were not
+in `draw` at all. One command answers it:
+
+```sh
+sample $(pgrep -f '.build/arm64-apple-macosx/debug/NullPlayer') 6 -file /tmp/np-sample.txt
+```
+
+Read the **Main Thread** tree, aggregate the `(in NullPlayer)` frames by subtree cost, and note the
+idle share: the profile that named these two showed the app **43% busy**, which is already the answer
+to "is it CPU-bound?" — it was not, and the remaining question was why each repaint cost so much.
+Two full graph walks were hiding in plain sight:
+
+- **`WasabiObjectGraph.objects(xmlID:)` scanned every object and sorted the result, per call.** It is
+  on the playback tick (`updateTime` looks up `HiddenVolume`), so on a skin with a few thousand
+  objects it was ~10% of the app's entire busy time in one lookup. Now a lazily built id index,
+  dropped in `makeObject`, `discardSubtree`, and on a script writing `id`.
+- **`layoutNodes()` had no cache**, and `resolvedGeometry(of:)` goes through it — which is what
+  answers every `getWidth`/`getLeft`/`getGuiW` a script asks. One event reading its own layout a few
+  dozen times walked the whole graph a few dozen times, and `browserNodes()` re-walked it on every
+  `layout()` pass on top. Now memoized on the same generation+canvas key `sceneNodes()` uses, and
+  cleared with it in `invalidateSceneCache()`.
+
+#### Four ways to pay full price for nothing (Big Bento Modern, 2026-08-24)
+
+Measured at `RENDER_TIME_SCALE=2` on Big Bento Modern's main window: **238 ms/frame → 37 ms/frame**.
+Each of these is a general renderer defect that one heavy skin made visible.
+
+| Fix | ms/frame |
+|---|---|
+| before | 238 |
+| skip fully-transparent draws | 146 |
+| prescale cap large enough for window-sized art | 37 |
+| native tiling; spectrum bounded to the display rate | 37 |
+
+1. **`alpha="0"` was drawn, not skipped.** The renderer set `alpha(0)` on the context and composited
+   anyway. Big Bento lays `<layer id="player.resizer.disable" move="1" alpha="0">` over its **entire**
+   1526×868 window as a mousetrap: that one invisible layer cost **42.8 ms/frame**, and `focus.dummy`
+   another **42.0**. `draw(_:in:pressed:hovered:)` now returns early when the effective alpha
+   (object × inherited) is zero. Alpha is read per frame, so an object fading in resumes drawing the
+   moment it is no longer transparent.
+2. **The prescale cache had a cap smaller than a window.** `maximumPrescaledPixels` was 4 M px; a
+   full-window background at 2× is 5.3 M, so the entries that matter most missed the cache and were
+   `.high`-resampled *every frame*. `grid#-` went 60.5 → 7.0 ms, `two.frame.2.center` 30.4 → 2.2. The
+   cap is now 16.7 M (4096², a window at 4× UI Size) and the total budget 25 M px (~100 MB). **Both
+   numbers are a memory/time trade, not a constant of nature** — at 50 M it measured 34 ms instead of
+   37, which was not judged worth another 100 MB.
+3. **`drawTiled` blitted one tile at a time**, up to 8192 `drawImage` calls per frame. It is now a
+   single `CGContext.draw(_:in:byTiling:)`; the tiling axes are chosen by the size of the rect handed
+   to it, so an axis that should *stretch* gets the frame's full extent and its repeats fall outside
+   the clip. **The y-flip has to be applied here too** — tiling straight through drew every tiled
+   background upside down across 20 corpus skins, which the sweep caught and nothing else would have.
+4. **`updateSpectrum` ran at the audio block rate (~75 Hz).** Every delivery that invalidates a box
+   costs a scene traversal, because `draw(_:)` repaints the whole tree clipped to the dirty rect. Big
+   Bento shows **six** `<vis>` boxes once its player pane is wide enough, so the moment its splitter
+   became draggable the analyzer began asking for 75 repaints a second of a 238 ms scene. Now bounded
+   to 60 Hz; a frame the display was never going to show costs nothing to drop.
+
+**Still the biggest thing inside `draw`, and unfixed:** text. `drawText` was 339 of 1148 draw samples,
+with `WasabiResourceCache.font(identifier:size:traits:)` alone at 96 — an `NSAttributedString`
+attribute dictionary is built and `NSString.draw` entered per string, per frame, and the embedded
+playlist does it per row.
+
+**Sweep note:** the tiling rewrite leaves 12 of 288 corpus images differing by **maxdelta = 1** — one
+LSB, from a single native tiling pass rounding differently than N individually-rounded blits. Diff in
+RGB and check the magnitude before calling that a regression.
+
 The main thread still carries what genuinely belongs to it: MAKI timer ticks and the interpreter (the
 VM and the graph are single-threaded by construction), and the warp's pixel loop inside `draw`
 (~1.9 ms for Defix's two 264×264 reels). Both are measured, bounded and, at 30 Hz, comfortably inside

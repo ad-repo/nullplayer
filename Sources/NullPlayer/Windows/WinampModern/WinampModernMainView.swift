@@ -605,8 +605,13 @@ final class WinampModernMainView: NSView {
             surface.applyPalette(renderer.palette)
             addSubview(surface.view)
         }
+        // Not every `{0000000A}` holder gets the engine: a letterbox strip is an analyzer's box, and
+        // the bridge vends one surface per skin, so a second holder asking for it stole the picture
+        // from the first. Everything not named here falls through to the renderer's analyzer (BB9).
+        let engineHolderID = WinampModernVisualizationHolder.engineHolder(among: holders)
         var liveVis: Set<WasabiObjectID> = []
         for holder in holders where holder.kind == .visualization {
+            guard holder.object.stableID == engineHolderID else { continue }
             liveVis.insert(holder.object.stableID)
             guard visualizationSurfaces[holder.object.stableID] == nil,
                   let surface = componentHost?.makeVisualizationSurface() else { continue }
@@ -862,9 +867,12 @@ final class WinampModernMainView: NSView {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
         // A splitter's grab strip spans the full height of its frame, which means it crosses whatever
         // the skin has laid over that column — cPro's tab strip runs straight through the 8px seam.
-        // So the divider only claims the click when nothing interactive is under it; a control the
-        // user can actually see always wins, and the seam between the panes is still draggable.
-        if renderer.object(at: point) == nil, let divider = renderer.frameDivider(at: point) {
+        // So the divider only claims the click when nothing that outranks it is under it: a control
+        // the user can actually see always wins. An invisible mousetrap and a bare window-drag surface
+        // do not, or Big Bento's full-window `player.resizer.disable` layer makes its splitter
+        // undraggable while the cursor promises otherwise — see `objectOverridingDivider` (BB21).
+        if renderer.objectOverridingDivider(at: point) == nil,
+           let divider = renderer.frameDivider(at: point) {
             draggedDivider = divider
             return
         }
@@ -1199,12 +1207,25 @@ final class WinampModernMainView: NSView {
         // thread the skin's own animation is trying to use.
         let rects = visualizationRects()
         guard !rects.isEmpty else { return }
+        // And no faster than the display. The tap delivers at the audio block rate — ~75 Hz — and
+        // every delivery that invalidates a box costs a scene traversal, because `draw(_:)` repaints
+        // the whole tree clipped to the dirty rect. Big Bento Modern shows **six** `<vis>` boxes once
+        // its player pane is wide enough, so the moment its splitter became draggable (BB21) the
+        // analyzer started asking for 75 repaints a second of a scene that then cost 238 ms to paint
+        // once, and the main thread stopped coming back. Dropping a frame the display was never going
+        // to show costs nothing visible.
+        let now = CACurrentMediaTime()
+        guard now - lastSpectrumRedraw >= Self.spectrumRedrawInterval else { return }
+        lastSpectrumRedraw = now
         guard rects.count <= 24 else {
             needsDisplay = true
             return
         }
         for rect in rects { setNeedsDisplay(rect) }
     }
+
+    private static let spectrumRedrawInterval: CFTimeInterval = 1.0 / 60
+    private var lastSpectrumRedraw: CFTimeInterval = 0
 
     /// The boxes of every `<vis>`/`<eqvis>` in this scene, cached with the other animation rects.
     private func visualizationRects() -> [NSRect] {

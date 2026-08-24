@@ -629,13 +629,37 @@ different windows (and the video window still gets its picture parked on it). Th
 out: they each have a menu item already, and a second entry would be the double route this rule
 exists to prevent.
 
+### `{0000000A}` is a plugin *host*, and not every holder gets the engine (BB9, 2026-08-24)
+
+The GUID does not mean "MilkDrop's box". It is Winamp's **visualization plugin host**: what renders in
+it is whichever plugin is selected, and Winamp's own default there is its built-in **spectrum
+analyzer**. MilkDrop/AVS appears only when the user has picked it. Big Bento Modern ships a `MILKDROP`
+preset-folder button under its stretched pane *and* its screenshots show an analyzer there; both are
+true, and the button is not evidence about the default.
+
+We used to mount the engine over **every** such holder unconditionally, and `VisualizationEngineType`
+is only `projectM`/`geiss`/`tripex` — so an analyzer in that slot was unreachable by construction,
+not a setting nobody had found. `WinampModernVisualizationHolder` now routes them on the **box**,
+never on a skin's object ids:
+
+- A holder at or above **3:1** width-to-height is a letterbox strip and never takes the engine — that
+  is an analyzer's shape. Big Bento's three placements measure 7.3 (stretched), 1.0 (mini) and ~2.5
+  (the Visualization tab), so the boundary is nowhere near any of them.
+- Of the rest, the **largest** takes the engine. `makeVisualizationSurface()` deliberately vends one
+  surface per skin — two GL contexts, two display links and two spectrum consumers against the same
+  audio is what that cache prevents — so a second holder asking for it got the same view moved out
+  from under the first, which is why "the tab works and the mini doesn't".
+- Every other holder draws the analyzer rather than sitting black.
+
 ### What the renderer draws
 
 `WasabiSceneRenderer.hostedVisualizationHolders` is the set of holders the view layer has actually
-filled. Those boxes are painted **black and nothing else**; bars under a live engine are a second
-visualization nobody can see, costing a repaint every frame. Headless — the render sweep, the golden
-images, `WinampModernRenderDumpTests` — there is no view layer, the set is empty, and a
-`<component>` box still draws the analyzer.
+filled — now at most one. Those boxes are painted **black and nothing else**; bars under a live engine
+are a second visualization nobody can see, costing a repaint every frame. Every *other* `{0000000A}`
+holder gets `drawVisualizationBars`, which is a real analyzer (see
+[rendering.md](rendering.md) → *The analyzer a `<component>` box draws*). Headless — the render
+sweep, the golden images, `WinampModernRenderDumpTests` — there is no view layer, the set is empty,
+and every `<component>` box draws the analyzer.
 
 ### The menu
 

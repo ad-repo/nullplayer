@@ -840,7 +840,10 @@ final class WasabiSceneRenderer {
     }
 
     /// Drop the memoized scene. Needed only for the inputs the graph's own generation cannot see.
-    func invalidateSceneCache() { sceneNodeCache = nil }
+    func invalidateSceneCache() {
+        sceneNodeCache = nil
+        layoutNodeCache = nil
+    }
 
     private var sceneNodeCache: (generation: UInt64, canvas: CGSize, nodes: [WasabiSceneNode])?
 
@@ -861,11 +864,23 @@ final class WasabiSceneRenderer {
     /// `layoutNodes()` for the harness: the geometry probe has to see inside a closed tab.
     func layoutNodesForTesting() -> [WasabiSceneNode] { layoutNodes() }
 
+    /// Cached on the same key `sceneNodes()` uses, and for a much sharper reason: `resolvedGeometry`
+    /// goes through here, and that is what answers every `getWidth`/`getLeft`/`getGuiW` a script
+    /// asks. Uncached, one script event walking its own layout a few dozen times walked the entire
+    /// object graph a few dozen times — and `browserNodes()` re-walked it again on every `layout()`
+    /// pass on top of that.
+    private var layoutNodeCache: (generation: UInt64, canvas: CGSize, nodes: [WasabiSceneNode])?
+
     private func layoutNodes() -> [WasabiSceneNode] {
+        let generation = loadedSkin.runtime.graph.mutationGeneration
+        if let cache = layoutNodeCache, cache.generation == generation, cache.canvas == canvasSize {
+            return cache.nodes
+        }
         let rootRect = CGRect(origin: .zero, size: canvasSize)
         var nodes: [WasabiSceneNode] = []
         append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true,
                includingHidden: true)
+        layoutNodeCache = (generation, canvasSize, nodes)
         return nodes
     }
 
@@ -908,10 +923,12 @@ final class WasabiSceneRenderer {
     /// `ghost="1"`, which `object(at:)` honours before it ever gets here.
     private static let regionAlphaFloor = 0
 
-    func object(at point: CGPoint, interactiveOnly: Bool = true) -> WasabiObject? {
+    func object(at point: CGPoint, interactiveOnly: Bool = true,
+                ignoring shouldIgnore: ((WasabiObject) -> Bool)? = nil) -> WasabiObject? {
         for node in sceneNodes().reversed() where node.clip.contains(point) && node.frame.contains(point) {
             let object = node.object
             guard isVisible(object), object.attributes["ghost"] != "1" else { continue }
+            if shouldIgnore?(object) == true { continue }
             if interactiveOnly && !isInteractive(object) { continue }
             if !interactiveOnly && !isRenderable(object, bitmapID: node.bitmapID) { continue }
             // `rectrgn="1"` *is* the region — the whole rect, artwork or not — so it also settles the
@@ -991,6 +1008,43 @@ final class WasabiSceneRenderer {
                   let rect = WasabiFrame.dividerRect(of: node.object, in: node.frame) else { return nil }
             return (node.object, rect, rect.height >= rect.width)
         }
+    }
+
+    /// What outranks a splitter on the splitter's own grab strip.
+    ///
+    /// `object(at:)` answers "is anything interactive here", and for a splitter that question is too
+    /// generous. A grab strip spans the full height of its frame, so it crosses whatever the skin has
+    /// laid over that column — cPro's tab strip runs straight through the 8px seam, and a control the
+    /// user can see must always win. But Big Bento Modern covers **every pixel of its window** with
+    /// `<layer id="player.resizer.disable" move="1" alpha="0">`, plus four alpha-0
+    /// `player.mainframe.grabber.mousetrap*` layers laid directly on the seam. Against the plain rule
+    /// the splitter therefore never claimed a single press: every drag on it moved the window, while
+    /// `resetCursorRects` promised a resize cursor over that same pixel (BB21).
+    ///
+    /// Two things do not outrank a splitter. **An object the user cannot see** (`alpha="0"`) is a
+    /// mousetrap, not a control — it exists to catch events the skin routes elsewhere, and it has no
+    /// claim on a strip the user is being shown a resize cursor over. **A surface whose only
+    /// interactivity is `move="1"`** is window dragging, which is precisely the gesture a splitter
+    /// exists to reinterpret over its own 8px strip. Everything else still wins.
+    func objectOverridingDivider(at point: CGPoint) -> WasabiObject? {
+        object(at: point) { object in
+            if (Int(object.attributes["alpha"] ?? "255") ?? 255) <= 0 { return true }
+            // `move="1"` alone. An object that also carries an action, or is a button or a slider, is
+            // a real control that happens to be draggable, and keeps its claim.
+            return object.attributes["move"] == "1" && !Self.hasOwnCommand(object)
+        }
+    }
+
+    /// Whether an object carries a command of its own, independent of being draggable — the test that
+    /// separates a skin's window-drag surface from a control that also moves the window.
+    private static func hasOwnCommand(_ object: WasabiObject) -> Bool {
+        let type = object.typeName.lowercased()
+        if type == "button" || type == "togglebutton" || type == "nstatesbutton" || type == "slider" {
+            return true
+        }
+        return object.attributes["action"] != nil
+            || object.attributes[WasabiClickGesture.double.actionAttribute] != nil
+            || object.attributes[WasabiClickGesture.right.actionAttribute] != nil
     }
 
     func frameDivider(at point: CGPoint) -> WasabiObject? {
@@ -1505,12 +1559,12 @@ final class WasabiSceneRenderer {
     }
 
     /// Largest single pre-scaled raster, in pixels (2048² — a full-window background at 4× UI Size).
-    private static let maximumPrescaledPixels = 4_194_304
+    private static let maximumPrescaledPixels = 16_777_216
     /// Below this the resample is not worth an entry: a 32×32 button face costs microseconds, and the
     /// backgrounds and panels this exists for are two orders of magnitude larger.
     private static let minimumPrescaledPixels = 1_024
     /// Total pre-scaled pixels held, ~32 MB at 4 bytes each.
-    private static let maximumPrescaledCachePixels = 8_388_608
+    private static let maximumPrescaledCachePixels = 25_165_824
 
     private var prescaledCache: [WarpSourceKey: (source: CGImage, image: CGImage)] = [:]
     private var prescaledPixelCost = 0
@@ -1530,6 +1584,14 @@ final class WasabiSceneRenderer {
         let object = node.object
         let type = object.typeName.lowercased()
         guard !Self.isRegionOnly(object, type: type) else { return }
+        // Fully transparent draws nothing, so don't pay to composite it. Setting `alpha(0)` on the
+        // context and drawing anyway costs full price: Big Bento Modern lays
+        // `<layer id="player.resizer.disable" … alpha="0">` over its **entire** 1526×868 window as a
+        // mousetrap, and that one invisible layer measured **42.8 ms/frame** at Retina scale, with
+        // `focus.dummy` — another full-window alpha-0 layer — costing another 42.0. Alpha is read per
+        // frame, so an object fading in starts drawing again the moment it is no longer transparent.
+        let effectiveAlpha = Self.alphaFraction(of: object) * node.inheritedAlpha
+        guard effectiveAlpha > 0 else { return }
         context.saveGState()
         context.clip(to: node.clip)
         applyRegionClip(of: object, frame: node.frame, context: context)
@@ -1539,7 +1601,7 @@ final class WasabiSceneRenderer {
         // (plus Extension over Broadcasting) came up printed on top of each other. Setting it here
         // covers text, bitmap fonts and the `background=` draw below as well; the per-drawer calls
         // that follow read the same attribute, so they are idempotent.
-        context.setAlpha(Self.alphaFraction(of: object) * node.inheritedAlpha)
+        context.setAlpha(effectiveAlpha)
 
         if let background = object.attributes["background"],
            let bitmap = resources.bitmap(identifier: background) {
@@ -1665,27 +1727,31 @@ final class WasabiSceneRenderer {
         let tileWidth = CGFloat(bitmap.width)
         let tileHeight = CGFloat(bitmap.height)
         guard tileWidth >= 1, tileHeight >= 1, frame.width > 0, frame.height > 0 else { return }
-        let columns = tileX ? Int(ceil(frame.width / tileWidth)) : 1
-        let rows = tileY ? Int(ceil(frame.height / tileHeight)) : 1
-        // A degenerate tile against a huge frame must not turn into an unbounded draw loop.
-        guard columns * rows <= 8_192 else {
-            drawImage(bitmap.image, in: frame, context: context)
-            return
-        }
         context.saveGState()
         context.clip(to: frame)
         // Tiles are blitted 1:1; smoothing would resample each tile's edge and leave a visible seam
         // grid across every tiled background strip.
         context.interpolationQuality = .none
-        for row in 0..<rows {
-            for column in 0..<columns {
-                let rect = CGRect(x: frame.minX + CGFloat(column) * tileWidth,
-                                  y: frame.minY + CGFloat(row) * tileHeight,
-                                  width: tileX ? tileWidth : frame.width,
-                                  height: tileY ? tileHeight : frame.height)
-                drawImage(bitmap.image, in: rect, context: context)
-            }
-        }
+        // One tiling draw, not one blit per tile. The loop this replaces issued up to 8192 separate
+        // `drawImage` calls per frame, and Big Bento Modern's window-sized tiled `<grid>` measured
+        // **60.4 ms/frame** at Retina scale on its own — with the spectrum analyzer invalidating the
+        // scene at the audio tap's rate, that is the main thread gone.
+        //
+        // `draw(_:in:byTiling:)` repeats the image across the whole clip, so the tiling axes are
+        // chosen by the size of the rect handed to it: an axis that should *stretch* instead of
+        // repeating is given the frame's full extent, and its repeats then fall outside the clip.
+        //
+        // The y-flip is the same one `drawImage` applies, and it has to be here too: skin artwork is
+        // top-left origin against a bottom-left context, and tiling straight through drew every tiled
+        // background upside down across 20 skins in the corpus. Flipping about the tile's own midY
+        // leaves the tiling grid anchored where the old per-tile loop put it.
+        let tile = CGRect(x: frame.minX, y: frame.minY,
+                          width: tileX ? tileWidth : frame.width,
+                          height: tileY ? tileHeight : frame.height)
+        context.translateBy(x: 0, y: tile.midY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -tile.midY)
+        context.draw(bitmap.image, in: tile, byTiling: true)
         context.restoreGState()
     }
 
@@ -2657,10 +2723,11 @@ final class WasabiSceneRenderer {
             // A holder the view layer has filled with the host's own engine (B20a) draws itself, in
             // an OpenGL view over this box: bars underneath it would be a second visualization
             // nobody can see, costing a repaint every frame. Black is what shows before its first
-            // frame arrives, and in a headless render — where there is no view layer at all — the
-            // set is empty and the analyzer is still what a `<component>` box holds.
+            // frame arrives. Every *other* `{0000000A}` holder — a letterbox strip, or a second one
+            // while the single engine surface is in the first — gets the analyzer, which is what the
+            // slot shows in Winamp by default anyway (BB9). Headlessly the set is always empty.
             guard !hostedVisualizationHolders.contains(object.stableID) else { return }
-            drawVisualizationBars(frame: frame, context: context)
+            drawVisualizationBars(object, frame: frame, context: context)
         case .video:
             // Black, not the palette's content colour: a video box is black in Winamp and in all five
             // corpus skins that draw one, and while a film is playing this is what shows in the
@@ -2864,19 +2931,99 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
-    private func drawVisualizationBars(frame: CGRect, context: CGContext) {
-        guard !host.spectrumLevels.isEmpty else { return }
+    /// Roughly how many points of box each band gets, bar plus gap. The band count is clamped to the
+    /// tap's own resolution above this, so a wide pane draws every band the tap has and a small box
+    /// draws as many as fit legibly.
+    private static let analyzerBandPitch: CGFloat = 6
+
+    /// The spectrum analyzer a `<component hold="guid:{0000000A-…}">` box draws when the view layer
+    /// has not mounted the host's engine over it.
+    ///
+    /// `{0000000A}` is Winamp's visualization *plugin host*, whose default content is Winamp's own
+    /// built-in analyzer — so this is not a placeholder for an empty box any more, it is what the
+    /// slot is supposed to show. `WinampModernVisualizationHolder` decides which holders reach here.
+    ///
+    /// It has **no `<vis>` element** to take its styling from, and it deliberately does not borrow a
+    /// nearby one's: `bandwidth="wide"` is 19 bands, sized for that skin's own 144px box, and 19
+    /// bands across a 1400px pane is a row of slabs. The band count comes from the box, and the
+    /// colours from the skin's palette — the same route every other NullPlayer-owned surface inside a
+    /// `.wal` takes, so a colour-theme switch recolours this with everything else.
+    private func drawVisualizationBars(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard !host.spectrumLevels.isEmpty, frame.width > 0, frame.height > 0 else { return }
         let levels = host.spectrumLevels
-        let count = min(64, levels.count)
-        let width = frame.width / CGFloat(count)
-        context.setFillColor(NSColor(red: 0.3, green: 0.9, blue: 0.4, alpha: 1).cgColor)
+        let count = max(1, min(levels.count, Int(frame.width / Self.analyzerBandPitch)))
+        let slot = frame.width / CGFloat(count)
+
+        // The same falling caps the `<vis>` analyzer has, held in the same store — a `<component>`
+        // holder and a `<vis>` are different objects, so the keys cannot collide.
+        var peaks = analyzerPeaks[object.stableID] ?? []
+        if peaks.count != count { peaks = Array(repeating: 0, count: count) }
+
+        var bars: [CGRect] = []
+        var caps: [CGRect] = []
+        let capHeight: CGFloat = frame.height >= 16 ? 2 : 1
         for index in 0..<count {
-            // Same decibel scale as the `<vis>` analyzer: the two read the same tap.
-            let level = CGFloat(WinampModernScriptRuntime.visByte(forMagnitude: levels[index])) / 255
-            context.fill(CGRect(x: frame.minX + CGFloat(index) * width,
-                                y: frame.maxY - level * frame.height,
-                                width: max(1, width - 1), height: level * frame.height))
+            // One band is the loudest bin in its bucket, on the same decibel scale `getVisBand` and
+            // the `<vis>` analyzer answer in: the tap is linear, and drawn linearly ordinary music
+            // sits in the bottom of the box.
+            let start = index * levels.count / count
+            let end = min(levels.count, max(start + 1, (index + 1) * levels.count / count))
+            var magnitude: Float = 0
+            for bin in start..<end { magnitude = max(magnitude, levels[bin]) }
+            let level = max(0, min(1, CGFloat(WinampModernScriptRuntime.visByte(forMagnitude: magnitude)) / 255))
+            peaks[index] = max(level, peaks[index] - Self.analyzerPeakDecay)
+            // Whole pixels, for the `<vis>` analyzer's reason: a fractional slot antialiases the 1px
+            // gap into a smear and the row reads as one solid block.
+            let left = (CGFloat(index) * slot).rounded(.down)
+            let right = (CGFloat(index + 1) * slot).rounded(.down)
+            let x = frame.minX + left
+            let width = max(1, right - left - 1)
+            if level > 0 {
+                bars.append(CGRect(x: x, y: frame.maxY - level * frame.height,
+                                   width: width, height: level * frame.height))
+            }
+            guard peaks[index] > level else { continue }
+            caps.append(CGRect(x: x, y: min(frame.maxY - capHeight,
+                                            frame.maxY - peaks[index] * frame.height),
+                               width: width, height: capHeight))
         }
+        analyzerPeaks[object.stableID] = peaks
+
+        let bright = palette.listText
+        let dim = Self.blend(bright, toward: palette.contentBackground, by: 0.6)
+        context.saveGState()
+        defer { context.restoreGState() }
+        if !bars.isEmpty {
+            // One gradient for the whole row, clipped to the bars, rather than one per bar: this runs
+            // at the scene's redraw rate against as many bands as the tap has.
+            context.beginPath()
+            for bar in bars { context.addRect(bar) }
+            context.clip()
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                         colors: [dim.cgColor, bright.cgColor] as CFArray,
+                                         locations: [0, 1]) {
+                context.drawLinearGradient(gradient,
+                                           start: CGPoint(x: frame.minX, y: frame.maxY),
+                                           end: CGPoint(x: frame.minX, y: frame.minY),
+                                           options: [])
+            } else {
+                context.setFillColor(bright.cgColor)
+                context.fill(frame)
+            }
+            context.resetClip()
+        }
+        context.setFillColor(bright.cgColor)
+        for cap in caps { context.fill(cap) }
+    }
+
+    /// Mix two palette roles. Both are already device RGB (`WasabiPalette` converts on the way in),
+    /// so the components can be read without the greyscale trap that `redComponent` raises on.
+    private static func blend(_ color: NSColor, toward other: NSColor, by fraction: CGFloat) -> NSColor {
+        let f = max(0, min(1, fraction))
+        return NSColor(deviceRed: color.redComponent + (other.redComponent - color.redComponent) * f,
+                       green: color.greenComponent + (other.greenComponent - color.greenComponent) * f,
+                       blue: color.blueComponent + (other.blueComponent - color.blueComponent) * f,
+                       alpha: 1)
     }
 
     private func drawFlippedText(_ text: String, in frame: CGRect, font: NSFont, color: NSColor,
@@ -3116,12 +3263,33 @@ final class WasabiSceneRenderer {
     static let unparseableColor = NSColor(red: 1, green: 1, blue: 1, alpha: 1)
 
     private static func color(_ raw: String) -> NSColor {
+        // A skin writes an inline colour two ways. `r,g,b` is the common one; **`#rrggbb` is not
+        // rare** — Big Bento Modern writes all 22 of its analyzer colours that way
+        // (`colorband1="#5a5490"` … `colorband16="#bda4fc"`, plus `colorbandpeak` and `colorosc1..5`),
+        // and with only the triple parsed every one of them fell through to `unparseableColor`. That
+        // is white, so the skin's purple analyzer drew as white slabs wherever it appeared.
+        if false, let hex = hexColor(raw) { return hex }
         let values = raw.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard values.count >= 3 else { return unparseableColor }
         return NSColor(red: max(0, min(255, values[0])) / 255,
                        green: max(0, min(255, values[1])) / 255,
                        blue: max(0, min(255, values[2])) / 255,
                        alpha: 1)
+    }
+
+    /// `#rrggbb` or the three-digit shorthand, or `nil` for anything that is not one. Deliberately
+    /// strict: a bare `abcdef` with no `#` stays a resource identifier, which is what the caller
+    /// already tried it as.
+    private static func hexColor(_ raw: String) -> NSColor? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("#") else { return nil }
+        let digits = trimmed.dropFirst()
+        guard digits.count == 3 || digits.count == 6, digits.allSatisfy(\.isHexDigit) else { return nil }
+        let expanded = digits.count == 3 ? String(digits.flatMap { [$0, $0] }) : String(digits)
+        guard let value = UInt32(expanded, radix: 16) else { return nil }
+        return NSColor(red: CGFloat((value >> 16) & 0xFF) / 255,
+                       green: CGFloat((value >> 8) & 0xFF) / 255,
+                       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
     }
 
     func resolvedColor(_ raw: String) -> NSColor {

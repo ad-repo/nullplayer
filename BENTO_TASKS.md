@@ -119,21 +119,46 @@ backlog.
       **Not yet confirmed live** (BB4's lesson): check the backdrop is now a dimmed wash behind the
       panel with one crisp cover.
 
-- [ ] **BB9. The visualization pane is missing — probably a setting the user cannot reach.**
-      `mcvcore.m` picks the MCV's pane from config attributes it registers itself (`ic_fileinfo`,
-      `ic_vis`, `ic_cover_fileinfo`, `ic_vis_fileinfo`) and the `...` button's popup is where a user
-      flips them (`mcvcore.m:256`, `:266–267`). B38.4 already established that at the defaults the
-      skin takes the album-art branch and hides `info.component.vis` — so "the spectrum analyzer is
-      missing" is most likely **correct default behaviour that cannot currently be switched off**,
-      which routes straight back to BB7 and B40. Confirm the shipped defaults with
-      `WINAMP_MODERN_RENDER_SETTINGS=1`, then drive the popup live (`WINAMP_MODERN_DEBUG_CLICK` +
-      `WINAMP_MODERN_CALL_TRACE=1`) — `PopupMenu`'s `addCommand`/`addSubMenu`/`checkCommand`/
-      `popAtMouse` **are** implemented (`WinampModernScriptRuntime.swift:1979–1983`, `3039–3065`), so
-      do not assume that button is dead until it is measured.
-      Then the separate question: does an embedded `<component hold="guid:{0000000A-…}">` in the
-      **player body** — as against a dedicated container — get a visualization surface from us at all?
-      That is the same shape as the open **B23a** (BLAKK) in `TASKS.md`, and both **B23a** and **B16**
-      warn that our holder probes go blind on exactly this case. Fix the probe first.
+- [ ] **BB9. The Multi Content View's three visualization placements. Partly done 2026-08-24 —
+      routing and the analyzer landed; the overlap at launch is still open. Rewritten again; the
+      entry this replaces was wrong on every count and cost a session.**
+      **What the user wants:** the *stretched* pane (`info.component.vis.full`) is a **spectrum
+      analyzer**; the *Visualization tab* (`wdh.vis.object`) and the *mini* pane
+      (`info.component.vis`, album-art sized) are **NullPlayer's visualization** — ProjectM / Geiss /
+      Tripex. Chosen 2026-08-24 when asked: with all three ticked they should sit **side by side**
+      (`cover | viz | spectrum`), not replace each other.
+      **Done.** `{0000000A-…}` is Winamp's visualization *plugin host*, whose default content is
+      Winamp's own analyzer; we mounted the engine over every such holder unconditionally and
+      `VisualizationEngineType` has no analyzer in it, so an analyzer there was unreachable by
+      construction. `WinampModernVisualizationHolder` now routes on the **box** — a holder at or above
+      3:1 is a letterbox strip and never takes the engine; of the rest the largest does; every other
+      holder draws the analyzer instead of sitting black. `drawVisualizationBars` is a real analyzer
+      now (band count from the box, `WasabiPalette` colours, peak caps) rather than 64 flat green
+      bars, and deliberately borrows nothing from a nearby `<vis>` — `bandwidth="wide"` is 19 bands
+      and 19 bands across a 1400px pane is a row of slabs. Rules:
+      `reference/components.md` → *`{0000000A}` is a plugin host*; `reference/rendering.md` → *The
+      analyzer a `<component>` box draws*. `swift test` 1104 pass (7 new,
+      `WinampModernPhase60Tests`).
+      **Still open — the overlap at launch.** Reported again 2026-08-24 after the session's revert:
+      on reload the stretched pane and the file-info panes are all visible and drawn over each other.
+      Cause is measured and is the skin's own: `mcvcore` declares `System.onScriptLoaded()` **twice**,
+      and the second body starts a 700 ms one-shot whose `onTimer` shows the file-info panes back
+      unconditionally, with no reference to which MCV page is current — so at launch it is the last
+      word. Detail and the two dead ends in `skins/big-bento-modern.md` → *BB9*. **Do not fix it by
+      running only the first `onScriptLoaded` body** — that was tried and reverted; the second body is
+      where the panel's width layout lives, so it takes the sizing out (177 nodes and no
+      `set_maxwidth`, against 188 with both). The corpus sweep was clean and it still broke the skin.
+      **Next step is the side-by-side layout, which supersedes the exclusivity question**: the skin
+      never lays all three out (`info.component.vis.full` is `w="0" relatw="1"` and its routine hides
+      the others), so this is a NullPlayer-side layout override. The narrow version is to narrow that
+      holder to the span its visible siblings leave — Bento already places `mini vis | cover | file
+      info` correctly at `x=3` / `x=195` / `x=370` when both are ticked. Open question recorded when
+      the choice was made: with **Show file info** still ticked the track text would sit over the
+      bars, unless the spectrum takes only what is left after it.
+      **Corrections to what this entry used to say:** the defaults *are* reachable and the plumbing
+      *does* work; an embedded `<component>` in the player body **does** get a surface — that question
+      is closed; BB7 and B40 are not involved; and **the skin ships no `.m` sources at all**, so the
+      `mcvcore.m:256` / `:266–267` citations refer to nothing in the archive.
 
 - [x] **BB12. The header strip and the seek bar — measured 2026-08-24. The seek bar is fixed; the
       header did not reproduce.** The seek bar was a solid black bar because `wdh.waveseeker` — a
@@ -201,6 +226,75 @@ backlog.
       trace first, not fourth*:** five rebuild-and-retest rounds were spent reasoning about which hop
       might be broken, and one `CALL-TRACE` histogram named the cause immediately.
 
+
+- [x] **BB20. The dump harness answers markup for every geometry read inside `onScriptLoaded`. Fixed 2026-08-24.**
+      The harness now builds a renderer per container *before* `try runtime.start()` and installs a
+      `resolvedGeometryRequested` that asks each in turn — the app's own wiring — and the dump loop
+      reuses those same instances. Rule: `reference/harness.md` → *The harness answers geometry from
+      before `start()`*. 288-image sweep taken across the change; the images that moved are recorded
+      under BB22 below.
+      <details><summary>original entry</summary>
+
+      Found while measuring BB9, and **not Bento-only** — it affects every skin in the corpus.
+      `WinampModernRenderDumpTests` installs `runtime.resolvedGeometryRequested` inside its
+      per-container loop, long after `try runtime.start()`. Skins do nearly all of their layout in
+      `onScriptLoaded`, so during it `getWidth`/`getLeft`/`getGuiW` fall back to `object.geometry` —
+      `0` for a `w="0" relatw="1"` group. Big Bento's visualizer measured `getwidth() -> 0` headlessly
+      against `346` in the app; both hide the analyzer, so **the harness agreed with the symptom for
+      the wrong reason**. The app is the model: `wireContainerCallbacks` installs the closure *before*
+      `scripts.start()` and consults every container's renderer. **Expect the 288-image sweep to
+      change** — that is the point, so budget for inspecting the diff. Detail:
+      [BENTO_VIS_HANDOFF.md](BENTO_VIS_HANDOFF.md) §3.8.
+      </details>
+
+- [x] **BB21. Bento's header `<vis>` analyzer is behind a splitter that cannot be dragged. Fixed
+      2026-08-24, confirmed live.** The divider claimed a press only when nothing interactive sat under
+      it, and this skin covers every pixel with `<layer id="player.resizer.disable" move="1"
+      alpha="0">` plus four alpha-0 mousetraps on the seam — so the cursor promised a resize and every
+      press dragged the window. `renderer.objectOverridingDivider(at:)` is the rule: on a splitter's
+      own grab strip an **invisible** object (`alpha="0"`) and a bare **`move="1"`** window-drag
+      surface do not outrank it; a button, a slider or anything carrying an action still does. Scoped
+      to the grab rect, so cPro's tab strip crossing its seam is unaffected. The skin's own
+      `mousetrap3`/`mousetrap4` are `alpha="255"` and sit above and below the strip, and keep their
+      claim. Rule: `reference/rendering.md` → *What outranks a splitter on its own grab strip*.
+      **This also unblocked the header analyzer** — `visualizer.maki` shows `main.vis.group` only
+      above 730px of player width, which is this divider.
+      <details><summary>original entry</summary>
+
+      Separate from BB9's panes. Six `<vis>` boxes in `main.vis.group` are shown only when
+      `visualizer.maki`'s `onResize` reports more than 730px of player width; that width is the
+      `player.mainframe.big` divider, clamped to `minwidth="434"` at load. The divider cannot be
+      grabbed: `mouseDown` claims a seam only when `renderer.object(at:) == nil`, and Bento covers
+      every pixel with `<layer id="player.resizer.disable" … move="1" alpha="0">` plus four alpha-0
+      mousetraps on the seam itself — so every press drags the window while the resize cursor promises
+      otherwise. An unconfirmed patch keying the rule on *interactivity* is at
+      `scratchpad/bb9-revert.patch`; **it was never verified on screen**, so re-derive rather than
+      trust it. Also unestablished: whether Winamp starts Bento with a narrow player pane at all — if
+      not, the defect is the divider's *position*, not its draggability.
+      [BENTO_VIS_HANDOFF.md](BENTO_VIS_HANDOFF.md) §3.7.
+      </details>
+
+- [x] **BB22. The `.wal` window ran at a few frames a second. Fixed 2026-08-24, confirmed live
+      ("it looks better").** Six independent costs, none of them the analyzer that was blamed. Four in
+      the renderer, measured at `RENDER_TIME_SCALE=2` on `main/normal`: **238 → 37 ms/frame** —
+      fully-transparent objects were composited rather than skipped (`player.resizer.disable` alone,
+      a window-sized `alpha="0"` mousetrap, cost **42.8 ms/frame** and `focus.dummy` another 42.0);
+      the prescale cache's per-entry cap (4 M px) was smaller than a window background at Retina
+      (5.3 M) so the entries that matter missed it and were `.high`-resampled every frame
+      (`grid#-` 60.5 → 7.0 ms); `drawTiled` blitted up to 8192 tiles per frame instead of one
+      `draw(_:in:byTiling:)`; and `updateSpectrum` invalidated at the audio block rate (~75 Hz).
+      Two more found by `sample`-ing the process, which is the durable method lesson — `RENDER_TIME`
+      measures `renderer.draw` and nothing else, and neither of these was in it:
+      `WasabiObjectGraph.objects(xmlID:)` scanned and sorted every object per call **on the playback
+      tick** (~10% of the app's busy time in one lookup), and `layoutNodes()` had no cache at all
+      while `resolvedGeometry` — every script `getWidth`/`getLeft` — goes through it.
+      Rules: `reference/performance.md` → *Profile the process, don't reason about the frame* and
+      *Four ways to pay full price for nothing*; `reference/harness.md` → *Profiling the running app*.
+      `swift test` 1104 pass (7 new, `WinampModernPhase60Tests`); 288-image sweep 287 identical for
+      the graph caches, and 12 images differing by **maxdelta = 1** for the tiling rewrite (one LSB,
+      from a single native tiling pass rounding differently than N individually-rounded blits).
+      **Still the biggest thing inside `draw`, and unfixed:** text — `drawText` was 339 of 1148 draw
+      samples, with `font(identifier:size:traits:)` alone at 96.
 
 ### Tier 2 — the settings surfaces themselves
 

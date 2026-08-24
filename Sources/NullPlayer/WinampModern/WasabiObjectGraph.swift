@@ -56,6 +56,9 @@ final class WasabiObject {
         let oldValue = attributes[key]
         guard oldValue != value else { return false }
         if let value { attributes[key] = value } else { attributes.removeValue(forKey: key) }
+        // A script renaming an object invalidates the graph's id index. Rare, and cheap to be right
+        // about: the alternative is a lookup that silently answers with the old name.
+        if key == "id" { graph?.invalidateXMLIDIndex() }
         markDirty(Self.dirtyFlag(for: key))
         return true
     }
@@ -145,6 +148,7 @@ final class WasabiObjectGraph {
         let object = WasabiObject(stableID: id, typeName: typeName, attributes: attributes, source: source, graph: self)
         objectsByID[id] = object
         invalidated[id] = .all
+        xmlIDIndex = nil
         return object
     }
 
@@ -170,12 +174,32 @@ final class WasabiObjectGraph {
     /// sort. Prefer a targeted lookup everywhere else.
     var allObjectsUnordered: Dictionary<WasabiObjectID, WasabiObject>.Values { objectsByID.values }
 
+    /// Every object carrying an `id`, indexed by the folded id.
+    ///
+    /// Rebuilt lazily and dropped whenever the object set changes. Scanning and sorting the whole
+    /// graph per call is what this replaces, and the caller that made it matter is the playback tick:
+    /// `updateTime` looks `HiddenVolume` up on every time update, which on Big Bento Modern meant
+    /// walking several thousand objects and sorting the result sixty times a minute — 4% of the app's
+    /// entire wall clock in one lookup, measured with `sample`.
+    private var xmlIDIndex: [String: [WasabiObject]]?
+
     func objects(xmlID: String) -> [WasabiObject] {
         let folded = Self.fold(xmlID)
-        return objectsByID.values.filter { object in
-            object.xmlID.map(Self.fold) == folded
-        }.sorted { $0.stableID < $1.stableID }
+        if xmlIDIndex == nil {
+            var index: [String: [WasabiObject]] = [:]
+            for object in objectsByID.values.sorted(by: { $0.stableID < $1.stableID }) {
+                guard let id = object.xmlID.map(Self.fold), !id.isEmpty else { continue }
+                index[id, default: []].append(object)
+            }
+            xmlIDIndex = index
+        }
+        return xmlIDIndex?[folded] ?? []
     }
+
+    /// Drop the id index. Called wherever the object set or an object's `id` changes; rebuilding is
+    /// one pass, and the alternative — keeping it in step incrementally — has to be right in five
+    /// places instead of one.
+    func invalidateXMLIDIndex() { xmlIDIndex = nil }
 
     func markAllDirty(_ flags: WasabiDirtyFlags = .all) {
         for object in objectsByID.values { object.markDirty(flags) }
@@ -224,6 +248,7 @@ final class WasabiObjectGraph {
             objectsByID[id] = nil
             invalidated[id] = nil
         }
+        xmlIDIndex = nil
         mutationGeneration &+= 1
     }
 
