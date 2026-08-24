@@ -33,6 +33,26 @@ above — still fails the load, because that one means *the engine is not instal
 loads and draws almost nothing is worse than a named error. Cycles, depth, expansion limits, path
 escapes and unresolved variables are all unchanged: still hard errors.
 
+### What the XML parser tolerates, and what it still rejects
+
+`WalLenientXMLParser` accepts multiple roots and raw ampersands. It also, since B33, accepts a file
+that **runs out before it closes everything it opened**: the EOF check emits a `malformedXML`
+**warning** at the open tag's location and returns the tree. Nothing is lost by doing so — a node is
+attached to its parent (or to `roots`) when it *opens*, not when it closes, so by the time the check
+runs the unclosed tag already holds all of its children and every sibling written after it.
+`maximumDepth` still bounds how much can be left open, so nothing about the sandbox changes.
+
+`Shield_Amp` is the measured case and was the only skin of the 30 installed that failed outright:
+`opensource_notifier/notifier.xml` opens two `<container>`s, closes one, and ends on a
+`<script file="…"/>`. Winamp loads it. The throw cost the skin all nine of its surfaces.
+
+`parse` therefore returns `WalParsedXML { roots, diagnostics }` rather than `[WalXMLNode]`, and
+`WalXMLDocumentLoader.loadFile` folds those diagnostics into the document's own list, so the warning
+reaches the compatibility report like any other. Still hard errors, unchanged: an **unexpected
+closing** tag (a `</foo>` matching nothing on the stack — no corpus skin does this, so it stays strict
+until one demands otherwise), an unterminated comment, declaration, tag or attribute value, a tag
+with no name, and every depth/node-count bound.
+
 ### Sibling skin mounts
 
 An **overlay skin** is written against another skin: its own archive ships only what it changes and

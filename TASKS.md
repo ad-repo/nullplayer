@@ -282,20 +282,37 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
 
 ### Tier 2
 
-- [ ] **B33. An unclosed tag at EOF kills the whole skin.** `Shield_Amp` is the only skin of the 30
-      installed that fails to load at all: `WalXML.swift:218` throws `malformedXML` "Unclosed
-      <container> tag" on `opensource_notifier/notifier.xml`, pulled in by an `<include>` from
-      `skin.xml:36`. The skin's own bug — that file opens two `<container>`s, closes one, and ends on
-      `<script file="…"/>` — but Winamp loads it, and our parser is documented as *lenient*. The
-      engine rule is that malformed optional input should **warn, not fail**.
-      The fix looks cheap and safe: nodes are attached to their parent (or to `roots`) at **open**
+- [x] **B33. An unclosed tag at EOF kills the whole skin — done 2026-08-24.** `Shield_Amp` was the
+      only skin of the 30 installed that failed to load at all: `WalXML` threw `malformedXML`
+      "Unclosed <container> tag" on `opensource_notifier/notifier.xml`, pulled in by an `<include>`
+      from `skin.xml:36`. The skin's own bug — that file opens two `<container>`s, closes one, and
+      ends on `<script file="…"/>` — but Winamp loads it, and our parser is documented as *lenient*.
+      The engine rule is that malformed optional input should **warn, not fail**.
+      It was as cheap as it looked. Nodes are attached to their parent (or to `roots`) at **open**
       time, not at close, so by the time the `guard stack.isEmpty` runs the tree is already complete
-      and correct — the unclosed container simply has all its children. Replace the throw with a
-      warning `WalDiagnostic` at the open tag's location and return `roots`. `maximumDepth` already
-      bounds how much can be left open, so nothing about the sandbox changes.
-      Verify with the render sweep (Shield_Amp should go from `testok=0` to rendering its surfaces)
-      and confirm no skin that currently loads changes. Consider a fixture: a synthetic `.wal` whose
-      XML ends mid-tree, asserting it loads with a diagnostic rather than throwing.
+      and correct — the unclosed container simply has all its children. The throw is now a warning
+      `WalDiagnostic` at the open tag's location; `maximumDepth` still bounds how much can be left
+      open, so nothing about the sandbox changed. `parse` returns `WalParsedXML { roots, diagnostics }`
+      rather than `[WalXMLNode]` so the warning can reach the compatibility report through
+      `WalXMLDocumentLoader.loadFile`. Deliberately still strict: an **unexpected closing** tag
+      (`</b>` matching nothing — no corpus skin does it, and the tree it would leave is ambiguous),
+      unterminated comments/declarations/tags/attribute values, and every depth and node-count bound.
+      Verified: Shield_Amp `testok=0` → **9 surfaces**, and a sweep of all 35 installed `.wal`s shows
+      every previously-loading skin dumping the same count with no new diagnostic — the new code path
+      is only reachable where the parser used to throw outright. `swift test` 1138 pass (7 in
+      `WinampModernPhase63Tests`, including the synthetic truncated-`.wal` fixture).
+      Rules: `reference/loading.md` → *What the XML parser tolerates, and what it still rejects*.
+      **Confirmed live by the user, 2026-08-24.**
+      Found by its sweep, filed rather than folded in: **B45**.
+
+- [ ] **B45. Shield_Amp's playlist container has no layout.** `RENDER-DUMP dropped container: Pledit
+      (no layout)` — the skin declares `Pledit` (and the catalog routes `playlist=declared:Pledit` to
+      it), but nothing renderable is inside, so its `PL` button most likely opens nothing. Surfaced by
+      B33's sweep, which is the first time this skin has ever loaded far enough to be measured.
+      Unclear yet whether this is the skin shipping an empty container, an `<include>` we skip, or a
+      layout named something other than `normal` — LOBE's B26 was the last of those and the container
+      was being dropped silently, so check that first. Nothing else about this skin has been measured
+      beyond the render sweep and one live launch
 
 - [ ] **B21. `enqueueFile` / `playFile` — skin-supplied path ingest.** `PlEdit.enqueueFile(path)`
       (cPro-Bento) and `System.playFile(path)` (T800) hand the host a filesystem path the *skin*

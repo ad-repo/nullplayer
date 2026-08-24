@@ -18,6 +18,17 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: a skin with one unfinished line of markup no longer refuses to load
+  entirely** — Shield_Amp was the only skin of the thirty tested that would not open at all. One of
+  its files ends without closing a tag it opened, which is the skin author's slip, but Winamp itself
+  loads it quite happily; nullPlayer treated it as fatal and threw the whole skin away over it,
+  windows, artwork and all. That kind of truncation is now noted and passed over, and nothing is lost
+  by doing so — the markup is read as it goes, so everything the unfinished tag contained is already
+  in place by the time the end of the file is reached. Shield_Amp now opens with all nine of its
+  windows: the player and its compact bar, the equalizer, the visualiser, video, the media library,
+  the track notifier and its settings panel. Genuinely broken markup — a stray closing tag, an
+  unfinished comment, a tag whose attributes are cut off mid-air — is still rejected.
+
 - **Winamp 5.x modern skins: the window is no longer sluggish** — Big Bento Modern's player window took over 230 milliseconds to draw a single frame, which is a handful of frames a second, and it got dramatically worse the moment anything was playing. Six separate causes, none of them the thing being blamed. Artwork the skin had made fully transparent was still being drawn at full cost — one invisible layer covering the whole window accounted for a fifth of every frame on its own. Backgrounds large enough to fill the window were just too big for the cache that exists to stop them being rescaled, so the most expensive image in the window was re-scaled sixty times a second. Repeating background patterns were being stamped one tile at a time, up to eight thousand times a frame. The spectrum analyser asked for a redraw every time new audio arrived, far faster than the screen can show one. And two internal lookups — one on every playback tick, one behind every measurement a skin's own scripts make — were searching the entire skin from scratch each time. A full repaint now takes 37 milliseconds instead of 238.
 
 - **Winamp 5.x modern skins: mirrored visualisers are mirrored again** — skins build a symmetric

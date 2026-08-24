@@ -41,6 +41,13 @@ final class WalXMLNode {
     func appendChild(_ child: WalXMLNode) { children.append(child) }
 }
 
+/// What a single file's parse produced: the tree, plus anything the parser tolerated rather than
+/// rejected. Only `parse` fills `diagnostics` in; the loader folds them into the document's own list.
+struct WalParsedXML {
+    let roots: [WalXMLNode]
+    let diagnostics: [WalDiagnostic]
+}
+
 struct WalExpandedXMLDocument {
     let roots: [WalXMLNode]
     let visitedPaths: [String]
@@ -59,7 +66,7 @@ struct WalLenientXMLParser {
         self.maximumNodeCount = maximumNodeCount
     }
 
-    func parse(_ text: String, path: String) throws -> [WalXMLNode] {
+    func parse(_ text: String, path: String) throws -> WalParsedXML {
         let chars = Array(text)
         var roots: [WalXMLNode] = []
         var stack: [WalXMLNode] = []
@@ -213,11 +220,22 @@ struct WalLenientXMLParser {
             index = cursor
         }
 
-        guard stack.isEmpty else {
-            let open = stack.last!
-            throw WalFailure(WalDiagnostic(.malformedXML, "Unclosed <\(open.name)> tag.", location: open.location))
+        // A file that runs out before it closes everything it opened is the skin's bug, not ours,
+        // and Winamp loads those. Nothing is missing from the tree: a node is attached to its parent
+        // (or to `roots`) when it *opens*, so the unclosed tag already has all of its children and
+        // every sibling after it. `maximumDepth` still bounds how much can be left open, so warning
+        // here changes nothing about the sandbox. `Shield_Amp`'s `opensource_notifier/notifier.xml`
+        // is the measured case: two `<container>`s opened, one closed, file ends on a `<script/>`.
+        var diagnostics: [WalDiagnostic] = []
+        if let open = stack.last {
+            let extra = stack.count > 1 ? " (\(stack.count) tags left open)" : ""
+            diagnostics.append(WalDiagnostic(
+                .malformedXML,
+                "Unclosed <\(open.name)> tag at end of file\(extra); its children were kept.",
+                severity: .warning,
+                location: open.location))
         }
-        return roots
+        return WalParsedXML(roots: roots, diagnostics: diagnostics)
     }
 
     private static func unescape(_ value: String) -> String {
@@ -273,7 +291,8 @@ final class WalXMLDocumentLoader {
         }
         let parsed = try WalLenientXMLParser(maximumDepth: limits.maximumNestingDepth,
                                              maximumNodeCount: limits.maximumExpandedNodeCount).parse(text, path: path)
-        return try expand(parsed, sourcePath: path, includeStack: includeStack + [folded], depth: depth)
+        diagnostics.append(contentsOf: parsed.diagnostics)
+        return try expand(parsed.roots, sourcePath: path, includeStack: includeStack + [folded], depth: depth)
     }
 
     private func expand(
