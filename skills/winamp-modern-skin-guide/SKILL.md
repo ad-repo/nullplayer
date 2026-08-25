@@ -127,6 +127,8 @@ verbatim; it just lives in a reference file now.
 | Rotary controls: `Map` | [reference/scripting.md](reference/scripting.md) |
 | Asking a skin what it actually shipped | [reference/scripting.md](reference/scripting.md) |
 | Track metadata the skins actually read | [reference/scripting.md](reference/scripting.md) |
+| A file-info line is blank / `getPlayItemMetaDataString` keys and units | [compatibility/maki-surface.md](compatibility/maki-surface.md) |
+| Star ratings (`getCurrentTrackRating` and its 0–5 vs 0–10 scale) | [compatibility/maki-surface.md](compatibility/maki-surface.md) |
 | `onTextChanged` is how a skin learns a host readout moved | [reference/scripting.md](reference/scripting.md) |
 | The equalizer tells the skin it moved | [reference/scripting.md](reference/scripting.md) |
 | The keyboard is a string, and a borderless window has to ask for it | [reference/scripting.md](reference/scripting.md) |

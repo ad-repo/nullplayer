@@ -26,7 +26,8 @@
 | Header analyzers | **Fixed (B43)** | The `main.vis.group` butterfly; `fliph`/`flipv` were ignored, so it drew as two identical blocks. Confirmed live |
 | Seek bar (W10 editions) | **Blank** | The skin's own `waveseeker.rounder.bg` covers it; cause unmeasured |
 | File-info panel content | **Fixed (B39)** | The 17 `Bento:InfoLine` objects drew the song title on every line; a script's `setText` now beats their `display="SONGNAME"`. Confirmed live |
-| File-info panel *fields* | **Partial (B46)** | Only Title / Artist / Album / File Path fill. `getPlayItemMetaDataString` answers four keys, so Year, Genre, Track #, Disc, Album Artist, Composer, Publisher, Decoder, Comment, BPM and Rating come back empty and `fileinfo.maki` hides those lines — even though all are ticked in **… → File Info Components** |
+| File-info panel *fields* | **Fixed (B46)** | `getPlayItemMetaDataString` answered four keys; it now answers a full table, so Year, Genre, Track #, Disc, Album Artist, Composer, Decoder, Comment, BPM and Song Rating fill from the library row for the playing file. **Publisher stays blank by design** — nothing stores it |
+| File-info star rating | **Fixed (B46)** | `setCurrentTrackRating` was not in the method table at all, so a star click threw and aborted the rest of the handler. Get/set/`onCurrentTrackRated` are wired to NullPlayer's own 0–5 star field |
 | Divider position | **Fixed (B44)** | A divider the *user* drags now survives a relaunch, so the header analyzers stay visible. The skin's own `setPosition(434)` default is untouched. Confirmed live |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
@@ -154,7 +155,14 @@ Two things to know before touching this area again:
   The submenu is built from `newAttribute` registrations whose shipped default is `"1"` for every
   `Show …` item (only *Visualization*, *Scroll text if it doesn't fit* and *Hide File Info background*
   default to `"0"`). A line that is ticked and still absent is a **missing metadata key**, not a
-  broken toggle — see B46.
+  broken toggle — that was B46, and the diagnosis generalises: check the key before the menu.
+  The panel asks for eighteen keys and hides the line for every one that answers `""`, so a field
+  the engine cannot fill is indistinguishable from a field the user turned off.
+
+- **Publisher is the one line that is *supposed* to stay blank.** It is ticked by default like the
+  rest, and NullPlayer stores no publisher tag on any source. Do not read its absence as a
+  regression, and do not fill it with the label or the copyright field to make the panel look
+  complete — see [compatibility/maki-surface.md](../compatibility/maki-surface.md) → B46.
 
 - **There are *three* `winamp.albumart*` objects, and only one pair is the duplicate.** The Multi
   Content View holds the real cover plus an oversized dimmed backdrop behind the panel

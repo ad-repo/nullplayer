@@ -192,11 +192,68 @@ By area:
   equivalent here is the codec NullPlayer is decoding, from the track's own extension
   (`WinampModernHost.decoderName`), with "HTTP Stream" for a stream that has none. Skins print it as a
   *Decoder* readout. B38
-- **`System.getPlayItemMetaDataString("filename")`** — the playing item's location
-  (`WinampModernHost.trackPath`). Display only: nothing in the seam opens a path a script hands back,
-  and the file-info panels immediately split it with `getPath`/`getExtension`. B38.
-  **Only four keys are answered** — `title`, `artist`, `album`, `filename`; everything else returns
-  `""`, which a file-info panel reads as "this field is empty" and hides the line. B46
+- **`System.getPlayItemMetaDataString(key)`** — one field of the playing item, as a string. The whole
+  key table lives on the **host** (`WinampModernHost.playItemMetadata(forKey:)`), not in the runtime's
+  switch, so the render harness and every test double answer exactly as the live app does. Keys match
+  case-insensitively; an unknown key is `""`. B38, B46
+
+  | Key(s) | Answer |
+  |---|---|
+  | `title` / `artist` / `album` | the playing `Track`'s own tags |
+  | `albumartist` (or `album artist`), `composer`, `comment`, `year`, `track`/`tracknumber`, `disc`/`discnumber`, `bpm` | the **library row** for the playing file — a `Track` does not carry these |
+  | `genre` | the library row, falling back to the `Track` (which does carry it, for server sources) |
+  | `filename` / `filepath` | `trackPath`. Display only: nothing in the seam opens a path a script hands back, and the panels immediately split it with `getPath`/`getExtension` |
+  | `format` / `decoder` | `decoderName` — **deliberately the same string**, see below |
+  | `length` | whole **seconds** |
+  | `bitrate`, `srate`/`samplerate` | numbers; `0` is reported as `""` |
+  | `stereo` | the flag `"1"`/`"0"`, not a channel count; `""` when unknown |
+  | `timeelapsed` / `timeremaining` | formatted `m:ss` (`h:mm:ss` past an hour) |
+  | `rating` | **stars, 0–5** — the same field as `getCurrentTrackRating()` |
+  | `streamname` / `streamurl` / `streamtitle` / `streamgenre` | the current radio station, for a radio track only |
+  | `publisher`, `vbr`, `streamtype` | `""`, permanently — see the rule below |
+
+  **`""` is the answer for anything unknown, and it is load-bearing**: a file-info panel reads an
+  empty field as "this track has no such tag" and hides that line, which is what Winamp does too.
+  Never substitute a placeholder to fill a line. The corollary bit a whole release: a line that is
+  ticked in a skin's own components menu and still absent is a *missing key*, not a broken toggle.
+
+  **The units are measured, not guessed**, and a guess gets them wrong. Every corpus caller of
+  `length` wraps it in `integerToTime(stringToInteger(l))`, which pins seconds; `stereo` and `vbr` are
+  compared against the literal `"1"`, which makes them flags; `timeelapsed`/`timeremaining` go
+  straight into `setText`, which makes them pre-formatted. Read the call site before adding a key.
+
+  **`format` and `decoder` answer the same string on purpose.** Winamp shows a decoder ("Nullsoft
+  MPEG Audio Decoder") and a format ("MPEG-1 Layer 3") that describe one thing; deriving a second
+  string here from the path extension would let two lines of the same panel disagree.
+
+  **A streaming track answers from the `Track`, not from nothing.** Plex/Jellyfin/Emby/Subsonic
+  tracks have no library row, so they fill title/artist/album/genre plus the shared
+  `bitrate`/`srate`/`stereo`/`length`/`format` and leave the library-only tags empty. Radio adds the
+  four `stream*` fields from `RadioManager.currentStation`; `streamtitle` is the ICY now-playing line
+  and is read **live**, never cached with the row, because it changes within one track.
+
+  **`publisher`, `vbr` and `streamtype` are listed as explicit empty cases rather than left to the
+  default**, so that "empty" stays visibly a decision. Nothing in NullPlayer stores a publisher tag,
+  and the engine never learns whether a file is VBR or what flavour of shoutcast a stream is.
+
+- **`System.getCurrentTrackRating()` / `setCurrentTrackRating(stars)` / `onCurrentTrackRated(stars)`**
+  — the playing track's rating in **stars, 0–5**, which is Winamp's unit. B46
+
+  The scale is the thing to get right: NullPlayer's internal rating is **0–10** (a star is two
+  points) and every backend keeps its own — Plex 0–10, Subsonic 0–5, Jellyfin and Emby 0–100, the
+  local library 0–10. All of that conversion belongs to **`TrackRatingService`**, which the Library
+  Browser's ART-mode star row and this seam both go through; do not convert at a call site, or the
+  two surfaces will disagree about what three stars means.
+
+  Reading is asynchronous for every source but a local file. The host answers the local rating
+  immediately (0 for a server track), fires one fetch per track, and announces the late answer
+  through `onCurrentTrackRated` — which is why the event has to be dispatchable and why a star row
+  lights up a moment after a Plex track starts. A write caches optimistically before the round trip,
+  so the widget that was just clicked reads back its own value instead of snapping to the old one.
+
+  Before B46 `getCurrentTrackRating` was hard-coded to 0 and `setCurrentTrackRating` **was not in the
+  method table at all** — a star click threw `unsupported`, which aborts the rest of that handler.
+  A missing setter is not a dead button; it is a dead handler.
 - **`<object>.setText(s)`** — a **non-empty** value outranks the object's `display=` binding, and
   `setText("")` hands it back. Winamp has no precedence here at all (there the binding *writes* the
   text), so this rule is what stands in for that; the full order and why an override never expires are

@@ -935,16 +935,24 @@ too narrow for any useful text. `setNotifierText` overrides the layout width to 
 
 ### `getPlayItemMetaDataString` — per-field metadata
 
-MAKI scripts use `System.getPlayItemMetaDataString("artist")` etc. to read track metadata. The
-implementation dispatches on the string key:
-- `"title"` → `host.trackTitle`
-- `"artist"` → `host.trackArtist`
-- `"album"` → `host.trackAlbum`
+MAKI scripts use `System.getPlayItemMetaDataString("artist")` etc. to read track metadata.
 
-`trackArtist` and `trackAlbum` are properties on `WinampModernHost`, with defaults of `""` and live
-implementations on `WinampModernAudioEngineHost` reading `engine.currentTrack?.artist` and
-`.album`. These were added alongside the notifier — earlier, both keys incorrectly returned the
-combined `host.trackInfo` string.
+**The key table is not here — it is `WinampModernHost.playItemMetadata(forKey:)`**, a method on the
+protocol extension, and the runtime's `getplayitemmetadatastring` is a one-line delegation to it.
+Putting it on the protocol is deliberate: the render harness and every test double then answer
+identically to the live host, so a probe run is comparable to the real app. The full table, the units
+and the rules for an unanswerable key are in
+[compatibility/maki-surface.md](../compatibility/maki-surface.md) → `getPlayItemMetaDataString`; do
+not restate it here, and do not add a key to the runtime's switch instead of to the table.
+
+`trackTitle` / `trackArtist` / `trackAlbum` are properties on `WinampModernHost` (defaults `""`,
+live implementations on `WinampModernAudioEngineHost` reading `engine.currentTrack`). These were
+added alongside the notifier — earlier, both keys incorrectly returned the combined `host.trackInfo`
+string. Everything past those three arrives through `host.trackMetadata`
+(`WinampModernTrackMetadata`), which the engine host fills from the **library row** for the playing
+file, looked up once per track id: a `Track` carries only `genre` of the panel's fields, and a
+file-info panel asks for a dozen in a row, so a per-key lookup would take the library's queue a dozen
+times per repaint.
 
 ### `onshownotification` system event
 
@@ -961,6 +969,10 @@ handler's text-setting (which doesn't work anyway) is overridden.
 - `WinampModernScriptRuntime.swift` — `setNotifierText(title:artist:album:)`,
   `setTextInSubtree(_:id:text:)`, `ensureTextHeight(_:)`, `containerAlphaChanged` callback,
   `onshownotification` in `dispatchableEventArity`, `refresh` no-op
-- `WinampModernHost.swift` — `trackArtist`, `trackAlbum` protocol properties and implementations
+- `WinampModernHost.swift` — `trackArtist`, `trackAlbum` protocol properties and implementations;
+  `WinampModernTrackMetadata`, `playItemMetadata(forKey:)` (the key table), `currentTrackRating`,
+  and the engine host's `libraryRow(for:)` / `ratingCache` / `currentTrackRatingChanged`
+- `TrackRatingService.swift` (`Data/Models/`) — the one owner of the 0–5 star ↔ 0–10 internal ↔
+  per-server rating conversions, shared with the Library Browser's ART-mode star row
 - `WinampModernContainerTopology.swift` — `.hostManagedTransient` suppression for notifier containers
 - `WasabiTextMetrics.swift` — `content(of:host:)` resolves `text ?? default` for text elements

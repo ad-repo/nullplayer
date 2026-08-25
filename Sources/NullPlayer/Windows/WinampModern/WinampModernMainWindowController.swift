@@ -147,6 +147,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
             renderer.componentHost = componentBridge
             let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+            // A server track's rating arrives after the track does, so the star row is told rather
+            // than polled — the same shape as the EQ's `onEqBandChanged`.
+            host.currentTrackRatingChanged = { [weak scripts] stars in
+                _ = try? scripts?.dispatchSystem(event: "oncurrenttrackrated",
+                                                 arguments: [.integer(Int32(clamping: stars))])
+            }
             // Every renderer asks the one runtime for a `cfgattrib` control's state, so a switch in
             // the settings window and the control it mirrors in another window always agree.
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }

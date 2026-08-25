@@ -305,6 +305,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // for the only feedback it has: Love is War Miku's `+`/`-` buttons show "Volume: 40%" on the
         // song ticker from this handler and clear it a moment later.
         "onvolumechanged": 1,
+        // The star row's echo: Winamp raises it whenever the playing track's rating changes, whoever
+        // changed it, and Big Bento's `fileinfo` redraws its five stars from the handler rather than
+        // from the click. One argument — the new rating in stars — which is also how the API is
+        // documented and the only shape the getter/setter pair leaves room for.
+        "oncurrenttrackrated": 1,
         // The equalizer's two, on the same footing: Winamp raises them whenever a band or the preamp
         // moves, whoever moved it. Arities read off the five skins that handle them (multipass, mmd3,
         // Rika, winampmodern566, Overdrive_2) — every one of them opens `onEqBandChanged` with two
@@ -2117,6 +2122,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getbool": .init(argumentCount: 1, returnKind: .boolean),
             "getstring": .init(argumentCount: 1, returnKind: .string),
             "getcurrenttrackrating": .init(argumentCount: 0, returnKind: .integer),
+            "setcurrenttrackrating": .init(argumentCount: 1, returnKind: .null),
             // A group's children, which ClassicPro walks to find the widgets a component bucket loaded.
             "getnumchildren": .init(argumentCount: 0, returnKind: .integer),
             "enumchildren": .init(argumentCount: 1, returnKind: .object),
@@ -2445,16 +2451,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "gettimeofday": return .integer(Int32(truncatingIfNeeded: Int64(Date().timeIntervalSince1970 * 1000)))
         case "getplayitemdisplaytitle": return .string(host.trackDisplayTitle)
         case "getplayitemstring": return .string(host.trackDisplayTitle)
+        // The whole key table lives on the host (`playItemMetadata(forKey:)`) rather than here: a
+        // file-info panel asks for eighteen different fields and hides the line for every key that
+        // comes back empty, and the harness has to answer them the same way the live host does.
         case "getplayitemmetadatastring":
-            switch arguments[0].stringValue.lowercased() {
-            case "title": return .string(host.trackTitle)
-            case "artist": return .string(host.trackArtist)
-            case "album": return .string(host.trackAlbum)
-            // The key the file-info panels ask for after the three tags: the item's own location,
-            // which they then split with `getPath`/`getExtension` into a folder and a format.
-            case "filename": return .string(host.trackPath)
-            default: return .string("")
-            }
+            return .string(host.playItemMetadata(forKey: arguments[0].stringValue))
         case "getstatus":
             switch host.playbackState {
             case .playing: return .integer(1)
@@ -2555,11 +2556,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // One section of Winamp's preferences, keyed by GUID. Backed by the skin's own namespaced
             // configuration store — MAKI never reads or writes real Winamp settings.
             return dynamicValue(role: .configGroup(section: arguments[0].stringValue))
+        // Stars, 0–5 — Winamp's unit, and the one NullPlayer's own star rows already use. The host
+        // reads a local file's rating straight out of the library and asks the server for anything
+        // else, announcing the late answer through `onCurrentTrackRated`.
         case "getcurrenttrackrating":
-            // NullPlayer's playback `Track` carries no user rating (the library's rating lives in
-            // `MediaLibrary`, which is not on the host adapter), so every track reports unrated. The
-            // ClassicPro ratings widget then draws no stars instead of aborting its script.
-            return .integer(0)
+            return .integer(Int32(clamping: host.currentTrackRating))
+        case "setcurrenttrackrating":
+            host.currentTrackRating = Int(arguments[0].integerValue)
+            return .null
         case "getdateyear":
             // Years since 1900, as C's `tm_year`. Pinned by the engine's own use of it: `cproabout.m`
             // computes an age as `1899 + getDateYear(...) - birthYear` (+1 once the birthday has

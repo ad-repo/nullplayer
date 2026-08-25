@@ -287,6 +287,15 @@ the fields stay empty. `WinampModernHost.songInfoText` builds this; `trackDispla
 A skin reads that string through a `<text display="songinfo">`, so that binding must carry
 `songInfoText` and not the artist/album, or its KBPS/KHZ fields stay empty however good the parse is.
 
+For the *per-field* tags — the ones a file-info panel prints a line each for — a skin calls
+`System.getPlayItemMetaDataString(key)`. That table lives on the host
+(`WinampModernHost.playItemMetadata(forKey:)`) and is documented once, in
+[compatibility/maki-surface.md](../compatibility/maki-surface.md). Two things to carry away before
+you go there: `""` means "hide this line", so an unanswerable field must never get a placeholder;
+and everything past title/artist/album comes from the **library row** for the playing file, because
+a `Track` does not carry them. That is also why a skin can show a full panel for a local file and a
+four-line one for a Plex stream without anything being broken.
+
 A `songticker` carries no `text`/`default` attribute — its content **is** the current track, and it
 scrolls by default. `ticker="bounce"` slides to the end and back; any other enabled value scrolls
 continuously and is drawn twice with a gap so it never blanks between cycles. Both the TrueType and

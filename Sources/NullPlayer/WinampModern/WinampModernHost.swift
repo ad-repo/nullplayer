@@ -1,6 +1,31 @@
 import AppKit
 import Foundation
 
+/// The playing item's tag fields beyond the three (`title` / `artist` / `album`) a `Track` carries —
+/// what a file-info panel prints once it has asked `System.getPlayItemMetaDataString` for each one.
+///
+/// Every field is already the string a skin draws, so "we do not know" is `""`: a panel reads an
+/// empty field as "nothing to show" and hides that whole line, which is exactly the right outcome
+/// for a value we cannot answer honestly. Nothing here is ever faked to fill a line.
+struct WinampModernTrackMetadata {
+    var albumArtist = ""
+    var composer = ""
+    var genre = ""
+    var comment = ""
+    var year = ""
+    var trackNumber = ""
+    var discNumber = ""
+    var bpm = ""
+    /// Radio only. A station is what Winamp calls the "stream", and `streamTitle` is the ICY
+    /// now-playing line, which changes *within* one track — see `trackMetadata`'s caching note.
+    var streamName = ""
+    var streamURL = ""
+    var streamTitle = ""
+    var streamGenre = ""
+
+    static let empty = WinampModernTrackMetadata()
+}
+
 protocol WinampModernHost: AnyObject {
     var playbackState: PlaybackState { get }
     var currentTime: TimeInterval { get }
@@ -24,6 +49,17 @@ protocol WinampModernHost: AnyObject {
     var trackArtist: String { get }
     var trackAlbum: String { get }
     var trackInfo: String { get }
+    /// The rest of the playing item's tags — see `WinampModernTrackMetadata`. Read through
+    /// `playItemMetadata(forKey:)`, which is what maps a skin's key onto a field.
+    var trackMetadata: WinampModernTrackMetadata { get }
+    /// The playing track's rating in **stars, 0–5** — Winamp's own unit for
+    /// `getCurrentTrackRating`/`setCurrentTrackRating`, and the same field NullPlayer's Library
+    /// Browser draws in ART mode. `TrackRatingService` owns the conversion to the app's internal
+    /// 0–10 scale and to each server's; nothing here should do arithmetic on it.
+    ///
+    /// 0 is "unrated", because that is what a star widget draws as an empty row — Winamp has no
+    /// separate unrated value. Writing is a no-op for a source with nowhere to store it.
+    var currentTrackRating: Int { get set }
     /// What a song ticker shows — Winamp's playlist display title, i.e. "Artist - Title".
     var trackDisplayTitle: String { get }
     /// Stream properties the skin's `songinfo` script parses out of `getSongInfoText()`.
@@ -93,6 +129,13 @@ extension WinampModernHost {
     var vuLevels: (left: Double, right: Double) { (0, 0) }
     var trackArtist: String { "" }
     var trackAlbum: String { "" }
+    var trackMetadata: WinampModernTrackMetadata { .empty }
+    // A host with nothing to rate (the render harness, a test double) reads unrated and swallows the
+    // write, the way `balance` does — a star widget still draws, empty.
+    var currentTrackRating: Int {
+        get { 0 }
+        set {}
+    }
     var trackDisplayTitle: String { trackTitle }
     var bitrateKbps: Int { 0 }
     var sampleRateHz: Int { 0 }
@@ -101,6 +144,79 @@ extension WinampModernHost {
     var trackPath: String { "" }
     func revealInFinder(_ path: String) {}
     func openExternally(_ path: String) {}
+
+    /// `System.getPlayItemMetaDataString(key)` — one field of the playing item, as a string.
+    ///
+    /// Winamp's key set is open-ended and skins spell the same field several ways, so this is a
+    /// table rather than four cases: Big Bento's file-info panel alone asks for eighteen keys and
+    /// hides the line for every one that comes back `""`. It lives on the protocol so the render
+    /// harness and any test double answer identically to the live host.
+    ///
+    /// The rule for an unanswerable key is `""`, never a placeholder — the panel then hides the
+    /// line, which is what Winamp itself does with a field a file has no tag for.
+    func playItemMetadata(forKey key: String) -> String {
+        let metadata = trackMetadata
+        switch key.lowercased() {
+        case "title": return trackTitle
+        case "artist": return trackArtist
+        case "album": return trackAlbum
+        case "albumartist", "album artist": return metadata.albumArtist
+        case "composer": return metadata.composer
+        case "genre": return metadata.genre
+        case "comment": return metadata.comment
+        case "year": return metadata.year
+        // Winamp answers "-1" for an untagged track number and skins test for both that and `""`
+        // (`if (l != "" && l != "-1")`). `""` satisfies every one of those tests; "-1" satisfies
+        // only the skins that remember to check for it.
+        case "track", "tracknumber": return metadata.trackNumber
+        case "disc", "discnumber": return metadata.discNumber
+        case "bpm": return metadata.bpm
+        // The item's own location. `filepath` is the same field under Big Bento's spelling; the
+        // panels split whichever they get with `getPath`/`getExtension`.
+        case "filename", "filepath": return trackPath
+        // Both readouts name the codec, which is the one thing we actually know about the format —
+        // deliberately the same answer as `System.getDecoderName()` rather than a second, differently
+        // derived string that could disagree with it on the same panel.
+        case "format", "decoder": return decoderName
+        // Whole seconds, which is the unit the callers pin: every one wraps this in
+        // `integerToTime(stringToInteger(...))`, and the playlist-side `getMetaData("length")`
+        // already answers in the same unit.
+        case "length": return duration > 0 ? String(Int(duration)) : ""
+        case "bitrate": return bitrateKbps > 0 ? String(bitrateKbps) : ""
+        case "srate", "samplerate": return sampleRateHz > 0 ? String(sampleRateHz) : ""
+        // A flag, not a count — skins compare it to the literal "1" and print "Stereo"/"Mono".
+        // Unknown stays `""`, which takes the same branch as mono but claims nothing.
+        case "stereo": return channelCount > 0 ? (channelCount >= 2 ? "1" : "0") : ""
+        // Written straight into a text object, so these are formatted rather than numeric.
+        case "timeelapsed": return Self.clockString(currentTime)
+        case "timeremaining": return duration > 0 ? Self.clockString(duration - currentTime) : ""
+        case "streamname": return metadata.streamName
+        case "streamurl": return metadata.streamURL
+        case "streamtitle": return metadata.streamTitle
+        case "streamgenre": return metadata.streamGenre
+        // Stars, matching `getCurrentTrackRating()` — the same field under its other name, so a panel
+        // that prints the number and a star row that draws it cannot disagree. Unrated is `""`, which
+        // hides the line, rather than "0", which would read as a deliberate zero-star rating.
+        case "rating": return currentTrackRating > 0 ? String(currentTrackRating) : ""
+        // Answered empty on purpose, and listed rather than left to the default so the next reader
+        // knows it was decided: NullPlayer stores no publisher tag, and `vbr` and `streamtype` are
+        // things the engine never learns.
+        case "publisher", "vbr", "streamtype": return ""
+        default: return ""
+        }
+    }
+
+    /// `m:ss`, or `h:mm:ss` past an hour — the shape `integerToTime` produces, since these strings
+    /// go into a text object without passing through it.
+    private static func clockString(_ interval: TimeInterval) -> String {
+        let total = max(0, Int(interval))
+        let seconds = total % 60
+        let minutes = (total / 60) % 60
+        let hours = total / 3_600
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%d:%02d", total / 60, seconds)
+    }
 
     /// Winamp's `System.getSongInfoText()` string. Skins do not read bitrate/sample rate through
     /// dedicated APIs — `songinfo.maki` lowercases this string and pulls the values out around the
@@ -221,6 +337,101 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     var trackTitle: String { engine.currentTrack?.title ?? "" }
     var trackArtist: String { engine.currentTrack?.artist ?? "" }
     var trackAlbum: String { engine.currentTrack?.album ?? "" }
+    /// The library row for the playing track, looked up once per track rather than once per key —
+    /// a file-info panel asks for a dozen fields in a row, and each one would otherwise take the
+    /// library's queue. Keyed by track id, so it drops when the track changes.
+    private var libraryRowCache: (trackID: UUID, row: LibraryTrack?)?
+
+    /// Everything a file-info panel prints beyond title/artist/album. `Track` carries only `genre`
+    /// of these, so the tags come from the library row for the same file; a track with no row —
+    /// a Plex/Jellyfin/Emby/Subsonic stream, a radio station, a file outside every watch folder —
+    /// answers with what the `Track` itself knows and leaves the rest empty, which hides those
+    /// lines instead of filling them with something invented.
+    var trackMetadata: WinampModernTrackMetadata {
+        guard let track = engine.currentTrack else { return .empty }
+        let row = libraryRow(for: track)
+        var metadata = WinampModernTrackMetadata()
+        metadata.albumArtist = row?.albumArtist ?? ""
+        metadata.composer = row?.composer ?? ""
+        metadata.genre = row?.genre ?? track.genre ?? ""
+        metadata.comment = row?.comment ?? ""
+        metadata.year = row?.year.map(String.init) ?? ""
+        metadata.trackNumber = row?.trackNumber.map(String.init) ?? ""
+        metadata.discNumber = row?.discNumber.map(String.init) ?? ""
+        metadata.bpm = row?.bpm.map(String.init) ?? ""
+        // Read live, not cached with the row: the ICY now-playing line changes *during* a station's
+        // playback, and the whole point of the `streamtitle` field is to follow it.
+        if track.isRadioOrigin, let station = RadioManager.shared.currentStation {
+            metadata.streamName = station.name
+            metadata.streamURL = station.url.absoluteString
+            metadata.streamGenre = station.genre ?? ""
+            metadata.streamTitle = RadioManager.shared.currentMetadataTitle ?? ""
+        }
+        return metadata
+    }
+
+    /// The playing track's rating in stars, cached per track id.
+    ///
+    /// The cache is the whole mechanism, not an optimisation: a script reads this from a repaint, and
+    /// only a local file can answer synchronously — every server source needs a request. So a miss
+    /// answers with the local rating (0 for a server track), starts one fetch, and the arriving value
+    /// both fills the cache and is announced to the skin through `currentTrackRatingChanged`, which is
+    /// how a star row lights up a moment after a Plex track starts.
+    private var ratingCache: (trackID: UUID, stars: Int)?
+    private var ratingFetchTrackID: UUID?
+
+    /// Raised when the rating for the playing track becomes known or is changed, so the runtime can
+    /// fire `onCurrentTrackRated`. Set by the controller that owns the runtime.
+    var currentTrackRatingChanged: ((Int) -> Void)?
+
+    var currentTrackRating: Int {
+        get {
+            guard let track = engine.currentTrack else { return 0 }
+            if let ratingCache, ratingCache.trackID == track.id { return ratingCache.stars }
+            let stars = TrackRatingService.shared.localRating(for: track)
+                .map(TrackRatingService.stars(fromRating:)) ?? 0
+            ratingCache = (track.id, stars)
+            fetchRatingIfNeeded(for: track)
+            return stars
+        }
+        set {
+            guard let track = engine.currentTrack else { return }
+            let stars = max(0, min(5, newValue))
+            // Store first: the widget that just wrote this expects to read it back immediately, and
+            // the round trip to a server would otherwise let it snap back to its old position.
+            ratingCache = (track.id, stars)
+            let rating = TrackRatingService.rating(fromStars: stars)
+            Task { try? await TrackRatingService.shared.setRating(stars > 0 ? rating : nil, for: track) }
+            currentTrackRatingChanged?(stars)
+        }
+    }
+
+    private func fetchRatingIfNeeded(for track: Track) {
+        // Only a source that has to be asked, and only once per track — the local answer above is
+        // already final for a file.
+        guard track.plexRatingKey != nil || track.subsonicId != nil
+            || track.jellyfinId != nil || track.embyId != nil else { return }
+        guard ratingFetchTrackID != track.id else { return }
+        ratingFetchTrackID = track.id
+        Task { @MainActor [weak self] in
+            let rating = await TrackRatingService.shared.rating(for: track)
+            guard let self, self.engine.currentTrack?.id == track.id else { return }
+            let stars = rating.map(TrackRatingService.stars(fromRating:)) ?? 0
+            guard self.ratingCache?.stars != stars else { return }
+            self.ratingCache = (track.id, stars)
+            self.currentTrackRatingChanged?(stars)
+        }
+    }
+
+    private func libraryRow(for track: Track) -> LibraryTrack? {
+        if let libraryRowCache, libraryRowCache.trackID == track.id { return libraryRowCache.row }
+        // Only a local file can have one — the library is keyed by path, and a server or stream URL
+        // never matches. The miss is cached too, so a stream does not re-ask on every field.
+        let row = track.url.isFileURL ? MediaLibrary.shared.findTrack(byURL: track.url) : nil
+        libraryRowCache = (track.id, row)
+        return row
+    }
+
     var trackDisplayTitle: String {
         guard let track = engine.currentTrack else { return "" }
         guard let artist = track.artist, !artist.isEmpty else { return track.title }

@@ -146,8 +146,30 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       **Sweep the corpus for every object carrying both a `display=` and a script `setText` before
       landing this** — it changes what any such object draws, in every skin, not just this one.
 
-- [ ] **B46. `getPlayItemMetaDataString` answers four keys, so most of a file-info panel stays
-      blank.** Found by B39's live QA on 2026-08-24: with the `setText` precedence fixed, Big Bento's
+- [x] **B46. `getPlayItemMetaDataString` answers four keys, so most of a file-info panel stays
+      blank.** **Done.** The key table moved onto the host
+      (`WinampModernHost.playItemMetadata(forKey:)`) so the harness and every test double answer as
+      the live app does, and the runtime's four-case switch is now a one-line delegation to it. The
+      tags past title/artist/album come from the library row for the playing file, looked up once per
+      track id. The key set and its **units** were measured, not guessed: the union of the
+      `getPlayItemMetaDataString` call sites across the 36 installed skins and Big Bento's compiled
+      `fileinfo.maki` string table — which pins `length` to whole seconds (every caller wraps it in
+      `integerToTime(stringToInteger(…))`) and `stereo`/`vbr` to flags (compared against `"1"`).
+      **The open question is settled the way the user called it**: a streaming track answers from
+      what the `Track` carries rather than going empty, and radio adds the four `stream*` fields from
+      `RadioManager.currentStation` (`streamtitle` read live, never cached, since ICY changes it
+      within one track).
+      **The note's claim about ratings was wrong and checking the app corrected it** — NullPlayer has
+      drawn a 0–5 star row for every source all along, on an internal 0–10 scale, so `rating` is
+      answered and `getCurrentTrackRating`/`setCurrentTrackRating`/`onCurrentTrackRated` are wired.
+      `setCurrentTrackRating` had not been in the method table at all, so a star click threw
+      `unsupported` and aborted the rest of the handler. The per-source conversions moved out of
+      `ModernLibraryBrowserView` into a shared `TrackRatingService`, which fixed a real bug on the
+      way: the ART-mode star row had no Emby branch, so rating an Emby track updated the display and
+      silently never saved. Only **Publisher**, `vbr` and `streamtype` stay empty, as explicit cases.
+      Durable detail: `compatibility/maki-surface.md` → `getPlayItemMetaDataString` (the full table),
+      `reference/components.md`, `reference/scripting.md`, `skins/big-bento-modern.md`. Tests:
+      `WinampModernPhase65Tests`. The original report follows. Found by B39's live QA on 2026-08-24: with the `setText` precedence fixed, Big Bento's
       panel fills Title, Artist, Album and File Path and nothing else — even though **… → File Info
       Components** shows Year, Genre, Track #, Disc, Album Artist, Composer, Publisher, Decoder,
       Comment, BPM and Song Rating all ticked (the skin's own `newAttribute` defaults are `"1"` for
