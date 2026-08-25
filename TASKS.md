@@ -524,7 +524,7 @@ Big Bento's own pending verification is `BB4` in `BENTO_TASKS.md`, not here.
 - [ ] **B30 verify on Styx** (volume) and **mmd3** (knobs unchanged — its group is at the origin)
 - [ ] **B31 verify on Lobe:** the Pledit window shows playlist content
 
-- [ ] **B48. Text NullPlayer draws on its own surfaces is unreadable in most skins.** Reported live
+- [x] **B48. Text NullPlayer draws on its own surfaces is unreadable in most skins. Done 2026-08-25, confirmed live on Big Bento and Ebonite.** Reported live
       2026-08-25 (*"the playlist highlighter is white and the text underneath is also light"*,
       *"black titlebars with black title text"*, *"white text on light background"* on Ebonite) and
       then measured across all 36 installed skins. **This is the largest open defect in the `.wal`
@@ -573,6 +573,33 @@ Big Bento's own pending verification is `BB4` in `BENTO_TASKS.md`, not here.
       - Open question worth measuring rather than assuming: `currentText` means "currently playing"
         on a normal row and "selected" on a highlight. Guarding it for the highlight is right, but a
         skin may still have a hard-to-read currently-playing row on the normal background.
+
+      **Done 2026-08-25.** The guarantee is `WinampModernSurfaceStyle.legible(preferring:on:)` — the
+      first of the skin's own colours that clears `minimumContrast` (3.0), black/white only if none
+      does — plus the stored `selectedText` role, `legibleDimText(on:)` for inactive titles, and
+      `composited(_:over:)` for the half-alpha search field. `PlaylistColors.selectedText` defaults to
+      `currentText` in both declarations, so classic is a zero-pixel change by construction.
+      12 new tests in `WinampModernPhase68Tests`; full suite 1214 green.
+
+      **What live QA caught that the plan did not.** The first pass fixed the AppKit surfaces and
+      *looked* complete — and Big Bento was still grey-on-orange, because the skin's **own** playlist
+      panel and `<ColorThemes:List>` are drawn by `WasabiRenderer` straight from `WasabiPalette` and
+      never touch a style. That is `WasabiRenderer.legibleRowColor`. Lesson worth keeping: a guard
+      placed on the style covers only half the drawn rows in this engine.
+
+      **Formamp: closed as won't-do, measured not assumed.** Reported as *"just black on black"*. Its
+      window background is `(0,0,0,206)` — translucent by design, alpha never above 234 — and its
+      `<text>` objects declare 80,80,80 / 120,120,120 / 100,100,100 themselves. Over a bright desktop
+      the backdrop composites through. Guarding text a skin spelled out for its own controls overrules
+      the author (it would also hit Lobe and micro), so the guard stops at surfaces we draw. An
+      opaque-background option for translucent skins was offered and declined. Our chrome *inside*
+      Formamp is still guarded: 2.16:1 → 3.94:1.
+
+      **The open question stays open**, deliberately: `currentText` on a *normal* row (a
+      currently-playing track on the content background) is a separate pairing and was not measured.
+      Also not done: the byte-identical classic capture. The zero-pixel claim rests on the defaulted
+      field plus `WinampModernSurfaceStyle` being nil in classic, both asserted in tests, and on the
+      golden images being green — not on a capture.
 
 - [ ] **B49. A live UI-mode switch leaves the main window at the outgoing mode's size.** Found during
       B26's live QA, 2026-08-25: switching `.wal` (Ebonite, 197×297) → Classic left the classic

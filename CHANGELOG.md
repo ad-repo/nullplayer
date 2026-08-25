@@ -29,6 +29,17 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: highlighted rows and window titles are readable in every skin** — in
+  most skins, clicking a row in the playlist or library made its text *vanish*: the highlight and the
+  text landed on the same colour, exactly the same colour in nine skins. Some skins also drew a
+  window title you could not see against its own title bar. A modern skin declares its colours in
+  separate groups, and nullPlayer was taking the highlight from one and the text from another, so
+  neither author's pairing survived — Big Bento Modern ended up with pale blue-grey text on its
+  orange highlight. nullPlayer now checks that any text **it** draws can actually be seen against
+  what is behind it, and picks another of the skin's own colours when it cannot, falling back to
+  plain black or white only when nothing the skin declares would be visible. Inactive titles stay
+  quieter than active ones, as before. Classic `.wsz` skins are unchanged, and text a skin declares
+  for its own controls is left exactly as the author wrote it.
 - **Winamp 5.x modern skins: the Big Bento Modern tab icons are no longer stretched** — the icons
   down the left edge of the player (library, playlist, visualization, web reader, equalizer,
   settings) were squashed tall and thin, and the strip sat lower than it should. The skin sizes each

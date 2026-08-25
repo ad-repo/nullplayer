@@ -44,6 +44,7 @@ concept; read the one your symptom points at, not all of them.
 | Something draws wrong, missing, mis-clipped, wrong colour, wrong font, wrong text | [reference/rendering.md](reference/rendering.md) |
 | **Text or controls are black-on-black, or a colour theme washes out** — and "fixing" one skin breaks another | [reference/rendering.md](reference/rendering.md) — *Colour themes*: the additive/multiplicative model is per-`<gammagroup>`, chosen by its own `boost`. Never pick one globally |
 | **A white slab or a black rectangle where the skin plainly names a colour** — a list panel, an analyzer, a `<rect>` | [reference/rendering.md](reference/rendering.md) — *How a colour resolves*: the two fallbacks are white and black, so a lost colour is loud. Run `WINAMP_MODERN_RENDER_PALETTE=1` **before** touching a colour path — a value that names another id, a same-named bitmap winning the lookup, and a `#rrggbb` literal all look identical on screen |
+| **A selected row, or a window title, cannot be read** — text the same colour as its highlight, a black title on a black bar | [reference/rendering.md](reference/rendering.md) — *A resolved colour is not yet a readable one*: roles resolve from independent chains with no legibility check. Guard in `WinampModernSurfaceStyle` (nil in classic, so classic is out of reach) — **and** in `WasabiRenderer.legibleRowColor`, which the skin's own playlist and colour-theme list use instead. Text the *skin* declares for its own controls is out of scope |
 | **A `.wal` window comes back at the wrong size, or the skin looks pulled apart into two windows** | [reference/rendering.md](reference/rendering.md) — *…but a `.wal` window's size is still the skin's*: the frame is one global key, so another skin's size was being restored over it |
 | Animation frozen, needle/reel not turning, layer stuck on one frame | [reference/rendering.md](reference/rendering.md) |
 | Slow, stuttering, CPU high, repaint storm | [reference/performance.md](reference/performance.md) |
@@ -123,6 +124,7 @@ verbatim; it just lives in a reference file now.
 | `<ProgressGrid>` — the bar's *filled* part | [reference/rendering.md](reference/rendering.md) |
 | A skin's own right-click menus | [reference/rendering.md](reference/rendering.md) |
 | The three action attributes (Phase 36) | [reference/rendering.md](reference/rendering.md) |
+| A resolved colour is not yet a *readable* one (B48) | [reference/rendering.md](reference/rendering.md) |
 | Colour themes (`gammaset` / `gammagroup`) | [reference/rendering.md](reference/rendering.md) |
 | Colour theme screen is empty / will not switch | [reference/rendering.md](reference/rendering.md) §*The picker* |
 | Animated layers are played as a range | [reference/rendering.md](reference/rendering.md) |

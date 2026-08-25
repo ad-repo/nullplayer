@@ -33,6 +33,10 @@ struct WinampModernSurfaceStyle: Equatable {
     let treeText: NSColor
     let treeSelection: NSColor
 
+    /// The text a *selected* row is drawn in — the skin's own choice wherever that can be read on
+    /// `selectionBackground`, and only otherwise something else. See `legible(preferring:on:)`.
+    let selectedText: NSColor
+
     // Roles derived by blending, so a partial palette still produces a coherent surface.
     /// Toolbars, tab strips, status bars — a step away from the content background.
     let barBackground: NSColor
@@ -64,6 +68,96 @@ struct WinampModernSurfaceStyle: Equatable {
         divider = Self.blend(palette.contentBackground, toward: palette.listText, by: 0.18)
         dimText = Self.blend(palette.listText, toward: palette.contentBackground, by: 0.40)
         pressedFill = Self.blend(palette.contentBackground, toward: palette.selectionBackground, by: 0.55)
+
+        // A skin resolves every role from its own id chain, and nothing in Wasabi ever checks that a
+        // foreground and the background it lands on can be seen together — so a skin declaring two
+        // colour families gets a mongrel pairing (Big Bento takes its highlight from
+        // `studio.list.item.selected` and its row text from `wasabi.list.text.selected`, which is
+        // orange under pale blue-grey). Winamp never hits this because its Media Library is a native
+        // Win32 list, where the OS guarantees a legible selection. We draw the list ourselves, so the
+        // guarantee has to be ours.
+        selectedText = Self.legible(preferring: [palette.currentText, palette.selectionText,
+                                                 palette.listText, palette.contentBackground],
+                                    on: palette.selectionBackground)
+    }
+
+    // MARK: - Legibility
+
+    /// The contrast a foreground must clear to count as readable.
+    ///
+    /// WCAG's large-text bar. The corpus measurement behind this put 23 of 36 skins under **1.5:1**
+    /// on a selected row — nine of them at exactly 1.00:1 — so the threshold is not what decides
+    /// whether the common case is caught; it decides how much of a skin's own intent survives. 3.0
+    /// keeps a deliberately low-contrast-but-readable pairing and rejects the mud.
+    static let minimumContrast: CGFloat = 3.0
+
+    /// The first candidate that can be read on `background`, else black or white — whichever of the
+    /// two is further from the background.
+    ///
+    /// Order is the point: candidates are the skin's *own* colours, tried best-intent first, so a
+    /// skin that gives us anything usable is never overridden. The black/white fallback only fires
+    /// when every colour the skin named would be invisible, and it always clears the threshold — for
+    /// any background, one of the two extremes is at least ~4.5:1 away.
+    static func legible(preferring candidates: [NSColor], on background: NSColor,
+                        threshold: CGFloat = minimumContrast) -> NSColor {
+        for candidate in candidates where contrastRatio(candidate, background) >= threshold {
+            return candidate
+        }
+        return contrastRatio(.black, background) >= contrastRatio(.white, background) ? .black : .white
+    }
+
+    /// `legible` with this style's own palette appended, for a caller that has one preferred colour
+    /// and a background that is not a stored role (a composited fill, a derived bar).
+    func legibleText(_ preferred: NSColor, on background: NSColor) -> NSColor {
+        Self.legible(preferring: [preferred, text, currentText, selectionText, background],
+                     on: background)
+    }
+
+    /// A secondary label — an inactive title, a hint — that stays *dimmer than the primary text*
+    /// while still clearing the threshold.
+    ///
+    /// The middle steps are the point. `dimText` is a 40% blend toward the background, so on most
+    /// skins it fails the guard outright; going straight from it to full-strength text would erase
+    /// the active/inactive distinction across the whole corpus to fix the five skins where the
+    /// inactive title is invisible. Backing the blend off in stages keeps the distinction wherever a
+    /// weaker dim is still readable.
+    func legibleDimText(on background: NSColor) -> NSColor {
+        Self.legible(preferring: [dimText,
+                                  Self.blend(text, toward: background, by: 0.25),
+                                  Self.blend(text, toward: background, by: 0.12),
+                                  text, currentText, selectionText],
+                     on: background)
+    }
+
+    /// WCAG 2.x contrast ratio, 1.0 (identical) … 21.0 (black on white).
+    static func contrastRatio(_ a: NSColor, _ b: NSColor) -> CGFloat {
+        let la = relativeLuminance(a)
+        let lb = relativeLuminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    /// WCAG relative luminance. Both inputs come from a skin, so convert before reading components —
+    /// `getRed` on a pattern or catalog colour traps.
+    static func relativeLuminance(_ color: NSColor) -> CGFloat {
+        guard let rgb = color.usingColorSpace(.deviceRGB) else { return 0 }
+        func linear(_ c: CGFloat) -> CGFloat {
+            c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(rgb.redComponent)
+            + 0.7152 * linear(rgb.greenComponent)
+            + 0.0722 * linear(rgb.blueComponent)
+    }
+
+    /// A translucent colour flattened onto what is behind it, so a guard judges the colour a viewer
+    /// actually sees rather than the one the fill was written with.
+    static func composited(_ color: NSColor, over background: NSColor) -> NSColor {
+        guard let front = color.usingColorSpace(.deviceRGB),
+              let back = background.usingColorSpace(.deviceRGB) else { return background }
+        let t = min(max(front.alphaComponent, 0), 1)
+        return NSColor(deviceRed: back.redComponent + (front.redComponent - back.redComponent) * t,
+                       green: back.greenComponent + (front.greenComponent - back.greenComponent) * t,
+                       blue: back.blueComponent + (front.blueComponent - back.blueComponent) * t,
+                       alpha: 1)
     }
 
     /// The style a surface uses before any skin has been loaded, and in tests.
@@ -89,7 +183,8 @@ struct WinampModernSurfaceStyle: Equatable {
                        currentText: currentText,
                        normalBackground: background,
                        selectedBackground: selectionBackground,
-                       font: .systemFont(ofSize: 8))
+                       font: .systemFont(ofSize: 8),
+                       selectedText: selectedText)
     }
 
     /// True when the skin's content background is dark, which is what decides whether a hosted

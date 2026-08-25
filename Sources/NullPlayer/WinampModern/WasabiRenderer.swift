@@ -2940,6 +2940,26 @@ final class WasabiSceneRenderer {
         drawFlippedText(text, in: rect, font: font, color: color, alignment: alignment, context: context)
     }
 
+    /// A row colour that can be read on the bar behind it, for the lists **this renderer** draws
+    /// itself — the skin's own playlist panel and colour-theme picker.
+    ///
+    /// The same guarantee `WinampModernSurfaceStyle` gives NullPlayer's AppKit surfaces (B48), needed
+    /// again here because these rows never pass through a style: they read `WasabiPalette` directly,
+    /// and the palette resolves each role from an independent id chain with nothing checking that the
+    /// pair can be seen together. Big Bento is the measured case — `selectionText` is its pale
+    /// blue-grey `color.display` and `selectionBackground` its orange `color.selected.active`, 1.06:1
+    /// apart, and a *current* row over that same bar is orange on orange at 1.00:1.
+    ///
+    /// Unselected rows are returned untouched: they land on the content background, which is a
+    /// separate pairing and a separate measurement.
+    private func legibleRowColor(_ preferred: NSColor, selected: Bool) -> NSColor {
+        guard selected else { return preferred }
+        return WinampModernSurfaceStyle.legible(
+            preferring: [preferred, palette.selectionText, palette.currentText, palette.listText,
+                         palette.contentBackground],
+            on: palette.selectionBackground)
+    }
+
     /// Winamp's colour-theme picker: the skin's `<gammaset>` names, in document order.
     ///
     /// The rows are ours to draw — the widget lives inside Winamp, the skin ships only the tag — so
@@ -2985,8 +3005,10 @@ final class WasabiSceneRenderer {
                 context.setFillColor(palette.selectionBackground.cgColor)
                 context.fill(rowRect)
             }
-            let color = index == active ? palette.currentText
-                : (index == state.selectedIndex ? palette.selectionText : palette.listText)
+            let selected = index == state.selectedIndex
+            let color = legibleRowColor(index == active ? palette.currentText
+                                            : (selected ? palette.selectionText : palette.listText),
+                                        selected: selected)
             drawSurfaceText(names[index], in: rowRect.insetBy(dx: 3, dy: 1), color: color,
                             alignment: .left, pointSize: 9, context: context)
         }
@@ -3057,8 +3079,10 @@ final class WasabiSceneRenderer {
             // but only when the skin actually named one. `currentText` falls back to `listText`, and
             // list text over the selection background is what `selectionText` exists to avoid.
             let hasCurrentColor = palette.currentText != palette.listText
-            let color = row.isCurrent && (hasCurrentColor || !selected) ? palette.currentText
-                : (selected ? palette.selectionText : palette.listText)
+            let color = legibleRowColor(row.isCurrent && (hasCurrentColor || !selected)
+                                            ? palette.currentText
+                                            : (selected ? palette.selectionText : palette.listText),
+                                        selected: selected)
             let label = "\(index + 1). \(row.title)"
             drawSurfaceText(label, in: rowRect.insetBy(dx: 3, dy: 1), color: color,
                             alignment: .left, pointSize: font.pointSize, context: context)

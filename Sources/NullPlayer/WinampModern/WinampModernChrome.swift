@@ -63,7 +63,12 @@ struct WinampModernChrome {
 
         let titleColor = isActive ? style.barBackground : style.background
         let edgeColor = isActive ? style.border : style.divider
-        let labelColor = isActive ? style.text : style.dimText
+        // The title bar is a *derived* colour and the title a declared one, so nothing so far has
+        // guaranteed they can be seen together — five skins in the corpus drew a title that was
+        // literally invisible, and `dimText` (the inactive title) was the worse half nearly
+        // everywhere. Guard against the strip this label actually lands on (B48).
+        let labelColor = isActive ? style.legibleText(style.text, on: titleColor)
+                                  : style.legibleDimText(on: titleColor)
 
         context.setFillColor(titleColor.cgColor)
         context.fill(CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: titleHeight))

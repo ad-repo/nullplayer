@@ -577,7 +577,9 @@ class PlaylistView: NSView {
                               width: bounds.width - leftBorder - rightBorder + 1,
                               height: bounds.height - titleHeight - bottomHeight + 1))
 
-        let titleColor = isActive ? style.currentText : style.dimText
+        // Guarded against the bar it lands on (B48).
+        let titleColor = isActive ? style.legibleText(style.currentText, on: style.barBackground)
+                                  : style.legibleDimText(on: style.barBackground)
         let titleScale: CGFloat = 1.6
         let title = "PLAYLIST"
         let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: titleScale)

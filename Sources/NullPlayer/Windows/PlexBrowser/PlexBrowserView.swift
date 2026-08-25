@@ -2594,7 +2594,10 @@ class PlexBrowserView: NSView {
                               width: bounds.width - leftBorder - rightBorder + 1,
                               height: bounds.height - titleHeight - statusHeight + 1))
 
-        let titleColor = isActive ? style.currentText : style.dimText
+        // Guarded against the bar it lands on — the title strip is `barBackground` in both states
+        // (B48).
+        let titleColor = isActive ? style.legibleText(style.currentText, on: style.barBackground)
+                                  : style.legibleDimText(on: style.barBackground)
         let titleScale = WindowManager.shared.playlistChromeScale
         let title = "LIBRARY"
         let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: titleScale * 1.6)
@@ -3212,9 +3215,14 @@ class PlexBrowserView: NSView {
     /// Inside a `.wal` skin this is the skin's own list colour in a proportionally-matched system
     /// font instead of the classic 5×6 bitmap sprite sheet (Phase 16). The advance is identical
     /// either way, which is why none of the ~77 callers had to change how they lay themselves out.
-    private func drawScaledSkinText(_ text: String, at position: NSPoint, scale: CGFloat, renderer: SkinRenderer, in context: CGContext) {
+    ///
+    /// `color` overrides the skin's list colour for a caller that draws onto something other than the
+    /// content background and has already checked what can be read there (B48). It is only ever
+    /// non-nil in `winampModern` mode; the classic sprite path has no per-call colour and ignores it.
+    private func drawScaledSkinText(_ text: String, at position: NSPoint, scale: CGFloat, renderer: SkinRenderer,
+                                    in context: CGContext, color: NSColor? = nil) {
         if let style = winampModernStyle {
-            WinampModernSurfaceStyle.drawText(text, at: position, scale: scale, color: style.text,
+            WinampModernSurfaceStyle.drawText(text, at: position, scale: scale, color: color ?? style.text,
                                               in: context)
             return
         }
@@ -4352,15 +4360,25 @@ class PlexBrowserView: NSView {
         let charHeight = SkinElements.TextFont.charHeight * textScale
         let textY = searchRect.minY + (searchRect.height - charHeight) / 2
         
-        // Search text or placeholder using skin font
+        // Search text or placeholder using skin font.
+        //
+        // The field is a *translucent* fill, so what the text lands on is neither role: judge the
+        // composited colour or a focused field stays unreadable on the skins B48 measured while the
+        // opaque selection row is fixed.
+        let fieldBackground = winampModernStyle.map {
+            WinampModernSurfaceStyle.composited(bgColor, over: $0.background)
+        }
+        let fieldTextColor = winampModernStyle.flatMap { style in
+            fieldBackground.map { style.legibleText(style.text, on: $0) }
+        }
         let displayText = searchQuery.isEmpty ? "Type to search..." : searchQuery
         drawScaledSkinText(displayText, at: NSPoint(x: searchRect.minX + 6, y: textY),
-                           scale: textScale, renderer: renderer, in: context)
-        
+                           scale: textScale, renderer: renderer, in: context, color: fieldTextColor)
+
         // Draw cursor if focused
         if isFocused && !searchQuery.isEmpty {
             let cursorX = searchRect.minX + 6 + CGFloat(searchQuery.count) * charWidth + 1
-            colors.normalText.setFill()
+            (fieldTextColor ?? colors.normalText).setFill()
             context.fill(CGRect(x: cursorX, y: textY, width: max(1, contentScale), height: charHeight))
         }
     }
@@ -4703,7 +4721,7 @@ class PlexBrowserView: NSView {
                 context.scaleBy(x: 1, y: -1)
                 context.translateBy(x: 0, y: -textCenterY)
                 
-                let textColor = isSelected ? colors.currentText : colors.normalText
+                let textColor = isSelected ? colors.selectedText : colors.normalText
                 let attrs: [NSAttributedString.Key: Any] = [
                     .foregroundColor: textColor,
                     .font: contentFont(ofSize: 10)
@@ -4715,7 +4733,7 @@ class PlexBrowserView: NSView {
                 
                 // Secondary info (only for non-column view)
                 if let info = item.info {
-                    let infoColor = isSelected ? colors.currentText : colors.normalText.withAlphaComponent(0.6)
+                    let infoColor = isSelected ? colors.selectedText : colors.normalText.withAlphaComponent(0.6)
                     let infoAttrs: [NSAttributedString.Key: Any] = [
                         .foregroundColor: infoColor,
                         .font: contentFont(ofSize: 9)
@@ -4844,8 +4862,8 @@ class PlexBrowserView: NSView {
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -textCenterY)
         
-        let textColor = isSelected ? colors.currentText : colors.normalText
-        let dimColor = isSelected ? colors.currentText : colors.normalText.withAlphaComponent(0.65)
+        let textColor = isSelected ? colors.selectedText : colors.normalText
+        let dimColor = isSelected ? colors.selectedText : colors.normalText.withAlphaComponent(0.65)
         let font = contentFont(ofSize: 10)
         let smallFont = contentFont(ofSize: 9)
         

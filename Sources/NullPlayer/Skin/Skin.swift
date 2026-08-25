@@ -123,7 +123,12 @@ struct PlaylistColors {
     let normalBackground: NSColor
     let selectedBackground: NSColor
     let font: NSFont
-    
+    /// Text on a selected row. Defaults to `currentText`, which is exactly what the draw sites read
+    /// before this field existed, so a classic `.wsz` skin is a zero-pixel change and `SkinLoader`
+    /// needs no edit. Only `WinampModernSurfaceStyle` passes something else — a colour it has checked
+    /// against `selectedBackground` (backlog B48).
+    let selectedText: NSColor
+
     static let `default` = PlaylistColors(
         normalText: NSColor(hex: "#00FF00") ?? .green,
         currentText: .white,
@@ -132,12 +137,14 @@ struct PlaylistColors {
         font: .systemFont(ofSize: 8)
     )
     
-    init(normalText: NSColor, currentText: NSColor, normalBackground: NSColor, selectedBackground: NSColor, font: NSFont) {
+    init(normalText: NSColor, currentText: NSColor, normalBackground: NSColor, selectedBackground: NSColor,
+         font: NSFont, selectedText: NSColor? = nil) {
         self.normalText = normalText
         self.currentText = currentText
         self.normalBackground = normalBackground
         self.selectedBackground = selectedBackground
         self.font = font
+        self.selectedText = selectedText ?? currentText
     }
 }
 

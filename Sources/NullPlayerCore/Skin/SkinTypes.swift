@@ -252,7 +252,12 @@ public struct PlaylistColors: Sendable {
     public let normalBackground: NSColor
     public let selectedBackground: NSColor
     public let font: NSFont
-    
+    /// Text on a selected row. Defaults to `currentText`, which is what every draw site read before
+    /// this field existed, so a classic `.wsz` skin is a zero-pixel change (backlog B48). Kept in
+    /// step with the declaration in `NullPlayer/Skin/Skin.swift`.
+    public let selectedText: NSColor
+
+
     public static let `default` = PlaylistColors(
         normalText: NSColor(hex: "#00FF00") ?? .green,
         currentText: .white,
@@ -261,12 +266,14 @@ public struct PlaylistColors: Sendable {
         font: .systemFont(ofSize: 8)
     )
     
-    public init(normalText: NSColor, currentText: NSColor, normalBackground: NSColor, selectedBackground: NSColor, font: NSFont) {
+    public init(normalText: NSColor, currentText: NSColor, normalBackground: NSColor, selectedBackground: NSColor,
+                font: NSFont, selectedText: NSColor? = nil) {
         self.normalText = normalText
         self.currentText = currentText
         self.normalBackground = normalBackground
         self.selectedBackground = selectedBackground
         self.font = font
+        self.selectedText = selectedText ?? currentText
     }
 }
 

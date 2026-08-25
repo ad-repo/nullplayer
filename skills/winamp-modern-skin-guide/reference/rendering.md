@@ -795,6 +795,58 @@ answered or did not. **Use it before changing a colour path**: it distinguishes 
 declared it" from "a colour theme crushed it" from "the chain skipped a bitmap", which look identical
 on screen. See `harness.md`.
 
+#### A resolved colour is not yet a *readable* one (B48, 2026-08-25)
+
+Every role resolves from its **own** id chain, and nothing in Wasabi checks that a foreground and the
+background it lands on can be seen together. A skin declaring two colour families therefore hands us
+a mongrel pairing that neither family's author intended. Winamp never hits this: its Media Library is
+a native Win32 list, so the OS guarantees a legible selection. We draw those rows ourselves, so the
+guarantee has to be ours.
+
+**Measured across all 36 installed skins:** 23 drew an unreadable selected row (< 1.5:1), **nine of
+them at exactly 1.00:1** — text and highlight the same colour — and 5 an unreadable window title,
+with 22 more weak (< 3:1). Big Bento is the type specimen: highlight from
+`studio.list.item.selected` (orange `color.selected.active`), row text from
+`wasabi.list.text.selected` (pale blue-grey `color.display`) — **1.06:1**; and a *current* row over
+that same bar is orange on orange at **1.00:1**.
+
+The guarantee lives in `WinampModernSurfaceStyle`, which already *derives* roles by blending rather
+than inventing, and which is **nil in classic mode** — so classic cannot be reached by it:
+
+- `legible(preferring:on:)` returns the **first of the skin's own colours** that clears
+  `minimumContrast` (3.0, WCAG's large-text bar), and only falls back to black or white — whichever
+  is further from the background — when every one of them would be invisible. That fallback always
+  clears: for any background, one extreme is at least ~4.5:1 away. **Ordering is the policy**: a skin
+  that gives us anything usable is never overridden.
+- `selectedText` is the stored role for a highlighted row: `currentText` → `selectionText` →
+  `listText` → `contentBackground`, judged against `selectionBackground`.
+- `legibleDimText(on:)` is for inactive titles and hints. `dimText` is a 40% blend toward the
+  background, so a naive guard fails it almost everywhere and would snap every inactive title to full
+  strength — erasing the active/inactive distinction corpus-wide to fix five skins. It backs the
+  blend off in stages (40% → 25% → 12% → full) instead.
+- `composited(_:over:)` flattens a translucent fill first. `PlexBrowserView`'s focused search field
+  draws over a **half-alpha** highlight; judging the written colour rather than the composited one
+  leaves that one state unreadable while the opaque row beside it is fixed.
+
+**Two draw paths need it, and missing the second is the easy mistake.** NullPlayer's AppKit surfaces
+go through the style (`PlexBrowserView`'s four selection sites and its title, `WinampModernChrome`,
+`PlaylistView`, `EQView`). But the skin's **own** playlist panel and `<ColorThemes:List>` are drawn by
+`WasabiRenderer` straight from `WasabiPalette`, never touching a style — that is
+`WasabiRenderer.legibleRowColor`, and it was the half that live QA caught after the first pass looked
+complete on the library panel.
+
+**Where it deliberately stops: text the skin declares for its own controls.** Formamp's window
+background is `(0,0,0,206)` — translucent by design, never opaque anywhere — and its `<text>` objects
+name `color=80,80,80` (title), `120,120,120` (artist), `100,100,100` (timer). Over a bright desktop
+that composites to black-on-black, and it is still not ours to change: guarding a colour an author
+spelled out is overruling the design, not fixing our legibility. Closed as won't-do. The same reading
+applies to any quiet-by-design skin — Lobe, micro.
+
+`PlaylistColors.selectedText` (declared **twice**, `Skin/Skin.swift` and
+`NullPlayerCore/Skin/SkinTypes.swift` — out of step is a build error, not a silent regression)
+defaults to `currentText`, which is exactly what the draw sites read before it existed. Classic `.wsz`
+skins are a zero-pixel change by construction and `SkinLoader` needed no edit.
+
 #### Colour themes (`gammaset` / `gammagroup`)
 
 A theme is a set of per-channel adjustments keyed by `gammagroup` id, which bitmaps and `<color>`

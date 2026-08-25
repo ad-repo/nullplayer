@@ -429,7 +429,9 @@ class EQView: NSView {
         context.setLineWidth(1)
         context.stroke(drawBounds.insetBy(dx: 0.5, dy: 0.5))
 
-        let titleColor = isActive ? style.currentText : style.dimText
+        // Guarded against the bar it lands on (B48).
+        let titleColor = isActive ? style.legibleText(style.currentText, on: style.barBackground)
+                                  : style.legibleDimText(on: style.barBackground)
         let title = "EQUALIZER"
         let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: 1.4)
         WinampModernSurfaceStyle.drawText(
