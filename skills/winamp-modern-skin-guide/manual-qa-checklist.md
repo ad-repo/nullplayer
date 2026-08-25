@@ -4,7 +4,7 @@ Everything in this checklist requires a **GUI session** and **user-supplied skin
 why none of it was executed during implementation (Phases 3–7 all deferred it). The automated suite
 covers the headless side; this is the gap.
 
-Run this before treating the experimental label as removable.
+Run this before shipping a release that changes the `.wal` runtime.
 
 Since Phase 13 the playlist, equalizer, and library are skin-owned surfaces rather than classic
 windows, so **§4 is the section that changed most** — run it against all four fixtures.
@@ -27,7 +27,8 @@ You supply the fixtures — nothing third-party is committed:
 ./scripts/kill_build_run.sh
 ```
 
-Then **Winamp Modern (Experimental)** → **Import .wal Skin…**, and for cPro-Bento also
+Then **Modern** → **Import .wal Skin…** (the menu family for `.wal` skins; the `-uiMode` value and
+every internal identifier stay `winampModern`), and for cPro-Bento also
 **Import ClassicPro Engine…**. In a DEBUG build you can bypass the picker:
 
 ```sh
@@ -317,7 +318,8 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
 - [ ] `./scripts/validate_notices.sh` passes
 - [ ] Release build (`-c release`) compiles — the menu is no longer `#if DEBUG`, so release is the
       configuration that actually exercises this code path
-- [ ] The Winamp Modern menu is labeled **Experimental**
+- [ ] The `.wal` skin menu is labeled **Modern** (no "Experimental" tag), and the NullPlayer
+      families are labeled **Original** / **Original-Metal**
 - [ ] Fixtures used are recorded in the QA notes; none were committed
 
 ## Reporting

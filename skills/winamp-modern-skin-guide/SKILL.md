@@ -10,7 +10,13 @@ NullPlayer's fourth UI mode (`PlayerUIMode.winampModern`) loads and runs **Winam
 implementation: the archive is parsed, the object graph is built, and the scripts are interpreted by
 NullPlayer's own code. No Winamp binary, plugin, or asset is bundled.
 
-**Status: experimental.** The runtime loads, scripts, and renders real skins, but see
+**User-facing name: Modern.** This family is presented in the skin menu as **Modern**; NullPlayer's
+own former Modern/Metal families are shown as **Original**/**Original-Metal**. Every internal
+identifier is unchanged — the enum case and persisted raw value stay `winampModern`, as does the
+`-uiMode winampModern` flag. Never rename compatibility identifiers, preference keys, type names, or
+references to the actual stock *Winamp Modern* skin.
+
+The runtime loads, scripts, and renders real skins, but see
 [compatibility.md](compatibility.md) for the exact supported/unsupported surface before assuming any
 behavior works.
 ### Pick your working mode first

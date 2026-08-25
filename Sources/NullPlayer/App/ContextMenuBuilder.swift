@@ -814,14 +814,14 @@ class ContextMenuBuilder {
         metalItem.submenu = metalMenu
         if AppCapabilities.supports(.metalMode) { uiMenu.addItem(metalItem) }
 
-        // Winamp 5.x `.wal` skins. Released as experimental: the runtime loads, scripts, and renders
-        // real skins, but widgets backed by Winamp's built-in `wasabi.*` artwork draw empty and the
-        // hosted playlist/EQ are engine-drawn rather than painted with the skin's own bitmaps.
-        // See `skills/winamp-modern-skin-guide/`.
+        // Winamp 5.x `.wal` skins, presented to the user as the **Modern** family. The runtime loads,
+        // scripts, and renders real skins, but widgets backed by Winamp's built-in `wasabi.*` artwork
+        // draw empty and the hosted playlist/EQ are engine-drawn rather than painted with the skin's
+        // own bitmaps. See `skills/winamp-modern-skin-guide/`.
         if AppCapabilities.supports(.winampModernMode) {
             uiMenu.addItem(NSMenuItem.separator())
             let winampModernItem = NSMenuItem(
-                title: "Winamp Modern (Experimental)",
+                title: PlayerUIMode.winampModern.displayName,
                 action: nil,
                 keyEquivalent: ""
             )
@@ -830,7 +830,7 @@ class ContextMenuBuilder {
             winampModernMenu.autoenablesItems = false
 
             if activeMode != .winampModern {
-                let switchItem = NSMenuItem(title: "Switch to Winamp Modern",
+                let switchItem = NSMenuItem(title: "Switch to \(PlayerUIMode.winampModern.displayName)",
                                             action: #selector(MenuActions.setWinampModernMode), keyEquivalent: "")
                 switchItem.target = MenuActions.shared
                 winampModernMenu.addItem(switchItem)
@@ -4202,7 +4202,7 @@ class MenuActions: NSObject {
         loadModernFamilySkinFromFile(family: .metal)
     }
 
-    // MARK: - Winamp Modern (`.wal`, experimental)
+    // MARK: - Modern (Winamp 5.x `.wal`)
 
     @objc func loadWinampModernSkinFromFile() {
         let panel = NSOpenPanel()
@@ -4221,7 +4221,7 @@ class MenuActions: NSObject {
             }
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Failed to Import Winamp Modern Skin"
+            alert.messageText = "Failed to Import \(PlayerUIMode.winampModern.displayName) Skin"
             alert.informativeText = error.localizedDescription
             alert.alertStyle = .warning
             alert.runModal()
@@ -4411,7 +4411,7 @@ class MenuActions: NSObject {
         wm.reloadUI(to: .metal)
     }
 
-    /// Switch into the Winamp Modern (`.wal`) family. Experimental — see
+    /// Switch into the Winamp 5.x `.wal` family, shown to the user as **Modern**. See
     /// `skills/winamp-modern-skin-guide/compatibility.md` for what does and does not render.
     @objc func setWinampModernMode() {
         let wm = WindowManager.shared

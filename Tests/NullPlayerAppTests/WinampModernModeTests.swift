@@ -42,8 +42,14 @@ final class WinampModernModeTests: XCTestCase {
         XCTAssertEqual(PlayerUIMode.metal.modernSkinFamily, .metal)
     }
 
+    /// The `.wal` family is the user-facing **Modern** skin family; NullPlayer's own former
+    /// "Modern"/"Metal" families are shown as Original/Original-Metal. The raw value stays
+    /// `winampModern` for persistence compatibility.
     func testWinampModernHasDisplayName() {
-        XCTAssertEqual(PlayerUIMode.winampModern.displayName, "Winamp Modern")
+        XCTAssertEqual(PlayerUIMode.winampModern.displayName, "Modern")
+        XCTAssertEqual(PlayerUIMode.winampModern.rawValue, "winampModern")
+        XCTAssertEqual(PlayerUIMode.modern.displayName, "Original")
+        XCTAssertEqual(PlayerUIMode.metal.displayName, "Original-Metal")
     }
 
     // MARK: - Persistence round-trips
