@@ -1193,7 +1193,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // layout: mmd3's Crossfade button exists in `normal`, `shade` and `shade2`, and its
         // indicator layers are per-layout too.
         notifyActivationChanged(section: section, key: key)
-        for (id, state) in dynamicObjects {
+        // **In creation order**, which is script-load order — never the dictionary's. Every script
+        // that asks for an attribute gets its own object, so a radio group is a set of sibling
+        // handlers that each re-assert their own state: Big Bento's Multi Content View has one per
+        // page, and the one whose page is being *turned off* zeroes the others as it goes. Dispatched
+        // in hash order, a sibling could run before the page the user actually picked and clear its
+        // flag first, so that page's handler read `getData() != "1"` and never switched — the setting
+        // changed, the panel did not, and on the next launch the stored page and the stored radio
+        // disagreed and the skin opened both (the stretched visualization over the file info).
+        // Swift's dictionary order is also unstable per process, so this failed differently per run.
+        for (id, state) in dynamicObjects.sorted(by: { $0.key < $1.key }) {
             guard case .configAttribute(let attributeSection, let attributeKey) = state.role,
                   attributeSection.caseInsensitiveCompare(section) == .orderedSame,
                   attributeKey.caseInsensitiveCompare(key) == .orderedSame else { continue }
@@ -3531,12 +3540,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .null
         case "start":
             let reference = MakiObjectReference(.dynamic(id))
+            if MakiInterpreter.tracesExecution {
+                print("MAKI timer start id=\(id) delay=\(state.delayMilliseconds) "
+                      + "by=\(MakiInterpreter.traceStack.last ?? "-")")
+            }
             _ = try timers.schedule(id: id, period: TimeInterval(state.delayMilliseconds) / 1_000) { [weak self] in
                 guard let self else { return }
                 _ = try? self.dispatch(target: reference, event: "ontimer", arguments: [])
             }
             return .boolean(true)
         case "stop":
+            if MakiInterpreter.tracesExecution {
+                print("MAKI timer stop id=\(id) running=\(timers.contains(id: id)) "
+                      + "by=\(MakiInterpreter.traceStack.last ?? "-")")
+            }
             timers.cancel(id: id)
             return .null
         case "isrunning": return .boolean(timers.contains(id: id))
@@ -3553,7 +3570,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return dynamicValue(role: .configAttribute(section: section, key: key))
         case "getdata":
             guard case .configAttribute(let section, let key) = state.role else { return .string("") }
-            return .string(loadedSkin.configuration.string(section: section, key: key))
+            let data = loadedSkin.configuration.string(section: section, key: key)
+            if ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil {
+                print("CALL-TRACE getdata[\(section);\(key)] -> \(data)")
+            }
+            return .string(data)
         case "setdata":
             guard case .configAttribute(let section, let key) = state.role else { return .null }
             // Through the shared write route, not this object alone. A skin's configurator writes an
@@ -3789,6 +3810,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// event unwinds (see `settleStrandedControls`).
     private var strandingCandidates: Set<WasabiObjectID> = []
 
+    /// Objects the skin's own script has **closed**, as opposed to ones that merely start life
+    /// `visible="0"` and have never been opened. The `autoopen` fallback needs the difference: a
+    /// page the script deliberately shut is a decision to respect, while an unopened one is exactly
+    /// what the fallback exists to open. Big Bento's `mcvcore` closes the whole file-info page when
+    /// it switches the Multi Content View to the stretched visualization, and the fallback reopened
+    /// one of those groups on the next reveal — two pages on screen at once.
+    private(set) var scriptClosedObjects: Set<WasabiObjectID> = []
+
     /// The host actions this rule protects, and why it is only these.
     ///
     /// A **positional** control — the seek bar — has no paired counterpart to swap with, so a layout
@@ -3872,6 +3901,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// request a container needs, in the order Wasabi does them.
     private func setVisible(_ object: WasabiObject, _ visible: Bool) throws -> MakiValue {
         let changed = object.setAttribute("visible", value: visible ? "1" : "0")
+        #if DEBUG
+        if changed, ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_HOLDERS"] != nil {
+            NSLog("WinampModern SETVISIBLE %@ -> %d by=%@", object.xmlID ?? object.typeName,
+                  visible ? 1 : 0, MakiInterpreter.traceStack.last ?? "-")
+        }
+        #endif
+        if visible { scriptClosedObjects.remove(object.stableID) }
+        else { scriptClosedObjects.insert(object.stableID) }
         if changed, !visible, Self.strandableAction(of: object) != nil {
             strandingCandidates.insert(object.stableID)
         }

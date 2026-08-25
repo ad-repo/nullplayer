@@ -16,6 +16,56 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
 
 ## Open
 
+- [ ] **BB28. The stretched visualization draws with the file info on top of it.** Reported live
+      2026-08-25 on *Windows 10 edition Light*, with a screenshot: the analyzer spans the Multi
+      Content View while the bitrate line, title, artist, album and the cover all show through it.
+      **Reproduces only after a restart, and only once playback starts** (a 7.3:1 letterbox takes the
+      renderer's analyzer, which is blank without audio — see `WinampModernVisualizationHolder`, BB9).
+
+      **The sequence, measured in the running app** (`WINAMP_MODERN_DEBUG_HOLDERS=1` +
+      `WINAMP_MODERN_TRACE_MAKI=1`, which is what made this legible at all):
+
+      ```
+      t=0     mcvcore @909 (onscriptloaded): page = Visualization ({6A619628};Visualization = 1)
+              → hides infodisplay/songinfodisplay/cover/coverflow, shows info.component.vis.full  ✅
+              → arms a 50 ms transition lock (v170; the page routines guard on its isRunning())
+      t=0     a second player-normal-mcv script @3160 (onscriptloaded), gated only by a
+              getRuntimeVersion() range check (2…65535 — we answer 5, so it passes):
+              → arms a 700 ms one-shot (v171)
+      t=700   @3237 (ontimer v171) → call 2416 → v171.stop()
+              routine 2416 = "activate File Info": writes Component3="File Info", then **only calls
+              show()**. It contains no hide at all, so it cannot displace the visualization page.
+      ```
+
+      **No engine defect was found behind it.** Each of these was proposed and then killed by
+      measurement, and they are listed so nobody re-runs them: `openHolders` forcing (it never runs
+      for `visualization`); the private `Visualizer Mode`; a stale `Component3` (setting it to
+      `"Visualization"` changes nothing); `getGuiX` (`vis.prv -> 51`, correct and parent-relative);
+      handler shadowing (zero shadowed bindings); config-attribute **dispatch order** (sorting by
+      creation order changes nothing); missing visualization-surface detection (that log line is about
+      a dedicated vis *window*, which Bento does not declare); target-animation completion
+      (`onTargetReached` on `info.component.cover` fires *after* the page is already back); the
+      `Cycle File Info` setting (the page returns with it off — an earlier "confirmed" reading here
+      was a grep taken before the 5 s mark and is wrong); and the `v2` disable flag (set only on the
+      version check's failure branch, which a supported runtime never takes).
+
+      **Two fixes were written for it and reverted**, both unproven: cancelling a hidden object's
+      target animation, and ordering the `ondatachanged` dispatch. Neither changed the outcome.
+
+      **What is left is a policy question, not a defect.** These four MCV pages are *not* the
+      `visible`-tagged sibling tabs `closeDisplacedPages` knows how to arbitrate: only
+      `info.component.vis.full` declares `visible="0"`, while `cover`, `infodisplay` and
+      `songinfodisplay` declare none and are meant to be on screen *together* — they are the File
+      Info page. So sibling-exclusivity is the wrong rule here and must not be reached for.
+      The open question is whether the `{6A619628}` page radio should be honoured at launch at all,
+      given the skin's own startup activates File Info unconditionally 700 ms later. Winamp evidently
+      never collides, which suggests it does not restore the visualization *into the panel* at start.
+      Deciding that changes launch behaviour for all four variants and wants its own live QA.
+
+      **Workaround today:** set the panel's page to anything but Visualization; the overlap needs that
+      page stored to happen. Turning on *Open in Multi Content View (stretched)* does **not** set the
+      page — verified — so the two settings are independent and the page is the one that matters.
+
 - [x] **BB27. The notifier toast draws a giant, jumbled block of text — fixed 2026-08-25, confirmed
       live across all four variants** (*"now it looks correct across all skins"*). Reported with two
       screenshots; they share one `xml/notifier.xml`. **Four defects, three of them engine-wide.**

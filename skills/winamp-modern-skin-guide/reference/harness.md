@@ -47,6 +47,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **A `RENDER_SETTLE` is applied after the last one** (BB27): a skin routinely does an event's *work* from a timer the handler starts rather than in the handler — Big Bento's notifier starts a 30 ms poll from `onTitleChange` and lays the toast out on its first tick — so without one the scene is measured a frame too early and a working layout routine reads as one that never ran. **`onshownotification`** is drivable (arity 0, `.system`, exactly what `showNotifier` dispatches); it is the only entry into a notifier script, and without it every notifier in the corpus measured as a window whose script does nothing. **`onresize` first** for any ClassicPro skin: much of its state is only ever assigned there. `onmousewheelup`/`onmousewheeldown` are addressed at the **layout** with two arguments (where every corpus binding lands) — but they call `dispatch` directly rather than going through the view, and `isMouseOverRect` answers `false` with no window, so a `handlers=` count proves the bindings and the arity, **not** that anything scrolled |
 | `WINAMP_MODERN_RENDER_SCRIPTS=1` (or `=bindings`) | per program: owner, source, declared handlers, which events actually **ran**, and which failed with what. `=bindings` adds what every handler is bound to *right now*, its entry point (`@<index>`), whether the dispatcher **shadows** it as a repeat of an earlier body, and each script group's ancestor chain. The entry point is what tells two same-named bindings apart: a program may declare one (object, event) pair twice with *different* bodies, and which body a dispatch reaches is then the whole question |
 | `WINAMP_MODERN_RENDER_DISASM=<method>` | the instructions around every call site of a method — how an unknown **arity** is settled, by counting the net pushes between the receiver and the call |
+| `WINAMP_MODERN_TRACE_MAKI=1` | **runs in the app as well as the harness.** Every handler entry, subroutine call and return (`MAKI enter <script> @<entry>` / `MAKI call … -> <target>` / `MAKI return … at <instruction>`), plus every timer arm and cancel with the handler that did it (`MAKI timer start id=996 delay=700 by=<script>@<entry>`). It also stamps `by=` onto the `SETVISIBLE` line, which is the whole point: every skin's shows and hides arrive through one method, so *which handler did this* is unanswerable without it. A guard that returns at the third instruction and a handler that never ran look identical from outside — the `return … at <instruction>` is what tells them apart, and reading it against `RENDER_DISASM=@<source>` names the branch. Pair the two **for the skin that is actually loaded**: entry points are per-program and do not carry across variants (BB28 was chased through the base skin's listing while the app ran the Windows 10 Light overlay, and none of the numbers matched). Added for BB28 |
 | `WINAMP_MODERN_RENDER_DISASM=@<source>` | the **whole** listing for every program whose path matches: each handler's entry point, every instruction, constants and method names resolved. Variable values are read *after* the run, so a `vN=null` at a `findObject` is a lookup that failed. This is how Winamp Modern's titlebar layout was recovered — an arity fits in an 8-instruction window, a layout routine does not |
 | `WINAMP_MODERN_RENDER_SETTINGS=1` | every option the skin registered with `newAttribute` — item name, section GUID, current and default value. What the host's **Skin Settings** window will offer, and the only headless way to see options a skin registers for Winamp's preferences dialog and binds no control to |
 | `WINAMP_MODERN_RENDER_PALETTE=1` | the colours NullPlayer's **own** surfaces are painted in inside this skin — the embedded library, and any playlist/EQ/library window a skin declares none of — and how each one resolved. Per role: the resolved `rgb(r,g,b)`, then every id in its chain with the reason it answered or did not (`undeclared`, `kind=bitmap file=… — no declared colour, skipped`, `value=color.window.bg -> 55,57,64 gammagroup=PlayerDisplay`), plus a `PALETTE surface` line with the derived chrome (`background`/`bar`/`border`/`divider`/`dimText`). This is the **only** headless view of an embedded surface's appearance: the harness sets no component host, so nothing is drawn into a holder, but the colours those surfaces *would* use resolve exactly as they do in the app. Needs no `WINAMP_MODERN_RENDER_DUMP`. Run it before changing a colour path — "the skin never declared it", "a colour theme crushed it" and "the chain skipped a same-named bitmap" are indistinguishable on screen and one line apart here (BB2a) |
@@ -435,6 +436,27 @@ WINAMP_MODERN_SHOW_WINDOWS=SPEAKER1,SPEAKER2 WINAMP_MODERN_CALL_TRACE=1 \
 
 Then count, don't read: `grep -c 'CALL-TRACE getvisband' /tmp/x.log`, and histogram the results. A
 method being *called* proves nothing; what it *returns* is the finding.
+
+### Reading a probe without fooling yourself (BB28, 2026-08-25)
+
+Three of these turned a working instrument into a wrong finding, each of which then grew its own
+hypothesis. They are properties of the probes, not of any skin.
+
+- **`RENDER_SET` prints its `SET [...] = ... handlers=n` line *after* the write returns.** Filtering
+  the log "from the SET line onwards" therefore shows you everything *except* the dispatch you asked
+  for. A whole afternoon's "the page never switches on a config change" came from that window: the
+  switch was in the log, above the marker. Before filtering by any marker line, check whether the
+  harness prints it before or after the work.
+- **`CALL-TRACE`'s `-> ` is empty for every object-returning call.** `MakiValue.stringValue` answers
+  `""` for both `.null` and `.object`, so `findobject(x) -> ` says *nothing* about whether the lookup
+  found anything. Counting those as null lookups reads a healthy run as 1009 failures.
+- **`RENDER_SCRIPTS`' `ran=` only records events dispatched at a program's *owner object*.** An event
+  delivered to a **dynamic** object — every `ondatachanged` on a config attribute — never appears
+  there, so a handler that runs on every write measures as one that never runs.
+
+The general form: when a probe's answer is *negative* — nothing ran, nothing matched, no output —
+prove the instrument works before believing it. `WINAMP_MODERN_TRACE_MAKI` is the tiebreaker for all
+three, because a handler entry is recorded whether or not the handler does anything.
 
 ### Driving clicks in the running app: `CGEvent`, never System Events (2026-08-25)
 

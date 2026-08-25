@@ -915,7 +915,22 @@ final class WinampModernMainView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self else { return }
             let holders = self.renderer.componentHolders()
-                .map { "\($0.kind.rawValue)#\($0.object.xmlID ?? "-")\($0.frame)" }
+                .map { holder -> String in
+                    // The holder's own id does not say which *group* it is: Big Bento declares the
+                    // same `<component id="vis">` in a mini group and a full-width one, so the chain
+                    // with each node's `visible` is what tells them apart — and names whoever left a
+                    // `visible="0"` group open.
+                    var chain: [String] = []
+                    var node: WasabiObject? = holder.object.parent
+                    var depth = 0
+                    while let current = node, depth < 32 {
+                        chain.append("\(current.xmlID ?? current.typeName)=\(current.attributes["visible"] ?? "-")")
+                        node = current.parent
+                        depth += 1
+                    }
+                    return "\(holder.kind.rawValue)#\(holder.object.xmlID ?? "-")\(holder.frame)"
+                        + "<\(chain.joined(separator: "<"))"
+                }
                 .joined(separator: " | ")
             let subs = self.subviews
                 .map { "\(type(of: $0))\($0.frame)hidden=\($0.isHidden ? 1 : 0)" }

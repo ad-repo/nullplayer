@@ -768,8 +768,23 @@ final class MakiInterpreter {
     /// for `return <value>;`, and a handler that returns nothing leaves whatever the last statement
     /// pushed — so the value is only meaningful for a handler declared to return one, and every
     /// existing caller still ignores it.
+    /// `WINAMP_MODERN_TRACE_MAKI=1` — every handler entry, subroutine call and return, with the
+    /// instruction each one left from. The only way to see *where* a handler bailed: a guard that
+    /// returns at instruction 3 and a handler that never ran look identical from outside.
+    static let tracesExecution = ProcessInfo.processInfo.environment["WINAMP_MODERN_TRACE_MAKI"] != nil
+
+    /// The handler currently on the interpreter's stack, so a side effect can name the script that
+    /// caused it. `setVisible` alone cannot: every skin's shows and hides arrive through one method,
+    /// and "which handler called this" is the whole question when a page reopens itself.
+    static var traceStack: [String] = []
+
     @discardableResult
     func execute(program: MakiProgram, at start: Int, arguments: [MakiValue] = []) throws -> MakiValue {
+        if Self.tracesExecution {
+            print("MAKI enter \((program.source.path as NSString).lastPathComponent) @\(start)")
+            Self.traceStack.append("\((program.source.path as NSString).lastPathComponent)@\(start)")
+        }
+        defer { if Self.tracesExecution, !Self.traceStack.isEmpty { Self.traceStack.removeLast() } }
         guard !isTornDown, let dispatcher else { return .null }
         var stack = arguments.reversed().map(MakiVariable.temporary)
         var callStack: [Int] = []
@@ -922,11 +937,19 @@ final class MakiInterpreter {
                 guard callStack.count < limits.maximumCallDepth else {
                     throw failure(.scriptBudgetExceeded, "MAKI call depth exceeds \(limits.maximumCallDepth).")
                 }
+                if Self.tracesExecution {
+                    print("MAKI call \((program.source.path as NSString).lastPathComponent) "
+                          + "@\(start) \(instructionPointer) -> \((try? argument(instruction)) ?? -1)")
+                }
                 callStack.append(next)
                 next = try argument(instruction)
             case 33:
                 guard let returnAddress = callStack.popLast() else {
                     lastInstructionCount = instructionCount
+                    if Self.tracesExecution {
+                        print("MAKI return \((program.source.path as NSString).lastPathComponent) "
+                              + "@\(start) at \(instructionPointer)")
+                    }
                     return stack.last?.value ?? .null
                 }
                 next = returnAddress

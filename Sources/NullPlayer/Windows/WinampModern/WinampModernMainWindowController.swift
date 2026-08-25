@@ -906,23 +906,38 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             default: return false
             }
         }
+        // A page the skin's script closed is a decision, not an oversight: reopening it puts two
+        // pages on screen at once. Big Bento Modern switches its Multi Content View to the stretched
+        // visualization by closing the whole file-info page, and this fallback pulled one of those
+        // groups back open on the next reveal — the visualization drawn over the details and cover.
+        // An object that merely *starts* `visible="0"` and was never touched is still fair game;
+        // that is what the fallback is for.
+        let scriptClosed = skinView?.scripts.scriptClosedObjects ?? []
         func visit(_ object: WasabiObject) {
             if WinampModernComponentRegistry.isHolderElement(object.typeName),
                WasabiSceneRenderer.componentKind(of: object) == kind, isAutoOpen(object) {
+                var chain: [WasabiObject] = []
                 var node: WasabiObject? = object
                 var depth = 0
+                var blocked = false
                 while let current = node, depth < 64 {
                     if current.typeName.caseInsensitiveCompare("layout") == .orderedSame { break }
-                    switch current.attributes["visible"]?.lowercased() {
-                    case "0", "false", "no":
-                        _ = current.setAttribute("visible", value: "1")
-                        forced.append(current)
-                    default: break
-                    }
+                    if scriptClosed.contains(current.stableID) { blocked = true; break }
+                    chain.append(current)
                     node = current.parent
                     depth += 1
                 }
-                opened += 1
+                if !blocked {
+                    for current in chain {
+                        switch current.attributes["visible"]?.lowercased() {
+                        case "0", "false", "no":
+                            _ = current.setAttribute("visible", value: "1")
+                            forced.append(current)
+                        default: break
+                        }
+                    }
+                    opened += 1
+                }
             }
             for child in object.children { visit(child) }
         }
