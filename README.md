@@ -40,18 +40,18 @@
 - Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
-- Modern V2 UI skin system, many v2 skins included. Open format, users can easily make new v2 skins via json
-- Metal mode — a hi-fi faceplate look with seven brushed-metal finishes (Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, Copper)
-- Switch between Classic, Modern, and Metal live, with no restart — playback, casting, and the open playlist continue uninterrupted while the windows rebuild
+- Original UI skin system, with many skins included. Its open JSON format makes custom skins easy to create
+- Original-Metal — a hi-fi faceplate look with seven brushed-metal finishes (Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, Copper)
+- Switch between Classic, Original, and Original-Metal live, with no restart — playback, casting, and the open playlist continue uninterrupted while the windows rebuild
 - Original Spenctrum analysis visualization system
 - Audio Analysis window — Friture-style multi-pane analyzer with a live oscilloscope, stereo peak/RMS level meters, and a scrolling Metal spectrogram (Viridis colormap)
 - Cava spectrum analyzer — a cava-style bar spectrum in a dedicated window and in the main-window display, with mono/stereo modes, skin-following gradient and metallic color presets, and configurable bars, smoothing, and bass tilt
 - Flow network monitor — a live download/upload throughput window with a scrolling history graph and selectable network interface
 - PeppyMeter — a skinnable analog VU meter window (needle and bar meters) with 25 bundled templates and a random auto-switch mode
 - Album art visualization system with user selected effects
-- Modern mode with 21-band EQ implementation, Classic mode with standard 10-band EQ
+- Original and Original-Metal modes with a 21-band EQ, Classic mode with a standard 10-band EQ
 - Reference Tuning for pitch-shifting local playback and HTTP streams to a different reference frequency, with 432 Hz, 440 Hz, and custom source/target Hz options
-- Compact Mode — collapse to a single menu-bar app (Dock icon hidden, status-bar item) showing the Library Browser with an embedded mini player bar; works in both classic and modern UI
+- Compact Mode — collapse to a single menu-bar app (Dock icon hidden, status-bar item) showing the Library Browser with an embedded mini player bar; works with Classic, Original, and Original-Metal
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (VLCKit/libVLC)
@@ -483,15 +483,15 @@ network features.
 
 ## Skins
 
-NullPlayer has three looks — Classic, Modern, and Metal — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
+NullPlayer has three looks — Classic, Original, and Original-Metal — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
 
 ### Classic Mode
 
 Classic `.wsz` skin support. The app starts with a native macOS appearance and ships with one original NullPlayer skin (Silver). To apply a skin, use **Skins > Load Skin...** to open a `.wsz` file, or place skin files in `~/Library/Application Support/NullPlayer/Skins/` and select them from the Skins menu. Thousands of community-created skins can be downloaded from the **Skins > Get More Skins...** menu link, which opens the [Winamp Skin Museum](https://skins.webamp.org).
 
-### Modern Mode
+### Original Mode
 
-A custom skin engine built from scratch with a neon cyberpunk aesthetic. Modern skins are JSON-configured and support:
+A custom skin engine built from scratch with a neon cyberpunk aesthetic. Original skins are JSON-configured and support:
 
 - **Color palette theming** -- define 12 named colors and the entire UI adapts
 - **Custom PNG image assets** -- optionally replace any UI element with your own artwork
@@ -504,11 +504,11 @@ The bundled default skin ("NeonWave") is fully programmatic -- zero image assets
 
 **Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
 
-**Skin installation**: Place skin folders or `.nps` bundles in `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Skins > Modern > Select Skin**.
+**Skin installation**: Place skin folders or `.nsz` bundles in the compatibility directory `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Skins > Original**.
 
-### Metal Mode
+### Original-Metal Mode
 
-A hi-fi hardware faceplate look, selected from **Skins > Metal**, with seven finishes — Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, and Copper. Each finish restyles the whole player (chrome, panels, sliders, transport, and EQ) with a backlit-green LCD for the time and track displays and a spectrum analyzer matched to the finish.
+A hi-fi hardware faceplate look, selected from **Skins > Original-Metal**, with seven finishes — Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, and Copper. Each finish restyles the whole player (chrome, panels, sliders, transport, and EQ) with a backlit-green LCD for the time and track displays and a spectrum analyzer matched to the finish.
 
 ## License
 

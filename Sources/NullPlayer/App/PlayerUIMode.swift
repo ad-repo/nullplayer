@@ -29,8 +29,8 @@ enum PlayerUIMode: String, CaseIterable {
     var displayName: String {
         switch self {
         case .classic: return "Classic"
-        case .modern: return "Modern"
-        case .metal: return "Metal"
+        case .modern: return ModernSkinFamily.modern.displayName
+        case .metal: return ModernSkinFamily.metal.displayName
         case .winampModern: return "Winamp Modern"
         }
     }

@@ -258,7 +258,7 @@ class ModernSkinEngine {
     
     /// Build a menu of available skins with a checkmark on the active one
     func buildSkinMenu() -> NSMenu {
-        let menu = NSMenu(title: "Modern Skin")
+        let menu = NSMenu(title: "\(currentFamily.displayName) Skin")
         
         let available = availableSkins(for: currentFamily)
         

@@ -28,7 +28,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
-In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab is also available in the classic library browser. The Data tab shows:
+In Original and Original-Metal UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab is also available in the Classic library browser. The Data tab shows:
 - **Play Time** summary (day/week/month/year/all-time)
 - **Top Artists** (music only)
 - **Top Movies** and **Top TV Shows** (separate sections; TV groups by show name)
@@ -73,7 +73,7 @@ Windows automatically snap together when dragged near each other:
 
 ### Compact Mode
 
-**Compact Mode** collapses NullPlayer to a single menu-bar app. Toggle it from the main window's right-click context menu (**Compact Mode**) or the `Windows` top menu — available in **both classic and modern UI**. When enabled:
+**Compact Mode** collapses NullPlayer to a single menu-bar app. Toggle it from the main window's right-click context menu (**Compact Mode**) or the `Windows` top menu — available in **every UI family**. When enabled:
 
 - The Dock icon is hidden (the app switches to an accessory/menu-bar app) and a **NullPlayer status-bar item** appears in the menu bar. Clicking it reveals the single compact window; its menu also has **Exit Compact Mode**.
 - Left-clicking the status-bar item toggles the compact window shown/hidden. Right-clicking opens the Compact Mode menu.
@@ -96,7 +96,7 @@ Windows automatically snap together when dragged near each other:
 
 | Element | Description |
 |---------|-------------|
-| **Time Display** | Single-click toggles elapsed/remaining; double-click cycles timer number systems in modern UI |
+| **Time Display** | Single-click toggles elapsed/remaining; double-click cycles timer number systems in Original and Original-Metal UI |
 | **Track Marquee** | Scrolling song title/artist, with album art thumbnail when available |
 | **Bitrate** | Track bitrate in kbps |
 | **Sample Rate** | Audio sample rate in kHz |
@@ -128,7 +128,7 @@ Previous, Play, Pause, Stop, Next
 - **EQ**: Show/hide Equalizer
 - **PL**: Show/hide Playlist
 
-Modern UI adds: **HT** (Hide Title Bars), **CP** (Compact Mode), **VZ** (Visualizations), **FL** (Flow), **PM** (PeppyMeter), **SP** (Spectrum), **AA** (Audio Analysis), **WV** (Waveform), **LB** (Library)
+Original and Original-Metal UI add: **HT** (Hide Title Bars), **CP** (Compact Mode), **VZ** (Visualizations), **FL** (Flow), **PM** (PeppyMeter), **SP** (Spectrum), **AA** (Audio Analysis), **WV** (Waveform), **LB** (Library)
 
 ## Media Sources
 
@@ -245,14 +245,14 @@ Import discovery is now unified across classic + modern entry points (main windo
 
 ### Equalizer
 - **Classic UI**: 10-band graphic EQ (-12dB to +12dB per band)
-- **Modern UI**: 21-band graphic EQ (-12dB to +12dB per band)
+- **Original/Original-Metal UI**: 21-band graphic EQ (-12dB to +12dB per band)
 - Preamp control
 - Anti-clipping limiter
-- **Modern UI**: 7 compact preset toggle buttons in the button row (FLAT, ROCK, POP, ELEC, HIP, JAZZ, CLSC); clicking a preset auto-enables EQ if off; clicking the active preset deactivates it (reverts to flat); dragging any fader clears the active preset
-- **Modern UI**: integrated glowing `PRE` control in the graph strip replaces the old preamp slider; drag to adjust preamp, double-click to reset to `0 dB`
-- **Modern UI**: double-click a fader to reset that band only to `0 dB`
-- **Modern UI**: AUTO button applies genre-based preset for the current track and auto-enables EQ if off
-- **Modern UI**: all 21 frequency labels are visible in-window, using compact labels like `1K`, `1.4K`, `2K`, `11.2K`
+- **Original/Original-Metal UI**: 7 compact preset toggle buttons in the button row (FLAT, ROCK, POP, ELEC, HIP, JAZZ, CLSC); clicking a preset auto-enables EQ if off; clicking the active preset deactivates it (reverts to flat); dragging any fader clears the active preset
+- **Original/Original-Metal UI**: integrated glowing `PRE` control in the graph strip replaces the old preamp slider; drag to adjust preamp, double-click to reset to `0 dB`
+- **Original/Original-Metal UI**: double-click a fader to reset that band only to `0 dB`
+- **Original/Original-Metal UI**: AUTO button applies genre-based preset for the current track and auto-enables EQ if off
+- **Original/Original-Metal UI**: all 21 frequency labels are visible in-window, using compact labels like `1K`, `1.4K`, `2K`, `11.2K`
 - **Classic UI**: PRESETS dropdown with all presets including "I'm Old" / "I'm Young"
 
 ### Playback Options
@@ -261,7 +261,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - **Volume Normalization**: Consistent loudness (-14dB target)
 - **Reference Tuning**: Pitch-shift playback to a different reference frequency. Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog (source/target Hz, ±2400 cents). Applies to local files and HTTP streams; unavailable while casting because remote renderers have no local audio graph to insert the pitch shifter into. Persists across launches; the CLI also accepts `--tuning`, `--tuning-source`, and `--tuning-offset-cents` as session-only overrides.
 - **Playback Speed**: Tempo-preserving speed control from `0.25×` to `4.0×`, with presets plus Custom…. Applies to local files and HTTP streams; unavailable while casting. Persists across launches.
-- **Balance**: Stereo pan submenu (slider plus Left / Center / Right presets), backed by `engine.balance` and mirrored by the classic Balance Slider sprite. Gives the modern UI and menu-only/Compact workflows access to balance without a face slider. Persists across launches.
+- **Balance**: Stereo pan submenu (slider plus Left / Center / Right presets), backed by `engine.balance` and mirrored by the classic Balance Slider sprite. Gives Original and Original-Metal UI and menu-only/Compact workflows access to balance without a face slider. Persists across launches.
 - **Remember State on Quit**: `AppStateManager.restorePlaylistState` restores playlist contents and ordering; it intentionally does not restore the selected track, seek position, or playing state
 
 ### Sleep Timer
@@ -290,7 +290,7 @@ Accessible via **Playback > Sleep Timer** (or the right-click context menu).
 ## Visualizations
 
 ### Audio Analyzer Window
-A multi-pane real-time analyzer (Friture-style), available in both classic and modern UI. Right-click the window to pick a pane:
+A multi-pane real-time analyzer (Friture-style), available in every UI family. Right-click the window to pick a pane:
 - **Scope** — oscilloscope waveform of the live signal.
 - **Levels** — per-channel Peak and RMS meters (green/yellow/red) in dBFS.
 - **Spectrogram** — scrolling waterfall of the spectrum over time.
@@ -301,14 +301,14 @@ A multi-pane real-time analyzer (Friture-style), available in both classic and m
 Only the visible pane runs, so the window is light on CPU and idles when closed.
 
 ### PeppyMeter (Analog VU Meter)
-A skinnable analog VU meter window (a port of PeppyMeter), available in classic and modern UI. Left/right
+A skinnable analog VU meter window (a port of PeppyMeter), available in every UI family. Left/right
 levels drive rotating **needle** meters or **bar** meters composited from bundled image templates
 (25 meters at 480×320: `bar`, `vintage`, `blue`, `compass`, `chillout`, `big-bang`, …). Right-click to
 choose a meter or toggle **Random** (auto-switches on an interval). It consumes the shared stereo audio
 tap, so it idles when closed. See the **peppymeter** skill for internals.
 
 ### Flow (Network Throughput Meter)
-Flow is a single-height dockable network throughput meter, available in classic and modern UI. It shows
+Flow is a single-height dockable network throughput meter, available in every UI family. It shows
 either download or upload throughput with a live history graph. Double-click the window to switch between
 download and upload views, or right-click and choose **Show Upload View** / **Show Download View**. The
 right-click menu also selects the network interface or advances to the next interface. See the **flow**
@@ -344,22 +344,22 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Place in `~/Library/Application Support/NullPlayer/Skins/` for auto-discovery
 - Bundled skins: Silver (default), Classic, Dark, Light
 
-### Modern UI Mode
-- **Skins > Modern/Classic > Switch to…** to change UI mode
+### Original UI Mode
+- **Skins > Original/Classic > Switch to…** to change UI mode
 - Switches **live, with no restart** — only the mode-dependent window layer is rebuilt; audio, casting, the video player, and playlist/seek/play state continue uninterrupted. Picking a specific modern or classic skin while in the other mode also switches live.
-- Modern skins use `skin.json` format
-- Portable modern skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Modern > Load Skin...**
-- Bundled modern skins: NeonWave (default), Skulls
+- Original skins use `skin.json` format
+- Portable Original skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Original > Load Skin...**
+- Bundled Original skins: NeonWave (default), Skulls
 
 ### UI Size Mode
-- **Modern/Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
+- **Original/Original-Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
 - **Classic UI**: choose context menu -> **UI Size** or use the classic size control to enlarge
 - Scales all windows to the selected percentage
 - Persists across same-mode restarts; a saved session from a different UI mode starts at 100% with default window geometry
-- **Modern UI**: changes live instantly
+- **Original/Original-Metal UI**: changes live instantly
 - **Classic UI**: changes live instantly (no restart)
 
-### Hide Title Bars (Modern UI)
+### Hide Title Bars (Original/Original-Metal UI)
 - Toggle via context menu or HT button on the main window
 - **HT Off (default)**: EQ/Playlist/Spectrum hide titlebars when docked — this is always active, even with HT off
 - **HT On**: All 6 windows (main, EQ, playlist, spectrum, ProjectM, library browser) hide titlebars; the main window keeps the same outer size while its internal layout expands to fill the reclaimed space
@@ -403,7 +403,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 ### Windows
 - **Cmd+L**: Show/hide Playlist
 - **Cmd+G**: Show/hide Equalizer
-- **Cmd+S**: Show/hide Spectrum Analyzer (modern UI) or Library Browser (classic UI)
+- **Cmd+S**: Show/hide Spectrum Analyzer (Original/Original-Metal UI) or Library Browser (Classic UI)
 - **Cmd+K**: Show/hide ProjectM
 - **Cmd+J**: Jump to current track in playlist
 
