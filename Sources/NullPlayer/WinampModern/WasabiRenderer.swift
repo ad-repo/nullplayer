@@ -1216,6 +1216,57 @@ final class WasabiSceneRenderer {
         componentHolders().reversed().first { $0.frame.contains(point) }
     }
 
+    // MARK: - Component bucket (Winamp's thinger)
+
+    static func isComponentBucket(_ object: WasabiObject) -> Bool {
+        object.typeName.caseInsensitiveCompare("componentbucket") == .orderedSame
+    }
+
+    /// The skin-wide strip state every bucket in every one of this skin's windows shares.
+    var componentBucket: WinampModernComponentBucketState { loadedSkin.runtime.componentBucket }
+
+    /// Every `<componentbucket>` on screen in this window, with its box in skin coordinates.
+    func componentBuckets() -> [(object: WasabiObject, frame: CGRect)] {
+        sceneNodes().compactMap { node in
+            Self.isComponentBucket(node.object) ? (object: node.object, frame: node.frame) : nil
+        }
+    }
+
+    /// The icon under a point, with its index in the published set.
+    func componentBucketIcon(at point: CGPoint) -> (icon: WinampModernBucketIcon, index: Int)? {
+        let state = componentBucket
+        for entry in componentBuckets().reversed() {
+            let layout = WinampModernComponentBucketLayout(object: entry.object, frame: entry.frame)
+            guard let slot = layout.slot(at: point) else { continue }
+            let index = state.clampedOffset(state.offset, visibleCount: layout.visibleCount) + slot
+            guard state.icons.indices.contains(index) else { continue }
+            return (state.icons[index], index)
+        }
+        return nil
+    }
+
+    /// `CB_NEXT`/`CB_PREV` (`page: false`) and `CB_NEXTPAGE`/`CB_PREVPAGE`.
+    ///
+    /// A `CB_*` button names no bucket — in Winamp it is simply the button beside the strip — so the
+    /// step is measured against the widest bucket this window is showing, and the scrolled state is
+    /// skin-wide. A window whose layout draws no bucket (a `CB_*` button in a drawer that is closed)
+    /// still steps by one, which is what `visibleCount` of an unseen box would come out at anyway.
+    @discardableResult
+    func scrollComponentBucket(by delta: Int, page: Bool) -> Bool {
+        let visible = componentBuckets()
+            .map { WinampModernComponentBucketLayout(object: $0.object, frame: $0.frame).visibleCount }
+            .max() ?? 1
+        let step = page ? delta * max(1, visible) : delta
+        return componentBucket.scroll(by: step, visibleCount: max(1, visible))
+    }
+
+    /// Move the caption to the icon under the pointer. Returns whether it moved.
+    @discardableResult
+    func focusComponentBucketIcon(at point: CGPoint) -> Bool {
+        guard let hit = componentBucketIcon(at: point) else { return false }
+        return componentBucket.focus(hit.index)
+    }
+
     // MARK: - Browser element discovery
 
     /// Every `<browser>` element in the layout, visible or not (B19). These are NOT component
@@ -1762,6 +1813,10 @@ final class WasabiSceneRenderer {
                       let bitmap = resources.bitmap(identifier: fallback) {
                 draw(bitmap, object: object, frame: node.frame, context: context)
             }
+        } else if type == "componentbucket" {
+            // Before the holder branch: a bucket *is* a holder element, and a skin whose bucket id
+            // happened to name a component must still draw the strip rather than a playlist.
+            drawComponentBucket(object, frame: node.frame, context: context)
         } else if WinampModernComponentRegistry.isHolderElement(type),
                   let kind = Self.componentKind(of: object) {
             drawComponent(kind: kind, object: object, frame: node.frame, context: context)
@@ -2881,6 +2936,44 @@ final class WasabiSceneRenderer {
     /// Draw a hosted component into its holder frame. Playlist/EQ/vis are skin-framed but
     /// engine-drawn here; library/video/other are hosted as live AppKit subviews by the view layer,
     /// so this only paints a bounded neutral backing for them.
+    /// Winamp's thinger: the strip of installed-component icons, and the one it is pointing at (B34).
+    ///
+    /// No background of its own — the skin has already drawn whatever sits behind the strip, and
+    /// every measured bucket is placed on artwork that is meant to show. Each icon gets a rounded
+    /// plate instead, which is what keeps a glyph readable on a bucket parked over a bright
+    /// background (the same guarantee `legibleRowColor` gives the lists this renderer draws).
+    private func drawComponentBucket(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        guard frame.width > 1, frame.height > 1 else { return }
+        let state = componentBucket
+        let layout = WinampModernComponentBucketLayout(object: object, frame: frame)
+        let visible = layout.visibleCount
+        guard visible > 0 else { return }
+        let offset = state.clampedOffset(state.offset, visibleCount: visible)
+        let plate = palette.contentBackground
+        let glyph = WinampModernSurfaceStyle.legible(
+            preferring: [palette.listText, palette.currentText, palette.selectionText], on: plate)
+        let focusPlate = palette.selectionBackground
+        let focusGlyph = WinampModernSurfaceStyle.legible(
+            preferring: [palette.selectionText, palette.currentText, palette.listText],
+            on: focusPlate)
+        context.saveGState()
+        context.clip(to: frame)
+        for slot in 0..<visible {
+            let index = offset + slot
+            guard state.icons.indices.contains(index) else { break }
+            let rect = layout.iconRect(slot: slot)
+            let focused = index == state.focusedIndex
+            context.setFillColor((focused ? focusPlate : plate).withAlphaComponent(0.75).cgColor)
+            context.addPath(CGPath(roundedRect: rect, cornerWidth: 2, cornerHeight: 2,
+                                   transform: nil))
+            context.fillPath()
+            WinampModernComponentBucketCatalog.draw(state.icons[index], in: rect,
+                                                    color: focused ? focusGlyph : glyph,
+                                                    context: context)
+        }
+        context.restoreGState()
+    }
+
     private func drawComponent(kind: WinampModernComponentKind, object: WasabiObject,
                                frame: CGRect, context: CGContext) {
         guard frame.width > 1, frame.height > 1 else { return }
@@ -3295,6 +3388,9 @@ final class WasabiSceneRenderer {
         // A colour-theme list owns no bitmap and carries no action — Winamp supplies the widget, the
         // skin supplies only the tag — so without naming it here a click could never reach a row.
         if Self.isColorThemeList(object) { return true }
+        // Same for a component bucket: the skin ships the box, Winamp ships the icons, and clicking
+        // one is how the thinger opens that component (B34).
+        if Self.isComponentBucket(object) { return true }
         // `<Wasabi:Button text="…">` with no artwork: the renderer draws the label and its border
         // (see `drawTextButton`), so it has a region and has to be clickable. Every measured instance
         // also carries an `action`, which the line above already accepts; this covers one that does
@@ -3325,9 +3421,11 @@ final class WasabiSceneRenderer {
         // layer with it as an invisible click target (Love is War Miku switches its visualization mode
         // through `visual.trigger`), and a hit test that insists on a bitmap can never reach one.
         if object.attributes["rectrgn"] == "1" { return true }
-        // A colour-theme list and an artwork-less text button both paint a real surface of their own
-        // (rows; a bordered label), so both are opaque to hit testing without owning a bitmap.
-        if Self.isColorThemeList(object) || Self.isTextButton(object) { return true }
+        // A colour-theme list, an artwork-less text button and a component bucket all paint a real
+        // surface of their own (rows; a bordered label; the thinger's icons), so each is opaque to
+        // hit testing without owning a bitmap.
+        if Self.isColorThemeList(object) || Self.isTextButton(object)
+            || Self.isComponentBucket(object) { return true }
         return object.attributes["background"] != nil || bitmapID != nil ||
             object.typeName.caseInsensitiveCompare("text") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("songticker") == .orderedSame ||

@@ -4,6 +4,15 @@
 
 ### New Features
 
+- **Winamp 5.x modern skins: the thinger works** — the little strip of component icons a skin puts in
+  its player (Winamp calls it the thinger) was an empty box in every skin that has one, with a blank
+  caption beside it and scroll arrows that did nothing. It now shows an icon for each of the windows
+  the player can open — Playlist Editor, Equalizer, Media Library, Visualization and Video — and
+  clicking one opens that window. The name of the icon you are pointing at appears in the caption the
+  skin draws for it, and the skin's own arrows scroll the strip an icon or a page at a time. Where a
+  skin gives the thinger a window of its own, that window is under Skin Windows as before and is no
+  longer empty. Skins with one include mmd3, Lobe, Overdrive_2, Styx, S7Reflex, ZDL Reel-To-Reel and
+  the Nullsoft SP4 Lite skin.
 - **Winamp 5.x modern skins: the lyrics, video and cover-art buttons work** — the little magnifier
   buttons on a skin's track panel searched for nothing and looked broken. They now do what they say:
   the lyrics button searches for the playing artist and title, the video button searches YouTube, and

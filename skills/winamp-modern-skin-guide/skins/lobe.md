@@ -99,7 +99,9 @@ fired for XUI tags. The content group is now instantiated and tracks render.
   what it excludes — and this container is no longer excluded.
 - The thinger's `cb_prev`/`cb_next` arrows measure as unhittable, and that is **correct**: at rest the
   whole thinger group sits at z-order 10–11, behind `metalbg` at 68. It is a drawer `sliding2.maki`
-  slides out.
+  slides out. Its two buckets **do** draw icons since B34 (2026-08-25) — one at a time, since the
+  player's is 40×25 and the switch layout's is 25×39 `vertical="1"` — so an empty pod here is now a
+  defect, where before it was the expected state.
 
 ## Confirmed live
 

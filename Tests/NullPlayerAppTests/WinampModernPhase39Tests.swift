@@ -48,15 +48,28 @@ final class WinampModernPhase39Tests: XCTestCase {
 
     /// The ones we answer with a recorded nothing, so the demand is visible in a report instead of
     /// looking like a dead button of unknown cause. `VID_1X` / `VID_2X` left this list in B20: a
-    /// skin-hosted picture has a native size to scale from, which is the thing they lacked.
+    /// skin-hosted picture has a native size to scale from, which is the thing they lacked. The four
+    /// `CB_*` left it in B34, when the thinger gained an icon set to scroll.
     func testTheDeliberatelyInertActionsCarryTheirReason() {
-        for name in ["VID_TV", "CB_NEXT", "CB_PREV", "CB_NEXTPAGE", "CB_PREVPAGE"] {
+        for name in ["VID_TV", "ML_SENDTO"] {
             guard case .inert(let action, let reason)? = WinampModernHostAction(action: name) else {
                 return XCTFail("\(name) should decode as inert")
             }
             XCTAssertEqual(action, name)
             XCTAssertFalse(reason.isEmpty, "\(name) must say why it does nothing")
         }
+    }
+
+    /// The thinger's four scroll commands: one icon, or a whole screenful for the `*PAGE` pair.
+    func testTheComponentBucketActionsScrollTheStrip() {
+        XCTAssertEqual(WinampModernHostAction(action: "CB_NEXT"),
+                       .componentBucketScroll(delta: 1, page: false))
+        XCTAssertEqual(WinampModernHostAction(action: "CB_PREV"),
+                       .componentBucketScroll(delta: -1, page: false))
+        XCTAssertEqual(WinampModernHostAction(action: "CB_NEXTPAGE"),
+                       .componentBucketScroll(delta: 1, page: true))
+        XCTAssertEqual(WinampModernHostAction(action: "cb_prevpage"),
+                       .componentBucketScroll(delta: -1, page: true))
     }
 
     func testAnUnrelatedActionIsNotClaimed() {

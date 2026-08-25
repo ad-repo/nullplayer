@@ -76,7 +76,9 @@ Its content is `N items/h:mm:ss`; the `/` is load-bearing — Defix reads the du
 | Visualization / video | Holder discovered and framed; content per the component host |
 
 A holder is any of `<windowholder hold=…>`, `<componentbucket>`, or `<component param=…>` — the last
-is the form separate-window skins use for their real content.
+is the form separate-window skins use for their real content. A `<componentbucket>` is also Winamp's
+**thinger** in its own right: it draws the five hostable components as clickable icons, scrolls under
+`CB_*`, and feeds the `<text display="componentbucket">` beside it (B34).
 
 Playlist and EQ are **engine-drawn inside the skin-provided frame**: correct geometry, behavior, and
 colours (via `WasabiPalette`, resolved through the skin's own colour resources and active colour

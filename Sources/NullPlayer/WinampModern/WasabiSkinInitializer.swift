@@ -356,6 +356,11 @@ final class WasabiSkinRuntime {
     let loadDiagnostics: [WalDiagnostic]
     private(set) var state: WasabiRuntimeState = .awaitingFirstPaint
 
+    /// Winamp's thinger (B34): which component icon the skin's `<componentbucket>`s are pointing at,
+    /// and how far the strip is scrolled. Skin-wide — one skin has one thinger however many of its
+    /// layouts and windows draw one.
+    let componentBucket = WinampModernComponentBucketState()
+
     /// Diagnostics recorded *after* load — surface classification and synthesis decisions happen once
     /// the graph exists, and they belong in the same compatibility report as the load-time ones.
     /// Bounded and de-duplicated: a per-frame scene walk must not grow this without limit.

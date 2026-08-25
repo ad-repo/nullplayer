@@ -186,6 +186,13 @@ final class WasabiTextMetrics {
     /// The window controller installs this; unset, a `PE_Info` simply reads empty.
     static var componentTextProvider: (() -> WinampModernPlaylistSnapshot?)?
 
+    /// The name beside the thinger: `<text display="componentbucket">` reads whichever icon the
+    /// bucket has the focus on (B34). Installed alongside `componentTextProvider` and for the same
+    /// reason — the state is the loaded skin's, and neither the renderer's static text resolution nor
+    /// a script's `getAutoWidth()` has a route to it. Unset, the caption reads empty, which is what
+    /// it did before there were any icons.
+    static var componentBucketTextProvider: (() -> String?)?
+
     /// Whether this object's content comes from the **host** rather than from its own markup — a
     /// `display=` binding, a songticker, or the playlist status line. Only these can change without a
     /// script touching them, so only these are worth polling for `onTextChanged`.
@@ -271,6 +278,8 @@ final class WasabiTextMetrics {
         // object's own text back and tokenises it looking for `kbps`, `khz` and the channel words,
         // which is the only way MMD3's KBPS/KHZ fields are ever filled in.
         case "songinfo": return host.songInfoText
+        // The thinger's caption — the component its strip is pointing at.
+        case "componentbucket": return componentBucketTextProvider?() ?? ""
         default:
             if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame {
                 return host.trackDisplayTitle

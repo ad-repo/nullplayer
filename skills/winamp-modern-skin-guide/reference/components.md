@@ -106,6 +106,54 @@ and every auxiliary container window. Only the main view (`drivesScripts: true`)
 script callbacks (theme, actions, mouse, EQ) — layout switching and resizing are **container-scoped**
 (below).
 
+#### The component bucket — Winamp's thinger (B34, 2026-08-25)
+
+`<componentbucket>` is Winamp's scrolling strip of *installed component* icons: click one to open that
+component, and the `<text display="componentbucket">` beside it names the focused one.
+`CB_NEXT`/`CB_PREV` scroll it by an icon and `CB_NEXTPAGE`/`CB_PREVPAGE` by a screenful.
+
+In Winamp the icons come from the **components**, not from the skin — no `.wal` ships thinger artwork
+— so for as long as this engine published no icon set, every bucket in the corpus drew an empty box,
+its caption stayed blank and all four `CB_*` were `.inert`. `WinampModernComponentBucketCatalog`
+publishes one: the five surfaces `routeComponentToggle` can actually open (Playlist Editor,
+Equalizer, Media Library, Visualization, Video), drawn as vector glyphs on a rounded plate. Four
+things are worth knowing:
+
+- **The strip's state is skin-wide, not per object** (`WasabiSkinRuntime.componentBucket`). One skin
+  has one thinger however many layouts draw it — Mini_Me_2 declares ten (one per variant), mmd3 three
+  (`normal` plus both shades) — and a `CB_*` button names no bucket, so a per-object scroll position
+  would leave the arrow in one shape scrolling something the user cannot see. `WasabiTextMetrics`
+  reads the focused title through `componentBucketTextProvider`, installed beside
+  `componentTextProvider`, so a caption in a *different* container than its bucket (Styx's drawer,
+  ZDL's window) still follows it.
+- **The box is Winamp's, the icons are ours.** `WinampModernComponentBucketLayout` reads
+  `spacing`, `leftmargin`, `rightmargin` and `vertical` — the two margins run along the **scroll
+  axis** in both orientations — and sizes square icons from the cross axis, capped at Winamp's 32px.
+  Negative margins are honoured, not clamped (mmd3's shade buckets use `leftmargin="-3"`), and a box
+  narrower than one icon plus its margins still shows one: Lobe's is 40×25, and showing nothing there
+  is the empty strip again.
+- **A bucket has no bitmap**, so it has to be named in *both* `isRenderable` and `isInteractive` or
+  it can neither draw nor be clicked — the same pair `<ColorThemes:List>` needed for the same reason.
+  The draw dispatch tests `componentbucket` **before** the holder branch: a bucket is a holder
+  element by `isHolderElement`, and a skin whose bucket id happened to name a component would
+  otherwise draw a playlist in it.
+- **Legibility is not the palette's job here.** The plate is `contentBackground` (`selectionBackground`
+  for the focused icon) and the glyph comes from `WinampModernSurfaceStyle.legible`, because a bucket
+  sits directly on the skin's artwork and `listText` alone can land invisible on it.
+
+**The corpus table this was planned from was wrong, and the lesson generalizes.** It was built by
+grepping the shipped XML; a `.wal` draws only what its **include graph** reaches from `skin.xml`.
+Three skins ship a thinger they never include — corneramp_redux ("CornerAmp has never had the thinger
+but you can add it if you like"), Bio-Nid and Rika — so all three have nothing to fix and nothing to
+see, and one of them was the planned live check. Two mechanical traps when re-measuring: `<include
+file=…>` paths resolve **relative to the including file** (a closure that only tries the literal
+string finds one bucket in thirty-six), and `Lapis_Lazuli.wal` wraps its whole skin in a subfolder,
+so it has no top-level `skin.xml` at all. Live buckets in the installed set are seven: mmd3 ×3,
+Lobe ×2 (one `vertical="1"`), Overdrive_2, ZDL (own `thinger` container), Styx (in an `alpha="0"`
+drawer), S7Reflex (`CB_*PAGE`, vertical) and Nullsoft.Winamp.2000.SP4.Lite, whose full-width
+`w="-31" relatw="1"` Thinger window shows the whole five-icon set at once and is the cheapest live
+check.
+
 #### The window layer these views sit in
 
 Every `.wal` window is `.borderless`, which changes what AppKit will do for you:

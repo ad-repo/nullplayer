@@ -75,6 +75,8 @@ concept; read the one your symptom points at, not all of them.
 | A window the skin opens with itself does not open, or opens in the wrong place (`default_visible`, `default_x`/`default_y`) | [reference/components.md](reference/components.md) |
 | A whole container — or a whole skin — is missing, and its layouts are named something other than `normal` | [reference/components.md](reference/components.md) — *Which layout a container opens in* |
 | A toolbar button on a playlist/visualization/video window does nothing (`PE_*`, `VIS_*`, `VID_*`, `CB_*`) | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the host-action families, and the three that are inert on purpose |
+| **A thinger is empty, its caption blank, or its scroll arrows do nothing** (`<componentbucket>`) | [reference/components.md](reference/components.md) — *The component bucket*: the icon set is ours, the box is Winamp's, and three skins ship a thinger they never `<include>` |
+| **A skin's markup declares a widget that never appears anywhere on screen** | [reference/components.md](reference/components.md) — *The component bucket*: check the `<include>` closure from `skin.xml` before believing a grep, and remember include paths are relative to the including file |
 | An auxiliary window draws once then freezes; a script's `onTimer` changes nothing on screen | [reference/components.md](reference/components.md) |
 | Notifier toast doesn't show, shows wrong text, ghost default text, title invisible | [reference/components.md](reference/components.md) §*Notifier — track-change toast* |
 | Teardown crash, leak, or mode-switch breakage | [reference/components.md](reference/components.md) |
@@ -149,6 +151,7 @@ verbatim; it just lives in a reference file now.
 | `TOGGLE`'s parameter is a component **or a container id** | [reference/components.md](reference/components.md) |
 | `default_visible="1"` — the windows a skin opens with itself | [reference/components.md](reference/components.md) |
 | Component hosting | [reference/components.md](reference/components.md) |
+| The component bucket — Winamp's thinger (B34) | [reference/components.md](reference/components.md) |
 | The four routes a skin reaches the web by (B40) | [reference/components.md](reference/components.md) |
 | The window layer these views sit in | [reference/components.md](reference/components.md) |
 | Where a surface lives | [reference/components.md](reference/components.md) |
@@ -191,6 +194,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Script runtime + method dispatch | `WinampModernScriptRuntime.swift` |
 | Skin-facing host API | `WinampModernHost.swift` |
 | Component model + host protocol | `WinampModernComponents.swift` |
+| Component bucket (thinger): icon set, box layout, strip state | `WinampModernComponentBucket.swift`, `WasabiRenderer.swift` |
 | Container topology | `WinampModernContainerTopology.swift` |
 | Surface inventory + synthesis | `WasabiSurfaceInventory.swift`, `WasabiSurfaceSynthesizer.swift`, `WasabiStandardFrames.swift` |
 | Colour theme + palette | `WinampModernThemeCoordinator.swift`, `WasabiPalette.swift` |

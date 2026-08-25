@@ -31,6 +31,10 @@ enum WinampModernHostAction: Equatable {
     /// `VID_1X` / `VID_2X` — size the video window so its picture is the stream's own pixel size
     /// times this multiple (B20).
     case videoNativeSize(multiple: Int)
+    // Component bucket
+    /// `CB_NEXT` / `CB_PREV` (`page: false`) and `CB_NEXTPAGE` / `CB_PREVPAGE` — scroll the thinger
+    /// by one icon or by a whole screenful.
+    case componentBucketScroll(delta: Int, page: Bool)
     /// Declared by the corpus and answered by nothing here, with the reason a triage pass needs.
     case inert(action: String, reason: String)
 
@@ -67,11 +71,15 @@ enum WinampModernHostAction: Equatable {
         // Defix (1), which is why it says so here rather than falling through the switch unnamed.
         case "ML_SENDTO":
             self = .inert(action: name, reason: "NullPlayer publishes no Send To targets")
-        // The component bucket is Winamp's scrolling strip of *installed component* icons. Ours is
-        // always empty — the engine hosts playlist/EQ/library surfaces but publishes no icon set for
-        // a bucket to scroll — so scrolling it moves nothing. Give it icons and this becomes real.
-        case "CB_NEXT", "CB_PREV", "CB_NEXTPAGE", "CB_PREVPAGE":
-            self = .inert(action: name, reason: "component bucket holds no icons to scroll")
+        // The component bucket is Winamp's scrolling strip of *installed component* icons — the
+        // "thinger". These were inert for as long as the engine published no icon set for a bucket to
+        // scroll; it publishes one now (`WinampModernComponentBucketCatalog`, B34), so they scroll it:
+        // by one icon, or by a whole screenful for the `*PAGE` pair that winampmodern566 and S7Reflex
+        // page their config drawers with.
+        case "CB_NEXT": self = .componentBucketScroll(delta: 1, page: false)
+        case "CB_PREV": self = .componentBucketScroll(delta: -1, page: false)
+        case "CB_NEXTPAGE": self = .componentBucketScroll(delta: 1, page: true)
+        case "CB_PREVPAGE": self = .componentBucketScroll(delta: -1, page: true)
         default: return nil
         }
     }

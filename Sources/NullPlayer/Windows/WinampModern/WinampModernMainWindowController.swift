@@ -194,6 +194,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             WasabiTextMetrics.componentTextProvider = { [weak componentBridge] in
                 componentBridge?.playlistSnapshot()
             }
+            // And the thinger's caption, from the strip state this skin's runtime owns (B34). One
+            // provider serves every window: a bucket in a drawer and the caption beside it are the
+            // same thinger whichever container each of them lives in.
+            let bucket = loaded.runtime.componentBucket
+            WasabiTextMetrics.componentBucketTextProvider = { bucket.focusedTitle }
             wireContainerCallbacks(scripts: scripts)
             try scripts.start()
             // After `start()`, so the skin's own `switchToLayout` at load has already had its say and
@@ -1815,6 +1820,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         viewsByContainer.removeAll()
         surfaceCoordinator = nil
         WasabiTextMetrics.componentTextProvider = nil
+        WasabiTextMetrics.componentBucketTextProvider = nil
         // Views tear their own surfaces down; this releases the bridge's reference behind them.
         componentBridge?.releaseLibrarySurface()
         // The picture goes home before the windows holding it do — the video view is the app's, not

@@ -32,6 +32,11 @@ extension WinampModernMainView {
         case .videoFullscreen: toggleVideoFullscreen()
         case .videoMenu: showVideoMenu(from: object)
         case .videoNativeSize(let multiple): sizeVideoToNative(multiple: multiple)
+        case .componentBucketScroll(let delta, let page):
+            // The strip is skin-wide, so an arrow in one window moves the bucket in all of them —
+            // repaint whichever one this button lives in either way.
+            renderer.scrollComponentBucket(by: delta, page: page)
+            needsDisplay = true
         case .inert(let action, let reason): recordInertHostAction(action, reason: reason)
         }
     }

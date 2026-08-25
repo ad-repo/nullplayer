@@ -94,10 +94,10 @@ never going to work: its title box is **75px**, half again the declared 50, and 
   inventing lookup semantics for a 1px decorative sliver; measured and left alone.
 - Its EQ drawer's crossfade and EQ buttons shift 14px once `onResize` runs — the layout its own script
   computes, and invisible until the drawer is opened.
-- The config drawer's `cb_nextpage`/`cb_prevpage` scroll arrows, and the video window's `VID_1X` /
-  `VID_2X` / `VID_TV`, are accepted and inert with a recorded reason (Phase 39): its
-  `<componentbucket>` holds no icons here, and our video window has neither native-size sizing nor an
-  internet-TV source.
+- The video window's `VID_1X` / `VID_2X` / `VID_TV` are accepted and inert with a recorded reason
+  (Phase 39): our video window has neither native-size sizing nor an internet-TV source. The config
+  drawer's `cb_nextpage`/`cb_prevpage` arrows were inert with them until B34 (2026-08-25) gave the
+  thinger an icon set to page through.
 
 ### Role in the implementation
 

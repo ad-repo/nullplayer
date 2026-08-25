@@ -431,7 +431,8 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       sweep never sees it. Identical to the failure mode B23 already recorded for
       `VIDEO holder … hidden`, and exactly what B16 warns about. Fixing the probe to print a hidden
       holder is probably the first step, and would also re-answer B16.
-- [ ] **B34. The thinger is empty in every skin that has one.** `<componentbucket>` is Winamp's
+- [x] **B34. The thinger is empty in every skin that has one. Done 2026-08-25, confirmed live on
+      mmd3 and the Nullsoft SP4 Lite Thinger window.** `<componentbucket>` is Winamp's
       scrolling strip of *installed component* icons (Media Library, AVS, plugin buttons) — click an
       icon to open that component, and the `<text display="componentbucket">` beside it names the
       focused one. NullPlayer hosts playlist/EQ/library surfaces but publishes no **icon set** for a
@@ -458,6 +459,36 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       One icon set published from the component registry lights all 14 up at once; none needs
       skin-specific work. Verify with the render sweep plus a live check on mmd3 (in-body circle) and
       corneramp_redux (own container).
+      **The corpus count above is wrong, and this is how (re-measured 2026-08-25).** It was taken by
+      grepping the shipped XML files; a `.wal` draws only what its **include graph** reaches from
+      `skin.xml`, and three skins ship a thinger they never include — `corneramp_redux`
+      ("CornerAmp has never had the thinger but you can add it if you like", `skin.xml:26`), `Bio-Nid`
+      and `Rika`. Those three have nothing to fix and nothing to see. Two more corrections: the
+      include paths are **relative to the including file**, so a closure that only tries the literal
+      string finds one skin in thirty-six; and `Lapis_Lazuli.wal` wraps its whole skin in a
+      `Lapis_Lazuli/` subfolder, so it has no top-level `skin.xml` at all and is not installed.
+      Live buckets in the **installed** set are seven: mmd3 ×3, Lobe ×2 (one `vertical="1"`),
+      Overdrive_2, ZDL_Reel-To-Reel (own `thinger` container), Styx (in an `alpha="0"` drawer),
+      S7Reflex (`CB_*PAGE`, vertical), Nullsoft.Winamp.2000.SP4.Lite (own Thinger window, `w="-31"
+      relatw="1"` — the whole five-icon set at once, and the best single live check). Uninstalled but
+      live in `~/Downloads`: Mini_Me_2 ×10, Media_Whore, Capsule_II, Hoop_Life_WA3 (vertical, 36×100),
+      boom_by_adil_daqyn.
+      Implementation checklist (2026-08-25):
+      - [x] `WinampModernComponentBucket.swift` — the published icon set (one per hostable Winamp
+            component), the pure box layout (`spacing`/`leftmargin`/`rightmargin`/`vertical`), and the
+            skin-wide scroll/focus state on `WasabiSkinRuntime`
+      - [x] Renderer: draw the strip, make a bucket renderable + interactive, hit-test an icon,
+            scroll by item and by page
+      - [x] `<text display="componentbucket">` reads the focused icon's name
+      - [x] Click an icon → `routeComponentToggle`; hover moves the focus (and the caption)
+      - [x] `CB_NEXT`/`CB_PREV`/`CB_NEXTPAGE`/`CB_PREVPAGE` stop being `.inert` and scroll the strip
+      - [x] Manual verification, mmd3 — confirmed by the user 2026-08-25
+      - [x] Manual verification, own-window case: Nullsoft.Winamp.2000.SP4.Lite (Thinger).
+            *Not* corneramp_redux — it includes no thinger, which is why it showed nothing
+      - [x] Tests (`WinampModernComponentBucketTests`, 14), skill docs (`reference/components.md`
+            → *The component bucket*, `SKILL.md` routing + section + file map, `compatibility.md`,
+            `compatibility/wasabi-surface.md`, `skins.md`, `skins/lobe.md`,
+            `skins/winamp-modern-stock.md`), CHANGELOG
 
 ### B25 — The startup `autoopen` fallback forces a tab open behind the skin's back
 

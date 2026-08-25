@@ -862,7 +862,13 @@ final class WinampModernMainView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let next = renderer.object(at: skinPoint(convert(event.locationInWindow, from: nil)))
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        // The thinger's caption names whichever icon the pointer is over, which is Winamp's own
+        // behaviour and the only way a one-icon-wide bucket (Lobe's is 40×25) can be read at all.
+        // Before the identity guard below: moving between two icons of the same bucket never changes
+        // the hovered *object*.
+        if renderer.focusComponentBucketIcon(at: point) { needsDisplay = true }
+        let next = renderer.object(at: point)
         guard next !== hoveredObject else { return }
         if let hoveredObject { _ = try? scripts.dispatch(object: hoveredObject, event: "onleavearea") }
         hoveredObject = next
@@ -974,6 +980,16 @@ final class WinampModernMainView: NSView {
             if event.clickCount >= 2, let name = renderer.selectedColorTheme(in: list.object) {
                 applyColorTheme(name)
             }
+            needsDisplay = true
+            return
+        }
+        // Winamp's thinger: clicking an icon in a `<componentbucket>` opens that component (B34).
+        // Answered here rather than through `performAction`, as the playlist rows and the colour-theme
+        // list above are, because the bucket carries no `action=` — the widget is Winamp's, and the
+        // skin ships only the box.
+        if let hit = renderer.componentBucketIcon(at: point) {
+            renderer.componentBucket.focus(hit.index)
+            routeComponentToggle(hit.icon.kind)
             needsDisplay = true
             return
         }

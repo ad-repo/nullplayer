@@ -78,9 +78,10 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
 - Button actions **accepted and inert**, each recorded once in the skin's diagnostics with its reason
   (Phase 39): `VID_1X`/`VID_2X` (NullPlayer's video window has no native-size sizing to scale from —
   backlog **B20**, hosting the player in the skin's own video window, is what would give it one),
-  `VID_TV` (no internet-TV source), `CB_NEXT`/`CB_PREV`/`CB_NEXTPAGE`/`CB_PREVPAGE` (a
-  `componentbucket` here holds no icons to scroll); `WA5:Prefs` (winampmodern566 — a Winamp
-  preferences page, and there is no dialog to open)
+  `VID_TV` (no internet-TV source); `WA5:Prefs` (winampmodern566 — a Winamp preferences page, and
+  there is no dialog to open)
+  - `CB_NEXT`/`CB_PREV`/`CB_NEXTPAGE`/`CB_PREVPAGE` **left this list in B34**: the engine publishes an
+    icon set for the thinger now, so the arrows scroll it by an icon and by a page
 - Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
   and vertical), text, `clipchildren` parent clipping
 - Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups. A
@@ -180,7 +181,10 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   a library surface). A skin reads it with `getParam()` and lays itself out from the answer — Defix
   drops the Media Library tab out of its SUI tab strip when told there is none. An unrecognized macro
   is passed through unchanged. Phase 25
-- `windowholder hold="guid:…"` component embedding and `componentbucket` discovery
+- `windowholder hold="guid:…"` component embedding, and `<componentbucket>` — Winamp's **thinger**:
+  the five hostable components drawn as icons, clicked to open, scrolled by `CB_*`, and named by the
+  `<text display="componentbucket">` beside it (B34; see
+  [../reference/components.md](../reference/components.md) — *The component bucket*)
 - The curated predefined `wasabi.*` standard-library base groups (`registerWasabiStandardLibrary`),
   including a clean-room text-only `Wasabi:TitleBar` that draws the window's own name
 
