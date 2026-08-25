@@ -29,6 +29,7 @@
 | File-info panel *fields* | **Fixed (B46)** | `getPlayItemMetaDataString` answered four keys; it now answers a full table, so Year, Genre, Track #, Disc, Album Artist, Composer, Decoder, Comment, BPM and Song Rating fill from the library row for the playing file. **Publisher stays blank by design** — nothing stores it |
 | File-info star rating | **Fixed (B46)** | `setCurrentTrackRating` was not in the method table at all, so a star click threw and aborted the rest of the handler. Get/set/`onCurrentTrackRated` are wired to NullPlayer's own 0–5 star field |
 | Divider position | **Fixed (B44)** | A divider the *user* drags now survives a relaunch, so the header analyzers stay visible. The skin's own `setPosition(434)` default is untouched. Confirmed live |
+| Play/pause button | **Fixed (BB23)** | It stuck in *paused*: `setAutoReplay` was missing, so every `animbutton` handler aborted before it could swap the two buttons |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
 ## The family is two skins and two overlays
@@ -236,6 +237,36 @@ is dragged, and no probe can reach them (`RENDER_SIZE` widens the canvas, not th
 position was not persisted either, so every relaunch hid them again; a divider the user has dragged
 now comes back where they left it, but the **first** sight of these analyzers still costs a drag —
 that is the skin's own default and is deliberately not overridden.
+
+## BB23 — the play/pause button stuck in *paused* (fixed 2026-08-24)
+
+The transport is **two overlapping buttons** — `play.track` (`action="PLAY"`) and `pause.track`
+(`action="PAUSE"`), both at x≈68 with a `.null` base image — plus the 16-frame
+`animation.play.pause` layer that draws the icon and morphs between them. `animbutton.maki` owns the
+swap: every handler animates the layer and then calls `play.show(); pause.hide()` (or the reverse).
+
+All of them aborted at the third call of this block, which every handler writes:
+
+```
+anim.setStartFrame(15); anim.setEndFrame(0); anim.setAutoReplay(0); anim.setSpeed(50); anim.play();
+```
+
+`setAutoReplay` had no signature, and dispatch is fail-closed on a missing *signature* — so the
+handler ended there, before the swap. `pause.track` is declared second and stayed visible, so the
+next click sent `PAUSE` again and the skin could never be un-paused from its own button. One method
+also fixes `animbutton_main.maki` (the big display ring, 80→50) and `notif_playtopause.maki`.
+
+Three things worth keeping:
+
+- **A single missing method can present as a dead *control*, not a missing feature.** The button
+  drew, hovered and pressed correctly; only the half of the handler after the abort was gone.
+- **Count the preamble.** `setStartFrame`/`setEndFrame`/`setSpeed`/`play` were all implemented and
+  the fourth call sat in the middle of them. The signature of the diagnosis is a `CALL-TRACE` that
+  *stops*: `setstartframe(15)`, `setendframe(0)`, then nothing.
+- **`RENDER_SCRIPTS` cannot see this one.** Its `ran=`/`failed=` line is printed before
+  `RENDER_EVENTS` drives anything, so a handler that only fails on a *driven* event reads
+  `failed=-`. `WINAMP_MODERN_CALL_TRACE=1` with `RENDER_EVENTS=onpause` is the instrument, and
+  `RENDER_PROBE` confirms it — `play.track` absent from the scene after a pause is the whole defect.
 
 ## BB9 — the Multi Content View's three visualization placements
 

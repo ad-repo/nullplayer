@@ -1832,6 +1832,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "setstartframe": .init(argumentCount: 1, returnKind: .null),
             "setendframe": .init(argumentCount: 1, returnKind: .null),
             "setspeed": .init(argumentCount: 1, returnKind: .null),
+            // Part of the same four-call preamble every skin writes before `play()`, and the one that
+            // was missing: Big Bento Modern's `animbutton` sets start, end, **autoreplay** and speed
+            // in that order, so a missing signature here abandoned the whole handler at the third
+            // call — the play/pause morph never ran and the buttons were never swapped.
+            "setautoreplay": .init(argumentCount: 1, returnKind: .null),
             "isplaying": .init(argumentCount: 0, returnKind: .boolean),
             "setalternatetext": .init(argumentCount: 1, returnKind: .null),
             "setfontsize": .init(argumentCount: 1, returnKind: .null),
@@ -3027,6 +3032,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .null
         case "setspeed":
             _ = object.setAttribute("speed", value: String(max(1, arguments[0].integerValue)))
+            return .null
+        case "setautoreplay":
+            // Written to the same attribute the markup carries, so `WasabiAnimation` reads one value
+            // whether the skin declared it or a script set it. It only decides what a layer does with
+            // *no* explicit `playing`, which is why a range play started right after is unaffected.
+            _ = object.setAttribute("autoreplay", value: arguments[0].integerValue != 0 ? "1" : "0")
             return .null
         case "isplaying":
             return .boolean(WasabiAnimation.state(of: object,

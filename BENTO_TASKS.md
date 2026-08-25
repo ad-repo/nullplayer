@@ -316,6 +316,20 @@ backlog.
       **Still the biggest thing inside `draw`, and unfixed:** text — `drawText` was 339 of 1148 draw
       samples, with `font(identifier:size:traits:)` alone at 96.
 
+- [x] **BB23. The play/pause button stuck in *paused*. Fixed 2026-08-24.** Reported as *"the 4 bento
+      skins the play pause button gets stuck in paused if used"*. The transport is two overlapping
+      buttons (`play.track` / `pause.track`, both `.null`-imaged) plus the `animation.play.pause`
+      morph, and `animbutton.maki` swaps them at the end of each handler. Every handler aborted
+      three calls earlier: `setAutoReplay` had no signature in the method table, and dispatch fails
+      closed on a missing signature, so `play.show(); pause.hide()` never ran and `pause.track` — the
+      one declared second — stayed on top for ever. One method (`setautoreplay`, arity 1, written to
+      the same `autoreplay` attribute the markup carries) also un-aborts `animbutton_main.maki` (the
+      display ring) and `notif_playtopause.maki`. Verified on all four variants headlessly:
+      `RENDER_EVENTS=onpause` now leaves `play.track visible=1`, `onresume` puts `pause.track` back.
+      `swift test` 732 pass. Skill: `skins/big-bento-modern.md` → BB23,
+      `compatibility/maki-surface.md` → *Animated layers*, `reference/harness.md` → the blind-spot
+      table (`RENDER_SCRIPTS`'s `failed=` is load-time only).
+
 ### Tier 2 — the settings surfaces themselves
 
 - [ ] **BB10. The gear (host **Skin Settings**) window renders two widget kinds, and hides some

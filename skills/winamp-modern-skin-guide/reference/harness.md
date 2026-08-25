@@ -539,6 +539,12 @@ Three of this subsystem's probes were silently blind, and each one made a real d
 | No component host, so `PE_Info` never *changed* | `onTextChanged` could never be observed | harness stands a synthetic queue |
 | Empty queue, so every `PlEdit` walk took its empty branch | The playlist API looked exercised and reached nothing | `RENDER_PLAYLIST` |
 | No windows, so a doubled window **toggle** cancels invisibly | Defix's playlist button measured as one clean action while flashing open/shut in the app | `WINAMP_MODERN_DEBUG_CLICK` in the app |
+| `RENDER_SCRIPTS` prints `ran=`/`failed=` **before** `RENDER_EVENTS` drives anything | Big Bento Modern's `animbutton` reported `failed=-` while its `onPause` aborted on every pause (BB23) | `CALL_TRACE` + `RENDER_EVENTS`; read `failed=` as *load-time* only |
 
 When a probe says "nothing is happening", check that the probe can see the thing happening at all.
+
+A corollary for the last row: a handler that only fails on a **driven** event is invisible to the
+per-program report, and its signature in `CALL_TRACE` is a call sequence that simply *stops* mid-block
+(`setstartframe`, `setendframe`, then nothing). Dispatch fails closed on a missing **signature**, so
+the failing call never prints at all — the gap is the instruction after the last line you can see.
 

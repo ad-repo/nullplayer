@@ -33,8 +33,14 @@ By area:
 - **Events dispatched to scripts** — see the table below
 - **Timers**: bounded scheduling (see limits)
 - **Animated layers**: `getLength`, `gotoFrame`, `getCurFrame`, `setStartFrame`, `setEndFrame`,
-  `setSpeed`, `play`/`stop`, `isPlaying` — the play head is a pure function of the time since `play()`
-  (`WasabiAnimation`), so the renderer and the script always agree on the current frame
+  `setSpeed`, `setAutoReplay`, `play`/`stop`, `isPlaying` — the play head is a pure function of the
+  time since `play()` (`WasabiAnimation`), so the renderer and the script always agree on the current
+  frame. **The preamble is four calls, not three**: skins write
+  `setStartFrame; setEndFrame; setAutoReplay; setSpeed; play` as one block, so a missing signature
+  anywhere in it abandons the whole handler — `setAutoReplay` was the gap, and it is what stuck Big
+  Bento Modern's play/pause button in *paused* (`skins/big-bento-modern.md` → BB22). `setAutoReplay`
+  writes the same `autoreplay` attribute the markup carries, which decides what a layer does with no
+  explicit `playing` and therefore does not disturb a range `play()` started right after it
 - **`Map`**: `loadMap`, `inRegion`, `getValue`, `getWidth`, `getHeight`, `getARGBValue(x, y, channel)`
   — a bitmap the script samples. `new Map` and `new Timer` are indistinguishable at construction
   (class GUIDs are not in the archive), so a dynamic object becomes a map on its first `loadMap`.
