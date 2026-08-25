@@ -22,8 +22,8 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
       three counts (2026-08-23), and the engine already does the part this entry assumed was
       missing. The number is kept, not reused, so the correction is traceable. Closed with BB7.
 
-- **BB2. The embedded library tab is unstyled** (was B37.5) — **split 2026-08-25 into BB2a and BB2b.
-  BB2a is fixed and confirmed live; BB2b remains deferred.** The original entry read as one
+- **BB2. The embedded library tab is unstyled** (was B37.5) — **closed 2026-08-25. Split into BB2a
+  (fixed, confirmed live) and BB2b (won't do).** The original entry read as one
   styling job and guessed the palette never reached the surface. It does: `reconcileHostedSurfaces`
   calls `applyPalette(renderer.palette)` when the library surface mounts and again on a theme change,
   `WinampModernSurfaceStyle.background = palette.contentBackground`, and an embedded browser takes its
@@ -83,22 +83,20 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
       differs between two runs of the *same* tree and is the known nondeterministic render that commit
       also named. Skill: `skins.md` → Sony_Walkman.
 
-- [ ] **BB2b. The panel's chrome is structurally foreign — DEFERRED 2026-08-25, do not start with
-      BB2a.** `Source: Local Files` over a boxed monospace tab row is NullPlayer's classic
-      terminal-style chrome inside a skin that looks nothing like it. Two things to know before
-      anyone scopes this:
-      **Winamp never skinned this surface either.** Its Media Library is `gen_ml`, a native Win32
-      list the skin only *colours* through its colour themes — so the faithful target is "a native
-      pane in the skin's palette", not "the library drawn in the skin's artwork". That makes the job
-      much smaller than it first reads, and rules out the expensive interpretation.
-      **The font is the trap.** `WinampModernSurfaceStyle.font(scale:)` pins a monospaced advance to
-      the classic cell width *on purpose*: the browser lays itself out as
-      `text.count * SkinElements.TextFont.charWidth * scale`, 24 such sites in `PlexBrowserView`
-      alone, and that file is shared with the classic library window — so going proportional means
-      replacing that arithmetic with real text measurement in code where a mistake regresses classic
-      mode too. If this is picked up, scope it **chrome-only** first (bar heights, borders, dividers,
-      pressed fills) and leave the font and every layout site alone; the font refactor is its own
-      decision, with the classic window in the test plan.
+- **BB2b. The panel's chrome is structurally foreign — WON'T DO, closed 2026-08-25.** Kept as a
+      decision, not a backlog item, so it is not re-proposed. After BB2a the pane takes the skin's
+      background, list text, selection and derived bar/border/divider colours, and **that is the
+      faithful end state**: Winamp never skinned this surface either — its Media Library is `gen_ml`,
+      a native Win32 list the skin only *colours* through its colour themes. What a "chrome-only"
+      pass would still change (bar heights, border weight, the boxed tab rectangles) is minor once
+      the colours are right, while the one substantial tell — the **monospace font** — is exactly
+      what such a pass excludes. Small payoff for real work, so it is not worth doing as scoped.
+      **If it is ever reopened, it is the font or nothing**, and the shape of that job is: 11 places
+      in `PlexBrowserView` compute a cell width from `SkinElements.TextFont.charWidth` and 24 uses
+      consume them, so it is one mode-aware measurement helper behind those 11 — classic arithmetic
+      in classic mode, real text measurement in `.wal` mode — not a rewrite of every consumer. The
+      file is shared with the classic library window, which is therefore the regression surface and
+      belongs in any test plan.
 
 - [ ] **BB3. Bitmap overrides in the two Light overlays do not win.** Measured 2026-08-23 and
       recorded as a trap in the skill, never filed here. The Light editions ship light versions of

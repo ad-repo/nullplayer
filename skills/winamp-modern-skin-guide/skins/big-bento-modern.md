@@ -32,7 +32,7 @@
 | Play/pause button | **Fixed (BB23)** | It stuck in *paused*: `setAutoReplay` was missing, so every `animbutton` handler aborted before it could swap the two buttons |
 | Web Reader toolbar | **Fixed (BB25)** | The host WebKit surface fills `centro.browser`, covering the inherited inert Winamp toolbar without modifying the skin |
 | Embedded library colour | **Fixed (BB2a)** | The panel was black and the list palette white: `wasabi.list.background` is declared as both a `<color>` and a `<bitmap>`, and its value names another colour id. Now `rgb(55,57,64)`. Confirmed live |
-| Embedded library chrome | **Deferred (BB2b)** | `Source: Local Files` over a boxed monospace tab row. Scope it chrome-only; the font is load-bearing for layout in `PlexBrowserView` and shared with the classic window |
+| Embedded library chrome | **Won't do (BB2b)** | A native pane in the skin's palette *is* the faithful end state — Winamp only coloured `gen_ml` too. Closed as a decision; do not re-propose |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
 ## The family is two skins and two overlays
@@ -342,9 +342,12 @@ One visible side effect inside this skin, worth knowing as a second signature of
 Web Reader's results surface (`browserpro-resultslayout`) is a `<rect color="wasabi.list.background">`
 (`xml/reader.xml:16`) and drew as an opaque **white slab**. It is now the skin's grey-blue.
 
-**BB2b — the panel's chrome — is still deferred**, and deliberately: Winamp never skinned this
-surface either (its Media Library is `gen_ml`, a native Win32 list the skin only *colours*), so the
-faithful target is "a native pane in the skin's palette", which is what it now is.
+**BB2b — restyling the panel's chrome — was closed "won't do" (2026-08-25), and the colour fix is
+why.** Winamp never skinned this surface either: its Media Library is `gen_ml`, a native Win32 list
+the skin only *colours* through its colour themes. So "a native pane in the skin's palette" is the
+faithful end state, and that is what this now is. What a chrome pass would still change — bar
+heights, border weight, the boxed tab rectangles — is minor beside the one real remaining tell, the
+monospace font, which such a pass deliberately excludes. Treat this as settled rather than pending.
 
 ## BB9 — the Multi Content View's three visualization placements
 
