@@ -4,6 +4,15 @@ enum ModernSkinFamily {
     case modern
     case metal
 
+    /// User-facing family name. Internal identifiers retain their original values so
+    /// existing preferences and on-disk skin directories remain compatible.
+    var displayName: String {
+        switch self {
+        case .modern: return "Original"
+        case .metal: return "Original-Metal"
+        }
+    }
+
     var skinNameKey: String {
         switch self {
         case .modern: return "modernSkinName"

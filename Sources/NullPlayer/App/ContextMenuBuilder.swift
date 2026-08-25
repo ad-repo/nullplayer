@@ -544,7 +544,7 @@ class ContextMenuBuilder {
         let lastModernSkin = UserDefaults.standard.string(forKey: ModernSkinFamily.modern.skinNameKey)
         if !isModern {
             let switchItem = NSMenuItem(
-                title: "Switch to Modern" + (lastModernSkin.map { " (\($0))" } ?? ""),
+                title: "Switch to \(ModernSkinFamily.modern.displayName)" + (lastModernSkin.map { " (\($0))" } ?? ""),
                 action: #selector(MenuActions.setModernMode),
                 keyEquivalent: ""
             )
@@ -707,14 +707,14 @@ class ContextMenuBuilder {
         if AppCapabilities.supports(.classicMode) { uiMenu.addItem(classicItem) }
 
         // --- Modern submenu ---
-        let modernItem = NSMenuItem(title: "Modern", action: nil, keyEquivalent: "")
+        let modernItem = NSMenuItem(title: ModernSkinFamily.modern.displayName, action: nil, keyEquivalent: "")
         let modernMenu = NSMenu()
         modernMenu.autoenablesItems = false
 
         let lastModernSkin = UserDefaults.standard.string(forKey: ModernSkinFamily.modern.skinNameKey)
         if activeMode != .modern {
             let switchItem = NSMenuItem(
-                title: "Switch to Modern" + (lastModernSkin.map { " (\($0))" } ?? ""),
+                title: "Switch to \(ModernSkinFamily.modern.displayName)" + (lastModernSkin.map { " (\($0))" } ?? ""),
                 action: #selector(MenuActions.setModernMode),
                 keyEquivalent: ""
             )
@@ -764,14 +764,14 @@ class ContextMenuBuilder {
         if AppCapabilities.supports(.modernMode) { uiMenu.addItem(modernItem) }
 
         // --- Metal submenu ---
-        let metalItem = NSMenuItem(title: "Metal", action: nil, keyEquivalent: "")
+        let metalItem = NSMenuItem(title: ModernSkinFamily.metal.displayName, action: nil, keyEquivalent: "")
         let metalMenu = NSMenu()
         metalMenu.autoenablesItems = false
 
         let lastMetalSkin = UserDefaults.standard.string(forKey: ModernSkinFamily.metal.skinNameKey)
         if activeMode != .metal {
             let switchItem = NSMenuItem(
-                title: "Switch to Metal" + (lastMetalSkin.map { " (\($0))" } ?? ""),
+                title: "Switch to \(ModernSkinFamily.metal.displayName)" + (lastMetalSkin.map { " (\($0))" } ?? ""),
                 action: #selector(MenuActions.setMetalMode),
                 keyEquivalent: ""
             )
@@ -780,7 +780,7 @@ class ContextMenuBuilder {
             metalMenu.addItem(NSMenuItem.separator())
         }
 
-        let loadMetalSkin = NSMenuItem(title: "Load Metal Skin...", action: #selector(MenuActions.loadMetalSkinFromFile), keyEquivalent: "")
+        let loadMetalSkin = NSMenuItem(title: "Load \(ModernSkinFamily.metal.displayName) Skin...", action: #selector(MenuActions.loadMetalSkinFromFile), keyEquivalent: "")
         loadMetalSkin.target = MenuActions.shared
         metalMenu.addItem(loadMetalSkin)
         metalMenu.addItem(NSMenuItem.separator())
@@ -806,7 +806,7 @@ class ContextMenuBuilder {
             resetMetal.target = MenuActions.shared
             metalMenu.addItem(resetMetal)
         }
-        let openMetalFolder = NSMenuItem(title: "Open Metal Skins Folder...", action: #selector(MenuActions.openMetalSkinsFolder), keyEquivalent: "")
+        let openMetalFolder = NSMenuItem(title: "Open \(ModernSkinFamily.metal.displayName) Skins Folder...", action: #selector(MenuActions.openMetalSkinsFolder), keyEquivalent: "")
         openMetalFolder.target = MenuActions.shared
         metalMenu.addItem(openMetalFolder)
 
@@ -4087,8 +4087,7 @@ class MenuActions: NSObject {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.init(filenameExtension: ModernSkinLoader.bundleExtension)!]
-        let familyName = family == .metal ? "metal" : "modern"
-        panel.message = "Select a .\(ModernSkinLoader.bundleExtension) \(familyName) skin bundle"
+        panel.message = "Select a .\(ModernSkinLoader.bundleExtension) \(family.displayName) skin bundle"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
@@ -4103,7 +4102,7 @@ class MenuActions: NSObject {
                         UserDefaults.standard.removeObject(forKey: family.skinNameKey)
                     }
                     let alert = NSAlert()
-                    alert.messageText = family == .metal ? "Failed to Load Metal Skin" : "Failed to Load Modern Skin"
+                    alert.messageText = "Failed to Load \(family.displayName) Skin"
                     alert.informativeText = "The skin was imported but could not be loaded."
                     alert.alertStyle = .warning
                     alert.runModal()
@@ -4111,7 +4110,7 @@ class MenuActions: NSObject {
             }
         } catch {
             let alert = NSAlert()
-            alert.messageText = family == .metal ? "Failed to Import Metal Skin" : "Failed to Import Modern Skin"
+            alert.messageText = "Failed to Import \(family.displayName) Skin"
             alert.informativeText = error.localizedDescription
             alert.alertStyle = .warning
             alert.runModal()
