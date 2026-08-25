@@ -98,6 +98,35 @@ final class WinampModernPhase67Tests: XCTestCase {
         XCTAssertEqual(channels(renderer.palette.contentBackground), [8, 9, 10])
     }
 
+    /// Ebonite_2_1's shape, and the reason a `$solid` cannot simply be "another colour declaration":
+    /// it declares `wasabi.list.background` as a `<color>` at 70,70,70 ("lists/trees item
+    /// background") **and** as a `$solid` at 237,237,237 ("Tree background bitmap (tile)"), the tile
+    /// last. Its list text is white, so taking the tile painted white on near-white. A real `<color>`
+    /// outranks a generated bitmap however late the bitmap is registered.
+    func testARealColourOutranksAGeneratedBitmapWhicheverIsDeclaredLast() throws {
+        let tileLast = try renderer(resources: """
+        <color id="wasabi.list.background" value="70,70,70"/>
+        <bitmap id="wasabi.list.background" file="$solid" h="10" w="10" color="237,237,237"/>
+        """)
+        XCTAssertEqual(channels(tileLast.palette.contentBackground), [70, 70, 70])
+
+        let colorLast = try renderer(resources: """
+        <bitmap id="wasabi.list.background" file="$solid" h="10" w="10" color="237,237,237"/>
+        <color id="wasabi.list.background" value="70,70,70"/>
+        """)
+        XCTAssertEqual(channels(colorLast.palette.contentBackground), [70, 70, 70])
+    }
+
+    /// Two `<color>`s of the same id keep the ordinary last-wins rule — the ranking is only about
+    /// *kind*, and a skin that genuinely redefines a colour later still means the later one.
+    func testTwoColoursOfTheSameIdKeepLastWins() throws {
+        let renderer = try renderer(resources: """
+        <color id="wasabi.list.background" value="70,70,70"/>
+        <color id="wasabi.list.background" value="12,34,56"/>
+        """)
+        XCTAssertEqual(channels(renderer.palette.contentBackground), [12, 34, 56])
+    }
+
     // MARK: - `#rrggbb`
 
     func testAHexColourResourceResolves() throws {

@@ -424,6 +424,28 @@ WINAMP_MODERN_SHOW_WINDOWS=SPEAKER1,SPEAKER2 WINAMP_MODERN_CALL_TRACE=1 \
 Then count, don't read: `grep -c 'CALL-TRACE getvisband' /tmp/x.log`, and histogram the results. A
 method being *called* proves nothing; what it *returns* is the finding.
 
+### Driving clicks in the running app: `CGEvent`, never System Events (2026-08-25)
+
+Live QA needs synthetic clicks, and the obvious tool is wrong. `osascript -e 'tell application
+"System Events" to click at {x, y}'` **reports success and does nothing** to this app — it answers
+with the window it thinks it clicked, so it reads exactly like a click that landed on a dead control.
+Two working controls (BLAKK's `PL` toggle and its Switch Player Mode button) were nearly filed as
+defects on that evidence.
+
+Post real events instead — a `mouseMoved` to the point, then `leftMouseDown`/`leftMouseUp` through
+`CGEvent(mouseEventSource:mouseType:mouseCursorPosition:mouseButton:)` at `.cghidEventTap`, with a
+~60 ms gap. A double-click is the same pair twice with `.mouseEventClickState` set to 1 then 2. A
+~15-line Swift file does it; keep one in the scratchpad.
+
+Mapping a probe coordinate to a screen point is direct, because a `.wal` window is borderless and the
+skin's (0,0) is the window's top-left: **screen = window origin + skin coordinate**, both in
+top-left-origin points. Take the object's box from `RENDER_PROBE` (`frame=(246.0, 36.0, 14.0, 13.0)`)
+and click its **centre** — a 14×13 button hit at its declared corner is a coin-flip. Read the window
+origin from `CGWindowListCopyWindowInfo` rather than the Accessibility API, which also lets
+`screencapture -o -l <windowID>` grab one window even when another sits on top of it. Occlusion
+matters here: `.wal` skins stack their windows at the same origin, so a full-screen capture often
+photographs the playlist instead of the player.
+
 ### The measurement that finds scale bugs
 
 **Histogram the frames a meter actually uses against the frames it has.** A healthy meter spreads;

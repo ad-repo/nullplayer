@@ -486,6 +486,13 @@ the skin's state.
 These items are code-complete and passing tests, but have not yet been verified in the running app.
 Big Bento's own pending verification is `BB4` in `BENTO_TASKS.md`, not here.
 
+> **Before driving any of these, read `reference/harness.md` → *Driving clicks in the running app***.
+> System Events `click at` silently does nothing to this app while *reporting success*, which reads
+> exactly like a dead control — two working controls were nearly filed as defects on that evidence
+> (2026-08-25). Use `CGEvent`, click the **centre** of the box `RENDER_PROBE` prints, and read window
+> origins from `CGWindowListCopyWindowInfo` (`screencapture -o -l <windowID>` then captures one
+> window even when another covers it — `.wal` skins stack windows at the same origin).
+
 - [x] **B32.10 verified 2026-08-23:** manual QA on mmd3 passed — the lamps and display
       words follow both the skin's own buttons and the Playback menu, and crossfade drives Sweet
       Fades. B32 is closed.
@@ -495,8 +502,19 @@ Big Bento's own pending verification is `BB4` in `BENTO_TASKS.md`, not here.
 - [ ] **B24 verify:** Live on cPro-Bento: Media Library → Playlist → Media Library → Playlist, and
       the Video tab
 - [ ] **B26 verify on Lobe:** the `CT` button opens the window, the picker lists 43, Switch applies one
-- [ ] **B26 verify on BLAKK and Ebonite_2_1:** the player opens at all, and its other layouts
-      (`remote`/`stick`, `compact`/`mini`) still switch from whatever the skin binds them to
+- [x] **B26 verified on BLAKK, 2026-08-25.** It opens on its first declared layout (`boombox`,
+      436×160 — it has no `normal`), and the full cycle works from its own Switch Player Mode button:
+      boombox 436×160 → `stick` 650×30 → `remote` 160×280 → boombox, each matching its declared size
+      and rendering completely (the remote shows art, 965 KBPS/44 KHZ, time, spectrum, transport).
+      The button is script-bound through `configure.maki`'s `bboxswitch.onLeftClick`, not an
+      `action="SWITCH"`, so this also exercises `switchToLayout` from a MAKI handler.
+- [ ] **B26 verify on Ebonite_2_1 — half done, 2026-08-25.** It **opens**: 197×297, its first
+      declared layout `full` (it has no `normal` either). Its five other layouts
+      (`compact`/`stick`/`mini`/`minivert`/`narrow`) were **not** exercised. They hang off
+      `<SC:WindowModeButton>` at `full` (188,24,9,5) with `lclick="switchto:compact"` and a
+      right-click menu of all five (`xml/player-full.xml:7`), each layout's own button chaining to
+      the next. Note this skin's own colour defect is fixed but separate (see the Ebonite note in
+      `skills/winamp-modern-skin-guide/skins.md`).
 - [ ] **B28 verify:** Live on Lobe **and** on a tall skin (cPro-Bento), for the visualization and
       library windows, at 1× and 2×. Note Lobe cannot exercise the library half — its catalog reads
       `library=synthesized:nullplayer.library`, so the surface coordinator opens the skin's own
@@ -505,6 +523,81 @@ Big Bento's own pending verification is `BB4` in `BENTO_TASKS.md`, not here.
 - [ ] **B30 verify on LOBE:** drag the dial and the volume strip
 - [ ] **B30 verify on Styx** (volume) and **mmd3** (knobs unchanged — its group is at the origin)
 - [ ] **B31 verify on Lobe:** the Pledit window shows playlist content
+
+- [ ] **B48. Text NullPlayer draws on its own surfaces is unreadable in most skins.** Reported live
+      2026-08-25 (*"the playlist highlighter is white and the text underneath is also light"*,
+      *"black titlebars with black title text"*, *"white text on light background"* on Ebonite) and
+      then measured across all 36 installed skins. **This is the largest open defect in the `.wal`
+      UI, and it is one cause with three faces.**
+
+      **The cause.** `WasabiPalette` resolves each role from its own independent id chain, and
+      *nothing ever checks that a foreground and the background it lands on can be seen together*. A
+      skin that declares two colour families gets a mongrel pairing: Big Bento takes its highlight
+      from `studio.list.item.selected` (orange) and its row text from `wasabi.list.text.selected`
+      (pale blue-grey). Winamp never hits this — its Media Library is a native Win32 list where the
+      OS guarantees a legible selection.
+
+      **Measured (contrast ratios, corpus of 36).** The pair actually drawn on a selected row is
+      `currentText` over `selectionBackground` (`PlexBrowserView.swift:4706`, `4718`, `4847`, `4848`
+      — the code already switches text colour on selection; there is **no** missing field for the
+      highlight, `currentText` is doing double duty):
+      - **23 of 36 skins are unreadable (< 1.5:1) on the highlight**, nine of them at exactly
+        **1.00:1** — text and highlight are the same colour. Includes Big Bento ×4, cPro-Bento,
+        Defix, Sony_Walkman, BLAKK, both Mikus, Styx, T800, Shield_Amp, Itemskin, micro.
+      - Window chrome (`drawWinampModernChrome`): title on the derived `barBackground` is
+        **unreadable in 5** (Formamp, Itemskin, Lobe, micro, Nullsoft SP4) and weak (< 3:1) in 22
+        more. `dimText` — the inactive title — is the worse half almost everywhere.
+      - Reproduce the whole table with `WINAMP_MODERN_RENDER_PALETTE=1` per skin and a contrast
+        function over the `PALETTE <role> = rgb(...)` lines; the roles needed are `listText`,
+        `currentText`, `selectionBackground`, `contentBackground`.
+
+      **Agreed fix (approved 2026-08-25, not started).** A legibility guarantee in
+      `WinampModernSurfaceStyle`, which is the right home because that type already *derives* roles
+      by blending "rather than invented" — and because it is **nil in classic mode**, so classic
+      cannot be reached by it. For text drawn on a given background, take the first of the skin's own
+      colours (`selectionText`, then `listText`, then `contentBackground`) that clears a contrast
+      threshold, falling back to black/white only if none does: the skin's intent wins wherever the
+      skin gives us something usable. Apply to the selection row **and** to the chrome title.
+      - `PlaylistColors` (declared **twice**: `Skin/Skin.swift:120` and
+        `NullPlayerCore/Skin/SkinTypes.swift:249`) needs a `selectedText`, defaulting to
+        **`currentText`** — that is exactly what the four draw sites read today, so classic `.wsz`
+        skins are a **zero-pixel change** and `SkinLoader` needs no edit. Getting the two struct
+        declarations out of step is a build error, not a silent regression.
+      - `PlexBrowserView` is the only file that draws these (it backs both the classic Library window
+        and the embedded `.wal` surface); `PlaylistView` never reads `selectedBackground`.
+      - **Watch `PlexBrowserView.swift:4335`** — it draws over
+        `selectedBackground.withAlphaComponent(0.5)`, so the guard must judge the *composited*
+        colour there or that state stays unreadable while the main one is fixed.
+      - **Verify classic is untouched by capture, not by argument**: same `.wsz` skin, Library window
+        before and after, byte-identical PNGs.
+      - Open question worth measuring rather than assuming: `currentText` means "currently playing"
+        on a normal row and "selected" on a highlight. Guarding it for the highlight is right, but a
+        skin may still have a hard-to-read currently-playing row on the normal background.
+
+- [ ] **B49. A live UI-mode switch leaves the main window at the outgoing mode's size.** Found during
+      B26's live QA, 2026-08-25: switching `.wal` (Ebonite, 197×297) → Classic left the classic
+      player in a 197×297 window, drawing its 275×116 skin scaled down inside it. Reported as
+      *"the main window is tiny in classic mode at 100%"*.
+
+      **Not the saved settings** — both channels were checked and are clean: `savedAppState` is
+      mode-gated (`AppStateManager.swift:865`, a mismatch skips frame restoration entirely), and the
+      legacy `MainWindowFrame` keys are **write-only** (`restoreWindowPositions()` has no callers).
+
+      **The mechanism is two lines in `WindowManager`:**
+      `recreateModeDependentLayout` (**:6167**) stamps the *outgoing* mode's frame onto the freshly
+      created target-mode window —
+      `mainWindowController?.window?.setFrame(main.frame, display: true)` — and the only thing that
+      would then correct it is the UI-Size re-apply in `performReloadUI` (**:6615**), which runs
+      **only** `if restoreScaleLevel != .p100`. At 100% nothing ever resizes the window to
+      `Skin.mainWindowSize * scale`.
+      **Testable prediction: the bug should vanish at any UI Size other than 100%**, because setting
+      `uiScaleLevel` triggers `applyDoubleSize`. Confirm that before fixing — it pins the mechanism.
+
+      **Fix**: the BB2c rule, applied to the switch — keep the snapshot's **origin**, take the target
+      mode's **own size**, unconditionally rather than only when the scale changed. Note the code
+      above the collapse-to-1x already warns about "forcing the old mode's enlarged frames onto
+      freshly-created target-mode windows"; it handles *scale* but not the *base size* difference
+      between modes. Check every mode pair, not just `.wal`→classic.
 
 ## Backlog — cosmetic, low priority
 

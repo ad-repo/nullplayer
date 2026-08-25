@@ -102,6 +102,8 @@ The rule is now the first declared layout, Winamp's own.
 
 | Sony_Walkman | BB2a, 2026-08-25 | its analyzer draws in the grey it asks for. Every band is declared `colorband1="#808589"`, and `#rrggbb` was parsed by a branch left gated off behind `if false` in `8c7e0567` — whose own commit message says it lands that parse — so all 16 bands fell through to `unparseableColor`, i.e. **opaque white bars straight across the SONY wordmark**. See `reference/rendering.md` → *How a colour resolves* | unmeasured beyond the render sweep; its wasabi standard `Component` shell is one of the six containers with no `normal` layout (B26) |
 
+| Ebonite_2_1 | BB2a follow-up, 2026-08-25 | its embedded/fallback surfaces were **white text on a near-white panel**. It declares `wasabi.list.background` twice — a `<color>` at 70,70,70 (*"lists/trees item background"*) and a `$solid` bitmap at 237,237,237 (*"Tree background bitmap (tile)"*), the tile last — and its `wasabi.list.text` is white. A real `<color>` now outranks a generated bitmap for colour lookups, so the panel is 70,70,70. Opens on `full` (197×297); it declares no `normal` layout (B26) | its five other layouts are unverified live (see the B26 entry in `TASKS.md`); its **selection row is still unreadable** — that is B48, which is corpus-wide |
+
 ---
 
 ## Where each skin's detail lives

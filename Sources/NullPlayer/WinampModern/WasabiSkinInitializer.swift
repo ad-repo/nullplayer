@@ -50,16 +50,28 @@ final class WalResourceRegistry {
             ))
         }
         byIdentifier[key] = definition
-        if Self.carriesColor(definition) { colorsByIdentifier[key] = definition }
+        // Later wins among equals, but a real `<color>` outranks a generated bitmap however late the
+        // bitmap arrives. Ebonite_2_1 declares `wasabi.list.background` as **both**: a `<color>` at
+        // 70,70,70 ("lists/trees item background") and a `$solid` at 237,237,237 ("Tree background
+        // bitmap (tile)"). Its list text is white, so taking the tile painted white on near-white.
+        // The two are different things to Winamp — one is a colour, one is artwork a tree tiles —
+        // and only the first is an answer to "what colour is a list background".
+        if Self.colorRank(definition) > Self.colorRank(colorsByIdentifier[key]) ||
+            (Self.colorRank(definition) == Self.colorRank(colorsByIdentifier[key]) && Self.colorRank(definition) > 0) {
+            colorsByIdentifier[key] = definition
+        }
     }
 
-    /// Whether a declaration can answer a colour request: a `<color>`, or one of the generated
-    /// `$solid`/`$gradient` bitmaps, whose pixels *are* its `color=` attribute.
-    private static func carriesColor(_ definition: WalResourceDefinition) -> Bool {
-        if definition.kind.caseInsensitiveCompare("color") == .orderedSame { return true }
-        return definition.kind.caseInsensitiveCompare("bitmap") == .orderedSame
+    /// How well a declaration answers a **colour** request: a `<color>` best, then one of the
+    /// generated `$solid`/`$gradient` bitmaps whose pixels *are* its `color=` attribute (cPro-Bento
+    /// declares its list background only that way), then not at all.
+    private static func colorRank(_ definition: WalResourceDefinition?) -> Int {
+        guard let definition else { return 0 }
+        if definition.kind.caseInsensitiveCompare("color") == .orderedSame { return 2 }
+        let isGenerated = definition.kind.caseInsensitiveCompare("bitmap") == .orderedSame
             && definition.attributes["file"]?.hasPrefix("$") == true
             && definition.attributes["color"] != nil
+        return isGenerated ? 1 : 0
     }
 
     func warn(_ diagnostic: WalDiagnostic) { diagnostics.append(diagnostic) }

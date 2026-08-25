@@ -780,6 +780,11 @@ different signature:
    `WalResourceRegistry.resolvedColorDefinition` indexes the colour-carrying declarations separately;
    `resolvedDefinition` still answers the bitmap, so tiling that image is unaffected. A `$solid` /
    `$gradient` bitmap counts as colour-carrying, because its pixels *are* its `color=` attribute.
+   **Within that colour table a real `<color>` outranks a generated bitmap**, whichever is declared
+   last — Ebonite_2_1 declares the same id as a `<color>` at 70,70,70 ("lists/trees item background")
+   and a `$solid` at 237,237,237 ("Tree background bitmap (tile)"), the tile last, and its list text
+   is white: taking the tile painted white on near-white. Two `<color>`s of one id keep ordinary
+   last-wins; the ranking is about *kind*, not order.
 3. **`#rrggbb` is a literal.** Enkera declares its entire palette in hex; Sony_Walkman its analyzer
    (`colorband1="#808589"`), Big Bento its 22 analyzer bands. The parse is deliberately strict — only
    a `#`-prefixed token — so a bare `abcdef` stays a resource id, which is what the caller already
