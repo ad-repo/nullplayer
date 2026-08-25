@@ -278,6 +278,36 @@ Three things worth keeping:
   `failed=-`. `WINAMP_MODERN_CALL_TRACE=1` with `RENDER_EVENTS=onpause` is the instrument, and
   `RENDER_PROBE` confirms it — `play.track` absent from the scene after a pause is the whole defect.
 
+## BB24 — the SUI tab icons were stretched vertically (fixed 2026-08-24, confirmed live)
+
+Reported as *"the icons on the vertical tab are vertically stretched"* on all four variants. The
+strip is seven `<Bento:TabButton>`s in `sui.tabs`, each declared `h="60"` with a 258×58 icon sprite
+that the 40-wide column crops to its left edge. They drew at **96**.
+
+Nothing in the renderer stretched anything. `tabcontrol.maki` **re-sizes every tab at load**, and the
+arithmetic is its own:
+
+```
+label = findObject("bento.tabbutton.normal.text");   // <text y="9" h="60" fontsize="24">
+tab.setXmlParam("h", 4 * stringToInteger(label.getXmlParam("y")) + label.getAutoHeight());
+```
+
+With `getAutoHeight()` answering the label's declared `h`, that is `36 + 60 = 96` — the tab's own
+height fed back into its own sizing. The icon is drawn to the tab, so it stretched 1.66×, and since
+the script stacks each tab at `y + h + 1` the whole strip also drifted 37px per tab down a column that
+only had room for seven at 60. Winamp answers the **font**: `36 + 24 = 60`, the skin's own number.
+
+Two things worth keeping:
+
+- **A control sized by a script is not a rendering bug, however much it looks like one.** The tell
+  was `RENDER_GEOMETRY=sui.tabs` printing `h=96` against a markup that says 60 — one probe, before
+  any renderer code was read. `CALL-TRACE` then named the getter, and `RENDER_DISASM=@<the XML>` gave
+  the arithmetic exactly rather than by inference. Note the needle for `DISASM=@` is the **XML** that
+  declared the program, not the `.maki` it was compiled from.
+- **A wrong answer that is off by one is still wrong.** Measuring with CoreText's line height gave
+  25, so tabs came out 61 and the strip still crept a pixel per tab. `fontsize` **is** the line height
+  (see `reference/scripting.md`), and only that lands on the skin's 60.
+
 ## BB9 — the Multi Content View's three visualization placements
 
 The skin declares three `{0000000A}` holders: the SUI Visualization tab (`wdh.vis.object`), the mini

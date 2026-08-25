@@ -165,9 +165,14 @@ final class WasabiTextMetrics {
     /// the same 0.8 ratio. Taken as a point size, every string is a quarter too big and overflows the
     /// box the skin drew for it.
     static func pointSize(of object: WasabiObject) -> CGFloat {
+        CGFloat(pixelHeight(of: object) * pixelHeightToPointSize)
+    }
+
+    /// The `fontsize=` a text object declares, clamped — a pixel cell height in the skin's own units,
+    /// before the conversion to a point size the drawing needs.
+    static func pixelHeight(of object: WasabiObject) -> Double {
         let requested = Double(object.attributes["fontsize"] ?? "11") ?? 11
-        let clamped = requested.isFinite ? min(max(requested, 1), 256) : 11
-        return CGFloat(clamped * pixelHeightToPointSize)
+        return requested.isFinite ? min(max(requested, 1), 256) : 11
     }
 
     static let pixelHeightToPointSize = 0.8
@@ -344,9 +349,14 @@ final class WasabiTextMetrics {
             let spacing = Double(definition.attributes["vspacing"] ?? "0") ?? 0
             if charHeight > 0 { return CGFloat(charHeight + spacing) }
         }
-        let size = Self.pointSize(of: object)
-        let font = font(identifier: object.attributes["font"], size: size,
-                        traits: Self.traits(of: object)) ?? NSFont.systemFont(ofSize: size)
-        return ceil(font.ascender - font.descender + font.leading)
+        // For everything else the line height *is* `fontsize`: Winamp hands that number to GDI as the
+        // font's cell height, so the height a script reads back is the number the skin wrote, not a
+        // value derived from the face's own metrics. That is exactly what Big Bento Modern's tab strip
+        // counts on — `4 * label.y + label.getAutoHeight()` with `y="9"` and `fontsize="24"` is the
+        // skin's own 60-pixel tab — and a CoreText line height for the same label answers 25, which
+        // drifts the whole strip two pixels per tab. The point size the *drawing* uses is a different
+        // number (`pointSize(of:)`, 0.8 of this one), because the em GDI ends up rendering inside that
+        // cell is smaller than the cell.
+        return CGFloat(Self.pixelHeight(of: object))
     }
 }

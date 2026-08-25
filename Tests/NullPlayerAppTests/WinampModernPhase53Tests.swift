@@ -57,13 +57,19 @@ final class WinampModernPhase53Tests: XCTestCase {
 
     // MARK: - getAutoHeight
 
-    func testGetAutoHeightPrefersTheDeclaredHeight() throws {
+    /// Corrected by BB24: this asserted `37`, the declared `h`. A text object's *box* and its *line*
+    /// are two different numbers, and `getAutoHeight()` is the line's — Winamp measures the font and
+    /// never reads `h` back. Big Bento Modern's tab strip is what proved it: `tabcontrol.maki` sizes
+    /// each SUI tab to `4 * label.y + label.getAutoHeight()` where the label is declared `h="60"`
+    /// inside a 60-tall tab, so the declared height fed itself back in and made every tab 96 tall.
+    func testGetAutoHeightMeasuresTheFontRatherThanTheDeclaredBox() throws {
         let runtime = try makeRuntime(layout: """
         <layout id="normal" w="200" h="200">
           <text id="sized" x="0" y="0" w="80" h="37" text="Options" fontsize="20"/>
         </layout>
         """)
-        XCTAssertEqual(try height(of: "sized", in: runtime), 37)
+        XCTAssertEqual(try height(of: "sized", in: runtime), 20,
+                       "the line height is `fontsize`, the cell height Winamp hands to GDI")
     }
 
     func testGetAutoHeightMeasuresOneLineWhenNoHeightIsDeclared() throws {

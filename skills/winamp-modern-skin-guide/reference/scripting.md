@@ -301,6 +301,28 @@ scrolls by default. `ticker="bounce"` slides to the end and back; any other enab
 continuously and is drawn twice with a gap so it never blanks between cycles. Both the TrueType and
 bitmap-font paths share `tickerMotion(for:overflow:textWidth:)`.
 
+#### `getAutoWidth()` / `getAutoHeight()` measure the string; they never read the box back
+
+A `<text>` carries two different sizes — the **box** it was declared with (`w`/`h`, often
+`relatw="1"` and therefore its parent's) and the **line** its string occupies. `getAuto*` is the
+line's, always, and answering with the declared attribute instead is a feedback loop waiting for a
+skin that sizes a container from a label inside it. Big Bento Modern is that skin: `tabcontrol.maki`
+sets each SUI tab to `4 * label.y + label.getAutoHeight()` where the label is declared `h="60"` inside
+a 60-tall tab, so the declared height fed itself back in and every tab came out 96 — icons stretched
+1.66×, strip drifting 37px per tab (BB24). The order for both is: an `autowidthsource` /
+`autoheightsource` object first, then — for `text` and `songticker` — the measurement, then the
+declared attribute and the artwork for everything else. A **group** still answers from its declared
+size; only text objects measure.
+
+**`fontsize` *is* the line height.** Winamp hands that number to GDI as the font's cell height, so a
+script reads back exactly the number the skin wrote — not a value derived from the face's metrics.
+CoreText's ascender−descender+leading for the same label answers 25 against Winamp's 24, which is
+invisible in one control and a pixel of drift per tab in a strip of seven. The point size the
+*drawing* uses is the other number, 0.8 of this one (`pixelHeightToPointSize`), because the em GDI
+renders inside that cell is smaller than the cell. `WasabiTextMetrics.pixelHeight(of:)` and
+`pointSize(of:)` are the two, and a bitmap font answers from its own `charheight + vspacing` before
+either.
+
 #### What a text object shows: `setText` beats `display=`, and `setText("")` gives it back
 
 Four things can answer for one `<text>`, and the order between them is the whole rule.

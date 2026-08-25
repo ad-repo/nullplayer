@@ -29,6 +29,12 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: the Big Bento Modern tab icons are no longer stretched** — the icons
+  down the left edge of the player (library, playlist, visualization, web reader, equalizer,
+  settings) were squashed tall and thin, and the strip sat lower than it should. The skin sizes each
+  of those tabs from the label beside it, and nullPlayer was answering that measurement with the
+  label's declared box instead of the height of its text, making every tab half again too tall. Tabs
+  and icons now come out at the size the skin drew them, in all four Bento variants.
 - **Winamp 5.x modern skins: file-info panels no longer repeat the song title on every line** — Big
   Bento Modern's track panel showed the same title stacked over and over instead of the track's
   details. The skin fills each of those lines from its own script, but tags every one of them with a

@@ -64,6 +64,7 @@ concept; read the one your symptom points at, not all of them.
 | **The mouse wheel does nothing** — a settings page, drawer or custom list will not scroll | [reference/scripting.md](reference/scripting.md) — *The mouse wheel is a layout event, and it carries two arguments* |
 | **A vertical slider will not drag**, its thumb slides the wrong way, or an EQ shows no curve | [reference/rendering.md](reference/rendering.md) — *A skin spells the axis two ways, and `"v"` is not a typo* |
 | A scrollbar moves but its page does not, or a control's position reads 0 however far it is dragged | [reference/scripting.md](reference/scripting.md) — *`embed_xui` — the wrapper **is** the control* |
+| **Artwork is stretched, or a strip of controls drifts further wrong with every item** — and the markup says the right size | [reference/scripting.md](reference/scripting.md) — *`getAutoWidth()` / `getAutoHeight()` measure the string*: a script sized it, and a text object's box is not its line. `RENDER_GEOMETRY` against the markup names this in one run |
 | **A GUI-only report on a scripted control** — where do I even start? | [reference/harness.md](reference/harness.md) — *Ask for the live trace first, not fourth* |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
 | **A skin's web button does nothing, opens the wrong browser, or lands on a page with no query** | [reference/components.md](reference/components.md) — *The four routes a skin reaches the web by*: `navigateUrl` is the **user's** browser, a scheme-less address is not a VFS path, and `browser_search` carries terms while `browser_navigate` carries a URL |
@@ -136,6 +137,7 @@ verbatim; it just lives in a reference file now.
 | The keyboard is a string, and a borderless window has to ask for it | [reference/scripting.md](reference/scripting.md) |
 | The mouse wheel is a *layout* event, and it carries two arguments | [reference/scripting.md](reference/scripting.md) |
 | `embed_xui` — the wrapper **is** the control, and must not keep a second copy of its value | [reference/scripting.md](reference/scripting.md) |
+| `getAutoWidth()` / `getAutoHeight()` measure the string; they never read the box back | [reference/scripting.md](reference/scripting.md) |
 | Scrolling: `scrollToPercent` is a viewport offset, not a layout change | [reference/scripting.md](reference/scripting.md) |
 | A skin spells the axis two ways, and `"v"` is not a typo | [reference/rendering.md](reference/rendering.md) |
 | Ask for the live trace first, not fourth | [reference/harness.md](reference/harness.md) |

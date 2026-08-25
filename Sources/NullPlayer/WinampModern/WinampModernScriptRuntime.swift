@@ -492,21 +492,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
            let source = descendant(of: object, xmlID: sourceID), source !== object {
             return autoWidth(of: source)
         }
+        // Measured with the font the renderer draws with, not estimated: ClassicPro sizes every SUI
+        // tab to `label.getAutoWidth() + 14` and lays its menu bar out from these numbers, so an
+        // estimate that runs narrow clips every label inside a box the skin thinks fits it.
+        //
+        // The measurement outranks the declared `w`. For a `<text>` the *box* and the *string* are
+        // two different numbers, and "auto" is the string's — a label declared `w="0" relatw="1"`
+        // stretches to its parent and would otherwise answer with that stretch.
+        let type = object.typeName.lowercased()
+        if type == "text" || type == "songticker" {
+            let text = WasabiTextMetrics.content(of: object, host: host)
+            return Int32(clamping: Int(metrics.width(of: object, text: text).rounded(.up)))
+        }
         if let explicit = object.attributes["w"], let width = Int32(explicit), width > 0 { return width }
         if let imageID = object.attributes["image"], let width = bitmapWidth(identifier: imageID) {
             return width
         }
-        // Measured with the font the renderer draws with, not estimated: ClassicPro sizes every SUI
-        // tab to `label.getAutoWidth() + 14` and lays its menu bar out from these numbers, so an
-        // estimate that runs narrow clips every label inside a box the skin thinks fits it.
-        let type = object.typeName.lowercased()
-        guard type == "text" || type == "songticker" else { return 0 }
-        let text = WasabiTextMetrics.content(of: object, host: host)
-        return Int32(clamping: Int(metrics.width(of: object, text: text).rounded(.up)))
+        return 0
     }
 
-    /// `getAutoHeight()` — the vertical twin of `autoWidth(of:)`, resolved from the same three
-    /// sources in the same order (a named source object, a declared `h`, the artwork). Big Bento
+    /// `getAutoHeight()` — the vertical twin of `autoWidth(of:)`, resolved from the same sources in
+    /// the same order (a named source object, the font, a declared `h`, the artwork). Big Bento
     /// Modern's album-art script asks for both together (`getAutoWidth()` then `getAutoHeight()` on
     /// the cover layer) to keep the picture's aspect ratio, so answering one and aborting on the
     /// other took the whole cover panel's `onScriptLoaded` down with it.
@@ -515,15 +521,22 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
            let source = descendant(of: object, xmlID: sourceID), source !== object {
             return autoHeight(of: source)
         }
+        // A single line in the font the renderer would draw with, and it outranks the declared `h`
+        // for the same reason the width measurement outranks `w` — see `autoWidth(of:)`. Big Bento
+        // Modern's tab strip is the case that shows it: `tabcontrol.maki` sizes every SUI tab to
+        // `4 * label.y + label.getAutoHeight()`, and the label is declared `h="60"` inside a 60-tall
+        // tab. Answering 60 made each tab 96 tall, which stretched all seven icons vertically and
+        // pushed the strip 37px per tab down the column. Measured, the answer is the font's 24 and
+        // the arithmetic lands back on the skin's own 60.
+        let type = object.typeName.lowercased()
+        if type == "text" || type == "songticker" {
+            return Int32(clamping: Int(metrics.lineHeight(of: object).rounded(.up)))
+        }
         if let explicit = object.attributes["h"], let height = Int32(explicit), height > 0 { return height }
         if let imageID = object.attributes["image"], let height = bitmapHeight(identifier: imageID) {
             return height
         }
-        // A single line in the font the renderer would draw with. Text objects are the only other
-        // thing that has an intrinsic height at all; everything else honestly has none.
-        let type = object.typeName.lowercased()
-        guard type == "text" || type == "songticker" else { return 0 }
-        return Int32(clamping: Int(metrics.lineHeight(of: object).rounded(.up)))
+        return 0
     }
 
     /// Pixel width of a declared bitmap. Uses the resource's explicit `w` when the declaration crops

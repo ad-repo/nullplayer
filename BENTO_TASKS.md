@@ -330,6 +330,25 @@ backlog.
       `compatibility/maki-surface.md` → *Animated layers*, `reference/harness.md` → the blind-spot
       table (`RENDER_SCRIPTS`'s `failed=` is load-time only).
 
+- [x] **BB24. The SUI tab icons were stretched vertically. Fixed 2026-08-24, confirmed live.**
+      Reported as *"on the 4 bento skins, the icons (browser, library, settings, visualizations,
+      playlist) on the vertical tab are vertically stretched"*. Not a renderer defect:
+      `tabcontrol.maki` sizes each tab to `4 * label.y + label.getAutoHeight()`, and `getAutoHeight()`
+      answered the label's **declared** `h="60"` rather than its font, so every tab came out
+      `36 + 60 = 96` — the tab's own height fed back into its own sizing. The 258×58 icon is drawn to
+      the tab, hence the 1.66× stretch, and the script's `y + h + 1` stacking drifted the strip 37px
+      per tab. Two parts: `getAutoWidth`/`getAutoHeight` now measure before falling back to the
+      declared `w`/`h` for `text`/`songticker` (a group still answers from its declared size), and
+      `lineHeight(of:)` is `fontsize` — the pixel cell height Winamp hands GDI — rather than a
+      CoreText line height, which answered 25 and left the tabs 61 tall and still creeping. Measured
+      on all four variants: `RENDER_GEOMETRY=sui.tabs` prints `h=60` at `y=4,65,126,187,248,309`
+      against `h=96` at `y=4,101,198,295,392,489` before. `swift test` 1184 pass; the Phase 53
+      assertion that `getAutoHeight` prefers the declared height was the assumption this corrects, and
+      is rewritten. Skill: `skins/big-bento-modern.md` → BB24, `reference/scripting.md` →
+      *`getAutoWidth()` / `getAutoHeight()` measure the string*, `SKILL.md` routing table.
+      **Corpus sweep not run** — the change reaches any skin whose scripts measure a text object, and
+      the 37-skin before/after is the check that has not been taken.
+
 ### Tier 2 — the settings surfaces themselves
 
 - [ ] **BB10. The gear (host **Skin Settings**) window renders two widget kinds, and hides some
