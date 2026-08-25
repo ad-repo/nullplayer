@@ -241,7 +241,8 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       number here would put a skin's own arithmetic in a different space from everything else it
       measures.
 
-- [x] **B42. `relat*` is `atoi(value) != 0`, not `== 1`. Done 2026-08-24.** `WasabiGeometry`'s flag
+- [x] **B42. `relat*` is `atoi(value) != 0`, not `== 1`. Done 2026-08-24, confirmed live
+      2026-08-25** (in BB4's re-run: one crisp cover over a dimmed backdrop wash). `WasabiGeometry`'s flag
       reader accepted only `1`/`true`/`yes`, so every other number fell back to **absolute** geometry.
       Found live on Big Bento Modern, where it reads as *the album cover drawn twice*: the dimmed
       oversized backdrop in `info.component.albumbg` is `w="99" h="100" relatw="2" relath="2"`, and
@@ -515,7 +516,10 @@ the skin's state.
 ## Pending live verification
 
 These items are code-complete and passing tests, but have not yet been verified in the running app.
-Big Bento's own pending verification is `BB4` in `BENTO_TASKS.md`, not here.
+Big Bento's own pending verification was `BB4` in `BENTO_TASKS.md`, **closed clean on 2026-08-25** —
+all three of its symptoms had been fixed by intervening work and none reproduced live. Two things it
+is worth carrying into the items below: a headless pass is necessary and not sufficient, and an entry
+that has sat unverified for days may already be fixed, so **re-measure before debugging**.
 
 > **Before driving any of these, read `reference/harness.md` → *Driving clicks in the running app***.
 > System Events `click at` silently does nothing to this app while *reporting success*, which reads
