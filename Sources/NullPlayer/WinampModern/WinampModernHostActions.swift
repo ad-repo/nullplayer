@@ -60,6 +60,13 @@ enum WinampModernHostAction: Equatable {
         case "VID_2X": self = .videoNativeSize(multiple: 2)
         // SHOUTcast TV. NullPlayer has no internet-TV source and will not gain one here.
         case "VID_TV": self = .inert(action: name, reason: "no internet TV source in NullPlayer")
+        // Winamp's **Send To** menu: hand the current item to a Media Library playlist, a portable
+        // device, the CD burner or a transcoder — a menu built by whatever plugins are installed.
+        // NullPlayer publishes no such targets, so the menu would be empty and every item in it a lie
+        // about something the app can do. Declared by Big Bento Modern (both editions, 2 each) and
+        // Defix (1), which is why it says so here rather than falling through the switch unnamed.
+        case "ML_SENDTO":
+            self = .inert(action: name, reason: "NullPlayer publishes no Send To targets")
         // The component bucket is Winamp's scrolling strip of *installed component* icons. Ours is
         // always empty — the engine hosts playlist/EQ/library surfaces but publishes no icon set for
         // a bucket to scroll — so scrolling it moves nothing. Give it icons and this becomes real.

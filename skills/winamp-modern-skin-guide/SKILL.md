@@ -66,6 +66,8 @@ concept; read the one your symptom points at, not all of them.
 | A scrollbar moves but its page does not, or a control's position reads 0 however far it is dragged | [reference/scripting.md](reference/scripting.md) — *`embed_xui` — the wrapper **is** the control* |
 | **A GUI-only report on a scripted control** — where do I even start? | [reference/harness.md](reference/harness.md) — *Ask for the live trace first, not fourth* |
 | A button that should open a window does nothing (`TOGGLE`, container ids) | [reference/components.md](reference/components.md) |
+| **A skin's web button does nothing, opens the wrong browser, or lands on a page with no query** | [reference/components.md](reference/components.md) — *The four routes a skin reaches the web by*: `navigateUrl` is the **user's** browser, a scheme-less address is not a VFS path, and `browser_search` carries terms while `browser_navigate` carries a URL |
+| **A search runs with the terms missing** (`?q=` empty, "searched for the word lyrics") | [reference/scripting.md](reference/scripting.md) — *`embed_xui`*: `getText()` on a wrapper whose inner control holds the string answers `""` |
 | A window the skin opens with itself does not open, or opens in the wrong place (`default_visible`, `default_x`/`default_y`) | [reference/components.md](reference/components.md) |
 | A whole container — or a whole skin — is missing, and its layouts are named something other than `normal` | [reference/components.md](reference/components.md) — *Which layout a container opens in* |
 | A toolbar button on a playlist/visualization/video window does nothing (`PE_*`, `VIS_*`, `VID_*`, `CB_*`) | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) — the host-action families, and the three that are inert on purpose |
@@ -141,6 +143,7 @@ verbatim; it just lives in a reference file now.
 | `TOGGLE`'s parameter is a component **or a container id** | [reference/components.md](reference/components.md) |
 | `default_visible="1"` — the windows a skin opens with itself | [reference/components.md](reference/components.md) |
 | Component hosting | [reference/components.md](reference/components.md) |
+| The four routes a skin reaches the web by (B40) | [reference/components.md](reference/components.md) |
 | The window layer these views sit in | [reference/components.md](reference/components.md) |
 | Where a surface lives | [reference/components.md](reference/components.md) |
 | Synthesizing a missing window | [reference/components.md](reference/components.md) |
@@ -245,9 +248,17 @@ The skin is **untrusted input**. Three rules hold everywhere and must not be rel
    skin input is a bug — the fuzz tests in `WinampModernPhase7Tests` exist to catch exactly that.
 
 Scripts cannot launch executables, open modal UI, reach arbitrary host paths, or make general host
-network requests. The one narrow exception is an actual `<browser>` object's `navigateUrl`: it may
-navigate only its own ephemeral, policy-gated WebKit surface. `System.navigateUrl` and
-`System.navigateUrlBrowser` remain no-ops, and `messagebox` remains denied.
+network requests, and `messagebox` remains denied.
+
+**Navigation is the one narrow exception, and it is typed rather than free** (B40). Every address a
+skin authors — from `<browser>.navigateUrl`, from `System.navigateUrl` /
+`System.navigateUrlBrowser`, or from a `browser_search` / `browser_navigate` action — passes through
+`WinampModernWebNavigationPolicy`: HTTP/HTTPS with a real host only, no other scheme, no file or
+application URL. An internal address reaches only that skin's own ephemeral, policy-gated WebKit
+surface. The **external** route (`System.navigateUrl`, the user's default browser) additionally
+requires the user's consent: a sheet naming the URL on first use, remembered per skin if they choose
+"Always Allow", one outstanding question at a time, and never a modal loop. See
+[reference/components.md](reference/components.md) — *The four routes a skin reaches the web by*.
 
 
 ## Rules for extending this subsystem

@@ -191,28 +191,47 @@ The Bento-only findings from the same pass are `BB6`–`BB15` there.
       empty and letting the lines hide is the honest default and matches what Winamp does with a
       shoutcast stream; falling back to whatever the server sent is the alternative. Not settled.
 
-- [ ] **B40. Global browser routing remains denied, and that is why some skin buttons "do nothing".**
-      `System.navigateUrl` / `System.navigateUrlBrowser` remain null-returning no-ops. The object-level
-      `<browser>.navigateUrl` form now routes to that object's policy-gated WebKit surface, but global
-      calls and `sui.sendAction("browser_search", …)` still need an explicit destination. The cost is
-      that part of a skin's web-facing feature set presents as dead
-      controls: Big Bento Modern alone has **92 `navigateUrl` call sites**, and its two magnifier
-      buttons are the lyrics finder (Google/Bing) and the YouTube search
-      (`fileinfo_lyrics_finder.m`).
-      This is a **policy decision, not a bug** — but it is *less* open than it first looks, because
-      **the skin already exposes the choice as a setting** and expects the host to honour it. Big
-      Bento's Web Content config page declares
-      `{0E17DBEA-9398-49e6-AE6F-3AB17D001DF3};Use Default Browser to open links` against a
-      *"Web Reader (Internal Browser)"* alternative (`config.xml:1161–1172`), plus a Google/Bing
-      choice. So the shape is: honour that attribute — external goes to `NSWorkspace`, internal goes
-      to the in-app web view — rather than inventing a blanket rule. Keep the first-use confirmation
-      for the external path; the URL is skin-chosen.
-      **The WebKit prerequisite is complete** (2026-08-23): browser windows and tabs now provide the
-      internal target. B40 is therefore unblocked, but still needs the skin's internal-vs-default
-      browser setting and an explicit route to the intended browser object.
-      One smaller piece of the same surface, independent of the browser work: `ML_SendTo` (Big
-      Bento's `sendTo` button) is not in `WinampModernHostActions.swift` at all — wire it or mark it
-      explicitly `.inert` with a reason, the way `CB_*` and `VID_TV` are.
+- [x] **B40. A skin's web buttons reach the web. Done 2026-08-24, confirmed live.** `navigateUrl`
+      is the **user's** browser and `navigateUrlBrowser` the player's — not two spellings of one
+      thing — and both are now typed rather than inert: every skin-authored address passes through
+      `WinampModernWebNavigationPolicy` (HTTP/HTTPS with a real host, nothing else), the internal one
+      reaches the scene's own `<browser>` (a visible one preferred over one in a closed tab), and the
+      external one is gated by a first-use sheet naming the URL, remembered per skin, one question at
+      a time, never `runModal`.
+      **The skin's setting did not need reading.** Bento's Web Content page (`Use Default Browser to
+      open links`, its own default `1`) is read by the skin's *own* script, which then calls
+      `navigateUrl` on one branch and `sendAction` on the other — so honouring the setting **is**
+      answering both routes. Same for the engine: `Default Search Engine: Google`/`Bing` is the
+      skin's registration, and `preferredSearchEngine` reads it (DuckDuckGo when a skin names none,
+      matching the internal browser's own start page).
+      **Four faults sat on these buttons, and each alone was enough to make them look broken.** Only
+      the first was the one this task named:
+      1. `System.urlEncode` did not exist. It sits *inside* the expression that builds the address,
+         so the unsupported method aborted the handler one layer before any navigation.
+      2. `browser_search` carries **terms**, `browser_navigate` carries a **URL** — measured off the
+         bytecode, not assumed. Read alike, a search becomes `https://<terms>`. Terms are decoded
+         once before being re-encoded, since the skin encodes each term itself.
+      3. A **scheme-less address is a web address**, not a skin-local path. Bento's reader writes
+         `www.google.com/search?q=…` and hands it to `<browser>.navigateUrl`; `destination(for:)`
+         found no scheme and looked for a hostname in the WAL VFS, where it can only ever be missing
+         — *"The skin-local page could not be found"*, and nothing reached WebKit.
+      4. **`getText`/`setText` did not follow `embed_xui`.** The search string is built from the
+         *display lines*, not from metadata: `getText()` on the `Bento:InfoLine` wrapper, whose text
+         lives on the inner `<Text id="text">` that `fileinfo.maki` fills. The wrapper answered `""`
+         and the button searched for the bare word "lyrics" — a text bug wearing a browser bug's
+         clothes, and the only one live QA could see. `getPosition`/`setPosition` had followed the
+         link since BB19; the text methods never did.
+      Also: a skin's own reader answers `browser_search`/`browser_navigate` itself, so the host route
+      is a **fallback** taken only when no script handled the action — otherwise the same surface
+      loads twice with a URL the skin did not choose. `ML_SendTo` is accepted and `.inert` with a
+      reason (7 declarations: Bento ×2 per edition, Defix ×1); NullPlayer publishes no Send To
+      targets.
+      **Method note for the next reader:** the harness had already printed the answer
+      (`navigateurl(www.google.com/search?q=  lyrics)`) one pass before it was believed — it was
+      explained away as a synthetic-track artifact. *When a trace shows a handler running, what it is
+      being handed is the finding.* Durable detail: `reference/components.md` → *The four routes a
+      skin reaches the web by*, `reference/scripting.md` → *`embed_xui`*, `compatibility/maki-surface.md`,
+      `skins/big-bento-modern.md`. Tests: `WinampModernPhase66Tests`.
 
 - [ ] **B41. `getMonitorWidth()` / `getMonitorHeight()`.** Absent from the runtime; called from Big
       Bento's `sc_aerosnap.m`, `notifier.m` and `pledit.m`, where they drive AeroSnap edge-snapping

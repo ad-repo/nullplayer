@@ -126,9 +126,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// loading the host defers the request rather than resizing windows that do not exist yet.
     var uiScaleRequested: ((CGFloat) -> Void)?
     var actionRequested: ((String, String?) -> Void)?
-    /// The object form of `navigateUrl`: only the addressed `<browser>` may navigate. Global
-    /// `System.navigateUrl` remains inert and cannot launch an application or arbitrary URL.
+    /// The object form of `navigateUrl`: only the addressed `<browser>` may navigate.
     var browserNavigationRequested: ((WasabiObjectID, String) -> Void)?
+    /// The **global** form, which names no object: `System.navigateUrl` (the user's browser) and
+    /// `System.navigateUrlBrowser` (the player's own). Both are routed rather than executed here —
+    /// the address is skin-authored, so the window layer resolves it against
+    /// `WinampModernWebNavigationPolicy` and the external route is confirmation-gated (B40).
+    var globalNavigationRequested: ((WinampModernWebNavigationTarget, String) -> Void)?
     /// A script showing or hiding a **container** is asking for its *window*, not just for an
     /// attribute on the graph. Defix's SUI is reachable only this way: its four round PL/EQ/ML/VD
     /// buttons send the skin's own `opentab` action, and `skin.xml`'s `onAction` answers it with
@@ -355,6 +359,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// value branches the script past its "please update Winamp" warning without hard-blocking.
     static let reportedWinampBuild: Int32 = 9999
     static let reportedWinampVersion = "5.9"
+
+    /// The two `sendAction` names a skin's own reader script answers for itself, and which the host
+    /// therefore only picks up when nothing did. See the `sendaction` case.
+    static let scriptOwnedBrowserActions: Set<String> = ["browser_search", "browser_navigate"]
+
+    /// What `System.urlEncode` leaves alone — RFC 3986's unreserved characters.
+    static let urlUnreserved = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~")
 
     init(loadedSkin: WinampModernLoadedSkin, host: WinampModernHost,
          executionLimits: MakiExecutionLimits = .production,
@@ -1960,6 +1972,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "strlower": .init(argumentCount: 1, returnKind: .string),
             "strupper": .init(argumentCount: 1, returnKind: .string),
             "strsearch": .init(argumentCount: 2, returnKind: .integer),
+            // Percent-encoding for a search term a skin is about to put in a URL. Every measured call
+            // sits *inside* the expression that builds the address — Big Bento's lyrics finder is
+            // `"…/search?q=" + urlEncode(artist) + " " + urlEncode(title) + " lyrics"` — so refusing
+            // it took the whole handler down and the two magnifier buttons did nothing at all, one
+            // layer before the navigation this phase is about (B40).
+            "urlencode": .init(argumentCount: 1, returnKind: .string),
             "strleft": .init(argumentCount: 2, returnKind: .string),
             "strright": .init(argumentCount: 2, returnKind: .string),
             "strmid": .init(argumentCount: 3, returnKind: .string),
@@ -2299,6 +2317,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "strlen": return .integer(Int32(clamping: arguments[0].stringValue.count))
         case "strlower": return .string(arguments[0].stringValue.lowercased())
         case "strupper": return .string(arguments[0].stringValue.uppercased())
+        // RFC 3986 unreserved set, everything else escaped. Deliberately stricter than
+        // `.urlQueryAllowed`: the argument is one *term* being pasted into a query a skin is
+        // assembling, so a `&`, a `?` or a `#` in an album title must not survive as syntax.
+        case "urlencode":
+            return .string(arguments[0].stringValue
+                .addingPercentEncoding(withAllowedCharacters: Self.urlUnreserved) ?? "")
         case "strsearch":
             let range = arguments[0].stringValue.range(of: arguments[1].stringValue)
             return .integer(range.map { Int32(arguments[0].stringValue.distance(from: arguments[0].stringValue.startIndex, to: $0.lowerBound)) } ?? -1)
@@ -2488,7 +2512,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "hasvideosupport": return .boolean(false)
         case "getidealvideowidth", "getidealvideoheight": return .integer(0)
         case "lockui", "unlockui", "hidenamedwindow": return .null
-        case "navigateurl", "navigateurlbrowser": return .null // Sandboxed: no script-driven navigation.
+        // Winamp's two global navigations, and they are not synonyms: `navigateUrl` means the user's
+        // default browser and `navigateUrlBrowser` the player's own. Neither opens anything from
+        // here — the request carries a skin-authored string, so it is handed to the window layer,
+        // which resolves it through `WinampModernWebNavigationPolicy` (HTTP/HTTPS with a real host,
+        // nothing else) and asks the user before the external one leaves the app (B40).
+        case "navigateurl":
+            globalNavigationRequested?(.defaultBrowser, arguments[0].stringValue)
+            return .null
+        case "navigateurlbrowser":
+            globalNavigationRequested?(.internalBrowser, arguments[0].stringValue)
+            return .null
         case "newgroup":
             // Wasabi creates the group as a child of the calling script's own group; the script then
             // positions it with `setXmlParam`. This is how Winamp Modern fills a window frame's
@@ -2806,6 +2840,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             }
             return .null
         case "settext":
+            // Through the `embed_xui` link, exactly as `setPosition`/`getPosition` are: the wrapper
+            // **is** the control and its text must not exist in two places. Big Bento's file-info
+            // lines are the case that proves it — `<groupdef id="bento.infodisplay.line"
+            // embed_xui="text" xuitag="Bento:InfoLine">` — where `fileinfo.maki` fills the inner
+            // `<Text id="text">` while `fileinfo_lyrics_finder.maki` reads the *wrapper* with
+            // `getText()` to build its search. Kept apart, the reader answered "" and the lyrics
+            // button searched the web for the bare word "lyrics" (B40).
+            let object = embeddedControl(of: object) ?? object
             _ = object.setAttribute("text", value: arguments[0].stringValue)
             // Written to its own key as well, because a non-empty value has to beat the object's
             // `display=` binding — see `WasabiTextMetrics.scriptTextKey`. Empty writes through as
@@ -2820,7 +2862,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // What the object *shows*, not just the literal it was declared with. MMD3's songinfo timer
         // reads `getText()` off the `display="songinfo"` text and tokenises it for KBPS/KHZ; answering
         // with the (empty) `default=` attribute left both fields blank forever.
-        case "gettext": return .string(WasabiTextMetrics.content(of: object, host: host))
+        // Read through the same `embed_xui` link `setText` writes through, above.
+        case "gettext":
+            return .string(WasabiTextMetrics.content(of: embeddedControl(of: object) ?? object,
+                                                     host: host))
         case "getautowidth":
             return .integer(autoWidth(of: object))
         case "getautoheight":
@@ -2828,9 +2873,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "gettextwidth":
             // Measured with the font the renderer draws with, and through the same content
             // resolution — a `display=` binding, a songticker's implicit title, `setAlternateText` —
-            // so the answer is about the string on screen rather than the XML literal.
+            // so the answer is about the string on screen rather than the XML literal. Through the
+            // `embed_xui` link for the same reason `getText` is: the wrapper draws nothing itself,
+            // so measuring it measures an empty string.
+            let measured = embeddedControl(of: object) ?? object
             return .integer(Int32(clamping: Int(metrics.width(
-                of: object, text: WasabiTextMetrics.content(of: object, host: host)).rounded(.up))))
+                of: measured, text: WasabiTextMetrics.content(of: measured, host: host)).rounded(.up))))
         case "getguid":
             return .string(object.attributes["guid"] ?? "")
         case "resize":
@@ -3092,11 +3140,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // Delivered to the addressed object only, not down its subtree: every measured use names
             // the exact group whose script declares the handler.
             let source = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:))
-            _ = try dispatch(object: object, event: "onaction",
-                             arguments: Array(arguments.prefix(6)) + [objectValue(source)])
+            let handled = try dispatch(object: object, event: "onaction",
+                                       arguments: Array(arguments.prefix(6)) + [objectValue(source)])
             // The host action route is kept: a skin is also free to name one of NullPlayer's own
             // actions here, and nothing that used to work should stop.
-            actionRequested?(arguments[0].stringValue, arguments[1].stringValue)
+            //
+            // The **browser pair is the exception**, and only because both ends are real here now
+            // (B40): a skin that ships its own reader answers `browser_search` / `browser_navigate`
+            // itself — Big Bento's turns the terms into a query with its own engine setting and
+            // navigates its `<browser>` — so letting the host act as well loads that same surface a
+            // second time, with a URL the skin did not choose. They reach the host only when no
+            // script took them, which is the skin that sends one and ships no reader.
+            if handled == 0 || !Self.scriptOwnedBrowserActions.contains(arguments[0].stringValue.lowercased()) {
+                actionRequested?(arguments[0].stringValue, arguments[1].stringValue)
+            }
             return .null
         case "triggeraction":
             actionRequested?(arguments[0].stringValue, arguments[1].stringValue)
@@ -4036,6 +4093,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         uiScaleRequested = nil
         actionRequested = nil
         browserNavigationRequested = nil
+        globalNavigationRequested = nil
         themeNamesRequested = nil
         activeThemeRequested = nil
         themeSwitchRequested = nil

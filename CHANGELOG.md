@@ -4,6 +4,17 @@
 
 ### New Features
 
+- **Winamp 5.x modern skins: the lyrics, video and cover-art buttons work** — the little magnifier
+  buttons on a skin's track panel searched for nothing and looked broken. They now do what they say:
+  the lyrics button searches for the playing artist and title, the video button searches YouTube, and
+  the cover button searches for album artwork. Where the result opens is the skin's own choice, and
+  nullPlayer now honours both halves of it — Big Bento Modern's **Web Content** settings page offers
+  *Use Default Browser to open links* against its built-in *Web Reader*, along with a Google or Bing
+  preference, and each setting now takes effect. Anything opened inside the player stays in the
+  skin's own sandboxed browser tab; anything sent **out** to your normal browser asks you first,
+  showing the address, with an *Always Allow* choice remembered for that skin alone. Only ordinary
+  web addresses are accepted from a skin, never a file or an application link. A skin's *Send To*
+  button is accepted and does nothing, as nullPlayer has nothing to send tracks to.
 - **Winamp 5.x modern skins: embedded browser windows and tabs work** — `<Browser>` and
   `<Winamp:Browser>` controls now host an isolated WebKit browser instead of a Media Library view or
   an empty pane. Links, forms, JavaScript, back/forward through WebKit, and skin-script navigation all

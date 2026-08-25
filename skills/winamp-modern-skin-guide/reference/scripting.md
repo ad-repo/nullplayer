@@ -407,6 +407,15 @@ broken on its own, and each fix looked like it had done nothing until the next o
 - **Value events cross the seam.** `onSetPosition`/`onSetFinalPosition`/`onPostedPosition` are
   forwarded to the embedding owner alongside the pointer set, so a script bound to either one hears
   the control move exactly once.
+- **`getText`/`setText`/`getTextWidth` follow the same link** — the value in question is a string
+  rather than a number, and everything above applies unchanged (B40). Big Bento Modern's file-info
+  lines are the proof from the text side: `<groupdef id="bento.infodisplay.line" embed_xui="text"
+  xuitag="Bento:InfoLine">` wraps a `<Text id="text">`, `fileinfo.maki` fills the **inner** text,
+  and `fileinfo_lyrics_finder.maki` reads the **wrapper** with `getText()` to build its search
+  string. Kept apart, the reader answered `""` and the lyrics button searched the web for the bare
+  word "lyrics" — a symptom that looks like a broken browser and is nothing of the kind. Measuring
+  the wrapper is just as wrong: it draws nothing itself, so `getTextWidth()` on it is the width of
+  an empty string.
 
 Two related rules that fell out of the same investigation:
 

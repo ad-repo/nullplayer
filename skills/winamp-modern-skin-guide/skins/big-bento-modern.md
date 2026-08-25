@@ -152,6 +152,16 @@ Two things to know before touching this area again:
   precedence rule that settles it is general: [reference/scripting.md](../reference/scripting.md) →
   *What a text object shows*.
 
+- **The web buttons read the *display lines*, not the metadata.** The lyrics/YouTube/cover buttons
+  build their search from `getText()` on the `Bento:InfoLine` **wrappers** — and those wrappers are
+  `embed_xui="text"`, with the string on the inner `<Text id="text">` that `fileinfo.maki` fills. A
+  `getText` that does not follow the embed answers `""` and the button searches for the bare word
+  "lyrics", which reads as a broken browser and is a text bug (B40). The two halves of the trap are
+  in [reference/scripting.md](../reference/scripting.md) → *`embed_xui`* and
+  [reference/components.md](../reference/components.md) → *The four routes a skin reaches the web by*.
+  This skin's Web Content page also decides internal-vs-external **itself** (`Use Default Browser to
+  open links`, its own default `1`), so both routes have to work before either button is judged.
+
 - **Everything in … → File Info Components is ticked by default, and that is the skin, not us.**
   The submenu is built from `newAttribute` registrations whose shipped default is `"1"` for every
   `Show …` item (only *Visualization*, *Scroll text if it doesn't fit* and *Hide File Info background*

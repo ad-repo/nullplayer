@@ -66,6 +66,10 @@ final class WinampModernMainView: NSView {
     var canvasSizeDidChange: ((CGSize) -> Void)?
     /// Returns true if the skin provides a separate native window for the kind and it was toggled.
     var componentWindowToggleRequested: ((WinampModernComponentKind) -> Bool)?
+    /// A web address the skin wants opened, and where it wants it. Owned by the window layer rather
+    /// than answered here: the destination browser can live in another container's view, and the
+    /// external route has to ask the user first (B40).
+    var webNavigationRequested: ((WinampModernWebNavigationTarget, String) -> Void)?
     /// Show/hide one of the skin's *own* container windows by id, for a `TOGGLE` whose parameter
     /// names a container rather than a component.
     var containerWindowToggleRequested: ((String) -> Bool)?
@@ -747,6 +751,23 @@ final class WinampModernMainView: NSView {
         return true
     }
 
+    /// The `<browser>` in this scene a *global* request should land in — `System.navigateUrlBrowser`
+    /// and the `browser_search` / `browser_navigate` actions name no object at all (B40).
+    ///
+    /// **A visible one wins.** A skin keeps its reader in a tab that starts hidden and often ships a
+    /// second browser besides (cPro-Bento's `SC:UpdateSystem` update-check widget is one), so the box
+    /// the user can actually see is the one they asked to fill. With none visible the first is taken
+    /// and its surface holds the request until its tab is opened — the same buffering an early
+    /// `onScriptLoaded` navigation already gets.
+    func globalBrowserTarget() -> (object: WasabiObject, isVisible: Bool)? {
+        guard !isTornDown else { return nil }
+        let nodes = renderer.browserNodes()
+        if let visible = nodes.first(where: { renderer.isBrowserVisible($0.object) }) {
+            return (visible.object, true)
+        }
+        return nodes.first.map { ($0.object, false) }
+    }
+
     /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
     /// hand the picture over before showing the skin's video window, and to size that window from
     /// the stream's own dimensions for `VID_1X` / `VID_2X`.
@@ -1295,6 +1316,7 @@ final class WinampModernMainView: NSView {
         componentWindowToggleRequested = nil
         containerWindowToggleRequested = nil
         surfaceToggleRequested = nil
+        webNavigationRequested = nil
         isTornDown = true
     }
 
@@ -1638,6 +1660,23 @@ final class WinampModernMainView: NSView {
         // rather than `action=`: the file-info dialog and the track's own context menu. Here they are
         // the same File Info sheet and the same track menu the playlist windows already show, so the
         // three routes to a track's details cannot drift apart.
+        // The skin's *internal* web route, and the other half of B40. A skin that offers "Web Reader"
+        // against "default browser" does not call a second navigation method for it — it addresses
+        // its own reader group with `sendAction(…)` (Big Bento's lyrics finder and its YouTube search
+        // both do, from `fileinfo_lyrics_finder.maki`), and `sendAction` already reaches here with
+        // the action and its parameter.
+        //
+        // **The two actions carry different things** and must not be read alike: `browser_navigate`
+        // hands over a finished `https://…`, while `browser_search` hands over the bare terms and
+        // leaves the engine to the reader.
+        case "BROWSER_NAVIGATE":
+            if let address = parameter, !address.isEmpty {
+                webNavigationRequested?(.internalBrowser, address)
+            }
+        case "BROWSER_SEARCH":
+            if let terms = parameter, !terms.isEmpty {
+                webNavigationRequested?(.internalBrowserSearch, terms)
+            }
         case "TRACKINFO":
             showTrackInfo()
         case "TRACKMENU":

@@ -288,6 +288,21 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
                 : .blocked("The skin requested a malformed web address.")
         }
 
+        // **A bare host is a web address, not a skin-local path.** Winamp's own readers write one
+        // without a scheme and with the search terms still in it — Big Bento's builds
+        // `www.google.com/search?q=<artist> <title> lyrics` and hands that straight to
+        // `<browser>.navigateUrl` — and everything below this line treats an address as a path
+        // inside the WAL VFS, where a hostname can only ever be missing. That is what turned a
+        // lyrics search into "The skin-local page could not be found": the address never reached
+        // WebKit at all. Repaired through the one shared policy (scheme added, spaces encoded,
+        // `%XX` the skin already wrote left alone) rather than a second, private normalization.
+        if looksLikeWebAddress(address) {
+            switch WinampModernWebNavigationPolicy.resolve(address: address) {
+            case .allow(let url): return .url(url)
+            case .blocked(let reason): return .blocked(reason)
+            }
+        }
+
         guard let vfs else { return .blocked("This skin-local page is unavailable.") }
         do {
             let resource = try vfs.resolve(address, relativeTo: request.sourceLogicalPath)
@@ -299,6 +314,32 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
             return .url(url)
         } catch {
             return .blocked("The skin-local page could not be found.")
+        }
+    }
+
+    /// File extensions a skin-local page uses. They keep `reader/source/_en-us.xml` — a real WAL
+    /// resource whose name is two dot-separated labels — from being read as a hostname.
+    private static let localResourceExtensions: Set<String> = [
+        "html", "htm", "xml", "txt", "css", "js", "json", "svg", "png", "jpg", "jpeg", "gif",
+        "webp", "bmp", "ico", "maki", "m", "ini", "cfg", "ttf", "otf", "woff", "woff2",
+    ]
+
+    /// Whether a scheme-less address names a **host** rather than a path in the skin.
+    ///
+    /// The head is everything before the first separator, so the query is not consulted (Bento's
+    /// carries literal spaces). It has to be a dotted, label-shaped name whose last label is a
+    /// plausible TLD and not one of the resource extensions above — `www.google.com` yes,
+    /// `backgrounds/start.html` and `reader_providers.xml` no.
+    static func looksLikeWebAddress(_ address: String) -> Bool {
+        let head = address.prefix { $0 != "/" && $0 != "\\" && $0 != "?" && $0 != "#" }
+        guard !head.isEmpty, !head.contains(" ") else { return false }
+        let labels = head.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, let tld = labels.last, tld.count >= 2,
+              tld.allSatisfy(\.isLetter), !localResourceExtensions.contains(tld.lowercased()) else {
+            return false
+        }
+        return labels.allSatisfy { label in
+            !label.isEmpty && label.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
         }
     }
 

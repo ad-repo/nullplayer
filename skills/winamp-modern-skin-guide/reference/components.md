@@ -831,6 +831,56 @@ Each `<browser>` gets its own **non-cached** `WinampModernBrowserSurface` via
   `onScriptLoaded` is buffered until the first layout. The global `System.navigateUrl` methods remain
   denied.
 
+### The four routes a skin reaches the web by (B40)
+
+A skin's web-facing buttons do **not** all go through the `<browser>` object, and reading them as one
+thing is what left "some buttons do nothing" open for a phase. There are four routes and each needed
+its own answer:
+
+| Route | What it means | Where it lands |
+|---|---|---|
+| `<browser>.navigateUrl(url)` | that object's own surface | `browserNavigationRequested` → `WinampModernMainView.navigateBrowser` |
+| `System.navigateUrl(url)` | **the user's default browser** — Winamp's meaning, not a synonym for the next row | policy → confirmation sheet → `NSWorkspace` |
+| `System.navigateUrlBrowser(url)` | the *player's* browser | the scene's `<browser>`, visible one preferred |
+| `sendAction("browser_navigate"/"browser_search", …)` | a skin's own reader, addressed as an action | the skin's script, and the host only if nothing answered |
+
+Three traps live in that table, all of them measured on Big Bento Modern:
+
+- **A scheme-less address is a web address, not a skin-local path.** Winamp readers write
+  `www.google.com/search?q=<terms>` with no scheme and hand it to `<browser>.navigateUrl`. Everything
+  after the scheme check in `destination(for:)` treats an address as a path inside the WAL VFS, where
+  a hostname can only ever be missing — so the page came back *"The skin-local page could not be
+  found"* and the search never reached WebKit. A host-shaped head (dotted labels, plausible TLD, not
+  a resource extension — `looksLikeWebAddress`) is repaired to HTTPS through
+  `WinampModernWebNavigationPolicy`; `reader_providers.xml` and `backgrounds/start.html` still
+  resolve locally.
+- **`browser_search` carries *terms*; `browser_navigate` carries a *URL*.** Bento's lyrics button
+  sends `urlEncode(artist) + " " + urlEncode(title) + " lyrics"`, while its YouTube, album-cover and
+  stream buttons send a complete `https://…`. Reading both as addresses turns a search into
+  `https://<terms>`. Terms are **decoded once** before being re-encoded (the skin encodes each term
+  itself, so encoding again searches for `%2520`), and the engine comes from the skin's own
+  `Default Search Engine: Google` / `Bing` registration, DuckDuckGo when it registers neither.
+- **A skin with a reader answers those two actions itself**, building the URL from its own engine
+  setting and navigating its `<browser>`. The host route is therefore a **fallback**, taken only when
+  no script handled the action — otherwise the same surface is loaded twice, the second time with a
+  URL the skin did not choose.
+
+The **external** route is the only place a `.wal` skin reaches `NSWorkspace`, and it is gated: the
+address is untrusted markup, so the first request raises a sheet (Open / Always Allow / Cancel)
+naming the URL, "always" is stored per skin in its own namespaced configuration, and one question is
+outstanding at a time so a script on a timer cannot stack alerts. Never `runModal()` — a modal loop a
+skin can enter at will is a hang the user cannot escape.
+
+**Whose setting decides internal vs external?** The skin's, and it does not need asking: Bento's Web
+Content page offers *Use Default Browser to open links* (its own default, `1`) against *Use internal
+Web Reader*, and its scripts read that attribute and call `navigateUrl` on one branch and
+`sendAction` on the other. Honouring the setting **is** answering both routes.
+
+One thing the internal route deliberately does not do: it navigates the browser but does not open the
+tab the browser sits in. A request for a browser in a closed tab waits in that surface (the same
+buffering an early `onScriptLoaded` navigation gets) rather than driving the skin's own tab
+bookkeeping from outside.
+
 ### The `SC:UpdateSystem` browser
 
 cPro-Bento also has `<browser id="brw">` inside an `SC:UpdateSystem` XUI widget in the main
@@ -842,10 +892,16 @@ does not load while it remains offscreen, hidden, or zero-sized.
 - `WasabiRenderer.swift` — `isBrowserElement()`, `browserNodes()`, `isBrowserVisible()`
 - `WinampModernComponents.swift` — `makeBrowserSurface()` protocol method
 - `WinampModernComponentBridge.swift` — `makeBrowserSurface()` implementation (non-cached)
-- `WinampModernBrowserSurfaceView.swift` — WebKit policy, search/address UI, VFS scheme handler
+- `WinampModernBrowserSurfaceView.swift` — WebKit policy, search/address UI, VFS scheme handler,
+  `looksLikeWebAddress` (the scheme-less repair)
+- `WinampModernWebNavigation.swift` — the shared address policy, the search-URL builder, the engine
+  the skin asked for, and where the external-route consent is stored (B40)
 - `WinampModernMainView.swift` — `browserSurfaces`, `reconcileBrowserSurfaces()`,
-  `layoutHostedSubviews(browsers:)`
-- `WinampModernScriptRuntime.swift` — object-scoped `navigateUrl` command route
+  `layoutHostedSubviews(browsers:)`, `globalBrowserTarget()`, the `BROWSER_*` actions
+- `WinampModernMainWindowController.swift` — `routeWebNavigation`, `navigateInternalBrowser`,
+  `openInDefaultBrowser` (the confirmation sheet)
+- `WinampModernScriptRuntime.swift` — object-scoped `navigateUrl`, the two global forms, `urlEncode`,
+  and the `sendAction` fallback rule
 
 ## Notifier — track-change toast
 

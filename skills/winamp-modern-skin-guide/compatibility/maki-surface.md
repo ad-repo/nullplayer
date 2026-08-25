@@ -329,8 +329,20 @@ By area:
   worth re-reading: Defix writes its playlist `Items:`/`Time:` from a subroutine whose sole caller is
   this handler. Polled from the window controller's host-state hooks plus a 1 Hz beat. Phase 30
 - **`<browser>.navigateUrl(url)`** — navigates only the addressed embedded browser through the host's
-  scheme policy. A call on a non-browser GUI object is quietly inert. `System.navigateUrl` remains
-  denied and cannot launch an application or choose a browser object.
+  scheme policy. A call on a non-browser GUI object is quietly inert. **A scheme-less address is
+  repaired to HTTPS** rather than looked for in the WAL VFS (B40): Winamp readers write
+  `www.google.com/search?q=…` with no scheme, and treating that as a skin-local path is what made a
+  lyrics search come back as *"The skin-local page could not be found"*.
+- **`System.navigateUrl(url)`** — the **user's default browser**, behind a first-use confirmation
+  sheet remembered per skin (B40). Not a synonym for the next row: in Winamp this method *is* "hand
+  this to the user's browser", which is the branch a skin takes when its own setting says so.
+- **`System.navigateUrlBrowser(url)`** — the player's own browser: the scene's `<browser>`, a visible
+  one preferred over one in a closed tab, and the external route as a last resort for a skin that
+  ships none. Both global forms go through `WinampModernWebNavigationPolicy` (HTTP/HTTPS, real host).
+- **`System.urlEncode(term)`** — RFC 3986 unreserved set, everything else escaped; stricter than
+  `.urlQueryAllowed` because the argument is one term being pasted into a query the skin assembles.
+  It sits *inside* the expression that builds a URL, so while it was missing the whole handler
+  aborted and the buttons that called it did nothing at all — one layer before navigation.
 - **`System.getVisBand(channel, band)`** — one spectrum band as a vis byte (0…255), the unit
   `getLeftVUMeter`/`getRightVUMeter` already answer in and the one meter artwork is cut for. `std.mi`
   documents the band range as **0…75**, so a request is resampled into whatever band count the host's
@@ -529,8 +541,9 @@ across the engine but never reached at startup):
 > looks implemented. `newgroup` hid there and cost the entire Winamp Modern window body. Omit the
 > signature instead of stubbing.
 - `messagebox` — denied (no arbitrary modal host UI)
-- `System.navigateUrl` / `System.navigateUrlBrowser` — sandboxed no-ops; the object-scoped browser
-  form is implemented separately
+- `System.navigateUrl` / `System.navigateUrlBrowser` — **implemented since B40**, typed and gated:
+  see the rows above and *The four routes a skin reaches the web by* in `reference/components.md`.
+  The external one is the only path from a `.wal` skin to `NSWorkspace`, and it asks first
 - `newgroup` — **implemented**: expands a registered groupdef as a child of the calling script's group, and starts the scripts the new subtree declares (bounded by the load-time object budget and `maximumRuntimePrograms`)
 - Popup menus use an inert command model with an injected presenter
 - `getPublicInt`/`setPublicInt` are per-skin namespaced, not truly app-global

@@ -500,6 +500,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                     coordinator.toggleSurface(kind)
                     return true
                 }
+                instance.view.webNavigationRequested = { [weak self] target, address in
+                    self?.routeWebNavigation(target, address: address)
+                }
             },
             instanceWillTeardown: { [weak self] instance in
                 self?.viewsByContainer.removeValue(forKey: instance.view.containerID)
@@ -1337,6 +1340,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 return
             }
         }
+        // The two *global* navigations, which name no object: `System.navigateUrl` (the user's
+        // browser) and `System.navigateUrlBrowser` (the skin's own). The same route answers the
+        // `browser_search` / `browser_navigate` actions a skin's reader is driven with, so the
+        // internal and external halves of a skin's web feature set cannot resolve differently.
+        scripts.globalNavigationRequested = { [weak self] target, address in
+            self?.routeWebNavigation(target, address: address)
+        }
+        let webNavigation: (WinampModernWebNavigationTarget, String) -> Void = { [weak self] target, address in
+            self?.routeWebNavigation(target, address: address)
+        }
+        viewsByContainer.values.forEach { $0.webNavigationRequested = webNavigation }
         // `layout.setScale(f)` — the skin asking for every window at a different size. It is
         // answered by the one UI Size system rather than by a scale of the skin's own: the view
         // already applies UI Size at its drawing and input boundaries, and a second scale on top of
@@ -1377,6 +1391,104 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 return view.currentMousePositionInSkinPixels()
             }
             return nil
+        }
+    }
+
+    // MARK: - Web navigation (B40)
+
+    /// One question at a time. The address is skin-authored and a script may call `navigateUrl` from
+    /// a timer, so without this a skin could stack alerts over the player faster than they can be
+    /// dismissed. A request that arrives while the sheet is up is dropped, not queued.
+    private var isAskingAboutDefaultBrowser = false
+
+    /// Where a skin's global navigation actually goes, once its address has passed the policy.
+    ///
+    /// The skin decides the *destination* — Big Bento's Web Content page offers "Use Default Browser
+    /// to open links" against its internal Web Reader, and its scripts call `navigateUrl` for the one
+    /// and `sendAction("browser_search", …)` for the other — so honouring that setting is answering
+    /// both routes rather than reading the attribute.
+    private func routeWebNavigation(_ target: WinampModernWebNavigationTarget, address: String) {
+        // A search is terms, not an address, so it never goes near the address policy: the URL is
+        // built here from an engine we choose, which is safe by construction.
+        if target == .internalBrowserSearch {
+            let engine = WinampModernWebNavigationPolicy.preferredSearchEngine(
+                settings: (skinView?.scripts).map { scripts in
+                    scripts.registeredSettings.map { ($0.name, scripts.configAttributeValue($0)) }
+                } ?? [])
+            guard let url = WinampModernWebNavigationPolicy.searchURL(terms: address, engine: engine)
+            else { return }
+            if !navigateInternalBrowser(to: url) { openInDefaultBrowser(url) }
+            return
+        }
+        switch WinampModernWebNavigationPolicy.resolve(address: address) {
+        case .blocked(let reason):
+            #if DEBUG
+            NSLog("WinampModern: refused skin navigation to '%@' — %@", address, reason)
+            #endif
+        case .allow(let url):
+            switch target {
+            case .internalBrowser:
+                // A skin that asks for its own reader and ships no `<browser>` at all would otherwise
+                // have a dead button. The external route is the honest second choice — and it asks.
+                if !navigateInternalBrowser(to: url) { openInDefaultBrowser(url) }
+            case .defaultBrowser:
+                openInDefaultBrowser(url)
+            case .internalBrowserSearch:
+                break // Answered above, before the address policy this branch belongs to.
+            }
+        }
+    }
+
+    /// Put the address in the skin's own browser. A browser the user can see wins over one in a tab
+    /// that is still closed; with only the latter, the request waits in that surface until its tab
+    /// opens rather than being lost.
+    private func navigateInternalBrowser(to url: URL) -> Bool {
+        var hidden: (view: WinampModernMainView, object: WasabiObject)?
+        for view in viewsByContainer.values {
+            guard let target = view.globalBrowserTarget() else { continue }
+            if target.isVisible {
+                return view.navigateBrowser(objectID: target.object.stableID,
+                                            address: url.absoluteString)
+            }
+            if hidden == nil { hidden = (view, target.object) }
+        }
+        guard let hidden else { return false }
+        return hidden.view.navigateBrowser(objectID: hidden.object.stableID,
+                                           address: url.absoluteString)
+    }
+
+    /// The external route, and the only place a `.wal` skin can reach `NSWorkspace`.
+    ///
+    /// Gated by a **first-use confirmation**: the URL is chosen by untrusted markup, so the first
+    /// time a skin asks, the user sees the address and decides. "Always Allow" is remembered in that
+    /// skin's own namespaced configuration and speaks for no other skin. Presented as a sheet, never
+    /// `runModal()` — a modal loop a skin can enter at will is a hang the user cannot escape (the
+    /// same rule `showTrackInfo` follows), so with no window the request is simply inert.
+    private func openInDefaultBrowser(_ url: URL) {
+        guard let configuration = loadedSkin?.configuration else { return }
+        if WinampModernWebNavigationPolicy.allowsDefaultBrowser(in: configuration) {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        guard let window, !isAskingAboutDefaultBrowser else { return }
+        isAskingAboutDefaultBrowser = true
+        let alert = NSAlert()
+        alert.messageText = "Open this link in your default browser?"
+        alert.informativeText = "The skin “\(configuration.namespace)” wants to open:\n\(url.absoluteString)"
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Always Allow")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            self?.isAskingAboutDefaultBrowser = false
+            switch response {
+            case .alertFirstButtonReturn:
+                NSWorkspace.shared.open(url)
+            case .alertSecondButtonReturn:
+                WinampModernWebNavigationPolicy.setAllowsDefaultBrowser(true, in: configuration)
+                NSWorkspace.shared.open(url)
+            default:
+                break
+            }
         }
     }
 
