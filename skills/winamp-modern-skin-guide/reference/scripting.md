@@ -314,6 +314,14 @@ a 60-tall tab, so the declared height fed itself back in and every tab came out 
 declared attribute and the artwork for everything else. A **group** still answers from its declared
 size; only text objects measure.
 
+**The stock skin is the second instance, and it was invisible for eight phases.** Winamp Modern's
+titlebar centres its title and sizes the two streaks either side of it from
+`title.getAutoWidth()`, where the title is declared `w="50"` and carries a *different string in every
+window* (`WINAMP`, `VISUALIZER`, `VIDEO`, `:componentname`). Every window was laid out as though its
+title were 50px wide; the playlist's is 75. Nothing looked broken — the streaks flanked a plausible
+box — which is the shape to expect from this defect: a fixed `w` on a text object is usually a
+placeholder, and a layout built on it is wrong by however far the string misses it.
+
 **`fontsize` *is* the line height.** Winamp hands that number to GDI as the font's cell height, so a
 script reads back exactly the number the skin wrote — not a value derived from the face's metrics.
 CoreText's ascender−descender+leading for the same label answers 25 against Winamp's 24, which is

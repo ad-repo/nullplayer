@@ -346,8 +346,21 @@ backlog.
       assertion that `getAutoHeight` prefers the declared height was the assumption this corrects, and
       is rewritten. Skill: `skins/big-bento-modern.md` → BB24, `reference/scripting.md` →
       *`getAutoWidth()` / `getAutoHeight()` measure the string*, `SKILL.md` routing table.
-      **Corpus sweep not run** — the change reaches any skin whose scripts measure a text object, and
-      the 37-skin before/after is the check that has not been taken.
+      **Corpus sweep run 2026-08-24: 310 images, 300 identical, 10 changed, no regression.** Four are
+      the Bento tab strips (the fix), one is Anexa's `main-shade` (documented as nondeterministic at
+      exactly that rect — discount it), and **five are `winampmodern566`, which is the same defect
+      fixed a second time in the reference skin.** Its titlebar is
+      `<text id="window.titlebar.title" w="50" fontsize="14" bold="1" forceuppercase="1">` — one fixed
+      placeholder box for a string that is per-window (`WINAMP`, `VISUALIZER`, `VIDEO`, and
+      `:componentname` for the playlist and library) — and `titlebar.maki` centres the title and sizes
+      the two streaks either side of it from `getAutoWidth()`. That answered the declared **50** for
+      every window regardless of the string; it now answers each string. The five changed scenes are
+      exactly the five windows that have a title, and the diff is largest on the longest ones
+      (`MLibrary` 84px wide, `Pledit` 86px) and 1–2px on `WINAMP`, which is nearest to 50. The user
+      checked the running skin and saw no visible difference, which is the expected result for a
+      1–2px titlebar shift; it was measured rather than eyeballed. **The menu bar is not affected** —
+      `menugroup.*` reaches its label through `autowidthsource="File.txt"`, and `File.txt` is a
+      `<layer>`, so it still answers from the artwork.
 
 - [x] **BB25. The Web Reader showed a second, inert toolbar. Fixed 2026-08-24.** The four variants
       inherit the same `centro.browser` group: its `<Browser id="browserpro.browser">` starts 38px

@@ -47,8 +47,19 @@ routine first runs. Two things had to be true before it could:
   slot while the title centred itself — landing underneath them, reading "WI…". That was the whole of
   the symptom this skin was documented with, and it was never about the streak *geometry*.
 
-Measured after the fix: at 354px the left streak is 20–152, the title 152–202, the right streak
-203–309; at 500px they follow the title to 20–225 / 225–275 / 276–455.
+**`title.getAutoWidth()` is the whole input, so what it answers is load-bearing** (BB24, 2026-08-24).
+The title is declared `<text id="window.titlebar.title" w="50" fontsize="14" bold="1"
+forceuppercase="1">`, and that 50 is a *placeholder*: the string is per-window — `WINAMP`,
+`VISUALIZER`, `VIDEO` by `sendparams`, and `:componentname` for the playlist and library. While
+`getAutoWidth()` answered the declared `w`, all five windows were laid out as though their title were
+50px wide whatever it said, and the streaks flanked a box the title did not fill. It measures the
+string now, which is what moved all five of this skin's scenes in the BB24 corpus sweep — the only
+skin besides Bento that changed, and the same defect rather than a regression.
+
+Measured at `main` 354px: left streak 20–153, title 153–200 (47px — `WINAMP` measured, against the
+declared 50), right streak 201–309. `Pledit` at 436px is the case that shows the placeholder was
+never going to work: its title box is **75px**, half again the declared 50, and the streaks sit at
+20–180 / 256–404 around it.
 
 - **Colour themes** (Phase 32) — the config drawer's *Color Themes* tab lists all 44, and `Switch`,
   previous and next all work. Its shade-layout arrows target a `<ColorThemes:Mgr>` rather than the
