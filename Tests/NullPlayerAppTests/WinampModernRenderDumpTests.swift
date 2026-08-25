@@ -20,7 +20,9 @@ final class WinampModernRenderDumpTests: XCTestCase {
         // A probe-only run needs no PNGs. `WINAMP_MODERN_RENDER_THEMES` is asked of all sixteen
         // installed skins in one loop, and requiring a dump directory for each of them buys nothing
         // but sixteen directories of images nobody looks at.
-        guard let dumpPath = env["WINAMP_MODERN_RENDER_DUMP"] ?? (env["WINAMP_MODERN_RENDER_THEMES"] != nil
+        let isProbeOnly = env["WINAMP_MODERN_RENDER_THEMES"] != nil
+            || env["WINAMP_MODERN_RENDER_PALETTE"] != nil
+        guard let dumpPath = env["WINAMP_MODERN_RENDER_DUMP"] ?? (isProbeOnly
                 ? NSTemporaryDirectory() + "WinampModernRenderDump-\(UUID().uuidString)" : nil) else {
             throw XCTSkip("Set WINAMP_MODERN_WAL and WINAMP_MODERN_RENDER_DUMP (and WINAMP_MODERN_ENGINE for cPro).")
         }
@@ -636,6 +638,26 @@ final class WinampModernRenderDumpTests: XCTestCase {
         ].joined(separator: "\n")
         try sidecar.write(to: dumpDirectory.appendingPathComponent("surfaces.txt"),
                           atomically: true, encoding: .utf8)
+
+        // WINAMP_MODERN_RENDER_PALETTE=1 — the colours NullPlayer's own surfaces (the embedded
+        // library, and any playlist/EQ/library window a skin declares none of) are painted in, and
+        // how each one resolved. The palette is skin-wide, so any container's renderer answers.
+        if env["WINAMP_MODERN_RENDER_PALETTE"] != nil, let renderer = renderersByContainer.values.first {
+            print("PALETTE skin: \((walPath as NSString).lastPathComponent) "
+                  + "theme=\(loaded.themeCoordinator.catalog.activeTheme)")
+            for line in renderer.paletteResolutionReport() { print(line) }
+            // What the panel actually ends up filled with: `background` is the fill, and the derived
+            // chrome roles are what a "black rectangle" complaint is really about.
+            let style = WinampModernSurfaceStyle(palette: renderer.palette)
+            func rgb(_ color: NSColor) -> String {
+                guard let c = color.usingColorSpace(.deviceRGB) else { return "non-RGB" }
+                return String(format: "rgb(%.0f,%.0f,%.0f)", c.redComponent * 255,
+                              c.greenComponent * 255, c.blueComponent * 255)
+            }
+            print("PALETTE surface background=\(rgb(style.background)) bar=\(rgb(style.barBackground)) "
+                  + "border=\(rgb(style.border)) divider=\(rgb(style.divider)) "
+                  + "text=\(rgb(style.text)) dimText=\(rgb(style.dimText))")
+        }
 
         var printedThemeCatalog = false
         // The scene walk only reaches what is *on screen*, and a colour-theme picker usually is not:

@@ -22,8 +22,8 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
       three counts (2026-08-23), and the engine already does the part this entry assumed was
       missing. The number is kept, not reused, so the correction is traceable. Closed with BB7.
 
-- **BB2. The embedded library tab is unstyled** (was B37.5) — **split 2026-08-25 into BB2a and BB2b,
-  after measuring the wiring. Scope is BB2a; BB2b is deferred.** The original entry read as one
+- **BB2. The embedded library tab is unstyled** (was B37.5) — **split 2026-08-25 into BB2a and BB2b.
+  BB2a is fixed and confirmed live; BB2b remains deferred.** The original entry read as one
   styling job and guessed the palette never reached the surface. It does: `reconcileHostedSurfaces`
   calls `applyPalette(renderer.palette)` when the library surface mounts and again on a theme change,
   `WinampModernSurfaceStyle.background = palette.contentBackground`, and an embedded browser takes its
@@ -31,19 +31,57 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
   and one large, and they should not be done together. Neither reproduces headlessly — the harness
   sets no component host — so both need the running app and a before/after screenshot, not a probe.
 
-- [ ] **BB2a. The embedded library panel is the wrong colour** — black, where the skin names a colour.
-      `WasabiPalette`'s `contentBackground` chain is `wasabi.edit.background` →
-      `studio.list.column.background` → `wasabi.list.background` → `common.labelwnd.background`. Big
-      Bento declares only the third: `wasabi.list.background` = `color.window.bg` =
-      **RGB(55,57,64)** (`xml/system-colors.xml:30`), the same dark blue-grey as its chrome. The panel
-      in the user's 2026-08-24 screenshot is pure black, so the colour is being lost *downstream of
-      the palette*. Two suspects, unmeasured: the `PlayerDisplay` gammagroup on that colour crushing it,
-      or the list's content area painting its own background rather than `playlistColors`.
-      **First step is making the resolved RGB observable** — a palette line in the render dump, or a
-      one-shot log in the running app — and comparing it against (55,57,64); do that before changing a
-      colour path. Worth doing alone even if BB2b never happens: a black rectangle in a grey-blue
-      window is most of what makes the tab read as foreign. Check cPro-Bento and Defix at the same
-      time to see whether it is general or Bento-shaped.
+- [x] **BB2a. The embedded library panel is the wrong colour. Fixed 2026-08-25, confirmed live.**
+      Black, where the skin names a colour. **Neither of the two suspects this entry recorded was
+      right** — the `PlayerDisplay` gammagroup leaves (55,57,64) alone, and the list paints
+      `playlistColors` as designed. The colour was lost in *resolution*, and three separate faults did
+      it, each reaching well past this panel:
+      **(1)** a `<color>`'s value may name **another colour resource** (`wasabi.list.text` =
+      `color.display`), which was split on commas, came out as one token, and became
+      `unparseableColor` — white. That alone made Bento's whole list palette white-on-black.
+      **(2)** Wasabi keeps **bitmaps and colours in different tables**, and Bento declares
+      `wasabi.list.background` as both a `<color>` (`system-colors.xml:99`) and a tiled `<bitmap>`
+      (`system-elements.xml:68`); a flat registry let the bitmap win, and a colour lookup found an
+      image with no `color=`, so the chain fell to the black literal — the reported rectangle.
+      **(3)** `#rrggbb` was not parsed as a literal, which is a different skin's bug entirely
+      (see the Sony_Walkman note below).
+      The first step this entry asked for is now a permanent instrument: **`WINAMP_MODERN_RENDER_PALETTE=1`**
+      prints every role, every link of its chain and why each one answered — it is what ruled the
+      gamma model out in one line. Measured end state: `contentBackground = rgb(55,57,64)`, matching
+      `xml/system-colors.xml:30`. Corpus checked as the entry asked: cPro-Bento `rgb(8,9,10)` and
+      Defix `rgb(13,17,17)` were already correct, so **the defect was Bento-shaped, but its causes
+      were general** — Enkera's entire palette was white for reason (3), and Bento's own Web Reader
+      results surface (`<rect color="wasabi.list.background">`, `xml/reader.xml:16`) was a white slab
+      for reason (2). `swift test` 1200 pass. Skill: `skins/big-bento-modern.md` → BB2a,
+      `reference/rendering.md` → *How a colour resolves*, `reference/harness.md` → `RENDER_PALETTE`.
+
+- [x] **BB2c. A `.wal` main window came back at another skin's size. Fixed 2026-08-25, confirmed
+      live.** Found while QA-ing BB2a and unrelated to it. Reported as *"the title bar split off the
+      main body of winampmodern566 into 2 windows and the horizontal size is huge"* — it was one
+      window, stretched: 566 anchors its titlebar to the top and its player bar to the bottom, so at
+      the wrong size they sit at opposite ends of an empty window. `AppState.mainWindowFrame` is a
+      single global key, but a `.wal` window's **size is the skin's**: Big Bento Modern's `main/normal`
+      is 1536×878 against 566's 354×280, and the saved frame was Bento's, restored *after* the skin
+      had sized the window correctly. `clampRestoredFrame` had nothing to catch because 566 declares
+      `max=16384x16384` and is meant to widen. `AppState` now records `winampModernSkinName`, and
+      `AppStateManager.mainFrameForRestore` keeps the saved **origin** while taking the loaded skin's
+      **own size** whenever the names differ; a pre-existing state decodes as `nil`, never matches, and
+      self-corrects on the next launch. **Two things that hid it:** headless geometry is correct
+      (`RENDER-DUMP main/normal: 354x280` before and after — the defect is entirely in the window
+      layer), and `kill_build_run.sh`'s `pkill -9` never writes saved state while the selected-skin
+      preference is written immediately, so the dev loop manufactures the mismatch. Skill:
+      `reference/rendering.md` → *…but a `.wal` window's size is still the skin's*.
+
+- [x] **BB2d. Sony_Walkman's analyzer drew opaque white over its own wordmark. Fixed 2026-08-25.**
+      Every band is `colorband1="#808589"`. The `#rrggbb` parse existed but was committed **disabled**
+      behind `if false` in `8c7e0567` — whose message states it *"lands the inline #rrggbb colour
+      parse"* and reports a 288-image sweep including *"Sony_Walkman's analyzer in the grey it asked
+      for"*, a result only reachable with it enabled. So the shipped build contradicted its own
+      recorded verification; this is the leftover toggle, not a decision. **The sweep that commit
+      claimed has now been run**: all 36 installed skins, 310 images, gate on vs. off — 308 identical,
+      1 real change (Sony_Walkman's `main-normal`, the intended fix), and `Anexa/main-shade`, which
+      differs between two runs of the *same* tree and is the known nondeterministic render that commit
+      also named. Skill: `skins.md` → Sony_Walkman.
 
 - [ ] **BB2b. The panel's chrome is structurally foreign — DEFERRED 2026-08-25, do not start with
       BB2a.** `Source: Local Files` over a boxed monospace tab row is NullPlayer's classic

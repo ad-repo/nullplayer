@@ -31,6 +31,8 @@
 | Divider position | **Fixed (B44)** | A divider the *user* drags now survives a relaunch, so the header analyzers stay visible. The skin's own `setPosition(434)` default is untouched. Confirmed live |
 | Play/pause button | **Fixed (BB23)** | It stuck in *paused*: `setAutoReplay` was missing, so every `animbutton` handler aborted before it could swap the two buttons |
 | Web Reader toolbar | **Fixed (BB25)** | The host WebKit surface fills `centro.browser`, covering the inherited inert Winamp toolbar without modifying the skin |
+| Embedded library colour | **Fixed (BB2a)** | The panel was black and the list palette white: `wasabi.list.background` is declared as both a `<color>` and a `<bitmap>`, and its value names another colour id. Now `rgb(55,57,64)`. Confirmed live |
+| Embedded library chrome | **Deferred (BB2b)** | `Source: Local Files` over a boxed monospace tab row. Scope it chrome-only; the font is load-bearing for layout in `PlexBrowserView` and shared with the classic window |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
 ## The family is two skins and two overlays
@@ -308,6 +310,41 @@ Two things worth keeping:
 - **A wrong answer that is off by one is still wrong.** Measuring with CoreText's line height gave
   25, so tabs came out 61 and the strip still crept a pixel per tab. `fontsize` **is** the line height
   (see `reference/scripting.md`), and only that lands on the skin's 60.
+
+## BB2a — the embedded library panel was black (fixed 2026-08-25, confirmed live)
+
+Reported as *"the embedded library tab is unstyled"*, and the palette wiring was never the problem:
+`reconcileHostedSurfaces` applies `renderer.palette` on mount and on every theme change. What was
+wrong sat one layer lower, in resolution, and this skin trips **two** of the three faults now
+documented in `reference/rendering.md` → *How a colour resolves*:
+
+- `wasabi.list.background` is declared **twice** — a `<color>` in `xml/system-colors.xml:99` and a
+  tiled `<bitmap file="window/lists_bg.png">` in `xml/system-elements.xml:68`. The bitmap won a flat
+  registry, carried no `color=`, and the palette chain skipped it onto the black literal.
+- Its value is `color.window.bg`, an **id**, not a triple — so even reaching the `<color>` produced
+  `unparseableColor`, which is white.
+
+Measured end state, and the number to check against `xml/system-colors.xml:30`:
+
+```
+PALETTE contentBackground = rgb(55,57,64)
+PALETTE   wasabi.list.background: kind=color value=color.window.bg -> 55,57,64
+                                  gammagroup=PlayerDisplay -> rgb(55,57,64)
+PALETTE surface background=rgb(55,57,64) bar=rgb(64,69,76) text=rgb(147,175,185)
+```
+
+Before the fix the whole palette was white-on-black: `listText`, `currentText`, `selectionText` and
+`selectionBackground` all resolved to `rgb(255,255,255)` for the same indirection reason. **The gamma
+model was the suspect the task recorded and it was innocent** — `PlayerDisplay` leaves (55,57,64)
+alone. Running `RENDER_PALETTE` first is what ruled it out in one line instead of a session.
+
+One visible side effect inside this skin, worth knowing as a second signature of the same bug: the
+Web Reader's results surface (`browserpro-resultslayout`) is a `<rect color="wasabi.list.background">`
+(`xml/reader.xml:16`) and drew as an opaque **white slab**. It is now the skin's grey-blue.
+
+**BB2b — the panel's chrome — is still deferred**, and deliberately: Winamp never skinned this
+surface either (its Media Library is `gen_ml`, a native Win32 list the skin only *colours*), so the
+faithful target is "a native pane in the skin's palette", which is what it now is.
 
 ## BB9 — the Multi Content View's three visualization placements
 

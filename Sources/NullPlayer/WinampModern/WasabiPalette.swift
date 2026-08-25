@@ -64,34 +64,75 @@ struct WasabiPalette: Equatable {
         treeText: listTextFallback,
         treeSelection: selectionBackgroundFallback)
 
+    /// The roles, and the skin colour ids each one tries in order.
+    ///
+    /// Held as data rather than inlined into `make` so a probe can report *which* link of a chain
+    /// answered — and why the earlier ones did not — without re-declaring the chains beside it and
+    /// drifting from them the first time one changes (BB2a).
+    enum Role: String, CaseIterable {
+        case listText, currentText, selectionText, selectionBackground, contentBackground
+        case treeText, treeSelection
+
+        var identifiers: [String] {
+            switch self {
+            case .listText: return ["studio.list.text", "wasabi.list.text", "pledit.text"]
+            case .currentText: return ["wasabi.list.text.current", "pledit.text.current"]
+            case .selectionText: return ["studio.list.item.selected.fg", "wasabi.list.text.selected"]
+            case .selectionBackground: return ["studio.list.item.selected",
+                                               "wasabi.list.text.selected.background",
+                                               "pledit.currentoutline"]
+            case .contentBackground: return ["wasabi.edit.background", "studio.list.column.background",
+                                             "wasabi.list.background", "common.labelwnd.background"]
+            case .treeText: return ["studio.tree.text"]
+            case .treeSelection: return ["studio.tree.selected", "studio.tree.hilited"]
+            }
+        }
+
+        /// What a role falls back to when no id in its chain answers: a literal of its own, or
+        /// another role's resolved colour.
+        var fallbackDescription: String {
+            switch self {
+            case .listText: return "literal 0,255,0"
+            case .selectionBackground: return "literal 0,0,199"
+            case .contentBackground: return "literal 0,0,0"
+            case .currentText, .selectionText, .treeText: return "role listText"
+            case .treeSelection: return "role selectionBackground"
+            }
+        }
+    }
+
+    func color(for role: Role) -> NSColor {
+        switch role {
+        case .listText: return listText
+        case .currentText: return currentText
+        case .selectionText: return selectionText
+        case .selectionBackground: return selectionBackground
+        case .contentBackground: return contentBackground
+        case .treeText: return treeText
+        case .treeSelection: return treeSelection
+        }
+    }
+
     /// Resolve every role against a skin, newest-first per chain.
     ///
     /// `resolve` is the renderer's own colour resolver (resource lookup + gamma), passed in rather
     /// than duplicated, so a palette colour and a skin-drawn colour of the same id are identical.
     static func make(resolve: (String) -> NSColor?) -> WasabiPalette {
-        func first(_ identifiers: [String], default fallbackColor: NSColor) -> NSColor {
-            for identifier in identifiers {
+        func first(_ role: Role, default fallbackColor: NSColor) -> NSColor {
+            for identifier in role.identifiers {
                 if let color = resolve(identifier) { return color }
             }
             return fallbackColor
         }
-        let listText = first(["studio.list.text", "wasabi.list.text", "pledit.text"],
-                             default: listTextFallback)
-        let selectionBackground = first(["studio.list.item.selected",
-                                         "wasabi.list.text.selected.background",
-                                         "pledit.currentoutline"],
-                                        default: selectionBackgroundFallback)
+        let listText = first(.listText, default: listTextFallback)
+        let selectionBackground = first(.selectionBackground, default: selectionBackgroundFallback)
         return WasabiPalette(
             listText: listText,
-            currentText: first(["wasabi.list.text.current", "pledit.text.current"], default: listText),
-            selectionText: first(["studio.list.item.selected.fg", "wasabi.list.text.selected"],
-                                 default: listText),
+            currentText: first(.currentText, default: listText),
+            selectionText: first(.selectionText, default: listText),
             selectionBackground: selectionBackground,
-            contentBackground: first(["wasabi.edit.background", "studio.list.column.background",
-                                      "wasabi.list.background", "common.labelwnd.background"],
-                                     default: contentBackgroundFallback),
-            treeText: first(["studio.tree.text"], default: listText),
-            treeSelection: first(["studio.tree.selected", "studio.tree.hilited"],
-                                 default: selectionBackground))
+            contentBackground: first(.contentBackground, default: contentBackgroundFallback),
+            treeText: first(.treeText, default: listText),
+            treeSelection: first(.treeSelection, default: selectionBackground))
     }
 }

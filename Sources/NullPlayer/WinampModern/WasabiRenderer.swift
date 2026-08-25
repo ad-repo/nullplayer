@@ -632,12 +632,61 @@ final class WasabiSceneRenderer {
         if let paletteCache { return paletteCache }
         let palette = WasabiPalette.make { [weak self] identifier in
             guard let self,
-                  let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
+                  let definition = loadedSkin.runtime.resources.resolvedColorDefinition(identifier: identifier),
                   Self.declaredColor(of: definition) != nil else { return nil }
             return resolvedColor(identifier)
         }
         paletteCache = palette
         return palette
+    }
+
+    /// A line-per-link account of how `palette` resolved, for the `RENDER_PALETTE` probe.
+    ///
+    /// The palette is the one thing about an embedded surface that *is* observable headlessly — the
+    /// harness sets no component host, so nothing is drawn into a holder, but the colours those
+    /// surfaces would be painted in resolve exactly as they do in the app. Every link reports why it
+    /// answered or did not (missing definition, a bitmap with no `color=`, a value that is not three
+    /// numbers), plus the declared value, the gammagroup, and the RGB the gamma left behind — which
+    /// is what tells "the skin never declared it" apart from "a colour theme crushed it" (BB2a).
+    func paletteResolutionReport() -> [String] {
+        var lines: [String] = []
+        let palette = palette
+        for role in WasabiPalette.Role.allCases {
+            let resolved = palette.color(for: role)
+            lines.append("PALETTE \(role.rawValue) = \(Self.describe(resolved)) "
+                         + "(fallback: \(role.fallbackDescription))")
+            for identifier in role.identifiers {
+                lines.append("PALETTE   \(identifier): \(describeLink(identifier))")
+            }
+        }
+        return lines
+    }
+
+    /// Why one identifier in a role's chain answered, or did not.
+    private func describeLink(_ identifier: String) -> String {
+        guard let definition = loadedSkin.runtime.resources.resolvedColorDefinition(identifier: identifier) else {
+            return "undeclared"
+        }
+        let origin = "kind=\(definition.kind)"
+            + (definition.attributes["file"].map { " file=\($0)" } ?? "")
+        guard let declared = Self.declaredColor(of: definition) else {
+            // A bitmap that is a real image file carries no colour, so the chain skips it.
+            return "\(origin) — no declared colour, skipped"
+        }
+        let (literal, gammaGroup) = Self.dereference(declared,
+                                                     gammaGroup: definition.attributes["gammagroup"],
+                                                     resources: loadedSkin.runtime.resources)
+        let reference = literal == declared ? "" : " -> \(literal)"
+        let gammagroup = gammaGroup.map { " gammagroup=\($0)" } ?? ""
+        return "\(origin) value=\(declared)\(reference)\(gammagroup) -> \(Self.describe(resolvedColor(identifier)))"
+    }
+
+    /// `r,g,b` in the 0…255 the skin's XML is written in, so a probe line can be compared against the
+    /// skin file by eye.
+    private static func describe(_ color: NSColor) -> String {
+        guard let rgb = color.usingColorSpace(.deviceRGB) else { return "non-RGB" }
+        return String(format: "rgb(%.0f,%.0f,%.0f)", rgb.redComponent * 255,
+                      rgb.greenComponent * 255, rgb.blueComponent * 255)
     }
 
     @discardableResult
@@ -2769,7 +2818,7 @@ final class WasabiSceneRenderer {
     /// A named `<color>` resource carries its own gammagroup and `resolvedColor` already applies it;
     /// applying the object's on top would tint the same channels twice.
     private func objectColor(_ raw: String, gammaGroup: String?) -> NSColor {
-        if let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: raw),
+        if let definition = loadedSkin.runtime.resources.resolvedColorDefinition(identifier: raw),
            Self.declaredColor(of: definition) != nil {
             return resolvedColor(raw)
         }
@@ -3378,6 +3427,31 @@ final class WasabiSceneRenderer {
         return definition.attributes["color"]
     }
 
+    /// Follow a `<color>` whose value names another colour resource until a literal triple is
+    /// reached, carrying the first `gammagroup` seen along the chain.
+    ///
+    /// Bounded and cycle-guarded like the alias walk in the registry: a skin can write
+    /// `value="<id>"` pointing anywhere, including at itself.
+    private static func dereference(_ declared: String, gammaGroup: String?,
+                                    resources: WalResourceRegistry) -> (value: String, gammaGroup: String?) {
+        var value = declared
+        var group = gammaGroup
+        var visited: Set<String> = []
+        for _ in 0..<16 {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            // A literal (`r,g,b` or `#rrggbb`) ends the walk; anything else may be an id to follow.
+            if channels(of: trimmed) != nil { return (value, group) }
+            guard visited.insert(trimmed.lowercased()).inserted,
+                  let next = resources.resolvedColorDefinition(identifier: trimmed),
+                  let nextDeclared = declaredColor(of: next), nextDeclared != value else {
+                return (value, group)
+            }
+            value = nextDeclared
+            group = group ?? next.attributes["gammagroup"]
+        }
+        return (value, group)
+    }
+
     /// Every colour this file hands out is component-readable RGB — never `.white`/`.black`, which
     /// AppKit vends as greyscale tagged pointers whose `redComponent` *raises*. Callers that tint
     /// their own glyphs (the library's star rating, for one) read the channels directly.
@@ -3389,13 +3463,29 @@ final class WasabiSceneRenderer {
         // (`colorband1="#5a5490"` … `colorband16="#bda4fc"`, plus `colorbandpeak` and `colorosc1..5`),
         // and with only the triple parsed every one of them fell through to `unparseableColor`. That
         // is white, so the skin's purple analyzer drew as white slabs wherever it appeared.
-        if false, let hex = hexColor(raw) { return hex }
+        if let hex = hexColor(raw) { return hex }
         let values = raw.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard values.count >= 3 else { return unparseableColor }
         return NSColor(red: max(0, min(255, values[0])) / 255,
                        green: max(0, min(255, values[1])) / 255,
                        blue: max(0, min(255, values[2])) / 255,
                        alpha: 1)
+    }
+
+    /// The 0…255 channels a **declared** colour value spells out, either as `r,g,b` or as `#rrggbb`,
+    /// or `nil` for a value that is neither.
+    ///
+    /// Only the colour-*resource* path uses this. A `<color value="#800000">` cannot be anything but
+    /// a literal — Enkera declares its whole palette that way, and every one of those roles was
+    /// resolving to `unparseableColor`, i.e. white text on a white list (BB2a). The inline-attribute
+    /// path in `color(_:)` keeps its own rules, where a bare token may still be a resource id.
+    private static func channels(of declared: String) -> [CGFloat]? {
+        if let hex = hexColor(declared), let rgb = hex.usingColorSpace(.deviceRGB) {
+            return [rgb.redComponent * 255, rgb.greenComponent * 255, rgb.blueComponent * 255]
+        }
+        let values = declared.split(separator: ",")
+            .map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 255) }
+        return values.count >= 3 ? values : nil
     }
 
     /// `#rrggbb` or the three-digit shorthand, or `nil` for anything that is not one. Deliberately
@@ -3414,12 +3504,20 @@ final class WasabiSceneRenderer {
     }
 
     func resolvedColor(_ raw: String) -> NSColor {
-        guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: raw),
+        guard let definition = loadedSkin.runtime.resources.resolvedColorDefinition(identifier: raw),
               let declared = Self.declaredColor(of: definition) else { return Self.color(raw) }
-        let base = declared
-        var values = base.split(separator: ",").map { CGFloat(Double($0.trimmingCharacters(in: .whitespaces)) ?? 255) }
-        guard values.count >= 3 else { return Self.unparseableColor }
-        let gamma = themes.transform(group: definition.attributes["gammagroup"]) ?? .identity
+        // A `<color>`'s value may name **another colour resource** rather than spell out a triple,
+        // and Big Bento Modern writes nearly every one of its list colours that way
+        // (`wasabi.list.text` = `color.display`, `wasabi.list.background` = `color.window.bg`).
+        // Without following the reference the value is not three numbers, so it became
+        // `unparseableColor` — white — and the whole skin's list palette came out white-on-black
+        // (BB2a). The gammagroup taken is the *referring* declaration's where it has one, so the
+        // channels are tinted once, by the group the id that was actually asked for names.
+        let (base, gammaGroup) = Self.dereference(declared,
+                                                  gammaGroup: definition.attributes["gammagroup"],
+                                                  resources: loadedSkin.runtime.resources)
+        guard var values = Self.channels(of: base) else { return Self.unparseableColor }
+        let gamma = themes.transform(group: gammaGroup) ?? .identity
         if gamma.grayscale {
             // Same order as the bitmap path: desaturate, then tint.
             let luminance = values[0] * 0.299 + values[1] * 0.587 + values[2] * 0.114

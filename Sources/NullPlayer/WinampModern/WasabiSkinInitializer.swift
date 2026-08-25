@@ -23,6 +23,14 @@ final class WalResourceRegistry {
     private(set) var definitions: [WalResourceDefinition] = []
     private(set) var diagnostics: [WalDiagnostic] = []
     private var byIdentifier: [String: WalResourceDefinition] = [:]
+    /// The colour-carrying declarations only, indexed separately from everything else.
+    ///
+    /// Wasabi keeps bitmaps and colours in **different tables**, so one id may legitimately name both
+    /// — and skins use that: Big Bento Modern declares `wasabi.list.background` as a `<color>` in
+    /// `system-colors.xml` *and* as a tiled `<bitmap>` in `system-elements.xml`. With one flat table
+    /// the bitmap won, a colour lookup found an image with no `color=` attribute, and every surface
+    /// that asked the skin for its list background fell through to the black literal instead (BB2a).
+    private var colorsByIdentifier: [String: WalResourceDefinition] = [:]
     private var aliases: [String: String] = [:]
 
     func register(_ definition: WalResourceDefinition) {
@@ -42,6 +50,16 @@ final class WalResourceRegistry {
             ))
         }
         byIdentifier[key] = definition
+        if Self.carriesColor(definition) { colorsByIdentifier[key] = definition }
+    }
+
+    /// Whether a declaration can answer a colour request: a `<color>`, or one of the generated
+    /// `$solid`/`$gradient` bitmaps, whose pixels *are* its `color=` attribute.
+    private static func carriesColor(_ definition: WalResourceDefinition) -> Bool {
+        if definition.kind.caseInsensitiveCompare("color") == .orderedSame { return true }
+        return definition.kind.caseInsensitiveCompare("bitmap") == .orderedSame
+            && definition.attributes["file"]?.hasPrefix("$") == true
+            && definition.attributes["color"] != nil
     }
 
     func warn(_ diagnostic: WalDiagnostic) { diagnostics.append(diagnostic) }
@@ -59,11 +77,24 @@ final class WalResourceRegistry {
     }
 
     func resolvedDefinition(identifier: String) -> WalResourceDefinition? {
+        resolved(identifier: identifier, in: byIdentifier)
+    }
+
+    /// The declaration that answers a **colour** request for this id, which is not always the one
+    /// `resolvedDefinition` answers — see `colorsByIdentifier`. Falls back to the general table so an
+    /// id declared only once behaves exactly as before.
+    func resolvedColorDefinition(identifier: String) -> WalResourceDefinition? {
+        resolved(identifier: identifier, in: colorsByIdentifier)
+            ?? resolvedDefinition(identifier: identifier)
+    }
+
+    private func resolved(identifier: String,
+                          in table: [String: WalResourceDefinition]) -> WalResourceDefinition? {
         var key = Self.fold(identifier)
         var visited: Set<String> = []
         for _ in 0..<64 {
             guard visited.insert(key).inserted else { return nil }
-            if let definition = byIdentifier[key] { return definition }
+            if let definition = table[key] { return definition }
             guard let target = aliases[key] else { return nil }
             key = Self.fold(target)
         }

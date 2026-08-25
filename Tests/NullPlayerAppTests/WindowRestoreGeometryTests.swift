@@ -202,4 +202,77 @@ final class WindowRestoreGeometryTests: XCTestCase {
         XCTAssertEqual(restored.height, 116, accuracy: 0.001)
         XCTAssertEqual(restored.maxY, savedNetworkMonitorFrame.maxY, accuracy: 0.001)
     }
+
+    // MARK: - A `.wal` main frame belongs to the skin that saved it
+
+    /// The reported case, with its real numbers: Big Bento Modern's main layout is 1536×878 and
+    /// winampmodern566's is 354×280. `mainWindowFrame` is one global key, so Bento's size was
+    /// restored onto 566 — and 566 declares `max=16384x16384`, so the restore clamp had nothing to
+    /// catch. Its top-anchored titlebar and bottom-anchored player bar ended up at opposite ends of a
+    /// near-fullscreen window, which reads on screen as the skin having split into two windows.
+    func testAWalFrameSavedUnderAnotherSkinKeepsTheLoadedSkinsSize() {
+        let bentoFrame = NSRect(x: 97, y: 99, width: 1536, height: 878)
+
+        let restored = AppStateManager.mainFrameForRestore(
+            saved: bentoFrame,
+            ownSize: NSSize(width: 354, height: 280),
+            savedUnderSkin: "Big Bento Modern",
+            loadedSkin: "winampmodern566",
+            isWinampModern: true
+        )
+
+        XCTAssertEqual(restored.size, NSSize(width: 354, height: 280))
+        // The position is the user's, not the skin's, so it survives — anchored at the same top-left,
+        // the corner Winamp resizes a window around.
+        XCTAssertEqual(restored.minX, bentoFrame.minX, accuracy: 0.001)
+        XCTAssertEqual(restored.maxY, bentoFrame.maxY, accuracy: 0.001)
+    }
+
+    /// The same skin coming back is the ordinary case, and a size the user dragged must survive it.
+    func testAWalFrameSavedUnderTheSameSkinRestoresVerbatim() {
+        let dragged = NSRect(x: 200, y: 300, width: 900, height: 500)
+
+        XCTAssertEqual(
+            AppStateManager.mainFrameForRestore(
+                saved: dragged,
+                ownSize: NSSize(width: 354, height: 280),
+                savedUnderSkin: "winampmodern566",
+                loadedSkin: "winampmodern566",
+                isWinampModern: true
+            ),
+            dragged
+        )
+    }
+
+    /// Every state written before the skin name was recorded decodes as `nil`. That never matches a
+    /// loaded skin, so an old state falls back to the skin's own size — which is how the stale Bento
+    /// frame already sitting in a user's preferences gets corrected on the next launch.
+    func testAStateFromBeforeTheSkinNameWasRecordedFallsBackToTheSkinsSize() {
+        let restored = AppStateManager.mainFrameForRestore(
+            saved: NSRect(x: 97, y: 99, width: 1536, height: 878),
+            ownSize: NSSize(width: 354, height: 280),
+            savedUnderSkin: nil,
+            loadedSkin: "winampmodern566",
+            isWinampModern: true
+        )
+
+        XCTAssertEqual(restored.size, NSSize(width: 354, height: 280))
+    }
+
+    /// Classic and modern windows are the app's own, not a skin's, so the rule must not touch them —
+    /// their saved size is the only size they have.
+    func testANonWalModeRestoresItsSavedFrameUntouched() {
+        let saved = NSRect(x: 625, y: 768, width: 344, height: 145)
+
+        XCTAssertEqual(
+            AppStateManager.mainFrameForRestore(
+                saved: saved,
+                ownSize: NSSize(width: 275, height: 116),
+                savedUnderSkin: nil,
+                loadedSkin: "winampmodern566",
+                isWinampModern: false
+            ),
+            saved
+        )
+    }
 }

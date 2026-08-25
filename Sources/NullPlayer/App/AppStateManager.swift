@@ -224,6 +224,16 @@ class AppStateManager {
 
         // Window frames (as strings for NSRect compatibility)
         var mainWindowFrame: String?
+        /// The `.wal` skin `mainWindowFrame` was saved under, or nil outside `winampModern` mode.
+        ///
+        /// A `.wal` skin's window *is* the skin: Big Bento Modern's main layout is 1536×878 and
+        /// winampmodern566's is 354×280, and each declares its own resize range. The frame is one
+        /// global key, so a size saved under one skin was restored under the next — and a skin whose
+        /// layout permits it (566 declares `max=16384x16384`) accepted Bento's 1536×878 without a
+        /// clamp, which spread its top-anchored titlebar and bottom-anchored player bar to opposite
+        /// ends of an empty window. Only the size is skin-specific; the position is the user's and
+        /// restores either way.
+        var winampModernSkinName: String?
         var playlistWindowFrame: String?
         var equalizerWindowFrame: String?
         var plexBrowserWindowFrame: String?
@@ -312,6 +322,7 @@ class AppStateManager {
             // v2 fields
             case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, selectedOutputDeviceUID
             case browserBrowseMode, uiMode, savedInModernMode
+            case winampModernSkinName
             case stateVersion
         }
 
@@ -339,6 +350,10 @@ class AppStateManager {
             
             // Window frames
             mainWindowFrame = try container.decodeIfPresent(String.self, forKey: .mainWindowFrame)
+            // Absent in every state written before this key existed, which is read as "we do not know
+            // which skin that frame came from" — the safe answer, since it makes the size fall back
+            // to the skin's own.
+            winampModernSkinName = try container.decodeIfPresent(String.self, forKey: .winampModernSkinName)
             playlistWindowFrame = try container.decodeIfPresent(String.self, forKey: .playlistWindowFrame)
             equalizerWindowFrame = try container.decodeIfPresent(String.self, forKey: .equalizerWindowFrame)
             plexBrowserWindowFrame = try container.decodeIfPresent(String.self, forKey: .plexBrowserWindowFrame)
@@ -466,6 +481,7 @@ class AppStateManager {
             browserBrowseMode: Int? = nil,
             uiMode: String? = nil,
             savedInModernMode: Bool = false,
+            winampModernSkinName: String? = nil,
             stateVersion: Int = 3
         ) {
             self.isPlaylistVisible = isPlaylistVisible
@@ -479,6 +495,7 @@ class AppStateManager {
             self.isCavaVisible = isCavaVisible
             self.isWaveformVisible = isWaveformVisible
             self.mainWindowFrame = mainWindowFrame
+            self.winampModernSkinName = winampModernSkinName
             self.playlistWindowFrame = playlistWindowFrame
             self.equalizerWindowFrame = equalizerWindowFrame
             self.plexBrowserWindowFrame = plexBrowserWindowFrame
@@ -647,7 +664,12 @@ class AppStateManager {
             selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
             browserBrowseMode: browserBrowseMode,
             uiMode: wm.uiMode.rawValue,
-            savedInModernMode: wm.uiMode.usesModernControllers
+            savedInModernMode: wm.uiMode.usesModernControllers,
+            // Which skin `mainWindowFrame` above belongs to. Recorded only in `winampModern` mode,
+            // where the window's size is the skin's rather than the app's.
+            winampModernSkinName: wm.uiMode == .winampModern
+                ? UserDefaults.standard.string(forKey: WinampModernSkinImporter.selectedSkinNameKey)
+                : nil
         )
         
         // Encode and save
@@ -1118,6 +1140,30 @@ class AppStateManager {
         NSLog("AppStateManager: State restored successfully")
     }
     
+    /// Which main-window frame a restore should actually apply, given what was saved and which skin
+    /// is now loaded.
+    ///
+    /// A `.wal` window's *size* is the skin's, not the app's: Big Bento Modern's main layout is
+    /// 1536×878 and winampmodern566's is 354×280, and each declares its own resize range.
+    /// `mainWindowFrame` is a single global key, so a size saved under one skin was being restored
+    /// under the next — and because winampmodern566 declares `max=16384x16384`, the caller's clamp
+    /// had nothing to catch. Its top-anchored titlebar and bottom-anchored player bar then sat at
+    /// opposite ends of a near-fullscreen window, which reads on screen as the skin having come apart
+    /// into two windows.
+    ///
+    /// Only the size is skin-specific. The **position** is the user's and restores either way, which
+    /// is why a mismatch keeps the saved origin and substitutes the skin's own size — anchored at the
+    /// same top-left, the corner Winamp anchors to.
+    ///
+    /// A state written before the skin name was recorded decodes as `nil`, which never matches a
+    /// loaded skin, so old saved states fall back to the skin's own size — the safe direction.
+    static func mainFrameForRestore(saved: NSRect, ownSize: NSSize, savedUnderSkin: String?,
+                                    loadedSkin: String?, isWinampModern: Bool) -> NSRect {
+        guard isWinampModern, savedUnderSkin != loadedSkin else { return saved }
+        return NSRect(x: saved.minX, y: saved.maxY - ownSize.height,
+                      width: ownSize.width, height: ownSize.height)
+    }
+
     /// Restore window frames from saved state
     /// Note: Only the main window frame is restored here since it exists at restore time.
     /// Playlist, EQ, Browser, and ProjectM frames are passed to their show methods
@@ -1129,8 +1175,22 @@ class AppStateManager {
         if let frameString = state.mainWindowFrame,
            let controller = wm.mainWindowController,
            let window = controller.window {
-            let saved = NSRectFromString(frameString)
-            if saved != .zero {
+            let stored = NSRectFromString(frameString)
+            if stored != .zero {
+                let loadedSkin = UserDefaults.standard
+                    .string(forKey: WinampModernSkinImporter.selectedSkinNameKey)
+                // The skin has already sized this window to its own layout by now, so its current
+                // size is the one to keep when the saved frame belongs to a different skin.
+                let saved = Self.mainFrameForRestore(saved: stored,
+                                                     ownSize: window.frame.size,
+                                                     savedUnderSkin: state.winampModernSkinName,
+                                                     loadedSkin: loadedSkin,
+                                                     isWinampModern: wm.uiMode == .winampModern)
+                if saved != stored {
+                    NSLog("AppStateManager: main frame %@ was saved under skin %@ — keeping %@'s own %@",
+                          NSStringFromRect(stored), state.winampModernSkinName ?? "(unknown)",
+                          loadedSkin ?? "(none)", NSStringFromSize(window.frame.size))
+                }
                 // Restoring verbatim is what brought a 500×500 `.wal` window back as 376×182 (R1):
                 // the saved frame is honoured for position, but the window that owns it decides which
                 // sizes it can actually render.

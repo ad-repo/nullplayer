@@ -305,6 +305,34 @@ Two things are deliberately **not** in it. The active colour theme is already pe
 screen belongs to the *player's* window rather than to the skin, so it goes through `AppStateManager`
 with everything else the app restores (with `clampRestoredFrame`, R1).
 
+###### …but a `.wal` window's *size* is still the skin's (BB2c, 2026-08-25)
+
+"The frame belongs to the player" is right about the **position** and wrong about the **size**, and
+the difference is not cosmetic. A `.wal` window is sized by the skin's layout: Big Bento Modern's
+`main/normal` is 1536×878, winampmodern566's is 354×280, and each declares its own resize range.
+`AppState.mainWindowFrame` is one global key, so a size saved under one skin was restored under the
+next — after the skin had already sized the window correctly, so the restore *won*.
+
+It reads on screen as the skin coming apart into two windows: winampmodern566 anchors its titlebar to
+the top and its player bar to the bottom, so at 1536×878 they sit at opposite ends of a near-empty
+window. There is no clamp to catch it either, because 566 declares `max=16384x16384` and is genuinely
+meant to widen — `clampRestoredFrame` had nothing to reject.
+
+`AppState.winampModernSkinName` records which skin the frame was saved under, and
+`AppStateManager.mainFrameForRestore` keeps the saved **origin** while substituting the loaded skin's
+**own size** whenever the two names differ. A state written before that key existed decodes as `nil`,
+which never matches, so old preferences self-correct on the next launch.
+
+Two things worth knowing when this class of bug is suspected again:
+
+- **The dev loop manufactures it.** `kill_build_run.sh` does `pkill -9`, which never writes saved
+  state, while `winampModernSkinName` is written the moment a skin is selected. So the frame in
+  preferences routinely belongs to a *different* skin than the one that will load.
+- **The harness cannot see it.** Scene geometry is correct headlessly (`RENDER-DUMP main/normal:
+  354x280` before and after); the defect lives entirely in the window layer. `resizeWindow` logs
+  `WinampModern R1: resizeWindow(…) reason=…` in DEBUG, and comparing that line against the window's
+  size afterwards is what separates "the skin asked for the wrong size" from "something overwrote it".
+
 The write points are the whole design. **Every one of them is a user gesture**, and a script's
 `setPosition`, `switchToLayout` or `hide()` writes nothing — that is the skin describing *this* run.
 The layout entry is the one where the distinction takes care: a `SWITCH` click action is a control the
@@ -727,6 +755,40 @@ attribute-read toggle inverts after the first manual close. For the same reason 
 button goes through `setAuxiliaryWindow` rather than calling `orderOut` itself: closing a window is a
 scene becoming invisible, and a skin that lights its console button from that window's layout
 `onSetVisible` (Ujola Cat) was left with a lit button and nothing on screen.
+
+#### How a colour resolves (BB2a, 2026-08-25)
+
+Everything a skin colours — a `<rect color=…>`, a `<vis colorband1=…>`, and the `WasabiPalette` roles
+NullPlayer's own surfaces draw with — goes through `resolvedColor` / `objectColor`. A colour that
+fails to resolve does not disappear; it becomes a **fallback**, and the two fallbacks are loud:
+`unparseableColor` is **white** and `contentBackground`'s literal is **black**. So the symptom to
+recognise is *"a white slab"* or *"a black rectangle"* where the skin plainly names a colour — not a
+subtly wrong shade.
+
+Three ways a declared colour used to be lost, all fixed and all worth knowing because each has a
+different signature:
+
+1. **A colour resource may name another colour resource.** `<color id="wasabi.list.text"
+   value="color.display"/>` — the value is an *id*, not a triple. Big Bento Modern writes nearly its
+   whole palette this way. The walk to the literal is bounded and cycle-guarded, and the **referring**
+   declaration's `gammagroup` wins where it has one, so the channels are tinted once, by the group the
+   id that was asked for names.
+2. **Bitmaps and colours are different tables.** Wasabi keeps them apart, and skins rely on it: Big
+   Bento declares `wasabi.list.background` as a `<color>` in `system-colors.xml` *and* as a tiled
+   `<bitmap>` in `system-elements.xml`. A single flat registry let the bitmap win, and a colour lookup
+   then found an image with no `color=` — which the palette chain skips, landing on black.
+   `WalResourceRegistry.resolvedColorDefinition` indexes the colour-carrying declarations separately;
+   `resolvedDefinition` still answers the bitmap, so tiling that image is unaffected. A `$solid` /
+   `$gradient` bitmap counts as colour-carrying, because its pixels *are* its `color=` attribute.
+3. **`#rrggbb` is a literal.** Enkera declares its entire palette in hex; Sony_Walkman its analyzer
+   (`colorband1="#808589"`), Big Bento its 22 analyzer bands. The parse is deliberately strict — only
+   a `#`-prefixed token — so a bare `abcdef` stays a resource id, which is what the caller already
+   tried it as.
+
+`WINAMP_MODERN_RENDER_PALETTE=1` prints every role, every link of its chain, and why each link
+answered or did not. **Use it before changing a colour path**: it distinguishes "the skin never
+declared it" from "a colour theme crushed it" from "the chain skipped a bitmap", which look identical
+on screen. See `harness.md`.
 
 #### Colour themes (`gammaset` / `gammagroup`)
 
