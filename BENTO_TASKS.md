@@ -22,12 +22,45 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
       three counts (2026-08-23), and the engine already does the part this entry assumed was
       missing. The number is kept, not reused, so the correction is traceable. Closed with BB7.
 
-- [ ] **BB2. The embedded library tab is unstyled** (was B37.5). The SUI tab below the player shows
-      NullPlayer's own source bar and monospace tab row (`Source: Local Files`,
-      Artists/Albums/Folders/…) rather than anything drawn in the skin's palette. **Not started**:
-      this is a host-surface styling question, not a skin-script one, and it does not reproduce
-      headlessly (the harness sets no component host). Compare against how cPro-Bento and Defix host
-      the same surface before deciding whether it is a Bento-specific gap or the general fallback.
+- **BB2. The embedded library tab is unstyled** (was B37.5) — **split 2026-08-25 into BB2a and BB2b,
+  after measuring the wiring. Scope is BB2a; BB2b is deferred.** The original entry read as one
+  styling job and guessed the palette never reached the surface. It does: `reconcileHostedSurfaces`
+  calls `applyPalette(renderer.palette)` when the library surface mounts and again on a theme change,
+  `WinampModernSurfaceStyle.background = palette.contentBackground`, and an embedded browser takes its
+  list colours from `style.playlistColors`. What is actually wrong is two unrelated things, one small
+  and one large, and they should not be done together. Neither reproduces headlessly — the harness
+  sets no component host — so both need the running app and a before/after screenshot, not a probe.
+
+- [ ] **BB2a. The embedded library panel is the wrong colour** — black, where the skin names a colour.
+      `WasabiPalette`'s `contentBackground` chain is `wasabi.edit.background` →
+      `studio.list.column.background` → `wasabi.list.background` → `common.labelwnd.background`. Big
+      Bento declares only the third: `wasabi.list.background` = `color.window.bg` =
+      **RGB(55,57,64)** (`xml/system-colors.xml:30`), the same dark blue-grey as its chrome. The panel
+      in the user's 2026-08-24 screenshot is pure black, so the colour is being lost *downstream of
+      the palette*. Two suspects, unmeasured: the `PlayerDisplay` gammagroup on that colour crushing it,
+      or the list's content area painting its own background rather than `playlistColors`.
+      **First step is making the resolved RGB observable** — a palette line in the render dump, or a
+      one-shot log in the running app — and comparing it against (55,57,64); do that before changing a
+      colour path. Worth doing alone even if BB2b never happens: a black rectangle in a grey-blue
+      window is most of what makes the tab read as foreign. Check cPro-Bento and Defix at the same
+      time to see whether it is general or Bento-shaped.
+
+- [ ] **BB2b. The panel's chrome is structurally foreign — DEFERRED 2026-08-25, do not start with
+      BB2a.** `Source: Local Files` over a boxed monospace tab row is NullPlayer's classic
+      terminal-style chrome inside a skin that looks nothing like it. Two things to know before
+      anyone scopes this:
+      **Winamp never skinned this surface either.** Its Media Library is `gen_ml`, a native Win32
+      list the skin only *colours* through its colour themes — so the faithful target is "a native
+      pane in the skin's palette", not "the library drawn in the skin's artwork". That makes the job
+      much smaller than it first reads, and rules out the expensive interpretation.
+      **The font is the trap.** `WinampModernSurfaceStyle.font(scale:)` pins a monospaced advance to
+      the classic cell width *on purpose*: the browser lays itself out as
+      `text.count * SkinElements.TextFont.charWidth * scale`, 24 such sites in `PlexBrowserView`
+      alone, and that file is shared with the classic library window — so going proportional means
+      replacing that arithmetic with real text measurement in code where a mistake regresses classic
+      mode too. If this is picked up, scope it **chrome-only** first (bar heights, borders, dividers,
+      pressed fills) and leave the font and every layout site alone; the font refactor is its own
+      decision, with the classic window in the test plan.
 
 - [ ] **BB3. Bitmap overrides in the two Light overlays do not win.** Measured 2026-08-23 and
       recorded as a trap in the skill, never filed here. The Light editions ship light versions of
