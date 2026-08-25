@@ -330,6 +330,17 @@ let slice = buffer[startIdx..<endIdx]
 swift scripts/test_chromecast.swift
 ```
 
+### `NULLPLAYER_UPNP_LOG` — the DLNA/UPnP wire log
+
+`UPnPManager` is silent unless this is set (`UPnPManager.swift:6`, read once into
+`upnpLoggingEnabled`); any non-empty value turns it on. It is the only view of the DLNA half of
+casting, which matters because DLNA has no status channel — the session goes `.casting` immediately
+after LOAD (see *Discovery*), so nothing else tells you whether the renderer accepted the request.
+
+```bash
+NULLPLAYER_UPNP_LOG=1 ./.build/arm64-apple-macosx/debug/NullPlayer > /tmp/upnp.log 2>&1
+```
+
 ### Common Issues
 
 | Symptom | Cause | Fix |

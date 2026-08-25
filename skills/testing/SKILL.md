@@ -160,6 +160,20 @@ if CommandLine.arguments.contains("--ui-testing") {
 }
 ```
 
+### `NULLPLAYER_SKIN` — launch straight into a given classic skin
+
+**DEBUG builds only** (`AppDelegate.swift:56`). Set it to the path of a `.wsz` and the app loads that
+skin at launch instead of the stored one, so a skin-specific check needs no clicking through the
+Skins menu and leaves the user's selection alone:
+
+```bash
+NULLPLAYER_SKIN=/abs/path/Skin.wsz ./.build/arm64-apple-macosx/debug/NullPlayer
+```
+
+It loads a **classic** skin only — a `.wal` is selected with `-winampModernSkinPath` and a modern
+skin through its own preference. Useful for the "test with multiple skins" rule above, since a wrong
+skin is one of the commoner reasons a UI check passes locally and fails for someone else.
+
 ## Running Tests
 
 ### Local Development
