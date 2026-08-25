@@ -29,6 +29,13 @@
 
 ### Bug Fixes
 
+- **Switching skin family no longer leaves the player at the old skin's size** — going from a Winamp
+  5.x modern skin to a Classic one left the classic player squeezed into the outgoing skin's window,
+  drawing its artwork shrunk inside a box the wrong shape ("the main window is tiny in classic mode").
+  Every skin family sizes the player from its own layout, so the rebuilt window now takes the incoming
+  skin's own size instead of inheriting the outgoing one's, in every direction between every pair of
+  modes. The window stays where you left it — its top-left corner does not move.
+
 - **Winamp 5.x modern skins: highlighted rows and window titles are readable in every skin** — in
   most skins, clicking a row in the playlist or library made its text *vanish*: the highlight and the
   text landed on the same colour, exactly the same colour in nine skins. Some skins also drew a

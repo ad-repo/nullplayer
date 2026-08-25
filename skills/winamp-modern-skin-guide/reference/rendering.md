@@ -323,6 +323,16 @@ meant to widen — `clampRestoredFrame` had nothing to reject.
 **own size** whenever the two names differ. A state written before that key existed decodes as `nil`,
 which never matches, so old preferences self-correct on the next launch.
 
+**The same rule was missing on the live mode switch (B49, 2026-08-25).** Launch restore was fixed
+here; `WindowManager.recreateModeDependentLayout` was still stamping the *outgoing* mode's whole
+frame onto the freshly created target-mode window, so `.wal` (Ebonite, 197×297) → Classic drew the
+275×116 classic skin scaled down inside a 197×297 box. Same shape of defect, same fix —
+`WindowManager.mainFrameForModeSwitch(outgoing:ownSize:)` keeps the origin and takes the incoming
+window's own size — and a test asserts it agrees with `mainFrameForRestore` on the same input, so the
+two paths cannot drift. Details in the `ui-guide` skill's live-switch section. **The lesson to carry:
+a "keep position, not size" rule has to be applied at *every* point that re-stamps a saved frame**;
+fixing the restore path alone left the switch path wrong for months.
+
 Two things worth knowing when this class of bug is suspected again:
 
 - **The dev loop manufactures it.** `kill_build_run.sh` does `pkill -9`, which never writes saved

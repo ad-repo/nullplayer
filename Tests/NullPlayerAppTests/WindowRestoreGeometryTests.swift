@@ -259,6 +259,98 @@ final class WindowRestoreGeometryTests: XCTestCase {
         XCTAssertEqual(restored.size, NSSize(width: 354, height: 280))
     }
 
+    // MARK: - A live UI-mode switch gives the main window the incoming mode's size (B49)
+
+    /// The reported case, with its real numbers: `.wal` (Ebonite, 197×297) → Classic left the
+    /// classic player drawing its 275×116 skin scaled down inside a 197×297 window, because the
+    /// rebuild stamped the *outgoing* frame onto the freshly created target-mode window.
+    func testModeSwitchGivesTheMainWindowTheIncomingModesOwnSize() {
+        let ebonite = NSRect(x: 420, y: 300, width: 197, height: 297)
+
+        let switched = WindowManager.mainFrameForModeSwitch(
+            outgoing: ebonite,
+            ownSize: NSSize(width: 275, height: 116)
+        )
+
+        XCTAssertEqual(switched.size, NSSize(width: 275, height: 116))
+    }
+
+    /// The position is the user's, not the mode's, so it survives the switch — anchored at the same
+    /// top-left, the corner `applyDoubleSize` resizes around.
+    func testModeSwitchKeepsTheOutgoingWindowsTopLeft() {
+        let ebonite = NSRect(x: 420, y: 300, width: 197, height: 297)
+
+        let switched = WindowManager.mainFrameForModeSwitch(
+            outgoing: ebonite,
+            ownSize: NSSize(width: 275, height: 116)
+        )
+
+        XCTAssertEqual(switched.minX, ebonite.minX, accuracy: 0.001)
+        XCTAssertEqual(switched.maxY, ebonite.maxY, accuracy: 0.001)
+    }
+
+    /// The rule is unconditional, so it has to hold in the growing direction too — the pair the
+    /// bug report did not cover. Classic (275×116) → Ebonite must not leave the `.wal` skin's
+    /// 197×297 layout inside a 275×116 box.
+    func testModeSwitchAppliesInTheGrowingDirectionToo() {
+        let classic = NSRect(x: 120, y: 640, width: 275, height: 116)
+
+        let switched = WindowManager.mainFrameForModeSwitch(
+            outgoing: classic,
+            ownSize: NSSize(width: 197, height: 297)
+        )
+
+        XCTAssertEqual(switched.size, NSSize(width: 197, height: 297))
+        XCTAssertEqual(switched.minX, classic.minX, accuracy: 0.001)
+        XCTAssertEqual(switched.maxY, classic.maxY, accuracy: 0.001)
+    }
+
+    /// Modern → Classic differ in height alone (145 vs 116). A same-width pair is exactly where a
+    /// width-only or "resize when it looks wrong" guard would quietly do nothing.
+    func testModeSwitchCorrectsAHeightOnlyDifference() {
+        let modern = NSRect(x: 300, y: 500, width: 275, height: 145)
+
+        let switched = WindowManager.mainFrameForModeSwitch(
+            outgoing: modern,
+            ownSize: NSSize(width: 275, height: 116)
+        )
+
+        XCTAssertEqual(switched.height, 116, accuracy: 0.001)
+        XCTAssertEqual(switched.maxY, modern.maxY, accuracy: 0.001)
+    }
+
+    /// Two modes that happen to agree on a size must come out of the switch unmoved and unresized.
+    func testModeSwitchIsAnIdentityWhenBothModesShareASize() {
+        let frame = NSRect(x: 250, y: 410, width: 275, height: 116)
+
+        XCTAssertEqual(
+            WindowManager.mainFrameForModeSwitch(
+                outgoing: frame,
+                ownSize: NSSize(width: 275, height: 116)
+            ),
+            frame
+        )
+    }
+
+    /// The switch rule and the launch-restore rule are the same rule, so a `.wal` frame put through
+    /// either path has to land in the same place. If they ever diverge, a switch and a relaunch
+    /// would leave the window somewhere different.
+    func testModeSwitchAgreesWithTheLaunchRestoreRule() {
+        let bentoFrame = NSRect(x: 97, y: 99, width: 1536, height: 878)
+        let ownSize = NSSize(width: 354, height: 280)
+
+        XCTAssertEqual(
+            WindowManager.mainFrameForModeSwitch(outgoing: bentoFrame, ownSize: ownSize),
+            AppStateManager.mainFrameForRestore(
+                saved: bentoFrame,
+                ownSize: ownSize,
+                savedUnderSkin: "Big Bento Modern",
+                loadedSkin: "winampmodern566",
+                isWinampModern: true
+            )
+        )
+    }
+
     /// Classic and modern windows are the app's own, not a skin's, so the rule must not touch them —
     /// their saved size is the only size they have.
     func testANonWalModeRestoresItsSavedFrameUntouched() {

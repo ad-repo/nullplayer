@@ -702,6 +702,19 @@ untouched; audio state is deliberately never snapshotted.
 6. `rebuildMainMenu()` via `(NSApp.delegate as? AppDelegate)?`.
 7. `recreateModeDependentLayout(snapshot)` — `showMainWindow()` + `makeKeyAndOrderFront`, restore sub-window visibility/frames via `show*(at:)`, re-push presentation state; restore Compact Mode last.
 
+**The main window keeps the outgoing *position* and the incoming *size*.** Every family lays its
+main window out at its own base size — classic `Skin.mainWindowSize * scale`, modern off
+`ModernSkinElements`, a `.wal` skin at whatever its own layout declares — so
+`recreateModeDependentLayout` must not stamp the snapshot's whole frame onto the freshly created
+target-mode window. `WindowManager.mainFrameForModeSwitch(outgoing:ownSize:)` keeps the snapshot's
+origin, substitutes the new window's own size, and anchors the top-left (the corner
+`applyDoubleSize` resizes around). It runs **unconditionally**: the UI Size re-apply below happens
+only when the captured level is not 100%, so relying on it left `.wal` (Ebonite, 197×297) → Classic
+drawing a 275×116 skin scaled down inside a 197×297 window at 100% — and the bug correspondingly
+*vanished* at any other UI Size, which is what pinned the mechanism. This is the same rule
+`AppStateManager.mainFrameForRestore` applies at launch (see the `winamp-modern-skin-guide`
+rendering reference, BB2c); a test asserts the two agree.
+
 **Audio-consumer ordering safety**: consumer sets in `AudioEngine` (spectrum/waveform/
 stereo/magnitudes) are **ref-counted** (`[String: Int]`), so a late `remove` from an old
 view's deferred `deinit` cannot wipe a same-id registration the replacement already made.

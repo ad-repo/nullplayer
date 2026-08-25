@@ -6157,6 +6157,25 @@ class WindowManager {
         return nil
     }
 
+    /// Where the main window goes when a live UI-mode switch rebuilds it — the same rule
+    /// `AppStateManager.mainFrameForRestore` applies at launch, applied to the switch.
+    ///
+    /// Every family lays its main window out at its own base size: classic at
+    /// `Skin.mainWindowSize * scale`, modern off `ModernSkinElements`, a `.wal` skin at whatever its
+    /// own layout declares. Stamping the *outgoing* mode's whole frame onto the freshly created
+    /// target-mode window therefore drew the incoming UI into a foreign box — switching Ebonite
+    /// (197×297) → Classic left the 275×116 classic skin scaled down inside a 197×297 window. Only
+    /// the UI Size re-apply in `performReloadUI` would have corrected it, and that runs only when
+    /// the scale is not 100%, so at 100% nothing ever resized the window.
+    ///
+    /// Only the size is mode-specific. The **position** is the user's, so it survives: the snapshot's
+    /// origin is kept and the incoming window's own size substituted, anchored at the same top-left —
+    /// the corner `applyDoubleSize` anchors to.
+    static func mainFrameForModeSwitch(outgoing: NSRect, ownSize: NSSize) -> NSRect {
+        NSRect(x: outgoing.minX, y: outgoing.maxY - ownSize.height,
+               width: ownSize.width, height: ownSize.height)
+    }
+
     /// Rebuild the mode-dependent windows from a snapshot: the main window always returns,
     /// but callers may keep it ordered out for transitions where another surface replaces it
     /// temporarily (Compact Window). Each sub-window returns only if it was visible, restored
@@ -6164,10 +6183,14 @@ class WindowManager {
     private func recreateModeDependentLayout(_ snapshot: ModeDependentLayoutSnapshot,
                                              revealMainWindow: Bool = true) {
         showMainWindow(reveal: revealMainWindow)
-        if let main = snapshot.main {
-            if main.frame != .zero {
-                mainWindowController?.window?.setFrame(main.frame, display: true)
-            }
+        if let main = snapshot.main, main.frame != .zero,
+           let mainWindow = mainWindowController?.window {
+            // The freshly created controller has already sized this window to the incoming mode's
+            // own layout, so its current size is the one to keep.
+            mainWindow.setFrame(
+                Self.mainFrameForModeSwitch(outgoing: main.frame, ownSize: mainWindow.frame.size),
+                display: true
+            )
         }
 
         if let playlist = snapshot.playlist, playlist.visible {

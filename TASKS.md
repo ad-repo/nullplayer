@@ -601,7 +601,7 @@ Big Bento's own pending verification is `BB4` in `BENTO_TASKS.md`, not here.
       field plus `WinampModernSurfaceStyle` being nil in classic, both asserted in tests, and on the
       golden images being green — not on a capture.
 
-- [ ] **B49. A live UI-mode switch leaves the main window at the outgoing mode's size.** Found during
+- [x] **B49. A live UI-mode switch leaves the main window at the outgoing mode's size.** Found during
       B26's live QA, 2026-08-25: switching `.wal` (Ebonite, 197×297) → Classic left the classic
       player in a 197×297 window, drawing its 275×116 skin scaled down inside it. Reported as
       *"the main window is tiny in classic mode at 100%"*.
@@ -625,6 +625,26 @@ Big Bento's own pending verification is `BB4` in `BENTO_TASKS.md`, not here.
       above the collapse-to-1x already warns about "forcing the old mode's enlarged frames onto
       freshly-created target-mode windows"; it handles *scale* but not the *base size* difference
       between modes. Check every mode pair, not just `.wal`→classic.
+
+      **Done 2026-08-25.** One site: `recreateModeDependentLayout` now calls
+      `WindowManager.mainFrameForModeSwitch(outgoing:ownSize:)`, which keeps the snapshot's origin and
+      takes the freshly created window's **own** size, anchored top-left — unconditionally, so it no
+      longer depends on the `restoreScaleLevel != .p100` re-apply. `showMainWindow` has already sized
+      that window to the incoming mode's layout (including
+      `normalizeModernMainWindowForHTIfNeeded`), so its current size *is* the target-mode size and no
+      per-mode branch is needed; that is what makes it cover every mode pair. 6 tests in
+      `WindowRestoreGeometryTests`, both directions plus a height-only pair and an identity case;
+      full suite 1220 green. Manually verified by the user.
+
+      **The rule already existed and was applied in only one place.** `AppStateManager.mainFrameForRestore`
+      (BB2c) is the same "keep position, substitute the loaded skin's size" rule for *launch restore*.
+      A test now asserts the two functions agree on the same input, so the switch path and the restore
+      path cannot drift apart again. Worth generalising: when a rule like this lands, grep for every
+      site that re-stamps a saved frame rather than fixing the one that was reported.
+
+      **The `!= .p100` prediction was never actually run.** The fix makes the resize unconditional,
+      so the prediction stopped being load-bearing — but it was not measured, and the mechanism
+      therefore rests on reading the two lines rather than on an observation. If this recurs, run it.
 
 ## Backlog — cosmetic, low priority
 
