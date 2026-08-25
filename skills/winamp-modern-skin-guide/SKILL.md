@@ -78,7 +78,9 @@ concept; read the one your symptom points at, not all of them.
 | **A thinger is empty, its caption blank, or its scroll arrows do nothing** (`<componentbucket>`) | [reference/components.md](reference/components.md) — *The component bucket*: the icon set is ours, the box is Winamp's, and three skins ship a thinger they never `<include>` |
 | **A skin's markup declares a widget that never appears anywhere on screen** | [reference/components.md](reference/components.md) — *The component bucket*: check the `<include>` closure from `skin.xml` before believing a grep, and remember include paths are relative to the including file |
 | An auxiliary window draws once then freezes; a script's `onTimer` changes nothing on screen | [reference/components.md](reference/components.md) |
-| Notifier toast doesn't show, shows wrong text, ghost default text, title invisible | [reference/components.md](reference/components.md) §*Notifier — track-change toast* |
+| Notifier toast doesn't show, shows wrong text, ghost default text, title invisible, rows overlapping, only part of the window used | [reference/components.md](reference/components.md) §*Notifier — track-change toast* |
+| Text is missing, or a row sits on top of the row beneath it | [reference/rendering.md](reference/rendering.md) §*A `<text>` with no `h` is one line tall* |
+| A skin sizes or moves its own window and nothing happens; a probe shows a layout laid out perfectly while the app is untouched | [reference/rendering.md](reference/rendering.md) §*A container's `x`/`y`/`w`/`h` are its window's* |
 | Teardown crash, leak, or mode-switch breakage | [reference/components.md](reference/components.md) |
 | A ClassicPro (`.wal` + NSIS engine) skin misbehaves | [reference/classicpro.md](reference/classicpro.md) |
 | A **WACUP**-era skin: should we claim to be WACUP, why a branch is dead, a plugin surface that never appears | [reference/wacup.md](reference/wacup.md) — the answer is *no*, with the measurement |

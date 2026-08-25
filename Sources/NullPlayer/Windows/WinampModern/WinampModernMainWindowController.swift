@@ -1309,6 +1309,36 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         container.window.setFrameOrigin(origin)
     }
 
+    /// A script parking its own window on the desktop (`container.resize(x, y, w, h)`, or the
+    /// `setTargetX/Y` animation that follows it).
+    ///
+    /// The point is in Winamp's screen space — top-left origin, the same space `getViewportWidth` and
+    /// `getViewportHeight` answer in, which is where the skin's arithmetic comes from — so the y flips
+    /// into AppKit's. It is in *screen* points rather than skin pixels for the same reason: the script
+    /// derived it from the viewport, not from the scene, so UI Size does not enter into it. Clamped to
+    /// the visible frame, as `place` clamps its own guess: Winamp's viewport excludes the taskbar and
+    /// ours does not, so a toast that puts itself two pixels above the bottom edge of the screen would
+    /// otherwise land under the Dock.
+    private func moveContainerWindow(_ container: WasabiObjectID, to point: CGPoint) {
+        let target: NSWindow?
+        if let auxiliary = auxiliaryContainers.first(where: { $0.view.containerID == container }) {
+            target = auxiliary.window
+        } else if skinView?.containerID == container {
+            target = window
+        } else {
+            target = nil
+        }
+        guard let target, let screen = target.screen ?? NSScreen.main else { return }
+        let size = target.frame.size
+        var origin = NSPoint(x: screen.frame.minX + point.x,
+                             y: screen.frame.maxY - point.y - size.height)
+        let visible = screen.visibleFrame
+        origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
+        origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        guard origin != target.frame.origin else { return }
+        target.setFrameOrigin(origin)
+    }
+
     /// Where the skin's own arrangement puts a window, in AppKit coordinates: `offset` skin pixels
     /// right of and *below* the player's top-left, scaled to the current UI Size.
     static func arrangedOrigin(playerFrame: NSRect, size: NSSize, offset: CGPoint,
@@ -1337,6 +1367,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         scripts.layoutResizeRequested = { [weak self] container, size in
             self?.viewsByContainer[container]?.applyCanvasResize(size)
+        }
+        scripts.containerMoveRequested = { [weak self] container, point in
+            self?.moveContainerWindow(container, to: point)
         }
         scripts.browserNavigationRequested = { [weak self] objectID, address in
             guard let self else { return }

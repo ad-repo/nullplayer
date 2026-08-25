@@ -349,6 +349,35 @@ faithful end state, and that is what this now is. What a chrome pass would still
 heights, border weight, the boxed tab rectangles — is minor beside the one real remaining tell, the
 monospace font, which such a pass deliberately excludes. Treat this as settled rather than pending.
 
+## BB27 — the notifier toast (fixed 2026-08-25, confirmed live across all four variants,
+and across every other notifier skin installed)
+
+Reported as *"the notifications are using a giant font and it is all jumbled"*, then *"the space
+within the notification to write is only like the middle 1/3 of the window — I have noticed this on
+other skins"*. **Four defects, three of them engine-wide.** Full write-up in `BENTO_TASKS.md` → BB27;
+the mechanisms are in [reference/rendering.md](../reference/rendering.md) (text auto-height, container
+geometry) and [reference/components.md](../reference/components.md) → *Notifier*.
+
+What matters about *this skin*: all four variants share one `xml/notifier.xml`, and **its notifier
+lays itself out**, which Winamp Modern's does not. `notifier.maki` starts a 30 ms poll from
+`onTitleChange`; the poll reads the four `Notifications` settings, hides the album line or the
+transport row, moves the text group, measures with `getAutoWidth`, then resizes and animates its own
+window from 540 to whatever the text needs (711 for a long title) at the bottom-right of the screen.
+Nothing the host does can substitute for that, and everything the host does has to land *before* it.
+
+Two traps worth carrying:
+
+- **The dump can be perfect while the app is wrong.** The skin takes `getLayout("desktopalpha")` when
+  `isDesktopAlphaAvailable()` is true and addresses that layout forever after without switching to
+  it. Nothing here activates such a layout, so `RENDER_PROBE notifier/desktopalpha` showed a flawless
+  toast while the window drew the untouched `normal` one. Check *which layout* a probe is showing you
+  against the one the window is on.
+- **Its transport row and its album line are one row.** `Show Playback Controls` and `Show Album Tag`
+  are a mutually-exclusive pair enforced by the skin's own `ondatachanged` in `skin.xml`
+  (`if (getData()=="0") { setData("1"); return; }`), so unticking playback controls alone is refused
+  and re-ticked — tick *Show Album Tag* instead and the pair flips. This was reported as a broken
+  toggle; it is the skin's design, and what was actually wrong was both rows drawing at once.
+
 ## BB9 — the Multi Content View's three visualization placements
 
 The skin declares three `{0000000A}` holders: the SUI Visualization tab (`wdh.vis.object`), the mini

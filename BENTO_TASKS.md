@@ -16,6 +16,93 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
 
 ## Open
 
+- [x] **BB27. The notifier toast draws a giant, jumbled block of text — fixed 2026-08-25, confirmed
+      live across all four variants** (*"now it looks correct across all skins"*). Reported with two
+      screenshots; they share one `xml/notifier.xml`. **Four defects, three of them engine-wide.**
+
+      **BB27a — the host clamped the toast to 350px.** `setNotifierText` hard-coded the layout width
+      to 350, a value chosen for stock Winamp Modern (`w="128"`, text group 33px, genuinely needs
+      widening). Bento declares `w="540"` with a 310px text group, so the clamp *shrank* it to 120px
+      of room for 46/34/28pt text — the oversized, clipped first screenshot. 350 is now a floor
+      (`max(declared, 350)`), never a size.
+
+      **BB27b — a container's own geometry never reached its window.** The real cause, and not
+      Bento-specific. Bento's notifier lays itself out from `notifier.maki`: `onTitleChange` starts a
+      30 ms poll, the poll runs the layout routine, and that routine reads its four `Notifications`
+      settings, hides the album line or the transport row, moves the text group with
+      `setXmlParam(x/w)`, measures the result with `getAutoWidth`, and then **sizes and positions its
+      own window** — `container.resize(0, 928, 540, 150)` followed by a `setTargetX/Y/W/H` animation
+      to `(1207, 928, 711, 150)`. The engine wrote all four as plain attributes on the container,
+      which nothing draws and nothing reads: `resize` forwarded to `layoutResizeRequested` only for a
+      *layout* receiver, and the target animation had no container path at all. So the toast stayed
+      at its declared 540 with the text pinned in the third of it the XML reserves for the album art
+      the script had already hidden — the user's "the space to write is only the middle 1/3, I have
+      noticed this on other skins". Fixed with `applyContainerGeometry`, called from `resize` and
+      from both target-animation paths, plus a new `containerMoveRequested` callback the controller
+      answers by setting that window's frame origin (Winamp's top-left screen space flipped into
+      AppKit's, clamped to `visibleFrame`).
+
+      **BB27c — the skin laid out a layout no window shows.** Found when BB27a+b were confirmed
+      correct headlessly and the live app was unchanged. `isDesktopAlphaAvailable()` answered **true**,
+      and Bento's notifier asks it once, takes `getLayout("desktopalpha")`, and addresses *that* layout
+      for the rest of the session — it never switches to it, because in Winamp the container is
+      already on it. Nothing here activates a `desktopalpha="1"` layout, so every write landed on a
+      layout the window never draws while the app went on showing the untouched `normal` one. That is
+      why the headless dump was perfect and the screenshot was not. It now answers false — the way the
+      engine actually behaves — and `notifier/normal`, the layout on screen, is the one laid out.
+      Deliberately split from `istransparencyavailable` / `istransparencysafe` /
+      `islayoutanimationsafe`, which stay true: those are about a window's alpha, this one is about a
+      second set of artwork.
+
+      **Measured before/after** (`RENDER_SHOW=notifier RENDER_EVENTS=ontitlechange RENDER_SETTLE=1`):
+      before, `notifier/normal` 540×150, 22 nodes, title/artist/album stacked on top of each other
+      with the transport buttons drawn through the album line. After, 711×150, 24 nodes: album art,
+      the playlist position, the orange title, the artist, and the transport row below it, nothing
+      overlapping.
+
+      **BB27d — a `<text>` with no `h` was zero pixels tall.** The overlap itself, and engine-wide.
+      The geometry resolver defaulted a missing `h` to 0 and the renderer clips to the frame, so such
+      a text drew nothing at all — Bento's `title`, `artist` and `album` are all declared that way.
+      The host had been papering over it for the notifier alone (`ensureTextHeight`, `fontsize * 1.4`),
+      which is 18px taller than the rows the skin is spaced for, so the title box ran down into the
+      artist. A missing `h` on a `<text>` now takes the font's line height as its intrinsic height, in
+      `WasabiSceneRenderer.append` beside the existing `autoWidth` case — the same number
+      `getAutoHeight()` answers, so a script's measurement and the drawn box are one measurement. The
+      host patch is deleted.
+
+      **Not a defect: the *Show Playback Controls* switch.** Reported as "the toggle in settings to
+      turn them off does not work". It is a mutually-exclusive pair with *Show Album Tag*, enforced
+      by the skin's own `ondatachanged` in `skin.xml` — `if (getData()=="0") { setData("1"); return; }`
+      — so unticking it alone is refused and re-ticked, while ticking *Show Album Tag* sets it to 0.
+      Measured: `RENDER_SET '…;Show Album Tag=1'` writes `Show Playback Controls = 0` in the same
+      dispatch, and the toast then draws the album row and no transport row. The engine reproduces
+      Winamp here; what the user was actually seeing was BB27b drawing both rows at once.
+
+      **Harness gaps this exposed, both fixed** — `drive(event:)` had no `onshownotification` (the
+      only entry into a notifier script), and `RENDER_EVENTS` measured the scene with no settle after
+      driving, so a skin that does the work of an event from a timer the handler starts always read
+      as a skin whose handler did nothing.
+
+      - [x] 350 is a floor, not a size.
+      - [x] `resize` and the target animation reach a container's window.
+      - [x] `isDesktopAlphaAvailable()` answers false.
+      - [x] A `<text>` with no `h` is one line tall.
+      - [x] Harness: `onshownotification`, a settle after `RENDER_EVENTS`, and a non-empty
+            artist/album on the render host — with two of three readouts empty a notifier measures as
+            one line and no collision between them is visible.
+      - [x] `swift test` — 1235 pass, 0 failures, golden images included.
+      - [x] **Confirmed live in all four variants on a track change**, 2026-08-25.
+      - [x] Regression tests: `WinampModernPhase69Tests`, 9 cases — the auto-height, the row it used
+            to overlap, that only `<text>` auto-sizes, the desktop-alpha answer against its three
+            neighbours, both container-geometry routes, that a non-container is not a window, and the
+            width floor at 128/350/540.
+      - [x] Landed: `reference/rendering.md` (two new sections), `reference/components.md` → *Notifier*,
+            `reference/harness.md` (`RENDER_EVENTS` settle + `onshownotification`, and the render
+            host's metadata), `skins/big-bento-modern.md` → BB27, CHANGELOG.
+      - [x] The other notifier skins checked live too — *"now it looks correct across all skins"*,
+            2026-08-25. The container-geometry and desktop-alpha routes are engine-wide, so this was
+            the outcome to expect, but it is measured rather than assumed.
+
 - [x] **BB1. `instantiate` — superseded by BB7, which corrects it.** Read **BB7** instead. This entry
       described the method as `instantiate(groupdef_id, index)` with "nine call sites" and called it
       a real engine capability rather than an arity question. The MAKI source says otherwise on all
@@ -108,18 +195,40 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
       cosmetic today. **Do not** fix it by flipping `resolveSkinResource`'s order without a full
       corpus sweep — the relative-first order exists for authored subfolders.
 
-- [ ] **BB4. Live QA of B38.4 / the rest of B38.3 — RAN, AND IT FAILED (2026-08-23).** B38.1 and
-      B38.2 were confirmed on screen by the user; the B38.4 dispatch-binding fix and the four methods
-      behind it were verified only headlessly and by a 300-image pixel diff. They do **not** hold in
-      the running app. The user's screenshot of the header is timestamped 19:10 and the debug build
-      it came from is 18:53 — the same working tree that contains every B37/B38 change — so this is
-      not a stale binary. Still wrong on screen: a full-width cover-flow strip crosses the panel, the
-      details column is squashed rather than laid out, and the album art is drawn twice (**BB6**).
-      What *did* hold: the file-info panel fills its lines, though with the wrong content (**B39**).
-      Re-measure **live**, not headlessly — B38 already established that three of its five defects
-      never reproduced in the harness — with `WINAMP_MODERN_DEBUG_HOLDERS=1` and
-      `WINAMP_MODERN_DEBUG_CLICK` + `WINAMP_MODERN_CALL_TRACE=1`. Treat the headless pass as
-      necessary and not sufficient for anything in this panel.
+- [x] **BB4. Live QA of B38.4 / the rest of B38.3 — re-run 2026-08-25, and all three symptoms are
+      gone. Confirmed live.** Nothing was fixed for this; the intervening work closed it, which is why
+      the entry is kept rather than deleted. Measured on the running app with a track playing, base
+      variant and Light, driving the library with `CGEvent` clicks (Albums tab → double-click an
+      album) and reading `WINAMP_MODERN_CALL_TRACE=1` + `WINAMP_MODERN_DEBUG_HOLDERS=1`:
+      the **cover-flow strip** is gone — `mcvcore` resolves `info.component.coverflow` and hides it,
+      and the run ends on `setprivatestring(Big Bento Modern, Component3, File Info)`, the page it is
+      meant to pick; the **details column** is laid out, one line each for bitrate/KHZ/stereo, title,
+      artist, album and genre; and the **album art draws once**, with the zoomed backdrop as a dimmed
+      wash behind the panel — which is the live confirmation **BB6/B42** was waiting for.
+      The trace is the finding that matters: `mcvcore` reaches `findobject` on all four MCV pages, the
+      album-bg pair, the footer and the menu, then starts its timers — the whole handler, so the
+      **B38.4 dispatch-binding fix runs in the app**, not only headlessly.
+      Found while measuring, and filed separately: the rating row draws as five dots (**BB26**).
+      <details><summary>original entry (the 2026-08-23 failure)</summary>
+
+      B38.1 and B38.2 were confirmed on screen by the user; the B38.4 dispatch-binding fix and the
+      four methods behind it were verified only headlessly and by a 300-image pixel diff. They did
+      **not** hold in the running app. The user's screenshot of the header is timestamped 19:10 and
+      the debug build it came from is 18:53 — the same working tree that contains every B37/B38
+      change — so this was not a stale binary. Still wrong on screen: a full-width cover-flow strip
+      crosses the panel, the details column is squashed rather than laid out, and the album art is
+      drawn twice (**BB6**). What *did* hold: the file-info panel fills its lines, though with the
+      wrong content (**B39**). **The lesson stands even though the entry closed clean**: treat a
+      headless pass as necessary and not sufficient for anything in this panel — B38 established that
+      three of its five defects never reproduced in the harness.
+      </details>
+
+- [ ] **BB26. The file-info rating row draws as five dots, not stars.** Found live 2026-08-25 while
+      closing BB4, on the base variant and on Light. `infodisplay.line.rating.stars`
+      (`xml/player-normal-mcv.xml:256`) sits under the genre line and paints five small faint dots
+      where the skin means star glyphs. Cause unmeasured — do not guess one; note only that its parent
+      `infodisplay.line.rating` is declared `visible="0"` at `:396`, so "should this row be on screen
+      at all" is part of the question, not settled before it.
 
 - [ ] **BB5. `@HAVE_LIBRARY@`** — carried over from B36's follow-up because it is not Bento-only.
       A second unresolved token, never used as a path so the VFS never sees it
@@ -188,8 +297,8 @@ backlog.
       geometry, so the oversized dimmed backdrop drew at its literal `99×100` as a small crisp second
       copy. Reached 5 skins beyond this family. Rule: `reference/loading.md` → the `relat*` flags are
       `atoi(value) != 0`. The three-`albumart` trap this entry warned about is in the skin's own file.
-      **Not yet confirmed live** (BB4's lesson): check the backdrop is now a dimmed wash behind the
-      panel with one crisp cover.
+      **Confirmed live 2026-08-25**, in BB4's re-run: one crisp cover, and the backdrop is a dimmed
+      wash behind the panel.
 
 - [ ] **BB9. The Multi Content View's three visualization placements. Partly done 2026-08-24 —
       routing and the analyzer landed; the overlap at launch is still open. Rewritten again; the

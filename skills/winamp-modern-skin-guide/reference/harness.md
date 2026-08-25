@@ -44,7 +44,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_CLICK_EVENTS=<event>[,<event>]` | narrow `RENDER_CLICK` to the events a *plain* click sends (`onleftbuttondown,onleftbuttonup`). The default is all seven, which includes the double-click and both right-button halves — so a skin that hangs a command off one of those makes an ordinary click unreadable: cPro-Bento's tab strip maximizes the window from its `onLeftButtonDblClk`, and every probe of a tab click reported that expansion as if the click had caused it |
 | `WINAMP_MODERN_RENDER_CLICK_WATCH=<id>,<id>` | where those objects ended up after the click, changed or not — for "it opened, but in the wrong place" |
 | `WINAMP_MODERN_RENDER_SIZE=<W>x<H>` | resize the layout (clamped, as a drag is) before measuring, so a defect can be reproduced at the user's window size. It resizes the *canvas* only — the app dispatches `onResize` on a real drag, so pair it with `RENDER_EVENTS=onresize` (applied after the resize) or a script-driven layout stays at its old width |
-| `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **`onresize` first** for any ClassicPro skin: much of its state is only ever assigned there. `onmousewheelup`/`onmousewheeldown` are addressed at the **layout** with two arguments (where every corpus binding lands) — but they call `dispatch` directly rather than going through the view, and `isMouseOverRect` answers `false` with no window, so a `handlers=` count proves the bindings and the arity, **not** that anything scrolled |
+| `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **A `RENDER_SETTLE` is applied after the last one** (BB27): a skin routinely does an event's *work* from a timer the handler starts rather than in the handler — Big Bento's notifier starts a 30 ms poll from `onTitleChange` and lays the toast out on its first tick — so without one the scene is measured a frame too early and a working layout routine reads as one that never ran. **`onshownotification`** is drivable (arity 0, `.system`, exactly what `showNotifier` dispatches); it is the only entry into a notifier script, and without it every notifier in the corpus measured as a window whose script does nothing. **`onresize` first** for any ClassicPro skin: much of its state is only ever assigned there. `onmousewheelup`/`onmousewheeldown` are addressed at the **layout** with two arguments (where every corpus binding lands) — but they call `dispatch` directly rather than going through the view, and `isMouseOverRect` answers `false` with no window, so a `handlers=` count proves the bindings and the arity, **not** that anything scrolled |
 | `WINAMP_MODERN_RENDER_SCRIPTS=1` (or `=bindings`) | per program: owner, source, declared handlers, which events actually **ran**, and which failed with what. `=bindings` adds what every handler is bound to *right now*, its entry point (`@<index>`), whether the dispatcher **shadows** it as a repeat of an earlier body, and each script group's ancestor chain. The entry point is what tells two same-named bindings apart: a program may declare one (object, event) pair twice with *different* bodies, and which body a dispatch reaches is then the whole question |
 | `WINAMP_MODERN_RENDER_DISASM=<method>` | the instructions around every call site of a method — how an unknown **arity** is settled, by counting the net pushes between the receiver and the call |
 | `WINAMP_MODERN_RENDER_DISASM=@<source>` | the **whole** listing for every program whose path matches: each handler's entry point, every instruction, constants and method names resolved. Variable values are read *after* the run, so a `vN=null` at a `findObject` is a lookup that failed. This is how Winamp Modern's titlebar layout was recovered — an arity fits in an 8-instruction window, a layout routine does not |
@@ -220,6 +220,16 @@ so this is the only headless view of the request; what it cannot show is the res
 `WinampModernRenderPixelTests` is the synthetic guard for all of the above: a banded atlas whose crop
 origin, upright orientation, tiling, and `fitparent` sizing are asserted per pixel. When you touch
 `WasabiSceneRenderer`, verify a fix *fails* without the change before trusting it.
+
+### What the render host is playing (BB27, 2026-08-25)
+
+`RenderHost` answers a **full** track: title, display title, *artist* and *album*. The protocol's
+defaults for the last two are `""`, which is a playing-nothing state no window in the app is ever in,
+and it hides a whole class of defect — a notifier is three stacked readouts, so with two of them empty
+its vertical arrangement measures as one line and no collision between the rows is visible at all.
+That is how a title box overlapping the artist beneath it survived a clean render dump. Both strings
+are deliberately long enough to need more room than a toast declares, because auto-width and ticker
+behaviour are only exercised by a string that does not fit.
 
 ### The golden images
 

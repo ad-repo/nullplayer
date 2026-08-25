@@ -1033,22 +1033,59 @@ whose id starts with the target + `"."` (e.g. `"title.shadow"`). It also sets bo
 `default` attributes, because the renderer resolves content as `text ?? default` — leaving `default`
 at its XML value ("Nithin Sawhney") causes ghost text when the new `text` value is shorter.
 
-### The zero-height text problem
+### The zero-height text problem — fixed in the renderer, not here (BB27)
 
 The notifier groupdef defines `<text id="title" w="0" relatw="1" fontsize="17">` with no `h`
-attribute. The geometry resolver defaults missing `h` to 0, and the renderer clips to the frame rect
-(`context.clip(to: frame)`), so a 0-height text element is invisible. `ensureTextHeight` walks the
-subtree after text is set and gives any 0-height text element a height of `ceil(fontSize * 1.4)`.
-This only runs on the notifier's text elements (called from `setNotifierText`), not globally.
+attribute. The geometry resolver defaulted a missing `h` to 0 and the renderer clips to the frame
+rect (`context.clip(to: frame)`), so the element drew nothing at all.
 
-### The layout-width problem
+**A heightless `<text>` now takes its font's line height as its intrinsic height**, in
+`WasabiSceneRenderer.append` beside the existing `autoWidth` case — see
+[rendering.md](rendering.md) → *A `<text>` with no `h` is one line tall*. It is the same number
+`getAutoHeight()` answers, so a script's measurement and the drawn box are one measurement.
+
+The notifier used to carry its own patch for this (`ensureTextHeight`, `ceil(fontSize * 1.4)`,
+called from `setNotifierText`). **It is gone.** That number is ~40% taller than the line a skin
+spaces its rows for: Big Bento stacks `title` at `y="22"` (46pt) over `artist` at `y="64"`, so a
+64-pixel title box ran 22 pixels into the artist underneath it. Do not reintroduce a per-surface
+height guess — if some other object type turns out to need auto-sizing, it belongs next to the
+renderer's intrinsic-size rules.
+
+### The layout-width floor
 
 The notifier's `<groupdef id="notifier.text">` is placed inside each layout at `x="75" w="-95"
-relatw="1"`. With the layout's declared `w="128"`, the text group is only `128 - 95 = 33` px wide —
-too narrow for any useful text. `setNotifierText` overrides the layout width to 350 and fires
-`layoutResizeRequested` to resize the renderer's canvas, view, and window to match. The background
-`<grid>` stretches to fill (`fitparent="1"`) and the `relatw="1"` text group recalculates to
-`350 - 95 = 255` px.
+relatw="1"`. With Winamp Modern's declared `w="128"`, the text group is only `128 - 95 = 33` px wide
+— too narrow for any useful text, so `setNotifierText` widens the layout and fires
+`layoutResizeRequested` to resize the renderer's canvas, view and window to match. The background
+`<grid>` stretches to fill (`fitparent="1"`) and the `relatw="1"` text group recalculates.
+
+**350 is a floor, not a size**: `max(declared, 350)` per layout. It used to be assigned, which
+*shrank* every skin that already declares a usable width — Big Bento's notifier is `w="540"` with a
+310px text group, and forcing 350 left 120px for 46pt text. That is the reported "giant font".
+
+### A notifier that lays itself out (BB27)
+
+Winamp Modern's notifier is a static layout the host fills in. **Big Bento's is not**, and the
+difference is worth knowing before touching this code: `notifier.maki` starts a 30 ms poll from
+`onTitleChange`, and the poll reads its four `Notifications` settings, hides the album line or the
+transport row, moves the text group with `setXmlParam(x/w)`, measures the result with
+`getAutoWidth`, and then **sizes and positions its own window** — `container.resize(0, 928, 540,
+150)` followed by a `setTargetX/Y/W/H` animation into the corner of the screen. Three engine
+capabilities have to be present for any of that to appear:
+
+- **A container's geometry must reach its window.** See [rendering.md](rendering.md) →
+  *A container's `x`/`y`/`w`/`h` are its window's*.
+- **`isDesktopAlphaAvailable()` must answer false.** A skin asks once and then addresses
+  `getLayout("desktopalpha")` for the rest of the session without ever switching to it — in Winamp
+  the container is already on that layout. Nothing here activates one, so a true answer sends every
+  write to a layout no window draws. This is the failure mode that looks like nothing is wrong: the
+  render dump of `notifier/desktopalpha` comes out perfect while the app draws the untouched
+  `normal` layout.
+- **The host must not fight it.** `setNotifierText` runs before the skin's timer does, so the
+  skin's own sizing lands last and wins. Keep it that way.
+
+The host's text override stays regardless, because the skins' timer-driven text chains do not
+reliably run — but on a skin like this one it is the *only* thing the host should be doing.
 
 ### `getPlayItemMetaDataString` — per-field metadata
 
@@ -1084,8 +1121,9 @@ handler's text-setting (which doesn't work anyway) is overridden.
   `showNotifier(for:)`, `notifierDismissTimer`, notifier detection in `setupAuxiliaryContainers`,
   bottom-right positioning in `place()`, `containerAlphaChanged` wiring
 - `WinampModernScriptRuntime.swift` — `setNotifierText(title:artist:album:)`,
-  `setTextInSubtree(_:id:text:)`, `ensureTextHeight(_:)`, `containerAlphaChanged` callback,
-  `onshownotification` in `dispatchableEventArity`, `refresh` no-op
+  `setTextInSubtree(_:id:text:)`, `containerAlphaChanged` and `containerMoveRequested` callbacks,
+  `applyContainerGeometry(_:)`, `isdesktopalphaavailable`, `onshownotification` in
+  `dispatchableEventArity`, `refresh` no-op
 - `WinampModernHost.swift` — `trackArtist`, `trackAlbum` protocol properties and implementations;
   `WinampModernTrackMetadata`, `playItemMetadata(forKey:)` (the key table), `currentTrackRating`,
   and the engine host's `libraryRow(for:)` / `ratingCache` / `currentTrackRatingChanged`

@@ -768,6 +768,14 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         }) where !event.isEmpty {
                             drive(event: event, renderer: renderer, runtime: runtime, host: host)
                         }
+                        // Same rule as the settle after a window is shown: a skin routinely does the
+                        // *work* of an event from a timer the handler starts, not in the handler. Big
+                        // Bento's notifier starts a 30 ms poll from `onTitleChange` and lays the toast
+                        // out on its first tick, so without this the scene is always measured one
+                        // frame too early and the layout routine reads as one that never ran (BB27).
+                        if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
+                            RunLoop.current.run(until: Date().addingTimeInterval(settle))
+                        }
                     }
                 }
                 let size = renderer.canvasSize
@@ -1261,6 +1269,13 @@ final class WinampModernRenderDumpTests: XCTestCase {
             let handled = (try? runtime.dispatchSystem(event: event,
                                                        arguments: [.string(host.trackDisplayTitle)])) ?? -1
             print("EVENT \(event) -> \(handled)")
+        case "onshownotification":
+            // What `WinampModernMainWindowController.showNotifier` dispatches on a track change, at
+            // the same target and arity. It is the *only* entry into a notifier script's layout
+            // routine — Big Bento's reads its four `Notifications` settings, hides the album line or
+            // the transport group, and moves and resizes the text group from there — so without it
+            // every notifier in the corpus measures as a window whose script does nothing (BB27).
+            print("EVENT \(event) -> \((try? runtime.dispatchSystem(event: event)) ?? -1)")
         case "onvolumechanged":
             let handled = (try? runtime.dispatchSystem(
                 event: event, arguments: [.integer(Int32((host.volume * 255).rounded()))])) ?? -1
@@ -1440,6 +1455,12 @@ final class WinampModernRenderDumpTests: XCTestCase {
         var shuffleEnabled = false
         var repeatEnabled = false
         var trackTitle = "A Very Long Song Title That Must Scroll Across The Display"
+        /// The protocol's defaults are both `""`, which is a *playing nothing* state no window in the
+        /// app is ever in — and a notifier is three stacked readouts, so with two of them empty its
+        /// whole vertical arrangement measures as one line and any collision between them is
+        /// invisible (BB27). Deliberately long enough to need more room than the toast declares.
+        var trackArtist = "Some Artist Whose Name Runs On"
+        var trackAlbum = "An Album Title That Also Runs On"
         var trackInfo = "NullPlayer QA"
         var trackDisplayTitle = "Some Artist - A Very Long Song Title That Must Scroll Across The Display"
         var bitrateKbps = 320

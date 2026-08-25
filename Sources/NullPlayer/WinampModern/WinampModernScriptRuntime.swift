@@ -116,6 +116,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// script that resized itself at startup resized the player instead.
     var layoutSwitchRequested: ((WasabiObjectID, String) -> Bool)?
     var layoutResizeRequested: ((WasabiObjectID, CGSize) -> Void)?
+    /// A script moving its own *window*, in Winamp's screen coordinates (top-left origin, the space
+    /// `getViewportWidth`/`getViewportHeight` answer in). A container's `x`/`y` are the window's
+    /// position on the desktop, not a box inside a scene, so unlike every other geometry write these
+    /// two reach nothing the renderer draws — Big Bento's notifier parks itself at the bottom-right
+    /// corner with `resize()` and a `setTargetX/Y` animation, and with this unwired the toast stayed
+    /// wherever the host had first placed it (BB27).
+    var containerMoveRequested: ((WasabiObjectID, CGPoint) -> Void)?
     /// `layout.setScale(f)` — the skin asking for the **whole UI** at a different size. Defix's
     /// configurator offers seven of them (100–300%) and every one of its five window scripts calls
     /// this on its own layout from the same stored `SCALING`, so it is one global request repeated,
@@ -733,11 +740,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         try startScripts(addedBeneath: root)
     }
 
+    /// The narrowest a track-change toast is allowed to be, whatever its layout declares.
+    private static let notifierMinimumWidth: CGFloat = 350
+
     func setNotifierText(title: String, artist: String, album: String) {
         guard let container = findRoot(type: "container", xmlID: "notifier") else { return }
         let layouts = container.children.filter {
             $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
         }
+        // The 350 is a *floor*, not a size. Stock Winamp Modern declares its notifier layout
+        // `w="128"` and hangs a `w="-95" relatw="1"` text group inside it — 33px, too narrow for a
+        // title — so that skin's toast has to be widened to be readable at all. A skin that already
+        // declares a usable width must keep it: Big Bento's notifier is `w="540"` with a 310px text
+        // group, and forcing 350 on it left 120px for 46pt text, clipping every line.
+        var width = Self.notifierMinimumWidth
         for layout in layouts {
             setTextInSubtree(layout, id: "title", text: title)
             setTextInSubtree(layout, id: "artist", text: artist)
@@ -745,24 +761,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             setTextInSubtree(layout, id: "plentry", text: "")
             setTextInSubtree(layout, id: "nexttrack", text: "")
             setTextInSubtree(layout, id: "endofplayback", text: "")
-            ensureTextHeight(layout)
-            _ = layout.setAttribute("w", value: "350")
+            let declared = CGFloat(Int32(layout.attributes["w"] ?? "") ?? 0)
+            let target = max(declared, Self.notifierMinimumWidth)
+            width = max(width, target)
+            _ = layout.setAttribute("w", value: String(Int(target)))
         }
         let height = CGFloat(Int32(layouts.first?.attributes["h"] ?? "80") ?? 80)
-        layoutResizeRequested?(container.stableID, CGSize(width: 350, height: height))
+        layoutResizeRequested?(container.stableID, CGSize(width: width, height: height))
         noteGeometryChange()
         notifyGraphDidMutate()
-    }
-
-    private func ensureTextHeight(_ root: WasabiObject) {
-        if root.typeName.caseInsensitiveCompare("text") == .orderedSame {
-            let h = Double(root.attributes["h"] ?? "0") ?? 0
-            if h <= 0 {
-                let fontSize = Double(root.attributes["fontsize"] ?? "13") ?? 13
-                _ = root.setAttribute("h", value: String(Int(ceil(fontSize * 1.4))))
-            }
-        }
-        for child in root.children { ensureTextHeight(child) }
     }
 
     private func setTextInSubtree(_ root: WasabiObject, id: String, text: String) {
@@ -2515,8 +2522,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // honest answer: the alternative reports every probe run as a background app and takes the
         // focus-gated half of a skin's behaviour out of measurement.
         case "isappactive": return .boolean(NSApp?.isActive ?? true)
-        case "isdesktopalphaavailable", "istransparencyavailable", "istransparencysafe", "islayoutanimationsafe":
+        case "istransparencyavailable", "istransparencysafe", "islayoutanimationsafe":
             return .boolean(true)
+        // **False, unlike the three above.** Desktop alpha is not "can this window be translucent" —
+        // it is Winamp asking whether it may run the container on its `desktopalpha="1"` *layout*,
+        // which is a second layout built from a second set of artwork. A skin asks once and then
+        // addresses that layout for the rest of the session without ever switching to it, because in
+        // Winamp the container is already on it. Nothing here activates it, so answering true sent
+        // every write to a layout no window shows: Big Bento's notifier laid out `desktopalpha`
+        // perfectly — sized to its text, album art in, transport row placed — while the app went on
+        // drawing the untouched `normal` layout underneath (BB27). Answer it the way the engine
+        // actually behaves and the skin lays out the layout that is on screen.
+        case "isdesktopalphaavailable":
+            return .boolean(false)
         // No video *component*: a `.wal` video holder gets the neutral backing every unhosted kind
         // gets, so a skin that asks is told the truth and lays itself out without a video tab. Defix
         // asks in the same `onScriptLoaded` that positions its whole tab strip — while the question
@@ -2904,6 +2922,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                        CGSize(width: CGFloat(arguments[2].integerValue),
                                               height: CGFloat(arguments[3].integerValue)))
             }
+            applyContainerGeometry(object)
             noteGeometryChange()
             notifyGraphDidMutate()
             return .null
@@ -3920,6 +3939,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         Double(object.attributes[key] ?? object.attributes[fallback] ?? "0") ?? 0
     }
 
+    /// Push a *container's* `x`/`y`/`w`/`h` out to its window.
+    ///
+    /// Every other object's geometry is read back out of the graph when the scene is next drawn, so
+    /// writing the attribute is the whole job. A container is not drawn: its size lives in the
+    /// window and its position on the desktop, and both are the host's to set. `resize()` and the
+    /// `setTargetX/Y/W/H` animation are the two ways a script asks for either, and Big Bento's
+    /// notifier uses both — it measures its own text with `getAutoWidth`, resizes to fit, and then
+    /// animates itself into the corner of the screen. Silently dropping these is why that toast came
+    /// out at its declared 540 with the text clipped into the third of it the XML reserves for the
+    /// album art it had already hidden (BB27).
+    private func applyContainerGeometry(_ object: WasabiObject) {
+        guard object.typeName.caseInsensitiveCompare("container") == .orderedSame else { return }
+        if let width = Double(object.attributes["w"] ?? ""),
+           let height = Double(object.attributes["h"] ?? ""), width > 0, height > 0 {
+            layoutResizeRequested?(object.stableID, CGSize(width: width, height: height))
+        }
+        if let x = Double(object.attributes["x"] ?? ""), let y = Double(object.attributes["y"] ?? "") {
+            containerMoveRequested?(object.stableID, CGPoint(x: x, y: y))
+        }
+    }
+
     private func startTargetAnimation(object: WasabiObject) {
         let id = object.stableID
         cancelTargetAnimation(objectID: id)
@@ -3938,6 +3978,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             if hasH { _ = object.setAttribute("h", value: object.attributes["targeth"]!) }
             if hasA { _ = object.setAttribute("alpha", value: object.attributes["targeta"]!) }
             _ = object.setAttribute("goingtotarget", value: "0")
+            applyContainerGeometry(object)
             notifyGraphDidMutate()
             _ = try? dispatch(object: object, event: "ontargetreached")
             return
@@ -4018,10 +4059,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             activeTargetAnimations.removeValue(forKey: objectID)
             timers.cancel(id: targetTimerID(for: objectID))
             _ = object.setAttribute("goingtotarget", value: "0")
+            applyContainerGeometry(object)
             notifyGraphDidMutate()
             _ = try? dispatch(object: object, event: "ontargetreached")
         } else {
             activeTargetAnimations[objectID] = state
+            applyContainerGeometry(object)
             notifyGraphDidMutate()
         }
     }

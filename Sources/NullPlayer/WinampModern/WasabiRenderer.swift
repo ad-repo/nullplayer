@@ -1589,6 +1589,19 @@ final class WasabiSceneRenderer {
         if object.attributes["w"] == nil, let width = autoWidth(of: object) {
             intrinsic.width = Double(width)
         }
+        // A `<text>` that states no `h` is one line tall, not zero. Wasabi sizes such an object to the
+        // font it draws in; here it resolved to 0, the draw clipped to the frame, and the string was
+        // simply absent. Big Bento's notifier is three of them — `<text id="title" w="0" relatw="1"
+        // fontsize="46">` with no height at all — so its song title never drew, and the host had to
+        // paste a height on before showing the toast (`ensureTextHeight`) to get anything on screen.
+        // That patch guessed `fontsize * 1.4`, which is 18 pixels taller than the line the skin
+        // spaced its rows for, and the title then sat on top of the artist underneath it (BB27).
+        // `lineHeight` is the same number `getAutoHeight()` answers, so the box a script measures and
+        // the box we draw are one measurement.
+        if object.attributes["h"] == nil,
+           (object.typeName.lowercased().components(separatedBy: ":").last ?? "") == "text" {
+            intrinsic.height = Double(resources.metrics.lineHeight(of: object))
+        }
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame

@@ -38,6 +38,17 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: the track-change notification is readable again** — the pop-up that
+  appears when a track changes drew its title, artist and album on top of one another in an
+  oversized font, with the play/previous/next buttons showing through the text, and used only the
+  middle third of its own window. All four Big Bento Modern skins showed it, and the causes reach
+  every skin. The pop-up now appears the way the skin designed it: cover art, the playlist position,
+  the song title, the artist, and a row of transport buttons under them, in a window sized to fit the
+  text and parked in the corner of the screen. Three fixes underneath it — text that declares no
+  height is now one line tall instead of invisible, a skin that sizes or moves its own window is now
+  obeyed, and a skin is no longer told it may use a second set of artwork the player cannot show it
+  on, which had been quietly sending all of its layout work to a window nobody sees.
+
 - **Switching skin family no longer leaves the player at the old skin's size** — going from a Winamp
   5.x modern skin to a Classic one left the classic player squeezed into the outgoing skin's window,
   drawing its artwork shrunk inside a box the wrong shape ("the main window is tiny in classic mode").

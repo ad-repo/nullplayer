@@ -482,6 +482,51 @@ Everything else falls through to `text`/`default`, which is what makes an unmapp
 the placeholder the skin ships rather than to a blank. See
 [Track metadata](#track-metadata-the-skins-actually-read) for why the shape of `songinfo` matters.
 
+#### A `<text>` with no `h` is one line tall (BB27, 2026-08-25)
+
+A `<text>` that declares no height at all sizes to the height of the font it draws in. It is not a
+degenerate case: Big Bento's notifier declares all three of its readouts that way
+(`<text id="title" w="0" relatw="1" fontsize="46">`), and so do skins across the corpus.
+
+The geometry resolver defaults a missing dimension to the object's **intrinsic size** — artwork for a
+layer, a frame for an animated layer, `autowidthsource` or its own text for a width. A `<text>` had
+no intrinsic *height*, so it fell through to 0 and the renderer's `context.clip(to: frame)` erased it.
+The height it takes now is `WasabiTextMetrics.lineHeight(of:)`, which is the same number
+`getAutoHeight()` answers — so the box a script measures and the box we draw cannot drift apart.
+
+> **Gotcha:** this is the fix for text that *overlaps the row beneath it*, not only for text that
+> does not appear. Before it, `setNotifierText` pasted `ceil(fontSize * 1.4)` onto the notifier's
+> text objects so that something would draw; 1.4 × 46 is 65 where the skin spaced its rows 42 apart,
+> so the title ran down through the artist. A per-surface height guess anywhere else in the engine is
+> the same bug waiting to happen — auto-sizing belongs here, in the intrinsic-size rules.
+
+Only `<text>` auto-sizes vertically. Everything else with no `h` keeps taking its height from its
+artwork or from nothing, which is what the corpus is laid out against.
+
+#### A container's `x`/`y`/`w`/`h` are its window's (BB27, 2026-08-25)
+
+Every other object's geometry is read back out of the graph when the scene is next drawn, so writing
+the attribute is the whole job. **A container is not drawn.** Its size lives in the window and its
+position on the desktop, and both are the host's to set, so the two ways a script asks for either
+have to be forwarded rather than stored:
+
+- `container.resize(x, y, w, h)`
+- `setTargetX/Y/W/H` + `gotoTarget()`, per animation tick and at the instant path
+
+`WinampModernScriptRuntime.applyContainerGeometry` is called from both and splits the request in
+two: the size through `layoutResizeRequested` (the same callback a layout resize uses, keyed by the
+container's id), the origin through `containerMoveRequested`. The controller answers the second by
+setting that window's frame origin — **Winamp's screen space is top-left origin**, the space
+`getViewportWidth`/`getViewportHeight` answer in, so the y flips into AppKit's. It is in screen
+points, not skin pixels: the script derived it from the viewport rather than from the scene, so UI
+Size does not enter into it. Clamped to `visibleFrame`, because Winamp's viewport excludes the
+taskbar and ours does not — a toast that puts itself two pixels above the bottom of the screen would
+otherwise land under the Dock.
+
+Dropping these is a silent failure with a very misleading shape: the skin's script runs clean, every
+handler counts, `RENDER_PROBE` shows the layout it addressed laid out perfectly, and the window on
+screen is untouched.
+
 #### `offsetx` / `offsety` move the string, not the box
 
 A `<text>` can shift its own drawing without moving its rect. The box still measures, hit-tests and
