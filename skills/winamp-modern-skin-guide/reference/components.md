@@ -831,6 +831,19 @@ Each `<browser>` gets its own **non-cached** `WinampModernBrowserSurface` via
   `onScriptLoaded` is buffered until the first layout. The global `System.navigateUrl` methods remain
   denied.
 
+### When a skin draws duplicate browser chrome (BB25)
+
+The four Big Bento Modern variants inherit a reader where `browserpro.browser` begins 38 pixels
+below its `centro.browser` parent. The gap contains a Winamp-owned navigation toolbar whose buttons
+have no compatible browser backend in NullPlayer. Exposing it above NullPlayer's host-owned address
+field produces two toolbars, with the upper one inert.
+
+Do not patch or normalize the skin to remove that row. `WinampModernMainView` recognizes the exact
+`centro.browser` / `browserpro.browser` structure and mounts its WebKit surface over the parent's
+resolved frame. The host address field therefore occupies the toolbar strip and the web content
+stays aligned with the skin's authored browser area. Every other browser surface keeps the frame its
+skin authored. `WinampModernBrowserTests` pins both sides of that exception.
+
 ### The four routes a skin reaches the web by (B40)
 
 A skin's web-facing buttons do **not** all go through the `<browser>` object, and reading them as one

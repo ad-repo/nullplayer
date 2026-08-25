@@ -822,8 +822,26 @@ final class WinampModernMainView: NSView {
         }
         for browser in browsers {
             guard let surface = browserSurfaces[browser.object.stableID] else { continue }
-            surface.view.frame = viewRect(fromSkin: browser.frame)
+            let parentFrame = renderer.resolvedGeometry(of: browser.object)?.parent
+            let frame = Self.browserSurfaceFrame(browserFrame: browser.frame,
+                                                 browserID: browser.object.xmlID,
+                                                 parentID: browser.object.parent?.xmlID,
+                                                 parentFrame: parentFrame)
+            surface.view.frame = viewRect(fromSkin: frame)
         }
+    }
+
+    /// Big Bento Modern's four variants inherit one reader which draws a 38px Winamp browser
+    /// toolbar above `browserpro.browser`. NullPlayer supplies its own working address/navigation
+    /// chrome inside the WebKit surface, so leaving that skin row exposed creates the duplicate,
+    /// inert toolbar reported in BB25. Replace the exact shared reader structure's whole parent;
+    /// other skins keep the browser rectangle they authored.
+    static func browserSurfaceFrame(browserFrame: CGRect, browserID: String?, parentID: String?,
+                                    parentFrame: CGRect?) -> CGRect {
+        guard browserID?.caseInsensitiveCompare("browserpro.browser") == .orderedSame,
+              parentID?.caseInsensitiveCompare("centro.browser") == .orderedSame,
+              let parentFrame else { return browserFrame }
+        return parentFrame
     }
 
     /// Top-left skin coordinates to the view's bottom-left ones, at the current UI Size.

@@ -47,6 +47,18 @@ final class WinampModernBrowserTests: XCTestCase {
                        surface.bounds.height - WinampModernBrowserSurfaceView.locationBarHeight)
     }
 
+    func testBentoReaderUsesTheWholeParentSoItsDuplicateToolbarIsCovered() {
+        let authored = CGRect(x: 20, y: 43, width: 500, height: 300)
+        let parent = CGRect(x: 20, y: 5, width: 500, height: 338)
+
+        XCTAssertEqual(WinampModernMainView.browserSurfaceFrame(
+            browserFrame: authored, browserID: "browserpro.browser",
+            parentID: "centro.browser", parentFrame: parent), parent)
+        XCTAssertEqual(WinampModernMainView.browserSurfaceFrame(
+            browserFrame: authored, browserID: "some.browser",
+            parentID: "some.group", parentFrame: parent), authored)
+    }
+
     func testRemoteHTTPAndHTTPSAreAllowed() {
         for address in ["https://example.com/path", "http://example.com/legacy"] {
             let request = WinampModernBrowserRequest(address: address,

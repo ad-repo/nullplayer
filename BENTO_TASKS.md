@@ -349,6 +349,14 @@ backlog.
       **Corpus sweep not run** — the change reaches any skin whose scripts measure a text object, and
       the 37-skin before/after is the check that has not been taken.
 
+- [x] **BB25. The Web Reader showed a second, inert toolbar. Fixed 2026-08-24.** The four variants
+      inherit the same `centro.browser` group: its `<Browser id="browserpro.browser">` starts 38px
+      below a skin-authored Winamp toolbar. NullPlayer already supplies working browser chrome inside
+      the hosted WebKit surface, so the exposed skin row duplicated it without a compatible Winamp
+      browser backend. The host now fills the exact shared Bento reader parent with WebKit, covering
+      that row without changing any `.wal` file; all other browser elements retain their authored
+      frames. Pinned by `WinampModernBrowserTests`.
+
 ### Tier 2 — the settings surfaces themselves
 
 - [ ] **BB10. The gear (host **Skin Settings**) window renders two widget kinds, and hides some

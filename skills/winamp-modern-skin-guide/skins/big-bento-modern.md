@@ -30,6 +30,7 @@
 | File-info star rating | **Fixed (B46)** | `setCurrentTrackRating` was not in the method table at all, so a star click threw and aborted the rest of the handler. Get/set/`onCurrentTrackRated` are wired to NullPlayer's own 0–5 star field |
 | Divider position | **Fixed (B44)** | A divider the *user* drags now survives a relaunch, so the header analyzers stay visible. The skin's own `setPosition(434)` default is untouched. Confirmed live |
 | Play/pause button | **Fixed (BB23)** | It stuck in *paused*: `setAutoReplay` was missing, so every `animbutton` handler aborted before it could swap the two buttons |
+| Web Reader toolbar | **Fixed (BB25)** | The host WebKit surface fills `centro.browser`, covering the inherited inert Winamp toolbar without modifying the skin |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
 ## The family is two skins and two overlays
