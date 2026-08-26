@@ -269,8 +269,16 @@ entries until that QA passes.
       found while QA'ing B52 and is filed here rather than chased there. Unknown whether it is a
       partial-repaint artifact (the view clears `dirtyRect` and repaints the scene clipped, and the
       vis box now has its own 30/60 Hz clock from B51), a peak-cap draw (`WasabiVisPainter`
-      `state.peaks`, `colorbandpeak`), or the box's background. Reproduce with the skin playing and
-      watch the cap row; `WINAMP_MODERN_MUTATION_TRACE=1` will not see it — this is a draw defect
+      `state.peaks`, `colorbandpeak`), or the box's background. `WINAMP_MODERN_MUTATION_TRACE=1` will
+      not see it — this is a draw defect.
+      **Clue, from the user 2026-08-26: it only happens at high bar counts**, i.e. `bandwidth="thin"`
+      (75 bands; `wide` is 19). Leading hypothesis, untested: at 75 bands in a box a hundred-odd
+      pixels wide the slot is 1–2 px, so `columns()` answers `max(1, end - start - 1)` = 1 px for
+      every bar and the 1 px gap between them disappears — bars abut, and the 2 px peak caps abut
+      with them into one continuous bright row across the top of the block, flickering as each band's
+      cap falls independently. Predictions to check first, in one look: it should vanish at `wide`
+      bandwidth and worsen as the box narrows. If that holds, the fix is about how a cap is drawn
+      when a band owns fewer than ~3 px, not about repainting
 
 - [x] **B52. Done 2026-08-26, confirmed live. The counter was the smaller half: the caches were
       being thrown away by hand, ~460 times a second.** Found while measuring B51's repaint clock, not caused by it —
