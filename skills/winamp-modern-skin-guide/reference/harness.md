@@ -71,6 +71,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_FX_TRACE=1` | every `fx_*` call with its receiver: which layers a skin warps, and **when** it switches them on |
 | `WINAMP_MODERN_CALL_TRACE=1` | every MAKI method call with its arguments and result |
 | `WINAMP_MODERN_ACTION_TRACE=1` | **runs in the app as well as the harness.** Every `sendAction` with its **receiver**: `ACTION hide_comp param=pe -> group#sui.content`. `CALL_TRACE` prints the same call without saying who it was addressed to, and the receiver is the whole question for a script-to-script message, because a handler only hears an action bound to *that* object. Big Bento's side playlist narrows the SUI content from an action sent to `sui.content` on open and had no counterpart on close (BB30) — a pair that is invisible in every other probe |
+| `WINAMP_MODERN_MUTATION_TRACE=1` | **runs in the app as well as the harness.** Every ~2 s: how many attribute writes landed on the object graph, the top writers (attribute, object type/id, source location), **and how many full re-solves of the object tree they cost** — `writes=145 rate=71/s writers=75 resolves: layout=3 scene=8`. The two halves are the point: a write is only expensive because a cache did not survive it, so `resolves` at 60/s next to `writes` at 8/s is the defect, and either number alone reads as normal. A `drop(<caller>)` entry names a caller that threw the memoized scene away *by hand* rather than letting the generation invalidate it — which is how B52 was actually found: `drop(invalidateRectCaches())=955` in two seconds, ~460 discarded scenes a second on Big Bento Modern, none of them visible to any other probe. `WINAMP_MODERN_MUTATION_TRACE_INTERVAL=<seconds>` (default 2) and `WINAMP_MODERN_MUTATION_TRACE_TOP=<n>` (default 12) size the report. **It reports on a write, not on a clock** — a silent window prints nothing at all, which is an answer and not a broken instrument |
 | `WINAMP_MODERN_DEBUG_HOLDERS=1` | **live**, not headless: after every click in the player, the component holders the scene actually has (kind, id, frame) **and the host subviews still in the view hierarchy**. The two together are what split "two live surfaces drawn on top of each other" from "stale pixels nobody cleared" — a symptom that reads identically on screen. A subview whose holder is gone from the holder list is a surface the view layer failed to unmount (B24); a holder gone with no subview left over is a repaint question. It is also the only way to watch an SUI move one holder between places: cPro-Bento's playlist holder is `(671, 107, 194, 606)` as the right-hand column and `(9, 133, 850, 571)` as the Playlist tab, and the same log line names both |
 | `WINAMP_MODERN_VU_LOG=1` | **live**, not headless: once a second, the arriving buffer's peak and RMS, the tap cadence, how many ~13 ms blocks it was split into, and the 0…255 byte range the skin receives across them. `peak` against `blockRange` is the whole diagnosis for "the meter doesn't follow peaks and valleys" — a wide block range with a flat needle is a skin-side ballistics question, a narrow one is a measurement question. `RENDER_VU` exercises only the half of the path *above* the meter |
 | `WINAMP_MODERN_MAKI_TRACE=<program>` | every bytecode instruction of the matching programs, with the top of the value stack. Each line is tagged `[<source>#<param>/<instruction count>]` — the needle matches the XUI parameter **or** the source path, so it routinely matches many programs at once (every path under `/Skins/Big Bento Modern/` contains `big`), and untagged their instruction indices interleave into one stream that reads as a single program taking impossible jumps. The last resort, and the only thing that finds a wrong *result* from a handler that does not fail — it is how an integer-truncating unary minus was found collapsing a needle's angle to two positions |
@@ -325,12 +326,21 @@ WINAMP_MODERN_DEBUG_CLICK="92,251;92,251" WINAMP_MODERN_CALL_TRACE=1 \
 Coordinates are **skin pixels** in the main window's active layout — take them from
 `RENDER_PROBE`'s `frame=` for the object you want.
 
-### Playing a video in the *running app*
+### Playing a video — or a track — in the *running app*
 
 `WINAMP_MODERN_DEBUG_PLAY=/abs/film.mp4` (DEBUG builds) starts a local video six seconds after
 launch — after `DEBUG_CLICK`'s points, so a tab a click opens is the surface the film lands in. It
 exists because the app takes no file argument and `application(_:openFiles:)` accepts audio
 extensions only, so before it the video path could not be driven from a cold launch at all:
+
+**An audio path is loaded into the engine and played instead** (B52). Every performance defect in
+this window is a defect of the *playing* window — the vis clock, the playback tick, the readouts a
+skin's scripts rewrite — and there is no other way to reach that state from a cold launch, which is
+what makes a `sample` run reproducible rather than a description of whatever the app happened to be
+doing. It is also the difference between measuring the analyzer and measuring the **scope**: those
+are two different repaint clocks (30 Hz and 60 Hz, B51), so a profile that does not say which one
+was on screen cannot be compared with one that does. `drawOscilloscope` appearing in the sample at
+all is the check that it was the scope.
 
 ```sh
 WINAMP_MODERN_DEBUG_CLICK="97,118" WINAMP_MODERN_DEBUG_PLAY="/abs/film.mp4" \

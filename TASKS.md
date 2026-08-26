@@ -263,8 +263,17 @@ entries until that QA passes.
       `VisualizationType` (`VisualizationEngine.swift:92`, three cases: ProjectM/Geiss/Tripex), which
       is the enum that has to widen for a spectrum surface to mount there.
 
-- [ ] **B52. Something bumps the graph's `mutationGeneration` nearly every frame, and it costs more
-      than the visualization does.** Found while measuring B51's repaint clock, not caused by it —
+- [ ] **B54. White flashes at the tops of the analyzer bars, centre of the box.** Reported live
+      2026-08-26 on Big Bento Modern (playing, `<vis>` in analyzer mode, debug build). **Pre-existing
+      — confirmed against a clean baseline in the same session**, so it is not B52's doing; it was
+      found while QA'ing B52 and is filed here rather than chased there. Unknown whether it is a
+      partial-repaint artifact (the view clears `dirtyRect` and repaints the scene clipped, and the
+      vis box now has its own 30/60 Hz clock from B51), a peak-cap draw (`WasabiVisPainter`
+      `state.peaks`, `colorbandpeak`), or the box's background. Reproduce with the skin playing and
+      watch the cap row; `WINAMP_MODERN_MUTATION_TRACE=1` will not see it — this is a draw defect
+
+- [x] **B52. Done 2026-08-26, confirmed live. The counter was the smaller half: the caches were
+      being thrown away by hand, ~460 times a second.** Found while measuring B51's repaint clock, not caused by it —
       `sample` on the live app (Big Bento Modern, playing, scope visible, 3744 main-thread samples
       over 5 s): `WinampModernMainView.layout()` is **369 samples (~10% of a core)**, of which
       **345 are `browserNodes()` → `layoutNodes()` → `append`** — a full recursive re-solve of the
@@ -278,6 +287,50 @@ entries until that QA passes.
       running player will name it), and either stop it writing an attribute per frame or key the two
       caches on something a cosmetic write does not move. Fixing it speeds up the whole skin, not
       just the `<vis>`. Pre-existing: it was happening at the old ~21 fps too
+  - **The writer, named 2026-08-26:** `tickTargetAnimation` (`WinampModernScriptRuntime.swift`) runs
+        at **60 Hz per animating object** and calls `notifyGraphDidMutate()` on **every tick** —
+        whether or not the tick changed an attribute — which is a full-window `needsLayout` +
+        `needsDisplay` and a layout/scene cache miss for a *fade*. Big Bento Modern's InfoDisplay
+        rotates its 17 `Bento:InfoLine` rows with a target-alpha fade that never stops while a track
+        is loaded, so the skin is in that state permanently. `MUTATION-TRACE` on the running player
+        (playing, 12 s): ~8/s of real writes, all `alpha`/`targeta`/`goingtotarget` on
+        `infodisplay.line.*` — and 60/s of invalidation on top of them that no probe could see
+  - [x] **B52.1** Add a mutation probe — `WINAMP_MODERN_MUTATION_TRACE=1` — that attributes every
+        `mutationGeneration` bump to the writer (attribute, object type/id, source) and prints the
+        top writers per interval. Instrument before reasoning; prove it prints on a skin that idles
+  - [x] **B52.2** Run Big Bento Modern in the app, playing, scope visible, and name the writer(s)
+  - [x] **B52.3** Stop the per-frame write at its source: `tickTargetAnimation` now notifies only
+        when a tick actually moved an attribute, and an alpha-only tick takes the object-targeted
+        repaint seam (`requestRepaint(for:)`) rather than a whole-window relayout
+  - [x] **B52.3a** The bigger half, found by the probe: `invalidateRectCaches()` in
+        `WinampModernMainView` dropped the renderer's memoized scene on *every* notification, times
+        every container window it fans out to — **~460 drops/second** measured. The scene cache is
+        keyed on the graph's own generation, so that drop was pure waste. Removed; the genuine
+        non-graph inputs (layout switch, resize, theme, playback state, UI Size) keep explicit calls
+  - [x] **B52.4** Key the layout/scene caches on a generation a cosmetic write does not move:
+        `sceneGeneration` skips `alpha` alone, and `sceneNodes()` re-resolves the inherited product
+        over the cached nodes (`withRefreshedAlpha`), the way `withRefreshedBitmapID` already did for
+        host-resolved artwork. It was reverted mid-QA on suspicion of the white analyzer flashes and
+        **exonerated** — the flashes reproduce on a clean baseline (now B54)
+  - [x] **B52.5** The object-targeted repaint seam now covers an object's whole **subtree**
+        (`WasabiSceneRenderer.paintedBounds`), because `alpha` is inherited and only a sized group
+        clips — repainting a faded group's own rect alone would leave a child hanging outside it
+        half-faded
+  - [x] **B52.6a** Measured, **analyzer** mode (not the ticket's scope — `drawOscilloscope` was 0
+        samples in both runs, so this is like-for-like but not B52's stated condition):
+        `layout()` 349 samples (7.9%) -> 69 (1.5%), `browserNodes`->`layoutNodes` 308 (7.0%) -> 61
+        (1.3%), main-thread idle 33% -> 62%. `renderer.draw` unchanged (~19%) — that is B51's vis
+        clock, not a cache miss
+  - [x] **B52.6b** Re-measured in **scope** mode (the ticket's condition; `drawOscilloscope`
+        non-zero is the check that it was not the analyzer): `layout()` 9.9% -> **1.3%** of the main
+        thread, its `layoutNodes()` -> `append` re-solve 9.2% -> **0.9%**. `renderer.draw` is
+        untouched and is now the largest cost in the window — B51's vis clock, not a cache miss
+  - [x] **B52.7** Confirmed live by the user 2026-08-26 ("looks fine", scope mode, Big Bento
+        Modern playing). `WinampModernPhase74Tests` (7 tests: the generation split, a parent's fade
+        reaching its children through a cache that was never rebuilt, the product of two fades, and
+        the painted-bounds rule both ways), 1295 total pass. Docs: `reference/performance.md` -> *A
+        cache nobody trusted*, the `MUTATION_TRACE` row and the `DEBUG_PLAY` audio note in
+        `reference/harness.md`, changelog under Unreleased -> Bug Fixes
 
 These three came out of the Big Bento Modern header/settings research on 2026-08-23
 (plan: `~/.claude/plans/abundant-pondering-hamster.md`) and are **here rather than in

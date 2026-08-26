@@ -304,12 +304,22 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // no file argument and `openFiles` accepts audio extensions only. Ordered *after*
             // `DEBUG_CLICK` on purpose: the tab a click opens is the surface the film should land in,
             // so the two together are the whole B23 case in one command.
+            //
+            // An **audio** path is loaded into the engine and played instead (B52): every
+            // performance defect in this window is a defect of the *playing* window — the vis
+            // clock, the playback tick, the readouts a script rewrites per track — and none of
+            // them can be reached from a cold launch otherwise.
             if let path = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_PLAY"] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
                     let track = Track(url: URL(fileURLWithPath: path))
                     NSLog("WinampModern debug play %@ mediaType=%@", path, "\(track.mediaType)")
-                    guard track.mediaType == .video else { return }
-                    WindowManager.shared.playVideoTrack(track)
+                    guard track.mediaType != .video else {
+                        WindowManager.shared.playVideoTrack(track)
+                        return
+                    }
+                    let engine = WindowManager.shared.audioEngine
+                    engine.loadTracks([track])
+                    engine.play()
                 }
             }
             #endif

@@ -865,18 +865,48 @@ final class WasabiSceneRenderer {
     /// The walk resolves every object's geometry from its parent's, and it ran again for *every*
     /// caller — the draw, the animation-rect scan, the visualization-rect scan, every hit test — so a
     /// scene that had not changed at all was re-solved several times a frame on the main thread. The
-    /// graph bumps `mutationGeneration` on any attribute write, which covers everything a script can
-    /// do to the scene (move, hide, reparent, retext) and everything a resize or a theme switch does
-    /// through `markAllDirty`; `invalidateSceneCache()` covers the few inputs that are *not* graph
-    /// state, chiefly the host's playback state feeding `resolvedBitmapID`.
+    /// graph bumps `sceneGeneration` on any attribute write the walk reads, which covers everything a
+    /// script can do to the scene (move, hide, reparent, retext) and everything a resize or a theme
+    /// switch does through `markAllDirty`; `invalidateSceneCache()` covers the few inputs that are
+    /// *not* graph state, chiefly the host's playback state feeding `resolvedBitmapID`. The one
+    /// attribute deliberately left out of that counter is `alpha`, re-resolved below.
     func sceneNodes() -> [WasabiSceneNode] {
-        let generation = loadedSkin.runtime.graph.mutationGeneration
+        let generation = loadedSkin.runtime.graph.sceneGeneration
         if let cache = sceneNodeCache, cache.generation == generation, cache.canvas == canvasSize {
-            return cache.nodes.map(withRefreshedBitmapID)
+            return withRefreshedAlpha(cache.nodes.map(withRefreshedBitmapID))
         }
+        WasabiMutationTrace.recordResolve("scene")
         let nodes = sceneNodes(canvas: canvasSize)
         sceneNodeCache = (generation, canvasSize, nodes)
         return nodes
+    }
+
+    /// Re-resolve `inheritedAlpha` over a memoized scene.
+    ///
+    /// `alpha` is the attribute skins *animate* — a target-alpha fade writes it up to sixty times a
+    /// second — and it is the only one `append` consumes purely as a multiplier handed down the
+    /// tree. So it is kept out of `sceneGeneration` and recomputed here instead, which turns a fade
+    /// from a full re-solve of the object tree per step into one pass over an array (B52). Nodes are
+    /// in pre-order, so a parent's product is always in the map before its children need it.
+    private func withRefreshedAlpha(_ nodes: [WasabiSceneNode]) -> [WasabiSceneNode] {
+        var product: [ObjectIdentifier: CGFloat] = [:]
+        product.reserveCapacity(nodes.count)
+        var refreshed: [WasabiSceneNode] = []
+        refreshed.reserveCapacity(nodes.count)
+        for node in nodes {
+            let inherited = node.object.parent
+                .flatMap { product[ObjectIdentifier($0)] } ?? node.inheritedAlpha
+            product[ObjectIdentifier(node.object)] = inherited * Self.alphaFraction(of: node.object)
+            if inherited == node.inheritedAlpha {
+                refreshed.append(node)
+            } else {
+                refreshed.append(WasabiSceneNode(object: node.object, frame: node.frame,
+                                                 clip: node.clip, bitmapID: node.bitmapID,
+                                                 parentFrame: node.parentFrame,
+                                                 inheritedAlpha: inherited))
+            }
+        }
+        return refreshed
     }
 
     /// A node's *geometry* is a function of the graph; its **bitmap** is not. Play/pause artwork,
@@ -896,7 +926,8 @@ final class WasabiSceneRenderer {
     }
 
     /// Drop the memoized scene. Needed only for the inputs the graph's own generation cannot see.
-    func invalidateSceneCache() {
+    func invalidateSceneCache(_ caller: String = #function) {
+        WasabiMutationTrace.recordResolve("drop(\(caller))")
         sceneNodeCache = nil
         layoutNodeCache = nil
     }
@@ -928,10 +959,11 @@ final class WasabiSceneRenderer {
     private var layoutNodeCache: (generation: UInt64, canvas: CGSize, nodes: [WasabiSceneNode])?
 
     private func layoutNodes() -> [WasabiSceneNode] {
-        let generation = loadedSkin.runtime.graph.mutationGeneration
+        let generation = loadedSkin.runtime.graph.sceneGeneration
         if let cache = layoutNodeCache, cache.generation == generation, cache.canvas == canvasSize {
             return cache.nodes
         }
+        WasabiMutationTrace.recordResolve("layout")
         let rootRect = CGRect(origin: .zero, size: canvasSize)
         var nodes: [WasabiSceneNode] = []
         append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true,
@@ -1034,6 +1066,29 @@ final class WasabiSceneRenderer {
 
     func frame(of object: WasabiObject) -> CGRect? {
         sceneNodes().first(where: { $0.object === object })?.frame
+    }
+
+    /// Everything one object puts on screen: its own box **and its subtree's**.
+    ///
+    /// The object's own frame is not enough for a targeted repaint, because a child is not obliged to
+    /// stay inside its parent — a group only clips when it says so. `alpha` is the case that makes
+    /// this matter: it is inherited multiplicatively, so fading a group repaints every descendant,
+    /// and invalidating the group's own rect alone leaves whatever hangs outside it half-faded on
+    /// screen (B52).
+    func paintedBounds(of object: WasabiObject) -> CGRect? {
+        var subtree: Set<ObjectIdentifier> = []
+        func collect(_ node: WasabiObject) {
+            subtree.insert(ObjectIdentifier(node))
+            for child in node.children { collect(child) }
+        }
+        collect(object)
+        var bounds: CGRect?
+        for node in sceneNodes() where subtree.contains(ObjectIdentifier(node.object)) {
+            let rect = node.frame.intersection(node.clip)
+            guard !rect.isNull, !rect.isEmpty else { continue }
+            bounds = bounds.map { $0.union(rect) } ?? rect
+        }
+        return bounds
     }
 
     /// One object's resolved geometry: where it actually landed, and the box it resolved against.
@@ -2654,9 +2709,9 @@ final class WasabiSceneRenderer {
     /// tick, which the graph's generation does not move for. **The `mode` attribute has two writers**:
     /// `setVisualizationAttribute` (the host's own menus) and MAKI's `setMode`/`setXmlParam`, which
     /// write the object directly — Big Bento's visualization menu is entirely the second kind — and
-    /// both bump `mutationGeneration`, which is what makes it the right key.
+    /// both bump `sceneGeneration`, which is what makes it the right key.
     func refreshWaveformDemand() {
-        let generation = loadedSkin.runtime.graph.mutationGeneration
+        let generation = loadedSkin.runtime.graph.sceneGeneration
         if let waveformDemand, waveformDemand.generation == generation { return }
         let needed = visualizationObjects().contains {
             visRenderer.needsWaveform(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))

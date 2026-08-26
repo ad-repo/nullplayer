@@ -59,7 +59,7 @@ final class WasabiObject {
         // A script renaming an object invalidates the graph's id index. Rare, and cheap to be right
         // about: the alternative is a lookup that silently answers with the old name.
         if key == "id" { graph?.invalidateXMLIDIndex() }
-        markDirty(Self.dirtyFlag(for: key))
+        markDirty(Self.dirtyFlag(for: key), reason: key)
         return true
     }
 
@@ -98,10 +98,24 @@ final class WasabiObject {
         markDirty(.script)
     }
 
-    func markDirty(_ flags: WasabiDirtyFlags) {
+    func markDirty(_ flags: WasabiDirtyFlags, reason: String? = nil) {
         guard !isTornDown, !flags.isEmpty else { return }
         dirtyFlags.formUnion(flags)
-        graph?.recordInvalidation(stableID, flags: flags)
+        if WasabiMutationTrace.isEnabled {
+            WasabiMutationTrace.record(object: self, reason: reason ?? Self.reasonName(for: flags))
+        }
+        graph?.recordInvalidation(stableID, flags: flags,
+                                  sceneAffecting: reason.map { !WasabiObjectGraph.isSceneNeutral(attribute: $0) } ?? true)
+    }
+
+    private static func reasonName(for flags: WasabiDirtyFlags) -> String {
+        var names: [String] = []
+        if flags.contains(.geometry) { names.append("geometry") }
+        if flags.contains(.appearance) { names.append("appearance") }
+        if flags.contains(.content) { names.append("content") }
+        if flags.contains(.structure) { names.append("structure") }
+        if flags.contains(.script) { names.append("script") }
+        return "<\(names.joined(separator: "+"))>"
     }
 
     @discardableResult
@@ -130,10 +144,101 @@ final class WasabiObject {
     }
 }
 
+/// Names whoever moves `mutationGeneration`. `WINAMP_MODERN_MUTATION_TRACE=1`.
+///
+/// The counter keys the renderer's layout and scene caches, so a skin that writes one attribute per
+/// frame re-solves the entire object tree per frame — a cost that lands in `layout()` and `draw`,
+/// nowhere near the write that caused it, and that no other probe can attribute (B52). Aggregated
+/// rather than logged per write: at sixty writes a second a line each is unreadable, and the finding
+/// is always *which* attribute on *which* object, not the order they arrived in.
+enum WasabiMutationTrace {
+    static let isEnabled = ProcessInfo.processInfo.environment["WINAMP_MODERN_MUTATION_TRACE"] == "1"
+
+    /// Seconds between reports. `WINAMP_MODERN_MUTATION_TRACE_INTERVAL=<seconds>`.
+    private static let interval: Double = {
+        let raw = ProcessInfo.processInfo.environment["WINAMP_MODERN_MUTATION_TRACE_INTERVAL"]
+        return max(0.5, Double(raw ?? "") ?? 2)
+    }()
+
+    /// How many writers a report names. `WINAMP_MODERN_MUTATION_TRACE_TOP=<n>`.
+    private static let top: Int = {
+        Int(ProcessInfo.processInfo.environment["WINAMP_MODERN_MUTATION_TRACE_TOP"] ?? "") ?? 12
+    }()
+
+    private static var counts: [String: Int] = [:]
+    private static var total = 0
+    private static var windowStart = Date.timeIntervalSinceReferenceDate
+
+    /// Full re-solves of the object tree in this window — the cost the writes above are being blamed
+    /// for. A write is only expensive because a cache did not survive it, so the two numbers belong
+    /// on the same line: `writes=145 resolves=3` is a healthy skin, `resolves=60` is the defect.
+    private static var resolves: [String: Int] = [:]
+
+    /// Called from the renderer wherever a memoized walk is recomputed.
+    static func recordResolve(_ kind: @autoclosure () -> String) {
+        guard isEnabled else { return }
+        resolves[kind(), default: 0] += 1
+    }
+
+    /// Main-thread only, like every graph mutation.
+    static func record(object: WasabiObject, reason: String) {
+        let id = object.xmlID.map { "#\($0)" } ?? ""
+        let key = "\(reason)\t\(object.typeName.lowercased())\(id)\t\(object.source)"
+        counts[key, default: 0] += 1
+        total += 1
+        let now = Date.timeIntervalSinceReferenceDate
+        guard now - windowStart >= interval else { return }
+        flush(elapsed: now - windowStart)
+        counts.removeAll(keepingCapacity: true)
+        resolves.removeAll(keepingCapacity: true)
+        total = 0
+        windowStart = now
+    }
+
+    private static func flush(elapsed: Double) {
+        guard total > 0 else { return }
+        let rate = Int((Double(total) / elapsed).rounded())
+        let resolved = resolves.sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }.joined(separator: " ")
+        print(String(format: "MUTATION-TRACE %.1fs writes=%d rate=%d/s writers=%d %@",
+                     elapsed, total, rate, counts.count,
+                     resolved.isEmpty ? "resolves=0" : "resolves: " + resolved))
+        for (key, count) in counts.sorted(by: { $0.value > $1.value }).prefix(top) {
+            let parts = key.split(separator: "\t", omittingEmptySubsequences: false)
+            let reason = parts.count > 0 ? String(parts[0]) : "?"
+            let object = parts.count > 1 ? String(parts[1]) : "?"
+            let source = parts.count > 2 ? String(parts[2]) : "?"
+            let column = { (value: String, width: Int) in
+                value.padding(toLength: max(width, value.count), withPad: " ", startingAt: 0)
+            }
+            print("MUTATION-TRACE   \(column(String(count), 5)) \(column(reason, 18)) "
+                  + "\(column(object, 34)) \(source)")
+        }
+    }
+}
+
 final class WasabiObjectGraph {
     private(set) var roots: [WasabiObject] = []
     private(set) var mutationGeneration: UInt64 = 0
+
+    /// Bumped by every mutation **except** the ones the scene walk does not read.
+    ///
+    /// Today that is `alpha` alone, and it earns its own counter because it is the attribute skins
+    /// animate: a target-alpha fade writes it up to sixty times a second, and keying the renderer's
+    /// scene and layout caches on `mutationGeneration` meant every one of those writes re-solved the
+    /// whole object tree — geometry, clips, bitmaps — to change one multiplier (B52). `append`
+    /// consumes alpha only as `inheritedAlpha`, which `sceneNodes()` re-resolves over the cached
+    /// nodes on the way out, so a fade now costs a repaint and nothing else.
+    ///
+    /// Anything else that stops moving this counter has to be provably invisible to `append` in the
+    /// same way. `visible` is not (it decides membership), `image`/`text` are not (they can size an
+    /// object), and an attribute the flag map does not recognise is not.
+    private(set) var sceneGeneration: UInt64 = 0
+
     private(set) var isTornDown = false
+
+    /// Attributes `append` never reads except through the value `sceneNodes()` re-resolves itself.
+    static func isSceneNeutral(attribute: String) -> Bool { attribute == "alpha" }
 
     private var nextRawID: UInt64 = 1
     private var objectsByID: [WasabiObjectID: WasabiObject] = [:]
@@ -212,10 +317,12 @@ final class WasabiObjectGraph {
         return result
     }
 
-    fileprivate func recordInvalidation(_ id: WasabiObjectID, flags: WasabiDirtyFlags) {
+    fileprivate func recordInvalidation(_ id: WasabiObjectID, flags: WasabiDirtyFlags,
+                                        sceneAffecting: Bool = true) {
         guard !isTornDown else { return }
         invalidated[id, default: []].formUnion(flags)
         mutationGeneration &+= 1
+        if sceneAffecting { sceneGeneration &+= 1 }
     }
 
     func snapshot() -> String {
@@ -250,6 +357,7 @@ final class WasabiObjectGraph {
         }
         xmlIDIndex = nil
         mutationGeneration &+= 1
+        sceneGeneration &+= 1
     }
 
     func teardown() {
@@ -261,6 +369,7 @@ final class WasabiObjectGraph {
         invalidated.removeAll()
         isTornDown = true
         mutationGeneration &+= 1
+        sceneGeneration &+= 1
     }
 
     private static func fold(_ value: String) -> String {

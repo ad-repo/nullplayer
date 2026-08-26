@@ -4288,11 +4288,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         state.currentH = lerp(state.currentH, state.targetH)
         state.currentAlpha = lerp(state.currentAlpha, state.targetAlpha)
 
-        if state.hasTargetX { _ = object.setAttribute("x", value: String(Int(state.currentX.rounded()))) }
-        if state.hasTargetY { _ = object.setAttribute("y", value: String(Int(state.currentY.rounded()))) }
-        if state.hasTargetW { _ = object.setAttribute("w", value: String(Int(state.currentW.rounded()))) }
-        if state.hasTargetH { _ = object.setAttribute("h", value: String(Int(state.currentH.rounded()))) }
-        if state.hasTargetA { _ = object.setAttribute("alpha", value: String(Int(state.currentAlpha.rounded()))) }
+        // What this tick actually *changed*, kept apart by kind. A 60 Hz ease writes an integer
+        // attribute, so most ticks of a slow fade write the value the object already has —
+        // `setAttribute` answers false and there is nothing on screen to repaint. And a tick that
+        // moves only `alpha` moves no geometry: it needs the object's own rect repainted, not a
+        // full-window relayout. Before B52 every tick took the heavy path unconditionally, which on
+        // Big Bento Modern is a whole-tree re-solve plus a whole-window repaint, sixty times a
+        // second, for a text row fading in.
+        var movedGeometry = false
+        var movedAlpha = false
+        if state.hasTargetX { movedGeometry = object.setAttribute("x", value: String(Int(state.currentX.rounded()))) || movedGeometry }
+        if state.hasTargetY { movedGeometry = object.setAttribute("y", value: String(Int(state.currentY.rounded()))) || movedGeometry }
+        if state.hasTargetW { movedGeometry = object.setAttribute("w", value: String(Int(state.currentW.rounded()))) || movedGeometry }
+        if state.hasTargetH { movedGeometry = object.setAttribute("h", value: String(Int(state.currentH.rounded()))) || movedGeometry }
+        if state.hasTargetA { movedAlpha = object.setAttribute("alpha", value: String(Int(state.currentAlpha.rounded()))) }
 
         if animationReached(state) {
             if state.hasTargetX { _ = object.setAttribute("x", value: String(Int(state.targetX))) }
@@ -4308,8 +4317,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             _ = try? dispatch(object: object, event: "ontargetreached")
         } else {
             activeTargetAnimations[objectID] = state
-            applyContainerGeometry(object)
-            notifyGraphDidMutate()
+            if movedGeometry {
+                applyContainerGeometry(object)
+                notifyGraphDidMutate()
+            } else if movedAlpha {
+                requestRepaint(for: object)
+            }
         }
     }
 

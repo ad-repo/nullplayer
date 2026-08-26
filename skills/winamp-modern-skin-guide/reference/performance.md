@@ -53,13 +53,49 @@ about every 46 ms and everything in a `<vis>` moved at **21 fps** however fast t
 is ~4 ms, so 60 Hz is ~16–24% of a core against ~8% at 21 fps. Drawing the scope itself is **7 samples
 out of 3744** — the visualization is never the cost; what the repaint drags with it is.
 
-And what it dragged with it names a bigger problem: in the same trace `layout()` is ~10% of a core,
-**345 of its 369 samples in `browserNodes()` → `layoutNodes()` → `append`** — a full recursive
-re-solve of the tree including hidden nodes. `layoutNodes()` *is* memoized against
-`mutationGeneration`, so missing it that consistently means something in the skin's scripts bumps the
-counter nearly every frame, which invalidates the scene walk too. Pre-existing, amplified by any
-faster clock, and tracked as **B52**. The general rule: before spending frames, check whether the
-frame is expensive because of what you are drawing or because a cache upstream is never surviving.
+And what it dragged with it named a bigger problem, fixed as **B52** below: in the same trace
+`layout()` was ~10% of a core, **345 of its 369 samples in `browserNodes()` → `layoutNodes()` →
+`append`**. The general rule it taught: before spending frames, check whether the frame is expensive
+because of what you are drawing or because a cache upstream is never surviving.
+
+#### A cache nobody trusted: 460 discarded scenes a second (B52, 2026-08-26)
+
+The memoized scene and layout walks were being thrown away ~460 times a second on Big Bento Modern
+while a track played. The report blamed `mutationGeneration` — something must be bumping it every
+frame — and that was the smaller half. `WINAMP_MODERN_MUTATION_TRACE=1`, which prints writes **and
+re-solves** in the same line, found two mechanisms and neither was a script writing per frame:
+
+1. **`tickTargetAnimation` notified on every tick.** The target animation (`setTargetA` +
+   `gotoTarget`) runs at 60 Hz per animating object and called `notifyGraphDidMutate()` each time —
+   a whole-window `needsLayout` + `needsDisplay` — **whether or not the tick changed anything.** It
+   writes rounded integers, so most ticks of a slow fade write the value the object already has.
+   Big Bento rotates 17 `Bento:InfoLine` rows through a target-alpha fade that never stops while a
+   track is loaded, so the skin sits in that state permanently. It now notifies only when a write
+   landed, and an **alpha-only** tick takes the object-targeted repaint seam
+   (`requestRepaint(for:)`) instead of a relayout.
+2. **`invalidateRectCaches()` dropped the renderer's scene by hand**, on every notification, times
+   every container window the notification fans out to — plus `updateAnimationTimer()` on the way
+   past. That cache is keyed on the graph's own generation: a mutation invalidates it *without being
+   told*, and a non-mutation must not. The drop is gone; the inputs the generation genuinely cannot
+   see keep explicit calls (layout switch, resize, theme, playback state, UI Size).
+
+Alongside them, `alpha` was given its own exemption. `append` reads it only as `inheritedAlpha`, the
+multiplier handed down the tree, so it moves `mutationGeneration` but not **`sceneGeneration`**, and
+`sceneNodes()` re-resolves the product over the cached nodes on the way out — the same trick
+`withRefreshedBitmapID` already used for host-resolved artwork. Anything else that stops moving that
+counter has to be provably invisible to `append`: `visible` decides membership, `image` and `text`
+can size an object, and an unrecognised attribute is not assumed harmless.
+
+Measured with `sample`, Big Bento Modern playing with the **scope** visible (`drawOscilloscope`
+non-zero, which is the check that it was not the analyzer — two different clocks):
+
+| main thread | before | after |
+|---|---|---|
+| `WinampModernMainView.layout()` | 9.9% | 1.3% |
+| its `layoutNodes()` → `append` re-solve | 9.2% | 0.9% |
+
+`renderer.draw` is untouched by this and is now the largest cost in the window — that is B51's vis
+clock repainting, not a cache miss.
 
 #### Profile the process, don't reason about the frame (2026-08-24)
 

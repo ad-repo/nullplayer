@@ -36,6 +36,8 @@ final class WinampModernMainView: NSView {
             for surface in hostedWindowSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in browserSurfaces.values { surface.applySkinScale(skinScale) }
             invalidateRectCaches()
+            // UI Size is not graph state, so the memoized scene cannot see it move.
+            renderer.invalidateSceneCache()
             needsLayout = true
             needsDisplay = true
         }
@@ -175,15 +177,22 @@ final class WinampModernMainView: NSView {
         repaintAnimatingObjects()
     }
 
-    /// Drop every derived rect this view caches, and the renderer's memoized scene with them.
-    /// Called wherever the scene may have changed shape — a layout switch, a resize, a UI Size
-    /// change, a script mutating the graph.
+    /// Drop every derived rect **this view** caches. Called wherever the scene may have changed
+    /// shape — a layout switch, a resize, a UI Size change, a script mutating the graph.
+    ///
+    /// It deliberately does **not** drop the renderer's memoized scene any more. That cache is keyed
+    /// on the graph's own generation, so a mutation invalidates it without being told and a
+    /// *non*-mutation must not: dropping it from here threw the scene away 220 times a second on Big
+    /// Bento Modern — every graph notification, times every container window it fans out to, plus
+    /// `updateAnimationTimer` on the way past — and each drop bought a full recursive re-solve of the
+    /// object tree at the next draw (B52). The inputs the generation genuinely cannot see keep their
+    /// own explicit `invalidateSceneCache()`: a layout switch, a resize, a theme change, and the
+    /// host's playback state.
     private func invalidateRectCaches() {
         animatingRectsCache = nil
         objectRectCache.removeAll()
         visualizationRectsCache = nil
         timeRectsCache = nil
-        renderer.invalidateSceneCache()
     }
 
     /// The boxes of everything in this scene that moves on its own — animated layers, song tickers,
@@ -668,7 +677,9 @@ final class WinampModernMainView: NSView {
             setNeedsDisplay(cached)
             return
         }
-        guard let frame = renderer.resolvedGeometry(of: object)?.frame else {
+        // The object's *painted* box, which includes its subtree: `alpha` is inherited, so fading a
+        // group repaints every descendant, and a child may hang outside a parent that does not clip.
+        guard let frame = renderer.paintedBounds(of: object) ?? renderer.resolvedGeometry(of: object)?.frame else {
             needsDisplay = true
             return
         }

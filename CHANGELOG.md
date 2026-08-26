@@ -53,6 +53,17 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: a fading readout no longer re-lays-out the whole window** — a `.wal`
+  skin that animates something (Big Bento Modern cross-fades the row of track details under the
+  title, continuously, for as long as a track is loaded) was making the player re-solve the position
+  of every object in the skin, hidden ones included, and repaint the entire window — up to sixty
+  times a second, for a piece of text quietly fading. On Big Bento Modern that was about a tenth of a
+  CPU core doing nothing but arithmetic it had already done, and it made the whole skin feel heavy:
+  the visualization, the meters and the buttons all shared the same thread. A fade now repaints the
+  part of the window it actually covers, and the layout is reused instead of being thrown away and
+  rebuilt. Measured on that skin while playing with the scope showing, the layout pass dropped from
+  9.9% of the main thread to 1.3%.
+
 - **Winamp 5.x modern skins: the oscilloscope shows the actual waveform, and a skin's visualization
   settings finally do something** — a skin's scope drew a fixed zigzag that only swelled and shrank
   with the volume, because it was being derived from the spectrum bars rather than from the sound. It
