@@ -30,7 +30,7 @@ final class WinampModernMainView: NSView {
         didSet {
             guard skinScale != oldValue else { return }
             setFrameSize(scaledCanvasSize)
-            for surface in librarySurfaces.values { surface.applySkinScale(skinScale) }
+            pushLibraryContentScale()
             for surface in videoSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in visualizationSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in hostedWindowSurfaces.values { surface.applySkinScale(skinScale) }
@@ -44,6 +44,23 @@ final class WinampModernMainView: NSView {
     var scaledCanvasSize: NSSize {
         NSSize(width: (renderer.canvasSize.width * skinScale).rounded(),
                height: (renderer.canvasSize.height * skinScale).rounded())
+    }
+
+    /// How large the embedded Media Library draws its content: UI Size, times the Text Size setting
+    /// resolved against *this* scene's canvas. One number, so the library and the playlist beside it
+    /// move together and cannot drift.
+    var libraryContentScale: CGFloat {
+        skinScale * renderer.textScale.contentScale(canvasHeight: renderer.canvasSize.height)
+    }
+
+    /// Tell every live library surface the current number.
+    ///
+    /// Called from everything that can move either factor — including **every canvas change**, since
+    /// `auto` is keyed on canvas height: without that, resizing a Big Bento window leaves the library
+    /// at a stale scale while the playlist next to it grows.
+    func pushLibraryContentScale() {
+        let scale = libraryContentScale
+        for surface in librarySurfaces.values { surface.applyContentScale(scale) }
     }
 
     private var pressedObject: WasabiObject?
@@ -227,6 +244,8 @@ final class WinampModernMainView: NSView {
         // A different layout is a different scene, so nothing carries over: every object in it hears
         // its geometry for the first time, exactly as it does when the window first comes up.
         dispatchResize(seeding: true)
+        // A different layout is a different canvas height, which is what `auto` Text Size is keyed on.
+        pushLibraryContentScale()
         needsDisplay = true
         return true
     }
@@ -238,6 +257,8 @@ final class WinampModernMainView: NSView {
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
         dispatchResize(seeding: false)
+        // `auto` Text Size is keyed on canvas height, so a user resize moves it.
+        pushLibraryContentScale()
         needsDisplay = true
     }
 
@@ -689,7 +710,7 @@ final class WinampModernMainView: NSView {
             guard librarySurfaces[holder.object.stableID] == nil,
                   let surface = componentHost?.makeLibrarySurface() else { continue }
             librarySurfaces[holder.object.stableID] = surface
-            surface.applySkinScale(skinScale)
+            surface.applyContentScale(libraryContentScale)
             surface.applyPalette(renderer.palette)
             addSubview(surface.view)
         }

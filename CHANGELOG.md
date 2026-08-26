@@ -4,6 +4,21 @@
 
 ### New Features
 
+- **Winamp 5.x modern skins: a Text Size control, and playlist rows that no longer depend on the
+  skin's fonts** — the playlist inside a `.wal` skin and the Media Library beside it now draw at one
+  size, set from **UI → Winamp Modern → Text Size** and remembered for each skin separately. Left on
+  *Auto*, the size follows the skin's own window: a big skin like Big Bento Modern gets the large
+  rows it needs at 1536×878, and a small one keeps the compact rows it was designed for. That fixes
+  Defix Hi-END 200, whose playlist had started drawing at Big Bento's size in a window a quarter the
+  height, and it fixes the Media Library, which had stayed small next to a playlist that had grown.
+  Auto tops out at a size that keeps a list quieter than the labels around it; if you want it larger
+  than that, pick a percentage and it is honoured. The **Winamp Modern menu is also reordered** —
+  the ClassicPro engine first (a cPro skin needs it before it can run at all), then Import .wal Skin
+  and Open Skins Folder together, then everything scoped to the loaded skin — Text Size, Color
+  Themes, Skin Settings and Skin Windows — grouped below, with your installed skins last. The **UI
+  menu itself now lists the four skin families in a settled order** — Classic, Modern, Original,
+  Original-Metal — with no divider fencing Modern off from the rest; all four are the same kind of
+  choice.
 - **Winamp 5.x modern skins: the thinger works** — the little strip of component icons a skin puts in
   its player (Winamp calls it the thinger) was an empty box in every skin that has one, with a blank
   caption beside it and scroll arrows that did nothing. It now shows an icon for each of the windows

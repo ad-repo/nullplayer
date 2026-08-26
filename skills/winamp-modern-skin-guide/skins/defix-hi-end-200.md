@@ -431,3 +431,12 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   partway: `getExtension` took the main layout's display with it, `fx_setGridSize` the VU meter,
   `newDynamicContainer` → `setFontSize` → `navigateUrl` → `hasVideoSupport` the global script, each
   surfacing only once the one before it was implemented.
+- **A metric derived from a skin's own fonts will leak onto this one.** `b2980d3a` sized the embedded
+  playlist's rows from the **median `fontsize` declared near the holder**, to fix Big Bento Modern's
+  half-size rows in a 1536×878 window. Defix's `pledit` pane declares `fontsize="19"`/`"20"`, so it
+  landed on the same 18px cell — inside a **406×355** window, where it read as enormous. The two
+  skins are indistinguishable by their fonts, and B50 rekeyed the rule on **window size**
+  (`clamp(canvasHeight/48, 11, 18)`), which separates them cleanly: Defix's playlist is back to 11px
+  and Bento keeps 18. Its 800×600 `SUI` library resolves to 12.5px. The lesson generalises — a
+  host-drawn surface sized from the markup around it inherits every skin's typographic taste, and the
+  *window* is the thing that actually differs.

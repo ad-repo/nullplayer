@@ -13,10 +13,25 @@ final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
 
     var view: NSView { browser }
 
+    /// The content scale the view layer last pushed, or nil before the first push — in which case the
+    /// browser falls back to `contentScaleFallback`, the bridge's live skin scale. It is stored rather
+    /// than computed because Text Size lives in the renderer, which this wrapper deliberately cannot
+    /// see: the view layer resolves the number and hands it over.
+    ///
+    /// A box, not a plain property, because the browser is handed a closure reading it *while this
+    /// object is still being initialized* — the fallback has to answer from the browser's very first
+    /// layout, which happens inside `PlexBrowserView.init`.
+    private final class ContentScaleBox { var value: CGFloat? }
+    private let pushedContentScale = ContentScaleBox()
+
     /// `presentLinkSheet` is supplied by the host because there is no `PlexBrowserWindowController`
-    /// here; `skinScale` is read live so a UI Size change needs no re-creation.
-    init(frame: NSRect, skinScale: @escaping () -> CGFloat, presentLinkSheet: @escaping () -> Void) {
-        browser = PlexBrowserView(embeddedFrame: frame, skinScale: skinScale,
+    /// here; `contentScaleFallback` is read live so a UI Size change needs no re-creation, and only
+    /// answers until the view layer's first `applyContentScale(_:)`.
+    init(frame: NSRect, contentScaleFallback: @escaping () -> CGFloat,
+         presentLinkSheet: @escaping () -> Void) {
+        let scale = pushedContentScale
+        browser = PlexBrowserView(embeddedFrame: frame,
+                                  skinScale: { scale.value ?? contentScaleFallback() },
                                   presentLinkSheet: presentLinkSheet)
         browser.autoresizingMask = [.width, .height]
         browser.wantsLayer = true
@@ -46,10 +61,11 @@ final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
         browser.applyWinampModernStyle(WinampModernSurfaceStyle(palette: palette))
     }
 
-    func applySkinScale(_ scale: CGFloat) {
+    func applyContentScale(_ scale: CGFloat) {
         guard !isTornDown else { return }
-        // The scale is read through the closure the browser already holds, so this only has to
-        // invalidate the geometry that was computed at the old one.
+        // The browser reads this through the closure it already holds, so storing it is the whole
+        // change; the repaint only discards the geometry computed at the old number.
+        pushedContentScale.value = max(0.1, scale)
         browser.needsDisplay = true
     }
 

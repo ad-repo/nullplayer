@@ -148,6 +148,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                                                                browserVFS: loaded.vfs)
             let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
             renderer.componentHost = componentBridge
+            renderer.textScale = WinampModernSkinState.textScale(in: loaded.configuration)
             let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
             // A server track's rating arrives after the track does, so the star row is told rather
             // than polled — the same shape as the EQ's `onEqBandChanged`.
@@ -166,7 +167,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             loadedSkin = loaded
             self.host = host
             self.componentBridge = componentBridge
-            componentBridge.skinScaleProvider = { [weak self] in self?.skinScale ?? 1 }
+            // Only the fallback before the view layer's first push; the resolved number is UI Size
+            // times Text Size, which the view resolves against its own canvas.
+            componentBridge.libraryContentScaleFallback = { [weak self] in self?.skinScale ?? 1 }
             componentBridge.linkSheetPresenter = { [weak self] in
                 self?.presentEmbeddedLibraryLinkSheet()
             }
@@ -370,6 +373,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 continue
             }
             renderer.componentHost = componentBridge
+            renderer.textScale = WinampModernSkinState.textScale(in: loaded.configuration)
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
             renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
             renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
@@ -474,6 +478,39 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// (Phase 16). Nil before a skin loads and while the placeholder is showing, which is exactly
     /// when a fallback window should keep its own defaults rather than guess at a theme.
     var currentPalette: WasabiPalette? { skinView?.renderer.palette }
+
+    // MARK: - Text Size (B50)
+
+    /// How large NullPlayer draws its own text inside this skin — the embedded playlist's rows and the
+    /// embedded Media Library, which move together.
+    var textScale: WinampModernTextScale { skinView?.renderer.textScale ?? .auto }
+
+    /// What `.auto` currently amounts to, as a percent, for the menu entry that shows it. Read off the
+    /// **player's** canvas: a separate-window skin resolves `auto` per window, but the menu can only
+    /// name one number and the player is the window the user is looking at.
+    var resolvedTextPercent: Int {
+        guard let renderer = skinView?.renderer else { return 100 }
+        return WinampModernTextScale.resolvedPercent(canvasHeight: renderer.canvasSize.height)
+    }
+
+    /// Apply a Text Size and remember it for this skin.
+    ///
+    /// Fans out exactly as `applyUIScale` does: a separate-window skin keeps its playlist in an
+    /// auxiliary container, so setting only the player's renderer would move the menu's checkmark and
+    /// nothing on screen.
+    func setTextScale(_ scale: WinampModernTextScale) {
+        if let configuration = loadedSkin?.configuration {
+            WinampModernSkinState.setTextScale(scale, in: configuration)
+        }
+        skinView?.renderer.textScale = scale
+        skinView?.pushLibraryContentScale()
+        skinView?.needsDisplay = true
+        for container in auxiliaryContainers {
+            container.view.renderer.textScale = scale
+            container.view.pushLibraryContentScale()
+            container.view.needsDisplay = true
+        }
+    }
 
     // MARK: - NullPlayer-hosted windows
 

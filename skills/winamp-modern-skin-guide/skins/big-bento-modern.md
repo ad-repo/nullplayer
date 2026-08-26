@@ -35,7 +35,7 @@
 | Embedded library chrome | **Won't do (BB2b)** | A native pane in the skin's palette *is* the faithful end state — Winamp only coloured `gen_ml` too. Closed as a decision; do not re-propose |
 | Side playlist | **Fixed (BB30)** | The whole family — "Open Playlist on the Right Side", the Collapse/Enlarge toggles, **Skin Settings → Playlist → Enlarge Playlist** — was dead behind one unimplemented method and one geometry misreading. See below. Confirmed live |
 | Playlist search | **Fixed (BB31)** | Text entry, the results list, the popup's placement and its dismissal — six causes, see below. Confirmed live: type, Enter, wheel, double-click to play, click away to dismiss |
-| Playlist row size | **Fixed (BB30, BB31)** | The embedded playlist drew at the Wasabi default 11px in a 1536×878 window. Rows follow the skin's own body text, capped at an 18px cell (22 read as oversized on screen) |
+| Playlist and library text size | **Fixed (BB30, BB31, then B50)** | The embedded playlist drew at the Wasabi default 11px in a 1536×878 window. The first fix followed the skin's own body text; **B50 replaced that with a window-size rule** because it leaked onto Defix. Bento is unchanged by the swap — `main/normal` still resolves to the 18px cap, and `main/shade` correctly drops to 11. The embedded Media Library now follows the same number. `UI → Winamp Modern → Text Size` overrides it per skin (`reference/components.md` → *How large NullPlayer draws its own text*) |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
 ## The family is two skins and two overlays

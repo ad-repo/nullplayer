@@ -51,6 +51,7 @@ concept; read the one your symptom points at, not all of them.
 | **Text or controls are black-on-black, or a colour theme washes out** — and "fixing" one skin breaks another | [reference/rendering.md](reference/rendering.md) — *Colour themes*: the additive/multiplicative model is per-`<gammagroup>`, chosen by its own `boost`. Never pick one globally |
 | **A white slab or a black rectangle where the skin plainly names a colour** — a list panel, an analyzer, a `<rect>` | [reference/rendering.md](reference/rendering.md) — *How a colour resolves*: the two fallbacks are white and black, so a lost colour is loud. Run `WINAMP_MODERN_RENDER_PALETTE=1` **before** touching a colour path — a value that names another id, a same-named bitmap winning the lookup, and a `#rrggbb` literal all look identical on screen |
 | **A selected row, or a window title, cannot be read** — text the same colour as its highlight, a black title on a black bar | [reference/rendering.md](reference/rendering.md) — *A resolved colour is not yet a readable one*: roles resolve from independent chains with no legibility check. Guard in `WinampModernSurfaceStyle` (nil in classic, so classic is out of reach) — **and** in `WasabiRenderer.legibleRowColor`, which the skin's own playlist and colour-theme list use instead. Text the *skin* declares for its own controls is out of scope |
+| **The embedded playlist's rows or the Media Library read too small or too large**, or the two disagree with each other | [reference/components.md](reference/components.md) — *How large NullPlayer draws its own text*: one per-skin **Text Size** control drives both, defaulting to `clamp(canvasHeight/48, 11, 18)`. Keyed on the **window**, never on the skin's declared fonts — that was tried (`b2980d3a`) and leaked Big Bento's 18px cell onto Defix's 355px playlist |
 | **A `.wal` window comes back at the wrong size, or the skin looks pulled apart into two windows** | [reference/rendering.md](reference/rendering.md) — *…but a `.wal` window's size is still the skin's*: the frame is one global key, so another skin's size was being restored over it |
 | Animation frozen, needle/reel not turning, layer stuck on one frame | [reference/rendering.md](reference/rendering.md) |
 | Slow, stuttering, CPU high, repaint storm | [reference/performance.md](reference/performance.md) |
@@ -169,6 +170,7 @@ verbatim; it just lives in a reference file now.
 | NullPlayer-owned hosted windows are lazy | [reference/components.md](reference/components.md) |
 | Container-scoped layout callbacks | [reference/components.md](reference/components.md) |
 | Resize, and why a skin needs it | [reference/components.md](reference/components.md) |
+| How large NullPlayer draws its own text | [reference/components.md](reference/components.md) |
 | Colours and hosted AppKit content | [reference/components.md](reference/components.md) |
 | Repaint routes are per-window, and scripts are not | [reference/components.md](reference/components.md) |
 | Teardown order | [reference/components.md](reference/components.md) |
@@ -197,7 +199,8 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Retained object graph | `WasabiObjectGraph.swift` |
 | Coordinates / anchors | `WasabiGeometry.swift` |
 | `<Wasabi:Frame>` splitter | `WasabiFrame.swift` |
-| What the host remembers about a skin between launches (B44/B44a) | `WinampModernSkinState.swift` |
+| What the host remembers about a skin between launches (B44/B44a/B50) | `WinampModernSkinState.swift` |
+| How large the host draws its own text (Text Size, B50) | `WinampModernTextScale.swift` |
 | Fonts + text measurement (shared) | `WasabiTextMetrics.swift` |
 | Resource cache + scene renderer | `WasabiRenderer.swift` |
 | MAKI parser + interpreter | `MakiBytecode.swift` |

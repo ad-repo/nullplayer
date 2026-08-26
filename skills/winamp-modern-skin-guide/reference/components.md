@@ -431,6 +431,52 @@ is the host's, exactly as the playlist panel is.
   height with a smaller em inside it. A skin sizes its window from its own expectation of this
   number, so getting it wrong crops the last row of every result.
 
+#### How large NullPlayer draws its own text: Text Size
+
+The embedded playlist and the embedded Media Library are the **host's** surfaces. A
+`<windowholder hold="guid:{45F3F7C1-…}">` is filled by the player, so there is no `fontsize` on it to
+read, and in Winamp the playlist font is a *Winamp preference* rather than something the skin states.
+The size has to be decided by us, and `WinampModernTextScale` is where.
+
+**One control drives both surfaces**, so they cannot drift apart — `UI → Winamp Modern → Text Size`,
+stored **per skin** (`WinampModernSkinState`, section `@nullplayer.text`, key `size`, raw percent with
+`0` meaning Auto). The library keeps every internal proportion it has: the setting moves the single
+`contentScale` that `itemHeight`, the column header height, `bitmapTextScale` and `contentFont` are
+all derived from.
+
+```
+auto cell (px) = clamp(canvasHeight / 48, 11, 18)
+explicit cell  = 11 * percent / 100      // 100…200%, and an explicit choice is NOT capped at 18
+content scale  = cell / 11               // what the library multiplies its own scale by
+```
+
+**Auto is keyed on the window's size, and the first attempt keyed it on fonts.** That earlier rule
+(`b2980d3a`) took the median `fontsize` declared near the holder, and it cannot separate the two skins
+it has to: Big Bento Modern's playlist pane declares 22 and wants the large rows, Defix Hi-END 200's
+declares 19/20 and does not. Window size separates them cleanly.
+
+| Skin | Window | Auto cell | |
+|---|---|---|---|
+| Big Bento Modern (all four) | 1536×878 | 878/48 → **18px** (the cap) | large rows, as intended |
+| Defix Hi-END 200 `pledit` | 406×355 | 355/48 → clamps to **11px** | the Wasabi default |
+| Defix `SUI` (library) | 800×600 | 600/48 → **12.5px** | mild, coherent with its window |
+
+Two details that are load-bearing:
+
+- **It reads the `canvasSize`, not the holder's frame.** Big Bento's side playlist pane swings between
+  202 and 819px as the user collapses or enlarges it; the row size must not move with it. Using the
+  canvas also gives each window of a separate-window skin its own correct number.
+- **`auto` depends on canvas height, so every canvas change has to re-push the library's scale** —
+  `applyCanvasResize` and `activateLayout`, not just the UI Size observer and surface creation.
+  Without that a user resize grows the playlist and leaves the library beside it stale.
+
+The divisor 48 keeps anything under a 528px-tall window at the 11px default. The 18px cap belongs to
+`auto` alone, which is guessing: judged on screen, a host-drawn *list* has to stay quieter than the
+labels around it. A user who picks 200% is not guessing, so their choice beats the cap.
+
+The `<text>`/`<edit>`/`<list>` paths above are untouched by all of this — they read a size the skin
+really did declare for its own object.
+
 #### Colours and hosted AppKit content
 
 `WinampModernThemeCoordinator` owns the one `WasabiColorThemeCatalog` per loaded skin; renderers and

@@ -17,7 +17,11 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     private var selectedRows: Set<Int> = []
 
     /// The `.wal` window's current UI Size, read live so a scale change needs no re-creation.
-    var skinScaleProvider: (() -> CGFloat)?
+    ///
+    /// This is only the **fallback** the embedded library uses before the view layer pushes it a
+    /// resolved content scale (UI Size × Text Size). It cannot be the whole answer, because Text Size
+    /// is resolved against the *hosting scene's* canvas and the bridge is shared by every window.
+    var libraryContentScaleFallback: (() -> CGFloat)?
     /// How the embedded browser asks for the server-link sheet, since it has no classic controller.
     var linkSheetPresenter: (() -> Void)?
     private var librarySurface: WinampModernLibrarySurface?
@@ -191,7 +195,7 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         if let librarySurface { return librarySurface }
         let surface = WinampModernLibrarySurfaceView(
             frame: NSRect(x: 0, y: 0, width: 400, height: 300),
-            skinScale: { [weak self] in self?.skinScaleProvider?() ?? 1 },
+            contentScaleFallback: { [weak self] in self?.libraryContentScaleFallback?() ?? 1 },
             presentLinkSheet: { [weak self] in self?.linkSheetPresenter?() })
         librarySurface = surface
         return surface

@@ -300,8 +300,11 @@ protocol WinampModernLibrarySurface: AnyObject {
     func showLinkSheet()
     /// Recolour to the skin's active colour theme.
     func applyPalette(_ palette: WasabiPalette)
-    /// UI Size, as the `.wal` window's own skin scale.
-    func applySkinScale(_ scale: CGFloat)
+    /// How large to draw the library's content: the `.wal` window's own skin scale **multiplied by**
+    /// the Text Size setting, resolved against the hosting canvas. One number, because every
+    /// proportion inside the browser is derived from it — and it is pushed rather than pulled so the
+    /// library can never disagree with the playlist drawn beside it.
+    func applyContentScale(_ scale: CGFloat)
     /// Cancel work and release resources before the view is removed. Must be idempotent, and it is
     /// **terminal**: the surface never works again after it.
     func prepareForUITeardown()

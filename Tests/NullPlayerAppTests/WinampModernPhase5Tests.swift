@@ -391,7 +391,7 @@ final class WinampModernPhase5Tests: XCTestCase {
         func reloadData() { reloads += 1 }
         func showLinkSheet() { linkSheets += 1 }
         func applyPalette(_ palette: WasabiPalette) { paletteUpdates += 1 }
-        func applySkinScale(_ scale: CGFloat) { scaleUpdates += 1 }
+        func applyContentScale(_ scale: CGFloat) { scaleUpdates += 1 }
         func prepareForUITeardown() {
             isTornDown = true
             view.removeFromSuperview()

@@ -556,9 +556,10 @@ final class WasabiSceneRenderer {
     private var playlistScrollOffset = 0
     /// The scroll position `revealPlaylistRow` computes, for the tests that assert the arithmetic.
     var playlistScrollOffsetForTesting: Int { playlistScrollOffset }
-    /// Resolved body text size per playlist holder (`playlistTextPixelHeight(in:)`). The skin's markup
-    /// is fixed once loaded, so this is computed once per holder rather than per drawn row.
-    private var playlistTextPixelHeights: [WasabiObjectID: Double] = [:]
+    /// How large NullPlayer draws its own text on this scene's host surfaces — the embedded playlist
+    /// here, and the embedded library through the view layer, so the two cannot drift apart. Seeded
+    /// from the skin's stored preference at load and set from the Text Size menu.
+    var textScale: WinampModernTextScale = .auto
     /// The `<edit>` holding the keyboard, so it can draw a caret. Owned by the view (focus is a
     /// window's property); `nil` in every window that does not have one focused, which is most.
     var focusedEditID: WasabiObjectID?
@@ -1392,15 +1393,15 @@ final class WasabiSceneRenderer {
                              severity: .warning)
     }
 
-    /// The text size the embedded playlist draws at inside a given holder, in skin pixels — the
-    /// skin's own body text rather than a fixed number (`WasabiTextMetrics.bodyPixelHeight`). Cached
-    /// per holder: it is a subtree walk, and every row of every repaint asks for it.
+    /// The text size the embedded playlist draws at, in skin pixels — the Text Size setting, resolved
+    /// against this scene's canvas.
+    ///
+    /// The `holder` is unused and stays in the signature deliberately: the render-dump probe reports
+    /// per holder, and the size is a property of the *window*, not of the pane inside it. That is the
+    /// whole point of the rule — Big Bento's playlist keeps one size whether its side pane is
+    /// collapsed to 202px or enlarged to 819px.
     func playlistTextPixelHeight(in holder: WasabiObject?) -> Double {
-        guard let holder else { return WasabiTextMetrics.defaultPixelHeight }
-        if let cached = playlistTextPixelHeights[holder.stableID] { return cached }
-        let value = WasabiTextMetrics.bodyPixelHeight(near: holder)
-        playlistTextPixelHeights[holder.stableID] = value
-        return value
+        textScale.cellPixelHeight(canvasHeight: canvasSize.height)
     }
 
     /// Row height of the embedded playlist, in skin pixels. One cell plus the gap the 12px rows of

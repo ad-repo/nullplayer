@@ -13,6 +13,11 @@ import Foundation
 /// | A `<Wasabi:Frame>`'s divider offset | `@nullplayer.frames` | `container-id/frame-id` |
 /// | Which layout a container is on (shade) | `@nullplayer.layouts` | `container-id` |
 /// | Whether one of the skin's windows is open | `@nullplayer.windows` | `container-id` |
+/// | How large the host draws its own text (Text Size) | `@nullplayer.text` | `size` |
+///
+/// Text Size is the one entry that is not object-graph state — it is a plain per-skin preference —
+/// but it belongs here for the same reason: it is the *host's* setting about a skin, so nothing the
+/// skin itself writes would ever carry it.
 ///
 /// Two things are deliberately **not** here. The active colour theme is already persisted by
 /// `WasabiColorThemeList` under `appearance/theme`, which is where a skin's own script would look for
@@ -37,6 +42,8 @@ enum WinampModernSkinState {
     static let framesSection = "@nullplayer.frames"
     static let layoutsSection = "@nullplayer.layouts"
     static let windowsSection = "@nullplayer.windows"
+    static let textSection = "@nullplayer.text"
+    static let textSizeKey = "size"
 
     // MARK: - A splitter's divider offset
 
@@ -88,11 +95,30 @@ enum WinampModernSkinState {
         configuration.setInteger(visible ? 1 : 0, section: windowsSection, key: container)
     }
 
+    // MARK: - How large the host draws its own text
+
+    /// The Text Size the user chose for this skin, or `.auto` when they never have.
+    ///
+    /// Stored as the raw percent, so `0` is `auto` — a legal value, which is exactly why the "never
+    /// set" sentinel below cannot be zero. A value no longer in the enum reads as `.auto` rather than
+    /// resurrecting a size the menu can no longer show.
+    static func textScale(in configuration: WinampModernConfiguration) -> WinampModernTextScale {
+        guard let stored = storedInteger(section: textSection, key: textSizeKey, in: configuration)
+        else { return .auto }
+        return WinampModernTextScale.from(storedValue: Int(stored))
+    }
+
+    static func setTextScale(_ scale: WinampModernTextScale,
+                             in configuration: WinampModernConfiguration) {
+        configuration.setInteger(Int32(scale.storedValue), section: textSection, key: textSizeKey)
+    }
+
     // MARK: - The sentinel
 
     /// `-1` means "never set", which is why it cannot be spelled as `0`: **zero is a legal value for
-    /// both integer entries here.** ClassicPro closes its side view with `setPosition(0)` and a user
-    /// may leave it closed, and `0` is exactly how a deliberately closed window is stored.
+    /// every integer entry here.** ClassicPro closes its side view with `setPosition(0)` and a user
+    /// may leave it closed, `0` is exactly how a deliberately closed window is stored, and `0` is how
+    /// Text Size spells the `auto` a user may have chosen deliberately after setting a percent.
     private static let unset: Int32 = -1
 
     private static func storedInteger(section: String, key: String,

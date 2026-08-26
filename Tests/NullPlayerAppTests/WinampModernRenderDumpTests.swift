@@ -1118,13 +1118,17 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 // host's, not the skin's — a `<windowholder hold="guid:{45F3F7C1-…}">` is filled by
                 // the player, so there is no `fontsize` on it to read and nothing in the rendered
                 // dump shows the size headlessly (the harness sets no component host, so the panel
-                // comes out empty). `text=` is what `WasabiTextMetrics.bodyPixelHeight` derived from
-                // the skin's own text around the holder, which is the whole question behind "the
-                // playlist font is tiny in this skin".
+                // comes out empty). `text=` is the Text Size setting resolved against this window's
+                // canvas, and `scale=` says whether it came from `auto` or from a user's choice —
+                // which is the whole question behind "the playlist font is tiny in this skin".
+                let textScaleLabel = renderer.textScale == .auto
+                    ? "auto(\(WinampModernTextScale.resolvedPercent(canvasHeight: renderer.canvasSize.height))%)"
+                    : "set(\(renderer.textScale.storedValue)%)"
                 for holder in holders where holder.kind == .playlist {
                     print("PLAYLIST holder \(info.id)/\(layoutID): \(holder.object.xmlID ?? "-")"
                           + "\(holder.frame) text=\(renderer.playlistTextPixelHeight(in: holder.object))px"
-                          + " row=\(renderer.playlistRowHeight(in: holder.object))px")
+                          + " row=\(renderer.playlistRowHeight(in: holder.object))px"
+                          + " scale=\(textScaleLabel)")
                 }
                 // An SUI keeps its playlist in a closed tab, so the visible-scene pass above reports
                 // nothing for the skins that most need measuring (every Big Bento variant). The
@@ -1133,7 +1137,8 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 where !holders.contains(where: { $0.object === object }) {
                     print("PLAYLIST holder \(info.id)/\(layoutID): \(object.xmlID ?? "-") hidden"
                           + " text=\(renderer.playlistTextPixelHeight(in: object))px"
-                          + " row=\(renderer.playlistRowHeight(in: object))px")
+                          + " row=\(renderer.playlistRowHeight(in: object))px"
+                          + " scale=\(textScaleLabel)")
                 }
                 for node in renderer.sceneNodes()
                 where node.object.typeName.caseInsensitiveCompare("vis") == .orderedSame {

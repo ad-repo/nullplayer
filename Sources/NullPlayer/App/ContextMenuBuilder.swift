@@ -623,6 +623,31 @@ class ContextMenuBuilder {
         return parent
     }
 
+    /// How large NullPlayer draws its **own** text inside the loaded `.wal` skin — the embedded
+    /// playlist's rows and the embedded Media Library, which move together and are stored per skin.
+    ///
+    /// `Auto` names what it currently resolves to, because the rule is keyed on the window's size and
+    /// the number is otherwise invisible. Only built in `.winampModern`, per the mode-guarding rule.
+    private static func buildWinampModernTextSizeMenuItem(wm: WindowManager) -> NSMenuItem {
+        let parent = NSMenuItem(title: "Text Size", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        let (active, resolved) = wm.winampModernTextScale
+        for scale in WinampModernTextScale.allCases {
+            let title = scale == .auto ? "Auto (\(resolved)%)" : scale.menuTitle
+            let item = NSMenuItem(title: title,
+                                  action: #selector(MenuActions.setWinampModernTextScale(_:)),
+                                  keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = scale.storedValue
+            item.state = scale == active ? .on : .off
+            submenu.addItem(item)
+            if scale == .auto { submenu.addItem(NSMenuItem.separator()) }
+        }
+        parent.submenu = submenu
+        return parent
+    }
+
     private static func moveMenuItems(from source: NSMenu, to destination: NSMenu) {
         while let item = source.items.first {
             source.removeItem(item)
@@ -761,7 +786,11 @@ class ContextMenuBuilder {
 
         if activeMode == .modern { modernItem.state = .on }
         modernItem.submenu = modernMenu
-        if AppCapabilities.supports(.modernMode) { uiMenu.addItem(modernItem) }
+        // Held back rather than added here. The four families read Classic → Modern → Original →
+        // Original-Metal, and Modern is the `.wal` engine, which is built further down — so the two
+        // Original families wait for it. Adding them inline would put them above it.
+        var deferredFamilies: [NSMenuItem] = []
+        if AppCapabilities.supports(.modernMode) { deferredFamilies.append(modernItem) }
 
         // --- Metal submenu ---
         let metalItem = NSMenuItem(title: ModernSkinFamily.metal.displayName, action: nil, keyEquivalent: "")
@@ -812,14 +841,16 @@ class ContextMenuBuilder {
 
         if activeMode == .metal { metalItem.state = .on }
         metalItem.submenu = metalMenu
-        if AppCapabilities.supports(.metalMode) { uiMenu.addItem(metalItem) }
+        if AppCapabilities.supports(.metalMode) { deferredFamilies.append(metalItem) }
 
         // Winamp 5.x `.wal` skins, presented to the user as the **Modern** family. The runtime loads,
         // scripts, and renders real skins, but widgets backed by Winamp's built-in `wasabi.*` artwork
         // draw empty and the hosted playlist/EQ are engine-drawn rather than painted with the skin's
         // own bitmaps. See `skills/winamp-modern-skin-guide/`.
+        //
+        // No separator before it any more: the four families are peers in one list, and fencing this
+        // one off read as though it were a different kind of thing from the other three.
         if AppCapabilities.supports(.winampModernMode) {
-            uiMenu.addItem(NSMenuItem.separator())
             let winampModernItem = NSMenuItem(
                 title: PlayerUIMode.winampModern.displayName,
                 action: nil,
@@ -837,32 +868,37 @@ class ContextMenuBuilder {
                 winampModernMenu.addItem(NSMenuItem.separator())
             }
 
+            // What this installation is, before what is loaded into it. The ClassicPro engine leads
+            // because it is the **dependency**: a cPro skin needs it imported before it can run at
+            // all, so it belongs above the skins that ask for it rather than below them.
+            let engineInstalled = ClassicProEngineStore.shared.isInstalled
+            let engineItem = NSMenuItem(
+                title: engineInstalled ? "Reimport ClassicPro Engine..." : "Import ClassicPro Engine...",
+                action: #selector(MenuActions.importClassicProEngineFromFile), keyEquivalent: "")
+            engineItem.target = MenuActions.shared
+            if engineInstalled { engineItem.state = .on }
+            winampModernMenu.addItem(engineItem)
+
+            // How the user gets `.wal` skins, and where they land — about *this* installation, not
+            // about what is loaded into it. Opening the folder belongs with the import it is the
+            // other half of, not stranded at the bottom of the menu.
             let importItem = NSMenuItem(title: "Import .wal Skin...",
                                         action: #selector(MenuActions.loadWinampModernSkinFromFile), keyEquivalent: "")
             importItem.target = MenuActions.shared
             winampModernMenu.addItem(importItem)
 
-            // The skin's own extra windows (Phase 27.7). A `.wal` skin declares windows it binds no
-            // button to and expects Winamp's Windows menu to open — Defix's two speaker cabinets and
-            // its configurator are declared, render correctly, and were unreachable without this.
-            let skinWindows = WindowManager.shared.winampModernSkinWindows
-            if !skinWindows.isEmpty {
-                let windowsItem = NSMenuItem(title: "Skin Windows", action: nil, keyEquivalent: "")
-                let windowsMenu = NSMenu()
-                windowsMenu.autoenablesItems = false
-                for skinWindow in skinWindows {
-                    let item = NSMenuItem(title: skinWindow.name,
-                                          action: #selector(MenuActions.toggleWinampModernSkinWindow(_:)),
-                                          keyEquivalent: "")
-                    item.target = MenuActions.shared
-                    item.representedObject = skinWindow.id
-                    if skinWindow.isVisible { item.state = .on }
-                    windowsMenu.addItem(item)
-                }
-                windowsItem.submenu = windowsMenu
-                winampModernMenu.addItem(windowsItem)
-                winampModernMenu.addItem(NSMenuItem.separator())
-            }
+            let openFolder = NSMenuItem(title: "Open Skins Folder...",
+                                        action: #selector(MenuActions.openWinampModernSkinsFolder), keyEquivalent: "")
+            openFolder.target = MenuActions.shared
+            winampModernMenu.addItem(openFolder)
+
+            // Everything scoped to the **loaded skin**, in one block: how large it draws the text
+            // NullPlayer puts inside it, what it can be coloured as, what it lets the user configure,
+            // and which of its own windows are open. All four are stored per skin and all four change
+            // meaning when the skin does. Only Text Size is unconditional — the other three depend on
+            // the skin declaring one — so the group's separator is placed around what was actually
+            // added rather than written inline after each block.
+            var skinSpecific: [NSMenuItem] = [buildWinampModernTextSizeMenuItem(wm: wm)]
 
             // The skin's colour themes (Phase 32). A secondary route where the skin ships its own
             // picker, and the *only* route on the six measured skins that define themes and ship
@@ -884,8 +920,7 @@ class ContextMenuBuilder {
                     themesMenu.addItem(item)
                 }
                 themesItem.submenu = themesMenu
-                winampModernMenu.addItem(themesItem)
-                winampModernMenu.addItem(NSMenuItem.separator())
+                skinSpecific.append(themesItem)
             }
 
             // Only when the loaded skin registered settings of its own: many skins register none,
@@ -895,17 +930,34 @@ class ContextMenuBuilder {
                                               action: #selector(MenuActions.showWinampModernSkinSettings),
                                               keyEquivalent: "")
                 settingsItem.target = MenuActions.shared
-                winampModernMenu.addItem(settingsItem)
-                winampModernMenu.addItem(NSMenuItem.separator())
+                skinSpecific.append(settingsItem)
             }
 
-            let engineInstalled = ClassicProEngineStore.shared.isInstalled
-            let engineItem = NSMenuItem(
-                title: engineInstalled ? "Reimport ClassicPro Engine..." : "Import ClassicPro Engine...",
-                action: #selector(MenuActions.importClassicProEngineFromFile), keyEquivalent: "")
-            engineItem.target = MenuActions.shared
-            if engineInstalled { engineItem.state = .on }
-            winampModernMenu.addItem(engineItem)
+            // The skin's own extra windows (Phase 27.7). A `.wal` skin declares windows it binds no
+            // button to and expects Winamp's Windows menu to open — Defix's two speaker cabinets and
+            // its configurator are declared, render correctly, and were unreachable without this.
+            let skinWindows = WindowManager.shared.winampModernSkinWindows
+            if !skinWindows.isEmpty {
+                let windowsItem = NSMenuItem(title: "Skin Windows", action: nil, keyEquivalent: "")
+                let windowsMenu = NSMenu()
+                windowsMenu.autoenablesItems = false
+                for skinWindow in skinWindows {
+                    let item = NSMenuItem(title: skinWindow.name,
+                                          action: #selector(MenuActions.toggleWinampModernSkinWindow(_:)),
+                                          keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = skinWindow.id
+                    if skinWindow.isVisible { item.state = .on }
+                    windowsMenu.addItem(item)
+                }
+                windowsItem.submenu = windowsMenu
+                skinSpecific.append(windowsItem)
+            }
+
+            if !skinSpecific.isEmpty {
+                winampModernMenu.addItem(NSMenuItem.separator())
+                for item in skinSpecific { winampModernMenu.addItem(item) }
+            }
 
             let installed = WinampModernSkinImporter.shared.installedSkins()
             if !installed.isEmpty {
@@ -923,14 +975,11 @@ class ContextMenuBuilder {
                 }
             }
 
-            winampModernMenu.addItem(NSMenuItem.separator())
-            let openFolder = NSMenuItem(title: "Open Skins Folder...",
-                                        action: #selector(MenuActions.openWinampModernSkinsFolder), keyEquivalent: "")
-            openFolder.target = MenuActions.shared
-            winampModernMenu.addItem(openFolder)
             winampModernItem.submenu = winampModernMenu
             uiMenu.addItem(winampModernItem)
         }
+
+        for item in deferredFamilies { uiMenu.addItem(item) }
 
         return uiMenu
     }
@@ -4240,6 +4289,11 @@ class MenuActions: NSObject {
 
     @objc func showWinampModernSkinSettings() {
         WindowManager.shared.showWinampModernSkinSettings()
+    }
+
+    @objc func setWinampModernTextScale(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? Int else { return }
+        WindowManager.shared.setWinampModernTextScale(WinampModernTextScale.from(storedValue: raw))
     }
 
     @objc func importClassicProEngineFromFile() {

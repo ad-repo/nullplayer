@@ -369,58 +369,12 @@ final class WasabiTextMetrics {
         return CGFloat(Self.pixelHeight(of: object))
     }
 
-    /// The cell height a **host-drawn** list inside `object`'s pane should use, in skin pixels.
+    /// The Wasabi default cell height, and the base every host-drawn size is a multiple of.
     ///
-    /// The playlist is a `<windowholder hold="guid:{45F3F7C1-…}">`: Winamp fills it with the playlist
-    /// editor, whose font is a *Winamp preference*, not something the skin states. So there is no
-    /// `fontsize` to read, and NullPlayer drew every skin's rows at the Wasabi default (11px, the same
-    /// number `pixelHeight(of:)` falls back to). That is right for a 275px-wide skin and half-size
-    /// inside Big Bento Modern, whose window is 1536×878 and whose own captions are `fontsize="22"`.
-    ///
-    /// So the rows follow the skin's own body text instead: the median `fontsize` declared by the text
-    /// objects in the nearest ancestor pane that has any. Bento's playlist pane carries its search
-    /// help, edit box and results line at 22 and the list comes out matching them; a skin that states
-    /// nothing near its playlist keeps exactly the 11 it drew at before. Clamped at both ends — a
-    /// display font (`fontsize="48"` on Bento's own song title) must not be able to set a list's
-    /// line height.
-    static func bodyPixelHeight(near object: WasabiObject?) -> Double {
-        guard var node = object?.parent else { return defaultPixelHeight }
-        var samples: [Double] = []
-        while samples.isEmpty {
-            samples = declaredTextPixelHeights(in: node)
-            guard let parent = node.parent else { break }
-            node = parent
-        }
-        guard !samples.isEmpty else { return defaultPixelHeight }
-        samples.sort()
-        let median = samples[samples.count / 2]
-        return min(max(median, defaultPixelHeight), maximumBodyPixelHeight)
-    }
-
-    /// The Wasabi default cell height, and what a pane that declares no text of its own keeps.
+    /// What a **host-drawn** list (the embedded playlist, the embedded library) actually draws at is
+    /// `WinampModernTextScale`, not anything measured here: there is no `fontsize` on a
+    /// `<windowholder>` to read, and the skin's *nearby* fonts turned out not to separate the skins
+    /// that want large rows from the ones that do not. The `<text>`/`<edit>`/`<list>` paths above,
+    /// which read a size the skin really did declare for its own object, are unaffected.
     static let defaultPixelHeight = 11.0
-
-    /// How far a skin's own text may raise a host-drawn list.
-    ///
-    /// 18, not the skin's own number: Big Bento's captions are `fontsize="22"`, and rows that size
-    /// read as oversized against the rest of its UI — judged on screen, and it is the *list* that has
-    /// to stay quieter than the labels around it, not the other way round. A display font
-    /// (`fontsize="48"` on Bento's song title) must not be able to set a line height at all.
-    static let maximumBodyPixelHeight = 18.0
-
-    /// Every `fontsize=` declared by a text-bearing object under `root`, in skin pixels. Only objects
-    /// that actually draw a string count: a group's `fontsize` is inherited markup, not a measurement.
-    private static func declaredTextPixelHeights(in root: WasabiObject) -> [Double] {
-        var sizes: [Double] = []
-        var stack = root.children
-        while let node = stack.popLast() {
-            stack.append(contentsOf: node.children)
-            let type = node.typeName.lowercased().components(separatedBy: ":").last ?? ""
-            guard type == "text" || type == "edit" || type == "list",
-                  let raw = node.attributes["fontsize"], let value = Double(raw), value.isFinite
-            else { continue }
-            sizes.append(min(max(value, 1), 256))
-        }
-        return sizes
-    }
 }

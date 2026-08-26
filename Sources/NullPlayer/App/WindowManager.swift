@@ -960,6 +960,22 @@ class WindowManager {
         (mainWindowController as? WinampModernMainWindowController)?.selectColorTheme(name)
     }
 
+    /// The loaded `.wal` skin's Text Size — how large NullPlayer draws its own text on the surfaces it
+    /// fills the skin's holders with (the playlist rows and the Media Library, which move together),
+    /// plus what `.auto` currently resolves to for the menu entry that shows it. Safe default in every
+    /// other mode, per the mode-guarding rule in CLAUDE.md.
+    var winampModernTextScale: (scale: WinampModernTextScale, resolvedPercent: Int) {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return (.auto, 100) }
+        return (controller.textScale, controller.resolvedTextPercent)
+    }
+
+    func setWinampModernTextScale(_ scale: WinampModernTextScale) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.setTextScale(scale)
+    }
+
     /// Open the list of settings the skin registered but bound no control to.
     func showWinampModernSkinSettings() {
         guard uiMode.controllerFamily == .winampModern else { return }

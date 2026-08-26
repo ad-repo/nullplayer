@@ -1170,7 +1170,7 @@ final class WinampModernPhase13Tests: XCTestCase {
     func testLibrarySurfaceViewClipsContentToItsBounds() {
         let surface = WinampModernLibrarySurfaceView(
             frame: NSRect(x: 0, y: 0, width: 200, height: 100),
-            skinScale: { 1 }, presentLinkSheet: { })
+            contentScaleFallback: { 1 }, presentLinkSheet: { })
         let view = surface.view
         XCTAssertTrue(view.wantsLayer, "the browser must be layer-backed for clipping")
         XCTAssertEqual(view.layer?.masksToBounds, true,
@@ -1192,7 +1192,7 @@ final class WinampModernPhase13Tests: XCTestCase {
         func reloadData() { reloads += 1 }
         func showLinkSheet() { linkSheets += 1 }
         func applyPalette(_ palette: WasabiPalette) { paletteUpdates += 1 }
-        func applySkinScale(_ scale: CGFloat) { scaleUpdates += 1; lastScale = scale }
+        func applyContentScale(_ scale: CGFloat) { scaleUpdates += 1; lastScale = scale }
         func prepareForUITeardown() {
             guard !isTornDown else { return }
             teardowns += 1

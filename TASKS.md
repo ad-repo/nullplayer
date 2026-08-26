@@ -78,6 +78,74 @@ correctly skin-private.
 
 ---
 
+## B50 — Text Size: fix the Defix leak, align the library, add a per-skin control
+
+Plan: `~/.claude/plans/implement-claude-plans-there-is-a-proble-glittery-popcorn.md`
+
+`b2980d3a` made the embedded playlist follow the skin's **median declared `fontsize`**. That reads
+right on Big Bento Modern (1536×878) and wrong on Defix Hi-END 200, whose `fontsize="19"/"20"`
+playlist pane lands on the same 18px cell inside a 406×355 window. And the embedded Media Library
+never learned about the new metric at all, so it reads small beside the playlist. One **Text Size**
+control per skin drives both, defaulting to an Auto rule keyed on **window size**, not on fonts:
+
+```
+auto cell (px) = clamp(canvasHeight / 48, 11, 18)
+explicit cell  = 11 * percent / 100          // 100…200%, no 18px cap on an explicit choice
+content scale  = cell / 11
+```
+
+- [x] **B50.1** New `WinampModern/WinampModernTextScale.swift` — `enum WinampModernTextScale`
+      (`auto = 0`, `p100`…`p200`) with `menuTitle`, `cellPixelHeight(canvasHeight:)`,
+      `contentScale(canvasHeight:)`, and the auto rule + its two constants documented
+- [x] **B50.2** `WasabiTextMetrics` — delete `bodyPixelHeight(near:)` and
+      `declaredTextPixelHeights(in:)`; move `maximumBodyPixelHeight` into the new type as the auto cap
+- [x] **B50.3** `WasabiRenderer` — `var textScale`; `playlistTextPixelHeight(in:)` becomes
+      arithmetic on `canvasSize.height`; drop the `playlistTextPixelHeights` cache. Keep the `holder`
+      parameter so the render-dump probe keeps its signature
+- [x] **B50.4** `WinampModernSkinState` — fourth entry: section `@nullplayer.text`, key `size`,
+      raw percent (`0` = auto), `textScale(in:)` / `setTextScale(_:in:)`; update the doc table
+- [x] **B50.5** Library scale — `WinampModernLibrarySurface.applySkinScale` →
+      `applyContentScale(_:)` (library protocol only); the surface view stores the pushed value and
+      returns it from the `skinScale` closure it hands `PlexBrowserView`; rename
+      `WinampModernComponentBridge.skinScaleProvider` to match
+- [x] **B50.6** `WinampModernMainView` — one `libraryContentScale` helper, pushed to **all** live
+      library surfaces from the `skinScale` observer, `reconcileHostedSurfaces()`,
+      `applyCanvasResize` and `activateLayout` (Auto depends on canvas height, so a resize must
+      re-push or the library keeps a stale scale)
+- [x] **B50.7** Menu — `Text Size` submenu in the Winamp Modern block of `buildUIMenu()`, built like
+      `buildUISizeMenuItem`, `Auto (n%)` first; `MenuActions.setWinampModernTextScale(_:)` and the
+      `WindowManager` getter/setter pair, guarded at all three layers
+- [x] **B50.8** `WinampModernMainWindowController.setTextScale(_:)` — write skin state, set
+      `textScale` on the main and **every auxiliary** renderer, repaint, re-push the library scale;
+      seed `textScale` at both renderer construction sites; `textScale` / `resolvedTextPercent`
+      getters for the menu
+- [x] **B50.9** Tests — auto at canvas heights 355 → 11px and 878 → 18px, explicit 200% beating the
+      auto cap, skin state round-trip; update `WinampModernRenderDumpTests.swift:1121-1136`
+- [x] **B50.10** Docs — `reference/components.md` (window-size rule + the control),
+      `skins/big-bento-modern.md`, `skins/defix-hi-end-200.md`, and `reference/harness.md` (whose
+      measured-values sentence is stale today: it claims Big Bento `text=22`, which the 18px clamp
+      already prevents)
+- [x] **B50.11** Verify — **manual QA passed 2026-08-26.** 1263 tests green (12 new in
+      `WinampModernPhase71Tests`). Render-dump measured on Auto: Big Bento `main/normal` **18** and
+      its own `main/shade` **11** (same skin, two layouts — the rule follows the canvas), Defix
+      `pledit` **11**, cPro-Bento / mmd3 / micro / stock Winamp Modern **11**. micro moved 13 → 11,
+      which is the intended correction
+- [x] **B50.12** Menu ordering (asked for after QA) — the ClassicPro engine leads, as the
+      dependency a cPro skin needs before it can run; then Import .wal Skin and Open Skins Folder,
+      which are two halves of the same thing rather than one of them stranded at the bottom of the
+      menu; then the per-skin group
+      — **Text Size**, Color Themes, Skin Settings, Skin Windows — built as a list so its separator
+      brackets what was actually added rather than being written inline per conditional block. Text
+      Size sits with the skin's own settings rather than with the imports because it is stored per
+      skin and changes meaning when the skin does; it is the only unconditional entry in that group,
+      the other three depending on the skin declaring one. **The UI menu's four families were also
+      reordered** to Classic → Modern → Original → Original-Metal: `buildUIMenu` builds them in
+      source order, so the two Original families are held in a `deferredFamilies` list and added
+      after the `.wal` block rather than inline. The separator that fenced the `.wal` family off is
+      gone — the four are peers
+
+---
+
 ## Big Bento Modern — moved out of this file
 
 **B35, B36, B37 and B38 are not here any more.** All four were the same skin family, and together
