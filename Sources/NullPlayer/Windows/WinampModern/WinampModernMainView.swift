@@ -1426,25 +1426,87 @@ final class WinampModernMainView: NSView {
 
     func updateSpectrum(_ levels: [Float]) {
         host.spectrumLevels = levels
-        // Delivering levels without invalidating left the analyzer repainting only by luck: cPro-Bento
-        // has animated layers and therefore a 30 Hz redraw timer, so its bars moved, but a skin whose
-        // scene holds nothing animated would never repaint its `<vis>` from a spectrum update at all.
-        //
-        // Only the visualization boxes, though. This arrives at the audio tap's rate, and repainting
-        // the whole window for it costs Defix 19.3 ms a frame at Retina scale — on the same main
-        // thread the skin's own animation is trying to use.
+        lastSpectrumArrival = CACurrentMediaTime()
+        startVisualizationClock()
+    }
+
+    /// **The visualization's own 60 Hz clock, because the audio's rate is not a frame rate.**
+    ///
+    /// The boxes used to repaint only when a spectrum notification arrived, which sounds like the
+    /// right beat and is not: `AudioEngine` taps `mixerNode` with a 2048-frame buffer, so a
+    /// notification lands about every **46 ms — 21 fps**, and everything in a `<vis>` moved in 21
+    /// steps a second however fast the display was. The bar and cap falloff are per *second*
+    /// (`WasabiVisStyle`), so with frames of their own they animate the whole way down instead of
+    /// stepping; and the oscilloscope has a genuinely new 576-sample chunk every 13 ms to show
+    /// (`WinampModernWaveformTap` queues them and plays them out in real time), which no amount of
+    /// repainting at 21 fps could ever reveal.
+    ///
+    /// Nothing here smooths, averages or levels the signal — that would buy motion by destroying the
+    /// detail the scope exists to show. It draws more of the frames the audio already contains.
+    ///
+    /// Only the visualization boxes are invalidated: a full repaint at this rate costs Defix 19.3 ms
+    /// a frame at Retina scale, and Big Bento Modern shows **six** boxes once its player pane is wide
+    /// enough — the case (BB21) that made a repaint-per-notification stall the main thread. The clock
+    /// runs only while there is something to show and stops itself once the decay is finished, so an
+    /// idle player pays nothing.
+    private func startVisualizationClock() {
+        guard !isTornDown, visualizationClock == nil, !visualizationRects().isEmpty else { return }
+        let timer = Timer(timeInterval: visualizationClockInterval, repeats: true) { [weak self] _ in
+            self?.visualizationTick()
+        }
+        // `.common`, for the animation timer's reason: a tracking loop (a menu, a window drag) must
+        // not freeze the visualization.
+        RunLoop.main.add(timer, forMode: .common)
+        visualizationClock = timer
+        // Paint the first frame now rather than a clock tick later: this is the moment audio started
+        // (or came back), and waiting up to 33 ms to acknowledge it is a visible hesitation. Not a
+        // full `visualizationTick`, which would re-enter this on the rate check.
+        invalidateVisualizationRects(visualizationRects())
+    }
+
+    /// **As fast as the box has new content, and no faster.** A repaint of the vis rects measured
+    /// ~4 ms on Big Bento Modern, so the difference between these two rates is about 15% of a core
+    /// against 4% — worth spending only where it shows.
+    ///
+    /// An **oscilloscope** has a genuinely new 576-sample chunk every 13 ms, so it gets the full
+    /// 60 Hz; below that the trace visibly steps. An **analyzer** — which is most skins — is fed by
+    /// the FFT, and `AudioEngine` taps `mixerNode` with a 2048-frame buffer, so its bands only change
+    /// about 21 times a second. Frames past 30 Hz there animate nothing but the falloff between two
+    /// identical sets of bars, which is not a difference anyone can see.
+    private var visualizationClockInterval: CFTimeInterval {
+        renderer.visualizationNeedsWaveform ? 1.0 / 60 : 1.0 / 30
+    }
+
+    private func visualizationTick() {
+        guard !isTornDown else { return }
         let rects = visualizationRects()
-        guard !rects.isEmpty else { return }
-        // And no faster than the display. The tap delivers at the audio block rate — ~75 Hz — and
-        // every delivery that invalidates a box costs a scene traversal, because `draw(_:)` repaints
-        // the whole tree clipped to the dirty rect. Big Bento Modern shows **six** `<vis>` boxes once
-        // its player pane is wide enough, so the moment its splitter became draggable (BB21) the
-        // analyzer started asking for 75 repaints a second of a scene that then cost 238 ms to paint
-        // once, and the main thread stopped coming back. Dropping a frame the display was never going
-        // to show costs nothing visible.
-        let now = CACurrentMediaTime()
-        guard now - lastSpectrumRedraw >= Self.spectrumRedrawInterval else { return }
-        lastSpectrumRedraw = now
+        guard !rects.isEmpty else { return stopVisualizationClock() }
+        // A skin can switch modes under the clock (its own menu, `VIS_NEXT`, a script), and the rate
+        // follows the mode.
+        if let clock = visualizationClock,
+           abs(clock.timeInterval - visualizationClockInterval) > 0.001 {
+            stopVisualizationClock()
+            startVisualizationClock()
+        }
+        // Nothing to paint for a window nobody can see — behind another window, on another Space, or
+        // miniaturised. The timer keeps running (it costs ~0.5%) so the idle check below still
+        // retires it, but the repaints, which are the actual cost, stop.
+        let isVisible = window?.occlusionState.contains(.visible) ?? true
+        if isVisible { invalidateVisualizationRects(rects) }
+        // Stop once the audio has been quiet long enough for the scope to have flattened and no bar
+        // or cap is still falling. Until then the clock is what paints the decay out — and while
+        // occluded there are no draws, so there is nothing to wait for.
+        guard CACurrentMediaTime() - lastSpectrumArrival > Self.visualizationIdleTimeout,
+              !isVisible || !renderer.hasDecayingVisualizationState else { return }
+        stopVisualizationClock()
+    }
+
+    private func stopVisualizationClock() {
+        visualizationClock?.invalidate()
+        visualizationClock = nil
+    }
+
+    private func invalidateVisualizationRects(_ rects: [NSRect]) {
         guard rects.count <= 24 else {
             needsDisplay = true
             return
@@ -1452,8 +1514,33 @@ final class WinampModernMainView: NSView {
         for rect in rects { setNeedsDisplay(rect) }
     }
 
-    private static let spectrumRedrawInterval: CFTimeInterval = 1.0 / 60
-    private var lastSpectrumRedraw: CFTimeInterval = 0
+    /// **What tells the boxes the audio went quiet.**
+    ///
+    /// Nothing posts a "zero": the taps simply stop when playback pauses, stops, ends or moves to a
+    /// cast device, so `spectrumLevels` keeps whatever the music left in it and the analyzer would
+    /// redraw those same bars forever, however fast the clock above runs.
+    /// `updatePlaybackState` fires one `needsDisplay` at the transition — ~150 ms *before* either
+    /// decay has finished — and it does not fire at all for a cast.
+    ///
+    /// So the host's level meter, the one tap that runs for **every** `.wal` skin, reports the
+    /// transition (`WinampModernLevelMeter.onSilence`, on the main thread, once), and this zeroes the
+    /// input. The clock then paints the fall out at the skin's own `falloff` and stops itself when
+    /// nothing is left above the floor.
+    func beginVisualizationSilenceDecay() {
+        guard !visualizationRects().isEmpty else { return }
+        // Zeroed, not emptied: an empty spectrum means "no input" and the analyzer draws nothing at
+        // all, which reads as the bars vanishing rather than falling.
+        if !host.spectrumLevels.isEmpty {
+            host.spectrumLevels = [Float](repeating: 0, count: host.spectrumLevels.count)
+        }
+        startVisualizationClock()
+    }
+
+    /// How long after the last spectrum the clock may stop — past the tap's own silence timeout, so
+    /// the scope's flat line is certain to have been painted at least once.
+    private static let visualizationIdleTimeout: CFTimeInterval = 0.5
+    private var visualizationClock: Timer?
+    private var lastSpectrumArrival: CFTimeInterval = 0
 
     /// The boxes of every `<vis>`/`<eqvis>` in this scene, cached with the other animation rects.
     private func visualizationRects() -> [NSRect] {
@@ -1475,6 +1562,7 @@ final class WinampModernMainView: NSView {
         tracking = nil
         animationTimer?.invalidate()
         animationTimer = nil
+        stopVisualizationClock()
         pressedObject = nil
         pressedEQHolder = nil
         draggedDivider = nil

@@ -1,0 +1,307 @@
+import CoreGraphics
+import Foundation
+import QuartzCore
+
+/// What one `<vis>` box draws, decoded from its attributes once per draw.
+///
+/// Winamp's analyzer and oscilloscope are both configured entirely through this handful of
+/// attributes, and a skin that ships a visualization settings page writes every one of them:
+/// Big Bento Modern's `visualizer.maki` sets `oscstyle`, `peaks`, `falloff`, `peakfalloff` and
+/// `coloring` from its own right-click menu, and until this existed the whole page was inert.
+///
+/// The colours arrive already **resolved** — through `WasabiSceneRenderer.objectColor`, which is the
+/// only thing that reads a `<gammagroup>` and an inline `r,g,b` triple the same way (see the comment
+/// at its call site for the Ujola Cat case that pins that down).
+struct WasabiVisStyle {
+    enum OscStyle { case solid, dots, lines }
+    enum Coloring { case normal, fire, line }
+
+    var mode: WasabiVisualizationMode = .analyzer
+    /// `bandwidth` — Winamp's fat blocks (`wide`) or the full comb (`thin`).
+    var isThin = false
+    var oscStyle: OscStyle = .lines
+    var coloring: Coloring = .normal
+    var showsPeaks = true
+    /// Bar and cap fall, **in box fractions per second** (see `WasabiBuiltInVisRenderer`).
+    var barFalloff: CGFloat = WasabiVisStyle.barFalloffSteps[2]
+    var peakFalloff: CGFloat = WasabiVisStyle.peakFalloffSteps[2]
+    /// `colorband1`…`colorband16` (or `colorallbands` for all of them), lowest band first.
+    var bandColors: [CGColor] = []
+    /// `colorosc1`…`colorosc5`, smallest excursion first.
+    var oscColors: [CGColor] = []
+    /// `colorbandpeak`, or `nil` for a skin that declares none — then a cap takes its bar's colour,
+    /// which is what Winamp does.
+    var peakColor: CGColor?
+
+    /// `falloff` / `peakfalloff` are written by MAKI at runtime, not declared in markup, and the
+    /// range is documented nowhere. **Measured** (`WINAMP_MODERN_RENDER_DISASM=@player-normal-group`
+    /// against Big Bento Modern, whose menu is Slower / Slow / Moderate / Fast / Faster): the script
+    /// checkmarks each entry with `value == 0` … `value == 4`, so the attribute is **0…4**, and the
+    /// same listing shows `peaks` written as `"0"`/`"1"` and `coloring` as the words
+    /// `Normal`/`Fire`/`Line` rather than as numbers.
+    ///
+    /// Both scales are per **second**. Draws are not a clock — `updateSpectrum` throttles to 1/60 and
+    /// drops frames outright when a scene is expensive (Big Bento's 238 ms case) — so a per-draw
+    /// constant would make "Slower…Faster" mean different things on different skins, window widths
+    /// and splitter positions. Moderate's cap fall is ~0.9/s, which is what the old fixed
+    /// 0.015-per-draw came to at 60 Hz and reads the way Winamp's does.
+    static let barFalloffSteps: [CGFloat] = [1.5, 2.5, 4.0, 6.5, 10.0]
+    static let peakFalloffSteps: [CGFloat] = [0.35, 0.55, 0.9, 1.5, 2.4]
+    static let falloffStepCount = 5
+
+    static func falloffStep(_ raw: String?) -> Int {
+        guard let value = raw.flatMap({ Int($0.trimmingCharacters(in: .whitespaces)) }) else { return 2 }
+        return max(0, min(falloffStepCount - 1, value))
+    }
+
+    /// Decode one box. `color` resolves an attribute value the way the scene renderer does; the two
+    /// must not drift, so it is passed in rather than reimplemented.
+    static func decode(attributes: [String: String], color: (String) -> CGColor) -> WasabiVisStyle {
+        func attribute(_ name: String) -> String? { attributes[name] }
+        var style = WasabiVisStyle()
+        style.mode = WasabiVisualizationMode(attribute: attribute("mode"))
+        style.isThin = attribute("bandwidth")?.lowercased() == "thin"
+        switch attribute("oscstyle")?.lowercased() {
+        case "solid": style.oscStyle = .solid
+        case "dots": style.oscStyle = .dots
+        // Winamp's default, and the sensible fallback for a value we do not know.
+        default: style.oscStyle = .lines
+        }
+        switch attribute("coloring")?.lowercased() {
+        case "fire": style.coloring = .fire
+        case "line": style.coloring = .line
+        default: style.coloring = .normal
+        }
+        style.showsPeaks = attribute("peaks")?.trimmingCharacters(in: .whitespaces) != "0"
+        style.barFalloff = barFalloffSteps[falloffStep(attribute("falloff"))]
+        style.peakFalloff = peakFalloffSteps[falloffStep(attribute("peakfalloff"))]
+        // A skin colours its analyzer per band **or** in one stroke with `colorallbands`, and its
+        // oscilloscope with `colorosc1`…`colorosc5`. White is the fallback because that is what
+        // Winamp draws with no colour at all.
+        let allBands = attribute("colorallbands")
+        style.bandColors = (1...16).map { color(attribute("colorband\($0)") ?? allBands ?? "255,255,255") }
+        style.oscColors = (1...5).map { color(attribute("colorosc\($0)") ?? allBands ?? "255,255,255") }
+        style.peakColor = attribute("colorbandpeak").map(color)
+        return style
+    }
+
+    /// The colour of the analyzer bar at `index` of `count`, at height `level`.
+    func barColor(index: Int, count: Int, level: CGFloat) -> CGColor {
+        guard !bandColors.isEmpty else { return WasabiVisStyle.white }
+        switch coloring {
+        case .normal:
+            // Colour by band, which is what a skin's sixteen `colorband` values are cut for: the
+            // gradient runs left to right across the row.
+            return bandColors[min(bandColors.count - 1, index * bandColors.count / max(1, count))]
+        case .fire:
+            // Colour by the bar's own height, so a loud band lights the top of the ramp wherever it
+            // sits in the row.
+            return bandColors[min(bandColors.count - 1,
+                                  max(0, Int(level * CGFloat(bandColors.count))))]
+        case .line:
+            return bandColors[0]
+        }
+    }
+
+    /// The colour of one oscilloscope sample. Winamp bands the scope by **excursion** into five
+    /// steps, which is why a skin declares five colours — reading only the first drew Big Bento's
+    /// four scopes as a flat `#665ea1` line where the skin asked for a gradient.
+    func oscColor(excursion: CGFloat) -> CGColor {
+        guard !oscColors.isEmpty else { return WasabiVisStyle.white }
+        let step = Int(min(1, max(0, excursion)) * CGFloat(oscColors.count))
+        return oscColors[min(oscColors.count - 1, step)]
+    }
+
+    static let white = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+}
+
+/// Everything a renderer needs for one box, one frame.
+struct WasabiVisInput {
+    let objectID: WasabiObjectID
+    let style: WasabiVisStyle
+    /// The spectrum tap's band magnitudes. Empty while nothing is playing.
+    let levels: [Float]
+    /// Winamp's 576-sample `visdata` waveform, `UInt8` centred on 128, flat when silent.
+    let waveform: (left: [UInt8], right: [UInt8])
+}
+
+/// What paints a `<vis>` box.
+///
+/// A protocol rather than a bigger `switch`, because NullPlayer's own visualization suite (Cava,
+/// vis_classic, the Metal modes) is meant to become selectable inside a `.wal` skin, and each of
+/// those is a renderer of exactly this shape — `<vis>` boxes are painted straight into the scene
+/// context, which is what lets Big Bento's `main.vis.mirror` sit over `main.vis` at `alpha="110"
+/// flipv="1"`.
+protocol WasabiVisRenderer: AnyObject {
+    /// Whether this renderer reads PCM for that mode, and therefore whether the host's waveform tap
+    /// has to run. Deliberately answered from the mode alone: it is recomputed whenever the graph
+    /// changes, so it must not cost a colour resolution per box per frame.
+    func needsWaveform(forMode mode: WasabiVisualizationMode) -> Bool
+    func draw(_ input: WasabiVisInput, in frame: CGRect, context: CGContext)
+    /// Whether any box still has a bar or a cap above the floor — what tells the window it can stop
+    /// repainting after the audio went quiet.
+    var hasDecayingState: Bool { get }
+    func discardState()
+}
+
+/// Winamp's own two visualizations: the spectrum analyzer and the oscilloscope.
+final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
+    /// How many bars the analyzer draws, per `bandwidth`. Winamp's analyzer is a row of **bands**,
+    /// not of FFT bins: `wide` is the familiar handful of fat blocks, `thin` the full comb.
+    static let wideAnalyzerBands = 19
+    static let thinAnalyzerBands = 75
+
+    /// Per-box bar heights, falling caps and the clock they were last decayed against — all in box
+    /// fractions, keyed by object because one skin draws the same visualization in several boxes and
+    /// several layouts.
+    private struct BoxState {
+        var bars: [CGFloat] = []
+        var peaks: [CGFloat] = []
+        var lastDraw: CFTimeInterval = 0
+    }
+    private var boxes: [WasabiObjectID: BoxState] = [:]
+
+    /// The longest step a single frame may decay by. A stall — or the first draw, whose `lastDraw` is
+    /// zero — must not drop every bar to the floor in one frame.
+    private static let maximumDecayStep: CFTimeInterval = 0.25
+
+    func needsWaveform(forMode mode: WasabiVisualizationMode) -> Bool { mode == .oscilloscope }
+
+    var hasDecayingState: Bool {
+        boxes.values.contains { state in
+            state.bars.contains { $0 > 0.001 } || state.peaks.contains { $0 > 0.001 }
+        }
+    }
+
+    func discardState() { boxes.removeAll() }
+
+    func draw(_ input: WasabiVisInput, in frame: CGRect, context: CGContext) {
+        switch input.style.mode {
+        case .off:
+            return
+        case .analyzer:
+            // The spectrum is the analyzer's input and only the analyzer's: with nothing playing
+            // there are no levels, and the bars simply stop being drawn.
+            guard !input.levels.isEmpty else { return }
+            drawAnalyzer(input, in: frame, context: context)
+        case .oscilloscope:
+            drawOscilloscope(input, in: frame, context: context)
+        }
+    }
+
+    // MARK: - The analyzer
+
+    private func drawAnalyzer(_ input: WasabiVisInput, in frame: CGRect, context: CGContext) {
+        let style = input.style
+        let levels = input.levels
+        let count = max(1, min(style.isThin ? Self.thinAnalyzerBands : Self.wideAnalyzerBands,
+                               min(levels.count, Int(frame.width))))
+        // One band, as the fraction of the box its bar fills: the loudest bin in the bucket, on the
+        // **decibel** scale `getVisBand` and the VU meters already answer in (Phases 29–30). The tap
+        // is linear, and drawn linearly ordinary music sits in the bottom of the box.
+        func bandFraction(_ index: Int) -> CGFloat {
+            let start = index * levels.count / count
+            let end = min(levels.count, max(start + 1, (index + 1) * levels.count / count))
+            var peak: Float = 0
+            for bin in start..<end { peak = max(peak, levels[bin]) }
+            let byte = WinampModernScriptRuntime.visByte(forMagnitude: peak)
+            return max(0, min(1, CGFloat(byte) / 255))
+        }
+        // Bars are laid out on whole pixels. A fractional slot antialiases the 1px gap between bars
+        // into a smear, and a `wide` row then reads as one solid block rather than as Winamp's
+        // separated bars.
+        let slot = frame.width / CGFloat(count)
+        func columns(_ index: Int) -> (x: CGFloat, width: CGFloat) {
+            let start = (CGFloat(index) * slot).rounded(.down)
+            let end = (CGFloat(index + 1) * slot).rounded(.down)
+            return (frame.minX + start, max(1, end - start - 1))
+        }
+
+        var state = boxes[input.objectID] ?? BoxState()
+        if state.bars.count != count { state.bars = Array(repeating: 0, count: count) }
+        if state.peaks.count != count { state.peaks = Array(repeating: 0, count: count) }
+        let now = CACurrentMediaTime()
+        let elapsed = state.lastDraw > 0
+            ? min(Self.maximumDecayStep, max(0, now - state.lastDraw)) : 0
+        state.lastDraw = now
+        let barStep = style.barFalloff * CGFloat(elapsed)
+        let peakStep = style.peakFalloff * CGFloat(elapsed)
+
+        for index in 0..<count {
+            let level = bandFraction(index)
+            // The bar rises instantly and falls at `falloff` — the fall did not exist at all before,
+            // so bars snapped straight down, which is a large part of why the analyzer read twitchier
+            // than Winamp's.
+            let bar = max(level, state.bars[index] - barStep)
+            state.bars[index] = bar
+            state.peaks[index] = max(bar, state.peaks[index] - peakStep)
+            context.setFillColor(style.barColor(index: index, count: count, level: bar))
+            let (x, barWidth) = columns(index)
+            context.fill(CGRect(x: x, y: frame.maxY - bar * frame.height,
+                                width: barWidth, height: bar * frame.height))
+            guard style.showsPeaks, state.peaks[index] > bar else { continue }
+            let capHeight: CGFloat = frame.height >= 16 ? 2 : 1
+            let capY = min(frame.maxY - capHeight, frame.maxY - state.peaks[index] * frame.height)
+            context.setFillColor(style.peakColor
+                                 ?? style.barColor(index: index, count: count, level: bar))
+            context.fill(CGRect(x: x, y: capY, width: barWidth, height: capHeight))
+        }
+        boxes[input.objectID] = state
+    }
+
+    // MARK: - The oscilloscope
+
+    /// **Left channel only** — Winamp's scope reads channel 0, and the mirrored second box is the
+    /// skin's job (Big Bento's `main.vis` is `fliph="1"`), not ours.
+    private func drawOscilloscope(_ input: WasabiVisInput, in frame: CGRect, context: CGContext) {
+        let samples = input.waveform.left
+        guard !samples.isEmpty else { return }
+        let style = input.style
+        let columns = max(1, min(samples.count, Int(frame.width.rounded())))
+        // One column per pixel of box width, sampled across the buffer.
+        func sample(_ column: Int) -> (y: CGFloat, excursion: CGFloat) {
+            let index = min(samples.count - 1, column * samples.count / columns)
+            let offset = (CGFloat(samples[index]) - 128) / 128
+            return (frame.midY + offset * frame.height / 2, min(1, abs(offset)))
+        }
+        func x(_ column: Int) -> CGFloat {
+            columns == 1 ? frame.midX
+                : frame.minX + CGFloat(column) * (frame.width - 1) / CGFloat(columns - 1)
+        }
+
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.setLineWidth(1)
+        switch style.oscStyle {
+        case .lines:
+            // Stroked segment by segment, each in the colour of the sample it arrives at: the five
+            // `colorosc` steps are a gradient by excursion, so one stroke for the whole polyline
+            // would throw four of them away.
+            var previous = sample(0)
+            for column in 1..<max(2, columns) {
+                let current = sample(column)
+                context.setStrokeColor(style.oscColor(excursion: current.excursion))
+                context.beginPath()
+                context.move(to: CGPoint(x: x(column - 1), y: previous.y))
+                context.addLine(to: CGPoint(x: x(column), y: current.y))
+                context.strokePath()
+                previous = current
+            }
+        case .dots:
+            for column in 0..<columns {
+                let point = sample(column)
+                context.setFillColor(style.oscColor(excursion: point.excursion))
+                context.fill(CGRect(x: x(column), y: point.y, width: 1, height: 1))
+            }
+        case .solid:
+            for column in 0..<columns {
+                let point = sample(column)
+                context.setFillColor(style.oscColor(excursion: point.excursion))
+                let top = max(point.y, frame.midY)
+                let bottom = min(point.y, frame.midY)
+                context.fill(CGRect(x: x(column), y: bottom,
+                                    width: 1, height: max(1, top - bottom)))
+            }
+        }
+    }
+}

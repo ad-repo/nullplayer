@@ -31,6 +31,36 @@ is a function of the graph; its **bitmap** is not — play/pause artwork, the sh
 the EQ buttons and every `cfgattrib` switch are resolved from the host and the config store, so a
 memoized node has its image re-resolved on the way out.
 
+#### The visualization has a clock of its own, because the audio's rate is not a frame rate (B51)
+
+The `<vis>` boxes used to repaint only when a spectrum notification arrived. That sounds like the
+right beat and is not: `AudioEngine` taps `mixerNode` with a **2048-frame buffer**, so one arrives
+about every 46 ms and everything in a `<vis>` moved at **21 fps** however fast the display ran. The
+1/60 throttle in `updateSpectrum` never had anything to throttle.
+
+`WinampModernMainView` now runs its own clock, invalidating **only the vis rects**:
+
+- **60 Hz when a `mode="2"` box is on screen** — the scope has a genuinely new 576-sample chunk every
+  13 ms, and below 60 the trace visibly steps.
+- **30 Hz otherwise.** An analyzer's bands only change at the FFT's ~21 Hz; frames past 30 animate
+  nothing but falloff between two identical sets of bars.
+- **No repaints while the window is occluded**; the timer keeps running (~0.5%) so the idle check
+  still retires it.
+- **It stops itself** once the audio is quiet and no bar or cap is still falling, so an idle player
+  pays nothing — stricter than the old path, which re-entered on every notification.
+
+**What that costs, measured** (`sample`, Big Bento Modern, playing, scope visible): a vis-rect repaint
+is ~4 ms, so 60 Hz is ~16–24% of a core against ~8% at 21 fps. Drawing the scope itself is **7 samples
+out of 3744** — the visualization is never the cost; what the repaint drags with it is.
+
+And what it dragged with it names a bigger problem: in the same trace `layout()` is ~10% of a core,
+**345 of its 369 samples in `browserNodes()` → `layoutNodes()` → `append`** — a full recursive
+re-solve of the tree including hidden nodes. `layoutNodes()` *is* memoized against
+`mutationGeneration`, so missing it that consistently means something in the skin's scripts bumps the
+counter nearly every frame, which invalidates the scene walk too. Pre-existing, amplified by any
+faster clock, and tracked as **B52**. The general rule: before spending frames, check whether the
+frame is expensive because of what you are drawing or because a cache upstream is never surviving.
+
 #### Profile the process, don't reason about the frame (2026-08-24)
 
 `WINAMP_MODERN_RENDER_TIME` measures **`renderer.draw` and nothing else**. A report of "1–2 fps" was

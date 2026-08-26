@@ -90,6 +90,18 @@ protocol WinampModernHost: AnyObject {
     var vuLevels: (left: Double, right: Double) { get }
     var spectrumLevels: [Float] { get set }
 
+    /// The 576-sample waveform per channel a `<vis mode="2">` oscilloscope draws — Winamp's
+    /// `visdata` format, `UInt8` centred on 128. **Not the spectrum**: a scope shows the wave itself,
+    /// which is the whole point of the mode, and the band levels beside it cannot be reshaped into
+    /// one. A host with no tap (the render harness, a test double) reads a flat centre line, so a
+    /// scope still draws — as a straight line, which is what silence looks like.
+    var waveformSamples: (left: [UInt8], right: [UInt8]) { get }
+
+    /// Whether anything on screen is asking for that waveform. The tap is real-time audio work, so it
+    /// stays off unless a skin actually declares a scope: the renderer recomputes this whenever the
+    /// graph changes and pushes it here only when the answer moves. Idempotent.
+    func setWaveformNeeded(_ needed: Bool)
+
     func play()
     func pause()
     func stop()
@@ -127,6 +139,10 @@ extension WinampModernHost {
         set {}
     }
     var vuLevels: (left: Double, right: Double) { (0, 0) }
+    var waveformSamples: (left: [UInt8], right: [UInt8]) {
+        (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
+    }
+    func setWaveformNeeded(_ needed: Bool) {}
     var trackArtist: String { "" }
     var trackAlbum: String { "" }
     var trackMetadata: WinampModernTrackMetadata { .empty }
@@ -252,6 +268,31 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     /// measures the same audio for artwork calibrated differently (`WinampModernLevelMeter`).
     private lazy var levelMeter = WinampModernLevelMeter(consumerId: consumerID + ".vu")
     var vuLevels: (left: Double, right: Double) { levelMeter.levels }
+
+    /// The oscilloscope's PCM. Lazy beside `levelMeter`, but unlike it **not** started with the rest
+    /// of the visualization consumption: the waveform tap costs real-time audio work in
+    /// `AudioEngine.processAudioBuffer`, and most skins draw an analyzer and never ask for it.
+    /// `setWaveformNeeded` is what turns it on, from the renderer that found a `mode="2"` box.
+    private lazy var waveformTap = WinampModernWaveformTap(consumerId: consumerID + ".waveform")
+    private var isWaveformNeeded = false
+    var waveformSamples: (left: [UInt8], right: [UInt8]) {
+        isWaveformNeeded ? waveformTap.samples
+            : (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
+    }
+
+    func setWaveformNeeded(_ needed: Bool) {
+        guard needed != isWaveformNeeded else { return }
+        isWaveformNeeded = needed
+        if needed { waveformTap.start() } else { waveformTap.stop() }
+    }
+
+    /// What the skin's window installs to hear that the audio went quiet — the one clock that can
+    /// get a paused analyzer's bars and a scope's flat line actually *painted*
+    /// (`WinampModernLevelMeter.onSilence`). On the host because the meter is the host's.
+    var visualizationSilenceHandler: (() -> Void)? {
+        get { levelMeter.onSilence }
+        set { levelMeter.onSilence = newValue }
+    }
 
     /// The current track's cover, decoded once per track rather than per frame — `albumArtwork` is
     /// read inside `draw`, so converting an `NSImage` there would re-rasterise the art every repaint.
@@ -517,6 +558,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         isConsumingVisualization = false
         engine.removeSpectrumConsumer(consumerID)
         levelMeter.stop()
+        setWaveformNeeded(false)
         spectrumLevels.removeAll(keepingCapacity: false)
     }
 

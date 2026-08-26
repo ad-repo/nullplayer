@@ -166,6 +166,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
             loadedSkin = loaded
             self.host = host
+            // The audio going quiet is the only thing that can ask a `<vis>` box to repaint once the
+            // taps stop posting — see `WinampModernMainView.beginVisualizationSilenceDecay`. Every
+            // container's boxes get it, not just the player's.
+            host.visualizationSilenceHandler = { [weak self] in
+                guard let self else { return }
+                for view in viewsByContainer.values { view.beginVisualizationSilenceDecay() }
+            }
             self.componentBridge = componentBridge
             // Only the fallback before the view layer's first push; the resolved number is UI Size
             // times Text Size, which the view resolves against its own canvas.

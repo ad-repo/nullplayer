@@ -168,6 +168,41 @@ attribute, so honouring it in the renderer is the whole implementation.
 A `<vis ghost="1">` takes **no** clicks — Love is War Miku puts an invisible `<layer rectrgn="1">`
 beside it as the click target instead, so the menu is reached through that, not the box.
 
+#### The oscilloscope reads PCM, and the host has always had it (B51)
+
+`mode="2"` is drawn from Winamp's own `visdata` waveform — 576 `UInt8` samples per channel centred on
+128, **left channel only**, one column per pixel of box width. The mirrored second box is the *skin's*
+job (`fliph`), not the renderer's.
+
+It was a spectrum-derived zigzag for a long time on the stated premise that *"the host publishes a
+spectrum, not raw PCM"*. **That premise was false the whole time**: `AudioEngine` posts exactly this
+array on `.audioWaveform576DataUpdated`, consumer-gated, and vis_classic and the waveform views were
+already consuming it. The lesson is the general one — *check what the host already publishes before
+building a substitute for it*; a placeholder that survives long enough acquires a rationale.
+
+**The tap is demand-gated and the demand is graph state.** `WinampModernWaveformTap` runs only while
+some `<vis>` in the graph asks for a PCM-fed mode — **any**, not all: one scope among five analyzers
+still needs it. `WasabiSceneRenderer` recomputes that against the graph's `mutationGeneration` (the
+key `sceneNodes()` already uses) and pushes it to the host only on a change. `mutationGeneration` is
+the right key because **`mode` has two writers**: `setVisualizationAttribute`, and MAKI's `setMode` /
+`setXmlParam` writing the object directly — and a skin's own visualization menu is entirely the
+second kind, so anything keyed on the setter alone would miss it.
+
+**Chunks are queued and played out in real time, not overwritten.** `processAudioBuffer` runs once per
+2048-frame buffer (~46 ms) and posts every 576-sample chunk it can from inside that one call, so they
+arrive three or four at a time. Keeping only the newest discarded three quarters of the audio and left
+the survivors 46 ms apart — which reads as a scope that jumps, and is a *discarded-data* problem, not
+a frame-rate one. The queue is capped (6 chunks ≈ 78 ms) so the trace cannot drift behind the music,
+and a read is a pure function of the clock so every box in a frame draws the same chunk. The renderer
+takes the waveform **once per frame** for the same reason: two boxes reading microseconds apart can
+straddle a 13 ms boundary, and in Big Bento's butterfly that is a mirror that does not mirror.
+
+Every other `<vis>` attribute is read too — `oscstyle`, `coloring`, `peaks`, `falloff`,
+`peakfalloff`, `colorosc1`…`5` — see `compatibility/wasabi-surface.md` for the list and the measured
+0…4 falloff scale. **Both falloffs are per second, not per draw**: draws are not a clock (the vis
+clock below drops frames when a scene is expensive), so a per-draw constant would make
+"Slower…Faster" mean different things on different skins, window widths and splitter positions.
+
 #### What the analyzer actually draws (Phase 34)
 
 Three rules, all of them measured on Ujola Cat, all of them engine-wide:

@@ -942,6 +942,16 @@ final class WasabiSceneRenderer {
 
     func draw(in context: CGContext, pressed: WasabiObjectID? = nil,
               hovered: WasabiObjectID? = nil) {
+        // Whether the host's PCM tap needs to run is a property of the graph, and the frame is where
+        // every route that can change it — a menu, a script's `setMode`, a scene rebuild — has
+        // certainly landed. Cached against the graph's generation, so this is a `UInt64` compare on
+        // the frames where nothing moved.
+        refreshWaveformDemand()
+        // Once per frame, not once per box. The tap plays its chunks out against the clock, so two
+        // boxes reading it a few microseconds apart can straddle a 13 ms boundary and draw different
+        // chunks — which in Big Bento's butterfly is a mirror that does not quite mirror.
+        frameWaveform = waveformDemand?.needed == true ? host.waveformSamples : nil
+        defer { frameWaveform = nil }
         context.saveGState()
         context.translateBy(x: 0, y: canvasSize.height)
         context.scaleBy(x: 1, y: -1)
@@ -2601,7 +2611,13 @@ final class WasabiSceneRenderer {
 
     /// `wide` (Winamp's fat blocks) or `thin` (the full comb), the analyzer's only real option.
     var analyzerBandwidthIsThin: Bool {
-        visualizationObjects().first?.attributes["bandwidth"]?.lowercased() == "thin"
+        visualizationAttribute("bandwidth")?.lowercased() == "thin"
+    }
+
+    /// One `<vis>` attribute as the skin currently has it — what a menu ticks its current entry from.
+    /// The first box's, because `setVisualizationAttribute` writes them all together.
+    func visualizationAttribute(_ name: String) -> String? {
+        visualizationObjects().first?.attributes[name]
     }
 
     @discardableResult
@@ -2617,24 +2633,73 @@ final class WasabiSceneRenderer {
         for object in visualizationObjects() where object.setAttribute(name, value: value) {
             changed = true
         }
-        if changed { invalidateSceneCache() }
+        if changed {
+            invalidateSceneCache()
+            refreshWaveformDemand()
+        }
         return changed
     }
 
-    /// How many bars the analyzer draws, per `bandwidth`. Winamp's analyzer is a row of **bands**,
-    /// not of FFT bins: `wide` is the familiar handful of fat blocks, `thin` the full comb.
-    private static let wideAnalyzerBands = 19
-    private static let thinAnalyzerBands = 75
+    /// Does anything in this skin want the host's PCM tap running?
+    ///
+    /// **Any** `<vis>` in the graph, not all of them: one scope among Big Bento's five analyzers
+    /// still needs the waveform. Whole-graph for the same reason `visualizationObjects()` is — a skin
+    /// draws its visualization in several layouts, and every `WasabiSceneRenderer` in the skin shares
+    /// one `loadedSkin.runtime.graph`, so each of them computes the same answer and the host does not
+    /// have to refcount per renderer.
+    ///
+    /// Cached against the graph's own mutation counter rather than recomputed per draw:
+    /// `visualizationObjects()` is an uncached filter over every object in the graph, and this is
+    /// asked once per frame. Not from `invalidateSceneCache()` either — that runs on every playback
+    /// tick, which the graph's generation does not move for. **The `mode` attribute has two writers**:
+    /// `setVisualizationAttribute` (the host's own menus) and MAKI's `setMode`/`setXmlParam`, which
+    /// write the object directly — Big Bento's visualization menu is entirely the second kind — and
+    /// both bump `mutationGeneration`, which is what makes it the right key.
+    func refreshWaveformDemand() {
+        let generation = loadedSkin.runtime.graph.mutationGeneration
+        if let waveformDemand, waveformDemand.generation == generation { return }
+        let needed = visualizationObjects().contains {
+            visRenderer.needsWaveform(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
+        }
+        let changed = waveformDemand?.needed != needed
+        waveformDemand = (generation, needed)
+        // Pushed only on a change, though `setWaveformNeeded` is idempotent regardless.
+        if changed { host.setWaveformNeeded(needed) }
+    }
 
-    /// Per-`<vis>` falling peak caps, keyed by object, in bar fractions. Decayed once per draw.
+    /// Whether any box in this skin is a PCM-fed visualization, as of the last `refreshWaveformDemand`
+    /// — the window reads it to decide how fast its visualization clock has to run.
+    var visualizationNeedsWaveform: Bool { waveformDemand?.needed ?? false }
+
+    private var waveformDemand: (generation: UInt64, needed: Bool)?
+    /// The waveform every `<vis>` in *this* frame draws from. See `draw(in:)`.
+    private var frameWaveform: (left: [UInt8], right: [UInt8])?
+
+    /// The `{0000000A}` holder fallback's falling caps, keyed by object, in bar fractions. Decayed
+    /// once per draw — that surface has no `<vis>` to take a `peakfalloff` from, by design, and is
+    /// left as it was.
     private var analyzerPeaks: [WasabiObjectID: [CGFloat]] = [:]
-    /// How far a peak cap falls per frame. At the scene's redraw rate this is roughly the drop
+    /// How far one of those caps falls per frame. At the scene's redraw rate this is roughly the drop
     /// Winamp's own caps have — fast enough to follow a track, slow enough to read as a cap.
     private static let analyzerPeakDecay: CGFloat = 0.015
 
+    /// What actually paints a `<vis>` box (`WasabiVisPainter.swift`). Behind a protocol because
+    /// NullPlayer's own visualization suite is meant to become selectable in a `.wal` skin, and each
+    /// of those engines is a renderer of the same shape. It owns the bar and cap decay state, keyed
+    /// by object, which used to live here as `analyzerPeaks`.
+    let visRenderer: WasabiVisRenderer = WasabiBuiltInVisRenderer()
+
+    /// Whether any box still has a bar or a cap above the floor — what tells the window it can stop
+    /// repainting once the audio has gone quiet.
+    var hasDecayingVisualizationState: Bool { visRenderer.hasDecayingState }
+
     private func drawVisualization(_ object: WasabiObject, frame: CGRect, context: CGContext) {
-        guard !host.spectrumLevels.isEmpty, frame.width > 0, frame.height > 0 else { return }
-        let levels = host.spectrumLevels
+        // Only the box's own size is a precondition here. The spectrum-levels check used to be, and
+        // that gated the *oscilloscope* — which reads PCM — on the analyzer's input: with nothing
+        // playing (`endVisualizationConsumption` clears the levels, and they are empty before the
+        // first tap after a skin load) a scope could not even paint its flat centre line. It now
+        // lives in the analyzer branch, where it belongs.
+        guard frame.width > 0, frame.height > 0 else { return }
         // A skin colours its analyzer per band (`colorband1`…`colorband16`) **or** in one stroke with
         // `colorallbands`, and its oscilloscope with `colorosc1`…`colorosc5`. Reading only the
         // per-band form and defaulting to white painted Rika's spectrum as bright white bars across
@@ -2648,88 +2713,19 @@ final class WasabiSceneRenderer {
         // carries its own group and `objectColor` hands it back to `resolvedColor`, so nothing is
         // tinted twice.
         let gammaGroup = object.attributes["gammagroup"]
-        func color(_ index: Int) -> CGColor {
-            objectColor(object.attributes["colorband\(min(16, index + 1))"]
-                        ?? object.attributes["colorallbands"] ?? "255,255,255",
-                        gammaGroup: gammaGroup).cgColor
-        }
-        func oscilloscopeColor(_ index: Int) -> CGColor {
-            objectColor(object.attributes["colorosc\(min(5, index + 1))"]
-                        ?? object.attributes["colorallbands"] ?? "255,255,255",
-                        gammaGroup: gammaGroup).cgColor
-        }
-        // `bandwidth` picks the band *count*, which is what it means — it used to pick only the bar
-        // thickness while the bars stayed one-per-FFT-bin, so every skin drew 64 hairlines (and
-        // silently dropped the top 11 of the tap's 75 bands).
-        let isThin = object.attributes["bandwidth"]?.lowercased() == "thin"
-        let count = max(1, min(isThin ? Self.thinAnalyzerBands : Self.wideAnalyzerBands,
-                               min(levels.count, Int(frame.width))))
-        // One band, as the fraction of the box its bar fills: the loudest bin in the bucket, on the
-        // **decibel** scale `getVisBand` and the VU meters already answer in (Phases 29–30). The tap
-        // is linear, and drawn linearly ordinary music sits in the bottom of the box.
-        func bandFraction(_ index: Int) -> CGFloat {
-            let start = index * levels.count / count
-            let end = min(levels.count, max(start + 1, (index + 1) * levels.count / count))
-            var peak: Float = 0
-            for bin in start..<end { peak = max(peak, levels[bin]) }
-            let byte = WinampModernScriptRuntime.visByte(forMagnitude: peak)
-            return max(0, min(1, CGFloat(byte) / 255))
+        let style = WasabiVisStyle.decode(attributes: object.attributes) {
+            objectColor($0, gammaGroup: gammaGroup).cgColor
         }
         context.saveGState()
         defer { context.restoreGState() }
-        switch WasabiVisualizationMode(attribute: object.attributes["mode"]) {
-        case .off:
-            return
-        case .analyzer:
-            // Bars are laid out on whole pixels. A fractional slot antialiases the 1px gap between
-            // bars into a smear, and a `wide` row then reads as one solid block rather than as
-            // Winamp's separated bars.
-            let slot = frame.width / CGFloat(count)
-            func columns(_ index: Int) -> (x: CGFloat, width: CGFloat) {
-                let start = (CGFloat(index) * slot).rounded(.down)
-                let end = (CGFloat(index + 1) * slot).rounded(.down)
-                return (frame.minX + start, max(1, end - start - 1))
-            }
-            // The falling caps `colorbandpeak` is for. Held at the running max and decayed a fixed
-            // amount per draw; a skin that declares no peak colour gets the band's own, which is what
-            // Winamp does with an analyzer whose caps are the same colour as its bars.
-            var peaks = analyzerPeaks[object.stableID] ?? []
-            if peaks.count != count { peaks = Array(repeating: 0, count: count) }
-            let peakColor = object.attributes["colorbandpeak"].map {
-                objectColor($0, gammaGroup: gammaGroup).cgColor
-            }
-            for index in 0..<count {
-                let level = bandFraction(index)
-                peaks[index] = max(level, peaks[index] - Self.analyzerPeakDecay)
-                context.setFillColor(color(index))
-                let (x, barWidth) = columns(index)
-                context.fill(CGRect(x: x, y: frame.maxY - level * frame.height,
-                                    width: barWidth, height: level * frame.height))
-                guard peaks[index] > level else { continue }
-                let capHeight: CGFloat = frame.height >= 16 ? 2 : 1
-                let capY = min(frame.maxY - capHeight, frame.maxY - peaks[index] * frame.height)
-                context.setFillColor(peakColor ?? color(index))
-                context.fill(CGRect(x: x, y: capY, width: barWidth, height: capHeight))
-            }
-            analyzerPeaks[object.stableID] = peaks
-        case .oscilloscope:
-            // Drawn from the same band levels, mirrored about the centre line: the host publishes a
-            // spectrum, not raw PCM, so this is the shape of the signal rather than the waveform
-            // itself. It keeps a skin that asks for a scope from showing an analyzer instead.
-            let step = frame.width / CGFloat(max(1, count - 1))
-            context.saveGState()
-            context.setLineWidth(1)
-            context.setStrokeColor(oscilloscopeColor(0))
-            context.beginPath()
-            for index in 0..<count {
-                let level = bandFraction(index)
-                let point = CGPoint(x: frame.minX + CGFloat(index) * step,
-                                    y: frame.midY + (index % 2 == 0 ? -1 : 1) * level * frame.height / 2)
-                if index == 0 { context.move(to: point) } else { context.addLine(to: point) }
-            }
-            context.strokePath()
-            context.restoreGState()
-        }
+        // The frame's waveform, taken once in `draw(in:)`. A box drawn outside a full frame (a probe,
+        // a golden image) falls back to asking the host directly.
+        let waveform = visRenderer.needsWaveform(forMode: style.mode)
+            ? (frameWaveform ?? host.waveformSamples)
+            : (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
+        visRenderer.draw(WasabiVisInput(objectID: object.stableID, style: style,
+                                        levels: host.spectrumLevels, waveform: waveform),
+                         in: frame, context: context)
     }
 
     /// `<eqvis>` — the little curve a skin draws over its equalizer, from the current band gains.

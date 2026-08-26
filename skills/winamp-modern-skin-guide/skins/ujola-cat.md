@@ -64,8 +64,9 @@ the right tab opens volume/balance and four window buttons.
   with white. That is Winamp's behaviour, so matching it is correct.
 - **The window region is not applied**, only no longer painted: `.wal` windows are rectangular here,
   so the rounded/notched silhouette those mask layers describe is not cut out of the window.
-- The oscilloscope mode is a mirrored spectrum rather than real PCM — engine-wide, see
-  `compatibility.md`.
+- ~~The oscilloscope mode is a mirrored spectrum rather than real PCM~~ — **fixed (B51)**; it draws
+  the real waveform, and its 22 inline vis colours (`colorosc1`…`5` included) all resolve through the
+  skin's `gammagroup` as before.
 
 ### Traps this skin sets
 

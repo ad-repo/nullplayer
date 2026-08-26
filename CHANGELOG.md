@@ -53,6 +53,22 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: the oscilloscope shows the actual waveform, and a skin's visualization
+  settings finally do something** — a skin's scope drew a fixed zigzag that only swelled and shrank
+  with the volume, because it was being derived from the spectrum bars rather than from the sound. It
+  now draws the real waveform, the same one Winamp's own scope shows, so you can see the shape of what
+  you are listening to. Everything the skin offers alongside it works too: **Oscilloscope Style**
+  (Lines, Dots, Solid), **Show Peaks**, **Analyzer Coloring** (Normal, Fire, Line) and the two
+  **Falloff Speed** settings from Slower to Faster — all of which used to be menu items that changed
+  nothing. Skins that colour the scope by loudness (Big Bento Modern gives it five shades) now show
+  that gradient instead of one flat line, and the analyzer's bars fall smoothly rather than snapping
+  down. NullPlayer's own right-click **Visualization** menu offers the same options for skins that
+  don't ship a menu of their own. The whole display is also **much smoother** — it was being redrawn
+  about 21 times a second no matter how fast your screen refreshes, and three quarters of the
+  waveform was being thrown away before it could be shown. And when you **pause**, the scope now
+  settles to a flat line and the bars and peaks fall away, instead of freezing on the last frame of
+  the music. Verified live on Big Bento Modern and Love is War Miku.
+
 - **Winamp 5.x modern skins: Big Bento Modern's enlarged playlist shows its album art at full size** —
   with **Skin Settings → Playlist → Show Album Art if Playlist is enlarged** turned on, the cover
   panel under the side playlist opened about a third of its proper height, so the artwork was

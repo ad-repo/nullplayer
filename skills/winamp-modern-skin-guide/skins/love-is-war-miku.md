@@ -52,8 +52,10 @@ embedded (a second panel over the same box, swapped by `maineq.maki`). Compatibi
 
 - **`fliph` on `<vis>`** — a left-click on the same invisible trigger toggles it in the skin's script,
   and the renderer ignores the attribute, so the left-click has no visible effect.
-- **The oscilloscope is a mirrored spectrum**, not real PCM: the host publishes band levels, so it is
-  the shape of the signal rather than the waveform. Engine-wide, see `compatibility.md`.
+- ~~The oscilloscope is a mirrored spectrum~~ — **fixed (B51)**: it draws Winamp's real 576-sample
+  waveform, and this skin's own `visualizer.maki` menu (`oscstyle` Solid/Dots/Lines, plus the
+  analyzer's `peaks`/`falloff`/`coloring`) now changes what is on screen. Engine-wide, see
+  `reference/rendering.md` → *The oscilloscope reads PCM*.
 - **`volbtn` ("Show Volume Bar") does nothing** — `action="TOGGLE"` with an empty `param`. It does
   nothing in Winamp either; not a defect.
 - **Time readout is ~2px narrower than the reference** (48px against 50px for `1:12`). The fixed-pitch

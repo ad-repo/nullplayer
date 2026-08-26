@@ -114,7 +114,7 @@ extension WinampModernMainView {
                 menu.addItem(item)
             }
             menu.addItem(.separator())
-            menu.addItem(analyzerBandwidthMenuItem(enabled: mode == .analyzer))
+            for item in visualizationOptionMenuItems(mode: mode) { menu.addItem(item) }
             menu.addItem(.separator())
         }
         let hostItem = NSMenuItem(title: "Visualizations", action: nil, keyEquivalent: "")
@@ -135,14 +135,78 @@ extension WinampModernMainView {
             popUpMenu(live, from: object)
             return
         }
-        guard renderer.visualizationMode != nil else {
+        guard let mode = renderer.visualizationMode else {
             popUpMenu(ContextMenuBuilder.buildVisualizationsMenu(), from: object)
             return
         }
         let menu = NSMenu(title: "Visualization Options")
         menu.autoenablesItems = false
-        menu.addItem(analyzerBandwidthMenuItem(enabled: renderer.visualizationMode == .analyzer))
+        for item in visualizationOptionMenuItems(mode: mode) { menu.addItem(item) }
         popUpMenu(menu, from: object)
+    }
+
+    /// The `<vis>` options the renderer actually reads, on the standing principle that *a menu item
+    /// that changes nothing on screen is worse than no item*. Every one of these was inert until the
+    /// renderer learned to read it, which is also why the skins that ship their own visualization
+    /// page (Big Bento Modern, Love is War Miku) had a page that did nothing: they write these same
+    /// attributes themselves.
+    ///
+    /// Each is enabled only for the mode it belongs to — greyed rather than hidden, so the menu says
+    /// *why* an option is not available.
+    private func visualizationOptionMenuItems(mode: WasabiVisualizationMode) -> [NSMenuItem] {
+        let isAnalyzer = mode == .analyzer
+        let isScope = mode == .oscilloscope
+        var items = [analyzerBandwidthMenuItem(enabled: isAnalyzer)]
+        // Winamp's own spelling of the values, which is what the skins' scripts write.
+        items.append(visualizationSubmenu(
+            title: "Oscilloscope Style", attribute: "oscstyle", enabled: isScope,
+            entries: [("Lines", "Lines"), ("Dots", "Dots"), ("Solid", "Solid")],
+            current: renderer.visualizationAttribute("oscstyle") ?? "Lines"))
+        items.append(visualizationSubmenu(
+            title: "Analyzer Coloring", attribute: "coloring", enabled: isAnalyzer,
+            entries: [("Normal", "Normal"), ("Fire", "Fire"), ("Line", "Line")],
+            current: renderer.visualizationAttribute("coloring") ?? "Normal"))
+        // `peaks` is a flag, not a choice, so it is a single checked item rather than a submenu.
+        let peaksOn = renderer.visualizationAttribute("peaks")?
+            .trimmingCharacters(in: .whitespaces) != "0"
+        let peaks = NSMenuItem(title: "Show Peaks", action: #selector(toggleAnalyzerPeaksFromMenu(_:)),
+                               keyEquivalent: "")
+        peaks.target = self
+        peaks.state = peaksOn ? .on : .off
+        peaks.representedObject = peaksOn ? "0" : "1"
+        peaks.isEnabled = isAnalyzer
+        items.append(peaks)
+        // 0…4, Slower…Faster — measured off Big Bento's own menu script, not guessed
+        // (`WasabiVisStyle.barFalloffSteps`).
+        let speeds = ["Slower", "Slow", "Moderate", "Fast", "Faster"]
+        for (title, attribute) in [("Analyzer Falloff Speed", "falloff"),
+                                   ("Peak Falloff Speed", "peakfalloff")] {
+            let step = WasabiVisStyle.falloffStep(renderer.visualizationAttribute(attribute))
+            items.append(visualizationSubmenu(
+                title: title, attribute: attribute, enabled: isAnalyzer,
+                entries: speeds.enumerated().map { ($1, String($0)) },
+                current: String(step)))
+        }
+        return items
+    }
+
+    private func visualizationSubmenu(title: String, attribute: String, enabled: Bool,
+                                      entries: [(String, String)], current: String) -> NSMenuItem {
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        for (label, value) in entries {
+            let item = NSMenuItem(title: label, action: #selector(applyVisualizationAttributeFromMenu(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = "\(attribute)=\(value)"
+            item.state = value.caseInsensitiveCompare(current) == .orderedSame ? .on : .off
+            item.isEnabled = enabled
+            submenu.addItem(item)
+        }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        item.isEnabled = enabled
+        return item
     }
 
     /// `bandwidth` — Winamp's fat blocks (`wide`) or the full comb (`thin`). The only `<vis>` option
@@ -170,6 +234,20 @@ extension WinampModernMainView {
     @objc private func applyVisualizationModeFromMenu(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
         applyVisualizationMode(WasabiVisualizationMode(attribute: value))
+    }
+
+    @objc private func applyVisualizationAttributeFromMenu(_ sender: NSMenuItem) {
+        guard let spec = sender.representedObject as? String else { return }
+        let parts = spec.split(separator: "=", maxSplits: 1)
+        guard parts.count == 2 else { return }
+        if renderer.setVisualizationAttribute(String(parts[0]), value: String(parts[1])) {
+            needsDisplay = true
+        }
+    }
+
+    @objc private func toggleAnalyzerPeaksFromMenu(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        if renderer.setVisualizationAttribute("peaks", value: value) { needsDisplay = true }
     }
 
     @objc private func applyAnalyzerBandwidthFromMenu(_ sender: NSMenuItem) {

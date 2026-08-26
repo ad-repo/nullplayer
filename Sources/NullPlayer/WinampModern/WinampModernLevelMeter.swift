@@ -55,6 +55,16 @@ final class WinampModernLevelMeter {
     private var lastArrival: TimeInterval?
     private let lock = NSLock()
 
+    /// Called on the **main thread**, once, each time the audio goes quiet — see `silenceWatch`.
+    var onSilence: (() -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return silenceHandler }
+        set { lock.lock(); silenceHandler = newValue; lock.unlock() }
+    }
+    private var silenceHandler: (() -> Void)?
+    private var silenceWatch: DispatchSourceTimer?
+    private var didReportSilence = false
+    private static let silenceWatchInterval: TimeInterval = 0.25
+
     struct Level: Equatable {
         var left: Double
         var right: Double
@@ -114,6 +124,37 @@ final class WinampModernLevelMeter {
             let right = note.userInfo?["right"] as? [Float] ?? []
             self?.receive(left: left, right: right, at: ProcessInfo.processInfo.systemUptime)
         }
+        startSilenceWatch()
+    }
+
+    /// **The one clock that notices the audio stopped.**
+    ///
+    /// Nothing posts a "zero" notification: the tap simply stops when playback pauses, stops, ends,
+    /// or moves to a cast device. The meters cope on their own because a skin polls them from its own
+    /// timer, but a `<vis>` box has no clock of its own — it repaints only when a spectrum
+    /// notification arrives, which is exactly what has stopped happening. So the analyzer froze
+    /// wherever the music left it, and a scope would freeze on its last waveform.
+    ///
+    /// It lives here, rather than in `WinampModernWaveformTap`, because this meter runs for **every**
+    /// `.wal` skin while the waveform tap is gated on a skin actually asking for a scope — and the
+    /// frozen analyzer is the older half of the same defect. A `DispatchSourceTimer` on a private
+    /// queue, never the audio thread; one callback per transition into silence, cleared when the next
+    /// buffer arrives, so a paused player costs four wakeups a second and nothing else.
+    private func startSilenceWatch() {
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "winampModern.silenceWatch"))
+        timer.schedule(deadline: .now() + Self.silenceWatchInterval,
+                       repeating: Self.silenceWatchInterval, leeway: .milliseconds(50))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            let quiet = level(at: ProcessInfo.processInfo.systemUptime) == .silence
+            guard quiet else { didReportSilence = false; return }
+            guard !didReportSilence else { return }
+            didReportSilence = true
+            guard let handler = onSilence else { return }
+            DispatchQueue.main.async(execute: handler)
+        }
+        silenceWatch = timer
+        timer.resume()
     }
 
     func stop() {
@@ -122,6 +163,10 @@ final class WinampModernLevelMeter {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         WindowManager.shared.audioEngine.removeStereoConsumer(consumerId)
+        silenceWatch?.setEventHandler {}
+        silenceWatch?.cancel()
+        silenceWatch = nil
+        didReportSilence = false
         lock.lock()
         blocks = []
         lastArrival = nil

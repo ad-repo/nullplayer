@@ -207,13 +207,21 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   is how skins mostly use them.
 - `embed_xui` is retained as metadata only — it is **not** an inheritance edge.
 - A splitter's `jump` (snap-to-detent) is parsed but not honoured — a drag is continuous.
-- **`<vis>` attributes read: `mode`, `bandwidth` (`thin` narrows the bars, `wide` is the solid row),
-  the band/oscilloscope colours and `alpha`. Ignored: `peaks`, `peakfalloff`, `falloff`, `coloring`,
-  `oscstyle`, `fliph` — a skin's visualization menu sets all of them (Love is War Miku's does), so those
-  menu items appear to do nothing.**
-- `<vis mode="2">` (oscilloscope) is drawn from the same band levels as the analyzer, mirrored about
-  the centre line: the host publishes a spectrum, not raw PCM, so it is the shape of the signal rather
-  than the waveform itself. It is distinguishable from the analyzer, not faithful to Winamp's scope.
+- **`<vis>` attributes read: `mode`, `bandwidth` (`thin` is the full comb, `wide` Winamp's fat
+  blocks), `oscstyle` (`Solid`/`Dots`/`Lines`), `coloring` (`Normal`/`Fire`/`Line`), `peaks`,
+  `falloff`, `peakfalloff`, `colorband1`…`16`, `colorallbands`, `colorbandpeak`, `colorosc1`…`5`,
+  `alpha`, `fliph`/`flipv`.** So a skin's own visualization settings page works — Big Bento Modern's
+  and Love is War Miku's both write these. **Still ignored: `fps`** (a per-box frame rate; the scene
+  has one clock, see `reference/performance.md`).
+- `falloff` / `peakfalloff` are **0…4**, Slower…Faster, and are applied **per second**, not per draw.
+  Measured, not assumed — they are written by MAKI at runtime and no markup in the corpus states
+  them; `WINAMP_MODERN_RENDER_DISASM=@player-normal-group` on Big Bento shows its menu checkmarking
+  `value == 0` … `value == 4`. The same listing is where `peaks` being `"0"`/`"1"` and `coloring`
+  being words rather than numbers comes from.
+- `<vis mode="2">` (oscilloscope) is drawn from **real PCM** — Winamp's own 576-sample `visdata`
+  waveform, `UInt8` centred on 128, left channel only (the mirrored second box is the skin's job via
+  `fliph`, not ours). It was a spectrum-derived zigzag until B51; the premise that the host publishes
+  no PCM was simply wrong.
 - Auxiliary container windows render and take input but do **not** drive per-container MAKI layout
   switching; the main window owns the scripted scene. (cPro-Bento is single-window, so this is
   invisible there.)

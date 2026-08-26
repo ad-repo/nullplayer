@@ -167,7 +167,117 @@ Two notes for whoever reads this next:
 
 ## Open backlog
 
+### In progress — B51
+
+**B51 — the `<vis>` oscilloscope draws no waveform, and every other `<vis>` attribute is ignored.**
+Plan: `~/.claude/plans/i-dont-think-the-velvet-wreath.md`. Pass 1 only; Pass 2 (NullPlayer's own vis
+suite inside a `.wal`) is gated on Pass 1 manual QA. No tests, docs, skill updates or changelog
+entries until that QA passes.
+
+- [x] **B51.1** **Done — measured 0…4.** Settle the numeric range of `falloff`/`peakfalloff` before hardcoding the map —
+      `WINAMP_MODERN_RENDER_DISASM=@visualizer` against Big Bento Modern (the plan assumes 0…4 from
+      the five menu entries; the values are written by MAKI, not declared in XML)
+- [x] **B51.2** **Done.** New `WinampModern/WinampModernWaveformTap.swift` — 576-sample `UInt8` tap modelled on
+      `WinampModernLevelMeter`: `queue: nil` observer, copy-under-lock only on the audio thread, and
+      a read that decays to flat 128 past `silenceTimeout`. The silence *nudge* moved to the level
+      meter — see B51.6
+- [x] **B51.3** **Done.** `WinampModernHost`: `waveformSamples` + `setWaveformNeeded(_:)`, backed in
+      `WinampModernAudioEngineHost` by a lazy tap beside `levelMeter`, stopped in
+      `endVisualizationConsumption`
+- [x] **B51.4** **Done.** New `WinampModern/WasabiVisPainter.swift` — `WasabiVisStyle` / `WasabiVisInput` /
+      `WasabiVisRenderer`, plus `WasabiBuiltInVisRenderer`: real-PCM scope (left channel, one column
+      per pixel), `oscstyle` solid/dots/lines, `colorosc1`…`colorosc5` banded by excursion, `peaks`,
+      `coloring` normal/fire/line, and **per-second** bar/peak decay from `falloff`/`peakfalloff`
+- [x] **B51.5** **Done.** `WasabiRenderer`: `drawVisualization` decodes the style and delegates; the
+      `spectrumLevels` guard moves into the analyzer branch; peak/bar state moves to the renderer;
+      cached `needsWaveform` pushed to the host only on change. **Deviation from the plan worth
+      recording:** `setVisualizationAttribute` is *not* the only route a `mode` write takes — MAKI's
+      `setmode` and `setxmlparam` write the attribute directly, so the cache is keyed on the graph's
+      `mutationGeneration` (the same key `sceneNodes()` already uses) rather than on that one setter
+- [x] **B51.6** **Done, and it is the second deviation.** The plan put the silence nudge on the
+      waveform tap and made it *one* `DispatchQueue.main.async` per transition. Two things are wrong
+      with that, and both had to change: (a) one repaint cannot show a *decay* — the bars and caps
+      need frames while they fall — and (b) `spectrumLevels` is not cleared on pause, so a repaint
+      redraws the same bars forever; the levels have to read silence. And the waveform tap is gated
+      on a skin declaring a scope, so an analyzer-only skin would never get a nudge at all, while
+      casting never changes `playbackState`. So the transition is reported by
+      **`WinampModernLevelMeter.onSilence`** — the one tap that runs for every `.wal` skin, watched by
+      a 4 Hz `DispatchSourceTimer` on a private queue, one callback per transition, cleared on the
+      next buffer — and `WinampModernMainView.beginVisualizationSilenceDecay` zeroes the levels and
+      invalidates the vis rects at the same 60 Hz until `renderer.hasDecayingVisualizationState` says
+      nothing is left above the floor (4 s backstop). The controller fans it out to every container's
+      view. The audio thread is still not in this path anywhere
+- [x] **B51.7** **Done.** `WinampModernHostActionMenus`: Oscilloscope Style, Show Peaks, Analyzer Coloring,
+      Analyzer Falloff Speed, Peak Falloff Speed — all through `setVisualizationAttribute`
+- [x] **B51.9 — smoothness, without touching the signal.** Pass 1 looked right and moved in steps.
+      Two causes, both measured, neither one a case for smoothing the data (explicitly *not* wanted —
+      no levelling, no RMS, no interpolation): (a) the boxes repainted only on a spectrum
+      notification, and `AudioEngine` taps `mixerNode` with a **2048-frame buffer**, so that is one
+      notification per ~46 ms — everything in a `<vis>` moved at **21 fps**; (b) the waveform posts a
+      576-sample chunk at a time from inside that single tap call, **three or four in a burst**, and
+      the tap kept only the newest — three quarters of the audio discarded, survivors 46 ms apart.
+      Fixes: `WinampModernWaveformTap` now **queues** chunks (cap 6 ≈ 78 ms, then drop-oldest and
+      resync) and plays them out against the clock at the exact 576/sampleRate rate they were
+      recorded at; `WinampModernMainView` gains a **60 Hz visualization clock** that invalidates only
+      the vis rects, runs only while there is something to show, and stops itself once the falloff
+      has finished. The frame's waveform is sampled **once per frame** in `WasabiRenderer.draw` so
+      Big Bento's six boxes cannot straddle a chunk boundary and mirror each other a chunk apart
+- [x] **B51.10 — what the clock costs, measured, and the rate that follows from it.** `sample` on the
+      running app (Big Bento, vis visible, playing): a vis-rect repaint is **~4 ms**, so 60 Hz is
+      ~24% of a core against ~8% at the old 21 fps — **+15 points**. (The 14% in
+      `WinampModernMainView.layout()` in the same trace is *not* the clock: `needsLayout` is set on
+      graph mutations by the skin's own scripts, `:390`/`:414`. Left alone.) So the clock now runs at
+      the rate the content actually changes: **60 Hz only when a `mode="2"` box is on screen** — new
+      PCM every 13 ms, and below 60 the trace steps — and **30 Hz otherwise**, because an analyzer's
+      bands only move at the FFT's ~21 Hz and frames past 30 animate nothing but falloff between two
+      identical sets of bars. It also **skips repaints while the window is occluded** (the timer
+      keeps running at ~0.5% so the idle check still retires it) and still stops entirely once the
+      falloff is done. Analyzer-only skins — most of the corpus — end up ~4 points over the old
+      behaviour rather than 15. A regression the suite caught while doing this: dropping the
+      immediate paint from `startVisualizationClock` cost up to 33 ms of hesitation when audio
+      started (`WinampModernPhase24Tests.testDeliveringSpectrumLevelsMarksTheViewForRedraw`)
+- [x] **B51.8 — confirmed live by the user 2026-08-26** ("looks great"), then smoothness (B51.9) and
+      the clock rates (B51.10) on top of it. Tests, skill updates and the changelog followed the QA,
+      per the verify-before-investing rule: `WinampModernPhase73Tests` (18 tests — attribute decode
+      including the measured 0…4 falloff, the colour steps, the tap's queue/playout/silence, the
+      demand gating, and the moved spectrum guard: a scope paints with no spectrum, an analyzer does
+      not), 1288 total pass. **The tests caught a real off-by-one**: the playout showed every chunk
+      one slot late and skipped the first chunk after silence, because `playoutStart` was being
+      treated as "the head becomes current one duration from now" rather than "now". Live QA
+      (the plan's Verification section). Built clean; `swift test` 1270 pass.
+      Static: `RENDER_DUMP` on stock Winamp Modern, Love is War Miku, Rika (`mode=1`) and mmd3
+      (`mode=0` stays off) all render. **Big Bento's own four header boxes cannot be checked
+      headlessly** — `main.vis.group` is hidden until the player pane passes 730px and the harness
+      cannot drag the divider, so `VIS box` prints nothing for it; that is verification step 1's job
+
 ### Tier 1
+
+- [ ] **B53. NullPlayer's own visualization suite selectable inside a `.wal` skin.** Pass 2 of
+      `~/.claude/plans/i-dont-think-the-velvet-wreath.md` — read it there; it carries the split by
+      surface (`<vis>` boxes → `WasabiVisRenderer` implementations, `{0000000A}` holders → the
+      existing NSView surface), the selection/persistence model, and the constraints. The seam it
+      needs already exists (`WasabiVisPainter.swift`, B51). Two corrections to the plan, verified in
+      the code before it gets picked up: `CavaDrawing.draw` paints with `NSColor`/`NSBezierPath`, so
+      a `CavaVisRenderer` has to push an `NSGraphicsContext` around the scene's `CGContext` rather
+      than being handed one; and `WinampModernVisualizationSurface.engineType` is
+      `VisualizationType` (`VisualizationEngine.swift:92`, three cases: ProjectM/Geiss/Tripex), which
+      is the enum that has to widen for a spectrum surface to mount there.
+
+- [ ] **B52. Something bumps the graph's `mutationGeneration` nearly every frame, and it costs more
+      than the visualization does.** Found while measuring B51's repaint clock, not caused by it —
+      `sample` on the live app (Big Bento Modern, playing, scope visible, 3744 main-thread samples
+      over 5 s): `WinampModernMainView.layout()` is **369 samples (~10% of a core)**, of which
+      **345 are `browserNodes()` → `layoutNodes()` → `append`** — a full recursive re-solve of the
+      object tree *including hidden nodes*. `layoutNodes()` is memoized against
+      `graph.mutationGeneration` + canvas (`WasabiRenderer.swift:930`), so missing that consistently
+      means the counter is moving almost every frame. The same counter keys `sceneNodes()`, so the
+      scene walk is being redone as well: `renderer.draw` is another 602 samples (~16%), while the
+      thing it is drawing — `WasabiBuiltInVisRenderer.drawOscilloscope` — is **7**.
+      **The visualization is not the cost; the cache misses are.** Find the writer (a ticker offset,
+      a clock, an animation attribute — `WINAMP_MODERN_TRACE_MAKI=1` / `CALL_TRACE` against the
+      running player will name it), and either stop it writing an attribute per frame or key the two
+      caches on something a cosmetic write does not move. Fixing it speeds up the whole skin, not
+      just the `<vis>`. Pre-existing: it was happening at the old ~21 fps too
 
 These three came out of the Big Bento Modern header/settings research on 2026-08-23
 (plan: `~/.claude/plans/abundant-pondering-hamster.md`) and are **here rather than in

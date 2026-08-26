@@ -59,6 +59,8 @@ concept; read the one your symptom points at, not all of them.
 | **A splitter shows a resize cursor but drags the window instead** | [reference/rendering.md](reference/rendering.md) — *What outranks a splitter on its own grab strip* |
 | **A splitter (or any skin-owned state) forgets where the user put it on relaunch** | [reference/rendering.md](reference/rendering.md) — *Where the user left the divider survives a relaunch*: only a **drag** is stored, and the restore has to land after the scripts settle |
 | **Deciding whether some new piece of skin state should persist** | [reference/rendering.md](reference/rendering.md) — *What else the host remembers about a skin, and what it must not*: the skin's own prefs already persist; only graph-owned state needs saving, and only from a user gesture |
+| **A skin's own visualization settings page changes nothing**, or the oscilloscope draws a fixed zigzag rather than the music | [reference/rendering.md](reference/rendering.md) — *The oscilloscope reads PCM, and the host has always had it*: `<vis>` reads every attribute now (`oscstyle`, `coloring`, `peaks`, the two falloffs, `colorosc1`…`5`), and the scope is real 576-sample `visdata`. The falloff scale is **0…4**, per second |
+| **The analyzer or scope moves in steps, or freezes on pause** | [reference/performance.md](reference/performance.md) — *The visualization has a clock of its own*: a spectrum notification is ~21 Hz, so the boxes need their own 60/30 Hz clock, and silence is reported by `WinampModernLevelMeter.onSilence` because no tap posts a zero |
 | A `{0000000A}` visualization slot shows the wrong thing, or only one of several works | [reference/components.md](reference/components.md) — *`{0000000A}` is a plugin host*: it is not "MilkDrop's box", and one holder per skin gets the engine |
 | A script does nothing, wrong arity, unknown method, script-built UI missing | [reference/scripting.md](reference/scripting.md) |
 | A host-fed readout never updates (`onTextChanged`) | [reference/scripting.md](reference/scripting.md) |
@@ -122,6 +124,8 @@ verbatim; it just lives in a reference file now.
 | Hit testing: who owns a point | [reference/rendering.md](reference/rendering.md) |
 | Dragging the window | [reference/rendering.md](reference/rendering.md) |
 | `<vis mode>` — the skin says whether it wants a visualization at all | [reference/rendering.md](reference/rendering.md) |
+| The oscilloscope reads PCM, and the host has always had it (B51) | [reference/rendering.md](reference/rendering.md) |
+| The visualization has a clock of its own, because the audio's rate is not a frame rate (B51) | [reference/performance.md](reference/performance.md) |
 | `<Wasabi:Frame>` — the splitter that builds its own children | [reference/rendering.md](reference/rendering.md) |
 | Text width is a layout input, not just a drawing detail | [reference/rendering.md](reference/rendering.md) |
 | How big the font is, and which one | [reference/rendering.md](reference/rendering.md) |
