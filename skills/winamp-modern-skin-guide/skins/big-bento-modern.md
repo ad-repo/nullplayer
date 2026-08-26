@@ -34,6 +34,7 @@
 | Embedded library colour | **Fixed (BB2a)** | The panel was black and the list palette white: `wasabi.list.background` is declared as both a `<color>` and a `<bitmap>`, and its value names another colour id. Now `rgb(55,57,64)`. Confirmed live |
 | Embedded library chrome | **Won't do (BB2b)** | A native pane in the skin's palette *is* the faithful end state — Winamp only coloured `gen_ml` too. Closed as a decision; do not re-propose |
 | Side playlist | **Fixed (BB30)** | The whole family — "Open Playlist on the Right Side", the Collapse/Enlarge toggles, **Skin Settings → Playlist → Enlarge Playlist** — was dead behind one unimplemented method and one geometry misreading. See below. Confirmed live |
+| Playlist album art | **Fixed (BB32)** | **Show Album Art if Playlist is enlarged** opened a 120px strip with the cover stretched across it, instead of the skin's 335px square. The skin applies its playlist settings at load with `attribute.onDataChanged()`, which was inert — so the splitter kept its markup seed and the skin then *saved that seed* over its own default at unload. Confirmed live |
 | Playlist search | **Fixed (BB31)** | Text entry, the results list, the popup's placement and its dismissal — six causes, see below. Confirmed live: type, Enter, wheel, double-click to play, click away to dismiss |
 | Playlist and library text size | **Fixed (BB30, BB31, then B50)** | The embedded playlist drew at the Wasabi default 11px in a 1536×878 window. The first fix followed the skin's own body text; **B50 replaced that with a window-size rule** because it leaked onto Defix. Bento is unchanged by the swap — `main/normal` still resolves to the 18px cap, and `main/shade` correctly drops to 11. The embedded Media Library now follows the same number. `UI → Winamp Modern → Text Size` overrides it per skin (`reference/components.md` → *How large NullPlayer draws its own text*) |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
@@ -323,6 +324,58 @@ popup went away and now search does nothing"*. Six causes in one feature, each h
 Row height in a `<list>` is the em plus 3px of leading, floored — not the `fontsize` cell. The skin
 sizes the window from its own expectation of that number (118px for four hits over a 36px banner is
 20.5 a row at `fontsize="22"`), and a row of 24 cropped the last hit off every search.
+
+## BB32 — the enlarged playlist's album art opened half height (fixed 2026-08-26, confirmed live)
+
+Reported as *"the cover art in the playlist when setting **Show Album Art if Playlist is enlarged** is
+squashed to half size under the playlist panel when it opens"*. The panel measured **120px** tall
+against the skin's own 335px default, so a square cover was stretched across a 330×116 strip.
+
+**The album art is the bottom pane of a second splitter.** `playlist.dualwnd`
+(`player-normal-mcv.xml`) is `from="bottom" orientation="h"`, `top="player.component.playlist"`
+`bottom="player.component.playlist.albumart"`, `height="120"` — and 120 is a *seed*, not the intended
+size. `pledit.maki`'s `onDataChanged` positions it from the skin's own remembered value,
+`getPrivateInt("Big Bento Modern", "playlist_cover_poppler", 335)`, which is 335 ≈ the side column's
+width: the author means a **square** cover.
+
+**One inert call, and the skin overwrote its own default.** `pledit.maki` ends `onScriptLoaded` with
+`attribute.onDataChanged()` — the settings pass. `onDataChanged` had an arity in the method table but
+was missing from `dispatchableEventArity`, so the call hit a `return .null` and *nothing* was applied
+at load: the splitter stayed at 120, and the playlist search box never appeared either. Then
+`onScriptUnloading` saves `playlist.dualwnd.getPosition()` into `playlist_cover_poppler` whenever it
+is `> 0` — so the **first quit persisted the 120 seed over the 335 default, permanently**. Every later
+enlarge honoured 120, and toggling the setting off and on could not recover it (the collapse branch
+re-saves the current position before zeroing it).
+
+Reproduced headlessly in one run, which is what named it — `WINAMP_MODERN_CALL_TRACE=1` on a virgin
+xctest defaults domain:
+
+```
+CALL-TRACE getposition() on Wasabi:Frame#playlist.dualwnd -> 120     ← onScriptUnloading
+CALL-TRACE setprivateint(Big Bento Modern,playlist_cover_poppler,120)
+```
+
+and after the fix, from the same clean profile, `-> 335` on both lines. `RENDER_SETTINGS` is what
+ruled out the obvious suspect first: both attributes read `= 1 (default 1)`, so the *settings* were
+never wrong — only their application.
+
+**A second, independent defect in the same splitter.** `playlist.dualwnd` carries `minheight="100"`
+and a leftover `minwidth="313"`, and `clampedPosition` read the width names first whatever the axis —
+so a drag of that divider clamped to a 313px floor for a *height*. That is where the Windows 10
+edition's stored `313` came from. The axis's own name now wins; see
+[reference/rendering.md](../reference/rendering.md) → *`<Wasabi:Frame>`*.
+
+**A poisoned `playlist_cover_poppler` survives the fix**, because the fix restores the value the skin
+stored rather than second-guessing it. A profile that ran the old build needs the key cleared
+(`defaults delete NullPlayer "winampModern.config.<skin>.<skin>.playlist_cover_poppler"`) or the
+divider dragged once. Four variants, four keys.
+
+**Blast radius, measured before shipping.** 7 of the 35 installed skins call `onDataChanged()` as a
+method — the four Bento variants (2 calls each), `winampmodern566` (19), `S7Reflex` (5),
+`Ebonite_2_1` (4). A before/after render sweep of those four skins: 39 images, 38 pixel-identical.
+The one change is `winampmodern566`'s `Pledit-normal`, where the skin's own newly-running handler
+writes `setxmlparam(y,16) on group#player.content.pl.dummy.group` and the playlist content and button
+bar move 2px — the settings pass running, not a regression.
 
 ## BB30 — the side playlist, and everything that governs it (fixed 2026-08-25, confirmed live)
 

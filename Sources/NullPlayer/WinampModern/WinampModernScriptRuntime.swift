@@ -371,6 +371,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // entry, which is what opens the track a search result names).
         "ondoubleclick": 1,
         "oneditupdate": 0,
+        // `attribute.onDataChanged()` — a script running its own settings handler once at load, so
+        // the layout the stored options describe is applied before anything is drawn. Zero
+        // arguments, and it is the *only* way a skin has of saying "apply what I read". Big Bento
+        // Modern's `pledit` ends `onScriptLoaded` with it, and while the call was inert the enlarged
+        // playlist never positioned its album-art splitter at load — leaving the frame on its markup
+        // seed, which the same script then saved over the user's remembered cover height at unload
+        // (BB32).
+        "ondatachanged": 0,
         "onscriptunloading": 0
     ]
 
@@ -3490,7 +3498,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             try parent.insertChild(object, at: method == "bringtofront" ? parent.children.count : 0)
             notifyGraphDidMutate()
             return .null
-        case "callme", "ondatachanged": return .null
+        case "callme": return .null
         default:
             throw unsupported(method, program: program)
         }
@@ -3766,7 +3774,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case .gammaSet(let name): return .string(name)
             case .generic: return .string("dynamic_\(id)")
             }
-        case "init", "callme", "ondatachanged": return .null
+        case "init", "callme": return .null
         default:
             if let value = classicProFileMethod(method, arguments: arguments) { return value }
             throw unsupported(method, program: program)

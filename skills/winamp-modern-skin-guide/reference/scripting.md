@@ -520,6 +520,22 @@ so the ticker stayed stuck on `Seek: 1:13/4:05 (30%)`. The tell in the click pro
 `on*` method — an unsupported *event name* in that list means a missing dispatch route, not a missing
 feature.
 
+`attribute.onDataChanged()` is the other common case, and the one with teeth: it is how a skin
+**applies its stored settings at load**. A `cfgattrib` handler only ever fires on a *change*, so a
+skin whose layout depends on an option has no other way to reach the state the option describes on a
+launch where nobody touched it — Big Bento Modern's `pledit` ends `onScriptLoaded` with exactly that
+call, and it drives the enlarged playlist, the album-art pane and the search box together. It was in
+the method table with an arity but *not* in `dispatchableEventArity`, so it fell through to a
+`return .null` and the whole settings pass was silently skipped (BB32).
+
+**An inert handler call is not a no-op — it is a wrong value, later.** The damage here was not the
+missing layout: it was that `playlist.dualwnd` therefore kept its markup seed, and the same script's
+`onScriptUnloading` persists `getPosition()` into the skin's own config. One quit wrote that seed
+over the skin's own 335px default, permanently, and every later enlarge honoured it. When a skin
+saves a value it read back from us, a call we answered with nothing becomes a value we invented. Look
+for the save side (`onScriptUnloading`, an `onDataChanged` collapse branch) before concluding an
+unimplemented method is cosmetic.
+
 #### Two handlers for one event: a repeat runs once, two *different* bodies both run
 
 A program can declare the same (object, event) pair twice, and what to do about it depends entirely

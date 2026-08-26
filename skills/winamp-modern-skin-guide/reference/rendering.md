@@ -242,6 +242,11 @@ ordinary group left the library tree, the playlist and the tab strip out of the 
   `minwidth`/`maxwidth` bound it — skins spell them that way for a horizontal frame too
   (ClassicPro's `centro.plframe`), and a **negative** limit is measured from the far edge
   (`maxwidth="-224"` = "always leave 224px for the other pane"). `jump` (snapping) is not honoured.
+  **When a skin declares both spellings, the split axis's own name wins** (BB32): Big Bento's
+  `playlist.dualwnd` is horizontal and carries `minheight="100"` beside a leftover `minwidth="313"`,
+  and reading the first name found made 313 the floor for a *height* — one drag snapped the
+  album-art pane to a third of the window with no way back. The width names stay as the fallback,
+  which is all `centro.plframe` ever needed.
 - A divider pushed flush with an edge (`setPosition(0)`, how ClassicPro closes its side view) offers
   no grab strip, so a closed split cannot be reopened by dragging where it used to be.
 

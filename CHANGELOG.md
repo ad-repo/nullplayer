@@ -53,6 +53,16 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: Big Bento Modern's enlarged playlist shows its album art at full size** —
+  with **Skin Settings → Playlist → Show Album Art if Playlist is enlarged** turned on, the cover
+  panel under the side playlist opened about a third of its proper height, so the artwork was
+  stretched flat across a narrow strip. The panel now opens at the square size the skin intends, and
+  the divider above it can be dragged to any height you like — it used to jump to a fixed third of
+  the window and stay there. The cause reached further than the cover: a skin applies *all* of its
+  saved settings when it loads, and that step was being skipped entirely, so options you had set were
+  only honoured after you toggled them again. Big Bento's playlist search box, which has the same
+  cause, now appears at launch as well. If your cover panel was already stuck small, it stays where it
+  was last saved — drag the divider above it once and it is remembered.
 - **Winamp 5.x modern skins: the Big Bento Modern tab bar is tidy, and its show/hide handle works** —
   on all four Big Bento Modern skins the little divider between the tab icons and the panel beside
   them sat *on top of* the icons, pointed the wrong way, and did nothing when clicked, and each icon

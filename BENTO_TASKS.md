@@ -66,6 +66,46 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
       page stored to happen. Turning on *Open in Multi Content View (stretched)* does **not** set the
       page — verified — so the two settings are independent and the page is the one that matters.
 
+- [x] **BB32. The enlarged playlist's album art opened half height — fixed 2026-08-26, confirmed
+      live** (*"it looks good"*). Reported as *"the cover art in the playlist when setting 'show album
+      art if playlist is enlarged' is squashed to half size under the playlist panel when it opens"*.
+      The pane measured 120px against the skin's own 335px default, so a square cover was stretched
+      across a 330×116 strip.
+
+      **Root cause: `attribute.onDataChanged()` was inert.** The skin applies its stored playlist
+      settings at load by calling that handler on itself at the end of `onScriptLoaded`.
+      `onDataChanged` had an arity in the method table but was missing from `dispatchableEventArity`,
+      so it fell through to a `return .null` — the album-art splitter `playlist.dualwnd` was never
+      positioned (it kept its `height="120"` markup seed) and the playlist search box never appeared.
+      `onScriptUnloading` then saves `getPosition()` into the skin's own `playlist_cover_poppler`, so
+      **the first quit persisted the seed over the skin's 335 default, permanently** — and toggling
+      the setting could not recover it, because the collapse branch re-saves before it zeroes.
+
+      **A second defect in the same splitter:** `clampedPosition` read `minwidth`/`maxwidth` first
+      whatever the axis, so this horizontal frame's `minwidth="313"` beat its own `minheight="100"`
+      and one drag snapped the pane to a 313px floor. The axis's own name now wins, width names kept
+      as the fallback ClassicPro's `centro.plframe` relies on.
+
+      Measured on a virgin xctest defaults domain with `WINAMP_MODERN_CALL_TRACE=1`:
+      `getposition() on Wasabi:Frame#playlist.dualwnd -> 120` then
+      `setprivateint(…,playlist_cover_poppler,120)`; after, `335` on both. `RENDER_SETTINGS` cleared
+      the obvious suspect in one line — both attributes read `= 1 (default 1)`, so the settings were
+      never wrong, only their application.
+
+      **A profile that ran the old build stays poisoned** — the fix honours the stored value rather
+      than second-guessing it. Clear `playlist_cover_poppler` for the affected variants, or drag the
+      divider once.
+
+      Blast radius measured before shipping: 7 of 35 skins call `onDataChanged()` as a method (the
+      four Bento variants, `winampmodern566` ×19, `S7Reflex` ×5, `Ebonite_2_1` ×4). Before/after
+      render sweep of the four affected skins: 39 images, 38 pixel-identical; the one change is
+      `winampmodern566`'s `Pledit-normal` moving 2px from its own newly-running handler
+      (`setxmlparam(y,16)` on `player.content.pl.dummy.group`) — the settings pass working.
+
+      `swift test` 1270 pass (7 new, `WinampModernPhase72Tests`). Skill: `skins/big-bento-modern.md` → BB32,
+      `reference/scripting.md` → *An event handler is also a method*, `reference/rendering.md` →
+      *`<Wasabi:Frame>`*, `compatibility/maki-surface.md`, CHANGELOG.
+
 - [x] **BB29. The left tab bar: a misplaced divider, a dead switch button, and a notched caption edge
       — fixed 2026-08-25, confirmed live** (*"I just tested the feature it worked"*). Reported on all
       four variants as *"a notch to the right of the icon, these don't look uniform and look like an

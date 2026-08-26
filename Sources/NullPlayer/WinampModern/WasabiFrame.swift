@@ -147,9 +147,17 @@ enum WasabiFrame {
 
     /// `minwidth`/`maxwidth` (which skins write for *both* orientations — ClassicPro's horizontal
     /// `centro.plframe` uses them) bound the offset, and 0…extent bounds those in turn.
+    ///
+    /// The **axis's own name wins** when a skin declares both. Big Bento Modern's `playlist.dualwnd`
+    /// splits the side playlist from its album art horizontally and carries `minheight="100"` next to
+    /// a leftover `minwidth="313"`; taking the first name found made 313 the floor for a *height*, so
+    /// the cover pane snapped to a third of the window on the first drag and could not go back.
     static func clampedPosition(_ raw: Double, extent: Double, object: WasabiObject) -> Double {
-        let low = max(0, min(limit(object, keys: ["minwidth", "minheight"], extent: extent) ?? 0, extent))
-        let high = max(low, min(limit(object, keys: ["maxwidth", "maxheight"], extent: extent) ?? extent, extent))
+        let vertical = isVerticalDivider(object)
+        let minimums = vertical ? ["minwidth", "minheight"] : ["minheight", "minwidth"]
+        let maximums = vertical ? ["maxwidth", "maxheight"] : ["maxheight", "maxwidth"]
+        let low = max(0, min(limit(object, keys: minimums, extent: extent) ?? 0, extent))
+        let high = max(low, min(limit(object, keys: maximums, extent: extent) ?? extent, extent))
         return max(low, min(high, raw.isFinite ? raw : low))
     }
 
