@@ -291,7 +291,7 @@ final class WinampModernPhase5Tests: XCTestCase {
         // First row is at the holder's top; rows advance by playlistRowHeight.
         let top = CGPoint(x: frame.midX, y: frame.minY + 1)
         XCTAssertEqual(renderer.playlistRow(at: top, in: frame), 0)
-        let third = CGPoint(x: frame.midX, y: frame.minY + renderer.playlistRowHeight * 2 + 1)
+        let third = CGPoint(x: frame.midX, y: frame.minY + renderer.playlistRowHeight() * 2 + 1)
         XCTAssertEqual(renderer.playlistRow(at: third, in: frame), 2)
 
         // Scrolling shifts the absolute row under the same point.

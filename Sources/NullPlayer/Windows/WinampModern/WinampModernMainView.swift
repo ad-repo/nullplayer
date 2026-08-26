@@ -64,6 +64,9 @@ final class WinampModernMainView: NSView {
     private(set) var isTornDown = false
     private var sceneIsVisible = false
     var canvasSizeDidChange: ((CGSize) -> Void)?
+    /// A click landed in this window: dismiss any `autoclose="1"` popup that is not this one. The
+    /// controller owns the windows, so it does the closing.
+    var didClickInWindow: ((WasabiObjectID) -> Void)?
     /// Returns true if the skin provides a separate native window for the kind and it was toggled.
     var componentWindowToggleRequested: ((WinampModernComponentKind) -> Bool)?
     /// A web address the skin wants opened, and where it wants it. Owned by the window layer rather
@@ -400,6 +403,7 @@ final class WinampModernMainView: NSView {
         scripts.actionRequested = { [weak self] action, parameter in
             self?.performAction(action: action, parameter: parameter)
         }
+        scripts.focusRequested = { [weak self] object in self?.focusEdit(object) }
         scripts.themeNamesRequested = { [weak renderer] in renderer?.themes.themeNames ?? [] }
         scripts.activeThemeRequested = { [weak renderer] in renderer?.themes.activeTheme ?? "Default" }
         scripts.mousePositionRequested = { [weak self] in
@@ -473,7 +477,84 @@ final class WinampModernMainView: NSView {
     ///    winampmodern566 also shades its playlist on `ctrl+w` and its album-art window on `alt+a`,
     ///    Defix closes its playlist search line on `esc`. A handler that reached its `complete;`
     ///    consumed the key; anything else falls through to the responder chain unchanged.
+    /// The `<edit>` this window's keyboard is going to, if any. A skin asks for it with `setFocus()`
+    /// (Big Bento's playlist search) and a click into the box takes it too.
+    private var focusedEdit: WasabiObject?
+
+    /// Give the keyboard to an `<edit>`, or take it back (`nil`).
+    ///
+    /// The object a skin focuses is as often the wrapper as the control, and the box it shows in the
+    /// same handler is a *descendant* — so an object that is not itself an edit is searched for one.
+    func focusEdit(_ object: WasabiObject?) {
+        let edit = object.flatMap { Self.editControl(in: $0) }
+        guard edit !== focusedEdit else { return }
+        focusedEdit = edit
+        renderer.focusedEditID = edit?.stableID
+        if edit != nil { window?.makeFirstResponder(self) }
+        needsDisplay = true
+    }
+
+    private static func editControl(in object: WasabiObject) -> WasabiObject? {
+        if object.typeName.lowercased().components(separatedBy: ":").last == "edit" { return object }
+        var stack = object.children
+        while let node = stack.popLast() {
+            if node.typeName.lowercased().components(separatedBy: ":").last == "edit" { return node }
+            stack.append(contentsOf: node.children)
+        }
+        return nil
+    }
+
+    /// Type into the focused `<edit>`, as Wasabi's native edit box does.
+    ///
+    /// Winamp's edit is a real child window and the skin never sees the keystrokes; it hears the three
+    /// events instead — `onEnter` when Return is pressed (Big Bento runs its playlist search from it),
+    /// `onAbort` on Escape (its own `Hidden Features.txt`: *"When in the search box, hit Escape to
+    /// close it"*), and `onEditUpdate` per keystroke for a skin that filters as you type.
+    ///
+    /// Returns whether the key was consumed: everything printable is, so a letter typed into a search
+    /// box can never also reach a skin accelerator or the playlist.
+    private func typeIntoFocusedEdit(_ event: NSEvent) -> Bool {
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil {
+            NSLog("EDIT key %d focused=%@", Int(event.keyCode), focusedEdit?.xmlID ?? "none")
+        }
+        guard let edit = focusedEdit else { return false }
+        // ⌘-anything stays with the menus — Select All, Copy, Quit.
+        if event.modifierFlags.contains(.command) { return false }
+        var text = edit.attributes["text"] ?? ""
+        switch event.keyCode {
+        case 53:                                   // Escape
+            focusEdit(nil)
+            _ = try? scripts.dispatch(object: edit, event: "onabort")
+            needsDisplay = true
+            return true
+        case 36, 76:                               // Return, Enter
+            let reached = (try? scripts.dispatch(object: edit, event: "onenter")) ?? -1
+            if ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil {
+                NSLog("EDIT onenter -> %@#%@ handlers=%d text=%@",
+                      edit.typeName, edit.xmlID ?? "-", reached, text)
+            }
+            needsDisplay = true
+            return true
+        case 51:                                   // Delete
+            guard !text.isEmpty else { return true }
+            text.removeLast()
+        default:
+            guard let typed = event.characters, !typed.isEmpty,
+                  typed.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
+            else { return false }
+            text += typed
+        }
+        _ = edit.setAttribute("text", value: text)
+        _ = edit.setAttribute(WasabiTextMetrics.scriptTextKey, value: text)
+        _ = try? scripts.dispatch(object: edit, event: "oneditupdate")
+        needsDisplay = true
+        return true
+    }
+
     override func keyDown(with event: NSEvent) {
+        // The focused edit first, and unconditionally: a search box that lets `d` through to a skin
+        // accelerator is not a text field.
+        if typeIntoFocusedEdit(event) { return }
         let deleteKeys: Set<UInt16> = [51, 117]   // Delete, Forward Delete
         if playlistHasFocus, deleteKeys.contains(event.keyCode), let host = componentHost {
             let snapshot = host.playlistSnapshot()
@@ -501,7 +582,8 @@ final class WinampModernMainView: NSView {
     func revealPlaylistRow(_ row: Int) {
         guard let host = componentHost,
               let holder = renderer.componentHolders().first(where: { $0.kind == .playlist }) else { return }
-        renderer.revealPlaylistRow(row, rowCount: host.playlistSnapshot().rows.count, in: holder.frame)
+        renderer.revealPlaylistRow(row, rowCount: host.playlistSnapshot().rows.count, in: holder.frame,
+                                   holder: holder.object)
         needsDisplay = true
     }
 
@@ -511,7 +593,7 @@ final class WinampModernMainView: NSView {
         guard let host = componentHost,
               let holder = renderer.componentHolders().first(where: { $0.kind == .playlist }) else { return }
         renderer.scrollPlaylist(byRows: 0, rowCount: host.playlistSnapshot().rows.count,
-                                in: holder.frame)
+                                in: holder.frame, holder: holder.object)
     }
 
     override func updateTrackingAreas() {
@@ -944,6 +1026,9 @@ final class WinampModernMainView: NSView {
     #endif
 
     override func mouseDown(with event: NSEvent) {
+        // Before anything else this click might do: a transient popup elsewhere goes away, which is
+        // what `autoclose="1"` means and the only way a chromeless one can be dismissed.
+        didClickInWindow?(containerID)
         let point = skinPoint(convert(event.locationInWindow, from: nil))
         // A splitter's grab strip spans the full height of its frame, which means it crosses whatever
         // the skin has laid over that column — cPro's tab strip runs straight through the 8px seam.
@@ -959,7 +1044,7 @@ final class WinampModernMainView: NSView {
         if let holder = renderer.componentHolder(at: point) {
             switch holder.kind {
             case .playlist:
-                if let row = renderer.playlistRow(at: point, in: holder.frame) {
+                if let row = renderer.playlistRow(at: point, in: holder.frame, holder: holder.object) {
                     if event.clickCount >= 2 { componentHost?.playlistPlay(row: row) }
                     else { componentHost?.playlistSelect(row: row) }
                     // Clicking a row is what gives this window the keyboard, and with it Delete.
@@ -998,6 +1083,20 @@ final class WinampModernMainView: NSView {
             needsDisplay = true
             return
         }
+        // A `<list>` a script filled — Big Bento's playlist search results. A click selects the row
+        // (which is what `getFirstItemSelected` reads back), a double-click is the skin's own
+        // `onDoubleClick`, which is how its search jumps to the track.
+        if let list = renderer.guiList(at: point), let row = renderer.guiListRow(at: point, in: list) {
+            WasabiGuiList.setSelection([row], on: list)
+            // `onDoubleClick(item)` — one argument, the row, counted off the single store at Big
+            // Bento's handler entry. It is how its search result opens the track it names.
+            if event.clickCount >= 2 {
+                _ = try? scripts.dispatch(object: list, event: "ondoubleclick",
+                                          arguments: [.integer(Int32(row))])
+            }
+            needsDisplay = true
+            return
+        }
         // Winamp's thinger: clicking an icon in a `<componentbucket>` opens that component (B34).
         // Answered here rather than through `performAction`, as the playlist rows and the colour-theme
         // list above are, because the bucket carries no `action=` — the widget is Winamp's, and the
@@ -1017,6 +1116,10 @@ final class WinampModernMainView: NSView {
             dispatch(object: object, event: "onleftbuttondblclk", point: point)
         }
         updateSlider(object, point: point)
+        // Focus follows the click, after the handlers: a skin shows its search box *from* the click
+        // that opens it (Big Bento's `pl.search.edit.rect`), so the `<edit>` is only under the pointer
+        // once those have run. A click that lands anywhere else gives the keyboard back.
+        focusEdit(renderer.editControl(at: point))
         needsDisplay = true
 
         if shouldDragWindow(from: object), let window {
@@ -1145,10 +1248,19 @@ final class WinampModernMainView: NSView {
             needsDisplay = true
             return
         }
+        // A script-filled `<list>` — the playlist search results. Same reason as the colour-theme
+        // list above: the renderer draws no scrollbar, so the wheel is the only way down it.
+        if let list = renderer.guiList(at: point) {
+            guard delta != 0 else { return }
+            renderer.scrollGuiList(byRows: delta, in: list)
+            needsDisplay = true
+            return
+        }
         if let holder = renderer.componentHolder(at: point), holder.kind == .playlist,
            let rowCount = componentHost?.playlistSnapshot().rows.count {
             guard delta != 0 else { return }
-            renderer.scrollPlaylist(byRows: delta, rowCount: rowCount, in: holder.frame)
+            renderer.scrollPlaylist(byRows: delta, rowCount: rowCount, in: holder.frame,
+                                    holder: holder.object)
             needsDisplay = true
             return
         }

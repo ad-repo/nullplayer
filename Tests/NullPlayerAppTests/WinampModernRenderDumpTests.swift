@@ -1114,6 +1114,27 @@ final class WinampModernRenderDumpTests: XCTestCase {
                           + "\(holder.frame) name=\(info.object.attributes["name"] ?? "-")"
                           + " nomenu=\(info.object.attributes["nomenu"] ?? "-")")
                 }
+                // The playlist holder and the metrics NullPlayer draws its rows at. The rows are the
+                // host's, not the skin's — a `<windowholder hold="guid:{45F3F7C1-…}">` is filled by
+                // the player, so there is no `fontsize` on it to read and nothing in the rendered
+                // dump shows the size headlessly (the harness sets no component host, so the panel
+                // comes out empty). `text=` is what `WasabiTextMetrics.bodyPixelHeight` derived from
+                // the skin's own text around the holder, which is the whole question behind "the
+                // playlist font is tiny in this skin".
+                for holder in holders where holder.kind == .playlist {
+                    print("PLAYLIST holder \(info.id)/\(layoutID): \(holder.object.xmlID ?? "-")"
+                          + "\(holder.frame) text=\(renderer.playlistTextPixelHeight(in: holder.object))px"
+                          + " row=\(renderer.playlistRowHeight(in: holder.object))px")
+                }
+                // An SUI keeps its playlist in a closed tab, so the visible-scene pass above reports
+                // nothing for the skins that most need measuring (every Big Bento variant). The
+                // metrics come from markup, not from the scene, so a hidden holder answers them too.
+                for object in Self.hiddenComponentHolders(kind: .playlist, in: info.object)
+                where !holders.contains(where: { $0.object === object }) {
+                    print("PLAYLIST holder \(info.id)/\(layoutID): \(object.xmlID ?? "-") hidden"
+                          + " text=\(renderer.playlistTextPixelHeight(in: object))px"
+                          + " row=\(renderer.playlistRowHeight(in: object))px")
+                }
                 for node in renderer.sceneNodes()
                 where node.object.typeName.caseInsensitiveCompare("vis") == .orderedSame {
                     let mode = WasabiVisualizationMode(attribute: node.object.attributes["mode"])
@@ -1280,6 +1301,43 @@ final class WinampModernRenderDumpTests: XCTestCase {
             let handled = (try? runtime.dispatchSystem(
                 event: event, arguments: [.integer(Int32((host.volume * 255).rounded()))])) ?? -1
             print("EVENT \(event) -> \(handled)")
+        case "onenter", "onabort", "oneditupdate":
+            // The `<edit>` control's own events, at every edit in the layout (arity 0). The box is
+            // usually `visible="0"` until a script shows it — Big Bento's playlist search is — so the
+            // hidden ones are driven too, or the only text field in the corpus is undrivable. Text
+            // typed into it comes from `WINAMP_MODERN_RENDER_TYPE`.
+            var edits: [WasabiObject] = []
+            var stack = [renderer.layout]
+            while let node = stack.popLast() {
+                stack.append(contentsOf: node.children)
+                if node.typeName.lowercased().components(separatedBy: ":").last == "edit" {
+                    edits.append(node)
+                }
+            }
+            if let typed = ProcessInfo.processInfo.environment["WINAMP_MODERN_RENDER_TYPE"] {
+                for edit in edits { _ = edit.setAttribute("text", value: typed) }
+            }
+            for edit in edits {
+                var handled = -1
+                do {
+                    handled = try runtime.dispatch(object: edit, event: event)
+                } catch let failure as WalFailure {
+                    print("EVENT \(event) !FAILED: "
+                          + failure.diagnostics.map(\.message).joined(separator: "; "))
+                } catch {
+                    print("EVENT \(event) !FAILED: \(error)")
+                }
+                var chain: [String] = []
+                var node = edit.parent
+                while let current = node, chain.count < 6 {
+                    chain.append("\(current.typeName)#\(current.xmlID ?? "-")")
+                    node = current.parent
+                }
+                print("EVENT \(event) -> \(edit.xmlID ?? "-") handlers=\(handled) "
+                      + "bound=\(runtime.hasBinding(for: edit, event: event)) "
+                      + "text=\(edit.attributes["text"] ?? "") in \(chain.joined(separator: "<"))")
+            }
+            if edits.isEmpty { print("EVENT \(event): this layout declares no <edit>") }
         case "onmousewheelup", "onmousewheeldown":
             // Addressed to the **layout**, which is where every corpus binding for these lands, and
             // with two arguments (both `op3` stores at the handler's entry, in two independent skins).

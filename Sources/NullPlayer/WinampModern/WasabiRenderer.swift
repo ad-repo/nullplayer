@@ -556,6 +556,12 @@ final class WasabiSceneRenderer {
     private var playlistScrollOffset = 0
     /// The scroll position `revealPlaylistRow` computes, for the tests that assert the arithmetic.
     var playlistScrollOffsetForTesting: Int { playlistScrollOffset }
+    /// Resolved body text size per playlist holder (`playlistTextPixelHeight(in:)`). The skin's markup
+    /// is fixed once loaded, so this is computed once per holder rather than per drawn row.
+    private var playlistTextPixelHeights: [WasabiObjectID: Double] = [:]
+    /// The `<edit>` holding the keyboard, so it can draw a caret. Owned by the view (focus is a
+    /// window's property); `nil` in every window that does not have one focused, which is most.
+    var focusedEditID: WasabiObjectID?
     /// Per-object `<ColorThemes:List>` state. Keyed by object because a skin may show the same list
     /// in two places (mmd3 puts one in its player drawer and one in a standalone window) and each
     /// keeps its own selection and scroll.
@@ -1216,6 +1222,20 @@ final class WasabiSceneRenderer {
         componentHolders().reversed().first { $0.frame.contains(point) }
     }
 
+    /// The visible `<edit>` under a point, if the click landed in one. Its own hit test rather than
+    /// `object(at:)`'s: an edit carries no artwork and no `action=`, so the interactive test skips it
+    /// and the renderable one has no bitmap to measure — yet a click in the box is exactly how a text
+    /// field takes the keyboard.
+    func editControl(at point: CGPoint) -> WasabiObject? {
+        for node in sceneNodes().reversed()
+        where node.clip.contains(point) && node.frame.contains(point) {
+            guard node.object.typeName.lowercased().components(separatedBy: ":").last == "edit",
+                  isVisible(node.object) else { continue }
+            return node.object
+        }
+        return nil
+    }
+
     // MARK: - Component bucket (Winamp's thinger)
 
     static func isComponentBucket(_ object: WasabiObject) -> Bool {
@@ -1372,30 +1392,45 @@ final class WasabiSceneRenderer {
                              severity: .warning)
     }
 
-    /// Row height of the embedded playlist, in skin pixels.
-    var playlistRowHeight: CGFloat { 12 }
+    /// The text size the embedded playlist draws at inside a given holder, in skin pixels — the
+    /// skin's own body text rather than a fixed number (`WasabiTextMetrics.bodyPixelHeight`). Cached
+    /// per holder: it is a subtree walk, and every row of every repaint asks for it.
+    func playlistTextPixelHeight(in holder: WasabiObject?) -> Double {
+        guard let holder else { return WasabiTextMetrics.defaultPixelHeight }
+        if let cached = playlistTextPixelHeights[holder.stableID] { return cached }
+        let value = WasabiTextMetrics.bodyPixelHeight(near: holder)
+        playlistTextPixelHeights[holder.stableID] = value
+        return value
+    }
 
-    func playlistVisibleRowCount(in frame: CGRect) -> Int {
-        max(0, Int(frame.height / playlistRowHeight))
+    /// Row height of the embedded playlist, in skin pixels. One cell plus the gap the 12px rows of
+    /// the original fixed metric had at 11px text.
+    func playlistRowHeight(in holder: WasabiObject? = nil) -> CGFloat {
+        CGFloat((playlistTextPixelHeight(in: holder) * 1.1).rounded())
+    }
+
+    func playlistVisibleRowCount(in frame: CGRect, holder: WasabiObject? = nil) -> Int {
+        max(0, Int(frame.height / playlistRowHeight(in: holder)))
     }
 
     /// Which playlist row (absolute index, accounting for scroll) sits under a point in a holder.
-    func playlistRow(at point: CGPoint, in frame: CGRect) -> Int? {
-        guard frame.contains(point), playlistRowHeight > 0 else { return nil }
-        let row = Int((point.y - frame.minY) / playlistRowHeight) + playlistScrollOffset
+    func playlistRow(at point: CGPoint, in frame: CGRect, holder: WasabiObject? = nil) -> Int? {
+        let rowHeight = playlistRowHeight(in: holder)
+        guard frame.contains(point), rowHeight > 0 else { return nil }
+        let row = Int((point.y - frame.minY) / rowHeight) + playlistScrollOffset
         return row >= 0 ? row : nil
     }
 
-    func scrollPlaylist(byRows delta: Int, rowCount: Int, in frame: CGRect) {
-        let maxOffset = max(0, rowCount - playlistVisibleRowCount(in: frame))
+    func scrollPlaylist(byRows delta: Int, rowCount: Int, in frame: CGRect, holder: WasabiObject? = nil) {
+        let maxOffset = max(0, rowCount - playlistVisibleRowCount(in: frame, holder: holder))
         playlistScrollOffset = max(0, min(maxOffset, playlistScrollOffset + delta))
     }
 
     /// Scroll the least that brings a row on screen — what `PlEdit.showTrack(n)` and
     /// `showCurrentlyPlayingTrack()` mean. A row already visible does not move the list, so a skin
     /// that calls this from a timer does not fight the user's own scrolling.
-    func revealPlaylistRow(_ row: Int, rowCount: Int, in frame: CGRect) {
-        let visible = playlistVisibleRowCount(in: frame)
+    func revealPlaylistRow(_ row: Int, rowCount: Int, in frame: CGRect, holder: WasabiObject? = nil) {
+        let visible = playlistVisibleRowCount(in: frame, holder: holder)
         guard visible > 0, rowCount > 0, row >= 0, row < rowCount else { return }
         let maxOffset = max(0, rowCount - visible)
         var offset = max(0, min(maxOffset, playlistScrollOffset))
@@ -1802,6 +1837,10 @@ final class WasabiSceneRenderer {
 
         if type == "text" || type == "songticker" {
             drawText(object, frame: node.frame, context: context)
+        } else if type == "edit" {
+            drawEdit(object, frame: node.frame, context: context)
+        } else if type == "list" {
+            drawGuiList(object, frame: node.frame, context: context)
         } else if type == "slider" {
             drawSlider(object, frame: node.frame, context: context,
                        pressed: pressed == object.stableID)
@@ -1993,6 +2032,107 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
+    /// The `<list>` control: the rows a script put in it, in the skin's own colours.
+    ///
+    /// Winamp fills this box with a native list; the skin draws only the frame around it, so — like
+    /// the playlist panel and the `<edit>` — the content is ours to paint. It takes its text size from
+    /// the object's own `fontsize` and its colours from the skin's list palette, which is what keeps a
+    /// search-results popup legible in a Light skin and a dark one without either being special-cased.
+    private func drawGuiList(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        let items = WasabiGuiList.items(of: object)
+        guard !items.isEmpty, frame.width > 2, frame.height > 2 else { return }
+        let rowHeight = CGFloat(WasabiGuiList.rowHeight(of: object))
+        let visible = max(0, Int(frame.height / rowHeight))
+        guard visible > 0 else { return }
+        let maxOffset = max(0, items.count - visible)
+        let offset = min(max(0, WasabiGuiList.scrollOffset(of: object)), maxOffset)
+        let selected = Set(WasabiGuiList.selection(of: object))
+        let pointSize = CGFloat(WasabiTextMetrics.pixelHeight(of: object)
+                                * WasabiTextMetrics.pixelHeightToPointSize)
+        context.saveGState()
+        context.clip(to: frame)
+        for slot in 0..<visible {
+            let index = offset + slot
+            guard items.indices.contains(index) else { break }
+            let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * rowHeight,
+                                 width: frame.width, height: rowHeight)
+            let isSelected = selected.contains(index)
+            if isSelected {
+                context.setFillColor(palette.selectionBackground.cgColor)
+                context.fill(rowRect)
+            }
+            let color = legibleRowColor(isSelected ? palette.selectionText : palette.listText,
+                                        selected: isSelected)
+            drawSurfaceText(items[index], in: rowRect.insetBy(dx: 3, dy: 1), color: color,
+                            alignment: .left, pointSize: pointSize, context: context)
+        }
+        context.restoreGState()
+    }
+
+    /// Which row of a `<list>` sits under a point, for the click that selects it.
+    func guiListRow(at point: CGPoint, in object: WasabiObject) -> Int? {
+        guard let frame = frame(of: object), frame.contains(point) else { return nil }
+        let rowHeight = CGFloat(WasabiGuiList.rowHeight(of: object))
+        guard rowHeight > 0 else { return nil }
+        let row = Int((point.y - frame.minY) / rowHeight) + WasabiGuiList.scrollOffset(of: object)
+        return WasabiGuiList.items(of: object).indices.contains(row) ? row : nil
+    }
+
+    /// Wheel a script-filled list, clamped to what it holds against the box it is drawn in.
+    func scrollGuiList(byRows delta: Int, in object: WasabiObject) {
+        guard let frame = frame(of: object) else { return }
+        let rowHeight = CGFloat(WasabiGuiList.rowHeight(of: object))
+        let visible = max(1, Int(frame.height / max(1, rowHeight)))
+        let maximum = max(0, WasabiGuiList.items(of: object).count - visible)
+        let offset = WasabiGuiList.scrollOffset(of: object) + delta
+        WasabiGuiList.setScrollOffset(min(max(0, offset), maximum), on: object)
+    }
+
+    /// The visible `<list>` under a point, if any — the same reason `editControl(at:)` has its own hit
+    /// test: a list carries no artwork and no `action=`.
+    func guiList(at point: CGPoint) -> WasabiObject? {
+        for node in sceneNodes().reversed()
+        where node.clip.contains(point) && node.frame.contains(point) {
+            guard WasabiGuiList.isList(node.object), isVisible(node.object) else { continue }
+            return node.object
+        }
+        return nil
+    }
+
+    /// The `<edit>` control: the text the user has typed, plus a caret while it holds the keyboard.
+    ///
+    /// A skin draws the box itself (Big Bento's search bar is three grids and a hover layer) and never
+    /// draws the string — in Winamp the edit is a native child window. So this paints only the content
+    /// and the insertion point, in the object's own font and colour, which is what makes the typed
+    /// text land in the box the skin drew rather than in a rectangle of our choosing.
+    private func drawEdit(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        let text = object.attributes["text"] ?? ""
+        if !text.isEmpty {
+            drawText(text, object: object, frame: frame, context: context,
+                     undeclaredColor: palette.listText)
+        }
+        guard focusedEditID == object.stableID else { return }
+        let size = WasabiTextMetrics.pointSize(of: object)
+        let font = resources.font(identifier: object.attributes["font"], size: size,
+                                  traits: WasabiTextMetrics.traits(of: object))
+            ?? NSFont.systemFont(ofSize: size)
+        let width = (text as NSString).size(withAttributes: [.font: font]).width
+        // Where the string ends, which depends on how it is aligned in the box — a centred search
+        // field grows from the middle outwards and its caret has to travel with the last glyph.
+        let x: CGFloat
+        switch object.attributes["align"]?.lowercased() {
+        case "center", "middle": x = frame.midX + width / 2
+        case "right": x = frame.maxX - 1
+        default: x = frame.minX + width + 1
+        }
+        let inset = max(1, (frame.height - CGFloat(size) * 1.2) / 2)
+        let caret = CGRect(x: min(max(frame.minX, x), frame.maxX - 1), y: frame.minY + inset,
+                           width: 1, height: max(2, frame.height - inset * 2))
+        let caretColor = object.attributes["color"].flatMap(resolvedColor) ?? palette.listText
+        context.setFillColor(caretColor.cgColor)
+        context.fill(caret)
+    }
+
     private func drawText(_ object: WasabiObject, frame: CGRect, context: CGContext) {
         // Content resolution (`display=`, a songticker's implicit track title, `setAlternateText`)
         // is shared with the measurement a script's `getAutoWidth()` gets — see `WasabiTextMetrics`.
@@ -2000,7 +2140,14 @@ final class WasabiSceneRenderer {
                  object: object, frame: frame, context: context)
     }
 
-    private func drawText(_ text: String, object: WasabiObject, frame rawFrame: CGRect, context: CGContext) {
+    /// `undeclaredColor` is what a text object that names no `color=` draws in. White for everything
+    /// the skin lays out itself — Wasabi's own default, and what the corpus is drawn against — but an
+    /// `<edit>` is different: Winamp fills it with a native child window whose text is
+    /// `wasabi.list.text`, the same colour the lists take (Big Bento says so in its own markup:
+    /// *"lists/trees item foreground (also edit text)"*). Left as white, a search box typed into a
+    /// Light skin wrote white on white.
+    private func drawText(_ text: String, object: WasabiObject, frame rawFrame: CGRect,
+                          context: CGContext, undeclaredColor: NSColor = .white) {
         // `leftpadding`/`rightpadding` inset the text inside its own rect. They are part of the width
         // a script measures with `getAutoWidth()`, so honouring them here is what makes a box sized
         // from that measurement fit the string it was sized for (ClassicPro's menu bar and SUI tabs).
@@ -2023,8 +2170,8 @@ final class WasabiSceneRenderer {
             ?? NSFont.systemFont(ofSize: size)
         // Optional for the same reason as the font: nothing that ends up in a CoreText attribute
         // dictionary may be a null pointer, and only an `Optional` binding can see one.
-        let resolved: NSColor? = resolvedColor(object.attributes["color"] ?? "255,255,255")
-        let color = resolved ?? .white
+        let resolved: NSColor? = object.attributes["color"].flatMap(resolvedColor)
+        let color = resolved ?? undeclaredColor
         let alignment: NSTextAlignment
         switch object.attributes["align"]?.lowercased() {
         case "center": alignment = .center
@@ -3003,7 +3150,7 @@ final class WasabiSceneRenderer {
                                frame: CGRect, context: CGContext) {
         guard frame.width > 1, frame.height > 1 else { return }
         switch kind {
-        case .playlist: drawPlaylistComponent(frame: frame, context: context)
+        case .playlist: drawPlaylistComponent(object, frame: frame, context: context)
         case .equalizer: drawEqualizerComponent(frame: frame, context: context)
         case .visualization:
             context.setFillColor(NSColor.black.cgColor)
@@ -3167,27 +3314,29 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
-    private func drawPlaylistComponent(frame: CGRect, context: CGContext) {
+    private func drawPlaylistComponent(_ holder: WasabiObject, frame: CGRect, context: CGContext) {
         // Drawn by us, coloured by the skin: the list sits inside the skin's own frame, so its text
         // and selection follow the skin's colour resources and its active colour theme.
         let palette = palette
         context.setFillColor(palette.contentBackground.cgColor)
         context.fill(frame)
         guard let snapshot = componentHost?.playlistSnapshot() else { return }
-        let visible = playlistVisibleRowCount(in: frame)
+        let rowHeight = playlistRowHeight(in: holder)
+        let visible = playlistVisibleRowCount(in: frame, holder: holder)
         guard visible > 0 else { return }
         // Keep the scroll offset in range as the list changes.
         let maxOffset = max(0, snapshot.rows.count - visible)
         let offset = max(0, min(maxOffset, playlistScrollOffset))
-        let font = NSFont.systemFont(ofSize: 9)
+        let pointSize = CGFloat(playlistTextPixelHeight(in: holder)
+                                * WasabiTextMetrics.pixelHeightToPointSize)
         context.saveGState()
         context.clip(to: frame)
         for slot in 0..<visible {
             let index = offset + slot
             guard index < snapshot.rows.count else { break }
             let row = snapshot.rows[index]
-            let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * playlistRowHeight,
-                                 width: frame.width, height: playlistRowHeight)
+            let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * rowHeight,
+                                 width: frame.width, height: rowHeight)
             let selected = snapshot.isSelected(index)
             if selected {
                 context.setFillColor(palette.selectionBackground.cgColor)
@@ -3203,12 +3352,12 @@ final class WasabiSceneRenderer {
                                         selected: selected)
             let label = "\(index + 1). \(row.title)"
             drawSurfaceText(label, in: rowRect.insetBy(dx: 3, dy: 1), color: color,
-                            alignment: .left, pointSize: font.pointSize, context: context)
+                            alignment: .left, pointSize: pointSize, context: context)
             if row.duration > 0 {
                 let seconds = Int(row.duration)
                 let time = String(format: "%d:%02d", seconds / 60, seconds % 60)
                 drawSurfaceText(time, in: rowRect.insetBy(dx: 3, dy: 1), color: color,
-                                alignment: .right, pointSize: font.pointSize, context: context)
+                                alignment: .right, pointSize: pointSize, context: context)
             }
         }
         context.restoreGState()

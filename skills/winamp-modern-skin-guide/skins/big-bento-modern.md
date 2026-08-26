@@ -33,6 +33,9 @@
 | Web Reader toolbar | **Fixed (BB25)** | The host WebKit surface fills `centro.browser`, covering the inherited inert Winamp toolbar without modifying the skin |
 | Embedded library colour | **Fixed (BB2a)** | The panel was black and the list palette white: `wasabi.list.background` is declared as both a `<color>` and a `<bitmap>`, and its value names another colour id. Now `rgb(55,57,64)`. Confirmed live |
 | Embedded library chrome | **Won't do (BB2b)** | A native pane in the skin's palette *is* the faithful end state — Winamp only coloured `gen_ml` too. Closed as a decision; do not re-propose |
+| Side playlist | **Fixed (BB30)** | The whole family — "Open Playlist on the Right Side", the Collapse/Enlarge toggles, **Skin Settings → Playlist → Enlarge Playlist** — was dead behind one unimplemented method and one geometry misreading. See below. Confirmed live |
+| Playlist search | **Fixed (BB31)** | Text entry, the results list, the popup's placement and its dismissal — six causes, see below. Confirmed live: type, Enter, wheel, double-click to play, click away to dismiss |
+| Playlist row size | **Fixed (BB30, BB31)** | The embedded playlist drew at the Wasabi default 11px in a 1536×878 window. Rows follow the skin's own body text, capped at an 18px cell (22 read as oversized on screen) |
 | Scripts | **Partial** | No handler in the skin aborts any more, and the level is `degraded` rather than `unsupported` |
 
 ## The family is two skins and two overlays
@@ -280,6 +283,89 @@ Three things worth keeping:
   `RENDER_EVENTS` drives anything, so a handler that only fails on a *driven* event reads
   `failed=-`. `WINAMP_MODERN_CALL_TRACE=1` with `RENDER_EVENTS=onpause` is the instrument, and
   `RENDER_PROBE` confirms it — `play.track` absent from the scene after a pause is the whole defect.
+
+## BB31 — the playlist search: a text field, a list, and a window (fixed 2026-08-26, confirmed live)
+
+Reported as *"you cannot enter text in the playlist search"*, then *"enter does nothing"*, then *"the
+popup went away and now search does nothing"*. Six causes in one feature, each hiding the next.
+
+1. **`System.setFocus()` was unimplemented.** `playlistpro.maki` shows the search box and focuses it
+   in the same handler, and an unimplemented method aborts the handler that calls it — so the box
+   appeared and the script died on the next line.
+2. **`<edit>` had no implementation at all**: no keyboard routing, no drawn text, no caret. The view
+   now owns the focused edit, types into it, and sends the control's three Wasabi events —
+   `onEnter` (the search), `onAbort` (Escape, per the skin's own *Hidden Features.txt*),
+   `onEditUpdate` (per keystroke).
+3. **The typed text drew white on white** in the Light editions: the edit declares no `color=`, and
+   an undeclared text colour defaults to white. Winamp fills the box with a native child window whose
+   text is `wasabi.list.text` — the skin says so in its own markup, *"lists/trees item foreground
+   (also edit text)"* — so an `<edit>` now takes the list palette (`rgb(87,98,115)` here).
+4. **`<list>` had no implementation either**, so `onEnter` aborted at `deleteAllItems`. The widget is
+   now real: `deleteAllItems` / `addItem` / `getNumItems` / `getItemLabel(item, column)` /
+   `getFirstItemSelected` / `getNextItemSelected(after)` / `scrollToItem`, rows drawn in the skin's
+   list palette, wheel scrolling, click to select, and `onDoubleClick(item)` — one argument, the row,
+   which is how a hit plays its track (`getItemLabel(0,0)` → `playTrack(5)`, confirmed live).
+5. **A layout is a window, and we only treated the container as one.** Three separate places:
+   `show()` on the results *layout* opened nothing; `setXmlParam` of `x`/`y`/`w`/`h` on it moved
+   nothing (only `resize()` did), so the popup came out at the container's declared 275×116 in the
+   corner instead of the screen position the script measures with `clientToScreenX/Y`; and
+   `getLeft()`/`getTop()` answered 0 for it, which the skin reads straight back into
+   `resize(getLeft(), getTop(), …)` and so undid its own placement. All three now treat a `<layout>`
+   as its container's window. Measured after: the popup lands at (70, 286) 1458×118 for four hits,
+   1458×70 for one.
+6. **`autoclose="1"` was unimplemented**, and this popup ships no titlebar, no close button and no
+   menu entry, because being dismissed *is* how it closes. Driven by the next click elsewhere, not by
+   `windowDidResignKey` — an `ontop noactivation` window's key state flickers as it is ordered in, and
+   closing on resign shut the popup in the same turn that opened it. Its companion: `isVisible()` on a
+   layout now answers from the **window**, not the graph attribute, or a dismissed popup leaves a
+   stale `visible="1"` behind and the skin never re-shows it (the *"search does nothing"* round).
+
+Row height in a `<list>` is the em plus 3px of leading, floored — not the `fontsize` cell. The skin
+sizes the window from its own expectation of that number (118px for four hits over a 36px banner is
+20.5 a row at `fontsize="22"`), and a row of 24 cropped the last hit off every search.
+
+## BB30 — the side playlist, and everything that governs it (fixed 2026-08-25, confirmed live)
+
+Reported as two things: *"the font in the playlist is tiny"* and *"skin setting → playlist → large
+playlist does not work"*. Three independent causes, and the second report needed all three.
+
+**1. `System.getMonitorWidth()` was not implemented.** The ↑ button at the bottom right of the
+playlist (*"Open Playlist on the Right Side"*, `pe.move.top`) sends `load_comp Pledit`, and the
+`onAction` that answers it calls `getMonitorWidth()` to size the column. Unimplemented, so the handler
+aborted and the playlist never moved: `player.dualwnd` stayed at `position=0`, i.e. a side column
+0 pixels wide. With no side playlist there is nothing for **Enlarge Playlist** to enlarge, which is
+why the setting read as dead — the setting itself was never broken. `RENDER_CLICK` is what named it:
+`player-normal.xml.onaction!FAILED` in the chain, then
+`CLICK finding: unsupportedScriptCapability … 'getmonitorwidth'`. The whole monitor family
+(`width`/`height`/`left`/`top`, arity 0) now answers alongside the viewport one — the monitor is the
+display, the viewport is the work area, and Big Bento's notifier asks for both one after the other.
+
+**2. The enlarge branch writes an absolute height through the relative flag.** With the column open,
+enlarging still looked identical to collapsing. `pledit.maki` writes
+`mainframe.setXmlParam("relath","1")` then `h = 819` — and 819 is
+`(sui.content.y + sui.content.h) − mainframe.y` = `853 − 34`, the skin's own arithmetic for *reach the
+bottom of the tab area*. Resolved relatively (`parent.height + h`, what every other `relath="1"` in
+the corpus means) that is **1697** in an 878px window: the pane hangs 800px below the window, and
+`player.component.playlist.buttons` — anchored to its *bottom* edge, `y="-37" relaty="1"` — lands at
+y=1570, off screen, taking the Collapse/Enlarge toggles with it. Both states then just fill to the
+window edge and clip, so they look the same. Corrected in
+[`WasabiSkinQuirks`](../../../Sources/NullPlayer/WinampModern/WasabiSkinQuirks.swift), scoped to that
+one splitter by id and type; the collapse branch writes `relath="0" h="202"` and is untouched.
+Measured after: 819 tall, the button bar at y=692, the two states 617px apart.
+
+**3. Closing the side playlist left a hole in every tab.** `sui.content` is narrowed to
+`-(columnWidth + 34)` by `player.component.playlist`'s **`onResize`**, which is also where the width
+is given back. Closing the column takes that group out of the scene entirely — the pane resolves to
+0 wide, `playlist.dualwnd` inside it to `w = 0 − 10`, and the negative-box rule drops it *and its
+subtree* — so the handler was never told and the 335px gap stayed on every tab. `dispatchResize` now
+tells an object that has **left** the layout that it resized to nothing, once, which is what Wasabi
+does (it resizes a window to nothing rather than forgetting about it). A 14px residue remains
+(`-34` against the `-20` the collapse path writes, because the skin's formula runs with a 0-wide
+column); the 335px hole is gone.
+
+The probe that cracked (3) was `WINAMP_MODERN_ACTION_TRACE=1`, which prints each `sendAction` with
+its **receiver**: `hide_comp pe -> group#sui.content` on open with no counterpart on close is the
+whole diagnosis, and no other probe shows who an action was addressed to.
 
 ## BB29 — the tab strip started in a mode the skin has no branch for (fixed 2026-08-25, confirmed live)
 

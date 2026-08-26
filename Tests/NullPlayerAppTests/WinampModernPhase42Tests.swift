@@ -246,7 +246,7 @@ final class WinampModernPhase42Tests: XCTestCase {
     /// already visible — a skin that calls this from a timer must not fight the user's own scrolling.
     func testRevealScrollsTheLeastItCanAndLeavesAVisibleRowAlone() throws {
         let renderer = try makeRenderer()
-        let frame = CGRect(x: 0, y: 0, width: 100, height: renderer.playlistRowHeight * 5)
+        let frame = CGRect(x: 0, y: 0, width: 100, height: renderer.playlistRowHeight() * 5)
 
         renderer.revealPlaylistRow(9, rowCount: 20, in: frame)
         XCTAssertEqual(renderer.playlistScrollOffsetForTesting, 5, "9 is the last of rows 5…9")

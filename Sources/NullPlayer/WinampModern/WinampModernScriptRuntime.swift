@@ -167,6 +167,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// expression precisely because they differ: mmd3's `getMousePosX() - x + knob.getLeft()` is the
     /// parent's origin plus the knob's own offset, i.e. the knob in cursor space.
     var mousePositionRequested: (() -> CGPoint)?
+    /// `setFocus()` on an object: the view gives the keyboard to the `<edit>` it resolves to.
+    var focusRequested: ((WasabiObject) -> Void)?
     /// The same cursor position, but in the pixel space of the window that renders `object` — which is
     /// a *different* window from the one `mousePositionRequested` answers for whenever the receiver
     /// lives in an auxiliary container. `System.getMousePos*` has no receiver and cannot ask this;
@@ -358,6 +360,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // dispatch either way.
         "onkeydown": 1,
         "onshownotification": 0,
+        // The `<edit>` control's own three events, all arity 0 in Wasabi. `onEnter` is the one every
+        // corpus consumer declares (Big Bento's `playlistpro.maki` runs the playlist search from it);
+        // `onAbort` is Escape leaving the box, and `onEditUpdate` fires per keystroke for a skin that
+        // filters as you type. Declared here because they are dispatchable — the view drives them from
+        // the keyboard.
+        "onenter": 0,
+        "onabort": 0,
+        // `List.onDoubleClick(item)` — the row, one argument (a single store at Big Bento's handler
+        // entry, which is what opens the track a search result names).
+        "ondoubleclick": 1,
+        "oneditupdate": 0,
         "onscriptunloading": 0
     ]
 
@@ -979,9 +992,39 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Route a `show()`/`hide()` on a top-level container to whoever owns that window. Anything else
     /// — a group, a layer, a layout — is graph state and stops here.
     private func requestWindow(for object: WasabiObject, visible: Bool) {
-        guard object.typeName.caseInsensitiveCompare("container") == .orderedSame,
-              let id = object.xmlID, !id.isEmpty else { return }
+        // A **layout** counts as its container: showing a layout is how Winamp opens the window that
+        // holds it, and skins say it that way as often as they name the container. Big Bento's
+        // playlist search is the measured case — it fills the `searchresults` container's list, sizes
+        // it, and then calls `show()` on that container's `normal` *layout*. Routed only from a
+        // `<container>`, the results window never opened and pressing Return looked like a dead key,
+        // with the search itself demonstrably running (BB31).
+        let target: WasabiObject?
+        if object.typeName.caseInsensitiveCompare("container") == .orderedSame {
+            target = object
+        } else if object.typeName.caseInsensitiveCompare("layout") == .orderedSame {
+            target = Self.enclosingContainer(of: object)
+        } else {
+            target = nil
+        }
+        guard let target, let id = target.xmlID, !id.isEmpty else { return }
         containerVisibilityRequested?(id, visible)
+    }
+
+    /// Whether this object *is* a window — a `<container>` or one of its `<layout>`s. Both carry a
+    /// desktop position rather than a position inside a parent.
+    static func isWindowObject(_ object: WasabiObject) -> Bool {
+        object.typeName.caseInsensitiveCompare("container") == .orderedSame
+            || object.typeName.caseInsensitiveCompare("layout") == .orderedSame
+    }
+
+    /// The `<container>` an object lives in, or nil for one that is not inside a window.
+    private static func enclosingContainer(of object: WasabiObject) -> WasabiObject? {
+        var node: WasabiObject? = object.parent
+        while let current = node {
+            if current.typeName.caseInsensitiveCompare("container") == .orderedSame { return current }
+            node = current.parent
+        }
+        return nil
     }
 
     /// A slider position held inside the `low…high` the object declares. Untouched when it declares
@@ -1319,6 +1362,29 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     func dispatchResize(targets: [(object: WasabiObject, frame: CGRect)],
                         previous: [WasabiObjectID: CGRect]?) -> Int {
         var dispatched = 0
+        // An object that has *left* the layout resized too, and it has to hear that exactly once.
+        //
+        // A pane collapsed to nothing takes its subtree out of the scene entirely: closing Big Bento's
+        // side playlist leaves `player.component.playlist.frame` 0 wide, so `playlist.dualwnd` inside
+        // it resolves to `w = 0 − 10` and the negative-box rule drops it and everything under it. The
+        // group that reacts to the close — `player.component.playlist`, whose `onResize` is where
+        // `pledit.maki` gives the tab area its width back — is inside that subtree, so it was never
+        // told, and the SUI content kept the 335px hole the open playlist had left in it on every tab.
+        //
+        // Wasabi resizes a window to nothing rather than forgetting about it, so that is what this
+        // does: the vanished object hears its old origin at 0×0, once, and then drops out of
+        // `previous` because the caller records the new target set.
+        if let previous {
+            let present = Set(targets.map(\.object.stableID))
+            for (id, before) in previous where !present.contains(id) {
+                guard let object = loadedSkin.runtime.graph.object(withID: id),
+                      hasBinding(for: object, event: "onresize") else { continue }
+                let origin: [MakiValue] = [.integer(Int32(clamping: Int(before.minX))),
+                                           .integer(Int32(clamping: Int(before.minY)))]
+                dispatched += (try? dispatch(object: object, event: "onresize",
+                                             arguments: origin + [.integer(0), .integer(0)])) ?? 0
+            }
+        }
         for target in targets {
             if let previous, let before = previous[target.object.stableID], before == target.frame {
                 continue
@@ -1881,6 +1947,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "isplaying": .init(argumentCount: 0, returnKind: .boolean),
             "setalternatetext": .init(argumentCount: 1, returnKind: .null),
             "setfontsize": .init(argumentCount: 1, returnKind: .null),
+            // `setFocus()` — the keyboard, asked for by the object that wants it. Big Bento's
+            // `playlistpro.maki` shows its playlist search box and focuses it in the same handler, so
+            // without this the handler aborted at the focus call and the box could never be typed in.
+            "setfocus": .init(argumentCount: 0, returnKind: .null),
+            // The `<list>` control a script fills — Big Bento's playlist search is the measured
+            // consumer, and every arity here is counted from its call sites: `deleteAllItems()`,
+            // `getItemLabel(item, column)`, `getFirstItemSelected()`, `getNextItemSelected(after)`,
+            // `scrollToItem(item)`. `addItem` is already declared (the dynamic `List` container shares
+            // the name); the receiver decides which one answers.
+            "deleteallitems": .init(argumentCount: 0, returnKind: .null),
+            "getitemlabel": .init(argumentCount: 2, returnKind: .string),
+            "getfirstitemselected": .init(argumentCount: 0, returnKind: .integer),
+            "getnextitemselected": .init(argumentCount: 1, returnKind: .integer),
+            "scrolltoitem": .init(argumentCount: 1, returnKind: .null),
             "leftclick": .init(argumentCount: 0, returnKind: .null),
             // Layer FX: Winamp warps a layer through a grid whose per-pixel source is supplied by the
             // skin's own `fx_onGetPixel*` callbacks — implemented in Phase 28 (`invokeLayerFX`,
@@ -2062,6 +2142,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getviewportheightfromguiobject": .init(argumentCount: 1, returnKind: .integer),
             "getviewportleftfromguiobject": .init(argumentCount: 1, returnKind: .integer),
             "getviewporttopfromguiobject": .init(argumentCount: 1, returnKind: .integer),
+            // The **monitor** family, which is the viewport's whole-screen twin: Winamp's viewport is
+            // the work area, the monitor is the display it sits on. Big Bento's notifier asks for both
+            // one after the other, and its `pledit.maki` sizes the side playlist from
+            // `getMonitorWidth()` — so with this unimplemented the `onAction("load_comp")` that moves
+            // the playlist beside the player aborted, and with it every option that governs that
+            // playlist ("Enlarge Playlist" had nothing left to enlarge). Arity 0, pinned by the four
+            // call sites in that skin.
+            "getmonitorwidth": .init(argumentCount: 0, returnKind: .integer),
+            "getmonitorheight": .init(argumentCount: 0, returnKind: .integer),
+            "getmonitorleft": .init(argumentCount: 0, returnKind: .integer),
+            "getmonitortop": .init(argumentCount: 0, returnKind: .integer),
             "getcurappleft": .init(argumentCount: 0, returnKind: .integer),
             "getcurapptop": .init(argumentCount: 0, returnKind: .integer),
             "getruntimeversion": .init(argumentCount: 0, returnKind: .integer),
@@ -2205,7 +2296,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         let method = method.lowercased()
         if Self.tracesEveryCall {
             let result = try invokeTraced(method: method, on: reference, arguments: arguments, program: program)
-            print("CALL-TRACE \(method)(\(arguments.map(\.stringValue).joined(separator: ","))) -> \(result.stringValue)")
+            // The **receiver**, not just the call: "who was this written to" is the question a
+            // geometry or visibility trace is always really asking, and a bare
+            // `setxmlparam(x,70)` cannot answer it.
+            var receiver = ""
+            if case .gui(let objectID) = reference.kind,
+               let object = loadedSkin.runtime.graph.object(withID: objectID) {
+                receiver = " on \(object.typeName)#\(object.xmlID ?? "-")"
+            }
+            print("CALL-TRACE \(method)(\(arguments.map(\.stringValue).joined(separator: ",")))"
+                  + "\(receiver) -> \(result.stringValue)")
             return result
         }
         return try invokeTraced(method: method, on: reference, arguments: arguments, program: program)
@@ -2433,6 +2533,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .integer(0)
         case "getviewportwidthfromguiobject": return .integer(Int32(NSScreen.main?.frame.width ?? 0))
         case "getviewportheightfromguiobject": return .integer(Int32(NSScreen.main?.frame.height ?? 0))
+        // The monitor is the whole display; the viewport above is the area a window may use. macOS
+        // states them as `frame` and `visibleFrame`, and the only reason the viewport does not use the
+        // latter here is that every skin in the corpus was measured against the value it already
+        // answers. `left`/`top` are the display's own origin, which for the single-screen case every
+        // skin assumes is 0 — a skin reads them to keep a notifier inside the screen it is on.
+        case "getmonitorwidth": return .integer(Int32(NSScreen.main?.frame.width ?? 0))
+        case "getmonitorheight": return .integer(Int32(NSScreen.main?.frame.height ?? 0))
+        case "getmonitorleft", "getmonitortop": return .integer(0)
         case "getcurappleft": return .integer(Int32(NSApp.mainWindow?.frame.minX ?? 0))
         case "getcurapptop": return .integer(Int32(NSApp.mainWindow?.frame.minY ?? 0))
         case "getmouseposx": return .integer(Int32(clamping: Int((mousePositionRequested?().x ?? 0).rounded())))
@@ -2873,6 +2981,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             else { return .null }
             _ = object.setAttribute(key, value: value)
             if Self.geometryKeys.contains(key.lowercased()) {
+                // A container or a layout is a *window*: its box is not read back out of the graph at
+                // the next repaint, it has to be pushed to AppKit. `resize()` already did this; the
+                // same four attributes written one at a time did not, which is how Big Bento's search
+                // results came out at the container's declared 275×116 in the corner of the screen
+                // instead of under the search box it measured itself against (BB31).
+                applyContainerGeometry(object)
                 noteGeometryChange()
                 notifyGraphDidMutate()
             } else {
@@ -3015,9 +3129,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // Winamp Modern's CONFIG button from ever opening its drawer.
         case "beforeredock", "redock", "snapadjust": return .null
         case "debugstring": return .null
+        // A **window's** left and top are where it sits on the desktop, not where it sits inside
+        // itself. A layout resolves to the origin of its own canvas, so both answered 0 — and Big
+        // Bento's playlist search reads them straight back to re-place its results popup
+        // (`results.resize(results.getLeft(), results.getTop(), w, h)` after writing the screen
+        // position it measured), which put the window at (0,0) and undid the placement (BB31).
         case "getleft", "getguix":
+            if Self.isWindowObject(object), let x = Double(object.attributes["x"] ?? "") {
+                return .integer(Int32(clamping: Int(x)))
+            }
             return .integer(dimension(resolvedFrame(of: object)?.minX, declared: object.geometry.x))
         case "gettop", "getguiy":
+            if Self.isWindowObject(object), let y = Double(object.attributes["y"] ?? "") {
+                return .integer(Int32(clamping: Int(y)))
+            }
             return .integer(dimension(resolvedFrame(of: object)?.minY, declared: object.geometry.y))
         case "getwidth", "getguiw":
             return .integer(dimension(resolvedFrame(of: object)?.width,
@@ -3131,6 +3256,48 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "isplaying":
             return .boolean(WasabiAnimation.state(of: object,
                                                   frameCount: animationFrameCount(of: object)).isPlaying)
+        // The `<list>` control. Its rows live on the object (`WasabiGuiList`), so the renderer draws
+        // what the script just wrote with no second copy in between.
+        case "deleteallitems" where WasabiGuiList.isList(object):
+            WasabiGuiList.setItems([], on: object)
+            WasabiGuiList.setSelection([], on: object)
+            WasabiGuiList.setScrollOffset(0, on: object)
+            notifyObjectDidMutate(object)
+            return .null
+        case "additem" where WasabiGuiList.isList(object):
+            var items = WasabiGuiList.items(of: object)
+            guard items.count < WasabiGuiList.maximumItems else { return .integer(-1) }
+            items.append(arguments[0].stringValue)
+            WasabiGuiList.setItems(items, on: object)
+            notifyObjectDidMutate(object)
+            return .integer(Int32(items.count - 1))
+        case "getnumitems" where WasabiGuiList.isList(object):
+            return .integer(Int32(clamping: WasabiGuiList.items(of: object).count))
+        case "getitemlabel" where WasabiGuiList.isList(object):
+            // One column: the skin's own list is `nocolheader="1"` and puts the whole row in the
+            // string it adds, so the column argument names the only column there is.
+            let items = WasabiGuiList.items(of: object)
+            let index = Int(arguments[0].integerValue)
+            guard items.indices.contains(index) else { return .string("") }
+            return .string(items[index])
+        case "getfirstitemselected" where WasabiGuiList.isList(object):
+            return .integer(Int32(WasabiGuiList.selection(of: object).first ?? -1))
+        case "getnextitemselected" where WasabiGuiList.isList(object):
+            let after = Int(arguments[0].integerValue)
+            return .integer(Int32(WasabiGuiList.selection(of: object).first { $0 > after } ?? -1))
+        case "scrolltoitem" where WasabiGuiList.isList(object):
+            // The row becomes the top of the box. Wasabi scrolls the least it can, but the renderer
+            // clamps this against the box it ends up drawing in, and a script only ever asks for this
+            // to bring a fresh hit into view.
+            WasabiGuiList.setScrollOffset(Int(arguments[0].integerValue), on: object)
+            notifyObjectDidMutate(object)
+            return .null
+        case "setfocus":
+            // The view owns the focus, because the keyboard is a window's property rather than the
+            // graph's. It resolves the object to the `<edit>` it is or contains — a skin focuses the
+            // wrapper (`Wasabi:EditBox2`) as often as the control.
+            focusRequested?(embeddedControl(of: object) ?? object)
+            return .null
         case "setfontsize":
             // The same pixel height the XML attribute carries, so it goes through the one
             // `WasabiTextMetrics` conversion the renderer and `getAutoWidth()` share.
@@ -3181,6 +3348,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // Delivered to the addressed object only, not down its subtree: every measured use names
             // the exact group whose script declares the handler.
             let source = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:))
+            if ProcessInfo.processInfo.environment["WINAMP_MODERN_ACTION_TRACE"] != nil {
+                print("ACTION \(arguments[0].stringValue) param=\(arguments[1].stringValue) "
+                      + "-> \(object.typeName)#\(object.xmlID ?? "-")")
+            }
             let handled = try dispatch(object: object, event: "onaction",
                                        arguments: Array(arguments.prefix(6)) + [objectValue(source)])
             // The host action route is kept: a skin is also free to name one of NullPlayer's own
@@ -3925,12 +4096,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// knows; for anything else the graph attribute is the whole truth. `nil` from the host — the
     /// headless harness, or an id no window backs — falls back to the attribute.
     private func effectiveVisibility(of object: WasabiObject) -> Bool {
-        if object.typeName.caseInsensitiveCompare("container") == .orderedSame,
-           let id = object.xmlID, !id.isEmpty,
-           let hosted = containerVisibilityQuery?(id) {
+        // A layout answers for its window as its container does, and for the same reason: the window
+        // is the thing that is actually on screen, and the host can close it (a dismissed
+        // `autoclose` popup) without the graph attribute moving. Big Bento asks its search results'
+        // *layout* whether it is open before re-showing it, so a stale `visible="1"` there left the
+        // skin believing a window the user had dismissed was still up — and the next search filled a
+        // list nobody could see (BB31).
+        if Self.isWindowObject(object), let hosted = enclosingWindowID(of: object)
+            .flatMap({ containerVisibilityQuery?($0) }) {
             return hosted
         }
         return isVisible(object)
+    }
+
+    /// The container id of the window this object belongs to, for the host queries that are answered
+    /// per window rather than per object.
+    private func enclosingWindowID(of object: WasabiObject) -> String? {
+        let container = object.typeName.caseInsensitiveCompare("container") == .orderedSame
+            ? object
+            : Self.enclosingContainer(of: object)
+        guard let id = container?.xmlID, !id.isEmpty else { return nil }
+        return id
     }
 
     /// Active *as the window server sees it*: the container this object belongs to owns the
@@ -3987,13 +4173,26 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// out at its declared 540 with the text clipped into the third of it the XML reserves for the
     /// album art it had already hidden (BB27).
     private func applyContainerGeometry(_ object: WasabiObject) {
-        guard object.typeName.caseInsensitiveCompare("container") == .orderedSame else { return }
+        // A **layout** is its window as much as the container is — a `noparent` popup is placed and
+        // sized by writing `x`/`y`/`w`/`h` on the layout, in screen coordinates the script builds with
+        // `clientToScreenX/Y`. Big Bento's playlist search does exactly that before showing its
+        // results (BB31); `resize()` on a layout already routed its size here, and `setXmlParam` of
+        // the same four attributes now does too, position included.
+        let target: WasabiObject?
+        if object.typeName.caseInsensitiveCompare("container") == .orderedSame {
+            target = object
+        } else if object.typeName.caseInsensitiveCompare("layout") == .orderedSame {
+            target = Self.enclosingContainer(of: object)
+        } else {
+            target = nil
+        }
+        guard let target else { return }
         if let width = Double(object.attributes["w"] ?? ""),
            let height = Double(object.attributes["h"] ?? ""), width > 0, height > 0 {
-            layoutResizeRequested?(object.stableID, CGSize(width: width, height: height))
+            layoutResizeRequested?(target.stableID, CGSize(width: width, height: height))
         }
         if let x = Double(object.attributes["x"] ?? ""), let y = Double(object.attributes["y"] ?? "") {
-            containerMoveRequested?(object.stableID, CGPoint(x: x, y: y))
+            containerMoveRequested?(target.stableID, CGPoint(x: x, y: y))
         }
     }
 
@@ -4164,6 +4363,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     private func unsupported(_ method: String, program: MakiProgram) -> WalFailure {
         unsupportedMethodCalls[method.lowercased(), default: 0] += 1
+        // Traced with the calls that *did* work, because that is the line the reader is looking for:
+        // an unimplemented method aborts its whole handler, so what a trace shows is a sequence that
+        // simply stops, and the reason is otherwise only in a compatibility report taken later.
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil {
+            print("CALL-TRACE \(method.lowercased())(…) -> UNSUPPORTED, handler aborts "
+                  + "[\((program.source.path as NSString).lastPathComponent)]")
+        }
         return WalFailure(WalDiagnostic(.unsupportedScriptCapability,
                                  "Winamp Modern runtime does not support method '\(method)'.",
                                  location: program.source))
@@ -4185,6 +4391,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         layoutResizeRequested = nil
         uiScaleRequested = nil
         actionRequested = nil
+        focusRequested = nil
         browserNavigationRequested = nil
         globalNavigationRequested = nil
         themeNamesRequested = nil

@@ -42,6 +42,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         /// menu. Without the equivalent here they exist, render, and cannot be reached at all.
         let displayName: String
         let isListedInWindowMenu: Bool
+        /// The container's `autoclose="1"`: a transient popup that closes when it loses the keyboard.
+        let autoCloses: Bool
         /// `default_visible="1"`: this window opens with the skin unless the user has since closed
         /// it (Phase 40, B6). Already net of the notifier/tooltip suppression, whose reason is
         /// recorded in the skin's diagnostics.
@@ -170,6 +172,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             skinView = view
             view.willReconcileSurfaces = { [weak self] in self?.enforceEmbeddedPageExclusivity() }
+            view.didClickInWindow = { [weak self] id in self?.dismissTransientContainers(except: id) }
             view.canvasSizeDidChange = { [weak self] size in
                 // A layout switch swaps the active layout, and with it the limits this window obeys.
                 self?.resizeWindow(to: size, reason: "canvasSizeDidChange")
@@ -386,6 +389,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             auxWindow.delegate = self
             auxWindow.orderOut(nil)
             // A script resizing *this* container resizes this window, not the player's.
+            view.didClickInWindow = { [weak self] id in self?.dismissTransientContainers(except: id) }
             view.canvasSizeDidChange = { [weak self, weak auxWindow] size in
                 guard let auxWindow else { return }
                 self?.resize(window: auxWindow, to: size)
@@ -414,6 +418,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 window: auxWindow, view: view, kind: info.kind, containerID: info.id,
                 displayName: WinampModernContainerTopology.displayName(of: info),
                 isListedInWindowMenu: WinampModernContainerTopology.isListedInWindowMenu(info),
+                autoCloses: info.object.attributes["autoclose"] == "1",
                 opensByDefault: info.opensByDefault && suppression == nil,
                 defaultOffset: info.defaultOrigin.map {
                     CGPoint(x: $0.x - playerOrigin.x, y: $0.y - playerOrigin.y)
@@ -1820,6 +1825,25 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func updateSpectrum(_ levels: [Float]) { skinView?.updateSpectrum(levels) }
     func skinDidChange() { skinView?.needsDisplay = true }
     func windowVisibilityDidChange() { skinView?.needsDisplay = true }
+
+    /// `autoclose="1"` on a container: a transient popup the next click elsewhere dismisses.
+    ///
+    /// Winamp's transient windows say this — Big Bento's playlist **search results** are a
+    /// `noparent ontop nodock autoclose` container — and they carry no titlebar, no close button and
+    /// no menu entry, because being dismissed *is* how they close. Unimplemented, the results panel
+    /// had no way to go away at all (BB31).
+    ///
+    /// Driven by the click rather than by `windowDidResignKey`: an `ontop noactivation` window's key
+    /// state flickers as it is ordered in, so closing on resign shut the popup in the same turn that
+    /// opened it and the search read as dead again.
+    func dismissTransientContainers(except container: WasabiObjectID) {
+        for candidate in auxiliaryContainers
+        where candidate.autoCloses && candidate.window.isVisible
+            && candidate.view.containerID != container {
+            // Through the same route a script's `hide()` takes, so the graph and the window agree.
+            setAuxiliaryWindow(id: candidate.containerID, visible: false)
+        }
+    }
 
     func windowDidResize(_ notification: Notification) {
         guard !isApplyingSkinSize,

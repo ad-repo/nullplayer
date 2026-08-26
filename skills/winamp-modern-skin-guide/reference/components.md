@@ -384,8 +384,52 @@ state that is assigned **nowhere else**. Three rules, each earned:
   keep using `sceneNodes()`. A hidden pane with no geometry can never hear that it is wide again — a
   one-way door.
 
+- **An object that leaves the layout resized to nothing, and hears that once.** Hidden subtrees are
+  laid out (above), but a *negative* box is dropped along with everything under it, so a pane
+  collapsed to zero takes its children out of `resizeTargets` entirely. `dispatchResize` therefore
+  compares against the previous target set and dispatches `onResize(x, y, 0, 0)` to whatever has gone,
+  which is what Wasabi does — it resizes a window to nothing rather than forgetting about it. Big
+  Bento gives the SUI tab area its width back from `player.component.playlist.onResize`; closing the
+  side playlist collapses that group's grandparent to 0 wide, so before this the tab area kept a 335px
+  hole on every tab (BB30).
+
 Each target hears its **own** parent-relative `(x, y, w, h)`, and only if its own box actually moved.
 A UI Size change dispatches nothing: it moves the drawing boundary, not the skin's canvas.
+
+#### A `<layout>` is a window, in four places
+
+Winamp treats a container's layout as the window itself, and a skin says it either way. Each of these
+was a separate defect on Big Bento's search popup (BB31), and they only make sense together:
+
+| A script does | Answered by |
+|---|---|
+| `layout.show()` / `hide()` | its **container's** window (`requestWindow` walks up) |
+| `layout.setXmlParam("x"/"y"/"w"/"h")` | the window's frame — `resize()` already did this, one-at-a-time writes now do too |
+| `layout.getLeft()` / `getTop()` | the desktop position it was given, not 0 (a layout resolves at its own canvas origin, and skins read these straight back into `resize(getLeft(), getTop(), …)`) |
+| `layout.isVisible()` | the **window**, not the graph attribute — the host can close a window (an `autoclose` popup) without the attribute moving |
+
+`autoclose="1"` on a container is a transient popup: it ships no titlebar, no close button and no menu
+entry, because being dismissed *is* how it closes. Dismiss it on the next **click elsewhere**, not on
+`windowDidResignKey` — an `ontop noactivation` window's key state flickers as it is ordered in, and
+closing on resign shuts the popup in the same turn that opened it.
+
+#### The two host-drawn controls: `<edit>` and `<list>`
+
+Winamp fills both with native child windows, so the skin draws the box and nothing else — the content
+is the host's, exactly as the playlist panel is.
+
+- **`<edit>`**: the view owns the focused one (click, or the skin's `setFocus()`), types into it, and
+  sends `onEnter` / `onAbort` / `onEditUpdate`. Printable keys are **consumed**, or a letter typed
+  into a search box also fires a skin accelerator. An edit that declares no `color=` draws in
+  `wasabi.list.text`, not white — Winamp's edit text is the list colour, which the skins say in their
+  own comments.
+- **`<list>`**: rows live on the object (`WasabiGuiList`) so the renderer draws what the script just
+  wrote. `deleteAllItems` / `addItem` / `getNumItems` / `getItemLabel(item, column)` /
+  `getFirstItemSelected` / `getNextItemSelected(after)` / `scrollToItem`, plus wheel scrolling, click
+  to select and `onDoubleClick(item)` — one argument, the row.
+- **Row height is the em plus 3px of leading, floored** — *not* the `fontsize` cell, which is a GDI
+  height with a smaller em inside it. A skin sizes its window from its own expectation of this
+  number, so getting it wrong crops the last row of every result.
 
 #### Colours and hosted AppKit content
 
