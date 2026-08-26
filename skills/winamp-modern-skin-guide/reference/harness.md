@@ -597,6 +597,7 @@ Three of this subsystem's probes were silently blind, and each one made a real d
 | Empty queue, so every `PlEdit` walk took its empty branch | The playlist API looked exercised and reached nothing | `RENDER_PLAYLIST` |
 | No windows, so a doubled window **toggle** cancels invisibly | Defix's playlist button measured as one clean action while flashing open/shut in the app | `WINAMP_MODERN_DEBUG_CLICK` in the app |
 | `RENDER_SCRIPTS` prints `ran=`/`failed=` **before** `RENDER_EVENTS` drives anything | Big Bento Modern's `animbutton` reported `failed=-` while its `onPause` aborted on every pause (BB23) | `CALL_TRACE` + `RENDER_EVENTS`; read `failed=` as *load-time* only |
+| **A handler that ran and took *no* branch looks exactly like a handler that worked** | Bento's tab strip: `ran=onscriptloaded failed=-` on all three tab scripts while none of them laid anything out, because its three-way mode `if` has no `else` and every member of the radio group read `"0"` (BB29) | `RENDER_SETTINGS=1` — a radio group sitting at `0 (default 0)` on *every* member is the tell, and it is one line. `RENDER_DISASM=@<xml>` is what then shows the missing `else` |
 
 When a probe says "nothing is happening", check that the probe can see the thing happening at all.
 

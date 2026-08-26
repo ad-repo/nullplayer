@@ -536,6 +536,16 @@ which is not a degenerate case but the mechanism a skin uses. Big Bento Modern's
 (a 40px-wide strip) the same 35 puts the caption outside the clip. Ignoring the attribute drew every
 tab's caption straight over its own icon.
 
+**A string whose origin lands in the clip's last pixel column is not drawn at all** (BB29). Bento's
+caption starts on column 39 of that 40px strip, so the clip leaves exactly one column: a glyph with no
+left side bearing (`V`, `W`) painted one bright column beside its icon plus one of antialiasing, and
+because the amount depends on each caption's first letter the strip looked *notched*, differently on
+every tab. One column of a 24px letter is never information — it is the fringe of a string the clip
+was meant to swallow — so a left-aligned, non-scrolling string with `drawFrame.minX >= visible.maxX-1`
+returns early (`visible` is `context.boundingBoxOfClipPath ∩ frame`, read before the flip). Measured
+on the corpus: 310 images, 305 identical, the 4 Bento `main-normal`s the fix, Anexa's nondeterministic
+`main-shade` discounted.
+
 #### A `cfgattrib` control has no `action` — the binding *is* what it does
 
 `cfgattrib="{GUID};Name"` binds a control to a Winamp preference, and a skin both **writes** it from

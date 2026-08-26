@@ -150,6 +150,31 @@ per resolved path, so a second `<bitmap>` naming the same dud file degrades too.
 itself is unchanged and `imageDimensionsExceeded` stays a hard error: that one is the *bound*, not a
 content problem, and so is every traversal/escape/variable failure.
 
+### A skin's settings must start in a state its own scripts can express
+
+`WinampModernConfigDefaults.apply` runs in `WinampModernSkinLoader.load`, **before** the runtime is
+handed out, because a skin lays its windows out from these values inside `onScriptLoaded` — a seed
+written afterwards arrives a whole layout late.
+
+It exists for one shape, and the file is meant to stay nearly empty: a set of `cfgattrib`s the skin
+treats as a **radio group** (its own `onDataChanged` forces exactly one member to `"1"` and zeroes the
+siblings), where every member is registered with a `"0"` default. A profile that has never run the
+skin then lands **all-zero — a state the skin has no branch for**, and Winamp only avoids it because
+its config file already carries a choice. Big Bento Modern's tab strip is the measured case (BB29):
+`tabswitch.maki`, `tabcontrol.maki` and `tabbutton.maki` are each a three-way `if` with no `else`, so
+all-zero skipped every branch, the strip's divider kept its markup `x` of 0 and drew *over* the icons,
+and its button was dead for ever — `onLeftClick` only cycles *between* the three states.
+
+Two properties make it safe to keep: it is keyed on the skin's **own markup** (the group is only
+considered when the document binds a control to a member, and the section GUID comes from that
+binding, so a skin that declares none of them is untouched), and it is idempotent — once any member
+reads `"1"`, whether from this seed or from the user's own pick, nothing is written again.
+
+> **This is not the place for "the skin looks nicer this way."** The value seeded has to be the one
+> the skin's *markup* is already laid out for, so it restores the author's arrangement rather than
+> choosing a look. Bento's markup ships `sui.tabs w="40"` / `sui.components x="57"` — the exact
+> numbers its icons branch writes — which is what makes `Tabs: Icons` the authored start.
+
 ### Retained graph and coordinates
 
 **`findObject` is the wide lookup, `getObject` the narrow one.** `getObject(id)` searches the

@@ -66,6 +66,34 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
       page stored to happen. Turning on *Open in Multi Content View (stretched)* does **not** set the
       page — verified — so the two settings are independent and the page is the one that matters.
 
+- [x] **BB29. The left tab bar: a misplaced divider, a dead switch button, and a notched caption edge
+      — fixed 2026-08-25, confirmed live** (*"I just tested the feature it worked"*). Reported on all
+      four variants as *"a notch to the right of the icon, these don't look uniform and look like an
+      artifact"* plus *"a triangle on the left side between the EQ and settings, and when you mouse
+      over it draws a darker line"*.
+
+      **One cause behind the triangle.** The strip's three modes (`Tabs: Hidden` / `Tabs: Icons` /
+      `Tabs: Icons + Text`) are a radio group of `cfgattrib`s that `loadattribs.maki` registers with a
+      `"0"` default each, and `tabswitch.maki` / `tabcontrol.maki` / `tabbutton.maki` are each a
+      three-way `if` with **no `else`**. A profile that has never run the skin therefore reads
+      all-zero and runs *none* of them, so `tabs.switch` — the divider, whose `x`, images and tooltip
+      the icons branch is what sets — kept its markup `x` of 0 and drew over the left edge of the
+      icons, wearing the *open* arrow. Its click was dead for the same reason: `onLeftClick` only
+      cycles *between* the three states. Seeded now at load, before the scripts run, keyed on the
+      skin's own markup (`WinampModernConfigDefaults`). `RENDER_GEOMETRY=sui.content` prints
+      `tabs.switch x=55` (base/Light; `50` on the Windows 10 editions) against `x=10` before.
+
+      **The notch was the captions' last pixel column**, and is independent of the mode: `offsetx=35`
+      on a box at `x=4` starts each caption on column 39 of the 40px strip, so `V`/`W` painted one
+      bright column and the others only antialiasing — hence "not uniform". A left-aligned string
+      whose origin lands in the clip's final column is no longer drawn.
+
+      Corpus sweep 2026-08-25: **310 images, 305 identical**, the 4 Bento `main-normal`s the fix,
+      Anexa's known-nondeterministic `main-shade` discounted. `swift test` 1246 pass. Skill:
+      `skins/big-bento-modern.md` → BB29, `reference/loading.md` → *A skin's settings must start in a
+      state its own scripts can express*, `reference/rendering.md` → *`offsetx` / `offsety` move the
+      string, not the box*, `SKILL.md` routing table.
+
 - [x] **BB27. The notifier toast draws a giant, jumbled block of text — fixed 2026-08-25, confirmed
       live across all four variants** (*"now it looks correct across all skins"*). Reported with two
       screenshots; they share one `xml/notifier.xml`. **Four defects, three of them engine-wide.**

@@ -38,6 +38,13 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: the Big Bento Modern tab bar is tidy, and its show/hide handle works** —
+  on all four Big Bento Modern skins the little divider between the tab icons and the panel beside
+  them sat *on top of* the icons, pointed the wrong way, and did nothing when clicked, and each icon
+  had a stray sliver of its own caption beside it that made the strip look notched. The tab strip now
+  starts in the icons layout the skin was designed to open in: the divider sits beside the icons where
+  it belongs, clicking it cycles the strip through icons, icons with text, and hidden — and the
+  captions stay hidden until you ask for them.
 - **Winamp 5.x modern skins: the track-change notification is readable again** — the pop-up that
   appears when a track changes drew its title, artist and album on top of one another in an
   oversized font, with the play/previous/next buttons showing through the text, and used only the

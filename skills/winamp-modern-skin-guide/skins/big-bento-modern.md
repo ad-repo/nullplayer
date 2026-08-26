@@ -16,7 +16,7 @@
 | Rendering | **Fixed (B36/B37)** | 80–82 bitmaps resolve in `main/normal`, 19–20 in `main/shade`; 38 scenes across the four |
 | Menu bar | **Fixed (B36)** | File/Play/Options/View/Help are placed by `mainmenu.maki`, not by a widget rule |
 | Display readouts | **Fixed (B37)** | `TIMEELAPSED` / `SONGLENGTH` / `SONGTITLE` / `SONGSAMPLERATE` are bound |
-| SUI tab strip | **Fixed (B37)** | `offsetx` on the captions is honoured, so icons-only mode clips them away |
+| SUI tab strip | **Fixed (B37, BB24, BB29)** | `offsetx` on the captions is honoured; the tabs size themselves from the font; and the strip starts in the **icons** mode the markup is laid out for, so its divider sits beside the icons and its button works. Confirmed live |
 | Overlay (`Light`) palette | **Works** | The Light editions render in their own light palette against the base skin's artwork |
 | Album-art panel (W10 edition) | **Degrades** | Its `window/no_alb_art_shade.png` is zero bytes; that one placeholder draws nothing |
 | Config pages + EQ tab | **Fixed (BB7)** | `GroupList.instantiate` builds them; `getApplicationPath` was the domino behind it |
@@ -280,6 +280,41 @@ Three things worth keeping:
   `RENDER_EVENTS` drives anything, so a handler that only fails on a *driven* event reads
   `failed=-`. `WINAMP_MODERN_CALL_TRACE=1` with `RENDER_EVENTS=onpause` is the instrument, and
   `RENDER_PROBE` confirms it — `play.track` absent from the scene after a pause is the whole defect.
+
+## BB29 — the tab strip started in a mode the skin has no branch for (fixed 2026-08-25, confirmed live)
+
+Reported on all four variants as two things at once: *"a notch to the right of each icon that doesn't
+look uniform"*, and *"a triangle on the left between the EQ and settings that draws a darker line on
+hover"*. One cause, plus one fringe.
+
+**The strip has three modes, and we were in none of them.** `Tabs: Hidden` / `Tabs: Icons` /
+`Tabs: Icons + Text` are a radio group in the skin's `Appearance` item
+(`{F1036C9C-3919-47ac-8494-366778CF10F9}`), read by `tabswitch.maki`, `tabcontrol.maki` and
+`tabbutton.maki` — each a three-way `if` with **no `else`**. `loadattribs.maki` registers all three
+with a `"0"` default, so a profile that has never run the skin reads all-zero and every branch is
+skipped:
+
+| what the icons branch writes | all-zero (before) |
+|---|---|
+| `tabs.switch` `x=45`, `image=v.divider.suiframe.close.*`, tooltip *Hide Tab's Icons* | markup `x` of **0** and the *open* arrow — the divider drew over the left edge of the icons |
+| `sui.tabs w=40`, `sui.components x=57`, `show.sui.tabs w=40` | already the markup's own values, which is why only the divider looked wrong |
+
+Its button was dead too, and permanently: `onLeftClick` only cycles *between* the three states
+(`Nothing > Icons > Icons & Text`, per the skin's own `Hidden Features.txt`), so all-zero cannot reach
+any of them. The fix is a first-run seed of `Tabs: Icons` — see
+[reference/loading.md](../reference/loading.md) → *A skin's settings must start in a state its own
+scripts can express* for the rule and why it is keyed on the skin's markup rather than its name.
+
+**The "notch" was the captions' last pixel column** — the fringe, and not the same defect: at
+`offsetx="35"` on a box at `x="4"`, the caption starts on column 39 of the 40px strip whatever mode
+the strip is in. See [reference/rendering.md](../reference/rendering.md) → *`offsetx` / `offsety` move
+the string, not the box*.
+
+Measured: `RENDER_GEOMETRY=sui.content` prints `tabs.switch` at `x=55` (base and Light; `50` on the
+two Windows 10 editions) against `x=10` before, and the fringe is 21 pixels of `main-normal`. The
+route to the whole picture was `RENDER_DISASM=@player-normal-sui` — the three branches are only
+legible as bytecode, and `RENDER_SETTINGS=1` is what shows the group sitting at `0 (default 0)` three
+times, which is the tell.
 
 ## BB24 — the SUI tab icons were stretched vertically (fixed 2026-08-24, confirmed live)
 

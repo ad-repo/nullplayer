@@ -2070,6 +2070,18 @@ final class WasabiSceneRenderer {
         let offsetX = CGFloat(Double(object.attributes["offsetx"] ?? "0") ?? 0)
         let offsetY = CGFloat(Double(object.attributes["offsety"] ?? "0") ?? 0)
         let drawFrame = frame.offsetBy(dx: offsetX, dy: -inset - offsetY)
+        // …and when the shift lands the string's own origin in the **last pixel column** of what is
+        // still visible, the skin means it to be gone, not to leave a sliver. Big Bento Modern's SUI
+        // tab captions land exactly there in the icons-only mode: `offsetx="35"` on a box at x=4
+        // starts the string on column 39 of a 40px strip, so a glyph with no left side bearing (`V`,
+        // `W`) paints one bright column beside its icon and one of antialiasing beside that, and each
+        // caption's first letter decides how much — which is what made the strip look notched. A
+        // single column of a 24px letter is never information; it is the fringe of a string the
+        // clip was meant to swallow.
+        if scroll == nil, alignment == .left {
+            let visible = context.boundingBoxOfClipPath.intersection(frame)
+            if !visible.isNull, drawFrame.minX >= visible.maxX - 1 { return }
+        }
 
         context.saveGState()
         context.clip(to: frame)

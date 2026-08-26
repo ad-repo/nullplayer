@@ -97,8 +97,12 @@ final class WinampModernSkinLoader {
                                                 maximumObjectCount: xmlLimits.maximumExpandedNodeCount)
             .initialize(document: document)
         for diagnostic in inventory.diagnostics { runtime.record(diagnostic) }
+        // Before anything can read it: a skin's scripts lay its windows out from these values inside
+        // `onScriptLoaded`, so a first-run seed applied afterwards would arrive a whole layout late.
+        let configuration = WinampModernConfiguration(namespace: mountName)
+        WinampModernConfigDefaults.apply(document: document, configuration: configuration)
         return WinampModernLoadedSkin(archive: archive, vfs: vfs, document: document, runtime: runtime,
-                                      configuration: WinampModernConfiguration(namespace: mountName),
+                                      configuration: configuration,
                                       surfaceInventory: inventory, surfaceSynthesis: synthesis)
     }
 
