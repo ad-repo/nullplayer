@@ -113,16 +113,34 @@ struct WinampModernSurfaceInventory {
         static let production = Limits()
     }
 
+    private struct OrderedGroupDefinition {
+        let node: WalXMLNode
+        let documentOrder: Int
+    }
+
+    private struct GroupVisit: Hashable {
+        let definitionOrder: Int
+        let instanceOrder: Int
+    }
+
     static func build(document: WalExpandedXMLDocument, limits: Limits = .production) -> Self {
-        var groupdefsByID: [String: WalXMLNode] = [:]
+        var groupdefsByID: [String: [OrderedGroupDefinition]] = [:]
         var groupdefsByXUITag: [String: String] = [:]
+        var documentOrder: [ObjectIdentifier: Int] = [:]
         var diagnostics: [WalDiagnostic] = []
+        var nextDocumentOrder = 0
 
         func collectDefinitions(_ nodes: [WalXMLNode]) {
             for node in nodes {
+                let nodeOrder = nextDocumentOrder
+                documentOrder[ObjectIdentifier(node)] = nodeOrder
+                nextDocumentOrder += 1
                 if node.name.caseInsensitiveCompare("groupdef") == .orderedSame,
                    let id = node.attribute("id"), !id.isEmpty {
-                    groupdefsByID[fold(id)] = node
+                    groupdefsByID[fold(id), default: []].append(OrderedGroupDefinition(
+                        node: node,
+                        documentOrder: nodeOrder
+                    ))
                     if let tag = node.attribute("xuitag"), !tag.isEmpty {
                         groupdefsByXUITag[fold(tag)] = fold(id)
                     }
@@ -136,6 +154,14 @@ struct WinampModernSurfaceInventory {
         for (tag, identifier) in WasabiStandardFrames.conventionalXUITags
         where groupdefsByXUITag[fold(tag)] == nil && groupdefsByID[fold(identifier)] != nil {
             groupdefsByXUITag[fold(tag)] = fold(identifier)
+        }
+
+        func definition(_ identifier: String, at instanceOrder: Int?) -> OrderedGroupDefinition? {
+            guard let versions = groupdefsByID[fold(identifier)], !versions.isEmpty else { return nil }
+            guard versions.count > 1, let instanceOrder else { return versions.last }
+            // Match the initializer's deliberate forward-reference leniency: if the instance comes
+            // before every declaration, use the first body rather than treating it as absent.
+            return versions.last { $0.documentOrder <= instanceOrder } ?? versions.first
         }
 
         var containers: [Container] = []
@@ -154,11 +180,11 @@ struct WinampModernSurfaceInventory {
 
         for container in topLevelContainers(document.roots) {
             let id = container.attribute("id") ?? ""
-            var visitedGroups: Set<String> = []
+            var visitedGroups: Set<GroupVisit> = []
             var found: Set<WinampModernComponentKind> = []
             var equalizerControls = false
 
-            func visit(_ node: WalXMLNode, depth: Int) {
+            func visit(_ node: WalXMLNode, depth: Int, enclosingOrder: Int? = nil) {
                 guard visitedBudget > 0, depth <= limits.maximumGroupDepth else {
                     if visitedBudget <= 0 {
                         diagnostics.append(WalDiagnostic(
@@ -171,6 +197,9 @@ struct WinampModernSurfaceInventory {
                     return
                 }
                 visitedBudget -= 1
+                // Template children are read when their outer group is instantiated, so all nested
+                // group references inherit that instance's position instead of their definition's.
+                let nodeOrder = enclosingOrder ?? documentOrder[ObjectIdentifier(node)]
 
                 if WinampModernComponentRegistry.isHolderElement(node.name) {
                     if let kind = holderKind(of: node) { found.insert(kind) }
@@ -178,23 +207,30 @@ struct WinampModernSurfaceInventory {
                 if isEqualizerControl(node) { equalizerControls = true }
 
                 for identifier in referencedGroupIdentifiers(of: node, xuiTags: groupdefsByXUITag) {
-                    visitGroup(identifier, depth: depth + 1)
+                    visitGroup(identifier, at: nodeOrder, depth: depth + 1)
                 }
-                for child in node.children { visit(child, depth: depth) }
+                for child in node.children {
+                    visit(child, depth: depth, enclosingOrder: enclosingOrder)
+                }
             }
 
-            func visitGroup(_ identifier: String, depth: Int) {
-                let key = fold(identifier)
-                guard visitedGroups.insert(key).inserted else { return }   // cycle / already seen
+            func visitGroup(_ identifier: String, at instanceOrder: Int?, depth: Int) {
                 guard depth <= limits.maximumGroupDepth else { return }
-                guard let definition = groupdefsByID[key] else { return }
-                if let inherited = definition.attribute("inherit_group") {
-                    visitGroup(groupdefsByXUITag[fold(inherited)] ?? inherited, depth: depth + 1)
+                guard let definition = definition(identifier, at: instanceOrder) else { return }
+                let visitKey = GroupVisit(
+                    definitionOrder: definition.documentOrder,
+                    instanceOrder: instanceOrder ?? .max
+                )
+                guard visitedGroups.insert(visitKey).inserted else { return } // cycle / already seen
+                if let inherited = definition.node.attribute("inherit_group") {
+                    visitGroup(groupdefsByXUITag[fold(inherited)] ?? inherited,
+                               at: definition.documentOrder, depth: depth + 1)
                 }
-                if let embedded = definition.attribute("embed_xui") {
-                    visitGroup(groupdefsByXUITag[fold(embedded)] ?? embedded, depth: depth + 1)
+                if let embedded = definition.node.attribute("embed_xui") {
+                    visitGroup(groupdefsByXUITag[fold(embedded)] ?? embedded,
+                               at: definition.documentOrder, depth: depth + 1)
                 }
-                visit(definition, depth: depth)
+                visit(definition.node, depth: depth, enclosingOrder: instanceOrder)
             }
 
             for layout in container.children

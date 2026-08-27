@@ -299,6 +299,35 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertTrue(inventory.synthesizableKinds.isEmpty, "an SUI skin is never synthesized into")
     }
 
+    /// The inventory and retained graph must agree about a group id redefined between two layouts.
+    /// Winamp's parser is streaming: the earlier layout keeps the first body, and only references
+    /// below the redefinition see the second one.
+    func testInventoryUsesTheGroupDefinitionInForceAtEachReference() throws {
+        let inventory = try makeInventory(xml: """
+        <WasabiXML>
+          <groupdef id="surface.body">
+            <component param="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}"/>
+          </groupdef>
+          <container id="main">
+            <layout id="normal" w="200" h="200"><group id="surface.body"/></layout>
+          </container>
+          <groupdef id="surface.body">
+            <component param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"/>
+          </groupdef>
+          <container id="later">
+            <layout id="normal" w="200" h="200"><group id="surface.body"/></layout>
+          </container>
+        </WasabiXML>
+        """)
+
+        let main = try XCTUnwrap(inventory.containers.first { $0.id == "main" })
+        let later = try XCTUnwrap(inventory.containers.first { $0.id == "later" })
+        XCTAssertEqual(main.reachableKinds, [.playlist],
+                       "a later redefinition must not rewrite an earlier layout's inventory")
+        XCTAssertEqual(later.reachableKinds, [.library],
+                       "references below the redefinition use its new body")
+    }
+
     /// The cPro shape: surfaces embedded in the main window through engine holders. Nothing is
     /// missing, so nothing may be synthesized — a duplicate window is the failure to avoid.
     func testSUISkinWithScriptBuiltHoldersSynthesizesNothing() throws {

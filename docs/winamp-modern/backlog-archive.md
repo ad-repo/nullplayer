@@ -2,6 +2,29 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B17 — Preserve groupdef redefinition order in the surface inventory — closed 2026-08-27
+
+### B17
+
+- [x] **B17. `WasabiSurfaceInventory`'s last-wins groupdef map.** The redefined-id defect fixed in
+      Phase 19, one layer up. No measured skin is affected — it changes nothing for T800 — so this is
+      a correctness tidy-up, not a fix
+
+The inventory now retains every definition of a group id in expanded-document order and resolves a
+reference to the version in force where that reference occurs, including the initializer's lenient
+first-definition fallback for forward references. Template traversal carries the outer instance's
+position, while `inherit_group` and `embed_xui` edges resolve at the definition's own position. This
+keeps pre-graph surface classification aligned with the live graph and prevents a later group body
+from changing an earlier container's embedded/declared/synthesis decision.
+
+Manual no-regression QA was accepted on Big Bento Modern on 2026-08-27. Regression coverage:
+`WinampModernPhase13Tests.testInventoryUsesTheGroupDefinitionInForceAtEachReference`.
+
+Reach command: `rg -i -o '<groupdef[^>]*[[:space:]]id="[^"]+"' "$corpus" --glob '*.xml'`;
+normalize ids case-insensitively per skin and retain ids declared more than once.
+
+---
+
 ## B15 — Render `wasabi.panel` / `wasabi.objectframe.group` bodies — closed 2026-08-27
 
 ### B15
@@ -23,6 +46,32 @@ grid, and a skin-supplied groupdef continues to win over the shell. Manual QA on
 accepted 2026-08-27.
 
 Reach command: `rg -i -o 'wasabi\.(panel|objectframe\.group)' "$corpus" --glob '*.xml'`.
+
+---
+
+## BB10 — Typed Skin Settings fallback widgets — closed 2026-08-27
+
+### BB10
+
+- [x] **BB10. The gear (host **Skin Settings**) window renders two widget kinds, and hides some
+      settings entirely.** Reported by the user as *"most items in the gear settings menu don't work
+      or are blank."*
+      `Windows/WinampModern/WinampModernSkinSettingsWindowController.swift` (208 lines) builds its
+      list from `runtime.presentableSettings` and renders a checkbox when the current value is
+      exactly `"0"` or `"1"` (`isToggle`, line 29) and otherwise a bare `NSTextField` (line 126).
+      There is no enum, slider, range or colour widget, because `RegisteredSetting` carries no type
+      metadata — only section, name and default. Separately, `presentableSettings` filters out every
+      setting whose *current value* looks like a GUID (`namesAnItem`), which is right for Winamp's
+      config-tree navigation nodes and also hides any legitimately GUID-valued option.
+      Decide in this order: **(a)** does this window stay a *fallback* for options no skin control
+      binds, once BB7 makes the skin's own nine pages work? It and `config.xml` read and write the
+      same store, so BB7 may make it largely redundant for this family and the answer changes how
+      much (b) is worth. **(b)** extend `RegisteredSetting` with type/range metadata so an enum is a
+      popup and a bounded int is a slider. **(c)** revisit the GUID filter.
+      Start by dumping what this skin actually registers: `WINAMP_MODERN_RENDER_SETTINGS=1`.
+
+Closed without an engine change after live review: the skin's own settings pages already expose the
+items and all of them work. The proposed duplicate host controls no longer describe an open defect.
 
 ---
 
@@ -1373,8 +1422,7 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
       against `346` in the app; both hide the analyzer, so **the harness agreed with the symptom for
       the wrong reason**. The app is the model: `wireContainerCallbacks` installs the closure *before*
       `scripts.start()` and consults every container's renderer. **Expect the 288-image sweep to
-      change** — that is the point, so budget for inspecting the diff. Detail:
-      [BENTO_VIS_HANDOFF.md](../../BENTO_VIS_HANDOFF.md) §3.8.
+      change** — that is the point, so budget for inspecting the diff.
       </details>
 
 ---
@@ -1405,7 +1453,6 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
       `scratchpad/bb9-revert.patch`; **it was never verified on screen**, so re-derive rather than
       trust it. Also unestablished: whether Winamp starts Bento with a narrow player pane at all — if
       not, the defect is the divider's *position*, not its draggability.
-      [BENTO_VIS_HANDOFF.md](../../BENTO_VIS_HANDOFF.md) §3.7.
       </details>
 
 ---

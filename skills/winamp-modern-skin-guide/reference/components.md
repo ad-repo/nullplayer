@@ -303,6 +303,11 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
 
 - It has to be pre-graph: reading the live graph would come too late for synthesis *and* would mistake
   cPro's script-built holders for missing surfaces.
+- Redefined group ids keep expanded-document order here just as they do in the initializer. Each
+  reference follows the newest definition at or before its own position (or the first definition for
+  a forward reference), so a later group body cannot change an earlier container's surface inventory.
+  Template children inherit the outer instance's position; inheritance and `embed_xui` edges resolve
+  where their definition was declared.
 - Ambiguity suppresses synthesis. A duplicate skin window is a much worse failure than a classic
   fallback.
 - A frame qualifies only if the skin declares it *and* it carries the script that instantiates its

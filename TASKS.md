@@ -18,8 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| BB10 | Add typed Skin Settings fallback widgets | 17 skins / 361 `newAttribute` program symbols ([M3]) | M | Measured |
-| B17 | Preserve groupdef redefinition order in the surface inventory | 9 skins / 53 duplicate declarations ([M5]) | S | Measured |
 | B41 | `getMonitorWidth` / `getMonitorHeight` | 6 skins / 18 MAKI program symbols ([M7]) | S | Measured |
 | BB5 | Substitute `@HAVE_LIBRARY@` | 6 skins / 6 uses ([M8]) | S | Measured |
 | BB15 | `parser_*` / `shutdown()` | 6 skins / 15 MAKI program symbols ([M9]) | M | Measured |
@@ -52,7 +50,6 @@ All commands use the 36 directories extracted with `7zz` from
 
 - <a id="m3"></a>**M3:** `rg -a -i -o 'newAttribute' "$corpus"`
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
-- <a id="m5"></a>**M5:** `rg -i -o '<groupdef[^>]*[[:space:]]id="[^"]+"' "$corpus" --glob '*.xml'`; normalize ids case-insensitively per skin and retain ids declared more than once.
 - <a id="m6"></a>**M6:** `rg -i -l 'info\.component\.vis|vis\.content\.group' "$corpus"/Big\ Bento\ Modern* --glob '*.xml'`
 - <a id="m7"></a>**M7:** `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
 - <a id="m8"></a>**M8:** `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
@@ -75,27 +72,6 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
 
 ---
 
-### BB10
-
-- [ ] **BB10. The gear (host **Skin Settings**) window renders two widget kinds, and hides some
-      settings entirely.** Reported by the user as *"most items in the gear settings menu don't work
-      or are blank."*
-      `Windows/WinampModern/WinampModernSkinSettingsWindowController.swift` (208 lines) builds its
-      list from `runtime.presentableSettings` and renders a checkbox when the current value is
-      exactly `"0"` or `"1"` (`isToggle`, line 29) and otherwise a bare `NSTextField` (line 126).
-      There is no enum, slider, range or colour widget, because `RegisteredSetting` carries no type
-      metadata — only section, name and default. Separately, `presentableSettings` filters out every
-      setting whose *current value* looks like a GUID (`namesAnItem`), which is right for Winamp's
-      config-tree navigation nodes and also hides any legitimately GUID-valued option.
-      Decide in this order: **(a)** does this window stay a *fallback* for options no skin control
-      binds, once BB7 makes the skin's own nine pages work? It and `config.xml` read and write the
-      same store, so BB7 may make it largely redundant for this family and the answer changes how
-      much (b) is worth. **(b)** extend `RegisteredSetting` with type/range metadata so an enum is a
-      popup and a bounded int is a slider. **(c)** revisit the GUID filter.
-      Start by dumping what this skin actually registers: `WINAMP_MODERN_RENDER_SETTINGS=1`.
-
----
-
 ### BB14
 
 - [ ] **BB14. Animated layout and tab transitions, and easing beyond linear.** Our layout and tab
@@ -103,14 +79,6 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
       `setTarget*`/`setTargetSpeed`/`gotoTarget`/`cancelTarget`/`onTargetReached` tween machine and
       timers are all implemented and are what Bento's own animations are built from, so **nothing in
       this family depends on this**. Filed so the absence is recorded rather than rediscovered.
-
----
-
-### B17
-
-- [ ] **B17. `WasabiSurfaceInventory`'s last-wins groupdef map.** The redefined-id defect fixed in
-      Phase 19, one layer up. No measured skin is affected — it changes nothing for T800 — so this is
-      a correctness tidy-up, not a fix
 
 ---
 
@@ -166,7 +134,7 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
       `main.vis.group.alt` — a single 252px analyzer plus reflection — along with `Visualizer Mode`,
       `Show Peaks`, `Visualizer show Lines` and the two falloff speeds. Both groups are placed with no
       `visible=`, and the script hides whichever is not chosen; that hide is running correctly. So the
-      header's own visualization has a settings surface already, which is BB7/BB10 territory rather
+      header's own visualization has a settings surface already, which is BB7 territory rather
       than new work here. **Do not fold the header into BB9's side-by-side layout question** — it is a
       separate placement with its own script and its own config.
       **Corrections to what this entry used to say:** the defaults *are* reachable and the plumbing
