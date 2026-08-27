@@ -6,12 +6,12 @@ import XCTest
 /// R2 was carried from Phase 7 as "`wasabi.*` widgets render empty because the artwork lives inside
 /// Winamp". Measured across the four reference skins, that is not the shape of what is left: the skins
 /// ship the standard artwork themselves, cPro-Bento references no `wasabi.*` group at all, and Winamp
-/// Modern defines its own. What was missing was the standard library's *structure* for two ids —
-/// `wasabi.tooltip` (off the curated list entirely) and `wasabi.titlebar` (a shell with no body, and
-/// no `Wasabi:TitleBar` tag, so every CornerAmp window came up with a nameless title bar).
+/// Modern defines its own. What was missing was the standard library's *structure* for four ids —
+/// `wasabi.tooltip` (off the curated list entirely), `wasabi.titlebar` (a shell with no body, and no
+/// `Wasabi:TitleBar` tag), and the artwork-backed `wasabi.panel` / `wasabi.objectframe.group` shells.
 ///
-/// These tests pin the two additions *and* the boundaries around them: a skin's own definition and its
-/// own `xuitag=` still win, and no other shell grew a body.
+/// These tests pin the additions *and* the boundaries around them: a skin's own definition and its
+/// own `xuitag=` still win, and no unmeasured shell grew a body.
 final class WinampModernPhase14Tests: XCTestCase {
 
     private final class Host: WinampModernHost {
@@ -136,11 +136,45 @@ final class WinampModernPhase14Tests: XCTestCase {
         XCTAssertEqual(runtime.graph.objects(xmlID: "skin.own.title").count, 1)
     }
 
+    // MARK: - B15 Artwork-backed frame shells
+
+    func testMeasuredFrameShellsProvideNineSliceBodies() throws {
+        for (identifier, prefix, middle) in [
+            ("wasabi.panel", "wasabi.panel", "wasabi.panel.tint"),
+            ("wasabi.objectframe.group", "wasabi.objectframe", "wasabi.objectframe.center"),
+        ] {
+            let runtime = try initialize(xml: """
+            <WasabiXML>
+              <container id="main">
+                <layout id="normal" w="100" h="100">
+                  <group id="\(identifier)" x="2" y="3" w="80" h="70"/>
+                </layout>
+              </container>
+            </WasabiXML>
+            """)
+            let instance = try XCTUnwrap(runtime.graph.objects(xmlID: identifier).first)
+            let grid = try XCTUnwrap(instance.children.first)
+            XCTAssertEqual(grid.typeName.lowercased(), "grid")
+            XCTAssertEqual(grid.attributes["topleft"], "\(prefix).top.left")
+            XCTAssertEqual(grid.attributes["top"], "\(prefix).top")
+            XCTAssertEqual(grid.attributes["topright"], "\(prefix).top.right")
+            XCTAssertEqual(grid.attributes["left"], "\(prefix).left")
+            XCTAssertEqual(grid.attributes["middle"], middle)
+            XCTAssertEqual(grid.attributes["right"], "\(prefix).right")
+            XCTAssertEqual(grid.attributes["bottomleft"], "\(prefix).bottom.left")
+            XCTAssertEqual(grid.attributes["bottom"], "\(prefix).bottom")
+            XCTAssertEqual(grid.attributes["bottomright"], "\(prefix).bottom.right")
+            XCTAssertEqual(grid.attributes["tile"], "1")
+            XCTAssertEqual(grid.attributes["ghost"], "1")
+        }
+    }
+
     func testEveryOtherShellStaysIdentifierOnly() throws {
-        // The shells are identifier-only by design — one with a body would put artwork we invented
-        // into every skin that inherits it. `wasabi.titlebar` is the single measured exception.
+        // The remaining shells are identifier-only by design — a body would put structure we did
+        // not measure into every skin that inherits one.
+        let shellsWithBodies = Set(["wasabi.titlebar", "wasabi.panel", "wasabi.objectframe.group"])
         for identifier in WasabiSkinInitializer.wasabiStandardLibraryGroups
-        where identifier != "wasabi.titlebar" {
+        where !shellsWithBodies.contains(identifier) {
             let runtime = try initialize(xml: """
             <WasabiXML>
               <container id="main">

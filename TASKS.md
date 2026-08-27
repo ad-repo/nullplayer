@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B15 | Render `wasabi.panel` / `wasabi.objectframe.group` bodies | 19 skins / 192 declarations ([M2]) | M | Measured |
 | BB10 | Add typed Skin Settings fallback widgets | 17 skins / 361 `newAttribute` program symbols ([M3]) | M | Measured |
 | B17 | Preserve groupdef redefinition order in the surface inventory | 9 skins / 53 duplicate declarations ([M5]) | S | Measured |
 | B41 | `getMonitorWidth` / `getMonitorHeight` | 6 skins / 18 MAKI program symbols ([M7]) | S | Measured |
@@ -51,7 +50,6 @@ All commands use the 36 directories extracted with `7zz` from
 `~/Library/Application Support/NullPlayer/WinampModernSkins/` (excluding
 `ClassicProEngine`). Set `corpus=/path/to/the/extracted/root`.
 
-- <a id="m2"></a>**M2:** `rg -i -o 'wasabi\.(panel|objectframe\.group)' "$corpus" --glob '*.xml'`
 - <a id="m3"></a>**M3:** `rg -a -i -o 'newAttribute' "$corpus"`
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
 - <a id="m5"></a>**M5:** `rg -i -o '<groupdef[^>]*[[:space:]]id="[^"]+"' "$corpus" --glob '*.xml'`; normalize ids case-insensitively per skin and retain ids declared more than once.
@@ -74,14 +72,6 @@ number of matched declarations or MAKI program symbols. A compiled MAKI method n
 symbol, not necessarily a call-site count; rows say so where that distinction matters.
 
 ## Item detail
-
----
-
-### B15
-
-- [ ] **B15. `wasabi.panel` / `wasabi.objectframe.group` bodies.** Every measured use is inside a
-      `modal`/`static` frame that synthesis never selects, so there is still nothing on screen to fix.
-      Wait for a skin that shows one
 
 ---
 

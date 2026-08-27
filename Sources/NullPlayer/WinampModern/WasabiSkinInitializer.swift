@@ -894,9 +894,9 @@ final class WasabiSkinInitializer {
         ("Wasabi:TitleBar", "wasabi.titlebar"),
     ]
 
-    /// The one shell that draws something.
+    /// The standard-library shells that can be reconstructed from conventional skin resources.
     ///
-    /// The shells are identifier-only by design, but a title bar is a measured exception: CornerAmp
+    /// Most shells are identifier-only by design, but a title bar is a measured exception: CornerAmp
     /// instantiates `<Wasabi:TitleBar>` inside its own `wasabi.standardframe.nostatusbar` and never
     /// defines the tag — in real Winamp the standard library supplies it — so every CornerAmp window
     /// came up with a nameless title bar. The skin ships no `wasabi.titlebar.*` bitmaps either, so this
@@ -905,22 +905,63 @@ final class WasabiSkinInitializer {
     /// the conventional ids — CornerAmp defines the colour, nothing measured defines the font, and both
     /// degrade (white, system font) when absent.
     private static func shellTemplateChildren(for identifier: String) -> [WalXMLNode] {
-        guard identifier == "wasabi.titlebar" else { return [] }
-        return [WalXMLNode(
-            name: "text",
+        switch identifier {
+        case "wasabi.panel":
+            return [standardLibraryGrid(
+                id: "wasabi.panel.grid",
+                prefix: "wasabi.panel",
+                middle: "wasabi.panel.tint"
+            )]
+        case "wasabi.objectframe.group":
+            return [standardLibraryGrid(
+                id: "wasabi.objectframe.grid",
+                prefix: "wasabi.objectframe",
+                middle: "wasabi.objectframe.center"
+            )]
+        case "wasabi.titlebar":
+            return [WalXMLNode(
+                name: "text",
+                attributes: [
+                    "id": "window.titlebar.title",
+                    "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+                    "align": "center",
+                    // A point under the 11 default: text draws from the top of its box and CornerAmp's
+                    // title bar is 11px tall, where 11pt clips the descenders of "Playlist Editor".
+                    "fontsize": "10",
+                    "default": ":componentname",
+                    "font": "wasabi.font.default",
+                    "color": "wasabi.window.text",
+                ],
+                location: wasabiStandardLibrarySource
+            )]
+        default:
+            return []
+        }
+    }
+
+    /// Winamp supplies these two group bodies, while modern skins supply the artwork under stable
+    /// `wasabi.*` bitmap ids. A tiled grid preserves the one-pixel edges and repeating centre
+    /// textures used by the measured skins; absent parts already degrade to an empty grid.
+    private static func standardLibraryGrid(id: String, prefix: String, middle: String) -> WalXMLNode {
+        WalXMLNode(
+            name: "grid",
             attributes: [
-                "id": "window.titlebar.title",
+                "id": id,
                 "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
-                "align": "center",
-                // A point under the 11 default: text draws from the top of its box and CornerAmp's
-                // title bar is 11px tall, where 11pt clips the descenders of "Playlist Editor".
-                "fontsize": "10",
-                "default": ":componentname",
-                "font": "wasabi.font.default",
-                "color": "wasabi.window.text",
+                "topleft": "\(prefix).top.left",
+                "top": "\(prefix).top",
+                "topright": "\(prefix).top.right",
+                "left": "\(prefix).left",
+                "middle": middle,
+                "right": "\(prefix).right",
+                "bottomleft": "\(prefix).bottom.left",
+                "bottom": "\(prefix).bottom",
+                "bottomright": "\(prefix).bottom.right",
+                "tile": "1",
+                "ghost": "1",
             ],
             location: wasabiStandardLibrarySource
-        )]
+        )
     }
 
     private func registerWasabiStandardLibrary(in registry: WasabiTypeRegistry) {

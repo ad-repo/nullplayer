@@ -221,6 +221,13 @@ about *today*. `Declared − Reachable` is how much of the skin we have never ev
 After include/glob expansion and group expansion, the document is a complete list of what the skin
 draws and what it wires up. Every one of these is a countable declaration:
 
+> **Count syntax in context, not substrings.** A search for `wasabi.panel` also matches bitmap and
+> colour ids such as `wasabi.panel.top`, and comments preserve abandoned declarations. B15's first
+> 36-skin count therefore reported 192 "declarations" in 19 skins, while a comment-stripped scan for
+> `<group id="…">` and `<groupdef inherit_group="…">` found 19 actual edges in eight. Resource-name
+> demand proves that artwork exists; it does not prove that the group body is instantiated. Record
+> resource declarations, group edges, and container/layout reachability as three separate counts.
+
 - containers and layouts → how many windows, and their declared sizes
 - every element tag (`layer`, `animatedlayer`, `button`, `togglebutton`, `slider`, `text`,
   `songticker`, `vis`, `grid`, `component`, `windowholder`, `Wasabi:Frame`, custom `xuitag`s…)

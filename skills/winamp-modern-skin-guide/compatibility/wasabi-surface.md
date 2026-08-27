@@ -191,19 +191,16 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   [../reference/components.md](../reference/components.md) — *The component bucket*)
 - The curated predefined `wasabi.*` standard-library base groups (`registerWasabiStandardLibrary`),
   including a clean-room text-only `Wasabi:TitleBar` that draws the window's own name
+- `wasabi.panel` and `wasabi.objectframe.group` bodies. Winamp supplies their structure while the
+  skin supplies conventional artwork ids, so each shell expands to a tiled nine-slice `<grid>`:
+  `wasabi.panel.*` with `wasabi.panel.tint` in the middle, or `wasabi.objectframe.*` with
+  `wasabi.objectframe.center`. Missing parts remain empty and a skin's own groupdef still wins. B15
 
 **Not supported / degraded**
 
-- **`wasabi.*` shells are structure-free, so a widget that has no body of its own draws nothing.**
-  What is missing is the standard library's *structure*, not the pixels: the skins ship the standard
-  artwork themselves under the conventional ids (mmd3 declares 174 `wasabi.*` bitmaps, Winamp Modern
-  114, CornerAmp 22), but the groupdef bodies that compose them live inside Winamp. Measured across
-  the four reference skins the live footprint is small — cPro-Bento references no `wasabi.*` group at
-  all (the ClassicPro engine supplies real definitions) and Winamp Modern declares its own; what falls
-  to a shell is `wasabi.panel` (CornerAmp ×4, mmd3 ×1 — all inside `modal`/`static` frames, which
-  synthesis never selects), `wasabi.objectframe.group` (mmd3 ×1), and `wasabi.titlebar`. Unresolved
-  conventional *tags* — `<Wasabi:Button>` (CornerAmp, mmd3 colour-theme dialogs) and `<Wasabi:TabSheet>`
-  (mmd3's winshade sidecar) — become inert nodes the same way.
+- Most remaining **`wasabi.*` shells are structure-free**, so a widget that has no body of its own
+  draws nothing. Unresolved conventional *tags* — `<Wasabi:Button>` (CornerAmp and mmd3 colour-theme
+  dialogs) and `<Wasabi:TabSheet>` (mmd3's winshade sidecar) — become inert nodes the same way.
 - A base group outside the curated set warns and is dropped.
 - A missing **optional** bitmap or cursor is a warning, not an error (Winamp-compatible).
 - `file="$solid"` / `file="$gradient"` predefined bitmaps generate no **pixels**, so a layer that
@@ -240,4 +237,3 @@ already lands correctly.
 
 Duplicate resource/group/XUI definitions **replace** earlier ones and warn — this is intentional
 override behavior, not an error.
-

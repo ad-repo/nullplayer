@@ -2,6 +2,30 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B15 — Render `wasabi.panel` / `wasabi.objectframe.group` bodies — closed 2026-08-27
+
+### B15
+
+- [x] **B15. `wasabi.panel` / `wasabi.objectframe.group` bodies.** Every measured use is inside a
+      `modal`/`static` frame that synthesis never selects, so there is still nothing on screen to fix.
+      Wait for a skin that shows one
+
+The 36-skin sweep superseded that old reachability note. The original 192 textual matches across 19
+skins include conventional bitmap declarations; after comments and resources are excluded, eight
+skins contain 19 group instances or inheritance edges. Ebonite 2.1 directly displays object frames
+around its RGB Color Changer swatches, palette, and checkbox controls, and BLAKK uses one in its
+default-visible Configure window.
+
+Both standard-library shells now contribute a tiled nine-slice `<grid>` that names only the skin's
+own conventional artwork: `wasabi.panel.*` with `wasabi.panel.tint` in the middle, and
+`wasabi.objectframe.*` with `wasabi.objectframe.center`. Missing artwork still degrades to an empty
+grid, and a skin-supplied groupdef continues to win over the shell. Manual QA on Ebonite 2.1 was
+accepted 2026-08-27.
+
+Reach command: `rg -i -o 'wasabi\.(panel|objectframe\.group)' "$corpus" --glob '*.xml'`.
+
+---
+
 ## B25 — Remove the startup `autoopen` fallback — closed 2026-08-27
 
 ### B25 — The startup `autoopen` fallback forces a tab open behind the skin's back
