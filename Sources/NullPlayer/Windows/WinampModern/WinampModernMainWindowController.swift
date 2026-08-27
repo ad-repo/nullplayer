@@ -72,6 +72,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                                             styleMask: [.borderless], backing: .buffered, defer: false)
         self.init(window: window)
         setupWindow()
+        // A transparent layer-backed window can lose its cached backing store while the display is
+        // asleep. AppKit normally reports the window becoming unoccluded afterwards, but a display
+        // sleep/wake can leave the window continuously "visible" and post no such transition. Keep
+        // the workspace wake as a backstop so the next targeted animation repaint cannot reveal only
+        // a handful of controls over a transparent background (B55, first seen on Big Bento Modern).
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemDidWake(_:)),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
         // Cover art arrives asynchronously and often *after* the scene has settled — with playback
         // paused nothing else would repaint, so an `<AlbumArt>` would sit on its "no cover art"
         // placeholder until something unrelated invalidated the window.
@@ -1921,7 +1932,41 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     }
     func updateSpectrum(_ levels: [Float]) { skinView?.updateSpectrum(levels) }
     func skinDidChange() { skinView?.needsDisplay = true }
-    func windowVisibilityDidChange() { skinView?.needsDisplay = true }
+    func windowVisibilityDidChange() { repaintVisibleSkinWindows() }
+
+    /// Mark the entire view tree dirty after WindowServer may have discarded its cached pixels.
+    ///
+    /// A `WinampModernMainView` normally invalidates only the small rectangles occupied by clocks,
+    /// tickers and visualizations. That is correct while the layer's static contents still exist,
+    /// but after occlusion, minimization or display sleep those rectangles can become the only
+    /// pixels AppKit restores. The hosted AppKit surfaces are descendants, so repaint the subtree,
+    /// not only the custom-drawn root.
+    static func markForFullBackingStoreRepaint(_ contentView: NSView) {
+        contentView.markSubtreeForDisplayAndLayout()
+    }
+
+    private func repaint(_ window: NSWindow) {
+        guard let contentView = window.contentView else { return }
+        Self.markForFullBackingStoreRepaint(contentView)
+        if window.isVisible { window.displayIfNeeded() }
+    }
+
+    private func repaintVisibleSkinWindows() {
+        var repainted: Set<ObjectIdentifier> = []
+        for view in viewsByContainer.values {
+            guard let window = view.window,
+                  repainted.insert(ObjectIdentifier(window)).inserted else { continue }
+            repaint(window)
+        }
+    }
+
+    @objc private func systemDidWake(_ notification: Notification) {
+        // Let AppKit finish reconnecting windows to WindowServer before drawing into the replacement
+        // backing stores. An immediate draw can itself be discarded as the wake transition settles.
+        DispatchQueue.main.async { [weak self] in
+            self?.repaintVisibleSkinWindows()
+        }
+    }
 
     /// `autoclose="1"` on a container: a transient popup the next click elsewhere dismisses.
     ///
@@ -1962,6 +2007,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         if size != content { resize(window: resized, to: size) }
         if size != view.frame.size { view.setFrameSize(size) }
         view.needsDisplay = true
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        guard let restored = notification.object as? NSWindow else { return }
+        repaint(restored)
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard let restored = notification.object as? NSWindow,
+              restored.occlusionState.contains(.visible) else { return }
+        repaint(restored)
     }
 
     func prepareForUITeardown() { tearDownSkin() }
@@ -2015,6 +2071,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     deinit {
         if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
         if let playbackOptionsObserver { NotificationCenter.default.removeObserver(playbackOptionsObserver) }
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         tearDownSkin()
     }
 }

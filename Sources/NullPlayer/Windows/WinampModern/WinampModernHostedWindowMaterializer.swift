@@ -335,6 +335,13 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         guard let window = notification.object as? NSWindow,
               let instance = instance(for: window) else { return }
         updateConsumerState(for: instance)
+        if window.isVisible, !window.isMiniaturized,
+           window.occlusionState.contains(.visible), let contentView = window.contentView {
+            // Like the primary `.wal` window, a hosted transparent window normally repaints only
+            // its moving rectangles. Rebuild the whole backing store when AppKit exposes it again.
+            contentView.markSubtreeForDisplayAndLayout()
+            window.displayIfNeeded()
+        }
     }
 
     deinit { teardown() }

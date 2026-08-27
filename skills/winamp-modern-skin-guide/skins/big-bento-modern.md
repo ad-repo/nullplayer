@@ -14,6 +14,7 @@
 |---------|--------|-------|
 | Loading | **Fixed (B35)** | All four failed outright before B35 — see the three root causes below |
 | Rendering | **Fixed (B36/B37)** | 80–82 bitmaps resolve in `main/normal`, 19–20 in `main/shade`; 38 scenes across the four |
+| Repaint after sleep/occlusion | **Fixed (B55)** | Transparent backing-store loss can no longer leave only the moving UI fragments visible; visibility restoration and system wake force a full subtree repaint |
 | Menu bar | **Fixed (B36)** | File/Play/Options/View/Help are placed by `mainmenu.maki`, not by a widget rule |
 | Display readouts | **Fixed (B37)** | `TIMEELAPSED` / `SONGLENGTH` / `SONGTITLE` / `SONGSAMPLERATE` are bound |
 | Elapsed / total time line | **Fixed (BB33)** | Two causes: the readouts declare `valign="middle"`, which is not a spelling Wasabi knows and reads as `top` — the skin's own `y=4` is the correction for it — and a clock lays out as fields, so a right-aligned time keeps clear of the `/` whose box overlaps its own. Confirmed live |

@@ -1647,3 +1647,25 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
       Skill: `reference/rendering.md` → *A clock is a run of fields, not a string* and the `valign`
       bullet (its "an unrecognised value falls back to `center`" line was wrong), CHANGELOG,
       `WinampModernPhase76Tests`.
+
+---
+
+## B55 — Static skin background disappeared after overnight idle — closed 2026-08-27
+
+- [x] **B55. Static skin background disappeared after overnight idle — fixed 2026-08-27.**
+      Reported live on Big Bento Modern as the UI returning in separated pieces with its background
+      missing. The `.wal` player is a transparent, layer-backed window, and its steady-state clocks,
+      tickers and visualizations deliberately invalidate only their own small rectangles. macOS can
+      discard the layer's cached static pixels while the window is occluded, miniaturized or the
+      display sleeps; without a full invalidation on return, those moving rectangles can be the only
+      regions repainted over the transparent window.
+
+      `WinampModernMainWindowController` now forces a full view-subtree repaint when any primary or
+      auxiliary skin window becomes visible after occlusion or minimization. It also observes
+      `NSWorkspace.didWakeNotification` as a backstop for display wake that leaves AppKit's window
+      occlusion state continuously visible. Hosted `.wal` windows apply the same rule in their own
+      delegate. The subtree matters: Big Bento's embedded native surfaces must rebuild their cached
+      layers along with the custom-drawn background.
+
+      Regression coverage: `WinampModernBackingStoreTests` verifies that the full repaint reaches
+      the root skin view, a hosted surface and a nested control.
