@@ -20,7 +20,8 @@ By area:
   never seeds, so taking those writes literally stripped the wood panel off the player and the frame
   off every other window. Phase 25
 - **Lookups**: containers, layouts, object descendants, script group, script parameter/token access
-- **System**: viewport/application coordinates, runtime/skin identity, integer/string/float
+- **System**: viewport/application coordinates; `getMonitorWidth` / `getMonitorHeight` for the whole
+  display containing the player (logical screen points, not Retina backing pixels); runtime/skin identity, integer/string/float
   conversion (`integerToString`, `stringToInteger`, `floatToString`, `stringToFloat`) and the casts
   (`Integer`, `Float`, `String`, `Boolean` — a script mixing a float with an int-typed API needs
   them, which is where a volume handler lives), date helpers, per-skin
@@ -505,7 +506,7 @@ opens under its tab, measured with `RENDER_CLICK`, which prints the point the me
 | `playTrack` / `clear` | 3 / 3 | script-driven playlist control |
 | `getItemLabel` / `getAttributeName` | 3 / 3 | Guilist accessors — the skin's own list widgets draw empty |
 | `getItemFocused` / `setSubItem` | 2 / 2 | the same |
-| `getMonitorWidth` / `getMonitorHeight` | 2 / 2 | monitor bounds for placement |
+| ~~`getMonitorWidth` / `getMonitorHeight`~~ | 2 / 2 | implemented in B41; player-window display bounds in logical screen points; live multi-display QA pending |
 | `getComponentName` | 2 | naming a hosted component |
 | ~~`getDecoderName`~~ / `deleteByPos` | 1 / 1 | `getDecoderName` implemented in B38; `deleteByPos` minor |
 

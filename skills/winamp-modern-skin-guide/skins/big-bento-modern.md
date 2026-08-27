@@ -410,6 +410,10 @@ why the setting read as dead — the setting itself was never broken. `RENDER_CL
 `CLICK finding: unsupportedScriptCapability … 'getmonitorwidth'`. The whole monitor family
 (`width`/`height`/`left`/`top`, arity 0) now answers alongside the viewport one — the monitor is the
 display, the viewport is the work area, and Big Bento's notifier asks for both one after the other.
+The first implementation read `NSScreen.main`, which silently made the primary display every skin's
+monitor. B41 routes width/height from the screen containing the player window instead and keeps
+AppKit's logical points rather than leaking Retina backing pixels into the script. Automated coverage
+is in `WinampModernPhase78Tests`; moving the player between displays remains a manual-QA item.
 
 **2. The enlarge branch writes an absolute height through the relative flag.** With the column open,
 enlarging still looked identical to collapsing. `pledit.maki` writes

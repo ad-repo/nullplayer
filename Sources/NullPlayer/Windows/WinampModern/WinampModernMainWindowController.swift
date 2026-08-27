@@ -1537,6 +1537,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         scripts.uiScaleRequested = { [weak self] factor in
             self?.applyUIScaleRequest(factor)
         }
+        // `System.getMonitorWidth/Height()` describe the display the skin is actually occupying,
+        // including during startup before its borderless window becomes the application's main
+        // window. `NSScreen.frame` is already in logical screen points; never multiply it by the
+        // Retina backing scale or MAKI would mix physical pixels with its desktop coordinates.
+        scripts.monitorSizeRequested = { [weak self] in
+            (self?.window?.screen ?? NSScreen.main)?.frame.size
+        }
         // A script moved something. Every container diffs its own scene and notifies what moved; a
         // container nothing happened in dispatches nothing.
         scripts.geometryDidSettle = { [weak self] in

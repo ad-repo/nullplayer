@@ -276,6 +276,24 @@ Engines are written to run against skins that omit optional pieces, and they ask
 - **`getCurCfgVal()`** — the value of the config attribute the object is bound to via
   `cfgattrib="{GUID};Name"`. The GUID is the section key, the same addressing `getItemByGuid` uses.
 
+#### Monitor dimensions are logical desktop coordinates
+
+`System.getMonitorWidth()` / `getMonitorHeight()` answer the whole display containing the skin's
+**player window**, not unconditionally `NSScreen.main`. That distinction is observable as soon as the
+player moves to a secondary display: Big Bento uses the width to size its right-side playlist and
+uses both dimensions for notifier placement.
+
+The values are AppKit **logical screen points**. Do not multiply `NSScreen.frame` by
+`backingScaleFactor`; Retina backing pixels are a rendering detail and would put the monitor in a
+different coordinate space from the runtime's other desktop values. This is separate from a view's
+canvas coordinates: mouse/object geometry remains in skin pixels and UI Size is applied at the view
+boundary. A System monitor call has no GUI receiver from which the runtime can discover a window, so
+`WinampModernMainWindowController` supplies the active player's screen through
+`monitorSizeRequested`; the runtime's `NSScreen.main` lookup is only an unwired/headless fallback.
+
+MAKI exposes signed integers, so fractional AppKit dimensions floor, non-finite or non-positive
+values become zero, and oversized values clamp to `Int32.max` rather than trapping during conversion.
+
 #### Track metadata the skins actually read
 
 Skins do not call dedicated bitrate/sample-rate APIs. `songinfo.maki` lowercases

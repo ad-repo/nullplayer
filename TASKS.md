@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B41 | `getMonitorWidth` / `getMonitorHeight` | 6 skins / 18 MAKI program symbols ([M7]) | S | Measured |
 | BB5 | Substitute `@HAVE_LIBRARY@` | 6 skins / 6 uses ([M8]) | S | Measured |
 | BB15 | `parser_*` / `shutdown()` | 6 skins / 15 MAKI program symbols ([M9]) | M | Measured |
 | BB9 | Finish the Multi Content View visualization placements | 4 variants / 2 base markups ([M6]) | M | Measured |
@@ -41,6 +40,12 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B54 | High-band-count analyzer peak flashes | — · seen on Big Bento Modern (2026-08-26) | S | Live-reported |
 | BB28 | Stretched visualization overlaps file info after restart | — · seen on Windows 10 edition Light (2026-08-25) | M | Live-reported |
 | BB26 | File-info rating row draws dots rather than stars | — · seen on base and Light variants (2026-08-25) | S | Live-reported |
+
+### Awaiting manual QA
+
+| Id | Item | Remaining check |
+|---|---|---|
+| B41 | `getMonitorWidth` / `getMonitorHeight` | Move Big Bento Modern between displays and verify its side-playlist sizing follows the display containing the player |
 
 ## Reproducible reach commands
 
@@ -146,13 +151,22 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
 
 ### B41
 
-- [ ] **B41. `getMonitorWidth()` / `getMonitorHeight()`.** Absent from the runtime; called from Big
-      Bento's `sc_aerosnap.m`, `notifier.m` and `pledit.m`, where they drive AeroSnap edge-snapping
-      and notifier placement. Cheap to answer from `NSScreen`, but **decide which coordinate space
-      first**: scripts are deliberately held to the skin's own pixel grid (UI Size is applied at the
-      view's drawing/input boundary and `getscale` answers 1, Phase 10), so a raw backing-store
-      number here would put a skin's own arithmetic in a different space from everything else it
-      measures.
+- [x] **B41 implementation and automated coverage.** `getMonitorWidth()` / `getMonitorHeight()` are
+      zero-argument integer System methods. The runtime's earlier compatibility stub always read
+      `NSScreen.main`, which is the primary display rather than necessarily the display containing
+      the skin. The window controller now supplies the frame of the screen containing the `.wal`
+      player, including during startup before the borderless player becomes `NSApp.mainWindow`.
+      Values are AppKit **logical screen points**, matching the runtime's other desktop coordinates;
+      they are never multiplied by `backingScaleFactor`, because Retina backing pixels do not belong
+      in MAKI geometry. Fractional values floor, invalid/non-positive values answer zero, and values
+      beyond MAKI's signed integer range clamp. `WinampModernPhase78Tests` covers dispatch, numeric
+      boundaries, unsupported-demand accounting and teardown.
+- [ ] **B41 manual QA.** When a second display is available, load Big Bento Modern, move the player
+      to that display, open the right-side playlist with its bottom-right up-arrow, and toggle
+      **Enlarge Playlist**. Confirm the side column opens and sizes against the display containing
+      the player rather than the primary display. Repeat after moving the player back to the primary
+      display. If either display is Retina, confirm there is no 2× oversizing. Archive B41 only after
+      this check is accepted.
 
 ---
 

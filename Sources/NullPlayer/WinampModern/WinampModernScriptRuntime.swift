@@ -132,6 +132,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// two would fight over every window's size. `nil` in the harness, and while a skin is still
     /// loading the host defers the request rather than resizing windows that do not exist yet.
     var uiScaleRequested: ((CGFloat) -> Void)?
+    /// The whole display containing the skin's player window, in logical screen points. MAKI's
+    /// monitor methods are global (there is no GUI-object receiver from which to find a window), so
+    /// the window layer supplies the screen explicitly. AppKit points are intentional: converting
+    /// through `backingScaleFactor` would leak Retina pixels into script geometry, while every other
+    /// desktop coordinate the runtime exchanges with the window layer is expressed in points.
+    var monitorSizeRequested: (() -> CGSize?)?
     var actionRequested: ((String, String?) -> Void)?
     /// The object form of `navigateUrl`: only the addressed `<browser>` may navigate.
     var browserNavigationRequested: ((WasabiObjectID, String) -> Void)?
@@ -2541,13 +2547,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .integer(0)
         case "getviewportwidthfromguiobject": return .integer(Int32(NSScreen.main?.frame.width ?? 0))
         case "getviewportheightfromguiobject": return .integer(Int32(NSScreen.main?.frame.height ?? 0))
-        // The monitor is the whole display; the viewport above is the area a window may use. macOS
-        // states them as `frame` and `visibleFrame`, and the only reason the viewport does not use the
-        // latter here is that every skin in the corpus was measured against the value it already
-        // answers. `left`/`top` are the display's own origin, which for the single-screen case every
-        // skin assumes is 0 — a skin reads them to keep a notifier inside the screen it is on.
-        case "getmonitorwidth": return .integer(Int32(NSScreen.main?.frame.width ?? 0))
-        case "getmonitorheight": return .integer(Int32(NSScreen.main?.frame.height ?? 0))
+        // The monitor is the whole display containing the skin's player window. Do not derive this
+        // from `NSScreen.main`: that is the primary display, not necessarily the one the skin is on.
+        // The controller answers in logical screen points so Retina backing pixels never enter MAKI
+        // geometry. The direct AppKit lookup is only the headless/unwired fallback.
+        case "getmonitorwidth":
+            return .integer(Self.screenDimension(monitorSizeRequested?()?.width
+                                                  ?? NSScreen.main?.frame.width))
+        case "getmonitorheight":
+            return .integer(Self.screenDimension(monitorSizeRequested?()?.height
+                                                  ?? NSScreen.main?.frame.height))
         case "getmonitorleft", "getmonitortop": return .integer(0)
         case "getcurappleft": return .integer(Int32(NSApp.mainWindow?.frame.minX ?? 0))
         case "getcurapptop": return .integer(Int32(NSApp.mainWindow?.frame.minY ?? 0))
@@ -4396,6 +4405,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                  location: program.source))
     }
 
+    /// Screen dimensions come from AppKit as `CGFloat`; MAKI exposes a signed integer. Invalid or
+    /// negative host values degrade to zero, and very large values clamp instead of trapping.
+    private static func screenDimension(_ value: CGFloat?) -> Int32 {
+        guard let value, value.isFinite, value > 0 else { return 0 }
+        guard value < CGFloat(Int32.max) else { return Int32.max }
+        return Int32(value.rounded(.down))
+    }
+
     func teardown() {
         guard !isTornDown else { return }
         // First, while the interpreter, the timers and the graph are all still alive: a script releases
@@ -4411,6 +4428,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         layoutSwitchRequested = nil
         layoutResizeRequested = nil
         uiScaleRequested = nil
+        monitorSizeRequested = nil
         actionRequested = nil
         focusRequested = nil
         browserNavigationRequested = nil
