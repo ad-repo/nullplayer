@@ -19,7 +19,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **ui-guide**: Coordinate systems, scaling, skin rendering, window docking, Hide Title Bars, UI Size
 - **audio-system**: Audio pipelines, EQ, spectrum analysis
 - **modern-skin-guide**: Modern skin engine and creation
-- **winamp-modern-skin-guide**: Winamp 5.x `.wal` skins — a slim router (pipeline, security model, file map, symptom→file routing table, section-title map) over `reference/` topic files: `loading`, `rendering`, `performance`, `scripting`, `components`, `classicpro`, `harness` (the canonical probe/env-var reference, plus the live-defect debugging method). Plus `compatibility.md`, `triage-playbook.md`, and per-skin state in `skins.md` → `skins/<skin>.md`
+- **winamp-modern-skin-guide**: Winamp 5.x `.wal` skins — a slim router (pipeline, security model, file map, symptom→file routing table) over `reference/` topic files: `loading`, `rendering/` (hit testing, vis, frame splitter, text, colour), `performance`, `scripting`, `components/` (video, visualization, browser, notifier), `classicpro`, `harness` (the canonical probe/env-var reference, plus the live-defect debugging method). Plus `compatibility.md`, `triage-playbook.md`, the historical section-title map, and per-skin state in `skins.md` → `skins/<skin>.md`
 - **wal-skin-report**: `/wal-skin-report <skin.wal>` — structured single-skin compatibility report (capabilities, supported/unsupported, per-surface status, unknowns, grade). Symlinked into `.claude/skills/`
 - **user-guide**: Features, menus, keyboard shortcuts
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations

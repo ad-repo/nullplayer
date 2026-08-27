@@ -438,16 +438,8 @@ version of that afternoon.
 
 ### Instrument before you reason
 
-Reading the skin's disassembly and the engine source and *deducing* the mechanism was wrong three
-times. `WINAMP_MODERN_CALL_TRACE=1` on the running app answered it every time, in one launch:
-
-```sh
-WINAMP_MODERN_SHOW_WINDOWS=SPEAKER1,SPEAKER2 WINAMP_MODERN_CALL_TRACE=1 \
-  ./.build/debug/NullPlayer -uiMode winampModern -winampModernSkinPath "/abs/Skin.wal" > /tmp/x.log 2>&1
-```
-
-Then count, don't read: `grep -c 'CALL-TRACE getvisband' /tmp/x.log`, and histogram the results. A
-method being *called* proves nothing; what it *returns* is the finding.
+This always-paid debugging rule lives in [the skill router](../SKILL.md#rules-for-extending-this-subsystem).
+The probe table above is the canonical command reference.
 
 ### Reading a probe without fooling yourself (BB28, 2026-08-25)
 
@@ -466,9 +458,9 @@ hypothesis. They are properties of the probes, not of any skin.
   delivered to a **dynamic** object — every `ondatachanged` on a config attribute — never appears
   there, so a handler that runs on every write measures as one that never runs.
 
-The general form: when a probe's answer is *negative* — nothing ran, nothing matched, no output —
-prove the instrument works before believing it. `WINAMP_MODERN_TRACE_MAKI` is the tiebreaker for all
-three, because a handler entry is recorded whether or not the handler does anything.
+The general negative-result rule lives in
+[the skill router](../SKILL.md#rules-for-extending-this-subsystem). `WINAMP_MODERN_TRACE_MAKI`
+remains the tiebreaker here because it records handler entry whether or not the body does anything.
 
 ### A measured value written into a doc goes stale silently (B50, 2026-08-26)
 
@@ -582,10 +574,8 @@ concluding the handler is fine — a method being called proves nothing; its arg
 
 ### When a fix changes nothing on screen, look for the *next* fault
 
-Defix's playlist readouts had **four** independent faults stacked on them: the `display="PE_Info"`
-binding, an unimplemented `getPlaylistLength`, an undispatched `onTextChanged`, and auxiliary windows
-having no repaint route. Any one of them alone kept the box blank, so the first two fixes looked like
-no change at all and read as "wrong fix". Re-measure after each one instead of reverting it.
+This always-paid rule lives in [the skill router](../SKILL.md#rules-for-extending-this-subsystem).
+The stacked-fault examples remain in the historical task records.
 
 ### Reading MAKI disassembly without fooling yourself
 
@@ -655,10 +645,11 @@ Three of this subsystem's probes were silently blind, and each one made a real d
 | `RENDER_SCRIPTS` prints `ran=`/`failed=` **before** `RENDER_EVENTS` drives anything | Big Bento Modern's `animbutton` reported `failed=-` while its `onPause` aborted on every pause (BB23) | `CALL_TRACE` + `RENDER_EVENTS`; read `failed=` as *load-time* only |
 | **A handler that ran and took *no* branch looks exactly like a handler that worked** | Bento's tab strip: `ran=onscriptloaded failed=-` on all three tab scripts while none of them laid anything out, because its three-way mode `if` has no `else` and every member of the radio group read `"0"` (BB29) | `RENDER_SETTINGS=1` — a radio group sitting at `0 (default 0)` on *every* member is the tell, and it is one line. `RENDER_DISASM=@<xml>` is what then shows the missing `else` |
 
-When a probe says "nothing is happening", check that the probe can see the thing happening at all.
+The general visibility rule lives in
+[the skill router](../SKILL.md#rules-for-extending-this-subsystem); the table above is the concrete
+catalog of blind spots.
 
 A corollary for the last row: a handler that only fails on a **driven** event is invisible to the
 per-program report, and its signature in `CALL_TRACE` is a call sequence that simply *stops* mid-block
 (`setstartframe`, `setendframe`, then nothing). Dispatch fails closed on a missing **signature**, so
 the failing call never prints at all — the gap is the instruction after the last line you can see.
-

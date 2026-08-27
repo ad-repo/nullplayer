@@ -1,814 +1,85 @@
-# Winamp 5.x Modern Skins (`.wal`) — Wasabi XML + MAKI UI System
+# Winamp 5.x Modern Skins (`.wal`) — ranked open backlog
 
-Plan: `~/.claude/plans/i-want-to-support-frolicking-rabbit.md`
+This is the only live backlog for the Winamp Modern subsystem. A skin is a test case, not a
+milestone: take measured capability work from the top down. Closed entries move to
+[`docs/winamp-modern/backlog-archive.md`](docs/winamp-modern/backlog-archive.md) in the same change
+that closes them.
 
-Add a fourth persisted UI mode `winampModern` backed by a third controller family that loads and
-runs Winamp 5.x `.wal` skins (Wasabi XML/XUI renderer + MAKI bytecode runtime). Implemented phase by
-phase; stop after each phase for review.
+## Ranking
 
-> **Phases 0A–34, 39–48, 51 are all closed.** Bugs B1–B13, B19–B20, B20a, B22, B23, B24, B26–B31
-> are closed (**B23a is not** — see Tier 3). B32 is closed, below. **B35–B38 moved to
-> `BENTO_TASKS.md`** on 2026-08-23 and are not repeated here. Everything else still open is below;
-> each closed item's details live in git history.
->
-> **There are exactly two backlogs, and both are tracked in git** (they were gitignored until
-> 2026-08-23): this file for the `.wal` engine, and **`BENTO_TASKS.md`** for the Big Bento Modern
-> family, which had grown to four sections of this one. Bug numbers do not collide — `B*` here,
-> `BB*` there. A task that turns out to affect skins beyond Bento belongs here; add and update tasks
-> in one of these two files and nowhere else. The old third copy
-> `docs/winamp-modern/open-items.md` was deleted on 2026-08-23 after every item unique to it was
-> audited: B19 (`ea4d9472`) and B22 (`df9d1028`) had shipped, and B23a was carried over below. Do
-> not recreate it.
+Measured items are ordered by reach, with effort as an advisory tiebreaker. Reach is corpus demand,
+not severity. Live-reported draw defects are kept in their own tier because a screenshot or runtime
+observation is not comparable to a static declaration count.
 
----
+Effort bands: **S** = one attribute/method/local draw fix; **M** = behavior spanning multiple files
+without a seam change; **L** = a host seam, protocol change, or new fixture harness.
 
-## B32 — `cfgattrib` toggles show no state, and crossfade drives nothing
+### Measured capability gaps
 
-mmd3's Crossfade / Shuffle / Repeat buttons are `cfgattrib`-bound togglebuttons whose *only* on-screen
-indication is a pair of `ghost="1"` layers (`*Led`, `*Dis`) whose alpha `playertools.m` sets from
-`getActivated()` and from `<toggle>.onActivate(int)`. Probe (`RENDER_PROBE=main/normal`): all three
-buttons `activated=0`, all six indicator layers `alpha=0`, script ran clean (`failed=-`). Two root
-causes, both engine-wide:
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B47 | Ratio-aware bitmap interpolation | 36 skins / engine-wide render path ([M19]) | L | Measured |
+| B25 | Remove or repair the startup `autoopen` fallback | 25 skins / 99 declarations ([M1]) | M | Measured |
+| B15 | Render `wasabi.panel` / `wasabi.objectframe.group` bodies | 19 skins / 192 declarations ([M2]) | M | Measured |
+| BB10 | Add typed Skin Settings fallback widgets | 17 skins / 361 `newAttribute` program symbols ([M3]) | M | Measured |
+| B17 | Preserve groupdef redefinition order in the surface inventory | 9 skins / 53 duplicate declarations ([M5]) | S | Measured |
+| B41 | `getMonitorWidth` / `getMonitorHeight` | 6 skins / 18 MAKI program symbols ([M7]) | S | Measured |
+| BB5 | Substitute `@HAVE_LIBRARY@` | 6 skins / 6 uses ([M8]) | S | Measured |
+| BB15 | `parser_*` / `shutdown()` | 6 skins / 15 MAKI program symbols ([M9]) | M | Measured |
+| BB9 | Finish the Multi Content View visualization placements | 4 variants / 2 base markups ([M6]) | M | Measured |
+| B14 | `<Wasabi:TabSheet>` | 4 skins / 5 declarations ([M10]); contradicts the old “one measured skin” note | L | Measured |
+| B21 | `enqueueFile` / `playFile` | 3 skins / 3 MAKI program symbols ([M11]) | M | Measured |
+| BB11 | List accessors | 3 skins / 9 MAKI program symbols ([M12]) | M | Measured |
+| BB3 | Light-overlay bitmap precedence | 2 skins / 83 shared artwork paths each ([M13]) | M | Measured |
+| BB18 | Host a waveform seeker at `wdh.waveseeker` | 2 skins / 2 declarations ([M14]) | L | Measured |
+| B16 | Investigate the missing `VISCON` container | 1 skin / 6 uses ([M15]) | M | Measured |
+| B23a | Player-embedded visualization holder | 1 skin / 1 player holder ([M16]) | L | Measured |
+| B45 | Container declared without a reachable renderable layout | 1 skin / 1 container ([M17]) | M | Measured |
+| BB13 | `setClipboardText()` | 1 skin / 1 MAKI program symbol; the program contains three calls ([M18]) | S | Measured |
+| BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
+| B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
 
-1. `getActivated()` reads `attributes["activated"]`, which `toggleConfigAttribute` deliberately never
-   writes — so a config-bound button always reports off.
-2. `onActivate` is dispatched from nowhere in the engine, so no skin's activation indicator can move.
+### Live-reported draw defects
 
-And shuffle/repeat are stored **twice** (the config attribute, plus `host.shuffleEnabled` toggled by an
-`xmlID`-matching special case in `performAction`), so the two drift the moment either side changes.
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B54 | High-band-count analyzer peak flashes | — · seen on Big Bento Modern (2026-08-26) | S | Live-reported |
+| BB28 | Stretched visualization overlaps file info after restart | — · seen on Windows 10 edition Light (2026-08-25) | M | Live-reported |
+| BB26 | File-info rating row draws dots rather than stars | — · seen on base and Light variants (2026-08-25) | S | Live-reported |
 
-Corpus demand (30 installed skins): `{45F3F7C1…};Repeat` ×52, `;Shuffle` ×50,
-`{FC3EAF78…};Enable crossfading` ×32, `{F1239F09…};Crossfade time` ×12. 8 skins reference `onActivate`.
+## Reproducible reach commands
 
-- [x] **B32.1 `WinampModernConfigBridge`** — table of well-known `{GUID};Key` attributes that are
-      *host state*, not skin-private storage: Shuffle, Repeat, Enable crossfading, Crossfade time.
-      Read/write through the host; everything else keeps hitting `WinampModernConfiguration`.
-- [x] **B32.2 Host crossfade surface** — `crossfadeEnabled` / `crossfadeSeconds` on
-      `WinampModernHost`, backed by `AudioEngine.sweetFadeEnabled` / `sweetFadeDuration`, with
-      inert defaults in the protocol extension for the harness/test hosts.
-- [x] **B32.3 Route reads through the bridge** — `configValue(of:)`, `getcurcfgval`, and
-      `getActivated()` on a config-bound object all answer the bridged value.
-- [x] **B32.4 Route writes through the bridge** — `setConfigAttribute` writes host state for a
-      bridged key, and still notifies `onDataChanged` exactly once.
-- [x] **B32.5 Dispatch `onActivate`** — on a real change of activation, from `toggleActivation`,
-      `setactivated`, and `toggleConfigAttribute` (to *every* object bound to that attribute, since
-      mmd3 declares the same button in `normal`, `shade` and `shade2`).
-- [x] **B32.6 Drop the `xmlID` shuffle/repeat special case** in `WinampModernMainView.performAction`
-      — with B32.1 in place it double-toggles.
-- [x] **B32.7 `cfgattrib` sliders** — a slider bound to an attribute (mmd3 `sCrossfade`, `high="20"`)
-      must read its thumb from the value and write the value on a drag, in its own `low…high` unit
-      rather than 0…255, so `onSetPosition` hands the skin the seconds it prints.
-- [x] **B32.8 Verify** — `RENDER_CLICK` + `CALL_TRACE` on all three buttons: `setalpha(255.0)` on the
-      indicator layers, `CLICK chain: … -> skin.xml.onactivate`. 1004 tests green, golden images
-      green, 30-skin render sweep green (multipass improved degraded→full). Live on mmd3 via
-      `WINAMP_MODERN_DEBUG_CLICK`: SHUFFLE/REPEAT lamps + words light, CROSSFADE lights and logs
-      `AudioEngine: Sweet Fades enabled`.
-- [x] **B32.10 The other direction.** Nothing observes `audioPlaybackOptionsChanged`, so shuffle
-      toggled from NullPlayer's own menu moves the host and leaves the skin's lamp stale — the very
-      drift the bridge exists to remove. Re-dispatch `onActivate` (and `onSetPosition` for a bound
-      slider) for a bridged attribute whose value moved from outside the skin.
-- [x] **B32.9 Land the findings** — `reference/rendering.md` (two new sections: the host-owned
-      attributes, and `onActivate`), `compatibility/maki-surface.md` (`onActivate` row),
-      `SKILL.md` (two routing rows, two section-map rows, file-map row), `skins.md` (mmd3 row —
-      mmd3 has no `skins/mmd3.md` yet, so the summary table is where this landed), `CHANGELOG`.
+All commands use the 36 directories extracted with `7zz` from
+`~/Library/Application Support/NullPlayer/WinampModernSkins/` (excluding
+`ClassicProEngine`). Set `corpus=/path/to/the/extracted/root`.
 
-Deferred, not in scope: `{280876CF…};Always on top` (×9) could bridge to
-`WindowManager.isAlwaysOnTop` the same way; `{0000000A…};Random` (×15) is AVS preset randomisation,
-correctly skin-private.
+- <a id="m1"></a>**M1:** `rg -i -o 'autoopen[[:space:]]*=' "$corpus" --glob '*.xml'`
+- <a id="m2"></a>**M2:** `rg -i -o 'wasabi\.(panel|objectframe\.group)' "$corpus" --glob '*.xml'`
+- <a id="m3"></a>**M3:** `rg -a -i -o 'newAttribute' "$corpus"`
+- <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
+- <a id="m5"></a>**M5:** `rg -i -o '<groupdef[^>]*[[:space:]]id="[^"]+"' "$corpus" --glob '*.xml'`; normalize ids case-insensitively per skin and retain ids declared more than once.
+- <a id="m6"></a>**M6:** `rg -i -l 'info\.component\.vis|vis\.content\.group' "$corpus"/Big\ Bento\ Modern* --glob '*.xml'`
+- <a id="m7"></a>**M7:** `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
+- <a id="m8"></a>**M8:** `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
+- <a id="m9"></a>**M9:** `rg -a -i -o 'parser_[A-Za-z0-9_]+|shutdown' "$corpus"`
+- <a id="m10"></a>**M10:** `rg -i -o '<[[:space:]]*Wasabi:TabSheet' "$corpus" --glob '*.xml'`
+- <a id="m11"></a>**M11:** `rg -a -i -o 'enqueueFile|playFile' "$corpus"`
+- <a id="m12"></a>**M12:** `rg -a -i -o 'getItemLabel|getItemFocused|setSubItem' "$corpus"`
+- <a id="m13"></a>**M13:** for each Light skin, `comm -12 <(cd "$corpus/$base" && find . -type f | sort) <(cd "$corpus/$light" && find . -type f | sort) | rg -i '\.(png|jpg|jpeg|gif|bmp)$'`
+- <a id="m14"></a>**M14:** `rg -i -o 'wdh\.waveseeker' "$corpus" --glob '*.xml'`
+- <a id="m15"></a>**M15:** `rg -i -o 'VISCON' "$corpus"`
+- <a id="m16"></a>**M16:** `rg -i -o 'hold="guid:\{0000000A-000C-0010-FF7B-01014263450C\}"' "$corpus/BLAKK/xml/blakk-remote.xml"`
+- <a id="m17"></a>**M17:** `rg -i -o '<container[^>]*id="Pledit"' "$corpus/Shield_Amp/xml/pledit.xml"`, then verify that file contains no `<layout>`.
+- <a id="m18"></a>**M18:** `rg -a -i -o 'setClipboardText' "$corpus"`
+- <a id="m19"></a>**M19:** `find "$corpus" -mindepth 1 -maxdepth 1 -type d` (36 skin roots); the item targets the shared bitmap draw path.
 
----
+For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
+number of matched declarations or MAKI program symbols. A compiled MAKI method name is a program
+symbol, not necessarily a call-site count; rows say so where that distinction matters.
 
-## B50 — Text Size: fix the Defix leak, align the library, add a per-skin control
+## Item detail
 
-Plan: `~/.claude/plans/implement-claude-plans-there-is-a-proble-glittery-popcorn.md`
-
-`b2980d3a` made the embedded playlist follow the skin's **median declared `fontsize`**. That reads
-right on Big Bento Modern (1536×878) and wrong on Defix Hi-END 200, whose `fontsize="19"/"20"`
-playlist pane lands on the same 18px cell inside a 406×355 window. And the embedded Media Library
-never learned about the new metric at all, so it reads small beside the playlist. One **Text Size**
-control per skin drives both, defaulting to an Auto rule keyed on **window size**, not on fonts:
-
-```
-auto cell (px) = clamp(canvasHeight / 48, 11, 18)
-explicit cell  = 11 * percent / 100          // 100…200%, no 18px cap on an explicit choice
-content scale  = cell / 11
-```
-
-- [x] **B50.1** New `WinampModern/WinampModernTextScale.swift` — `enum WinampModernTextScale`
-      (`auto = 0`, `p100`…`p200`) with `menuTitle`, `cellPixelHeight(canvasHeight:)`,
-      `contentScale(canvasHeight:)`, and the auto rule + its two constants documented
-- [x] **B50.2** `WasabiTextMetrics` — delete `bodyPixelHeight(near:)` and
-      `declaredTextPixelHeights(in:)`; move `maximumBodyPixelHeight` into the new type as the auto cap
-- [x] **B50.3** `WasabiRenderer` — `var textScale`; `playlistTextPixelHeight(in:)` becomes
-      arithmetic on `canvasSize.height`; drop the `playlistTextPixelHeights` cache. Keep the `holder`
-      parameter so the render-dump probe keeps its signature
-- [x] **B50.4** `WinampModernSkinState` — fourth entry: section `@nullplayer.text`, key `size`,
-      raw percent (`0` = auto), `textScale(in:)` / `setTextScale(_:in:)`; update the doc table
-- [x] **B50.5** Library scale — `WinampModernLibrarySurface.applySkinScale` →
-      `applyContentScale(_:)` (library protocol only); the surface view stores the pushed value and
-      returns it from the `skinScale` closure it hands `PlexBrowserView`; rename
-      `WinampModernComponentBridge.skinScaleProvider` to match
-- [x] **B50.6** `WinampModernMainView` — one `libraryContentScale` helper, pushed to **all** live
-      library surfaces from the `skinScale` observer, `reconcileHostedSurfaces()`,
-      `applyCanvasResize` and `activateLayout` (Auto depends on canvas height, so a resize must
-      re-push or the library keeps a stale scale)
-- [x] **B50.7** Menu — `Text Size` submenu in the Winamp Modern block of `buildUIMenu()`, built like
-      `buildUISizeMenuItem`, `Auto (n%)` first; `MenuActions.setWinampModernTextScale(_:)` and the
-      `WindowManager` getter/setter pair, guarded at all three layers
-- [x] **B50.8** `WinampModernMainWindowController.setTextScale(_:)` — write skin state, set
-      `textScale` on the main and **every auxiliary** renderer, repaint, re-push the library scale;
-      seed `textScale` at both renderer construction sites; `textScale` / `resolvedTextPercent`
-      getters for the menu
-- [x] **B50.9** Tests — auto at canvas heights 355 → 11px and 878 → 18px, explicit 200% beating the
-      auto cap, skin state round-trip; update `WinampModernRenderDumpTests.swift:1121-1136`
-- [x] **B50.10** Docs — `reference/components.md` (window-size rule + the control),
-      `skins/big-bento-modern.md`, `skins/defix-hi-end-200.md`, and `reference/harness.md` (whose
-      measured-values sentence is stale today: it claims Big Bento `text=22`, which the 18px clamp
-      already prevents)
-- [x] **B50.11** Verify — **manual QA passed 2026-08-26.** 1263 tests green (12 new in
-      `WinampModernPhase71Tests`). Render-dump measured on Auto: Big Bento `main/normal` **18** and
-      its own `main/shade` **11** (same skin, two layouts — the rule follows the canvas), Defix
-      `pledit` **11**, cPro-Bento / mmd3 / micro / stock Winamp Modern **11**. micro moved 13 → 11,
-      which is the intended correction
-- [x] **B50.12** Menu ordering (asked for after QA) — the ClassicPro engine leads, as the
-      dependency a cPro skin needs before it can run; then Import .wal Skin and Open Skins Folder,
-      which are two halves of the same thing rather than one of them stranded at the bottom of the
-      menu; then the per-skin group
-      — **Text Size**, Color Themes, Skin Settings, Skin Windows — built as a list so its separator
-      brackets what was actually added rather than being written inline per conditional block. Text
-      Size sits with the skin's own settings rather than with the imports because it is stored per
-      skin and changes meaning when the skin does; it is the only unconditional entry in that group,
-      the other three depending on the skin declaring one. **The UI menu's four families were also
-      reordered** to Classic → Modern → Original → Original-Metal: `buildUIMenu` builds them in
-      source order, so the two Original families are held in a `deferredFamilies` list and added
-      after the `.wal` block rather than inline. The separator that fenced the `.wal` family off is
-      gone — the four are peers
-
----
-
-## Big Bento Modern — moved out of this file
-
-**B35, B36, B37 and B38 are not here any more.** All four were the same skin family, and together
-they were most of this file. They live in **`BENTO_TASKS.md`** — closed history and open items
-(`BB1`–`BB5`) — under the same rules as this file, and tracked in git the same way.
-
-Two notes for whoever reads this next:
-
-- **`BB5` (`@HAVE_LIBRARY@`) is not Bento-only.** It also affects Styx, Shield_Amp, S7Reflex and
-  Defix. Move it back into this file if it is picked up.
-- **Nothing else moved.** Bug numbers stay unique across both files: `B*` is this file's series,
-  `BB*` is Bento's. Do not reuse B35–B38.
-- **Three items came back the other way on 2026-08-23.** The Bento header/settings research pass
-  turned up three findings that are not Bento-specific — Bento is only where they were found — so
-  they are **B39, B40 and B41** in *Tier 1* below, not `BB*`. `BENTO_TASKS.md` skips the three `BB`
-  numbers the plan had given them, exactly as this file skips B35–B38.
-
----
-
-## Open backlog
-
-### Recently closed — B53
-
-**B53 — NullPlayer's own visualizations, selectable in a skin's `<vis>` box.** Pass 2 of
-`~/.claude/plans/i-dont-think-the-velvet-wreath.md`, **narrowed by the user 2026-08-26 to the `<vis>`
-box alone** — the spectrum/oscilloscope area the skin draws in its own window. The `{0000000A}`
-plugin holder is **not** in scope: it already hosts ProjectM/Geiss/Tripex (B20a), and nothing here
-replaces or adds to that. So `VisualizationType` does not widen and no NSView surface is involved;
-every engine here is a `WasabiVisRenderer` painting into the scene's `CGContext`, which is the seam
-B51 built.
-
-Done 2026-08-26, confirmed live. File names below are as first written; the type was
-renamed to `WinampModernSpectrumAnalyzer` during QA, because *visualization engine* already means
-ProjectM/Geiss/Tripex in this app and these are spectrum analyzers.
-
-- [x] **B53.1 The selection, and where it lives.** `WinampModern/WinampModernSpectrumAnalyzer.swift` — the
-      engine choice (skin / Cava / vis_classic) and a skin-wide holder for it on `WasabiSkinRuntime`,
-      beside `componentBucket`: Big Bento draws its `<vis>` in six boxes across several containers
-      and they must not disagree about what is drawing. Persisted per skin through
-      `WinampModernSkinState` (new section `@nullplayer.vis`), so the skin's own declared mode stays
-      the default until the user picks something else
-- [x] **B53.2 `CavaVisRenderer`.** New AppKit-side file. Owns a `CavaPresenter` on a **new**
-      `CavaSettings.Scope` (its own keys — an embedding must not contaminate the Cava window's
-      settings). Two things the plan got wrong and the code confirms: `CavaDrawing.draw` paints with
-      `NSColor`/`NSBezierPath`, so the renderer has to push an `NSGraphicsContext` around the scene's
-      `CGContext`; and the bars have to follow the box's own `colorband*` while the user has not
-      customised Cava's colours, or a dark skin gets a lime-green analyzer
-- [x] **B53.3 `VisClassicVisRenderer`.** New `VisClassicBridge.PreferenceScope` case with scoped keys
-      (CLAUDE.md: vis_classic state is window-scoped and must not share keys). Fed by the **existing**
-      576-sample waveform tap from B51 — it answers `needsWaveform` true, so no second audio tap —
-      through `processAndDraw` into an RGBA buffer, wrapped as a `CGImage` and drawn into the box
-- [x] **B53.4 `WasabiRenderer` plumbing.** `visRenderer` becomes whichever engine is selected;
-      `setVisualizationSuite(_:)` persists it, discards the outgoing engine's state and re-runs
-      `refreshWaveformDemand` — whose cache is keyed on the graph's generation and therefore has to be
-      invalidated by a suite change too, which no graph write moves. `mode="0"` stays off whatever is
-      selected
-- [x] **B53.5 The menu.** "Visualization Engine" in `VIS_MENU` / `VIS_CFG`, with the active engine's
-      own options under it — Cava's real menu (`CavaPresenter.buildMenu`), vis_classic's profile list.
-      Winamp's own attribute items grey out while a non-skin engine draws, on B51's standing rule that
-      a menu item which changes nothing on screen is worse than no item
-- [x] **B53.6 Reachability.** Big Bento traps right-click on its vis with `main.vis.trigger`, so the
-      box's own menu is not a guaranteed route: also put the picker in the Winamp Modern block of
-      `buildUIMenu()` beside Text Size (B50.7's shape), and pop the box menu on a right-click over a
-      `<vis>` no script has claimed
-- [x] **B53.7 Lifecycle.** The Cava tap and the vis_classic core start on the selected engine's first
-      draw and stop on a suite change, a skin change and UI teardown (beside
-      `endVisualizationConsumption`). An engine nobody selected costs nothing — the B51 gating rule
-- [x] **B53.8 Verify — confirmed live by the user 2026-08-26 ("nailed it").** The QA loop found four
-      things no headless probe could, and each is recorded where it will be looked for:
-      **(a)** un-mirroring left *two copies* of the analyzer, because Big Bento cuts its box in two —
-      a suite engine is now handed the run's rect and clipped per box (`visualizationRows`);
-      **(b)** the picker was unreachable on the flagship skin, which claims the right button over its
-      own visualization — the section is inserted into the skin's own popup, which is ours to build;
-      **(c)** picking an engine appeared to do nothing: our rows leave MAKI's command id at `0`, and a
-      submenu parent carries `0` too, so the "user picked a skin mode" test matched every pick of ours
-      and handed the box back four milliseconds later;
-      **(d)** the three engines read at wildly different loudness, settled by eye as a calibration in
-      `WasabiVisStyle.Gain` plus a per-engine **Sensitivity** control.
-      Tests: `WinampModernPhase75Tests` (17 — persistence and its unknown-name fallback, the run
-      geometry, the suppressed `fliph`, the gain/Sensitivity arithmetic including the oscilloscope's
-      separate calibration, the input-gain clamp, and the command-id-zero rule). Docs:
-      `reference/rendering.md` → *NullPlayer's own analyzers in a skin's `<vis>` box* (with the gain
-      table and where to tune it), SKILL.md symptom + concept + file-map rows,
-      `skins/big-bento-modern.md`, CHANGELOG under Unreleased → New Features.
-      **Corpus sweep** (triage-playbook §6's pre-merge gate for a renderer change), 36 skins /
-      310 images, before = `91b87814`, after = `5464bc9c`, clock pinned at 2s, xctest defaults domain
-      reset before each half with nothing run in between, compared by **RGB** pixels:
-      **275 identical, 35 changed** — and all 34 real ones are *inside a declared `<vis mode="1">`
-      box*, checked against each dump's own `VIS box` geometry rather than by eye. That is the 0.8
-      analyzer calibration and nothing else: no diff anywhere outside a visualization box, which is
-      what the gate is for, since the flip and run-geometry changes are unreachable in the default
-      state. The 35th is `Anexa/main-shade`, **confirmed nondeterministic here** — two runs of the
-      *same* build differ at (53,35)-(70,63), the region the harness doc already records.
-      Note the sweep can exercise **neither new engine**: no env var selects one and both need real
-      audio, so their evidence is the live QA above plus `WinampModernPhase75Tests`
-
-### Closed in this area
-
-- [x] **B51. The `<vis>` oscilloscope draws real PCM, and every `<vis>` attribute is read.** Done
-      2026-08-26, confirmed live ("looks great"). Built the `WasabiVisRenderer` seam B53 now extends,
-      the 576-sample waveform tap, the per-second falloff model and the vis box's own 30/60 Hz clock.
-      Detail: `reference/rendering.md` → *The oscilloscope reads PCM*, `reference/performance.md` →
-      *The visualization has a clock of its own*, and git history
-- [x] **B52. A cache nobody trusted: ~460 discarded scenes a second.** Done 2026-08-26, confirmed
-      live. Found while measuring B51's clock, not caused by it: `invalidateRectCaches()` threw the
-      memoized scene away by hand on every notification, and `tickTargetAnimation` notified on every
-      fade tick. `layout()` 9.9% → 1.3% of the main thread. Detail: `reference/performance.md` → *A
-      cache nobody trusted*, the `MUTATION_TRACE` row in `reference/harness.md`, and git history
-
-<details>
-<summary>B51's task list, kept for the deviations it records</summary>
-
-- [x] **B51.1** **Done — measured 0…4.** Settle the numeric range of `falloff`/`peakfalloff` before hardcoding the map —
-      `WINAMP_MODERN_RENDER_DISASM=@visualizer` against Big Bento Modern (the plan assumes 0…4 from
-      the five menu entries; the values are written by MAKI, not declared in XML)
-- [x] **B51.2** **Done.** New `WinampModern/WinampModernWaveformTap.swift` — 576-sample `UInt8` tap modelled on
-      `WinampModernLevelMeter`: `queue: nil` observer, copy-under-lock only on the audio thread, and
-      a read that decays to flat 128 past `silenceTimeout`. The silence *nudge* moved to the level
-      meter — see B51.6
-- [x] **B51.3** **Done.** `WinampModernHost`: `waveformSamples` + `setWaveformNeeded(_:)`, backed in
-      `WinampModernAudioEngineHost` by a lazy tap beside `levelMeter`, stopped in
-      `endVisualizationConsumption`
-- [x] **B51.4** **Done.** New `WinampModern/WasabiVisPainter.swift` — `WasabiVisStyle` / `WasabiVisInput` /
-      `WasabiVisRenderer`, plus `WasabiBuiltInVisRenderer`: real-PCM scope (left channel, one column
-      per pixel), `oscstyle` solid/dots/lines, `colorosc1`…`colorosc5` banded by excursion, `peaks`,
-      `coloring` normal/fire/line, and **per-second** bar/peak decay from `falloff`/`peakfalloff`
-- [x] **B51.5** **Done.** `WasabiRenderer`: `drawVisualization` decodes the style and delegates; the
-      `spectrumLevels` guard moves into the analyzer branch; peak/bar state moves to the renderer;
-      cached `needsWaveform` pushed to the host only on change. **Deviation from the plan worth
-      recording:** `setVisualizationAttribute` is *not* the only route a `mode` write takes — MAKI's
-      `setmode` and `setxmlparam` write the attribute directly, so the cache is keyed on the graph's
-      `mutationGeneration` (the same key `sceneNodes()` already uses) rather than on that one setter
-- [x] **B51.6** **Done, and it is the second deviation.** The plan put the silence nudge on the
-      waveform tap and made it *one* `DispatchQueue.main.async` per transition. Two things are wrong
-      with that, and both had to change: (a) one repaint cannot show a *decay* — the bars and caps
-      need frames while they fall — and (b) `spectrumLevels` is not cleared on pause, so a repaint
-      redraws the same bars forever; the levels have to read silence. And the waveform tap is gated
-      on a skin declaring a scope, so an analyzer-only skin would never get a nudge at all, while
-      casting never changes `playbackState`. So the transition is reported by
-      **`WinampModernLevelMeter.onSilence`** — the one tap that runs for every `.wal` skin, watched by
-      a 4 Hz `DispatchSourceTimer` on a private queue, one callback per transition, cleared on the
-      next buffer — and `WinampModernMainView.beginVisualizationSilenceDecay` zeroes the levels and
-      invalidates the vis rects at the same 60 Hz until `renderer.hasDecayingVisualizationState` says
-      nothing is left above the floor (4 s backstop). The controller fans it out to every container's
-      view. The audio thread is still not in this path anywhere
-- [x] **B51.7** **Done.** `WinampModernHostActionMenus`: Oscilloscope Style, Show Peaks, Analyzer Coloring,
-      Analyzer Falloff Speed, Peak Falloff Speed — all through `setVisualizationAttribute`
-- [x] **B51.9 — smoothness, without touching the signal.** Pass 1 looked right and moved in steps.
-      Two causes, both measured, neither one a case for smoothing the data (explicitly *not* wanted —
-      no levelling, no RMS, no interpolation): (a) the boxes repainted only on a spectrum
-      notification, and `AudioEngine` taps `mixerNode` with a **2048-frame buffer**, so that is one
-      notification per ~46 ms — everything in a `<vis>` moved at **21 fps**; (b) the waveform posts a
-      576-sample chunk at a time from inside that single tap call, **three or four in a burst**, and
-      the tap kept only the newest — three quarters of the audio discarded, survivors 46 ms apart.
-      Fixes: `WinampModernWaveformTap` now **queues** chunks (cap 6 ≈ 78 ms, then drop-oldest and
-      resync) and plays them out against the clock at the exact 576/sampleRate rate they were
-      recorded at; `WinampModernMainView` gains a **60 Hz visualization clock** that invalidates only
-      the vis rects, runs only while there is something to show, and stops itself once the falloff
-      has finished. The frame's waveform is sampled **once per frame** in `WasabiRenderer.draw` so
-      Big Bento's six boxes cannot straddle a chunk boundary and mirror each other a chunk apart
-- [x] **B51.10 — what the clock costs, measured, and the rate that follows from it.** `sample` on the
-      running app (Big Bento, vis visible, playing): a vis-rect repaint is **~4 ms**, so 60 Hz is
-      ~24% of a core against ~8% at the old 21 fps — **+15 points**. (The 14% in
-      `WinampModernMainView.layout()` in the same trace is *not* the clock: `needsLayout` is set on
-      graph mutations by the skin's own scripts, `:390`/`:414`. Left alone.) So the clock now runs at
-      the rate the content actually changes: **60 Hz only when a `mode="2"` box is on screen** — new
-      PCM every 13 ms, and below 60 the trace steps — and **30 Hz otherwise**, because an analyzer's
-      bands only move at the FFT's ~21 Hz and frames past 30 animate nothing but falloff between two
-      identical sets of bars. It also **skips repaints while the window is occluded** (the timer
-      keeps running at ~0.5% so the idle check still retires it) and still stops entirely once the
-      falloff is done. Analyzer-only skins — most of the corpus — end up ~4 points over the old
-      behaviour rather than 15. A regression the suite caught while doing this: dropping the
-      immediate paint from `startVisualizationClock` cost up to 33 ms of hesitation when audio
-      started (`WinampModernPhase24Tests.testDeliveringSpectrumLevelsMarksTheViewForRedraw`)
-- [x] **B51.8 — confirmed live by the user 2026-08-26** ("looks great"), then smoothness (B51.9) and
-      the clock rates (B51.10) on top of it. Tests, skill updates and the changelog followed the QA,
-      per the verify-before-investing rule: `WinampModernPhase73Tests` (18 tests — attribute decode
-      including the measured 0…4 falloff, the colour steps, the tap's queue/playout/silence, the
-      demand gating, and the moved spectrum guard: a scope paints with no spectrum, an analyzer does
-      not), 1288 total pass. **The tests caught a real off-by-one**: the playout showed every chunk
-      one slot late and skipped the first chunk after silence, because `playoutStart` was being
-      treated as "the head becomes current one duration from now" rather than "now". Live QA
-      (the plan's Verification section). Built clean; `swift test` 1270 pass.
-      Static: `RENDER_DUMP` on stock Winamp Modern, Love is War Miku, Rika (`mode=1`) and mmd3
-      (`mode=0` stays off) all render. **Big Bento's own four header boxes cannot be checked
-      headlessly** — `main.vis.group` is hidden until the player pane passes 730px and the harness
-      cannot drag the divider, so `VIS box` prints nothing for it; that is verification step 1's job
-
-</details>
-
-### Tier 1
-
-- [ ] **B54. White flashes at the tops of the analyzer bars, centre of the box.** Reported live
-      2026-08-26 on Big Bento Modern (playing, `<vis>` in analyzer mode, debug build). **Pre-existing
-      — confirmed against a clean baseline in the same session**, so it is not B52's doing; it was
-      found while QA'ing B52 and is filed here rather than chased there. Unknown whether it is a
-      partial-repaint artifact (the view clears `dirtyRect` and repaints the scene clipped, and the
-      vis box now has its own 30/60 Hz clock from B51), a peak-cap draw (`WasabiVisPainter`
-      `state.peaks`, `colorbandpeak`), or the box's background. `WINAMP_MODERN_MUTATION_TRACE=1` will
-      not see it — this is a draw defect.
-      **Clue, from the user 2026-08-26: it only happens at high bar counts**, i.e. `bandwidth="thin"`
-      (75 bands; `wide` is 19). Leading hypothesis, untested: at 75 bands in a box a hundred-odd
-      pixels wide the slot is 1–2 px, so `columns()` answers `max(1, end - start - 1)` = 1 px for
-      every bar and the 1 px gap between them disappears — bars abut, and the 2 px peak caps abut
-      with them into one continuous bright row across the top of the block, flickering as each band's
-      cap falls independently. Predictions to check first, in one look: it should vanish at `wide`
-      bandwidth and worsen as the box narrows. If that holds, the fix is about how a cap is drawn
-      when a band owns fewer than ~3 px, not about repainting
-
-<details>
-<summary>B52's task list, kept for the measurements it records</summary>
-
-- [x] **B52. Done 2026-08-26, confirmed live. The counter was the smaller half: the caches were
-      being thrown away by hand, ~460 times a second.** Found while measuring B51's repaint clock, not caused by it —
-      `sample` on the live app (Big Bento Modern, playing, scope visible, 3744 main-thread samples
-      over 5 s): `WinampModernMainView.layout()` is **369 samples (~10% of a core)**, of which
-      **345 are `browserNodes()` → `layoutNodes()` → `append`** — a full recursive re-solve of the
-      object tree *including hidden nodes*. `layoutNodes()` is memoized against
-      `graph.mutationGeneration` + canvas (`WasabiRenderer.swift:930`), so missing that consistently
-      means the counter is moving almost every frame. The same counter keys `sceneNodes()`, so the
-      scene walk is being redone as well: `renderer.draw` is another 602 samples (~16%), while the
-      thing it is drawing — `WasabiBuiltInVisRenderer.drawOscilloscope` — is **7**.
-      **The visualization is not the cost; the cache misses are.** Find the writer (a ticker offset,
-      a clock, an animation attribute — `WINAMP_MODERN_TRACE_MAKI=1` / `CALL_TRACE` against the
-      running player will name it), and either stop it writing an attribute per frame or key the two
-      caches on something a cosmetic write does not move. Fixing it speeds up the whole skin, not
-      just the `<vis>`. Pre-existing: it was happening at the old ~21 fps too
-  - **The writer, named 2026-08-26:** `tickTargetAnimation` (`WinampModernScriptRuntime.swift`) runs
-        at **60 Hz per animating object** and calls `notifyGraphDidMutate()` on **every tick** —
-        whether or not the tick changed an attribute — which is a full-window `needsLayout` +
-        `needsDisplay` and a layout/scene cache miss for a *fade*. Big Bento Modern's InfoDisplay
-        rotates its 17 `Bento:InfoLine` rows with a target-alpha fade that never stops while a track
-        is loaded, so the skin is in that state permanently. `MUTATION-TRACE` on the running player
-        (playing, 12 s): ~8/s of real writes, all `alpha`/`targeta`/`goingtotarget` on
-        `infodisplay.line.*` — and 60/s of invalidation on top of them that no probe could see
-  - [x] **B52.1** Add a mutation probe — `WINAMP_MODERN_MUTATION_TRACE=1` — that attributes every
-        `mutationGeneration` bump to the writer (attribute, object type/id, source) and prints the
-        top writers per interval. Instrument before reasoning; prove it prints on a skin that idles
-  - [x] **B52.2** Run Big Bento Modern in the app, playing, scope visible, and name the writer(s)
-  - [x] **B52.3** Stop the per-frame write at its source: `tickTargetAnimation` now notifies only
-        when a tick actually moved an attribute, and an alpha-only tick takes the object-targeted
-        repaint seam (`requestRepaint(for:)`) rather than a whole-window relayout
-  - [x] **B52.3a** The bigger half, found by the probe: `invalidateRectCaches()` in
-        `WinampModernMainView` dropped the renderer's memoized scene on *every* notification, times
-        every container window it fans out to — **~460 drops/second** measured. The scene cache is
-        keyed on the graph's own generation, so that drop was pure waste. Removed; the genuine
-        non-graph inputs (layout switch, resize, theme, playback state, UI Size) keep explicit calls
-  - [x] **B52.4** Key the layout/scene caches on a generation a cosmetic write does not move:
-        `sceneGeneration` skips `alpha` alone, and `sceneNodes()` re-resolves the inherited product
-        over the cached nodes (`withRefreshedAlpha`), the way `withRefreshedBitmapID` already did for
-        host-resolved artwork. It was reverted mid-QA on suspicion of the white analyzer flashes and
-        **exonerated** — the flashes reproduce on a clean baseline (now B54)
-  - [x] **B52.5** The object-targeted repaint seam now covers an object's whole **subtree**
-        (`WasabiSceneRenderer.paintedBounds`), because `alpha` is inherited and only a sized group
-        clips — repainting a faded group's own rect alone would leave a child hanging outside it
-        half-faded
-  - [x] **B52.6a** Measured, **analyzer** mode (not the ticket's scope — `drawOscilloscope` was 0
-        samples in both runs, so this is like-for-like but not B52's stated condition):
-        `layout()` 349 samples (7.9%) -> 69 (1.5%), `browserNodes`->`layoutNodes` 308 (7.0%) -> 61
-        (1.3%), main-thread idle 33% -> 62%. `renderer.draw` unchanged (~19%) — that is B51's vis
-        clock, not a cache miss
-  - [x] **B52.6b** Re-measured in **scope** mode (the ticket's condition; `drawOscilloscope`
-        non-zero is the check that it was not the analyzer): `layout()` 9.9% -> **1.3%** of the main
-        thread, its `layoutNodes()` -> `append` re-solve 9.2% -> **0.9%**. `renderer.draw` is
-        untouched and is now the largest cost in the window — B51's vis clock, not a cache miss
-  - [x] **B52.7** Confirmed live by the user 2026-08-26 ("looks fine", scope mode, Big Bento
-        Modern playing). `WinampModernPhase74Tests` (7 tests: the generation split, a parent's fade
-        reaching its children through a cache that was never rebuilt, the product of two fades, and
-        the painted-bounds rule both ways), 1295 total pass. Docs: `reference/performance.md` -> *A
-        cache nobody trusted*, the `MUTATION_TRACE` row and the `DEBUG_PLAY` audio note in
-        `reference/harness.md`, changelog under Unreleased -> Bug Fixes
-
-</details>
-
-These three came out of the Big Bento Modern header/settings research on 2026-08-23
-(plan: `~/.claude/plans/abundant-pondering-hamster.md`) and are **here rather than in
-`BENTO_TASKS.md` because none of them is Bento-specific** — Bento is only where they were found.
-The Bento-only findings from the same pass are `BB6`–`BB15` there.
-
-- [x] **B39. A script's `setText()` must beat the object's `display=` binding. Done 2026-08-24,
-      confirmed live.** The override lives on `WasabiTextMetrics.scriptTextKey`, resolved in
-      `content(of:host:)` after `setAlternateText` and before the binding; `setText` writes it
-      alongside the XML `text` attribute, so a `<Wasabi:Button>` label still follows the script and a
-      skin still cannot declare an override in markup. **The corpus sweep ran** (all 36 installed
-      skins, XML `display=` objects cross-referenced against every `setText` receiver in the shipped
-      `.m` sources): 13 skins affected, and it settled the one open design question — a non-empty
-      override **does not expire** when the bound value moves, because micro's `oldtimer.m` and
-      Ebonite's `clock.m` both hold a different clock format over a `display="time"` binding and an
-      expiry would flicker them. Every non-reverting writer in the corpus rewrites on track change.
-      Durable detail: `reference/scripting.md` → *What a text object shows*,
-      `compatibility/maki-surface.md`, and the skin's own file. Tests:
-      `WinampModernPhase64Tests`. The original report follows.
-      Big Bento Modern
-      draws the same song title on four stacked lines, and the skin's author documents the mechanism
-      in the markup (`xml/player-normal-mcv.xml:378`):
-      ```xml
-      <!-- Victhor trick: display="SONGNAME" is used so ticker=1 actually works
-           (the actual content of the text is set by script) -->
-      <Text id="text" … display="SONGNAME" ticker="1" …/>
-      ```
-      That groupdef backs all **17** `Bento:InfoLine` objects (title, artist, album, track, year,
-      genre, disc, albumartist, composer, publisher, format, comment, bpm, sname, surl, filepath,
-      rating). Every one declares `display="SONGNAME"` **purely to enable tickering**, and
-      `fileinfo.m` then fills each with `setText()` (~20 call sites).
-      In our engine the two fight and the binding always wins:
-      `WasabiTextMetrics.bound()` (`WasabiTextMetrics.swift:229`) answers `host.trackDisplayTitle`
-      for `case "songname"` unconditionally, while `setText`
-      (`WinampModernScriptRuntime.swift:2646`) writes `attributes["text"]` — which `bound()` reads
-      **only in its `default:` branch**, i.e. only for an object with no `display=` at all. So all 17
-      lines render the display title. **The layout is correct; only the content is wrong**, which is
-      why it reads as "the title is repeated" rather than as a broken panel.
-      The rule: a **non-empty** script `setText` overrides the `display=` binding; `setText("")`
-      reverts to it. The revert half is not optional — MMD3's ticker fires `setText("")` a second
-      after a `setAlternateText` and expects the bound title back (see the comment at `:2648`).
-      Keep the override off the XML `text` attribute, the way `scriptAlternateTextKey` already does,
-      so a skin cannot declare it in markup.
-      **Sweep the corpus for every object carrying both a `display=` and a script `setText` before
-      landing this** — it changes what any such object draws, in every skin, not just this one.
-
-- [x] **B46. `getPlayItemMetaDataString` answers four keys, so most of a file-info panel stays
-      blank.** **Done.** The key table moved onto the host
-      (`WinampModernHost.playItemMetadata(forKey:)`) so the harness and every test double answer as
-      the live app does, and the runtime's four-case switch is now a one-line delegation to it. The
-      tags past title/artist/album come from the library row for the playing file, looked up once per
-      track id. The key set and its **units** were measured, not guessed: the union of the
-      `getPlayItemMetaDataString` call sites across the 36 installed skins and Big Bento's compiled
-      `fileinfo.maki` string table — which pins `length` to whole seconds (every caller wraps it in
-      `integerToTime(stringToInteger(…))`) and `stereo`/`vbr` to flags (compared against `"1"`).
-      **The open question is settled the way the user called it**: a streaming track answers from
-      what the `Track` carries rather than going empty, and radio adds the four `stream*` fields from
-      `RadioManager.currentStation` (`streamtitle` read live, never cached, since ICY changes it
-      within one track).
-      **The note's claim about ratings was wrong and checking the app corrected it** — NullPlayer has
-      drawn a 0–5 star row for every source all along, on an internal 0–10 scale, so `rating` is
-      answered and `getCurrentTrackRating`/`setCurrentTrackRating`/`onCurrentTrackRated` are wired.
-      `setCurrentTrackRating` had not been in the method table at all, so a star click threw
-      `unsupported` and aborted the rest of the handler. The per-source conversions moved out of
-      `ModernLibraryBrowserView` into a shared `TrackRatingService`, which fixed a real bug on the
-      way: the ART-mode star row had no Emby branch, so rating an Emby track updated the display and
-      silently never saved. Only **Publisher**, `vbr` and `streamtype` stay empty, as explicit cases.
-      Durable detail: `compatibility/maki-surface.md` → `getPlayItemMetaDataString` (the full table),
-      `reference/components.md`, `reference/scripting.md`, `skins/big-bento-modern.md`. Tests:
-      `WinampModernPhase65Tests`. The original report follows. Found by B39's live QA on 2026-08-24: with the `setText` precedence fixed, Big Bento's
-      panel fills Title, Artist, Album and File Path and nothing else — even though **… → File Info
-      Components** shows Year, Genre, Track #, Disc, Album Artist, Composer, Publisher, Decoder,
-      Comment, BPM and Song Rating all ticked (the skin's own `newAttribute` defaults are `"1"` for
-      every one of them; the menu is right, the data is missing).
-      `WinampModernScriptRuntime.swift:2448` answers `title`, `artist`, `album`, `filename` and
-      returns `""` for everything else; `fileinfo.maki` reads an empty field as "nothing to show" and
-      hides that line, so a dozen enabled components are invisible. **Engine-wide, not Bento** — any
-      skin's file-info surface asks for the same keys.
-      The data mostly exists but not on the path the host adapter uses: `Track` carries only `genre`,
-      while `MediaLibrary.MediaItem` has `albumArtist`, `trackNumber`, `discNumber`, `year`,
-      `composer`, `comment`, `bpm`, `grouping`, `musicalKey`, `isrc` and `copyright`. So the work is a
-      library lookup by URL behind `WinampModernHost`, plus `contentType`/bitrate for *Decoder*
-      (`getDecoderName` already answers a codec name — reuse it rather than inventing a second
-      answer). Two are expected to stay empty and should be **said** to stay empty rather than faked:
-      **Publisher**, which is not stored, and **Song Rating**, where Bento wants Winamp's 0–5 star
-      field and our Plex/Subsonic rating is a different concept (`getCurrentTrackRating` already
-      answers 0 for the same reason).
-      Decide first: a **streaming** track (radio, Plex, Jellyfin, Emby) has no library row. Answering
-      empty and letting the lines hide is the honest default and matches what Winamp does with a
-      shoutcast stream; falling back to whatever the server sent is the alternative. Not settled.
-
-- [x] **B40. A skin's web buttons reach the web. Done 2026-08-24, confirmed live.** `navigateUrl`
-      is the **user's** browser and `navigateUrlBrowser` the player's — not two spellings of one
-      thing — and both are now typed rather than inert: every skin-authored address passes through
-      `WinampModernWebNavigationPolicy` (HTTP/HTTPS with a real host, nothing else), the internal one
-      reaches the scene's own `<browser>` (a visible one preferred over one in a closed tab), and the
-      external one is gated by a first-use sheet naming the URL, remembered per skin, one question at
-      a time, never `runModal`.
-      **The skin's setting did not need reading.** Bento's Web Content page (`Use Default Browser to
-      open links`, its own default `1`) is read by the skin's *own* script, which then calls
-      `navigateUrl` on one branch and `sendAction` on the other — so honouring the setting **is**
-      answering both routes. Same for the engine: `Default Search Engine: Google`/`Bing` is the
-      skin's registration, and `preferredSearchEngine` reads it (DuckDuckGo when a skin names none,
-      matching the internal browser's own start page).
-      **Four faults sat on these buttons, and each alone was enough to make them look broken.** Only
-      the first was the one this task named:
-      1. `System.urlEncode` did not exist. It sits *inside* the expression that builds the address,
-         so the unsupported method aborted the handler one layer before any navigation.
-      2. `browser_search` carries **terms**, `browser_navigate` carries a **URL** — measured off the
-         bytecode, not assumed. Read alike, a search becomes `https://<terms>`. Terms are decoded
-         once before being re-encoded, since the skin encodes each term itself.
-      3. A **scheme-less address is a web address**, not a skin-local path. Bento's reader writes
-         `www.google.com/search?q=…` and hands it to `<browser>.navigateUrl`; `destination(for:)`
-         found no scheme and looked for a hostname in the WAL VFS, where it can only ever be missing
-         — *"The skin-local page could not be found"*, and nothing reached WebKit.
-      4. **`getText`/`setText` did not follow `embed_xui`.** The search string is built from the
-         *display lines*, not from metadata: `getText()` on the `Bento:InfoLine` wrapper, whose text
-         lives on the inner `<Text id="text">` that `fileinfo.maki` fills. The wrapper answered `""`
-         and the button searched for the bare word "lyrics" — a text bug wearing a browser bug's
-         clothes, and the only one live QA could see. `getPosition`/`setPosition` had followed the
-         link since BB19; the text methods never did.
-      Also: a skin's own reader answers `browser_search`/`browser_navigate` itself, so the host route
-      is a **fallback** taken only when no script handled the action — otherwise the same surface
-      loads twice with a URL the skin did not choose. `ML_SendTo` is accepted and `.inert` with a
-      reason (7 declarations: Bento ×2 per edition, Defix ×1); NullPlayer publishes no Send To
-      targets.
-      **Method note for the next reader:** the harness had already printed the answer
-      (`navigateurl(www.google.com/search?q=  lyrics)`) one pass before it was believed — it was
-      explained away as a synthetic-track artifact. *When a trace shows a handler running, what it is
-      being handed is the finding.* Durable detail: `reference/components.md` → *The four routes a
-      skin reaches the web by*, `reference/scripting.md` → *`embed_xui`*, `compatibility/maki-surface.md`,
-      `skins/big-bento-modern.md`. Tests: `WinampModernPhase66Tests`.
-
-- [ ] **B41. `getMonitorWidth()` / `getMonitorHeight()`.** Absent from the runtime; called from Big
-      Bento's `sc_aerosnap.m`, `notifier.m` and `pledit.m`, where they drive AeroSnap edge-snapping
-      and notifier placement. Cheap to answer from `NSScreen`, but **decide which coordinate space
-      first**: scripts are deliberately held to the skin's own pixel grid (UI Size is applied at the
-      view's drawing/input boundary and `getscale` answers 1, Phase 10), so a raw backing-store
-      number here would put a skin's own arithmetic in a different space from everything else it
-      measures.
-
-- [x] **B42. `relat*` is `atoi(value) != 0`, not `== 1`. Done 2026-08-24, confirmed live
-      2026-08-25** (in BB4's re-run: one crisp cover over a dimmed backdrop wash). `WasabiGeometry`'s flag
-      reader accepted only `1`/`true`/`yes`, so every other number fell back to **absolute** geometry.
-      Found live on Big Bento Modern, where it reads as *the album cover drawn twice*: the dimmed
-      oversized backdrop in `info.component.albumbg` is `w="99" h="100" relatw="2" relath="2"`, and
-      read as absolute it draws at a literal 99×100 — a small crisp second copy beside the real
-      cover. Filed as BB6 against the album-art code; the cause was three layers away, in the
-      geometry parser.
-      Corpus: Big Bento Modern + its Windows 10 edition (1 declaration each, inherited by both Light
-      overlays through the base's XML), Ebonite_2_1 (6), The_Nokia_5220 (2). corneramp_redux and
-      Shield_Amp ship a literal `relatw="%"`, which `atoi` reads as 0 and which therefore stays
-      absolute — unchanged.
-      **A percentage reading is wrong**, though it fits Bento's `99`/`100` and Ebonite's `85`/`93`:
-      Ebonite's own `group w="0" h="0" relatw="2"` would collapse to nothing at 0%, and `relatw="5"`
-      is not a percentage. Landed in `reference/loading.md` → *Retained graph and coordinates*.
-      `swift test` 1067 pass, 8 new in `WinampModernPhase56Tests`; corpus sweep pixel-diffed.
-
-- [x] **B43. `fliph` / `flipv` were ignored engine-wide. Fixed 2026-08-24, confirmed live.**
-      Neither attribute appeared anywhere in `Sources/`. Found live on Big Bento Modern, where the
-      header analyzer group is a **butterfly**: `main.vis` (`fliph="1"`) and `main.vis2` sit side by
-      side at 144px each so the two meet low-frequency-to-low-frequency in the middle, with
-      `main.vis.mirror` / `main.vis.mirror2` (`flipv="1" alpha="110" ghost="1"`) as a dimmed 10px
-      reflection under each. Ignored, that drew two identical copies with a seam and two reflections
-      that were not reflected — reported as *"another bug is there are 2 of them"*, and the two **are**
-      the skin's intent.
-      Implemented at the one seam every kind of drawing passes through
-      (`WasabiRenderer.draw(_ node:…)` → `applyFlip`), not in the bitmap path: the attribute belongs to
-      the object, not to one way of filling it — the same lesson `alpha` taught in the two lines above
-      it. Deliberately **after** both clips, so a flipped object cannot escape its box and a region
-      mask stays where its author put it. `WasabiGeometrySpec.flag(_:)` was extracted from the
-      initializer's closure so the flips read `"1"` exactly as `relat*` does (B42) rather than growing
-      a second interpretation.
-      Corpus: **all 16 declarations are on `<vis>`** and nothing else — Big Bento Modern + its Windows
-      10 edition (4 each, inherited by both Light overlays), Styx (4, a 2×2 quad covering all four
-      flip combinations — the strongest test case), multipass (2), Enkera (1),
-      Nullsoft.Winamp.2000.SP4.Lite (1). So the general implementation costs no extra blast radius
-      today, but a `<layer fliph="1">` is legal Wasabi and would have silently drawn unflipped.
-      **Not verifiable headlessly:** Styx's quad is in a closed drawer, and Bento's group is gated
-      behind `visualizer.maki`'s 730px player width — which `from="left"` pins at 434 at every window
-      size (see B44), so no probe can reach either. Confirmed on screen by the user instead.
-      `swift test` 1115 pass (11 new, `WinampModernPhase61Tests`), asserting the property that makes
-      this safe: a flip is an **involution about the object's own frame**, so it cannot translate
-      content out of its box.
-      **Sweep: 290 images, 288 identical.** Anexa's `main-shade` is the known nondeterministic one.
-      The other is a *correct* change and worth reading before it is mistaken for a regression:
-      `Nullsoft.Winamp.2000.SP4.Lite`'s `xml/video.xml` declares the **same** `<vis id="shade.vis">`
-      **twice** in the identical box — same colours, `mode="2" oscstyle="lines"` — with the second
-      carrying `flipv="1"`. That is the classic Winamp mirrored scope, a trace and its reflection
-      about the centre line. Ignoring the flag made the two coincide exactly, so it drew as one thin
-      trace (mean vertical span 4.6px); mirrored, the pair spans 12.5px and reads as the intended
-      symmetric double trace. Same idea as Bento's header, reached by a different route.
-      **Method lesson, and it nearly cost a false regression:** this skin is an **NSIS** archive, not
-      a zip, so the `unzip`-based corpus text scan skipped it silently — 35 skins in, 34 directories
-      out — and it was the *one* skin the first scan claimed had no flip declarations while being the
-      one image in the sweep that changed. A corpus scan that shells out to `unzip` under-reports; use
-      `7zz`, and check the extracted directory count against the skin count. Landed in
-      `reference/harness.md`.
-
-- [x] **B44. Skin-scoped persistence of skin config — first slice done 2026-08-24, confirmed live.**
-      The splitter position is the slice that landed; the item as filed is wider than it and the rest
-      stays open (see the follow-up below). Nothing a `.wal` skin's own state amounted to survived a
-      relaunch: every launch reseeds the graph from the markup and then re-runs the skin's own
-      `setPosition`, so Big Bento's player/playlist divider dragged wide came back narrow.
-      **The rule, and it is the whole design: only a drag is stored.** `persistFramePosition(of:)` is
-      called from mouse-up and nowhere else. A script moving its own splitter is the *author's* layout
-      speaking — Bento's `setPosition(434)` with `from="left"` genuinely ships "narrow player, wide
-      playlist" and there is no clamping bug on our side — so that is left exactly as written. Not a
-      `WasabiSkinQuirks` entry: that file's bar is *arithmetic the skin gets wrong, derivable from the
-      skin's own numbers*, and this fails both halves.
-      Stored in the skin's existing namespaced `WinampModernConfiguration` (the store behind
-      `setPrivateInt`) under section `@frame`, keyed `container-id/frame-id` — the two names that
-      survive a reload, where `stableID` is a per-load counter. `-1` is the "never dragged" sentinel
-      because **`0` is a legal position** (ClassicPro closes its side view with `setPosition(0)`).
-      Restored from `layoutNodes()` so a splitter in a shut drawer is not lost, and re-clamped against
-      the box *as it is now*, since a negative `maxwidth` is measured from the far edge.
-      **The ordering trap was the difficulty**, and it is the same one B38.2 hit: the skin's own
-      `setPosition` runs at load, so a restore before it is simply stomped. Each view restores in
-      `scriptsDidStart()` *before* the seeding resize dispatch, and the controller re-asserts once at
-      1.0s for the case where the skin's call comes from a timer instead (Bento's `mcvcore` starts a
-      700 ms one-shot, BB9). The re-assert **re-reads the store** rather than replaying, so a drag
-      inside that first second is not pulled back.
-      Rule: `reference/rendering.md` → *Where the user left the divider survives a relaunch — where the
-      skin put it does not*. `swift test` 1125 pass (10 new, `WinampModernPhase62Tests`).
-
-- [x] **B44a. The rest of skin-scoped persistence. Measured and closed 2026-08-24 — the list is
-      shorter than it looked.** The framing that settles it: **a skin's own preferences already
-      survive**. `setPrivateInt`/`setPrivateString` and `cfgattrib` write straight into the same
-      namespaced store, so anything a skin chose to remember about itself has always worked. Only what
-      lives in the **object graph** needs saving, because that is what is rebuilt from the markup on
-      every load — and that is a three-row table, now collected in `WinampModernSkinState`:
-
-      | State | Section | Written when |
-      |---|---|---|
-      | A `<Wasabi:Frame>`'s divider offset | `@nullplayer.frames` | mouse-up on the divider (B44) |
-      | Which layout a container is on (shade) | `@nullplayer.layouts` | a `SWITCH` the user clicked (new) |
-      | Whether one of the skin's windows is open | `@nullplayer.windows` | a menu item, skin button or close box (already existed, Phase 40/B6) |
-
-      Two candidates were **dropped after measuring**, and both were already done elsewhere: the
-      active colour theme is persisted by `WasabiColorThemeList` under `appearance/theme`, and a
-      window's frame on screen belongs to the *player's* window rather than to the skin, so it goes
-      through `AppStateManager` with `clampRestoredFrame` (R1). A `<ColorThemes:List>` row selection is
-      transient — applying it is what matters, and applying goes through the theme.
-      **Two things actually changed.** *Layout persistence* is new: a window left shaded comes back
-      shaded, restored right after `scripts.start()` so the skin's own `switchToLayout` has had its say
-      first. Deliberately **not** re-asserted at 1.0s the way a divider is — switching layout resizes
-      the window and rebuilds the scene, and doing that a second after launch would read as the player
-      flinching. And a **gap in B44's own slice** is fixed: `persistableFrames()` sees the active
-      layout only, so a divider dragged in a layout the user switched to later was stored and then
-      never put back; `activateLayout` now restores that layout's own splitters.
-      The window-visibility code moved onto the shared store unchanged (same section string, so no
-      stored state is orphaned), and B44's section was renamed `@frame` → `@nullplayer.frames` to match
-      it. **That last one resets a divider dragged before this landed, once.**
-      Rules: `reference/rendering.md` → *What else the host remembers about a skin, and what it must
-      not*. `swift test` 1131 pass (16 in `WinampModernPhase62Tests`).
-      **Confirmed live by the user, 2026-08-24** — the shade round trip, the splitter in a non-default
-      layout, and the negative case (skins never touched open unchanged).
-
-### Tier 2
-
-- [x] **B33. An unclosed tag at EOF kills the whole skin — done 2026-08-24.** `Shield_Amp` was the
-      only skin of the 30 installed that failed to load at all: `WalXML` threw `malformedXML`
-      "Unclosed <container> tag" on `opensource_notifier/notifier.xml`, pulled in by an `<include>`
-      from `skin.xml:36`. The skin's own bug — that file opens two `<container>`s, closes one, and
-      ends on `<script file="…"/>` — but Winamp loads it, and our parser is documented as *lenient*.
-      The engine rule is that malformed optional input should **warn, not fail**.
-      It was as cheap as it looked. Nodes are attached to their parent (or to `roots`) at **open**
-      time, not at close, so by the time the `guard stack.isEmpty` runs the tree is already complete
-      and correct — the unclosed container simply has all its children. The throw is now a warning
-      `WalDiagnostic` at the open tag's location; `maximumDepth` still bounds how much can be left
-      open, so nothing about the sandbox changed. `parse` returns `WalParsedXML { roots, diagnostics }`
-      rather than `[WalXMLNode]` so the warning can reach the compatibility report through
-      `WalXMLDocumentLoader.loadFile`. Deliberately still strict: an **unexpected closing** tag
-      (`</b>` matching nothing — no corpus skin does it, and the tree it would leave is ambiguous),
-      unterminated comments/declarations/tags/attribute values, and every depth and node-count bound.
-      Verified: Shield_Amp `testok=0` → **9 surfaces**, and a sweep of all 35 installed `.wal`s shows
-      every previously-loading skin dumping the same count with no new diagnostic — the new code path
-      is only reachable where the parser used to throw outright. `swift test` 1138 pass (7 in
-      `WinampModernPhase63Tests`, including the synthetic truncated-`.wal` fixture).
-      Rules: `reference/loading.md` → *What the XML parser tolerates, and what it still rejects*.
-      **Confirmed live by the user, 2026-08-24.**
-      Found by its sweep, filed rather than folded in: **B45**.
-
-- [ ] **B45. Shield_Amp's playlist container has no layout.** `RENDER-DUMP dropped container: Pledit
-      (no layout)` — the skin declares `Pledit` (and the catalog routes `playlist=declared:Pledit` to
-      it), but nothing renderable is inside, so its `PL` button most likely opens nothing. Surfaced by
-      B33's sweep, which is the first time this skin has ever loaded far enough to be measured.
-      Unclear yet whether this is the skin shipping an empty container, an `<include>` we skip, or a
-      layout named something other than `normal` — LOBE's B26 was the last of those and the container
-      was being dropped silently, so check that first. Nothing else about this skin has been measured
-      beyond the render sweep and one live launch
-
-- [ ] **B21. `enqueueFile` / `playFile` — skin-supplied path ingest.** `PlEdit.enqueueFile(path)`
-      (cPro-Bento) and `System.playFile(path)` (T800) hand the host a filesystem path the *skin*
-      chose. Deliberately left out of B8: it is a sandbox policy decision (what may a script add to
-      the queue, and from where), not an arity question. Note `clear()` **is** implemented and these
-      are not — safe today only because cPro-Bento's one caller early-returns on
-      `ClassicProFile.findFiles`'s bounded `-1` long before its `PlEdit.clear()`. Decide the policy
-      before implementing either, and check that pairing again
-
-### Tier 3 — narrow, latent, or a decision rather than code
-
-- [ ] **B14. `<Wasabi:TabSheet>`** (mmd3's winshade sidecar) — a real widget, not a shell, so it needs
-      a body rather than a synthesis rule. One measured skin
-- [ ] **B15. `wasabi.panel` / `wasabi.objectframe.group` bodies.** Every measured use is inside a
-      `modal`/`static` frame that synthesis never selects, so there is still nothing on screen to fix.
-      Wait for a skin that shows one
-- [ ] **B16. `VISCON`** — a container scripts bind to that `RENDER-DUMP containers` never lists. Find
-      out why; it may be a probe blind spot rather than an engine gap, and blind probes have made real
-      defects look absent three times in this subsystem
-- [ ] **B17. `WasabiSurfaceInventory`'s last-wins groupdef map.** The redefined-id defect fixed in
-      Phase 19, one layer up. No measured skin is affected — it changes nothing for T800 — so this is
-      a correctness tidy-up, not a fix
-- [ ] **B18. The classic UI's minimize mask.** `miniaturizeAllManagedWindows` calls `miniaturize(nil)`
-      on windows whose masks lack `.miniaturizable`, which is the bug modern's minimize had. Parity
-      item, outside the `.wal` subsystem
-- [ ] **B23a. `.visualization` embedded in a player (BLAKK).** Carried over from the deleted
-      `open-items.md`, which is the only place it was ever tracked. BLAKK reaches a visualization
-      holder **in its player** and declares no AVS container, so its engine could live in that box
-      instead of our own window. Deliberately left alone by B23 — no report, no measurement of what
-      the box should show. Still true as of 2026-08-23: `BLAKK/xml/blakk-remote.xml:88` declares
-      `<groupdef id="blakk.component.vis"><component id="vis" w="144" h="125" …
-      hold="guid:{0000000A-000C-0010-FF7B-01014263450C}"/></groupdef>`, placed at `x="8" y="34"`
-      inside `blakk.remote-avsgroup.group` with its own `VIS_Menu` / `VIS_Prev` / random-preset
-      controls alongside.
-      **Do not be reassured by the corpus table.** `reference/components.md:664` reads "8 of the 31
-      installed skins… none embeds the component in the player," and BLAKK is absent from it — that
-      is a probe blind spot, not a contradiction. The holder lives in the `remote` layout
-      (`blakk-remote.xml:113`), not the default `boombox` one, so a visibility-filtered `VIS holder`
-      sweep never sees it. Identical to the failure mode B23 already recorded for
-      `VIDEO holder … hidden`, and exactly what B16 warns about. Fixing the probe to print a hidden
-      holder is probably the first step, and would also re-answer B16.
-- [x] **B34. The thinger is empty in every skin that has one. Done 2026-08-25, confirmed live on
-      mmd3 and the Nullsoft SP4 Lite Thinger window.** `<componentbucket>` is Winamp's
-      scrolling strip of *installed component* icons (Media Library, AVS, plugin buttons) — click an
-      icon to open that component, and the `<text display="componentbucket">` beside it names the
-      focused one. NullPlayer hosts playlist/EQ/library surfaces but publishes no **icon set** for a
-      bucket to enumerate, so every bucket draws empty, its caption stays blank, and
-      `CB_NEXT`/`CB_PREV`/`CB_NEXTPAGE`/`CB_PREVPAGE` are `.inert(reason: "component bucket holds no
-      icons to scroll")` in `WinampModernHostActions.swift:66`. Correct-and-recorded today, not a
-      defect — this item is the feature that would make it real.
-      Corpus demand, measured 2026-08-23 over all 40 `.wal`s (35 installed + 5 in `~/Downloads`):
-      **14 skins**, splitting into two roles. *Thinger* (12, `CB_NEXT`/`CB_PREV`) — Mini_Me_2 ×10
-      (one bucket per skin variant, `skin1thinger`…), mmd3 ×3 (`normal` + both shades), Lobe ×2,
-      then boom_by_adil_daqyn, Capsule_II, corneramp_redux, Hoop_Life_WA3, Media_Whore, Overdrive_2,
-      Styx, ZDL_Reel-To-Reel, Lapis_Lazuli ×1. *Config-drawer paging* (2, `CB_*PAGE`) —
-      winampmodern566 and S7Reflex, already recorded in `skins/winamp-modern-stock.md:88`.
-      Three traps worth knowing before starting:
-      - **Four skins put the thinger in its own container**, not the player body —
-        boom_by_adil_daqyn and corneramp_redux declare `<container id="Thinger" default_visible="0">`,
-        ZDL and Lapis_Lazuli have dedicated thinger layouts. Those present as an empty *window* off
-        Skin Windows, not a dead widget. ZDL's `EQ` + `thinger` pair is at `skins.md:46`
-      - **Lapis_Lazuli declares a bucket with no arrows at all**, so it needs the icons but exercises
-        no scroll path — the cheapest render-only check
-      - **Lobe's arrows are correctly unhittable at rest** (`skins/lobe.md:100`): its thinger group
-        sits at z-order 10–11 behind `metalbg` at 68. Do not read that as a regression when the
-        icons land
-      One icon set published from the component registry lights all 14 up at once; none needs
-      skin-specific work. Verify with the render sweep plus a live check on mmd3 (in-body circle) and
-      corneramp_redux (own container).
-      **The corpus count above is wrong, and this is how (re-measured 2026-08-25).** It was taken by
-      grepping the shipped XML files; a `.wal` draws only what its **include graph** reaches from
-      `skin.xml`, and three skins ship a thinger they never include — `corneramp_redux`
-      ("CornerAmp has never had the thinger but you can add it if you like", `skin.xml:26`), `Bio-Nid`
-      and `Rika`. Those three have nothing to fix and nothing to see. Two more corrections: the
-      include paths are **relative to the including file**, so a closure that only tries the literal
-      string finds one skin in thirty-six; and `Lapis_Lazuli.wal` wraps its whole skin in a
-      `Lapis_Lazuli/` subfolder, so it has no top-level `skin.xml` at all and is not installed.
-      Live buckets in the **installed** set are seven: mmd3 ×3, Lobe ×2 (one `vertical="1"`),
-      Overdrive_2, ZDL_Reel-To-Reel (own `thinger` container), Styx (in an `alpha="0"` drawer),
-      S7Reflex (`CB_*PAGE`, vertical), Nullsoft.Winamp.2000.SP4.Lite (own Thinger window, `w="-31"
-      relatw="1"` — the whole five-icon set at once, and the best single live check). Uninstalled but
-      live in `~/Downloads`: Mini_Me_2 ×10, Media_Whore, Capsule_II, Hoop_Life_WA3 (vertical, 36×100),
-      boom_by_adil_daqyn.
-      Implementation checklist (2026-08-25):
-      - [x] `WinampModernComponentBucket.swift` — the published icon set (one per hostable Winamp
-            component), the pure box layout (`spacing`/`leftmargin`/`rightmargin`/`vertical`), and the
-            skin-wide scroll/focus state on `WasabiSkinRuntime`
-      - [x] Renderer: draw the strip, make a bucket renderable + interactive, hit-test an icon,
-            scroll by item and by page
-      - [x] `<text display="componentbucket">` reads the focused icon's name
-      - [x] Click an icon → `routeComponentToggle`; hover moves the focus (and the caption)
-      - [x] `CB_NEXT`/`CB_PREV`/`CB_NEXTPAGE`/`CB_PREVPAGE` stop being `.inert` and scroll the strip
-      - [x] Manual verification, mmd3 — confirmed by the user 2026-08-25
-      - [x] Manual verification, own-window case: Nullsoft.Winamp.2000.SP4.Lite (Thinger).
-            *Not* corneramp_redux — it includes no thinger, which is why it showed nothing
-      - [x] Tests (`WinampModernComponentBucketTests`, 14), skill docs (`reference/components.md`
-            → *The component bucket*, `SKILL.md` routing + section + file map, `compatibility.md`,
-            `compatibility/wasabi-surface.md`, `skins.md`, `skins/lobe.md`,
-            `skins/winamp-modern-stock.md`), CHANGELOG
+### B25
 
 ### B25 — The startup `autoopen` fallback forces a tab open behind the skin's back
 
@@ -832,175 +103,269 @@ the skin's state.
 
 ---
 
-## Pending live verification
+---
 
-These items are code-complete and passing tests, but have not yet been verified in the running app.
-Big Bento's own pending verification was `BB4` in `BENTO_TASKS.md`, **closed clean on 2026-08-25** —
-all three of its symptoms had been fixed by intervening work and none reproduced live. Two things it
-is worth carrying into the items below: a headless pass is necessary and not sufficient, and an entry
-that has sat unverified for days may already be fixed, so **re-measure before debugging**.
+### B15
 
-> **Before driving any of these, read `reference/harness.md` → *Driving clicks in the running app***.
-> System Events `click at` silently does nothing to this app while *reporting success*, which reads
-> exactly like a dead control — two working controls were nearly filed as defects on that evidence
-> (2026-08-25). Use `CGEvent`, click the **centre** of the box `RENDER_PROBE` prints, and read window
-> origins from `CGWindowListCopyWindowInfo` (`screencapture -o -l <windowID>` then captures one
-> window even when another covers it — `.wal` skins stack windows at the same origin).
+- [ ] **B15. `wasabi.panel` / `wasabi.objectframe.group` bodies.** Every measured use is inside a
+      `modal`/`static` frame that synthesis never selects, so there is still nothing on screen to fix.
+      Wait for a skin that shows one
 
-- [x] **B32.10 verified 2026-08-23:** manual QA on mmd3 passed — the lamps and display
-      words follow both the skin's own buttons and the Playback menu, and crossfade drives Sweet
-      Fades. B32 is closed.
+---
 
-- [ ] **B23 harness:** `VIDEO holder` line should print for an embedded holder too (it prints per
-      container/layout today and the tab's group is hidden at load)
-- [ ] **B24 verify:** Live on cPro-Bento: Media Library → Playlist → Media Library → Playlist, and
-      the Video tab
-- [ ] **B26 verify on Lobe:** the `CT` button opens the window, the picker lists 43, Switch applies one
-- [x] **B26 verified on BLAKK, 2026-08-25.** It opens on its first declared layout (`boombox`,
-      436×160 — it has no `normal`), and the full cycle works from its own Switch Player Mode button:
-      boombox 436×160 → `stick` 650×30 → `remote` 160×280 → boombox, each matching its declared size
-      and rendering completely (the remote shows art, 965 KBPS/44 KHZ, time, spectrum, transport).
-      The button is script-bound through `configure.maki`'s `bboxswitch.onLeftClick`, not an
-      `action="SWITCH"`, so this also exercises `switchToLayout` from a MAKI handler.
-- [ ] **B26 verify on Ebonite_2_1 — half done, 2026-08-25.** It **opens**: 197×297, its first
-      declared layout `full` (it has no `normal` either). Its five other layouts
-      (`compact`/`stick`/`mini`/`minivert`/`narrow`) were **not** exercised. They hang off
-      `<SC:WindowModeButton>` at `full` (188,24,9,5) with `lclick="switchto:compact"` and a
-      right-click menu of all five (`xml/player-full.xml:7`), each layout's own button chaining to
-      the next. Note this skin's own colour defect is fixed but separate (see the Ebonite note in
-      `skills/winamp-modern-skin-guide/skins.md`).
-- [ ] **B28 verify:** Live on Lobe **and** on a tall skin (cPro-Bento), for the visualization and
-      library windows, at 1× and 2×. Note Lobe cannot exercise the library half — its catalog reads
-      `library=synthesized:nullplayer.library`, so the surface coordinator opens the skin's own
-      synthesized window and never reaches `rightDockedSideFrame`. That half needs a skin whose
-      catalog reads `library=classic(...)`
-- [ ] **B30 verify on LOBE:** drag the dial and the volume strip
-- [ ] **B30 verify on Styx** (volume) and **mmd3** (knobs unchanged — its group is at the origin)
-- [ ] **B31 verify on Lobe:** the Pledit window shows playlist content
+### BB10
 
-- [x] **B48. Text NullPlayer draws on its own surfaces is unreadable in most skins. Done 2026-08-25, confirmed live on Big Bento and Ebonite.** Reported live
-      2026-08-25 (*"the playlist highlighter is white and the text underneath is also light"*,
-      *"black titlebars with black title text"*, *"white text on light background"* on Ebonite) and
-      then measured across all 36 installed skins. **This is the largest open defect in the `.wal`
-      UI, and it is one cause with three faces.**
+- [ ] **BB10. The gear (host **Skin Settings**) window renders two widget kinds, and hides some
+      settings entirely.** Reported by the user as *"most items in the gear settings menu don't work
+      or are blank."*
+      `Windows/WinampModern/WinampModernSkinSettingsWindowController.swift` (208 lines) builds its
+      list from `runtime.presentableSettings` and renders a checkbox when the current value is
+      exactly `"0"` or `"1"` (`isToggle`, line 29) and otherwise a bare `NSTextField` (line 126).
+      There is no enum, slider, range or colour widget, because `RegisteredSetting` carries no type
+      metadata — only section, name and default. Separately, `presentableSettings` filters out every
+      setting whose *current value* looks like a GUID (`namesAnItem`), which is right for Winamp's
+      config-tree navigation nodes and also hides any legitimately GUID-valued option.
+      Decide in this order: **(a)** does this window stay a *fallback* for options no skin control
+      binds, once BB7 makes the skin's own nine pages work? It and `config.xml` read and write the
+      same store, so BB7 may make it largely redundant for this family and the answer changes how
+      much (b) is worth. **(b)** extend `RegisteredSetting` with type/range metadata so an enum is a
+      popup and a bounded int is a slider. **(c)** revisit the GUID filter.
+      Start by dumping what this skin actually registers: `WINAMP_MODERN_RENDER_SETTINGS=1`.
 
-      **The cause.** `WasabiPalette` resolves each role from its own independent id chain, and
-      *nothing ever checks that a foreground and the background it lands on can be seen together*. A
-      skin that declares two colour families gets a mongrel pairing: Big Bento takes its highlight
-      from `studio.list.item.selected` (orange) and its row text from `wasabi.list.text.selected`
-      (pale blue-grey). Winamp never hits this — its Media Library is a native Win32 list where the
-      OS guarantees a legible selection.
+---
 
-      **Measured (contrast ratios, corpus of 36).** The pair actually drawn on a selected row is
-      `currentText` over `selectionBackground` (`PlexBrowserView.swift:4706`, `4718`, `4847`, `4848`
-      — the code already switches text colour on selection; there is **no** missing field for the
-      highlight, `currentText` is doing double duty):
-      - **23 of 36 skins are unreadable (< 1.5:1) on the highlight**, nine of them at exactly
-        **1.00:1** — text and highlight are the same colour. Includes Big Bento ×4, cPro-Bento,
-        Defix, Sony_Walkman, BLAKK, both Mikus, Styx, T800, Shield_Amp, Itemskin, micro.
-      - Window chrome (`drawWinampModernChrome`): title on the derived `barBackground` is
-        **unreadable in 5** (Formamp, Itemskin, Lobe, micro, Nullsoft SP4) and weak (< 3:1) in 22
-        more. `dimText` — the inactive title — is the worse half almost everywhere.
-      - Reproduce the whole table with `WINAMP_MODERN_RENDER_PALETTE=1` per skin and a contrast
-        function over the `PALETTE <role> = rgb(...)` lines; the roles needed are `listText`,
-        `currentText`, `selectionBackground`, `contentBackground`.
+### BB14
 
-      **Agreed fix (approved 2026-08-25, not started).** A legibility guarantee in
-      `WinampModernSurfaceStyle`, which is the right home because that type already *derives* roles
-      by blending "rather than invented" — and because it is **nil in classic mode**, so classic
-      cannot be reached by it. For text drawn on a given background, take the first of the skin's own
-      colours (`selectionText`, then `listText`, then `contentBackground`) that clears a contrast
-      threshold, falling back to black/white only if none does: the skin's intent wins wherever the
-      skin gives us something usable. Apply to the selection row **and** to the chrome title.
-      - `PlaylistColors` (declared **twice**: `Skin/Skin.swift:120` and
-        `NullPlayerCore/Skin/SkinTypes.swift:249`) needs a `selectedText`, defaulting to
-        **`currentText`** — that is exactly what the four draw sites read today, so classic `.wsz`
-        skins are a **zero-pixel change** and `SkinLoader` needs no edit. Getting the two struct
-        declarations out of step is a build error, not a silent regression.
-      - `PlexBrowserView` is the only file that draws these (it backs both the classic Library window
-        and the embedded `.wal` surface); `PlaylistView` never reads `selectedBackground`.
-      - **Watch `PlexBrowserView.swift:4335`** — it draws over
-        `selectedBackground.withAlphaComponent(0.5)`, so the guard must judge the *composited*
-        colour there or that state stays unreadable while the main one is fixed.
-      - **Verify classic is untouched by capture, not by argument**: same `.wsz` skin, Library window
-        before and after, byte-identical PNGs.
-      - Open question worth measuring rather than assuming: `currentText` means "currently playing"
-        on a normal row and "selected" on a highlight. Guarding it for the highlight is right, but a
-        skin may still have a hard-to-read currently-playing row on the normal background.
+- [ ] **BB14. Animated layout and tab transitions, and easing beyond linear.** Our layout and tab
+      switches are instant visibility swaps. Sprite `<AnimatedLayer>`, the
+      `setTarget*`/`setTargetSpeed`/`gotoTarget`/`cancelTarget`/`onTargetReached` tween machine and
+      timers are all implemented and are what Bento's own animations are built from, so **nothing in
+      this family depends on this**. Filed so the absence is recorded rather than rediscovered.
 
-      **Done 2026-08-25.** The guarantee is `WinampModernSurfaceStyle.legible(preferring:on:)` — the
-      first of the skin's own colours that clears `minimumContrast` (3.0), black/white only if none
-      does — plus the stored `selectedText` role, `legibleDimText(on:)` for inactive titles, and
-      `composited(_:over:)` for the half-alpha search field. `PlaylistColors.selectedText` defaults to
-      `currentText` in both declarations, so classic is a zero-pixel change by construction.
-      12 new tests in `WinampModernPhase68Tests`; full suite 1214 green.
+---
 
-      **What live QA caught that the plan did not.** The first pass fixed the AppKit surfaces and
-      *looked* complete — and Big Bento was still grey-on-orange, because the skin's **own** playlist
-      panel and `<ColorThemes:List>` are drawn by `WasabiRenderer` straight from `WasabiPalette` and
-      never touch a style. That is `WasabiRenderer.legibleRowColor`. Lesson worth keeping: a guard
-      placed on the style covers only half the drawn rows in this engine.
+### B17
 
-      **Formamp: closed as won't-do, measured not assumed.** Reported as *"just black on black"*. Its
-      window background is `(0,0,0,206)` — translucent by design, alpha never above 234 — and its
-      `<text>` objects declare 80,80,80 / 120,120,120 / 100,100,100 themselves. Over a bright desktop
-      the backdrop composites through. Guarding text a skin spelled out for its own controls overrules
-      the author (it would also hit Lobe and micro), so the guard stops at surfaces we draw. An
-      opaque-background option for translucent skins was offered and declined. Our chrome *inside*
-      Formamp is still guarded: 2.16:1 → 3.94:1.
+- [ ] **B17. `WasabiSurfaceInventory`'s last-wins groupdef map.** The redefined-id defect fixed in
+      Phase 19, one layer up. No measured skin is affected — it changes nothing for T800 — so this is
+      a correctness tidy-up, not a fix
 
-      **The open question stays open**, deliberately: `currentText` on a *normal* row (a
-      currently-playing track on the content background) is a separate pairing and was not measured.
-      Also not done: the byte-identical classic capture. The zero-pixel claim rests on the defaulted
-      field plus `WinampModernSurfaceStyle` being nil in classic, both asserted in tests, and on the
-      golden images being green — not on a capture.
+---
 
-- [x] **B49. A live UI-mode switch leaves the main window at the outgoing mode's size.** Found during
-      B26's live QA, 2026-08-25: switching `.wal` (Ebonite, 197×297) → Classic left the classic
-      player in a 197×297 window, drawing its 275×116 skin scaled down inside it. Reported as
-      *"the main window is tiny in classic mode at 100%"*.
+### BB9
 
-      **Not the saved settings** — both channels were checked and are clean: `savedAppState` is
-      mode-gated (`AppStateManager.swift:865`, a mismatch skips frame restoration entirely), and the
-      legacy `MainWindowFrame` keys are **write-only** (`restoreWindowPositions()` has no callers).
+- [ ] **BB9. The Multi Content View's three visualization placements. Partly done 2026-08-24 —
+      routing and the analyzer landed; the overlap at launch is still open. Rewritten again; the
+      entry this replaces was wrong on every count and cost a session.**
+      **What the user wants:** the *stretched* pane (`info.component.vis.full`) is a **spectrum
+      analyzer**; the *Visualization tab* (`wdh.vis.object`) and the *mini* pane
+      (`info.component.vis`, album-art sized) are **NullPlayer's visualization** — ProjectM / Geiss /
+      Tripex. Chosen 2026-08-24 when asked: with all three ticked they should sit **side by side**
+      (`cover | viz | spectrum`), not replace each other.
+      **Done.** `{0000000A-…}` is Winamp's visualization *plugin host*, whose default content is
+      Winamp's own analyzer; we mounted the engine over every such holder unconditionally and
+      `VisualizationEngineType` has no analyzer in it, so an analyzer there was unreachable by
+      construction. `WinampModernVisualizationHolder` now routes on the **box** — a holder at or above
+      3:1 is a letterbox strip and never takes the engine; of the rest the largest does; every other
+      holder draws the analyzer instead of sitting black. `drawVisualizationBars` is a real analyzer
+      now (band count from the box, `WasabiPalette` colours, peak caps) rather than 64 flat green
+      bars, and deliberately borrows nothing from a nearby `<vis>` — `bandwidth="wide"` is 19 bands
+      and 19 bands across a 1400px pane is a row of slabs. Rules:
+      `reference/components.md` → *`{0000000A}` is a plugin host*; `reference/rendering.md` → *The
+      analyzer a `<component>` box draws*. `swift test` 1104 pass (7 new,
+      `WinampModernPhase60Tests`).
+      **Still open — the overlap at launch.** Reported again 2026-08-24 after the session's revert:
+      on reload the stretched pane and the file-info panes are all visible and drawn over each other.
+      Cause is measured and is the skin's own: `mcvcore` declares `System.onScriptLoaded()` **twice**,
+      and the second body starts a 700 ms one-shot whose `onTimer` shows the file-info panes back
+      unconditionally, with no reference to which MCV page is current — so at launch it is the last
+      word. Detail and the two dead ends in `skins/big-bento-modern.md` → *BB9*. **Do not fix it by
+      running only the first `onScriptLoaded` body** — that was tried and reverted; the second body is
+      where the panel's width layout lives, so it takes the sizing out (177 nodes and no
+      `set_maxwidth`, against 188 with both). The corpus sweep was clean and it still broke the skin.
+      **Next step is the side-by-side layout, which supersedes the exclusivity question**: the skin
+      never lays all three out (`info.component.vis.full` is `w="0" relatw="1"` and its routine hides
+      the others), so this is a NullPlayer-side layout override. The narrow version is to narrow that
+      holder to the span its visible siblings leave — Bento already places `mini vis | cover | file
+      info` correctly at `x=3` / `x=195` / `x=370` when both are ticked. Open question recorded when
+      the choice was made: with **Show file info** still ticked the track text would sit over the
+      bars, unless the spectrum takes only what is left after it.
+      **A fourth placement exists, and nobody knew — found live by the user 2026-08-24.** Widening the
+      player pane reveals `main.vis.group` in the **header**, beside the transport buttons: a
+      288×60 group of four `<vis>` boxes at `x=436`, declared in `player-normal-group.xml:255`. It is
+      not one of BB9's three `{0000000A}` holders and is not routed by
+      `WinampModernVisualizationHolder` at all — these are real `<vis>` elements the renderer draws
+      itself. Two things came out of it, both engine-wide and both in `TASKS.md`: **B43**
+      (`fliph`/`flipv` were ignored, so the intended mirrored butterfly drew as two identical blocks
+      with a seam) and **B44** (the divider position was not persisted, which is the only reason this
+      went undiscovered for the whole B35–BB22 run; a dragged divider now survives a relaunch, though
+      the skin's own narrow default still hides the group until the first drag).
+      `visualizer.maki` also registers an **`Alt Visualizer`** setting that swaps the pair for
+      `main.vis.group.alt` — a single 252px analyzer plus reflection — along with `Visualizer Mode`,
+      `Show Peaks`, `Visualizer show Lines` and the two falloff speeds. Both groups are placed with no
+      `visible=`, and the script hides whichever is not chosen; that hide is running correctly. So the
+      header's own visualization has a settings surface already, which is BB7/BB10 territory rather
+      than new work here. **Do not fold the header into BB9's side-by-side layout question** — it is a
+      separate placement with its own script and its own config.
+      **Corrections to what this entry used to say:** the defaults *are* reachable and the plumbing
+      *does* work; an embedded `<component>` in the player body **does** get a surface — that question
+      is closed; BB7 and B40 are not involved; and **the skin ships no `.m` sources at all**, so the
+      `mcvcore.m:256` / `:266–267` citations refer to nothing in the archive.
 
-      **The mechanism is two lines in `WindowManager`:**
-      `recreateModeDependentLayout` (**:6167**) stamps the *outgoing* mode's frame onto the freshly
-      created target-mode window —
-      `mainWindowController?.window?.setFrame(main.frame, display: true)` — and the only thing that
-      would then correct it is the UI-Size re-apply in `performReloadUI` (**:6615**), which runs
-      **only** `if restoreScaleLevel != .p100`. At 100% nothing ever resizes the window to
-      `Skin.mainWindowSize * scale`.
-      **Testable prediction: the bug should vanish at any UI Size other than 100%**, because setting
-      `uiScaleLevel` triggers `applyDoubleSize`. Confirm that before fixing — it pins the mechanism.
+---
 
-      **Fix**: the BB2c rule, applied to the switch — keep the snapshot's **origin**, take the target
-      mode's **own size**, unconditionally rather than only when the scale changed. Note the code
-      above the collapse-to-1x already warns about "forcing the old mode's enlarged frames onto
-      freshly-created target-mode windows"; it handles *scale* but not the *base size* difference
-      between modes. Check every mode pair, not just `.wal`→classic.
+### B41
 
-      **Done 2026-08-25.** One site: `recreateModeDependentLayout` now calls
-      `WindowManager.mainFrameForModeSwitch(outgoing:ownSize:)`, which keeps the snapshot's origin and
-      takes the freshly created window's **own** size, anchored top-left — unconditionally, so it no
-      longer depends on the `restoreScaleLevel != .p100` re-apply. `showMainWindow` has already sized
-      that window to the incoming mode's layout (including
-      `normalizeModernMainWindowForHTIfNeeded`), so its current size *is* the target-mode size and no
-      per-mode branch is needed; that is what makes it cover every mode pair. 6 tests in
-      `WindowRestoreGeometryTests`, both directions plus a height-only pair and an identity case;
-      full suite 1220 green. Manually verified by the user.
+- [ ] **B41. `getMonitorWidth()` / `getMonitorHeight()`.** Absent from the runtime; called from Big
+      Bento's `sc_aerosnap.m`, `notifier.m` and `pledit.m`, where they drive AeroSnap edge-snapping
+      and notifier placement. Cheap to answer from `NSScreen`, but **decide which coordinate space
+      first**: scripts are deliberately held to the skin's own pixel grid (UI Size is applied at the
+      view's drawing/input boundary and `getscale` answers 1, Phase 10), so a raw backing-store
+      number here would put a skin's own arithmetic in a different space from everything else it
+      measures.
 
-      **The rule already existed and was applied in only one place.** `AppStateManager.mainFrameForRestore`
-      (BB2c) is the same "keep position, substitute the loaded skin's size" rule for *launch restore*.
-      A test now asserts the two functions agree on the same input, so the switch path and the restore
-      path cannot drift apart again. Worth generalising: when a rule like this lands, grep for every
-      site that re-stamps a saved frame rather than fixing the one that was reported.
+---
 
-      **The `!= .p100` prediction was never actually run.** The fix makes the resize unconditional,
-      so the prediction stopped being load-bearing — but it was not measured, and the mechanism
-      therefore rests on reading the two lines rather than on an observation. If this recurs, run it.
+### BB5
 
-## Backlog — cosmetic, low priority
+- [ ] **BB5. `@HAVE_LIBRARY@`** — carried over from B36's follow-up because it is not Bento-only.
+      A second unresolved token, never used as a path so the VFS never sees it
+      (`<script … param="@HAVE_LIBRARY@">` here; `default_visible="@HAVE_LIBRARY@"` on the
+      media-library container in Styx, Shield_Amp, S7Reflex, Defix). Winamp substitutes `1`; doing so
+      is a *behaviour* change — four skins would start opening a library window — and needs its own
+      live QA. **If this is picked up, move it to `TASKS.md` first**: four of the five skins it
+      affects are not Bento.
+
+---
+
+---
+
+### BB15
+
+- [ ] **BB15. `parser_*` (XmlDoc) and `shutdown()`** — inert, no measured demand in this family.
+
+**Not open, and not a defect:**
+
+- The Windows 10 edition's zero-byte `window/no_alb_art_shade.png` is the skin's own bug. It degrades
+  to a warning and that one placeholder draws nothing, which is the correct outcome.
+- The wide-window pane split (B38.5). `from="left"` anchors the divider to the left edge and the right
+  pane absorbs the extra width — see B38 below.
+
+---
+
+---
+
+### B14
+
+- [ ] **B14. `<Wasabi:TabSheet>`** (mmd3's winshade sidecar) — a real widget, not a shell, so it needs
+      a body rather than a synthesis rule. One measured skin
+
+---
+
+### B21
+
+- [ ] **B21. `enqueueFile` / `playFile` — skin-supplied path ingest.** `PlEdit.enqueueFile(path)`
+      (cPro-Bento) and `System.playFile(path)` (T800) hand the host a filesystem path the *skin*
+      chose. Deliberately left out of B8: it is a sandbox policy decision (what may a script add to
+      the queue, and from where), not an arity question. Note `clear()` **is** implemented and these
+      are not — safe today only because cPro-Bento's one caller early-returns on
+      `ClassicProFile.findFiles`'s bounded `-1` long before its `PlEdit.clear()`. Decide the policy
+      before implementing either, and check that pairing again
+
+---
+
+### BB11
+
+- [ ] **BB11. List accessors: `getItemLabel(i)`, `getItemFocused()`, `setSubItem()`.** All absent from
+      the runtime. Called from `reader/main.m` (the skin's own news reader) and `playlistpro.m`.
+      Scope which of those lists are actually reachable in our host before implementing any of it —
+      the reader may not be.
+
+---
+
+### BB3
+
+- [ ] **BB3. Bitmap overrides in the two Light overlays do not win.** Measured 2026-08-23 and
+      recorded as a trap in the skill, never filed here. The Light editions ship light versions of
+      ~30 of the *same* `window/*.png` the base declares (`frames.png`, `equalizer.png`,
+      `no_alb_art_*.png`), but a `<bitmap file="window/frames.png">` declared in **base** XML
+      resolves relative to that XML first, so it loads the **base's** artwork; only the `@SKINPATH@`
+      fallback would reach the overlay's copy. The editions still read as light because their
+      palette comes from `color-presets.xml` / `system-colors.xml` and the gamma model, so this is
+      cosmetic today. **Do not** fix it by flipping `resolveSkinResource`'s order without a full
+      corpus sweep — the relative-first order exists for authored subfolders.
+
+---
+
+### BB18
+
+- [ ] **BB18. Host a real waveform seeker at `wdh.waveseeker`.** Blocked by the skin, not by us:
+      `Use integrated Waveform Seeker` is never registered on a non-WACUP host, so a surface hosted
+      there is inert. Needs a design for offering the capability without impersonating WACUP.
+      Detail — the setting, the driving script, the measurement, and what NullPlayer already has to
+      host it — in **[reference/wacup.md](skills/winamp-modern-skin-guide/reference/wacup.md)** →
+      *The trap*.
+
+---
+
+### B16
+
+- [ ] **B16. `VISCON`** — a container scripts bind to that `RENDER-DUMP containers` never lists. Find
+      out why; it may be a probe blind spot rather than an engine gap, and blind probes have made real
+      defects look absent three times in this subsystem
+
+---
+
+### B23a
+
+- [ ] **B23a. `.visualization` embedded in a player (BLAKK).** Carried over from the deleted
+      `open-items.md`, which is the only place it was ever tracked. BLAKK reaches a visualization
+      holder **in its player** and declares no AVS container, so its engine could live in that box
+      instead of our own window. Deliberately left alone by B23 — no report, no measurement of what
+      the box should show. Still true as of 2026-08-23: `BLAKK/xml/blakk-remote.xml:88` declares
+      `<groupdef id="blakk.component.vis"><component id="vis" w="144" h="125" …
+      hold="guid:{0000000A-000C-0010-FF7B-01014263450C}"/></groupdef>`, placed at `x="8" y="34"`
+      inside `blakk.remote-avsgroup.group` with its own `VIS_Menu` / `VIS_Prev` / random-preset
+      controls alongside.
+      **Do not be reassured by the corpus table.** `reference/components.md:664` reads "8 of the 31
+      installed skins… none embeds the component in the player," and BLAKK is absent from it — that
+      is a probe blind spot, not a contradiction. The holder lives in the `remote` layout
+      (`blakk-remote.xml:113`), not the default `boombox` one, so a visibility-filtered `VIS holder`
+      sweep never sees it. Identical to the failure mode B23 already recorded for
+      `VIDEO holder … hidden`, and exactly what B16 warns about. Fixing the probe to print a hidden
+      holder is probably the first step, and would also re-answer B16.
+
+---
+
+### B45
+
+- [ ] **B45. Shield_Amp's playlist container has no layout.** `RENDER-DUMP dropped container: Pledit
+      (no layout)` — the skin declares `Pledit` (and the catalog routes `playlist=declared:Pledit` to
+      it), but nothing renderable is inside, so its `PL` button most likely opens nothing. Surfaced by
+      B33's sweep, which is the first time this skin has ever loaded far enough to be measured.
+      Unclear yet whether this is the skin shipping an empty container, an `<include>` we skip, or a
+      layout named something other than `normal` — LOBE's B26 was the last of those and the container
+      was being dropped silently, so check that first. Nothing else about this skin has been measured
+      beyond the render sweep and one live launch
+
+---
+
+### BB13
+
+- [ ] **BB13. `setClipboardText()`** — absent, so copy-title and copy-path from the skin's own menus
+      are inert. Three call sites.
+
+---
+
+### B18
+
+- [ ] **B18. The classic UI's minimize mask.** `miniaturizeAllManagedWindows` calls `miniaturize(nil)`
+      on windows whose masks lack `.miniaturizable`, which is the bug modern's minimize had. Parity
+      item, outside the `.wal` subsystem
+
+---
+
+### B47
 
 - [ ] **B47. Bitmap scaling uses one filter everywhere, chosen per file rather than per ratio.**
       Raised by a WACUP developer, 2026-08-25: *"try not to follow into winamp3's footsteps when
@@ -1044,3 +409,149 @@ that has sat unverified for days may already be fixed, so **re-measure before de
       snippet is stale, the code sets nothing** — but the comment is evidence that `.none` caused a
       real artifact once, and whoever picks this up should find out what it was. Fix the skill's
       snippet as part of this.
+
+---
+
+### B54
+
+- [ ] **B54. White flashes at the tops of the analyzer bars, centre of the box.** Reported live
+      2026-08-26 on Big Bento Modern (playing, `<vis>` in analyzer mode, debug build). **Pre-existing
+      — confirmed against a clean baseline in the same session**, so it is not B52's doing; it was
+      found while QA'ing B52 and is filed here rather than chased there. Unknown whether it is a
+      partial-repaint artifact (the view clears `dirtyRect` and repaints the scene clipped, and the
+      vis box now has its own 30/60 Hz clock from B51), a peak-cap draw (`WasabiVisPainter`
+      `state.peaks`, `colorbandpeak`), or the box's background. `WINAMP_MODERN_MUTATION_TRACE=1` will
+      not see it — this is a draw defect.
+      **Clue, from the user 2026-08-26: it only happens at high bar counts**, i.e. `bandwidth="thin"`
+      (75 bands; `wide` is 19). Leading hypothesis, untested: at 75 bands in a box a hundred-odd
+      pixels wide the slot is 1–2 px, so `columns()` answers `max(1, end - start - 1)` = 1 px for
+      every bar and the 1 px gap between them disappears — bars abut, and the 2 px peak caps abut
+      with them into one continuous bright row across the top of the block, flickering as each band's
+      cap falls independently. Predictions to check first, in one look: it should vanish at `wide`
+      bandwidth and worsen as the box narrows. If that holds, the fix is about how a cap is drawn
+      when a band owns fewer than ~3 px, not about repainting
+
+<details>
+<summary>B52's task list, kept for the measurements it records</summary>
+
+---
+
+### BB28
+
+- [ ] **BB28. The stretched visualization draws with the file info on top of it.** Reported live
+      2026-08-25 on *Windows 10 edition Light*, with a screenshot: the analyzer spans the Multi
+      Content View while the bitrate line, title, artist, album and the cover all show through it.
+      **Reproduces only after a restart, and only once playback starts** (a 7.3:1 letterbox takes the
+      renderer's analyzer, which is blank without audio — see `WinampModernVisualizationHolder`, BB9).
+
+      **The sequence, measured in the running app** (`WINAMP_MODERN_DEBUG_HOLDERS=1` +
+      `WINAMP_MODERN_TRACE_MAKI=1`, which is what made this legible at all):
+
+      ```
+      t=0     mcvcore @909 (onscriptloaded): page = Visualization ({6A619628};Visualization = 1)
+              → hides infodisplay/songinfodisplay/cover/coverflow, shows info.component.vis.full  ✅
+              → arms a 50 ms transition lock (v170; the page routines guard on its isRunning())
+      t=0     a second player-normal-mcv script @3160 (onscriptloaded), gated only by a
+              getRuntimeVersion() range check (2…65535 — we answer 5, so it passes):
+              → arms a 700 ms one-shot (v171)
+      t=700   @3237 (ontimer v171) → call 2416 → v171.stop()
+              routine 2416 = "activate File Info": writes Component3="File Info", then **only calls
+              show()**. It contains no hide at all, so it cannot displace the visualization page.
+      ```
+
+      **No engine defect was found behind it.** Each of these was proposed and then killed by
+      measurement, and they are listed so nobody re-runs them: `openHolders` forcing (it never runs
+      for `visualization`); the private `Visualizer Mode`; a stale `Component3` (setting it to
+      `"Visualization"` changes nothing); `getGuiX` (`vis.prv -> 51`, correct and parent-relative);
+      handler shadowing (zero shadowed bindings); config-attribute **dispatch order** (sorting by
+      creation order changes nothing); missing visualization-surface detection (that log line is about
+      a dedicated vis *window*, which Bento does not declare); target-animation completion
+      (`onTargetReached` on `info.component.cover` fires *after* the page is already back); the
+      `Cycle File Info` setting (the page returns with it off — an earlier "confirmed" reading here
+      was a grep taken before the 5 s mark and is wrong); and the `v2` disable flag (set only on the
+      version check's failure branch, which a supported runtime never takes).
+
+      **Two fixes were written for it and reverted**, both unproven: cancelling a hidden object's
+      target animation, and ordering the `ondatachanged` dispatch. Neither changed the outcome.
+
+      **What is left is a policy question, not a defect.** These four MCV pages are *not* the
+      `visible`-tagged sibling tabs `closeDisplacedPages` knows how to arbitrate: only
+      `info.component.vis.full` declares `visible="0"`, while `cover`, `infodisplay` and
+      `songinfodisplay` declare none and are meant to be on screen *together* — they are the File
+      Info page. So sibling-exclusivity is the wrong rule here and must not be reached for.
+      The open question is whether the `{6A619628}` page radio should be honoured at launch at all,
+      given the skin's own startup activates File Info unconditionally 700 ms later. Winamp evidently
+      never collides, which suggests it does not restore the visualization *into the panel* at start.
+      Deciding that changes launch behaviour for all four variants and wants its own live QA.
+
+      **Workaround today:** set the panel's page to anything but Visualization; the overlap needs that
+      page stored to happen. Turning on *Open in Multi Content View (stretched)* does **not** set the
+      page — verified — so the two settings are independent and the page is the one that matters.
+
+---
+
+### BB26
+
+- [ ] **BB26. The file-info rating row draws as five dots, not stars.** Found live 2026-08-25 while
+      closing BB4, on the base variant and on Light. `infodisplay.line.rating.stars`
+      (`xml/player-normal-mcv.xml:256`) sits under the genre line and paints five small faint dots
+      where the skin means star glyphs. Cause unmeasured — do not guess one; note only that its parent
+      `infodisplay.line.rating` is declared `visible="0"` at `:396`, so "should this row be on screen
+      at all" is part of the question, not settled before it.
+
+## Pending live verification
+
+These are verification state, not implementation priorities.
+
+| Id | Verification | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B23 | Embedded-holder harness output | — · verification only | S | Verification |
+| B24 | cPro-Bento library/playlist remount cycle | — · verification only | S | Verification |
+| B26 | Lobe and Ebonite container behavior | — · verification only | S | Verification |
+| B28 | Component frame sizing on Lobe and cPro-Bento | — · verification only | S | Verification |
+| B30 | Lobe/Styx/mmd3 control geometry | — · verification only | S | Verification |
+| B31 | Lobe playlist content | — · verification only | S | Verification |
+
+### Verification detail
+
+- [ ] **B23 harness:** `VIDEO holder` line should print for an embedded holder too (it prints per
+      container/layout today and the tab's group is hidden at load)
+- [ ] **B24 verify:** Live on cPro-Bento: Media Library → Playlist → Media Library → Playlist, and
+      the Video tab
+- [ ] **B26 verify on Lobe:** the `CT` button opens the window, the picker lists 43, Switch applies one
+- Already verified: **B26 on BLAKK, 2026-08-25.** It opens on its first declared layout (`boombox`,
+      436×160 — it has no `normal`), and the full cycle works from its own Switch Player Mode button:
+      boombox 436×160 → `stick` 650×30 → `remote` 160×280 → boombox, each matching its declared size
+      and rendering completely (the remote shows art, 965 KBPS/44 KHZ, time, spectrum, transport).
+      The button is script-bound through `configure.maki`'s `bboxswitch.onLeftClick`, not an
+      `action="SWITCH"`, so this also exercises `switchToLayout` from a MAKI handler.
+- [ ] **B26 verify on Ebonite_2_1 — half done, 2026-08-25.** It **opens**: 197×297, its first
+      declared layout `full` (it has no `normal` either). Its five other layouts
+      (`compact`/`stick`/`mini`/`minivert`/`narrow`) were **not** exercised. They hang off
+      `<SC:WindowModeButton>` at `full` (188,24,9,5) with `lclick="switchto:compact"` and a
+      right-click menu of all five (`xml/player-full.xml:7`), each layout's own button chaining to
+      the next. Note this skin's own colour defect is fixed but separate (see the Ebonite note in
+      `skills/winamp-modern-skin-guide/skins.md`).
+- [ ] **B28 verify:** Live on Lobe **and** on a tall skin (cPro-Bento), for the visualization and
+      library windows, at 1× and 2×. Note Lobe cannot exercise the library half — its catalog reads
+      `library=synthesized:nullplayer.library`, so the surface coordinator opens the skin's own
+      synthesized window and never reaches `rightDockedSideFrame`. That half needs a skin whose
+      catalog reads `library=classic(...)`
+- [ ] **B30 verify on LOBE:** drag the dial and the volume strip
+- [ ] **B30 verify on Styx** (volume) and **mmd3** (knobs unchanged — its group is at the origin)
+- [ ] **B31 verify on Lobe:** the Pledit window shows playlist content
+
+## Backlog hygiene check
+
+Run this in CI or before committing backlog changes:
+
+```bash
+if grep -n '^- \[x\]' TASKS.md; then
+  echo "closed item still in TASKS.md — archive it"
+  exit 1
+fi
+if grep -n '^| B' TASKS.md | grep -vE '\|[^|]*([0-9]+[^|]*skins?|[0-9]+ variants|—)[^|]*\|'; then
+  echo "open item missing Reach"
+  exit 1
+fi
+```

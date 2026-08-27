@@ -8,7 +8,7 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Gamma (black templates) | **Fixed** | The skin's own `boost` attribute selects the model: 57 of 65 groups are `boost="1"` → additive. A global additive model washed out Anexa/MMD3; a global multiplicative one left Anaheim black-on-black. See `reference/rendering.md` → Colour themes |
+| Gamma (black templates) | **Fixed** | The skin's own `boost` attribute selects the model: 57 of 65 groups are `boost="1"` → additive. A global additive model washed out Anexa/MMD3; a global multiplicative one left Anaheim black-on-black. See `reference/rendering/colour.md` → Colour themes |
 | Palette text colors | **Fixed** | `studio.*`/`wasabi.*` chains before `pledit.*` fallbacks |
 | Mini hover controls | **Fixed** | `setTargetSpeed(0)` instant snap + alpha inheritance |
 | Mini drawer (MiniTicker) | **Fixed** | `gotoTarget` alpha default bug — unset `targeta` defaulted to 0 |

@@ -2,13 +2,13 @@
 
 - **Date:** 2026-08-20
 - **Branch:** `feat/winamp-modern` (~69 commits ahead of `main`)
-- **Phases completed:** 0A/0B, then 2–33 — **all closed.** What is still open is one list:
-  `TASKS.md` at the repo root (local, gitignored, and the only backlog)
+- **Phases completed:** 0A/0B, then 2–33 — **all closed.** What is still open is one tracked list:
+  `TASKS.md` at the repo root (the only backlog)
 - **Audience:** anyone picking this up, reviewing it, or deciding whether it ships
 
 This is the orientation document; `skills/winamp-modern-skin-guide/triage-playbook.md` is the process
-for working the long tail beyond the measured skins (17 are installed locally, and as of Phase 35 all
-17 load — `Itemskin.wal` and `Overdrive_2.wal`, which used to fail outright, were the top item on
+for working the long tail beyond the measured skins (36 are installed locally today; as of Phase 35,
+all 17 skins in the then-current corpus loaded — `Itemskin.wal` and `Overdrive_2.wal`, which used to fail outright, were the top item on
 that list). The durable technical reference is
 `skills/winamp-modern-skin-guide/` — SKILL.md is a router over `reference/` topic files, alongside
 compatibility.md, skins.md → `skins/<skin>.md`, and manual-qa-checklist.md. The per-phase records are
@@ -254,7 +254,7 @@ the trademark question and item 2 above are the ones worth ten minutes of a real
 5. Do the 17-skin render sweep (clock pinned) for any renderer change until that sweep is automated —
    and diff it against *itself* first: one skin (Anexa's shade layout) renders differently run-to-run
    on an unchanged build, so a raw difference is not automatically a regression.
-6. **Take work from `TASKS.md`, top down.** It is the only backlog; the prose below it in this
+6. **Take work from `TASKS.md`'s ranked Reach table, top down.** It is the only backlog; the prose below it in this
    section is history and may name work that has since been done.
 
 **Layer FX is done.** Phase 28 made every Defix display style move; Phase 29 closed the two

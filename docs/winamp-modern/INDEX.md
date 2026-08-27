@@ -15,8 +15,7 @@ owns a point"*, *"read `skins.md` for Defix"*). Those titles are all still verba
 split into a router plus topic files, so they live in different files now. Two maps resolve any such
 pointer in one hop, and they are kept where the reader lands:
 
-- **Section title → reference file**: the *Section-title map* in
-  [`skills/winamp-modern-skin-guide/SKILL.md`](../../skills/winamp-modern-skin-guide/SKILL.md).
+- **Section title → reference file**: [section-title-map.md](section-title-map.md).
 - **Skin → file**: the *Where each skin's detail lives* index in
   [`skills/winamp-modern-skin-guide/skins.md`](../../skills/winamp-modern-skin-guide/skins.md).
 
@@ -60,10 +59,12 @@ available lesson in how to debug this subsystem.
 
 ## Not a phase handoff
 
-- **`TASKS.md`** (repo root, local, gitignored) — **everything still open.** It is the only backlog;
+- **`TASKS.md`** (repo root, tracked) — **everything still open.** It is the only backlog;
   start there when deciding what to do next. A tracked copy once lived here as `open-items.md`,
   compiled after Phase 33 and ranked by bang for buck; it was deleted on 2026-08-23 once an audit
   confirmed nothing in it was unique. `triage-playbook.md` §4b keeps the head of its ranking.
+- [backlog-archive.md](backlog-archive.md) — closed entries moved verbatim from the live backlogs;
+  not a source of current priorities.
 - [state-of-the-engine.md](state-of-the-engine.md) — orientation for someone arriving cold: what was
   built, component-by-component status, **what is not verified**, and the reverse-engineering /
   provenance analysis.

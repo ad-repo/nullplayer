@@ -115,12 +115,11 @@ step 3 answers.
 
 ---
 
-## 4b. What is open right now, ranked (2026-08-20)
+## 4b. Historical ranking (B1–B10, closed; 2026-08-20)
 
-The live list is **`TASKS.md`** plus **`BENTO_TASKS.md`** (both tracked in git since 2026-08-23) —
-together they are the **whole** backlog, and where new items go. Bento's family had grown to four sections of
-`TASKS.md` and was split out on 2026-08-23; its items are numbered `BB*` so the two series never
-collide. Anything that affects skins beyond Bento belongs in `TASKS.md`. There was once a tracked copy at `docs/winamp-modern/open-items.md` holding the ranked
+The live list is the tracked **`TASKS.md`**, whose Reach, Effort, and Tier columns are the demand
+index. It is the whole backlog and where new items go; `BB*` remains an identifier family, not a
+separate file. There was once a tracked copy at `docs/winamp-modern/open-items.md` holding the ranked
 reasoning behind B1–B23a; it was **deleted on 2026-08-23** after an audit confirmed nothing in it was
 unique (B19 shipped as `ea4d9472`, B22 as `df9d1028`, and B23a moved to `TASKS.md`). Do not recreate
 it. The table below is the head of that ranking, kept here as history so a reader does not have to go

@@ -174,7 +174,7 @@ Two things to know before touching this area again:
   `getText` that does not follow the embed answers `""` and the button searches for the bare word
   "lyrics", which reads as a broken browser and is a text bug (B40). The two halves of the trap are
   in [reference/scripting.md](../reference/scripting.md) → *`embed_xui`* and
-  [reference/components.md](../reference/components.md) → *The four routes a skin reaches the web by*.
+  [reference/components/browser.md](../reference/components/browser.md) → *The four routes a skin reaches the web by*.
   This skin's Web Content page also decides internal-vs-external **itself** (`Use Default Browser to
   open links`, its own default `1`), so both routes have to work before either button is judged.
 
@@ -227,7 +227,7 @@ Two things to know before touching this area again:
 
 "The cursor changes but it drags the whole window." The `player.mainframe.big` divider could not be
 grabbed because the skin covers every pixel with alpha-0 `move="1"` layers. The rule that fixes it is
-general and lives in [reference/rendering.md](../reference/rendering.md) → *What outranks a splitter
+general and lives in [reference/rendering/frame-splitter.md](../reference/rendering/frame-splitter.md) → *What outranks a splitter
 on its own grab strip*. This also gates the header analyzer: `visualizer.maki`'s `onResize` shows the
 six `<vis>` boxes in `main.vis.group` only above 730px of player width (`.alt`: 705), and that width
 *is* this divider — so before it could be dragged, those six boxes could never appear.
@@ -379,7 +379,7 @@ never wrong — only their application.
 and a leftover `minwidth="313"`, and `clampedPosition` read the width names first whatever the axis —
 so a drag of that divider clamped to a 313px floor for a *height*. That is where the Windows 10
 edition's stored `313` came from. The axis's own name now wins; see
-[reference/rendering.md](../reference/rendering.md) → *`<Wasabi:Frame>`*.
+[reference/rendering/frame-splitter.md](../reference/rendering/frame-splitter.md) → *`<Wasabi:Frame>`*.
 
 **A poisoned `playlist_cover_poppler` survives the fix**, because the fix restores the value the skin
 stored rather than second-guessing it. A profile that ran the old build needs the key cleared
@@ -462,7 +462,7 @@ scripts can express* for the rule and why it is keyed on the skin's markup rathe
 
 **The "notch" was the captions' last pixel column** — the fringe, and not the same defect: at
 `offsetx="35"` on a box at `x="4"`, the caption starts on column 39 of the 40px strip whatever mode
-the strip is in. See [reference/rendering.md](../reference/rendering.md) → *`offsetx` / `offsety` move
+the strip is in. See [reference/rendering/text.md](../reference/rendering/text.md) → *`offsetx` / `offsety` move
 the string, not the box*.
 
 Measured: `RENDER_GEOMETRY=sui.content` prints `tabs.switch` at `x=55` (base and Light; `50` on the
@@ -506,7 +506,7 @@ Two things worth keeping:
 Reported as *"the embedded library tab is unstyled"*, and the palette wiring was never the problem:
 `reconcileHostedSurfaces` applies `renderer.palette` on mount and on every theme change. What was
 wrong sat one layer lower, in resolution, and this skin trips **two** of the three faults now
-documented in `reference/rendering.md` → *How a colour resolves*:
+documented in `reference/rendering/colour.md` → *How a colour resolves*:
 
 - `wasabi.list.background` is declared **twice** — a `<color>` in `xml/system-colors.xml:99` and a
   tiled `<bitmap file="window/lists_bg.png">` in `xml/system-elements.xml:68`. The bitmap won a flat
@@ -544,9 +544,11 @@ and across every other notifier skin installed)
 
 Reported as *"the notifications are using a giant font and it is all jumbled"*, then *"the space
 within the notification to write is only like the middle 1/3 of the window — I have noticed this on
-other skins"*. **Four defects, three of them engine-wide.** Full write-up in `BENTO_TASKS.md` → BB27;
-the mechanisms are in [reference/rendering.md](../reference/rendering.md) (text auto-height, container
-geometry) and [reference/components.md](../reference/components.md) → *Notifier*.
+other skins"*. **Four defects, three of them engine-wide.** Full write-up in
+[`backlog-archive.md`](../../../docs/winamp-modern/backlog-archive.md) → BB27;
+the mechanisms are in [reference/rendering/text.md](../reference/rendering/text.md) (text auto-height),
+[reference/rendering.md](../reference/rendering.md) (container geometry), and
+[reference/components/notifier.md](../reference/components/notifier.md) → *Notifier*.
 
 What matters about *this skin*: all four variants share one `xml/notifier.xml`, and **its notifier
 lays itself out**, which Winamp Modern's does not. `notifier.maki` starts a 30 ms poll from
@@ -573,7 +575,7 @@ Two traps worth carrying:
 The skin declares three `{0000000A}` holders: the SUI Visualization tab (`wdh.vis.object`), the mini
 pane (`info.component.vis`, 186×185) and the stretched pane (`info.component.vis.full`, full width ×
 147). How they are routed is general and lives in
-[reference/components.md](../reference/components.md).
+[reference/components/visualization.md](../reference/components/visualization.md).
 
 **The trap, and it cost a session: `mcvcore` clobbers its own load-time layout.** The script declares
 `System.onScriptLoaded()` **twice**. The first body reads the stored MCV page and lays the panel out
@@ -649,7 +651,7 @@ app's own `#if DEBUG` logging. Worth knowing before reaching for `RENDER_PROBE` 
 - **Undraggable after shade → normal.** The titlebar is `<grid … move="1">` over
   `<rect id="vic_mover" move="1" fitparent="1">`, and we honoured `move="1"` on `<group>` only, so
   the window was draggable by accident — wherever bare background happened to be topmost — and shade
-  mode changed which object that was. See `reference/rendering.md` → *Dragging the window*.
+  mode changed which object that was. See `reference/rendering/hit-testing.md` → *Dragging the window*.
 - **Playlist and media library drawn on top of each other at launch.** The skin's script opens its
   tab on its own timer, ~0.6 s *after* our reveals, so a reveal-time exclusivity check can never see
   the page it needs to yield to. See `reference/components.md` → *Revealing an embedded surface*.

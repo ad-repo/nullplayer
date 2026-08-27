@@ -5,10 +5,10 @@
 >
 > | Was here | Now in |
 > |---|---|
-> | §1 what the user wants, §3.1–3.3 the `{0000000A}` model | `BENTO_TASKS.md` → **BB9**, `skills/winamp-modern-skin-guide/reference/components.md` |
-> | §3.2 what the component box should draw | `reference/rendering.md` → *The analyzer a `<component>` box draws* |
+> | §1 what the user wants, §3.1–3.3 the `{0000000A}` model | `TASKS.md` → **BB9**, `skills/winamp-modern-skin-guide/reference/components/visualization.md` |
+> | §3.2 what the component box should draw | `reference/components/visualization.md` → *The analyzer a `<component>` box draws* |
 > | §3.4 the stretched pane drawing over the file info | **BB9** — cause measured since (`mcvcore`'s 700 ms one-shot); see `skins/big-bento-modern.md` → *BB9* |
-> | §3.7 the undraggable splitter | **BB21, fixed** — `reference/rendering.md` → *What outranks a splitter on its own grab strip* |
+> | §3.7 the undraggable splitter | **BB21, fixed** — `reference/rendering/frame-splitter.md` → *What outranks a splitter on its own grab strip* |
 > | §3.8 the harness geometry blind spot | **BB20, fixed** — `reference/harness.md` |
 > | §3.9 measurement notes | `reference/harness.md` |
 > | §4 the hex-colour change | still uncommitted in `WasabiRenderer.swift`, with its sweep warning intact |
@@ -55,7 +55,7 @@ Additional requirements stated during the session:
 
 All of this is reverted. It is recorded so the next agent does not re-derive it as a good idea.
 
-1. **Started from the backlog's framing and never dropped it.** `BENTO_TASKS.md` BB9 said "the
+1. **Started from the backlog's framing and never dropped it.** `TASKS.md` BB9 said "the
    visualization pane is missing — probably a setting the user cannot reach". Every user report was
    bent to fit that. It was the wrong problem. BB9 has been rewritten (§5).
 
@@ -262,7 +262,7 @@ if any of it is wanted later.
 
 ---
 
-## 5. Corrections to `BENTO_TASKS.md`
+## 5. Corrections to the archived Bento backlog
 
 `BB9` as written is misleading and has been rewritten in place. For the record, what was wrong with it:
 

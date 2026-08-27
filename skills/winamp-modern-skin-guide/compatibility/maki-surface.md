@@ -543,7 +543,7 @@ across the engine but never reached at startup):
 > signature instead of stubbing.
 - `messagebox` — denied (no arbitrary modal host UI)
 - `System.navigateUrl` / `System.navigateUrlBrowser` — **implemented since B40**, typed and gated:
-  see the rows above and *The four routes a skin reaches the web by* in `reference/components.md`.
+  see the rows above and *The four routes a skin reaches the web by* in `reference/components/browser.md`.
   The external one is the only path from a `.wal` skin to `NSWorkspace`, and it asks first
 - `newgroup` — **implemented**: expands a registered groupdef as a child of the calling script's group, and starts the scripts the new subtree declares (bounded by the load-time object budget and `maximumRuntimePrograms`)
 - Popup menus use an inert command model with an injected presenter
