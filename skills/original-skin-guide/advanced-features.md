@@ -1,4 +1,4 @@
-# Advanced Modern Skin Features
+# Advanced Original Skin Features
 
 This document covers advanced topics: title text system, animations, UI Size mode, and adding new sub-windows.
 
@@ -199,14 +199,14 @@ All font sizes are **unscaled base values**. The engine multiplies by `window.sc
 
 ### Default Font (System Font)
 
-The modern/metal UI renders text in the **macOS system font**, not a retro bitmap font.
+The Original/Metal UI renders text in the **macOS system font**, not a retro bitmap font.
 Historically the bundled **Departure Mono** was the default, but `ModernSkinFont.resolveFont`
 now deliberately **skips** `DepartureMono-Regular` (the "lo-fi" default) and substitutes
 `NSFont.systemFont`. Numeric displays (the time/track digits) fall back to
 `NSFont.monospacedDigitSystemFont` so digits stay aligned. Existing skin JSONs can still list
 `"primaryName": "DepartureMono-Regular"` for compatibility — it just resolves to the system font.
 
-This substitution happens in one place (`ModernSkinFont.resolveFont`), so every modern window
+This substitution happens in one place (`ModernSkinFont.resolveFont`), so every Original window
 (main, playlist, EQ, spectrum, library) picks it up automatically.
 
 ### Using a Custom Font
@@ -242,7 +242,7 @@ At 1.0, shared edges are clipped entirely, also removing glow effects on those e
 
 ## Glass Skin Darkening and Seam Stability
 
-This section documents the March 2026 fix for modern glass skins where windows could become too dark or flicker over time, and docked interior edges could show dark seam lines.
+This section documents the March 2026 fix for Original glass skins where windows could become too dark or flicker over time, and docked interior edges could show dark seam lines.
 
 ### Symptoms
 
@@ -314,7 +314,7 @@ DYLD_LIBRARY_PATH="/Users/ad/Projects/nullplayer/Frameworks" \
 
 ## Text-Only Opacity Channel (`window.textOpacity`)
 
-Modern skins support a dedicated text opacity multiplier that is independent from window/panel translucency:
+Original skins support a dedicated text opacity multiplier that is independent from window/panel translucency:
 
 - `window.opacity`: background/border/content base alpha channels.
 - `window.areaOpacity.*`: per-area multipliers for those channels.
@@ -328,8 +328,8 @@ Glass skins often need darker text for readability while keeping the same transl
 ### Behavior
 
 - Optional field, range `0.0...1.0`, default `1.0`.
-- Applied to modern text-like channels:
-  - modern string text (`NSAttributedString` foreground colors) across main/EQ/playlist/library,
+- Applied to Original text-like channels:
+  - Original string text (`NSAttributedString` foreground colors) across main/EQ/playlist/library,
   - marquee text (main + playlist),
   - main time digits (sprite and programmatic 7-segment fallback).
 - Text paths are rendered at full context alpha so `window.areaOpacity.*.content` does not re-attenuate text.
@@ -360,7 +360,7 @@ With this configuration:
 
 ## Main Window Spectrum Opacity (`window.mainSpectrumOpacity`)
 
-Modern skins also support an independent opacity override for the main window's mini spectrum analyzer.
+Original skins also support an independent opacity override for the main window's mini spectrum analyzer.
 
 - `window.mainSpectrumOpacity`: optional `0.0...1.0` override.
 - Applies only to the main-window spectrum region:
@@ -412,12 +412,12 @@ Float `0.0...1.0` opacity override for the waveform window background. Falls bac
 
 ## UI Size Mode
 
-UI label is **UI Size**. Choose **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%** from the Windows menu or right-click context menu. Available in modern, metal, and classic UI modes.
+UI label is **UI Size**. Choose **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%** from the Windows menu or right-click context menu. Available in Original, Original-Metal, and Classic UI modes.
 
-- **Modern UI**: live change -- windows resize immediately, views recreate their renderers
+- **Original UI**: live change -- windows resize immediately, views recreate their renderers
 - **Classic UI**: live change -- windows resize immediately with no restart
 
-### How It Works (Modern UI)
+### How It Works (Original UI)
 
 `ModernSkinElements.scaleFactor` is a computed property: `baseScaleFactor * sizeMultiplier`.
 
@@ -441,7 +441,7 @@ A skin with `"window": { "scale": 1.5 }` sets `baseScaleFactor` to 1.5. At 125% 
 
 ## Marquee Album Art
 
-The modern main window marquee (`ModernMarqueeLayer`) shows a square album art thumbnail prepended to the scrolling title/artist text. Art and text scroll as a single unit in one seamless loop.
+The Original main window marquee (`ModernMarqueeLayer`) shows a square album art thumbnail prepended to the scrolling title/artist text. Art and text scroll as a single unit in one seamless loop.
 
 ### Layout
 
@@ -505,9 +505,9 @@ Loading is triggered from `updateTrackInfo(_ track:)` via a private `loadArtwork
 | `ModernSkin/ModernMarqueeLayer.swift` | `artworkImage` property, `scheduleArtwork`, scroll compensation |
 | `Windows/ModernMainWindow/ModernMainWindowView.swift` | `loadArtwork(for:)`, `artworkLoadTask`, `artworkCache`, `skinDidChange` re-apply |
 
-## Adding a Modern Sub-Window (Developer Guide)
+## Adding an Original Sub-Window (Developer Guide)
 
-This section documents the repeatable pattern for creating modern-skinned versions of sub-windows.
+This section documents the repeatable pattern for creating Original-skinned versions of sub-windows.
 
 **Reference implementation**: `ModernSpectrumWindowController` + `ModernSpectrumView` (simplest sub-window).
 
@@ -534,18 +534,18 @@ This section documents the repeatable pattern for creating modern-skinned versio
 ### Key Rules
 
 - **Zero classic imports**: Files in `ModernSkin/` and `Windows/Modern{Window}/` must NEVER import or reference anything from `Skin/` or `Windows/{ClassicWindow}/`
-- **Guard mode-specific features at all layers**: For features that apply only to modern UI, check `if wm.isModernUIEnabled` in menus and UI, return a safe default from property getters in the wrong mode, and begin actions with `guard isModernUIEnabled else { return }`
+- **Guard mode-specific features at all layers**: For features that apply only to Original UI, check `if wm.isModernUIEnabled` in menus and UI, return a safe default from property getters in the wrong mode, and begin actions with `guard isModernUIEnabled else { return }`
 - **Skin changes**: Observe `ModernSkinEngine.skinDidChangeNotification` to re-create renderer
 - **UI Size changes**: Observe `.doubleSizeDidChange` notification and call `skinDidChange()` to recreate the renderer with the updated scale factor
 - **Scale factor**: Use `ModernSkinElements.scaleFactor` for all geometry. This is a computed property: `baseScaleFactor * sizeMultiplier`. Do NOT cache in a `let` -- use a computed `var` or reference `ModernSkinElements.scaleFactor` directly
 - **Coordinates**: Standard macOS bottom-left origin (no flipping needed, unlike classic skin system)
 - **Dockable borders**: Dockable sub-windows must use `ModernSkinElements.auxiliaryWindowBorderWidth` for their outer chrome/content inset. Do not add per-window Metal border constants; Metal intentionally uses the smallest shared border width.
-- **Joined edges (all render styles)**: If a dockable window draws its own animated/content rect directly (rather than hosting a child view that naturally fills the content area), pass that rect through `expandingThroughJoinedEdges(in:borderWidth:adjacentEdges:)` before drawing. This bleeds the content back across the small chrome/border strip immediately adjacent to a docked edge so no leftover background strip shows wherever the shared border is suppressed — modern seamless docking, Metal's thin border, **and classic flush docking** alike. It is **not** metal-only: skipping it in non-metal modes leaves the ~1px seam of issue #364. The helper self-guards (`borderWidth > 0 && !adjacentEdges.isEmpty`) and only expands when the gap to the bounds is roughly one border wide, so non-docked edges and visible title-bar gaps are untouched.
-- **Extra content padding**: Avoid Metal-only outer padding on dockable windows. If normal Modern needs breathing room, make the padding conditional so Metal uses the standard thin border only.
+- **Joined edges (all render styles)**: If a dockable window draws its own animated/content rect directly (rather than hosting a child view that naturally fills the content area), pass that rect through `expandingThroughJoinedEdges(in:borderWidth:adjacentEdges:)` before drawing. This bleeds the content back across the small chrome/border strip immediately adjacent to a docked edge so no leftover background strip shows wherever the shared border is suppressed — Original seamless docking, Metal's thin border, **and Classic flush docking** alike. It is **not** Metal-only: skipping it in non-Metal modes leaves the ~1px seam of issue #364. The helper self-guards (`borderWidth > 0 && !adjacentEdges.isEmpty`) and only expands when the gap to the bounds is roughly one border wide, so non-docked edges and visible title-bar gaps are untouched.
+- **Extra content padding**: Avoid Metal-only outer padding on dockable windows. If standard Original needs breathing room, make the padding conditional so Metal uses the standard thin border only.
 
 ### Dockable Window Checklist
 
-Metal skins share the Modern window classes, but the chrome is visually thinner. When creating or changing any dockable window:
+Metal skins share the internally named `Modern` window classes, but the chrome is visually thinner. When creating or changing any dockable window:
 
 1. Use `ModernSkinElements.auxiliaryWindowBorderWidth` for the view's `borderWidth`.
 2. Draw chrome with `drawWindowBackground(... adjacentEdges:sharpCorners:)` and `drawWindowBorder(... occlusionSegments:)`.

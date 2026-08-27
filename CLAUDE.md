@@ -16,7 +16,7 @@ See `docs/development-workflow.md` for build details, log monitoring, and versio
 Technical documentation lives in `skills/`. Read the owning skill before changing a subsystem.
 
 - `ui-guide`: UI geometry/rendering; `audio-system`: playback/EQ; `app-state`: restoration and persistence; `user-guide`: features and menus
-- `modern-skin-guide`: modern skins; `winamp-modern-skin-guide`: `.wal` support, a slim router over `reference/`; `wal-skin-report`: `/wal-skin-report <skin.wal>`
+- `original-skin-guide`: Original skins; `winamp-modern-skin-guide`: `.wal` support, a slim router over `reference/`; `wal-skin-report`: `/wal-skin-report <skin.wal>`
 - `plex-integration`, `jellyfin-integration`, `subsonic-integration`, `emby-integration`: media servers
 - `sonos-casting`, `chromecast-casting`: casting protocols and debugging
 - `stream-ripper`: URL ripping; `youtube-source`: YouTube audio; `cue-sheets`: cue playback/splitting; `radio-streaming`: radio
@@ -65,7 +65,7 @@ Run `swift test`. For UI or playback work, manually exercise local and server pl
 ## Rules
 
 - No Spotify, Apple Music, or Amazon Music integrations; they are explicitly not accepted.
-- `ModernSkin/` and `Windows/Modern*/` must never import from `Skin/` or `Windows/MainWindow/`; see `modern-skin-guide`.
+- `ModernSkin/` and `Windows/Modern*/` must never import from `Skin/` or `Windows/MainWindow/`; see `original-skin-guide`.
 - Skin sprites use a top-left origin; macOS uses bottom-left. See `ui-guide`.
 - Slicing `Data` preserves original indices; always use `data.startIndex`.
 - Read the owning skill before changing a subsystem. Put new subsystem details in that skill, never here.

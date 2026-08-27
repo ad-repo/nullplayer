@@ -310,4 +310,4 @@ requires the user's consent: a sheet naming the URL on first use, remembered per
 - `docs/winamp-modern/INDEX.md` — decision records and per-phase handoffs, one line each. The
   historical record; where it and this skill disagree, this skill is right
 - `docs/legal/winamp_modern_provenance.md` — clean-room provenance record
-- `skills/modern-skin-guide` — NullPlayer's *own* modern skin system, which is unrelated to this one
+- `skills/original-skin-guide` — NullPlayer's own Original skin system, which is unrelated to this one

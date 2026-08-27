@@ -1,15 +1,15 @@
 ---
-name: modern-skin-guide
-description: Modern skin engine, skin.json schema, element catalog, and custom skin creation. Use when creating or modifying modern skins, working on ModernSkin components, or adding UI elements to the modern system.
+name: original-skin-guide
+description: Original skin engine, skin.json schema, element catalog, and custom skin creation. Use when creating or modifying Original skins, working on ModernSkin components, or adding UI elements to the Original system.
 ---
 
-# Modern Skin Creation Guide
+# Original Skin Creation Guide
 
 This guide covers creating custom skins for NullPlayer's Original UI mode. The implementation retains the `modern` name internally for compatibility.
 
 ## Overview
 
-Modern skins are built on the **ModernSkin Engine**, a theme-agnostic system that renders UI elements from:
+Original skins are built on the **ModernSkin Engine** (its internal compatibility name), a theme-agnostic system that renders UI elements from:
 
 1. **JSON configuration** (`skin.json`) -- colors, fonts, layout, animations
 2. **PNG image assets** -- optional per-element images
@@ -39,7 +39,7 @@ MySkin/
         "name": "My Skin",
         "author": "Your Name",
         "version": "1.0",
-        "description": "A custom modern skin"
+        "description": "A custom Original skin"
     },
     "palette": {
         "primary": "#00ffcc",
@@ -75,7 +75,7 @@ MySkin/
         "playlistSize": 8
     },
     // NOTE: "primaryName": "DepartureMono-Regular" (the lo-fi default) now resolves to the
-    // macOS system font — the modern/metal UI no longer uses the retro bitmap font. Only a
+    // macOS system font — the Original/Metal UI no longer uses the retro bitmap font. Only a
     // real custom font name is rendered verbatim. See advanced-features.md → Font Configuration.
     "background": {
         "image": "background.png",
@@ -199,7 +199,7 @@ Images go in the `images/` subdirectory:
 
 ### Time Display Rendering
 
-The modern main-window timer supports two rendering paths:
+The Original main-window timer supports two rendering paths:
 
 - Sprite-based rendering for the default 7-segment set: `time_digit_0` through `time_digit_9`, `time_colon`, and `time_minus`
 - Font-based fallback rendering for alternate timer number systems when matching sprites are not present
@@ -246,13 +246,13 @@ The simplest skin is just a `skin.json` with palette colors:
 
 All elements render programmatically using the palette colors.
 
-Original-Metal mode uses the same modern skin engine but a separate family namespace (`.metal` render style, `metalSkinName` key, user skins under `MetalSkins`). Its appearance is **code-driven, not palette-driven**: every metal skin draws the same surfaces, with per-finish colors supplied by a `MetalMaterial` preset (`ModernSkin/MetalMaterial.swift`).
+Original-Metal mode uses the same Original skin engine but a separate family namespace (`.metal` render style, `metalSkinName` key, user skins under `MetalSkins`). Its appearance is **code-driven, not palette-driven**: every metal skin draws the same surfaces, with per-finish colors supplied by a `MetalMaterial` preset (`ModernSkin/MetalMaterial.swift`).
 
 Seven built-in metal finishes ship in code (`ModernSkinLoader.createBuiltInMetalSkin(named:)`, listed by `builtInMetalSkinNames`): **Brushed Steel** (default), **Aluminum**, **Gunmetal**, **Anodized Black**, **Brass**, **Bronze**, **Copper**. They appear automatically in the Skins → Original-Metal menu and load by name (path-nil `SkinInfo`).
 
 Display vs. chrome contrast: the main-window time/track panels and EQ curve graph render on a backlit-green LCD (`material.displayFill`); text on the LCD uses `material.lcdInk` (dark in every finish), while on-chrome text uses the skin palette `text`/`textDim`/`dataColor` (light on dark finishes, dark on light). `timeColor`/`marqueeColor` stay dark for all finishes since they sit on the green LCD. EQ faders use a brightness value ramp (`material.faderLow`/`faderMid`/`faderHigh`), not a hue scale.
 
-Dockable sub-windows (EQ, Playlist, Spectrum, Audio Analysis, Flow, PeppyMeter, Waveform, Visualizations, Library) use `ModernSkinElements.auxiliaryWindowBorderWidth` for their chrome/content inset. In normal Modern skins this preserves the established thicker inset; in Metal skins it collapses to the renderer's thin window-border width so every dockable sub-window presents the same smallest border width. Metal-only content padding is avoided for Flow and PeppyMeter so their interiors do not read as extra border thickness; their content rects also expand through adjacent joined chrome strips via `expandingThroughJoinedEdges(...)` in every render style (not just Metal), matching the shared-edge border suppression so no seam shows on a docked edge (issue #364). The helper only bridges small edge-adjacent gaps and must not expand body content across a visible title bar.
+Dockable sub-windows (EQ, Playlist, Spectrum, Audio Analysis, Flow, PeppyMeter, Waveform, Visualizations, Library) use `ModernSkinElements.auxiliaryWindowBorderWidth` for their chrome/content inset. In standard Original skins this preserves the established thicker inset; in Metal skins it collapses to the renderer's thin window-border width so every dockable sub-window presents the same smallest border width. Metal-only content padding is avoided for Flow and PeppyMeter so their interiors do not read as extra border thickness; their content rects also expand through adjacent joined chrome strips via `expandingThroughJoinedEdges(...)` in every render style (not just Metal), matching the shared-edge border suppression so no seam shows on a docked edge (issue #364). The helper only bridges small edge-adjacent gaps and must not expand body content across a visible title bar.
 
 Library browser (metal): the window renders as one continuous brushed-metal surface — the top-chrome band fills and the alphabet-index inset are cleared, and the renderer's metal accent strip is suppressed for this window via `drawWindowBackground(..., drawMetalAccentStrip:)` (other metal windows keep the strip). Compact player bar (`CompactPlayerBarView`, metal): the upper display row (track-title marquee + inline, vertically-centered time) gets the green LCD fill via `drawInsetPanel(displayFill: true)`, with the seek bar and volume in a separate control row below so they sit off the LCD. The classic compact bar (`ClassicCompactPlayerBarView`) mirrors the same display-row / control-row layout without the green fill.
 
@@ -300,11 +300,11 @@ Skin changes take effect immediately. Switching between the Classic, Original, a
 
 ## Multi-Window Support
 
-The modern skin system renders multiple windows:
+The Original skin system renders multiple windows:
 
 - **Main Window** -- transport controls, time, marquee, mini spectrum
 - **Playlist Window** -- track list with selection, scrolling
-- **EQ Window** -- modern 21-band graphic equalizer with integrated `PRE` control and curve graph
+- **EQ Window** -- 21-band graphic equalizer with integrated `PRE` control and curve graph
 - **Spectrum Analyzer Window** -- standalone visualization
 - **ProjectM Window** -- MilkDrop visualization with presets
 - **Library Browser Window** -- multi-source browser with columns and an embedded Play History tab

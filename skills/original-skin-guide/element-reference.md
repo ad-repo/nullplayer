@@ -1,4 +1,4 @@
-# Modern Skin Element Catalog
+# Original Skin Element Catalog
 
 Complete reference of all skinnable elements with IDs, default positions, and states.
 
@@ -27,7 +27,7 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 | `time_colon` | 5x20 | Colon separator |
 | `time_minus` | 12x20 | Minus sign (remaining time) |
 
-If a timer character has no matching sprite, the modern renderer falls back to drawing it with the configured time font. This is how alternate numeral systems render without requiring a full sprite sheet per script.
+If a timer character has no matching sprite, the Original renderer falls back to drawing it with the configured time font. This is how alternate numeral systems render without requiring a full sprite sheet per script.
 
 ## Info Panel
 
@@ -146,7 +146,7 @@ Per-window chrome elements (fall back to shared elements if missing):
 | `playlist_titlebar` | 0,98,275,18 | normal | Playlist window title bar |
 | `playlist_btn_close` | 261,102,10,10 | normal, pressed | Playlist close button |
 
-The modern playlist has no bottom bar -- all operations via context menu and keyboard shortcuts. Currently playing track rendered in `accent` color.
+The Original playlist has no bottom bar -- all operations via context menu and keyboard shortcuts. Currently playing track rendered in `accent` color.
 
 **Track text colors:**
 - Current track: `palette.accent`
@@ -175,7 +175,7 @@ The modern playlist has no bottom bar -- all operations via context menu and key
 | `eq_titlebar` | 0,98,275,18 | normal | EQ window title bar |
 | `eq_btn_close` | 261,102,10,10 | normal, pressed | EQ close button |
 
-The modern EQ window renders a 21-band graphic equalizer with an integrated `PRE` control, ON/OFF toggle, AUTO toggle, and compact preset buttons (`FLAT`, `ROCK`, `POP`, `ELEC`, `HIP`, `JAZZ`, `CLSC`). The old dedicated preamp slider lane is gone; the `PRE` control now lives in the graph strip. Sliders still use color-coded fill from green (-12dB) through yellow (0dB) to red (+12dB), and the graph background now uses slim per-band mini tracks so it visually matches the fader lanes.
+The Original EQ window renders a 21-band graphic equalizer with an integrated `PRE` control, ON/OFF toggle, AUTO toggle, and compact preset buttons (`FLAT`, `ROCK`, `POP`, `ELEC`, `HIP`, `JAZZ`, `CLSC`). The old dedicated preamp slider lane is gone; the `PRE` control now lives in the graph strip. Sliders still use color-coded fill from green (-12dB) through yellow (0dB) to red (+12dB), and the graph background now uses slim per-band mini tracks so it visually matches the fader lanes.
 
 ## ProjectM Window Chrome
 
