@@ -1820,7 +1820,12 @@ final class WasabiSceneRenderer {
         context.translateBy(x: 0, y: rect.midY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -rect.midY)
-        context.draw(prescaled(image, for: rect, in: context), in: rect)
+        let quality = WasabiBitmapInterpolationPolicy.quality(
+            sourcePixelSize: CGSize(width: image.width, height: image.height),
+            destination: rect,
+            in: context)
+        context.interpolationQuality = quality
+        context.draw(prescaled(image, for: rect, in: context, quality: quality), in: rect)
         context.restoreGState()
     }
 
@@ -1836,7 +1841,8 @@ final class WasabiSceneRenderer {
     ///
     /// Only a genuine rescale is cached: art already at its device size is drawn straight through,
     /// so a skin at 1× on a non-Retina display pays nothing for this at all.
-    private func prescaled(_ image: CGImage, for rect: CGRect, in context: CGContext) -> CGImage {
+    private func prescaled(_ image: CGImage, for rect: CGRect, in context: CGContext,
+                           quality: CGInterpolationQuality) -> CGImage {
         let ctm = context.ctm
         let width = Int((rect.width * abs(ctm.a)).rounded())
         let height = Int((rect.height * abs(ctm.d)).rounded())
@@ -1845,7 +1851,8 @@ final class WasabiSceneRenderer {
               width != image.width || height != image.height else { return image }
         let key = WarpSourceKey(image: ObjectIdentifier(image), width: width, height: height)
         if let cached = prescaledCache[key] { return cached.image }
-        guard let scaled = Self.resized(image, width: width, height: height) else { return image }
+        guard let scaled = Self.resized(image, width: width, height: height, quality: quality)
+        else { return image }
         // Bounded by pixel budget rather than by entry count: a skin's window backgrounds are the
         // entries that matter and one of those is worth a hundred button faces.
         prescaledPixelCost += width * height
@@ -1868,12 +1875,13 @@ final class WasabiSceneRenderer {
     private var prescaledCache: [WarpSourceKey: (source: CGImage, image: CGImage)] = [:]
     private var prescaledPixelCost = 0
 
-    private static func resized(_ image: CGImage, width: Int, height: Int) -> CGImage? {
+    private static func resized(_ image: CGImage, width: Int, height: Int,
+                                quality: CGInterpolationQuality) -> CGImage? {
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                                       bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
-        context.interpolationQuality = .high
+        context.interpolationQuality = quality
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         return context.makeImage()
     }
@@ -2566,7 +2574,9 @@ final class WasabiSceneRenderer {
                                           space: CGColorSpaceCreateDeviceRGB(),
                                           bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
             else { return false }
-            context.interpolationQuality = .high
+            context.interpolationQuality = WasabiBitmapInterpolationPolicy.quality(
+                sourceWidth: image.width, sourceHeight: image.height,
+                destinationWidth: width, destinationHeight: height)
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }

@@ -187,6 +187,28 @@ panelling off the player, both speakers, the playlist and the library.
   top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
   edges leave a visible seam grid.
 
+#### Bitmap interpolation follows UI Size × backing scale, not the asset's stretch
+
+Ordinary `.wal` artwork uses nearest-neighbour filtering only when the scene's effective device
+scale is an exact integer and the bitmap is not actually being reduced. On Retina that makes 100%
+UI Size a crisp 2× and 150% a crisp 3×, while 125% stays smoothly filtered at 2.5×. Any real
+downscale stays smooth even if the surrounding UI scale is an integer; nearest would discard source
+pixels and alias.
+
+The integer test belongs to the CTM's basis vectors, **not** to
+`device destination size / bitmap source size`. A skin may deliberately stretch a 79px logo to 83
+skin pixels without changing the fact that its whole UI is at 2×. Using the asset ratio there picks
+smooth filtering at an integer UI Size and makes one stretched icon disagree with every native-sized
+icon beside it. `WasabiBitmapInterpolationPolicy` makes this decision once, and both the direct draw
+and `WasabiSceneRenderer`'s pre-scaled cache use its answer.
+
+Do not diagnose every soft edge as interpolation. Big Bento's 79×15
+`window.titlebar.text.winamp` source contains many partially transparent white edge pixels — the
+anti-aliasing is authored into `window/window.png`. Nearest preserves each of those pixels as a 2×2
+block; it cannot turn baked alpha into a hard binary outline. During live B47 QA the hamburger icon
+was the useful control (hard edges became crisp), while the WINAMP word remained intentionally soft.
+Inspect the source alpha before changing the filter to chase that look.
+
 #### A skin spells the axis two ways, and `"v"` is not a typo
 
 `orientation` decides whether a slider's thumb travels up or across, and skins write it **both** ways
@@ -307,4 +329,3 @@ button artwork never reaches the fallback.
 play head a pure function of the elapsed time since `play()`, which is what keeps the renderer and the
 script runtime agreeing on the current frame without either owning a clock. `stop()` freezes the head
 where it actually is, and an explicit `playing` beats the XML's `autoplay`.
-

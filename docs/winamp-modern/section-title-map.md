@@ -28,6 +28,7 @@ Historical handoffs cite the subsystem guide by section title. Every title below
 | `alpha` belongs to the object, not to one kind of drawing | [reference/rendering.md](../../skills/winamp-modern-skin-guide/reference/rendering.md) |
 | An image param is a *load*, and a failed load changes nothing | [reference/rendering.md](../../skills/winamp-modern-skin-guide/reference/rendering.md) |
 | Layer fill modes | [reference/rendering.md](../../skills/winamp-modern-skin-guide/reference/rendering.md) |
+| Bitmap interpolation follows UI Size × backing scale, not the asset's stretch | [reference/rendering.md](../../skills/winamp-modern-skin-guide/reference/rendering.md) |
 | `<ProgressGrid>` — the bar's *filled* part | [reference/rendering.md](../../skills/winamp-modern-skin-guide/reference/rendering.md) |
 | A skin's own right-click menus | [reference/rendering.md](../../skills/winamp-modern-skin-guide/reference/rendering.md) |
 | The three action attributes (Phase 36) | [reference/rendering/hit-testing.md](../../skills/winamp-modern-skin-guide/reference/rendering/hit-testing.md) |

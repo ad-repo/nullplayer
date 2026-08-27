@@ -14,6 +14,7 @@
 |---------|--------|-------|
 | Loading | **Fixed (B35)** | All four failed outright before B35 — see the three root causes below |
 | Rendering | **Fixed (B36/B37)** | 80–82 bitmaps resolve in `main/normal`, 19–20 in `main/shade`; 38 scenes across the four |
+| Integer-scale bitmap sharpness | **Fixed (B47)** | `.wal` art uses nearest at exact device ratios and smooth filtering at fractional/down scales. The top-left WINAMP word remains soft because its 79×15 source has authored partial-alpha edges; the hamburger is the hard-edge QA control |
 | Repaint after sleep/occlusion | **Fixed (B55)** | Transparent backing-store loss can no longer leave only the moving UI fragments visible; visibility restoration and system wake force a full subtree repaint |
 | Menu bar | **Fixed (B36)** | File/Play/Options/View/Help are placed by `mainmenu.maki`, not by a widget rule |
 | Display readouts | **Fixed (B37)** | `TIMEELAPSED` / `SONGLENGTH` / `SONGTITLE` / `SONGSAMPLERATE` are bound |

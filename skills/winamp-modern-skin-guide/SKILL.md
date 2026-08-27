@@ -51,6 +51,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Text metrics, fonts, clocks, bitmap fonts, missing height, offsets | [reference/rendering/text.md](reference/rendering/text.md) |
 | Colour resolution, themes, unreadable selections/titles | [reference/rendering/colour.md](reference/rendering/colour.md) |
 | Selected row or title text matches its background | [reference/rendering/colour.md](reference/rendering/colour.md) → *A resolved colour is not yet readable* |
+| Bitmap icons/borders look blurry at an integer UI Size | [reference/rendering.md](reference/rendering.md) → *Bitmap interpolation follows UI Size × backing scale* |
 | `cfgattrib`, `onActivate`, album art, alpha, fill, sliders, `ProgressGrid`, animation | [reference/rendering.md](reference/rendering.md) |
 | Slow rendering, CPU, repaint storms | [reference/performance.md](reference/performance.md) |
 | Frame is fast but the app hangs | [reference/harness.md](reference/harness.md) → *Profiling the running app* |

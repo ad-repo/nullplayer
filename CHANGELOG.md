@@ -71,6 +71,12 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins stay crisp at exact integer UI sizes** — bitmap icons and one-pixel
+  borders now use nearest-neighbour filtering when UI Size × display scale is an exact integer, such
+  as 100% on Retina (2×) or 150% (3×). Fractional enlargement and every downscale remain smoothly
+  filtered. The rule follows the whole `.wal` scene's device scale rather than an individual asset's
+  stretch, and the pre-scaled artwork cache uses the same decision as the direct draw.
+
 - **Winamp 5.x modern skins: the time display in the Big Bento Modern family reads straight again** —
   under the elapsed/total line of all four Bento variants, the `/` between the two times sat higher
   than the digits and the elapsed time ran into it (`1:13/ 4:05`). Two things behind it, both in how

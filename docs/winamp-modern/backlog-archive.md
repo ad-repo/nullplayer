@@ -1669,3 +1669,25 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
 
       Regression coverage: `WinampModernBackingStoreTests` verifies that the full repaint reaches
       the root skin view, a hosted surface and a nested control.
+
+---
+
+## B47 — Ratio-aware `.wal` bitmap interpolation — closed 2026-08-27
+
+- [x] **B47. Bitmap scaling now chooses its filter from the effective device ratio.** At an exact
+      integer UI Size × backing scale, Winamp Modern artwork is drawn nearest-neighbour so icons and
+      one-pixel borders keep their authored pixels; fractional scales remain high-quality smooth,
+      and an actual downscale is always smooth so source texels are not dropped. The decision is
+      scoped deliberately to `WinampModern`: the user rejected changes to classic and native-modern
+      modes while this item was under manual QA.
+
+      The first implementation tested `device destination / source bitmap`, which was subtly wrong:
+      a skin is allowed to stretch one asset inside an otherwise integer-scaled UI. The final policy
+      reads the CTM basis vectors for the UI/device ratio and separately checks the actual device
+      destination only for downscaling. The same answer drives the one-time pre-scale cache and the
+      direct draw, so cached and uncached frames cannot disagree.
+
+      Manual QA accepted 2026-08-27 on Big Bento Modern at 100%, 125% and 150%. A reported soft
+      WINAMP word was traced to the original 79×15 crop in `window/window.png`: it contains authored
+      partial-alpha edge pixels, which nearest correctly preserves. The adjacent hamburger's hard
+      edges were crisp. Regression coverage is `WinampModernPhase77Tests`.

@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B47 | Ratio-aware bitmap interpolation | 36 skins / engine-wide render path ([M19]) | L | Measured |
 | B25 | Remove or repair the startup `autoopen` fallback | 25 skins / 99 declarations ([M1]) | M | Measured |
 | B15 | Render `wasabi.panel` / `wasabi.objectframe.group` bodies | 19 skins / 192 declarations ([M2]) | M | Measured |
 | BB10 | Add typed Skin Settings fallback widgets | 17 skins / 361 `newAttribute` program symbols ([M3]) | M | Measured |
@@ -71,7 +70,6 @@ All commands use the 36 directories extracted with `7zz` from
 - <a id="m16"></a>**M16:** `rg -i -o 'hold="guid:\{0000000A-000C-0010-FF7B-01014263450C\}"' "$corpus/BLAKK/xml/blakk-remote.xml"`
 - <a id="m17"></a>**M17:** `rg -i -o '<container[^>]*id="Pledit"' "$corpus/Shield_Amp/xml/pledit.xml"`, then verify that file contains no `<layout>`.
 - <a id="m18"></a>**M18:** `rg -a -i -o 'setClipboardText' "$corpus"`
-- <a id="m19"></a>**M19:** `find "$corpus" -mindepth 1 -maxdepth 1 -type d` (36 skin roots); the item targets the shared bitmap draw path.
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
 number of matched declarations or MAKI program symbols. A compiled MAKI method name is a program
@@ -362,53 +360,6 @@ the skin's state.
 - [ ] **B18. The classic UI's minimize mask.** `miniaturizeAllManagedWindows` calls `miniaturize(nil)`
       on windows whose masks lack `.miniaturizable`, which is the bug modern's minimize had. Parity
       item, outside the `.wal` subsystem
-
----
-
-### B47
-
-- [ ] **B47. Bitmap scaling uses one filter everywhere, chosen per file rather than per ratio.**
-      Raised by a WACUP developer, 2026-08-25: *"try not to follow into winamp3's footsteps when
-      you're dealing with 2x/3x scaling, bilinear scaling/whatever you're using is fine for the
-      inbetween steps, but if you have 2x the size then its best to go with nearest neighbor, better
-      have it look pixelated than mushy and blurry."* He is right, and the rule generalizes onto our
-      scaling system — but **measure before prioritising it; the payoff here is small.**
-
-      **The rule.** Every mode lays its UI out in skin pixels and draws through a scaled CTM, so art
-      is resampled at draw time. What decides the filter is the *effective device ratio* — UI Size ×
-      backing scale — not the UI Size setting alone. `UIScaleLevel` has 13 stops (50…300%), and on a
-      Retina display five of them land on exact integers (50→1.0, 100→**2.0**, 150→3.0, 200→4.0,
-      250→5.0) while seven never can (90/105/110/115/125/135/175). Integer **and** upscaling →
-      `.none`; fractional → smooth. **Downscaling must stay smooth** whatever the ratio — nearest
-      drops texels and aliases, and the advice above is about upscaling only.
-
-      **Measured payoff (Big Bento's own artwork, nearest vs bilinear at 2×).** Line art — a tab icon
-      — 10% of pixels differ, up to 112/255 at the edges. Chrome — `sui.button.active.normal.*` — is
-      a **single flat colour** (40,42,48), so the two filters are bit-identical. That is the whole
-      story: the difference exists only at hard edges, and most of a modern skin is flat panels.
-      Text is unaffected in skins that use TrueType (drawn at device resolution, not upscaled); only
-      a `<bitmapfont>` would blur. So this makes icons and 1px borders crisper — it does not fix a
-      skin that "looks mushy", and nobody has reported one.
-
-      **There is no policy today, which is the actual defect.** Interpolation is set in six files
-      with four different answers: `SkinRenderer` 10 explicit `.none` sprite sites (classic is
-      mostly-nearest by accumulation, not by decision — the classic main window's `draw` sets nothing
-      and inherits the CG default); `WasabiRenderer` `.high` for the scene (line 892) and the
-      pre-scale cache (`resized`, 1655), `.none` for region masks and tiling; `PlexBrowserView`
-      `.low`; `PeppyMeter` and `CLIDisplay` `.high`; `PlaylistView` `.none`. The fix is to decide
-      once where the ratio is known and have every mode ask that, rather than flipping two flags in
-      the `.wal` renderer and letting the modes drift again. `WasabiRenderer.prescaled` already
-      computes the device width/height from the CTM, so the `.wal` half has the number in hand.
-
-      **Verification is unusual here and needs saying.** A filter change repaints a large share of
-      the 310-image corpus sweep *by design*, so the sweep stops being a pass/fail instrument and
-      becomes something to eyeball; the five golden images would need deliberate regeneration.
-      `RENDER_TIME` should improve slightly (nearest is cheaper than bilinear). Before assuming
-      nearest is free, note that `skills/ui-guide/SKILL.md` documents the classic main window as
-      setting `.low` with the rationale *"`.none` causes artifacts, `.high` causes blur"* — **that
-      snippet is stale, the code sets nothing** — but the comment is evidence that `.none` caused a
-      real artifact once, and whoever picks this up should find out what it was. Fix the skill's
-      snippet as part of this.
 
 ---
 
