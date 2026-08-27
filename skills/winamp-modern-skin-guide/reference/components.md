@@ -196,8 +196,14 @@ Two rules came out of it:
 
 `revealEmbeddedSurface` sends the skin `System.onGetCancelComponent(guid, true)` and falls back to
 Wasabi's `windowholder autoopen="1"` — walking up from the holder and un-hiding its ancestors — when
-the scene still has no visible holder of that kind (B23, cPro-Bento, whose script *has* handlers but
-declines to switch at startup).
+an explicit request leaves the scene with no visible holder of that kind (B23).
+
+The launch-only library reveal is deliberately different (B25): it sends the event but does **not**
+run the `autoopen` fallback. Correct object-typed `NULL` coercion repaired ClassicPro's first tab
+activation, so cPro-Bento now opens its own library page and updates `active_tab` with it. Retaining
+the old graph writes made the visible page disagree with the skin's bookkeeping. Explicit menu,
+script-toggle, and video reveals still allow the reversible fallback because those are requests to
+make a surface visible, not startup advice.
 
 **That fallback test is synchronous, and a script is not.** Big Bento Modern is the case that showed
 it (B38.2). Its component pages are siblings — `sui.components` holds seven `<group … visible="0"/>`,

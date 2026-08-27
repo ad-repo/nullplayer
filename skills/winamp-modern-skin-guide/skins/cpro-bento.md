@@ -51,6 +51,12 @@ synthesized and nothing left to the classic fallback.
   until the embedded-video route existed the tab was an empty box and every film opened NullPlayer's
   own window beside it. Playing with the tab closed switches to it; switching away mid-film hands the
   picture back to our window.
+- **The Media Library tab selects itself at launch** (B25) — the host still sends
+  `System.onGetCancelComponent`, but no longer walks the holder's `autoopen="1"` chain and writes
+  `visible="1"` behind the tab script's back. Once MAKI object-typed `NULL` coercion was corrected,
+  ClassicPro's own activation chain opened the tab synchronously and kept `active_tab` aligned with
+  the page on screen. Explicit Skin Windows/menu reveals and the Video tab retain the reversible
+  `autoopen` fallback. Confirmed live 2026-08-27.
 - **The beat visualization** in the middle of the display, centred on the window and surviving play /
   pause / resume, with its VU timer started and stopped by the transitions. Double-clicking it cycles
   the animations (and **re-centres** them — `beat.m` centres only inside `onResize`, and showing or
@@ -93,6 +99,11 @@ synthesized and nothing left to the classic fallback.
   the display. A `Wasabi:Frame` pane is a window and always clips; that is the whole fix (Phase 24.2).
   The escaped children still *have* frames at y=79 — check their **clip**, not their frame.
 - **`NULL` is an integer, and an object-typed variable has to be told that.** MAKI has no null literal of its own: `lastActiveT = NULL;` compiles to a plain integer 0, and storing that in an object variable left it comparing equal to null and reading as false while *not being* null — so `if (lastActiveT)` skipped it correctly and `lastActiveT.ID` (a different instruction, which fails closed on a non-object owner) took the whole handler down. `CproTabs`' `ON_TAB_ACTIVATED` opens with an unguarded `closeTab(lastActiveT)` whose first line is that read, so on the first tab activation of a session the handler died before its `sendAction("show_tab")` and before `alignByResize()`. The fix is one line in `MakiValue.coerced` (integer 0 / boolean false → `.null` for an object-typed target), not a special case in the member instruction. Probe it with `RENDER_CLICK` + `RENDER_CLICK_EVENTS=onleftbuttondown,onleftbuttonup`: the chain shows `CproTabs.xml.onaction!FAILED` before, and `CLICK action: show_tab` after.
+- **Do not compensate for a repaired script by mutating its tab graph.** The startup library
+  `autoopen` fallback survived after the `NULL` fix that made it unnecessary, so the right page was
+  visible while ClassicPro's `active_tab` bookkeeping still described the state before the host's
+  writes. Startup reveal is advisory now; graph forcing is reserved for an explicit request whose
+  script leaves no holder visible.
 - **A tab this skin closes is not a surface this skin destroyed.** The library, video and
   visualization surfaces are owned by the component bridge, one per skin, and re-served when their
   holder comes back; the tab strip removes and restores those holders all session long. Tearing a

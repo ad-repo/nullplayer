@@ -2,6 +2,38 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B25 — Remove the startup `autoopen` fallback — closed 2026-08-27
+
+### B25 — The startup `autoopen` fallback forces a tab open behind the skin's back
+
+`WinampModernMainWindowController.revealEmbeddedSurface` falls back to `openHolders`, which walks up
+from an `autoopen="1"` holder writing `visible="1"` onto every hidden ancestor. At launch on
+cPro-Bento this fires for the library (`WinampModern reveal library … opened=1`): the SUI's own tab
+bookkeeping never learns that tab was opened, because the app opened it directly on the graph.
+
+It exists because ClassicPro's `onGetCancelComponent` no-ops at startup (`active_tab` is already 0
+while `centro.library` has never been shown). **With the MAKI `NULL` coercion fix in place that no
+longer holds:** run with the fallback disabled and cPro-Bento's library tab renders correctly at
+startup on its own. So the workaround now looks obsolete for this skin while still desynchronising
+the skin's state.
+
+- [x] Measure which corpus skins actually depend on `openHolders` (B23's video reveal is one caller;
+      the Skin Windows menu and a script's `TOGGLE guid:…` are others). The 36-skin corpus contains
+      99 declarations across 25 skins, but most are bodies of declared component windows. Static
+      presence is not evidence that the launch-only embedded-library route needs graph forcing.
+- [x] Decide: preserve the already-reversible fallback for explicit menu, script-toggle, and video
+      requests; suppress it only for the advisory startup library reveal.
+- [x] Verify the startup library tab, the video tab reveal, and the Skin Windows menu on cPro-Bento
+      and on a skin with a declared container. Accepted live 2026-08-27.
+
+The surface coordinator now carries the fallback policy into the one embedded reveal route. Its
+focused test pins `true` for explicit show/toggle requests and `false` for startup. cPro-Bento's
+per-skin notes record why the repaired `NULL` coercion made the launch workaround obsolete.
+
+Reach command: `rg -i -o 'autoopen[[:space:]]*=' "$corpus" --glob '*.xml'`.
+
+---
+
 ## B32 — `cfgattrib` toggles show no state, and crossfade drives nothing — closed 2026-08-23
 
 ## B32 — `cfgattrib` toggles show no state, and crossfade drives nothing

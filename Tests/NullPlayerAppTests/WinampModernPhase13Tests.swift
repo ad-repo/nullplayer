@@ -551,10 +551,13 @@ final class WinampModernPhase13Tests: XCTestCase {
             loadedSkin: loaded, hostedContainerIDs: [], embeddedContainerID: mainContainer.stableID)
         XCTAssertEqual(catalog.playlist, .embedded(containerID: mainContainer.stableID))
 
-        var revealed: [WinampModernComponentKind] = []
+        var revealed: [(WinampModernComponentKind, Bool)] = []
         var classicCalls: [WinampModernComponentKind] = []
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
-            revealEmbedded: { kind, _ in revealed.append(kind); return true },
+            revealEmbedded: { kind, _, allowAutoOpenFallback in
+                revealed.append((kind, allowAutoOpenFallback))
+                return true
+            },
             isMainWindowVisible: { true },
             window: { _ in nil },
             setVisible: { _, _ in XCTFail("an embedded surface has no window to show") },
@@ -564,7 +567,10 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertTrue(coordinator.handles(.playlist))
         coordinator.toggleSurface(.playlist)
         coordinator.showSurface(.playlist)
-        XCTAssertEqual(revealed, [.playlist, .playlist])
+        coordinator.showSurface(.playlist, allowEmbeddedAutoOpenFallback: false)
+        XCTAssertEqual(revealed.map(\.0), [.playlist, .playlist, .playlist])
+        XCTAssertEqual(revealed.map(\.1), [true, true, false],
+                       "startup can suppress autoopen without weakening explicit reveals")
         XCTAssertTrue(classicCalls.isEmpty)
         XCTAssertNil(coordinator.nativeWindow(for: .playlist),
                      "embedded surfaces must stay out of docking and frame persistence")
@@ -586,7 +592,7 @@ final class WinampModernPhase13Tests: XCTestCase {
         var visibility: [String: Bool] = ["Pledit": false, "nullplayer.library": false]
         let windows: [String: NSWindow] = [:]
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
-            revealEmbedded: { _, _ in XCTFail("nothing is embedded here"); return false },
+            revealEmbedded: { _, _, _ in XCTFail("nothing is embedded here"); return false },
             isMainWindowVisible: { true },
             window: { windows[$0] },
             setVisible: { id, visible in visibility[id] = visible },
@@ -608,7 +614,7 @@ final class WinampModernPhase13Tests: XCTestCase {
                                                  video: .classicFallback(reason: "no video window"),
                                                  visualization: .classicFallback(reason: "no AVS window"))
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
-            revealEmbedded: { _, _ in true }, isMainWindowVisible: { true }, window: { _ in nil },
+            revealEmbedded: { _, _, _ in true }, isMainWindowVisible: { true }, window: { _ in nil },
             setVisible: { _, _ in }, classicFallback: { _, _ in }, redraw: {}))
         XCTAssertEqual(coordinator.summary,
                        "playlist=declared:Pledit equalizer=embedded library=classic(no frame) "

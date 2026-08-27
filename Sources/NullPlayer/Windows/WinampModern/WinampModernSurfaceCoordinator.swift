@@ -73,7 +73,7 @@ final class WinampModernSurfaceCoordinator {
     /// stays the sole owner of windows and views and this type owns no lifetime.
     struct Environment {
         /// Bring the main window forward and reveal an embedded surface inside it.
-        let revealEmbedded: (WinampModernComponentKind, WasabiObjectID) -> Bool
+        let revealEmbedded: (WinampModernComponentKind, WasabiObjectID, Bool) -> Bool
         /// Whether the window hosting the embedded surfaces is on screen.
         let isMainWindowVisible: () -> Bool
         /// The native window hosting a container, if the controller made one.
@@ -158,10 +158,11 @@ final class WinampModernSurfaceCoordinator {
         }
     }
 
-    func showSurface(_ kind: WinampModernComponentKind) {
+    func showSurface(_ kind: WinampModernComponentKind,
+                     allowEmbeddedAutoOpenFallback: Bool = true) {
         switch catalog[kind] {
         case .embedded(let containerID):
-            _ = environment.revealEmbedded(kind, containerID)
+            _ = environment.revealEmbedded(kind, containerID, allowEmbeddedAutoOpenFallback)
         case .declaredContainer(let id), .synthesizedContainer(let id):
             environment.setVisible(id, true)
         case .classicFallback:
@@ -172,7 +173,7 @@ final class WinampModernSurfaceCoordinator {
     func toggleSurface(_ kind: WinampModernComponentKind) {
         switch catalog[kind] {
         case .embedded(let containerID):
-            _ = environment.revealEmbedded(kind, containerID)
+            _ = environment.revealEmbedded(kind, containerID, true)
         case .declaredContainer(let id), .synthesizedContainer(let id):
             environment.setVisible(id, !(environment.window(id)?.isVisible == true))
         case .classicFallback:

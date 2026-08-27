@@ -657,7 +657,9 @@ app's own `#if DEBUG` logging. Worth knowing before reaching for `RENDER_PROBE` 
 - **Playlist and media library drawn on top of each other at launch.** The skin's script opens its
   tab on its own timer, ~0.6 s *after* our reveals, so a reveal-time exclusivity check can never see
   the page it needs to yield to. See `reference/components.md` → *Revealing an embedded surface*.
-  `WINAMP_MODERN_DEBUG_HOLDERS=1` is the only probe that shows it.
+  `WINAMP_MODERN_DEBUG_HOLDERS=1` is the only probe that shows it. B25 later removed graph-forcing
+  from the launch-only library reveal altogether; explicit menu/script requests still use the
+  reversible fallback, while Bento's delayed tab decision remains the last word.
 - **`getTextWidth`** aborted `onTextChanged` — the handler that runs on every track change. Only two
   objects in the skin declare it, both `display="PE_Info"`, so it is invisible headlessly until the
   harness has a queue: `WINAMP_MODERN_RENDER_TEXT=1 WINAMP_MODERN_RENDER_PLAYLIST=6`.

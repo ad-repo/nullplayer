@@ -685,10 +685,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         surfaceCoordinator = WinampModernSurfaceCoordinator(
             catalog: catalog,
             environment: .init(
-                revealEmbedded: { [weak self, weak scripts] kind, _ in
+                revealEmbedded: { [weak self, weak scripts] kind, _, allowAutoOpenFallback in
                     guard let self, let scripts else { return false }
                     window?.makeKeyAndOrderFront(nil)
-                    let revealed = self.revealEmbeddedSurface(kind, scripts: scripts)
+                    let revealed = self.revealEmbeddedSurface(
+                        kind, scripts: scripts, allowAutoOpenFallback: allowAutoOpenFallback)
                     skinView?.needsDisplay = true
                     return revealed
                 },
@@ -869,7 +870,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     private func revealEmbeddedLibraryAtStartup() {
         guard let coordinator = surfaceCoordinator, coordinator.isEmbedded(.library) else { return }
-        coordinator.showSurface(.library)
+        // Startup is advisory: let the skin reconcile its own selected tab from
+        // onGetCancelComponent, but do not force hidden ancestors visible behind its bookkeeping.
+        // Explicit user/script reveals still retain the Wasabi `autoopen` fallback below.
+        coordinator.showSurface(.library, allowEmbeddedAutoOpenFallback: false)
         skinView?.needsLayout = true
         skinView?.needsDisplay = true
     }
@@ -889,7 +893,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// declaring `autoopen="1"` — so forcing every one of them open after the skin had already
     /// switched to the right tab put two more copies of the surface on screen beside it.
     private func revealEmbeddedSurface(_ kind: WinampModernComponentKind,
-                                       scripts: WinampModernScriptRuntime) -> Bool {
+                                       scripts: WinampModernScriptRuntime,
+                                       allowAutoOpenFallback: Bool) -> Bool {
         guard let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else {
             // The equalizer has no component GUID; a skin-drawn EQ is already on screen wherever the
             // skin drew it, so revealing the player window is the whole job.
@@ -902,6 +907,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             NSLog("WinampModern reveal %@ guid=%@ handlers=%d (skin opened it)", kind.rawValue, guid, handled)
             #endif
             return true
+        }
+        guard allowAutoOpenFallback else {
+            #if DEBUG
+            NSLog("WinampModern reveal %@ guid=%@ handlers=%d (startup; autoopen skipped)",
+                  kind.rawValue, guid, handled)
+            #endif
+            return handled > 0
         }
         let opened = openHolders(for: kind, in: scripts.loadedSkin.runtime.graph)
         closeDisplacedPages(revealing: kind)
@@ -987,12 +999,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// Wasabi's `windowholder autoopen="1"`: when the component a holder holds becomes visible, the
     /// holder brings its own surroundings on screen with it.
     ///
-    /// This is the half of the contract a script cannot do for us. ClassicPro's SUI *does* switch
-    /// tabs from `onGetCancelComponent`, but only `if (active_tab != 0)` — and at startup its
-    /// `active_tab` is already 0, so asking for the Media Library made it decide it was already
-    /// showing one while `centro.library` had never actually been shown. Winamp does not rely on the
-    /// script here; the holder itself opens. So do we: reveal the hidden ancestors between an
-    /// `autoopen` holder of this kind and its layout, and nothing else.
+    /// This is the fallback half of an explicit reveal. If the skin leaves no holder visible after
+    /// `onGetCancelComponent`, reveal the hidden ancestors between an `autoopen` holder of this kind
+    /// and its layout, and nothing else. Startup deliberately does not enter this path (B25): after
+    /// the MAKI `NULL` coercion fix, ClassicPro selects its own library tab and must keep the last
+    /// word over its tab bookkeeping.
     ///
     /// **Opening one page must close the page we opened before it.** In a `singleWindowSUI` skin the
     /// component pages are siblings that all ship `visible="0"` — Big Bento Modern's `sui.components`

@@ -139,7 +139,10 @@ final class WinampModernPhase48Tests: XCTestCase {
                 video: .classicFallback(reason: "none"),
                 visualization: target)
             return WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
-                revealEmbedded: { _, _ in XCTFail("the visualization is never embedded"); return false },
+                revealEmbedded: { _, _, _ in
+                    XCTFail("the visualization is never embedded")
+                    return false
+                },
                 isMainWindowVisible: { true },
                 window: { _ in nil },
                 setVisible: { id, visible in visibility[id] = visible },

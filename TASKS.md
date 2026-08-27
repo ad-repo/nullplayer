@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B25 | Remove or repair the startup `autoopen` fallback | 25 skins / 99 declarations ([M1]) | M | Measured |
 | B15 | Render `wasabi.panel` / `wasabi.objectframe.group` bodies | 19 skins / 192 declarations ([M2]) | M | Measured |
 | BB10 | Add typed Skin Settings fallback widgets | 17 skins / 361 `newAttribute` program symbols ([M3]) | M | Measured |
 | B17 | Preserve groupdef redefinition order in the surface inventory | 9 skins / 53 duplicate declarations ([M5]) | S | Measured |
@@ -52,7 +51,6 @@ All commands use the 36 directories extracted with `7zz` from
 `~/Library/Application Support/NullPlayer/WinampModernSkins/` (excluding
 `ClassicProEngine`). Set `corpus=/path/to/the/extracted/root`.
 
-- <a id="m1"></a>**M1:** `rg -i -o 'autoopen[[:space:]]*=' "$corpus" --glob '*.xml'`
 - <a id="m2"></a>**M2:** `rg -i -o 'wasabi\.(panel|objectframe\.group)' "$corpus" --glob '*.xml'`
 - <a id="m3"></a>**M3:** `rg -a -i -o 'newAttribute' "$corpus"`
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
@@ -76,30 +74,6 @@ number of matched declarations or MAKI program symbols. A compiled MAKI method n
 symbol, not necessarily a call-site count; rows say so where that distinction matters.
 
 ## Item detail
-
-### B25
-
-### B25 — The startup `autoopen` fallback forces a tab open behind the skin's back
-
-`WinampModernMainWindowController.revealEmbeddedSurface` falls back to `openHolders`, which walks up
-from an `autoopen="1"` holder writing `visible="1"` onto every hidden ancestor. At launch on
-cPro-Bento this fires for the library (`WinampModern reveal library … opened=1`): the SUI's own tab
-bookkeeping never learns that tab was opened, because the app opened it directly on the graph.
-
-It exists because ClassicPro's `onGetCancelComponent` no-ops at startup (`active_tab` is already 0
-while `centro.library` has never been shown). **With the MAKI `NULL` coercion fix in place that no
-longer holds:** run with the fallback disabled and cPro-Bento's library tab renders correctly at
-startup on its own. So the workaround now looks obsolete for this skin while still desynchronising
-the skin's state.
-
-- [ ] Measure which corpus skins actually depend on `openHolders` (B23's video reveal is one caller;
-      the Skin Windows menu and a script's `TOGGLE guid:…` are others)
-- [ ] Decide: drop the fallback, or keep it and make it reversible (record what was forced and put it
-      back when the skin switches away)
-- [ ] Verify the startup library tab, the video tab reveal, and the Skin Windows menu on cPro-Bento
-      and on a skin with a declared container, before and after
-
----
 
 ---
 
