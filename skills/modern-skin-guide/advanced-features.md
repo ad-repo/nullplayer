@@ -534,6 +534,7 @@ This section documents the repeatable pattern for creating modern-skinned versio
 ### Key Rules
 
 - **Zero classic imports**: Files in `ModernSkin/` and `Windows/Modern{Window}/` must NEVER import or reference anything from `Skin/` or `Windows/{ClassicWindow}/`
+- **Guard mode-specific features at all layers**: For features that apply only to modern UI, check `if wm.isModernUIEnabled` in menus and UI, return a safe default from property getters in the wrong mode, and begin actions with `guard isModernUIEnabled else { return }`
 - **Skin changes**: Observe `ModernSkinEngine.skinDidChangeNotification` to re-create renderer
 - **UI Size changes**: Observe `.doubleSizeDidChange` notification and call `skinDidChange()` to recreate the renderer with the updated scale factor
 - **Scale factor**: Use `ModernSkinElements.scaleFactor` for all geometry. This is a computed property: `baseScaleFactor * sizeMultiplier`. Do NOT cache in a `let` -- use a computed `var` or reference `ModernSkinElements.scaleFactor` directly

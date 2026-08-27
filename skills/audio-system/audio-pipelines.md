@@ -14,6 +14,8 @@ When enabled via **Playback Options → Gapless Playback**, the engine pre-sched
 3. When the current track ends, playback continues seamlessly to the pre-scheduled track
 4. The next-next track is then pre-scheduled
 
+Local playback completion must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack`. Do not use the deprecated three-parameter form; its completion handler fires before audio finishes playing.
+
 **Streaming (Plex/Subsonic/Jellyfin/Emby):**
 1. Uses the AudioStreaming library's `queue(url:)` method to pre-buffer the next streaming track
 2. The queued track plays immediately when the current track finishes
