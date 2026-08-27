@@ -66,6 +66,39 @@ Skill: [skins/big-bento-modern.md](skills/winamp-modern-skin-guide/skins/big-ben
       page stored to happen. Turning on *Open in Multi Content View (stretched)* does **not** set the
       page — verified — so the two settings are independent and the page is the one that matters.
 
+- [x] **BB33. The elapsed/total time line was neither level nor apart — fixed 2026-08-27, confirmed
+      live** (*"manual qa looks good"*). Reported as *"the min and sec are not even and the slash is
+      not even"* on all four variants, with a screenshot: `0:12/ 4:21`, the `/` sitting higher than
+      the digits and the elapsed time running into it.
+
+      Reproduced headlessly in one dump (`RENDER_PROBE main/normal`), which is what separated the two
+      causes: `SongTime2`/`SongTime3` measured `frame=(…, 99, 84, 30)` against the separator's
+      `(…, 95, 11, 30)` — a 4px vertical offset the markup does not declare — while the elapsed box
+      (local `0…84`) and the separator's box (`80…91`) overlap by four pixels *by design*.
+
+      **Cause 1, the 4px: `valign="middle"` is not a spelling Wasabi knows, and an unrecognised value
+      reads as `top`.** Only an absent `valign` centres. `RENDER_DISASM=@player-normal-group` showed
+      the skin's own correction — `songticker.maki` sets `h=30, y=4` (and `setTargetY(4)`) on both
+      time readouts and never touches the separator — and `y=4` is exactly `(30 - 21) / 2` for the
+      21px line the font gives at `fontsize="22"`. Read `middle` as `center` and that nudge lands on
+      top of a centring already done. Nine declarations corpus-wide, eight of them Bento's.
+
+      **Cause 2, the collision: a clock is a run of fields, not a string.** `WasabiTextMetrics.clockRun`
+      now lays a time display out as hours/colon/minutes/colon/seconds with the colon in the cell
+      `timecolonwidth` sizes, aligns by the room a two-digit minute needs rather than by what is on
+      screen, and keeps clear of the edge it aligns against. The author's own `screenshot.png` is the
+      ground truth (§4.7): `0:01 / 0:05` with clearance either side of the `/`, and the elapsed's ink
+      ending ~11px inside its box — a digit cell plus the inset.
+
+      Blast radius, before/after render sweep of all 35 installed skins (299 images): 27 changed, all
+      of them clock-sized boxes, none broken. It caught one thing the Bento fix alone would have hidden
+      — skins declaring a colon cell *wider* than the glyph (Sony Walkman, Styx, T800, Nokia 5220,
+      corneramp) drew `1: 13`, so a colon now centres in its cell.
+
+      Skill: `reference/rendering.md` → *A clock is a run of fields, not a string* and the `valign`
+      bullet (its "an unrecognised value falls back to `center`" line was wrong), CHANGELOG,
+      `WinampModernPhase76Tests`.
+
 - [x] **BB32. The enlarged playlist's album art opened half height — fixed 2026-08-26, confirmed
       live** (*"it looks good"*). Reported as *"the cover art in the playlist when setting 'show album
       art if playlist is enlarged' is squashed to half size under the playlist panel when it opens"*.

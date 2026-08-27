@@ -524,8 +524,8 @@ render is the ground truth for this kind of thing):
 - **Text is centred in its box**, not drawn from the top edge the way `NSString.draw(in:)` does. On a
   30px-tall readout that is a whole line's leading; on a tight one it is the difference between a
   ticker inside its slot and one sitting on whatever is under it.
-- **`valign` moves it** (Phase 38) — `top`, `center` (the default, and what an unrecognised value
-  falls back to) or `bottom`, decoded by `WasabiTextMetrics.verticalAlignment` and applied as one
+- **`valign` moves it** (Phase 38) — `top`, `center` (the default) or `bottom`, decoded by
+  `WasabiTextMetrics.verticalAlignment` and applied as one
   offset down from the box's top edge (`VerticalAlignment.offset(cell:in:)`). 63 declarations across
   9 of the 17 skins, 54 of them `top`: Defix's songticker and Infoticker, every readout in Nokia
   5220's screen, multipass's whole display. The Core Text inset is **clamped at zero**, so a string
@@ -534,10 +534,39 @@ render is the ground truth for this kind of thing):
   `valign="top"` and nothing else, so every sheet-drawn readout with no `valign` (and every playlist
   row NullPlayer draws into a skin's own list) sat half a box too high. `valign` on a `<layer>` is
   inert, here and in Wasabi.
+- **A spelling Wasabi does not know is not the default — it reads as `top`** (BB29). Only the
+  *absent* attribute centres; `center`, `bottom` and `top` are the whole vocabulary, and anything
+  else (including the empty string) falls to the top edge. This is not pedantry about one typo: a
+  skin author who hit it corrected for it, so reading the value charitably breaks the skin *twice*.
+  Big Bento Modern's two small clock readouts declare `valign="middle"` and `songticker.maki` then
+  pushes each of them down by `y=4` — exactly `(30 - 21) / 2`, a 21px line inside a 30px box. Read as
+  `center`, that nudge lands on top of a centring already done and both times sit 4px below the `/`
+  between them, which declares no `valign` at all. Nine declarations corpus-wide, eight of them
+  Bento's; the arithmetic is what identifies them, not the spelling.
 
-`forcefixed="1"` gives every glyph the same advance (the widest digit's) so a clock's digits do not
-shuffle sideways as they tick, and `timecolonwidth` gives the colon a narrower cell of its own. Both
-go through `WasabiTextMetrics.fixedPitch`, so `getAutoWidth()` measures what the renderer draws.
+#### A clock is a run of fields, not a string (BB29)
+
+A time readout — `display="time"`, `timeelapsed` or `songlength`, with a colon in the value — is laid
+out by `WasabiTextMetrics.clockRun`, and it is a third layout beside the plain string and the
+fixed-pitch run. Three things distinguish it, and Big Bento Modern's elapsed/total line needs all
+three (it is right-aligned in a box the `/` separator's own box overlaps by four pixels — flush
+against the edge, the digits land on the slash):
+
+- **The colon has a cell**, sized by `timecolonwidth` and centred in it. A skin declaring a cell
+  *wider* than the glyph is moving the digits apart, not pushing the colon against the ones on its
+  left — Sony Walkman, Styx, T800 and the Nokia 5220 all do, and drawing the colon at the cell's left
+  edge renders them `1: 13`.
+- **The leading field holds room for two digits** whether or not the value needs them, so the run is
+  aligned by the widest thing it can become. A single-digit minute leaves the second digit's room
+  empty rather than sitting a column further along and jumping sideways at `10:00`. `ClockRun.width`
+  is what is on screen now; `ClockRun.layoutWidth` is the room, and alignment uses the second.
+- **The run keeps `ClockRun.edgeInset` clear** of the edge it aligns against. Centring needs none —
+  both edges are already free.
+
+`getTextWidth()` goes through the same call, because a skin lays out everything beside a readout from
+what it measures. `forcefixed="1"` still gives every glyph the same advance (the widest digit's) via
+`WasabiTextMetrics.fixedPitch`, which the clock run uses per glyph when both are declared; a
+`forcefixed` counter that is *not* a time display keeps the plain fixed-pitch path.
 
 #### A bitmap font's `file=` is an id **or** a path
 

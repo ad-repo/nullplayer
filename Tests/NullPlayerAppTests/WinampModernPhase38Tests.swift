@@ -23,12 +23,15 @@ final class WinampModernPhase38Tests: XCTestCase {
         XCTAssertEqual(alignment(of: ["valign": "center"]), .center)
     }
 
-    /// Wasabi centres a string unless told otherwise, so anything unrecognised — and the far more
-    /// common case of no attribute at all — has to land on `center`, not on the first case.
-    func testAnythingElseCentres() {
+    /// Wasabi centres a string unless told otherwise — but *told otherwise* includes a spelling it
+    /// does not know, which lands on the top edge. Corrected by BB33: this asserted `center` for all
+    /// three, and Big Bento Modern's clock readouts (`valign="middle"`, plus a `y=4` of the skin's
+    /// own that only makes sense against a top-aligned line) are what showed it. Only the **absent**
+    /// attribute centres.
+    func testOnlyAnAbsentAttributeCentres() {
         XCTAssertEqual(alignment(of: [:]), .center)
-        XCTAssertEqual(alignment(of: ["valign": ""]), .center)
-        XCTAssertEqual(alignment(of: ["valign": "middle"]), .center)
+        XCTAssertEqual(alignment(of: ["valign": ""]), .top)
+        XCTAssertEqual(alignment(of: ["valign": "middle"]), .top)
     }
 
     func testTheOffsetIsTheDistanceDownFromTheBoxTop() {

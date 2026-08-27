@@ -71,6 +71,20 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: the time display in the Big Bento Modern family reads straight again** —
+  under the elapsed/total line of all four Bento variants, the `/` between the two times sat higher
+  than the digits and the elapsed time ran into it (`1:13/ 4:05`). Two things behind it, both in how
+  any `.wal` skin's text is placed. A vertical alignment the skin spells in a way Wasabi does not
+  recognise now falls back the way Winamp does, instead of being read as "centred" and cancelling out
+  the skin's own correction — that is the 4px. And a clock is now laid out as the run of fields it is
+  — hours, colon, minutes, colon, seconds — with the colon in the cell the skin sizes for it, room
+  kept for a two-digit minute the value has not reached yet, and clearance from the edge it is aligned
+  against. So the times stay in their columns as they tick rather than shuffling sideways at 10:00,
+  and they no longer collide with whatever the skin parks beside them. Twenty-odd readouts across the
+  installed skins move by a pixel or two as a result; a colon given a cell wider than the glyph
+  (Sony Walkman, Styx, T800, the Nokia 5220) now sits in the middle of it rather than against the
+  digits on its left.
+
 - **Winamp 5.x modern skins: a fading readout no longer re-lays-out the whole window** — a `.wal`
   skin that animates something (Big Bento Modern cross-fades the row of track details under the
   title, continuously, for as long as a track is loaded) was making the player re-solve the position

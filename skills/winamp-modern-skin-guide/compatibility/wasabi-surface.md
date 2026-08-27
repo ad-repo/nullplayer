@@ -123,7 +123,11 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   invisible (a 1×1 pixel), so the grid is the only position indicator they draw
 - `<text>` metrics: `fontsize` is a **pixel height** (em ≈ 0.8 ×), `font=` resolves a declared
   `<truetypefont>`, an archive path, **or** an installed family name, `bold`/`italic` are honoured, the
-  string is centred in its box, and `forcefixed`/`timecolonwidth` give fixed-pitch cells
+  string is centred in its box unless `valign` says otherwise (`top`/`center`/`bottom`; a spelling
+  Wasabi does not know reads as `top`, and only an absent attribute centres), `forcefixed` gives
+  fixed-pitch cells, and a **time display is laid out as a run of fields** with the colon in the cell
+  `timecolonwidth` sizes, room held for a two-digit minute, and clearance from the edge it aligns
+  against (BB33)
 - Script-built menus: `PopupMenu` with `addCommand`/`addSeparator`/`addSubMenu`/`checkCommand`/
   `popAtMouse`/`popAtXY`, shown as a real `NSMenu` at the mouse or at a computed point; both block and
   answer the picked id

@@ -16,6 +16,7 @@
 | Rendering | **Fixed (B36/B37)** | 80–82 bitmaps resolve in `main/normal`, 19–20 in `main/shade`; 38 scenes across the four |
 | Menu bar | **Fixed (B36)** | File/Play/Options/View/Help are placed by `mainmenu.maki`, not by a widget rule |
 | Display readouts | **Fixed (B37)** | `TIMEELAPSED` / `SONGLENGTH` / `SONGTITLE` / `SONGSAMPLERATE` are bound |
+| Elapsed / total time line | **Fixed (BB33)** | Two causes: the readouts declare `valign="middle"`, which is not a spelling Wasabi knows and reads as `top` — the skin's own `y=4` is the correction for it — and a clock lays out as fields, so a right-aligned time keeps clear of the `/` whose box overlaps its own. Confirmed live |
 | SUI tab strip | **Fixed (B37, BB24, BB29)** | `offsetx` on the captions is honoured; the tabs size themselves from the font; and the strip starts in the **icons** mode the markup is laid out for, so its divider sits beside the icons and its button works. Confirmed live |
 | Overlay (`Light`) palette | **Works** | The Light editions render in their own light palette against the base skin's artwork |
 | Album-art panel (W10 edition) | **Degrades** | Its `window/no_alb_art_shade.png` is zero bytes; that one placeholder draws nothing |
@@ -151,6 +152,14 @@ Two things to know before touching this area again:
   slider that starts un-set opens every page at its own end.
 
 ## Traps
+
+- **The time readouts carry a correction of the author's own, and it only makes sense against
+  `valign="middle"`.** `songticker.maki` writes `h=30, y=4` (and `setTargetY(4)`) to `SongTime2` and
+  `SongTime3` from several handlers, and never to the `SongTime.separator` between them. That 4 is
+  not a nudge to taste — it is `(30 - 21) / 2`, the offset that lines a *top*-aligned line up with a
+  centred one, which is what the two readouts are once `middle` is read the way Wasabi reads an
+  unrecognised value. Any change that centres them again re-opens BB33, and the symptom shows up in
+  the separator rather than in the object that moved.
 
 - **The "Victhor trick" makes `display=` a lie on 17 objects.** Every `Bento:InfoLine` declares
   `display="SONGNAME"` *only* so `ticker="1"` works — the author says so in the markup

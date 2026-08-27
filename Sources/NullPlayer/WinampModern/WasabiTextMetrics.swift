@@ -105,12 +105,98 @@ final class WasabiTextMetrics {
     /// The widest digit is the cell: Winamp sizes the run so any digit fits any position.
     static func fixedPitch(of object: WasabiObject, font: NSFont) -> FixedPitch? {
         guard isEnabled(object.attributes["forcefixed"]) else { return nil }
-        let cell = "0123456789".map {
-            (String($0) as NSString).size(withAttributes: [.font: font]).width
-        }.max() ?? font.pointSize
         // A skin pixel, not a point size: this is a width in the same units as `w`/`h`.
         let colon = object.attributes["timecolonwidth"].flatMap { Double($0) }
+        let cell = digitCell(font)
         return FixedPitch(cell: cell, colon: colon.map { CGFloat($0) } ?? cell)
+    }
+
+    /// A clock readout laid out field by field, rather than as one string.
+    ///
+    /// A time is `hours`, `:`, `minutes`, `:`, `seconds`, and the colons carry cells of their own so
+    /// the digits keep their columns as the clock ticks. `timecolonwidth` sizes that cell, and a skin
+    /// that narrows it is buying room beside the readout: Big Bento Modern parks a `/` separator in a
+    /// box that overlaps the elapsed time's box by four pixels, and the two only read as separate
+    /// because neither draws flush against the edge it is aligned to.
+    struct ClockRun {
+        /// One field with the cell it occupies, which is not always the width it draws in — a
+        /// fixed-pitch cell is wider than the glyph it centres.
+        struct Cell {
+            let text: String
+            let width: CGFloat
+            /// Whether the glyph sits in the middle of its cell or at the cell's left edge. A colon
+            /// always centres: a skin sizing that cell means to move the digits around it, not to
+            /// leave the colon leaning against the digits on one side (Sony Walkman, Styx, T800 and
+            /// the Nokia 5220 all declare a cell wider than the glyph).
+            let centred: Bool
+        }
+
+        let cells: [Cell]
+        /// The room the run is aligned by, which is the room its *longest* value needs — so a clock
+        /// that rolls from `9:59` to `10:00` grows into the space it was already holding instead of
+        /// shoving its own digits a column sideways. Never less than what is on screen now.
+        let layoutWidth: CGFloat
+
+        /// What the value on screen actually draws in — the answer `getTextWidth()` wants.
+        var width: CGFloat { cells.reduce(0) { $0 + $1.width } }
+
+        /// Clearance kept between the run and the box edge it aligns against.
+        static let edgeInset: CGFloat = 2
+    }
+
+    /// How the object's clock lays out, or `nil` if it is not drawing one.
+    ///
+    /// The renderer and `getTextWidth()` both ask here, because a skin measures this run to decide
+    /// where to put everything beside it.
+    static func clockRun(of object: WasabiObject, text: String, font: NSFont) -> ClockRun? {
+        guard isClockDisplay(object), text.contains(":") else { return nil }
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        func measure(_ string: String) -> CGFloat {
+            (string as NSString).size(withAttributes: attributes).width
+        }
+        let pitch = fixedPitch(of: object, font: font)
+        // A skin pixel, in the same units as `w`/`h`. Left undeclared, the colon keeps its own advance
+        // and the run measures exactly as the string does.
+        let declaredColon = object.attributes["timecolonwidth"].flatMap { Double($0) }.map { CGFloat($0) }
+        let colonWidth = pitch?.colon ?? declaredColon ?? measure(":")
+
+        var cells: [ClockRun.Cell] = []
+        var leadingField = CGFloat(0)
+        for (index, field) in text.split(separator: ":", omittingEmptySubsequences: false).enumerated() {
+            if index > 0 { cells.append(.init(text: ":", width: colonWidth, centred: true)) }
+            let field = String(field)
+            guard let pitch else {
+                let width = measure(field)
+                if index == 0 { leadingField = width }
+                cells.append(.init(text: field, width: width, centred: false))
+                continue
+            }
+            // Fixed pitch is per glyph, not per field: every digit needs its own cell to be centred in.
+            if index == 0 { leadingField = pitch.cell * CGFloat(field.count) }
+            cells.append(contentsOf: field.map { .init(text: String($0), width: pitch.cell, centred: true) })
+        }
+        let drawn = cells.reduce(0) { $0 + $1.width }
+        // A skin that sizes the colon's cell is asking for a clock in columns, so the leading field
+        // holds room for the two digits it can reach even while it is showing one. Big Bento Modern's
+        // elapsed time is the case that shows it: right-aligned, it would otherwise sit hard against
+        // the `/` beside it and then jump a whole digit sideways at 10:00.
+        let leadingRoom = declaredColon == nil ? leadingField : max(leadingField, 2 * digitCell(font))
+        return ClockRun(cells: cells, layoutWidth: drawn - leadingField + leadingRoom)
+    }
+
+    /// The cell a digit needs: the widest of them, so any digit fits any column.
+    private static func digitCell(_ font: NSFont) -> CGFloat {
+        "0123456789".map {
+            (String($0) as NSString).size(withAttributes: [.font: font]).width
+        }.max() ?? font.pointSize
+    }
+
+    /// Whether this object's text is a playback time — the only text drawn as a clock run.
+    private static func isClockDisplay(_ object: WasabiObject) -> Bool {
+        switch object.attributes["display"]?.lowercased() {
+        case "time", "timeelapsed", "songlength": return true
+        default: return false
+        }
     }
 
     /// The bold/italic a text object asks for. Winamp spells them as their own attributes rather than
@@ -142,11 +228,20 @@ final class WasabiTextMetrics {
         }
     }
 
+    /// A declared `valign` Wasabi does not know is **not** the default: it reads as `top`.
+    ///
+    /// Only the absent attribute centres. The difference is a skin whose author corrected for it:
+    /// Big Bento Modern's two small clock readouts declare `valign="middle"` — which is not one of
+    /// the three spellings — and `songticker.maki` then pushes each of them down by 4px, which is
+    /// exactly `(30 - 21) / 2`, the gap between the top of a 30px box and a 21px line centred in it.
+    /// Read `middle` as `center` and that correction lands on top of a centring we already did, so
+    /// the two times sit 4px below the `/` between them, which declares no `valign` at all.
     static func verticalAlignment(of object: WasabiObject) -> VerticalAlignment {
-        switch object.attributes["valign"]?.lowercased() {
-        case "top": return .top
+        guard let declared = object.attributes["valign"]?.lowercased() else { return .center }
+        switch declared {
+        case "center": return .center
         case "bottom": return .bottom
-        default: return .center
+        default: return .top
         }
     }
 
@@ -341,6 +436,9 @@ final class WasabiTextMetrics {
         let size = Self.pointSize(of: object)
         let font = font(identifier: object.attributes["font"], size: size,
                         traits: Self.traits(of: object)) ?? NSFont.systemFont(ofSize: size)
+        if let run = Self.clockRun(of: object, text: text, font: font) {
+            return run.width + padding
+        }
         if let pitch = Self.fixedPitch(of: object, font: font) {
             return pitch.width(of: text) + padding
         }

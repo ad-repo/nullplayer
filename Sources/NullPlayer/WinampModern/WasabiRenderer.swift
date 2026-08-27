@@ -2273,9 +2273,12 @@ final class WasabiSceneRenderer {
         // `forcefixed` is a different layout, not a different font: every glyph gets the same cell.
         // A fixed run is a clock or a counter and is sized to fit, so it never enters the ticker.
         let pitch = WasabiTextMetrics.fixedPitch(of: object, font: font)
-        let measured = pitch?.width(of: text)
+        // A clock is laid out in fields with their own cells, which is a third layout again — and it
+        // is sized to fit for the same reason a fixed run is, so it never scrolls either.
+        let clock = WasabiTextMetrics.clockRun(of: object, text: text, font: font)
+        let measured = clock?.width ?? pitch?.width(of: text)
             ?? (text as NSString).size(withAttributes: attributes).width
-        let overflow = pitch == nil ? measured - frame.width : 0
+        let overflow = pitch == nil && clock == nil ? measured - frame.width : 0
         let scroll = overflow > 0 ? tickerMotion(for: object, overflow: overflow, textWidth: measured) : nil
         if scroll != nil {
             // While scrolling, the string is drawn into an oversized rect, so any alignment other
@@ -2332,6 +2335,29 @@ final class WasabiSceneRenderer {
                 textFrame.origin.x += measured + Self.tickerGap
                 (text as NSString).draw(in: textFrame, withAttributes: attributes)
             }
+        } else if let clock {
+            // The run keeps a pixel or two of clearance from the edge it is aligned against — a skin
+            // that puts a separator beside a readout counts on it, and centring needs none because
+            // both edges are already free.
+            // Aligned by the room the clock holds, then drawn from that room's left edge — so the
+            // digits stay in their columns rather than shuffling when the value gains one.
+            let room = clock.layoutWidth
+            var origin: CGFloat
+            switch alignment {
+            case .right: origin = drawFrame.maxX - WasabiTextMetrics.ClockRun.edgeInset - room
+            case .center: origin = drawFrame.minX + (drawFrame.width - room) / 2
+            default: origin = drawFrame.minX + WasabiTextMetrics.ClockRun.edgeInset
+            }
+            // Each cell places its own field, so the object's alignment must not apply a second time
+            // inside one.
+            let centred = attributes.merging([.paragraphStyle: centredParagraph]) { _, new in new }
+            let leading = attributes.merging([.paragraphStyle: leadingParagraph]) { _, new in new }
+            for cell in clock.cells {
+                (cell.text as NSString).draw(
+                    in: CGRect(x: origin, y: drawFrame.minY, width: cell.width, height: drawFrame.height),
+                    withAttributes: cell.centred ? centred : leading)
+                origin += cell.width
+            }
         } else if let pitch {
             var origin: CGFloat
             switch alignment {
@@ -2353,6 +2379,14 @@ final class WasabiSceneRenderer {
             (text as NSString).draw(in: drawFrame, withAttributes: attributes)
         }
         context.restoreGState()
+    }
+
+    /// Starts a clock's field at its own cell's left edge.
+    private var leadingParagraph: NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .left
+        style.lineBreakMode = .byClipping
+        return style
     }
 
     /// Centres a single glyph inside its fixed-pitch cell.
