@@ -235,6 +235,13 @@ not chosen:
 | `main.vis.group` | 288×60 at `x=436` | `main.vis` (`fliph="1"`) + `main.vis2`, 144×30 each, over `main.vis.mirror` / `main.vis.mirror2` (`flipv="1" alpha="110" ghost="1"`), 144×10 each |
 | `main.vis.group.alt` | 300×60 at `x=446` | `main.vis.alt` 252×30 + `main.vis.mirror.alt` 252×10 — a single analyzer |
 
+**With one of NullPlayer's analyzers selected (B53) the butterfly is deliberately off**: `fliph` is
+dropped and the two boxes are handed the pair's 288px rect with a clip to each, so they draw one
+continuous Cava / vis_classic instead of two mirrored copies. The 10px reflection strips still
+reflect. The skin's own engine keeps the butterfly exactly as B43 left it. The engine picker reaches
+this skin through its **own** menu — `main.vis.trigger` claims the right button, and the host inserts
+its section into the page that layer pops.
+
 The default pair is a **butterfly**: the left box is mirrored, so both analyzers' low frequencies meet
 in the centre and the two read as one symmetric figure with a dimmed reflection beneath. Before B43
 the flags were ignored and it drew as two identical blocks with a seam — reported as *"another bug is

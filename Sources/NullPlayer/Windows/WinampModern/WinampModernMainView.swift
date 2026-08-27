@@ -1245,6 +1245,18 @@ final class WinampModernMainView: NSView {
             return
         }
         guard let object = renderer.object(at: point) else { return }
+        // A `<vis>` box nothing else has claimed answers for itself: which engine paints it, that
+        // engine's own options, and Winamp's own `<vis>` attributes (B53). Two conditions, and both
+        // are the skin's right to be left alone — the box has to be the **topmost** object at the
+        // point (Big Bento covers its own with an invisible `main.vis.trigger` layer carrying the
+        // skin's settings page, and that menu wins), and it must have no right-button handler of its
+        // own (Love is War Miku's `visualizer.maki` binds one).
+        if object.typeName.caseInsensitiveCompare("vis") == .orderedSame,
+           !scripts.hasBinding(for: object, event: "onrightbuttondown"),
+           !scripts.hasBinding(for: object, event: "onrightbuttonup") {
+            showVisualizationMenu(from: object)
+            return
+        }
         rightPressedObject = object
         dispatch(object: object, event: "onrightbuttondown", point: point)
         needsDisplay = true
@@ -1701,7 +1713,24 @@ final class WinampModernMainView: NSView {
         } else {
             location = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
         }
+        // A menu the skin opens **over its own visualization** also carries the host's engine picker
+        // (B53). Big Bento Modern is why: its `main.vis.trigger` layer claims the right button over
+        // the header analyzers to show the skin's settings page, so the host's own `<vis>` menu never
+        // opens there and the engine choice was unreachable from the box itself.
+        var skinModeCommands: Set<Int> = []
+        if let location, renderer.visualizationObject(at: skinPoint(location)) != nil {
+            skinModeCommands = appendSpectrumAnalyzerSection(to: menu)
+        }
         menu.popUp(positioning: nil, at: location ?? .zero, in: self)
+        // The skin's mode rows and ours are one group, so picking one of the skin's is also a choice
+        // *against* whatever NullPlayer engine was drawing: the box goes back to Winamp's own
+        // analyzer, and the skin's own command runs on top of that as it always did. Without this,
+        // "Oscilloscope" would tick a row and change nothing on screen while Cava kept painting.
+        // `0` is "nothing chosen" — a dismissed menu, and also what our own rows leave behind — so it
+        // can never mean the user asked for the skin's engine back.
+        if target.chosen != 0, skinModeCommands.contains(Int(target.chosen)) {
+            WindowManager.shared.setWinampModernSpectrumAnalyzer(.skin)
+        }
         return target.chosen
     }
 

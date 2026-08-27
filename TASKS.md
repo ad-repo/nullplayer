@@ -167,12 +167,96 @@ Two notes for whoever reads this next:
 
 ## Open backlog
 
-### In progress — B51
+### Recently closed — B53
 
-**B51 — the `<vis>` oscilloscope draws no waveform, and every other `<vis>` attribute is ignored.**
-Plan: `~/.claude/plans/i-dont-think-the-velvet-wreath.md`. Pass 1 only; Pass 2 (NullPlayer's own vis
-suite inside a `.wal`) is gated on Pass 1 manual QA. No tests, docs, skill updates or changelog
-entries until that QA passes.
+**B53 — NullPlayer's own visualizations, selectable in a skin's `<vis>` box.** Pass 2 of
+`~/.claude/plans/i-dont-think-the-velvet-wreath.md`, **narrowed by the user 2026-08-26 to the `<vis>`
+box alone** — the spectrum/oscilloscope area the skin draws in its own window. The `{0000000A}`
+plugin holder is **not** in scope: it already hosts ProjectM/Geiss/Tripex (B20a), and nothing here
+replaces or adds to that. So `VisualizationType` does not widen and no NSView surface is involved;
+every engine here is a `WasabiVisRenderer` painting into the scene's `CGContext`, which is the seam
+B51 built.
+
+Done 2026-08-26, confirmed live. File names below are as first written; the type was
+renamed to `WinampModernSpectrumAnalyzer` during QA, because *visualization engine* already means
+ProjectM/Geiss/Tripex in this app and these are spectrum analyzers.
+
+- [x] **B53.1 The selection, and where it lives.** `WinampModern/WinampModernSpectrumAnalyzer.swift` — the
+      engine choice (skin / Cava / vis_classic) and a skin-wide holder for it on `WasabiSkinRuntime`,
+      beside `componentBucket`: Big Bento draws its `<vis>` in six boxes across several containers
+      and they must not disagree about what is drawing. Persisted per skin through
+      `WinampModernSkinState` (new section `@nullplayer.vis`), so the skin's own declared mode stays
+      the default until the user picks something else
+- [x] **B53.2 `CavaVisRenderer`.** New AppKit-side file. Owns a `CavaPresenter` on a **new**
+      `CavaSettings.Scope` (its own keys — an embedding must not contaminate the Cava window's
+      settings). Two things the plan got wrong and the code confirms: `CavaDrawing.draw` paints with
+      `NSColor`/`NSBezierPath`, so the renderer has to push an `NSGraphicsContext` around the scene's
+      `CGContext`; and the bars have to follow the box's own `colorband*` while the user has not
+      customised Cava's colours, or a dark skin gets a lime-green analyzer
+- [x] **B53.3 `VisClassicVisRenderer`.** New `VisClassicBridge.PreferenceScope` case with scoped keys
+      (CLAUDE.md: vis_classic state is window-scoped and must not share keys). Fed by the **existing**
+      576-sample waveform tap from B51 — it answers `needsWaveform` true, so no second audio tap —
+      through `processAndDraw` into an RGBA buffer, wrapped as a `CGImage` and drawn into the box
+- [x] **B53.4 `WasabiRenderer` plumbing.** `visRenderer` becomes whichever engine is selected;
+      `setVisualizationSuite(_:)` persists it, discards the outgoing engine's state and re-runs
+      `refreshWaveformDemand` — whose cache is keyed on the graph's generation and therefore has to be
+      invalidated by a suite change too, which no graph write moves. `mode="0"` stays off whatever is
+      selected
+- [x] **B53.5 The menu.** "Visualization Engine" in `VIS_MENU` / `VIS_CFG`, with the active engine's
+      own options under it — Cava's real menu (`CavaPresenter.buildMenu`), vis_classic's profile list.
+      Winamp's own attribute items grey out while a non-skin engine draws, on B51's standing rule that
+      a menu item which changes nothing on screen is worse than no item
+- [x] **B53.6 Reachability.** Big Bento traps right-click on its vis with `main.vis.trigger`, so the
+      box's own menu is not a guaranteed route: also put the picker in the Winamp Modern block of
+      `buildUIMenu()` beside Text Size (B50.7's shape), and pop the box menu on a right-click over a
+      `<vis>` no script has claimed
+- [x] **B53.7 Lifecycle.** The Cava tap and the vis_classic core start on the selected engine's first
+      draw and stop on a suite change, a skin change and UI teardown (beside
+      `endVisualizationConsumption`). An engine nobody selected costs nothing — the B51 gating rule
+- [x] **B53.8 Verify — confirmed live by the user 2026-08-26 ("nailed it").** The QA loop found four
+      things no headless probe could, and each is recorded where it will be looked for:
+      **(a)** un-mirroring left *two copies* of the analyzer, because Big Bento cuts its box in two —
+      a suite engine is now handed the run's rect and clipped per box (`visualizationRows`);
+      **(b)** the picker was unreachable on the flagship skin, which claims the right button over its
+      own visualization — the section is inserted into the skin's own popup, which is ours to build;
+      **(c)** picking an engine appeared to do nothing: our rows leave MAKI's command id at `0`, and a
+      submenu parent carries `0` too, so the "user picked a skin mode" test matched every pick of ours
+      and handed the box back four milliseconds later;
+      **(d)** the three engines read at wildly different loudness, settled by eye as a calibration in
+      `WasabiVisStyle.Gain` plus a per-engine **Sensitivity** control.
+      Tests: `WinampModernPhase75Tests` (17 — persistence and its unknown-name fallback, the run
+      geometry, the suppressed `fliph`, the gain/Sensitivity arithmetic including the oscilloscope's
+      separate calibration, the input-gain clamp, and the command-id-zero rule). Docs:
+      `reference/rendering.md` → *NullPlayer's own analyzers in a skin's `<vis>` box* (with the gain
+      table and where to tune it), SKILL.md symptom + concept + file-map rows,
+      `skins/big-bento-modern.md`, CHANGELOG under Unreleased → New Features.
+      **Corpus sweep** (triage-playbook §6's pre-merge gate for a renderer change), 36 skins /
+      310 images, before = `91b87814`, after = `5464bc9c`, clock pinned at 2s, xctest defaults domain
+      reset before each half with nothing run in between, compared by **RGB** pixels:
+      **275 identical, 35 changed** — and all 34 real ones are *inside a declared `<vis mode="1">`
+      box*, checked against each dump's own `VIS box` geometry rather than by eye. That is the 0.8
+      analyzer calibration and nothing else: no diff anywhere outside a visualization box, which is
+      what the gate is for, since the flip and run-geometry changes are unreachable in the default
+      state. The 35th is `Anexa/main-shade`, **confirmed nondeterministic here** — two runs of the
+      *same* build differ at (53,35)-(70,63), the region the harness doc already records.
+      Note the sweep can exercise **neither new engine**: no env var selects one and both need real
+      audio, so their evidence is the live QA above plus `WinampModernPhase75Tests`
+
+### Closed in this area
+
+- [x] **B51. The `<vis>` oscilloscope draws real PCM, and every `<vis>` attribute is read.** Done
+      2026-08-26, confirmed live ("looks great"). Built the `WasabiVisRenderer` seam B53 now extends,
+      the 576-sample waveform tap, the per-second falloff model and the vis box's own 30/60 Hz clock.
+      Detail: `reference/rendering.md` → *The oscilloscope reads PCM*, `reference/performance.md` →
+      *The visualization has a clock of its own*, and git history
+- [x] **B52. A cache nobody trusted: ~460 discarded scenes a second.** Done 2026-08-26, confirmed
+      live. Found while measuring B51's clock, not caused by it: `invalidateRectCaches()` threw the
+      memoized scene away by hand on every notification, and `tickTargetAnimation` notified on every
+      fade tick. `layout()` 9.9% → 1.3% of the main thread. Detail: `reference/performance.md` → *A
+      cache nobody trusted*, the `MUTATION_TRACE` row in `reference/harness.md`, and git history
+
+<details>
+<summary>B51's task list, kept for the deviations it records</summary>
 
 - [x] **B51.1** **Done — measured 0…4.** Settle the numeric range of `falloff`/`peakfalloff` before hardcoding the map —
       `WINAMP_MODERN_RENDER_DISASM=@visualizer` against Big Bento Modern (the plan assumes 0…4 from
@@ -250,18 +334,9 @@ entries until that QA passes.
       headlessly** — `main.vis.group` is hidden until the player pane passes 730px and the harness
       cannot drag the divider, so `VIS box` prints nothing for it; that is verification step 1's job
 
-### Tier 1
+</details>
 
-- [ ] **B53. NullPlayer's own visualization suite selectable inside a `.wal` skin.** Pass 2 of
-      `~/.claude/plans/i-dont-think-the-velvet-wreath.md` — read it there; it carries the split by
-      surface (`<vis>` boxes → `WasabiVisRenderer` implementations, `{0000000A}` holders → the
-      existing NSView surface), the selection/persistence model, and the constraints. The seam it
-      needs already exists (`WasabiVisPainter.swift`, B51). Two corrections to the plan, verified in
-      the code before it gets picked up: `CavaDrawing.draw` paints with `NSColor`/`NSBezierPath`, so
-      a `CavaVisRenderer` has to push an `NSGraphicsContext` around the scene's `CGContext` rather
-      than being handed one; and `WinampModernVisualizationSurface.engineType` is
-      `VisualizationType` (`VisualizationEngine.swift:92`, three cases: ProjectM/Geiss/Tripex), which
-      is the enum that has to widen for a spectrum surface to mount there.
+### Tier 1
 
 - [ ] **B54. White flashes at the tops of the analyzer bars, centre of the box.** Reported live
       2026-08-26 on Big Bento Modern (playing, `<vis>` in analyzer mode, debug build). **Pre-existing
@@ -279,6 +354,9 @@ entries until that QA passes.
       cap falls independently. Predictions to check first, in one look: it should vanish at `wide`
       bandwidth and worsen as the box narrows. If that holds, the fix is about how a cap is drawn
       when a band owns fewer than ~3 px, not about repainting
+
+<details>
+<summary>B52's task list, kept for the measurements it records</summary>
 
 - [x] **B52. Done 2026-08-26, confirmed live. The counter was the smaller half: the caches were
       being thrown away by hand, ~460 times a second.** Found while measuring B51's repaint clock, not caused by it —
@@ -339,6 +417,8 @@ entries until that QA passes.
         the painted-bounds rule both ways), 1295 total pass. Docs: `reference/performance.md` -> *A
         cache nobody trusted*, the `MUTATION_TRACE` row and the `DEBUG_PLAY` audio note in
         `reference/harness.md`, changelog under Unreleased -> Bug Fixes
+
+</details>
 
 These three came out of the Big Bento Modern header/settings research on 2026-08-23
 (plan: `~/.claude/plans/abundant-pondering-hamster.md`) and are **here rather than in

@@ -648,6 +648,45 @@ class ContextMenuBuilder {
         return parent
     }
 
+    /// What paints the loaded skin's `<vis>` box — Winamp's own analyzer and oscilloscope, or one of
+    /// NullPlayer's (B53).
+    ///
+    /// The box's own right-click menu carries this too, and that is the natural route. It is **not a
+    /// reliable one**: a skin is free to trap the right button over its visualization, and the
+    /// flagship one does — Big Bento Modern hangs its own settings page off an invisible
+    /// `main.vis.trigger` layer, which swallows the click before any box menu could open. So the
+    /// picker is here as well, where no skin can intercept it.
+    private static func buildWinampModernSpectrumAnalyzerMenuItem(wm: WindowManager) -> NSMenuItem {
+        let parent = NSMenuItem(title: "Spectrum Analyzer", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        let active = wm.winampModernSpectrumAnalyzer
+        // Plain, one-click rows — the same shape the box's own menu has, so the two routes to this
+        // feature do not describe it differently.
+        for analyzer in WinampModernSpectrumAnalyzer.allCases {
+            let item = NSMenuItem(title: analyzer.displayName,
+                                  action: #selector(MenuActions.setWinampModernSpectrumAnalyzer(_:)),
+                                  keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = analyzer.rawValue
+            item.state = analyzer == active ? .on : .off
+            submenu.addItem(item)
+        }
+        // …then the controls of whichever one is drawing, named after it.
+        submenu.addItem(.separator())
+        if let engine = wm.winampModernSpectrumAnalyzerMenus().first(where: { $0.suite == active }) {
+            engine.menu.autoenablesItems = false
+            let settings = NSMenuItem(title: "\(active.displayName) Settings", action: nil,
+                                      keyEquivalent: "")
+            settings.submenu = engine.menu
+            submenu.addItem(settings)
+        } else {
+            submenu.addItem(WinampModernVisSensitivityMenu.shared.menuItem(for: .skin))
+        }
+        parent.submenu = submenu
+        return parent
+    }
+
     private static func moveMenuItems(from source: NSMenu, to destination: NSMenu) {
         while let item = source.items.first {
             source.removeItem(item)
@@ -899,6 +938,14 @@ class ContextMenuBuilder {
             // the skin declaring one — so the group's separator is placed around what was actually
             // added rather than written inline after each block.
             var skinSpecific: [NSMenuItem] = [buildWinampModernTextSizeMenuItem(wm: wm)]
+
+            // Which visualization the skin's `<vis>` box draws (B53) — only for a skin that declares
+            // one. Defix declares none (its VIS buttons are a toolbar over the host's own
+            // visualization window), and an engine picker with no box to paint would be an item that
+            // changes nothing on screen.
+            if wm.winampModernHasVisualizationBox {
+                skinSpecific.append(buildWinampModernSpectrumAnalyzerMenuItem(wm: wm))
+            }
 
             // The skin's colour themes (Phase 32). A secondary route where the skin ships its own
             // picker, and the *only* route on the six measured skins that define themes and ship
@@ -4294,6 +4341,11 @@ class MenuActions: NSObject {
     @objc func setWinampModernTextScale(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? Int else { return }
         WindowManager.shared.setWinampModernTextScale(WinampModernTextScale.from(storedValue: raw))
+    }
+
+    @objc func setWinampModernSpectrumAnalyzer(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        WindowManager.shared.setWinampModernSpectrumAnalyzer(WinampModernSpectrumAnalyzer.from(storedValue: raw))
     }
 
     @objc func importClassicProEngineFromFile() {

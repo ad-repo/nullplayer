@@ -288,6 +288,9 @@ enum VisualizationPreferences {
         switch scope {
         case .mainWindow: return "mainWindow"
         case .spectrumWindow: return "spectrumWindow"
+        // The `.wal` `<vis>` box has no notification target: it is repainted by the skin window's
+        // own visualization clock, not by the `visClassicProfileCommand` broadcast.
+        case .winampModernVisBox: return "winampModernVisBox"
         }
     }
 

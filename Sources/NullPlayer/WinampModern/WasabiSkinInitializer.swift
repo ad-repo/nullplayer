@@ -361,6 +361,11 @@ final class WasabiSkinRuntime {
     /// layouts and windows draw one.
     let componentBucket = WinampModernComponentBucketState()
 
+    /// What paints this skin's `<vis>` boxes — Winamp's own analyzer/scope, or one of NullPlayer's
+    /// (B53). Skin-wide for the thinger's reason: one skin draws its visualization in several boxes
+    /// across several containers, and each has its own `WasabiSceneRenderer`.
+    let spectrumAnalyzer = WinampModernSpectrumAnalyzerState()
+
     /// Diagnostics recorded *after* load — surface classification and synthesis decisions happen once
     /// the graph exists, and they belong in the same compatibility report as the load-time ones.
     /// Bounded and de-duplicated: a per-frame scene walk must not grow this without limit.

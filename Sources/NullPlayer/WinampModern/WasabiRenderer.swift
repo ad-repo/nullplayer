@@ -983,7 +983,14 @@ final class WasabiSceneRenderer {
         // boxes reading it a few microseconds apart can straddle a 13 ms boundary and draw different
         // chunks — which in Big Bento's butterfly is a mirror that does not quite mirror.
         frameWaveform = waveformDemand?.needed == true ? host.waveformSamples : nil
-        defer { frameWaveform = nil }
+        // The box runs a suite engine draws across are a property of this frame's scene (B53), and
+        // they are worked out on the first `<vis>` that asks rather than up front — most skins have
+        // one box and most frames draw no suite engine at all.
+        frameVisRows = nil
+        defer {
+            frameWaveform = nil
+            frameVisRows = nil
+        }
         context.saveGState()
         context.translateBy(x: 0, y: canvasSize.height)
         context.scaleBy(x: 1, y: -1)
@@ -1981,8 +1988,20 @@ final class WasabiSceneRenderer {
     /// middle and read as one symmetric butterfly. Below them `main.vis.mirror` / `main.vis.mirror2`
     /// are `flipv="1" alpha="110" ghost="1"`, a dimmed 10px reflection. Ignoring the flags drew two
     /// identical copies with a seam down the middle and two reflections that were not reflected.
+    ///
+    /// **One exception, and it is a deliberate one (B53).** A `<vis>` painted by one of NullPlayer's
+    /// own engines does not take `fliph`. The horizontal mirror is a composition Winamp's analyzer
+    /// was drawn *for* — two rows of bands meeting at their low frequencies — and it does not
+    /// transfer: a mirrored Cava runs its frequency sweep backwards, and vis_classic's profile
+    /// artwork comes out reversed. `flipv` is untouched, because the dimmed reflection strip beneath
+    /// the boxes is a reflection of whatever is above it and reads correctly for any engine.
     private func applyFlip(of object: WasabiObject, frame: CGRect, context: CGContext) {
-        guard let transform = Self.flipTransform(of: object, frame: frame) else { return }
+        let suppressHorizontal = spectrumAnalyzer != .skin
+            && object.typeName.caseInsensitiveCompare("vis") == .orderedSame
+        guard let transform = Self.flipTransform(of: object, frame: frame,
+                                                 suppressHorizontal: suppressHorizontal) else {
+            return
+        }
         context.concatenate(transform)
     }
 
@@ -1993,8 +2012,9 @@ final class WasabiSceneRenderer {
     /// `maxX` and back, so applying it twice is the identity and the object still covers exactly the
     /// rect it declares. The flags are read with `WasabiGeometrySpec.flag`, so `fliph="2"` flips for
     /// the same `atoi` reason `relatw="2"` is relative (B42).
-    static func flipTransform(of object: WasabiObject, frame: CGRect) -> CGAffineTransform? {
-        let horizontal = WasabiGeometrySpec.flag(object.attributes["fliph"])
+    static func flipTransform(of object: WasabiObject, frame: CGRect,
+                              suppressHorizontal: Bool = false) -> CGAffineTransform? {
+        let horizontal = !suppressHorizontal && WasabiGeometrySpec.flag(object.attributes["fliph"])
         let vertical = WasabiGeometrySpec.flag(object.attributes["flipv"])
         guard horizontal || vertical else { return nil }
         // x' = (minX + maxX) - x sends minX to maxX and back, which is the mirror about the frame.
@@ -2713,8 +2733,11 @@ final class WasabiSceneRenderer {
     func refreshWaveformDemand() {
         let generation = loadedSkin.runtime.graph.sceneGeneration
         if let waveformDemand, waveformDemand.generation == generation { return }
+        // Resolved once, not once per box: `visRenderer` is a lookup through the skin's runtime now
+        // that the engine is selectable (B53).
+        let renderer = visRenderer
         let needed = visualizationObjects().contains {
-            visRenderer.needsWaveform(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
+            renderer.needsWaveform(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
         }
         let changed = waveformDemand?.needed != needed
         waveformDemand = (generation, needed)
@@ -2738,11 +2761,68 @@ final class WasabiSceneRenderer {
     /// Winamp's own caps have — fast enough to follow a track, slow enough to read as a cap.
     private static let analyzerPeakDecay: CGFloat = 0.015
 
-    /// What actually paints a `<vis>` box (`WasabiVisPainter.swift`). Behind a protocol because
-    /// NullPlayer's own visualization suite is meant to become selectable in a `.wal` skin, and each
-    /// of those engines is a renderer of the same shape. It owns the bar and cap decay state, keyed
-    /// by object, which used to live here as `analyzerPeaks`.
-    let visRenderer: WasabiVisRenderer = WasabiBuiltInVisRenderer()
+    /// What actually paints a `<vis>` box (`WasabiVisPainter.swift`) — Winamp's own analyzer and
+    /// oscilloscope, or one of NullPlayer's (B53). Behind a protocol because each of those engines
+    /// is a renderer of the same shape; it owns the bar and cap decay state, keyed by object, which
+    /// used to live here as `analyzerPeaks`.
+    ///
+    /// Held on the **skin's runtime**, not here: one skin's boxes are spread across several
+    /// containers and several `WasabiSceneRenderer`s, and they must all draw the same engine from
+    /// the same per-object state.
+    var visRenderer: WasabiVisRenderer {
+        loadedSkin.runtime.spectrumAnalyzer.renderer(in: loadedSkin.configuration)
+    }
+
+    /// Which engine is drawing this skin's `<vis>` boxes.
+    var spectrumAnalyzer: WinampModernSpectrumAnalyzer {
+        loadedSkin.runtime.spectrumAnalyzer.suite(in: loadedSkin.configuration)
+    }
+
+    /// Every NullPlayer engine's own controls, for the menus that offer them.
+    func spectrumAnalyzerMenus() -> [(suite: WinampModernSpectrumAnalyzer, menu: NSMenu)] {
+        loadedSkin.runtime.spectrumAnalyzer.optionMenus()
+    }
+
+    /// The `<vis>` box under a point, **whatever is stacked on top of it**.
+    ///
+    /// Deliberately not `object(at:)`, which answers the topmost object and is the right answer for
+    /// a click: a skin is free to cover its visualization with a layer that claims the mouse, and Big
+    /// Bento Modern does — `main.vis.trigger` is an invisible layer over the whole header group,
+    /// carrying the skin's own visualization settings page. This asks the other question, "is the
+    /// user pointing at the visualization", which is what decides whether the engine picker belongs
+    /// in the menu about to open there.
+    func visualizationObject(at point: CGPoint) -> WasabiObject? {
+        sceneNodes().last {
+            $0.object.typeName.caseInsensitiveCompare("vis") == .orderedSame
+                && $0.frame.contains(point)
+        }?.object
+    }
+
+    /// Change engines, reporting whether anything moved so the caller can skip the repaint.
+    ///
+    /// The waveform demand has to be recomputed by hand here. It is cached against the graph's own
+    /// generation — the right key for a `mode` write, which is a graph write — but an engine change
+    /// is not a graph write at all: swapping Winamp's analyzer for vis_classic turns the PCM tap
+    /// *on* without a single attribute moving, so the cached answer has to be dropped rather than
+    /// re-derived.
+    @discardableResult
+    func setSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer) -> Bool {
+        guard loadedSkin.runtime.spectrumAnalyzer.select(suite, in: loadedSkin.configuration) else {
+            return false
+        }
+        invalidateWaveformDemand()
+        invalidateSceneCache()
+        return true
+    }
+
+    /// Drop the cached waveform demand and work it out again.
+    ///
+    /// For the engine change above, and for the other renderers of the same skin, which share the
+    /// selection but each cache their own answer to it.
+    func invalidateWaveformDemand() {
+        waveformDemand = nil
+        refreshWaveformDemand()
+    }
 
     /// Whether any box still has a bar or a cap above the floor — what tells the window it can stop
     /// repainting once the audio has gone quiet.
@@ -2773,15 +2853,98 @@ final class WasabiSceneRenderer {
         }
         context.saveGState()
         defer { context.restoreGState() }
+        // **One visualization across the row, not one per box** (B53), and only for NullPlayer's own
+        // engines. A skin cuts its `<vis>` into as many boxes as its artwork needs: Big Bento Modern
+        // declares `main.vis` and `main.vis2` side by side, 144px each, and Winamp's analyzer in each
+        // of them — the left one mirrored — reads as one symmetric butterfly. Drop the mirror (which
+        // no other engine can wear) and the same two boxes read as two identical copies of the same
+        // spectrum, which is worse than either. So a suite engine is handed the **row's** rect and
+        // clipped to this box: each box shows its own slice of one continuous analyzer, and the skin's
+        // geometry is still exactly obeyed — nothing paints outside the box the author drew.
+        var drawFrame = frame
+        if spectrumAnalyzer != .skin {
+            drawFrame = visualizationRowFrame(for: object, frame: frame)
+            context.clip(to: frame)
+        }
         // The frame's waveform, taken once in `draw(in:)`. A box drawn outside a full frame (a probe,
         // a golden image) falls back to asking the host directly.
         let waveform = visRenderer.needsWaveform(forMode: style.mode)
             ? (frameWaveform ?? host.waveformSamples)
             : (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
         visRenderer.draw(WasabiVisInput(objectID: object.stableID, style: style,
-                                        levels: host.spectrumLevels, waveform: waveform),
-                         in: frame, context: context)
+                                        levels: host.spectrumLevels, waveform: waveform,
+                                        sampleRate: host.sampleRateHz > 0
+                                            ? Double(host.sampleRateHz) : 44_100),
+                         in: drawFrame, context: context)
     }
+
+    /// The rect one continuous visualization is drawn across for this box: the **run of `<vis>`
+    /// boxes it sits in**, or its own frame when it stands alone.
+    ///
+    /// A run is boxes on the same line — same top edge, same height — that touch, within a couple of
+    /// pixels of each other. That is deliberately narrow: it merges Big Bento's `main.vis` +
+    /// `main.vis2` (144px each, adjacent, 288 together) and its two 10px reflection strips as a
+    /// separate run of their own, while a skin that puts one `<vis>` in the player and another in a
+    /// shade layout, or two at different sizes, keeps them apart. Boxes that merely *overlap* are a
+    /// run too — Nullsoft.Winamp.2000.SP4.Lite declares the same box twice, and one analyzer across
+    /// the pair is exactly right there as well.
+    ///
+    /// Computed once per frame and dropped with the frame's waveform: it walks the scene, and this is
+    /// asked once per box.
+    private func visualizationRowFrame(for object: WasabiObject, frame: CGRect) -> CGRect {
+        if frameVisRows == nil { frameVisRows = computeVisualizationRows() }
+        return frameVisRows?[object.stableID] ?? frame
+    }
+
+    private func computeVisualizationRows() -> [WasabiObjectID: CGRect] {
+        Self.visualizationRows(boxes: sceneNodes().compactMap { node in
+            guard node.object.typeName.caseInsensitiveCompare("vis") == .orderedSame,
+                  node.frame.width > 0, node.frame.height > 0 else { return nil }
+            return (node.object.stableID, node.frame)
+        })
+    }
+
+    /// The run each box belongs to, as a pure function of the boxes — split out from the scene walk
+    /// so the geometry can be asserted without a skin.
+    static func visualizationRows(
+        boxes: [(id: WasabiObjectID, frame: CGRect)]) -> [WasabiObjectID: CGRect] {
+        guard boxes.count > 1 else { return [:] }
+        // Same line, same height — a reflection strip is not part of the row it reflects.
+        let lines = Dictionary(grouping: boxes) {
+            LineKey(top: ($0.frame.minY).rounded(), height: ($0.frame.height).rounded())
+        }
+        var rows: [WasabiObjectID: CGRect] = [:]
+        for (_, line) in lines {
+            var run: [(id: WasabiObjectID, frame: CGRect)] = []
+            func closeRun() {
+                guard run.count > 1 else { return run.removeAll() }
+                let union = run.dropFirst().reduce(run[0].frame) { $0.union($1.frame) }
+                for box in run { rows[box.id] = union }
+                run.removeAll()
+            }
+            for box in line.sorted(by: { $0.frame.minX < $1.frame.minX }) {
+                if let previous = run.last,
+                   box.frame.minX - previous.frame.maxX > Self.visualizationRowGap {
+                    closeRun()
+                }
+                run.append(box)
+            }
+            closeRun()
+        }
+        return rows
+    }
+
+    /// How far apart two boxes may be and still be one visualization. Big Bento's pair is flush; a
+    /// hairline is allowed for a skin that leaves a seam.
+    private static let visualizationRowGap: CGFloat = 2
+
+    private struct LineKey: Hashable {
+        let top: CGFloat
+        let height: CGFloat
+    }
+
+    /// This frame's box runs, alongside `frameWaveform` and cleared with it.
+    private var frameVisRows: [WasabiObjectID: CGRect]?
 
     /// `<eqvis>` — the little curve a skin draws over its equalizer, from the current band gains.
     /// Winamp colours it with a top/middle/bottom triple plus a separate preamp line colour.

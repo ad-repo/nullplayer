@@ -11,6 +11,9 @@ enum CavaSettings {
         case mainWindow
         case compactWindow
         case libraryWindow
+        /// A Winamp Modern (`.wal`) skin's own `<vis>` box (B53). Its own keys, so a skin embedding
+        /// cannot contaminate the standalone Cava window's settings.
+        case winampModernVisBox
 
         var identifier: String {
             switch self {
@@ -18,6 +21,7 @@ enum CavaSettings {
             case .mainWindow: return "mainWindow"
             case .compactWindow: return "compactWindow"
             case .libraryWindow: return "libraryWindow"
+            case .winampModernVisBox: return "winampModernVisBox"
             }
         }
     }
@@ -61,6 +65,8 @@ enum CavaSettings {
             return "cava.compactWindow.\(setting.rawValue)"
         case .libraryWindow:
             return "cava.libraryWindow.\(setting.rawValue)"
+        case .winampModernVisBox:
+            return "cava.winampModernVisBox.\(setting.rawValue)"
         }
     }
 
@@ -78,6 +84,7 @@ enum CavaSettings {
     // Factory defaults for the exposed tuning knobs (the "Reset to Defaults" target).
     static let defaultBarCount = 32
     static let defaultBrowserBarCount = 64
+    static let defaultWinampModernVisBarCount = 24
     static let defaultNoiseReduction = 0.65   // smoothing / latency; lower = snappier
     static let defaultCompactNoiseReduction = 0.80
     static let defaultBassTilt = 0.3          // band bin-count exponent; higher = more bass
@@ -89,6 +96,10 @@ enum CavaSettings {
             return [16, 24, 32, 48, 64]
         case .mainWindow:
             return [12, 19, 24, 32]
+        // A skin's `<vis>` is small — Big Bento's header boxes are ~100px wide — and Winamp's own
+        // analyzer offers 19 or 75 bands there, so the useful range sits low.
+        case .winampModernVisBox:
+            return [12, 19, 24, 32, 48]
         }
     }
 
@@ -111,7 +122,10 @@ enum CavaSettings {
     static func mode(for scope: Scope) -> Mode {
         // The tiny main-window strip is always mono. Other scopes remain configurable.
         guard scope != .mainWindow else { return .mono }
-        let defaultMode: Mode = scope == .libraryWindow ? .mono : .stereo
+        // A box a hundred pixels wide has no room for a mirrored pair, so it opens mono — but
+        // unlike the main window's strip it stays switchable.
+        let defaultMode: Mode = (scope == .libraryWindow || scope == .winampModernVisBox)
+            ? .mono : .stereo
         let preferenceKey = key(.mode, for: scope)
         guard defaults.object(forKey: preferenceKey) != nil else { return defaultMode }
         let raw = defaults.integer(forKey: preferenceKey)
@@ -137,6 +151,8 @@ enum CavaSettings {
             return defaultBrowserBarCount
         case .cavaWindow, .mainWindow:
             return defaultBarCount
+        case .winampModernVisBox:
+            return defaultWinampModernVisBarCount
         }
     }
 
@@ -372,6 +388,7 @@ enum CavaSettings {
         setHasCustomColors(false, for: .mainWindow)
         setHasCustomColors(false, for: .compactWindow)
         setHasCustomColors(false, for: .libraryWindow)
+        setHasCustomColors(false, for: .winampModernVisBox)
         setTransparentBackground(defaultTransparency, customized: false)
     }
 

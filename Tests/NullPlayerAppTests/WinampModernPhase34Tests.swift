@@ -203,9 +203,13 @@ final class WinampModernPhase34Tests: XCTestCase {
             <vis id="vis" x="0" y="0" w="16" h="16" colorallbands="255,0,0"/>
             """, host: host)
         let painted = (0..<16).filter { alpha(pixels, x: 0, y: $0) > 0 }.count
-        let expected = Int((Double(WinampModernScriptRuntime.visByte(forMagnitude: 0.1)) / 255 * 16).rounded())
+        // Times the analyzer's calibration gain (B53): three engines can paint this box now, and
+        // Winamp's own read hot against the other two off exactly this decibel curve. The *shape* is
+        // what this test is about and is unchanged — the sweep still decides the height.
+        let sweep = Double(WinampModernScriptRuntime.visByte(forMagnitude: 0.1)) / 255
+        let expected = Int((sweep * Double(WasabiVisStyle.Gain.builtInAnalyzer) * 16).rounded())
         XCTAssertEqual(painted, expected, accuracy: 1, "the bar follows the dB sweep")
-        XCTAssertGreaterThan(painted, 8, "and −20 dBFS is well clear of the floor")
+        XCTAssertGreaterThan(painted, 6, "and −20 dBFS is well clear of the floor")
     }
 
     /// Silence stays silent — the floor of the sweep is 0, not a permanent stub of a bar.

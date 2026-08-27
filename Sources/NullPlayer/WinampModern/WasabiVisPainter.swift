@@ -113,6 +113,35 @@ struct WasabiVisStyle {
     }
 
     static let white = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+
+    /// **How loud each engine draws, so the box reads the same whichever one is in it (B53).**
+    ///
+    /// The three engines measure the same audio on three scales that were never meant to agree.
+    /// Winamp's analyzer maps its bands through a **decibel** curve (`visByte(forMagnitude:)`), which
+    /// is why ordinary music fills its box to the top — it reads *hot*. Cava normalises linearly with
+    /// its own slow auto-gain, and vis_classic scales against a canvas cut for a 128px-tall window;
+    /// dropped into a 30px skin box both read *cold* beside it.
+    ///
+    /// So each engine takes one number on the way to the box, and the numbers are chosen to meet in
+    /// the middle rather than to make the quiet ones as hot as Winamp's: the built-in comes down, the
+    /// other two come up. They are calibration, not taste — a shared gain would only move all three
+    /// together and change nothing about how differently they read.
+    enum Gain {
+        /// Winamp's own analyzer, pulled back off the ceiling.
+        static let builtInAnalyzer: CGFloat = 0.8
+        /// Winamp's own oscilloscope, left where it is. It draws the wave itself rather than a
+        /// decibel curve, so it never read hot the way the analyzer did — but it takes the same
+        /// **Sensitivity** the user sets for this engine, which is why it has a number of its own to
+        /// be multiplied. A scope past the box is clamped, not clipped: the trace flattens against
+        /// the edge instead of vanishing off it.
+        static let builtInOscilloscope: CGFloat = 1.0
+        /// Cava's bars, brought up to meet it. Clamped at the top, so a loud passage still tops out.
+        static let cava: Float = 1.45
+        /// vis_classic takes its gain on the **input** — the 576-sample buffer, scaled about the
+        /// 128 centre line — because the core does its own FFT and paints its own bars, so there is
+        /// no height to scale on the way out without stretching its artwork.
+        static let visClassicInput: Double = 1.6
+    }
 }
 
 /// Everything a renderer needs for one box, one frame.
@@ -123,6 +152,10 @@ struct WasabiVisInput {
     let levels: [Float]
     /// Winamp's 576-sample `visdata` waveform, `UInt8` centred on 128, flat when silent.
     let waveform: (left: [UInt8], right: [UInt8])
+    /// What the waveform was sampled at. Winamp's own scope does not care — it draws the buffer it
+    /// is given — but a PCM engine that runs its own FFT (vis_classic, B53) needs the rate to place
+    /// a frequency, and a host with no audio (the render harness) answers the CD rate.
+    let sampleRate: Double
 }
 
 /// What paints a `<vis>` box.
@@ -205,7 +238,11 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
             var peak: Float = 0
             for bin in start..<end { peak = max(peak, levels[bin]) }
             let byte = WinampModernScriptRuntime.visByte(forMagnitude: peak)
-            return max(0, min(1, CGFloat(byte) / 255))
+            // The dB curve puts ordinary music at the top of the box; the gain is what brings it
+            // back down to where the other two engines can meet it (`WasabiVisStyle.Gain`), times
+            // whatever the user has set Sensitivity to.
+            return max(0, min(1, CGFloat(byte) / 255
+                                 * WinampModernVisSensitivity.gain(for: .skin)))
         }
         // Bars are laid out on whole pixels. A fractional slot antialiases the 1px gap between bars
         // into a smear, and a `wide` row then reads as one solid block rather than as Winamp's
@@ -258,10 +295,13 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
         guard !samples.isEmpty else { return }
         let style = input.style
         let columns = max(1, min(samples.count, Int(frame.width.rounded())))
+        let gain = WinampModernVisSensitivity.oscilloscopeGain()
         // One column per pixel of box width, sampled across the buffer.
         func sample(_ column: Int) -> (y: CGFloat, excursion: CGFloat) {
             let index = min(samples.count - 1, column * samples.count / columns)
-            let offset = (CGFloat(samples[index]) - 128) / 128
+            // Clamped to the box, so turning Sensitivity up makes a quiet track legible without
+            // drawing the loud parts outside the rect the skin's author gave this box.
+            let offset = max(-1, min(1, (CGFloat(samples[index]) - 128) / 128 * gain))
             return (frame.midY + offset * frame.height / 2, min(1, abs(offset)))
         }
         func x(_ column: Int) -> CGFloat {

@@ -44,6 +44,8 @@ enum WinampModernSkinState {
     static let windowsSection = "@nullplayer.windows"
     static let textSection = "@nullplayer.text"
     static let textSizeKey = "size"
+    static let visSection = "@nullplayer.vis"
+    static let analyzerKey = "engine"
 
     // MARK: - A splitter's divider offset
 
@@ -111,6 +113,23 @@ enum WinampModernSkinState {
     static func setTextScale(_ scale: WinampModernTextScale,
                              in configuration: WinampModernConfiguration) {
         configuration.setInteger(Int32(scale.storedValue), section: textSection, key: textSizeKey)
+    }
+
+    // MARK: - What paints the skin's `<vis>` box
+
+    /// The visualization engine the user chose for this skin's `<vis>` boxes, or `.skin` when they
+    /// never have — a skin looks the way its author drew it until somebody says otherwise.
+    ///
+    /// A string rather than an integer, because the value is an engine's *name*: an ordinal would
+    /// silently re-point at a different engine the first time the list changes order.
+    static func spectrumAnalyzer(in configuration: WinampModernConfiguration) -> WinampModernSpectrumAnalyzer {
+        WinampModernSpectrumAnalyzer.from(
+            storedValue: configuration.string(section: visSection, key: analyzerKey, default: ""))
+    }
+
+    static func setSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer,
+                            in configuration: WinampModernConfiguration) {
+        configuration.setString(suite.rawValue, section: visSection, key: analyzerKey)
     }
 
     // MARK: - The sentinel

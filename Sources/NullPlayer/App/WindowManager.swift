@@ -976,6 +976,48 @@ class WindowManager {
         (mainWindowController as? WinampModernMainWindowController)?.setTextScale(scale)
     }
 
+    /// What paints the loaded `.wal` skin's `<vis>` boxes — Winamp's own analyzer and oscilloscope,
+    /// or one of NullPlayer's (B53). Safe default in every other mode, per CLAUDE.md's rule that a
+    /// mode-specific feature is guarded at all three layers.
+    var winampModernSpectrumAnalyzer: WinampModernSpectrumAnalyzer {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return .skin }
+        return controller.spectrumAnalyzer
+    }
+
+    /// Whether the loaded skin draws a `<vis>` at all — Defix declares none, and an engine picker
+    /// over a skin with no box to paint would be a control for nothing.
+    var winampModernHasVisualizationBox: Bool {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return false }
+        return controller.hasVisualizationBox
+    }
+
+    /// The controls belonging to whatever is painting the skin's `<vis>` box — Cava's own menu,
+    /// vis_classic's profile catalogue — or nil for the skin's own analyzer, whose options are
+    /// `<vis>` attributes and live with the box.
+    func winampModernSpectrumAnalyzerMenus() -> [(suite: WinampModernSpectrumAnalyzer, menu: NSMenu)] {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return [] }
+        return controller.spectrumAnalyzerMenus()
+    }
+
+    /// Repaint the loaded skin's `<vis>` boxes now — for a setting that changes how they draw without
+    /// changing anything the visualization clock watches (Sensitivity, B53). A paused player has no
+    /// clock running at all, so without this the new gain would not show until the music restarted.
+    func repaintWinampModernVisualization() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.repaintVisualization()
+    }
+
+    func setWinampModernSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.setSpectrumAnalyzer(suite)
+    }
+
     /// Open the list of settings the skin registered but bound no control to.
     func showWinampModernSkinSettings() {
         guard uiMode.controllerFamily == .winampModern else { return }

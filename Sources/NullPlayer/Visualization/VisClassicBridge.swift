@@ -12,11 +12,16 @@ final class VisClassicBridge {
     enum PreferenceScope {
         case spectrumWindow
         case mainWindow
+        /// A `.wal` skin's own `<vis>` box (B53). Its own keys, per CLAUDE.md's rule that
+        /// vis_classic state is window-scoped: a profile picked inside a skin must not move the
+        /// dedicated spectrum window's, and a skin embedding must not be able to write over either.
+        case winampModernVisBox
 
         var lastProfileNameKey: String {
             switch self {
             case .spectrumWindow: return "visClassicLastProfileName.spectrumWindow"
             case .mainWindow: return "visClassicLastProfileName.mainWindow"
+            case .winampModernVisBox: return "visClassicLastProfileName.winampModernVisBox"
             }
         }
 
@@ -24,6 +29,7 @@ final class VisClassicBridge {
             switch self {
             case .spectrumWindow: return "visClassicFitToWidth.spectrumWindow"
             case .mainWindow: return "visClassicFitToWidth.mainWindow"
+            case .winampModernVisBox: return "visClassicFitToWidth.winampModernVisBox"
             }
         }
 
@@ -31,6 +37,7 @@ final class VisClassicBridge {
             switch self {
             case .spectrumWindow: return "visClassicTransparentBg.spectrumWindow"
             case .mainWindow: return "visClassicTransparentBg.mainWindow"
+            case .winampModernVisBox: return "visClassicTransparentBg.winampModernVisBox"
             }
         }
 
@@ -38,6 +45,7 @@ final class VisClassicBridge {
             switch self {
             case .spectrumWindow: return "visClassicOpacity.spectrumWindow"
             case .mainWindow: return "visClassicOpacity.mainWindow"
+            case .winampModernVisBox: return "visClassicOpacity.winampModernVisBox"
             }
         }
     }
@@ -361,6 +369,11 @@ final class VisClassicBridge {
     ) -> Bool {
         if let scoped = defaults.object(forKey: scope.transparentBgKey) as? Bool {
             return scoped
+        }
+        // A `.wal` skin's `<vis>` box is a recess its author drew, and the analyzer that normally
+        // lives there paints only its bars — an opaque black rectangle would cover the artwork.
+        if scope == .winampModernVisBox {
+            return true
         }
         // Metal finishes default to a transparent vis_classic background so the analyzer
         // bars sit on the brushed-metal chrome instead of an opaque black box. Only the

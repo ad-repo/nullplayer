@@ -4,6 +4,24 @@
 
 ### New Features
 
+- **Winamp 5.x modern skins: choose what draws the skin's spectrum analyzer** — the little
+  visualization box in a `.wal` skin has always been Winamp's own analyzer or oscilloscope. It can
+  now be **Cava** or **vis_classic** instead, chosen per skin and remembered, from the box's own
+  right-click menu or from **Skins → Modern → Spectrum Analyzer**. The choice sits in the same group
+  as the skin's own modes, because it answers the same question, and each engine brings the controls
+  it already has elsewhere in the app — Cava's bars, colours, smoothing and bass; vis_classic's
+  profile catalogue, fit-to-width and transparent background — on its own settings row rather than in
+  a second, thinner copy. Skins that claim the right button over their visualization are included:
+  Big Bento Modern pops its own settings page there, and the engine choice is inserted into it.
+  Cava follows the skin's own band colours unless you pick one of its presets, so a dark skin does
+  not suddenly get a lime-green analyzer, and a skin that cuts its visualization into several boxes
+  draws **one** continuous analyzer across them rather than a copy in each.
+  A **Sensitivity** control (Lowest → Highest) sits with each engine: the three measure the same audio
+  on scales that were never meant to agree, so they ship calibrated to a common loudness — Winamp's
+  analyzer, which reads hot off its decibel curve, turned down to meet Cava and vis_classic brought up
+  — and Sensitivity adjusts from there. Winamp's own oscilloscope takes the same setting, clamped to
+  its box so a hot trace flattens against the edge instead of drawing over the skin's artwork.
+
 - **Winamp 5.x modern skins: a Text Size control, and playlist rows that no longer depend on the
   skin's fonts** — the playlist inside a `.wal` skin and the Media Library beside it now draw at one
   size, set from **UI → Winamp Modern → Text Size** and remembered for each skin separately. Left on

@@ -529,6 +529,49 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
+    // MARK: - What paints the skin's `<vis>` box (B53)
+
+    /// Winamp's own analyzer and oscilloscope, or one of NullPlayer's. Skin-wide, so the player's
+    /// renderer answers for every container.
+    var spectrumAnalyzer: WinampModernSpectrumAnalyzer { skinView?.renderer.spectrumAnalyzer ?? .skin }
+
+    /// Whether this skin declares a `<vis>` anywhere. Defix declares none — its VIS buttons are a
+    /// toolbar over the host's own visualization window — and an engine picker there would name a
+    /// choice that changes nothing on screen.
+    var hasVisualizationBox: Bool { !(skinView?.renderer.visualizationObjects().isEmpty ?? true) }
+
+    /// The running engine's own controls, for the menu-bar route.
+    ///
+    /// It has to exist there as well as on the box: a skin is free to trap the right button over its
+    /// visualization — Big Bento Modern does, with the invisible `main.vis.trigger` layer carrying
+    /// its own settings page — and then the box menu that would have held these never opens.
+    /// Repaint every container's `<vis>`, for a setting the visualization clock cannot notice —
+    /// Sensitivity changes how the box draws without changing the audio it draws from.
+    func repaintVisualization() {
+        skinView?.needsDisplay = true
+        for container in auxiliaryContainers { container.view.needsDisplay = true }
+    }
+
+    func spectrumAnalyzerMenus() -> [(suite: WinampModernSpectrumAnalyzer, menu: NSMenu)] {
+        skinView?.renderer.spectrumAnalyzerMenus() ?? []
+    }
+
+    /// Switch engines and remember it for this skin.
+    ///
+    /// Fans out like `setTextScale`: the *selection* is skin-wide (it lives on the skin's runtime),
+    /// but each container has to be told to repaint — a separate-window skin can draw a `<vis>` in
+    /// an auxiliary container, and one of Big Bento's six sits in the player while others do not.
+    func setSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer) {
+        guard let skinView, skinView.renderer.setSpectrumAnalyzer(suite) else { return }
+        skinView.needsDisplay = true
+        for container in auxiliaryContainers {
+            // The renderers share one selection through the runtime, so this only re-derives the
+            // waveform demand each of them caches and asks for a repaint.
+            container.view.renderer.invalidateWaveformDemand()
+            container.view.needsDisplay = true
+        }
+    }
+
     // MARK: - NullPlayer-hosted windows
 
     private func setupHostedWindowMaterializer(loaded: WinampModernLoadedSkin,
@@ -1958,6 +2001,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         componentBridge?.releaseHostedWindowSurfaces()
         skinView?.teardown()
         skinView = nil
+        // Whatever was painting the skin's `<vis>` box stops with the skin (B53), beside the
+        // engine surface above and for the same reason: Cava holds a full-stereo consumer open and
+        // vis_classic a C++ core, and neither has anything left to draw into.
+        loadedSkin?.runtime.spectrumAnalyzer.discardAll()
         host?.endVisualizationConsumption()
         host = nil
         componentBridge = nil
