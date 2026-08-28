@@ -2,6 +2,62 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B56 — Skin windows spawn on top of each other — closed 2026-08-28
+
+### B56
+
+Winamp Modern has no center stack — a `.wal` skin's windows are whatever shape and size the author
+chose — so their arrangement is a **tiling**, generated in one deterministic sweep. It is not a
+collision-avoider bolted onto per-window placement: four attempts at that were whack-a-mole, because
+the inputs a per-window decision needs do not exist when it runs.
+
+Two measurements settled the design, both on Defix:
+
+- **Nothing decided during skin load can be right.** Containers are created and shown while the skin
+  loads, before `WindowManager` reveals the player at its restored frame and before the standard
+  frame's layout pass settles sizes. Every window was placed against a player at `{{0,695},{406,355}}`
+  that finished at `{{0,677},{426,373}}`, and against its own size ~5% smaller than it ended up.
+- **The skin's own `default_x`/`default_y` cannot be the answer.** Defix's put `pledit` at x 822–1228
+  and the media library at x 1120–1920 — 108px of overlap before any NullPlayer window is counted.
+
+- [x] **B56.1. `WindowManager.WinampModernTiler`.** Columns run down from the player, each window
+      flush under the last; one that will not fit starts the next column right. Fixed order, no
+      scoring, no iteration. The player is the anchor and never moves — its frame is restored state.
+- [x] **B56.2. `arrangeWindows()` — the single sweep.** Lays out the skin's containers in declaration
+      order, then the materialized hosted windows. Called from the `restoreSettingsState` completion
+      in `AppDelegate`, the first moment the player's final frame and every final size are known.
+- [x] **B56.3. `tiledOrigin(for:avoiding:)` — the open-later path.** Walks the same slot sequence and
+      takes the first slot clear of what is on screen, so a window opened from the menu lands where
+      the arrangement would have put it without disturbing anything already placed.
+- [x] **B56.4. Lay the scene out before choosing a slot.** `setAuxiliaryWindow` forces
+      `layoutSubtreeIfNeeded()` first. Placing before it picks a correct slot for a size the window is
+      about to stop having — two menu-opened windows overlapped 153×174 under a tiling that cannot
+      overlap.
+- [x] **B56.5. Classic and Original untouched.** `positionSubWindow` keeps its stack scan verbatim;
+      the tiling is an early return gated on `uiMode.controllerFamily == .winampModern`. An earlier
+      cut argued a shared resolve was "a no-op" for those modes instead of gating it, and it was not —
+      the screen clamp it carried moved Classic's sub-windows. See the rule now at the top of
+      `SKILL.md`.
+- [x] **B56.6. Verified in the running app** (2026-08-28, Defix, `WINAMP_MODERN_PLACE_TRACE=1`).
+      Launch with 5 windows restored, then 2 more opened from the menu: all 7 frames disjoint,
+      measured via the accessibility API rather than by eye. Before: the media library overlapped
+      three windows on a plain launch.
+- [x] **B56.7. Anaheim verified** by the user, 2026-08-28.
+- [ ] **B56.8. Remaining checks.** A skin whose playlist is a classic fallback; a Classic regression
+      pass (the mode gate should make it a formality); and the arrangement after a live UI-Size
+      change, which resizes every window and is the one input the sweep does not re-run for — expect
+      that to need the same treatment.
+
+Shipped as a deterministic tiling (`WindowManager.WinampModernTiler`) rather than per-window
+collision avoidance; the reasoning and the measurements that ruled the alternatives out are in
+[`components.md`](../../skills/winamp-modern-skin-guide/reference/components.md) under "Where a
+skin's windows go". Verified in the running app on Defix and Anaheim, 2026-08-28. Regression
+coverage: `WinampModernWindowTilingTests` (8 cases; the property test caught a real overlap bug
+in the right-edge clamp that the manual pass missed). Remaining verification is tracked as B56a
+in [`TASKS.md`](../../TASKS.md).
+
+---
+
 ## BB5 — Substitute `@HAVE_LIBRARY@` across markup — closed 2026-08-27
 
 ### BB5
