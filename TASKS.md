@@ -36,6 +36,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
+| B56 | New windows spawn on top of existing ones | — · pervasive across `.wal` skins (2026-08-28) | M | Live-reported |
 | B54 | High-band-count analyzer peak flashes | — · seen on Big Bento Modern (2026-08-26) | S | Live-reported |
 | BB28 | Stretched visualization overlaps file info after restart | — · seen on Windows 10 edition Light (2026-08-25) | M | Live-reported |
 | BB26 | File-info rating row draws dots rather than stars | — · seen on base and Light variants (2026-08-25) | S | Live-reported |
@@ -293,6 +294,50 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
       item, outside the `.wal` subsystem
 
 ---
+
+### B56
+
+Winamp Modern has no center stack — a `.wal` skin's windows are whatever shape and size the author
+chose — so their arrangement is a **tiling**, generated in one deterministic sweep. It is not a
+collision-avoider bolted onto per-window placement: four attempts at that were whack-a-mole, because
+the inputs a per-window decision needs do not exist when it runs.
+
+Two measurements settled the design, both on Defix:
+
+- **Nothing decided during skin load can be right.** Containers are created and shown while the skin
+  loads, before `WindowManager` reveals the player at its restored frame and before the standard
+  frame's layout pass settles sizes. Every window was placed against a player at `{{0,695},{406,355}}`
+  that finished at `{{0,677},{426,373}}`, and against its own size ~5% smaller than it ended up.
+- **The skin's own `default_x`/`default_y` cannot be the answer.** Defix's put `pledit` at x 822–1228
+  and the media library at x 1120–1920 — 108px of overlap before any NullPlayer window is counted.
+
+- [x] **B56.1. `WindowManager.WinampModernTiler`.** Columns run down from the player, each window
+      flush under the last; one that will not fit starts the next column right. Fixed order, no
+      scoring, no iteration. The player is the anchor and never moves — its frame is restored state.
+- [x] **B56.2. `arrangeWindows()` — the single sweep.** Lays out the skin's containers in declaration
+      order, then the materialized hosted windows. Called from the `restoreSettingsState` completion
+      in `AppDelegate`, the first moment the player's final frame and every final size are known.
+- [x] **B56.3. `tiledOrigin(for:avoiding:)` — the open-later path.** Walks the same slot sequence and
+      takes the first slot clear of what is on screen, so a window opened from the menu lands where
+      the arrangement would have put it without disturbing anything already placed.
+- [x] **B56.4. Lay the scene out before choosing a slot.** `setAuxiliaryWindow` forces
+      `layoutSubtreeIfNeeded()` first. Placing before it picks a correct slot for a size the window is
+      about to stop having — two menu-opened windows overlapped 153×174 under a tiling that cannot
+      overlap.
+- [x] **B56.5. Classic and Original untouched.** `positionSubWindow` keeps its stack scan verbatim;
+      the tiling is an early return gated on `uiMode.controllerFamily == .winampModern`. An earlier
+      cut argued a shared resolve was "a no-op" for those modes instead of gating it, and it was not —
+      the screen clamp it carried moved Classic's sub-windows. See the rule now at the top of
+      `SKILL.md`.
+- [x] **B56.6. Verified in the running app** (2026-08-28, Defix, `WINAMP_MODERN_PLACE_TRACE=1`).
+      Launch with 5 windows restored, then 2 more opened from the menu: all 7 frames disjoint,
+      measured via the accessibility API rather than by eye. Before: the media library overlapped
+      three windows on a plain launch.
+- [x] **B56.7. Anaheim verified** by the user, 2026-08-28.
+- [ ] **B56.8. Remaining checks.** A skin whose playlist is a classic fallback; a Classic regression
+      pass (the mode gate should make it a formality); and the arrangement after a live UI-Size
+      change, which resizes every window and is the one input the sweep does not re-run for — expect
+      that to need the same treatment.
 
 ### B54
 

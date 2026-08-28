@@ -174,6 +174,51 @@ Every `.wal` window is `.borderless`, which changes what AppKit will do for you:
   — stacked under the main window, clamped to the screen — and never repositioned again, so a window
   the user has moved stays where they put it (`placedAuxiliaryWindows`). Phase 24
 
+#### Where a skin's windows go — the tiling (B56)
+
+**There is no center stack in Winamp Modern.** A `.wal` skin's windows are whatever shape and size the
+author chose, so the arrangement is a **tiling generated in one deterministic sweep**
+(`WindowManager.WinampModernTiler`), not a placement negotiated per window as each one opens. Columns
+run down from the player, each window flush under the last; one that will not fit starts the next
+column to the right. Fixed order, no scoring, no iteration. The player is the anchor and never moves —
+its frame is restored user state.
+
+Two entry points, one slot sequence: `arrangeWindows()` lays out everything at once, and
+`tiledOrigin(for:avoiding:)` gives a window opened later the first slot clear of what is on screen, so
+it lands where the arrangement would have put it without disturbing anything already placed.
+
+Four attempts to solve this per-window failed before the sweep, and the reasons are the load-bearing
+part of this section:
+
+- **Nothing decided during skin load can be right.** Containers are created and shown *while the skin
+  loads*, which is before `WindowManager` reveals the player at its restored frame, before hosted
+  windows exist, and before the standard frame's layout pass settles sizes. Measured on Defix: every
+  window was placed against a player at `{{0,695},{406,355}}` that finished at `{{0,677},{426,373}}`,
+  and against its own size ~5% smaller than it ended up. `WindowManager.mainWindowController` is not
+  even assigned yet, so its managed-window graph reports the skin as having no windows at all. The
+  sweep therefore runs from the `restoreSettingsState` completion in `AppDelegate` — the first moment
+  the inputs exist.
+- **Lay the scene out before choosing a slot.** `setAuxiliaryWindow` calls `layoutSubtreeIfNeeded()`
+  first. Placing before it picks a correct slot for a size the window is about to stop having, which
+  is how two menu-opened windows overlapped by 153×174 under a tiling that cannot overlap.
+- **`default_x`/`default_y` are not consulted.** They are Winamp's desktop arrangement for a player at
+  the origin, and they do not survive contact: Defix's put `pledit` at x 822–1228 and the media library
+  at x 1120–1920, overlapping by 108px before any NullPlayer window is counted. Honouring them "when
+  the slot is free" cannot produce a clean layout for such a skin — check whether a skin's authored
+  arrangement is self-consistent before building on it.
+- **Never clamp a column back onto the screen.** A right-edge clamp can only move a column *left*,
+  into the one already there — on a 1600pt region it dragged the media library from x=852 to x=760 and
+  straight through its neighbour. When the screen is full, a window hanging off the right is the honest
+  answer; non-overlap is the invariant, staying on screen is the preference. `WinampModernWindowTilingTests`
+  pins this.
+- **The notifier is not part of the arrangement.** A corner toast is host-driven and transient, and
+  keeps its corner.
+
+Verify in the running app, never on paper: `WINAMP_MODERN_PLACE_TRACE=1` prints every placement
+decision ([harness.md](harness.md)), and the finished layout is read back through the accessibility
+API rather than judged by eye. Every claim above is a measurement; four earlier claims that were not
+were all wrong.
+
 #### Which layout a container opens in
 
 `WasabiSceneRenderer.primaryLayout(of:)` — the layout named `normal`, else the container's **first

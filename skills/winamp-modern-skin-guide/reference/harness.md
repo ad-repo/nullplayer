@@ -36,6 +36,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_ENGINE` | import + mount the ClassicPro engine first (cPro skins) |
 | `WINAMP_MODERN_RENDER_PROBE=<container>/<layout>` | dump every scene node: type, id, frame, clip, bitmap, attributes |
 | `WINAMP_MODERN_RENDER_BITMAPS=1` | count resolved bitmaps and list any that fail to load |
+| `WINAMP_MODERN_PLACE_TRACE=1` | every window-placement decision, in the running app. `[place] <container>` — an auxiliary window's size, its preferred origin, the origin resolved for it, and every frame it had to avoid. `[place/stack] …` — `positionSubWindow`'s stack scan: the player's frame, how many stack members it saw, the `targetY` it chose, and what the non-overlap resolve did with it. `[place/hosted] <id> afterShow=…` — a hosted window's frame *after* it is on screen, which is what catches something moving it later. `[place/script] <container>` — the skin's own MAKI `resize()`/`setTargetX/Y` parking a window, which overrides whatever placement decided and is the one case where an overlap is the skin's arithmetic rather than the host's. Window geometry has no useful armchair form; this is how B56 was actually found |
 | `WINAMP_MODERN_RENDER_XUI=1` | list objects with scripts and whether their events bind |
 | `WINAMP_MODERN_RENDER_CLOCK=<seconds>` | pin the animation/ticker clock; render two values to prove motion |
 | `WINAMP_MODERN_RENDER_MINIMUM=1` | name the objects that set each layout's protective minimum |

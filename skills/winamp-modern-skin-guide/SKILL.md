@@ -19,6 +19,26 @@ references to the actual stock *Winamp Modern* skin.
 The runtime loads, scripts, and renders real skins, but see
 [compatibility.md](compatibility.md) for the exact supported/unsupported surface before assuming any
 behavior works.
+## The rule that outranks everything below
+
+**Winamp Modern must never change how Classic or Original skins behave.** Those modes work; this one
+is the one under construction, and a regression there is a regression in the part of the app people
+already rely on.
+
+The trap is not `import` — that is already covered by the `ModernSkin/`/`Windows/Modern*/` rule in
+CLAUDE.md. It is **shared code every mode runs**, `App/WindowManager.swift` above all. Adding
+behavior there and reasoning that it "should be a no-op for the other modes" is not good enough, and
+has already produced one live regression (B56: a screen clamp added for `.wal` window placement moved
+Classic's sub-windows too). Gate on the mode explicitly —
+`uiMode.controllerFamily == .winampModern` — so the other modes run the identical code path they ran
+before, and the claim is enforced by the compiler rather than by an argument.
+
+Corollary: verify in the running app, not in your head. Window geometry in particular has no useful
+armchair form — `WINAMP_MODERN_PLACE_TRACE=1` prints the frames
+([reference/harness.md](reference/harness.md)), and one launch settles what a page of reasoning
+cannot. The window arrangement itself is in
+[reference/components.md](reference/components.md).
+
 ### Pick your working mode first
 
 Coverage is demand-driven and the wild corpus is effectively unbounded, so the *unit of work* matters
@@ -43,6 +63,7 @@ This file is a router. Read the one focused reference your symptom names.
 |---|---|
 | Load, mounts, `@VARS@`, include/glob, sibling skins | [reference/loading.md](reference/loading.md) |
 | Geometry, anchors, y-origin, collapsed windows | [reference/loading.md](reference/loading.md) |
+| Where a skin's windows open, overlapping windows, the tiling | [reference/components.md](reference/components.md) |
 | Dead mouse target, clipping, regions, drag policy, `sysregion` | [reference/rendering/hit-testing.md](reference/rendering/hit-testing.md) |
 | Invisible layer blocks clicks or drags the window | [reference/rendering/hit-testing.md](reference/rendering/hit-testing.md) → *Hit testing* |
 | Splitter cursor/drag/persistence or `<Wasabi:Frame>` | [reference/rendering/frame-splitter.md](reference/rendering/frame-splitter.md) |

@@ -98,6 +98,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         CastManager.shared.startDiscovery()
 
         AppStateManager.shared.restoreSettingsState { [weak self] in
+            // Everything the launch puts on screen is finally up: the player at its restored frame,
+            // the skin's own windows at their final sizes, and any hosted window the session had
+            // open. This is the first moment a `.wal` arrangement can be computed — see
+            // `WinampModernMainWindowController.arrangeWindows`.
+            self?.windowManager.arrangeWinampModernWindows()
             if shouldRestoreCompactMode {
                 // The main window was created but never revealed, so force its snapshot to
                 // "visible" — exiting Compact Mode must restore it onscreen.

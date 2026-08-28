@@ -66,6 +66,9 @@ Run `swift test`. For UI or playback work, manually exercise local and server pl
 
 - No Spotify, Apple Music, or Amazon Music integrations; they are explicitly not accepted.
 - `ModernSkin/` and `Windows/Modern*/` must never import from `Skin/` or `Windows/MainWindow/`; see `original-skin-guide`.
+- Winamp Modern (`.wal`) work must never change Classic or Original behavior. This binds shared
+  code too — a change in `App/` that both modes run is gated on the mode, not justified by
+  reasoning that it "should be a no-op"; see `winamp-modern-skin-guide`.
 - Skin sprites use a top-left origin; macOS uses bottom-left. See `ui-guide`.
 - Slicing `Data` preserves original indices; always use `data.startIndex`.
 - Read the owning skill before changing a subsystem. Put new subsystem details in that skill, never here.

@@ -1297,6 +1297,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return }
         if visible {
             container.view.needsDisplay = true
+            // Lay the scene out *before* choosing a slot. The window is created at the view's canvas
+            // size and the skin's standard frame then grows it on the first layout pass — measured on
+            // Defix, 406→426 wide and 285→299 for the speaker cabinets. Placing first picks a correct
+            // slot for a size the window is about to stop having, which is how two windows opened
+            // from the menu ended up overlapping by 153×174 with a tiling that cannot overlap.
+            container.view.needsLayout = true
+            container.view.layoutSubtreeIfNeeded()
             place(container)
             if activate {
                 container.window.makeKeyAndOrderFront(nil)
@@ -1414,36 +1421,71 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
-    /// Put an auxiliary window somewhere the user can see the first time it opens, then never move it
-    /// again — a window created at `NSRect(origin: .zero, …)` sits at the **bottom-left corner of the
-    /// screen**, which is where every one of these opened. Winamp stacks its extra windows under the
-    /// player, so they go there: below the main window, each under the last, clamped to the screen.
+    /// Lay every one of this skin's windows out in one sweep, in declaration order.
+    ///
+    /// This is the arrangement; `place` below is only what holds a window until this runs. It is
+    /// called once launch has settled, which is the first moment the inputs exist — during skin load
+    /// the player is not yet at its restored frame and no window is yet at its final size, so nothing
+    /// decided then can be right. See `WindowManager.WinampModernTiler`.
+    ///
+    /// Only the skin's own windows and the hosted windows are laid out. The player is the anchor and
+    /// never moves: its frame is restored user state.
+    func arrangeWindows() {
+        let manager = WindowManager.shared
+        guard var tiler = manager.winampModernTiler() else { return }
+        let trace = ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1"
+        for container in auxiliaryContainers where container.window.isVisible {
+            // A notifier is a corner toast, host-driven and transient. It is not part of the
+            // arrangement and keeps the corner it was given.
+            guard !container.isNotifier else { continue }
+            let slot = tiler.nextSlot(for: container.window.frame.size)
+            if trace {
+                NSLog("[place/tile] %@ %@ -> %@", container.containerID,
+                      NSStringFromRect(container.window.frame), NSStringFromRect(slot))
+            }
+            container.window.setFrameOrigin(slot.origin)
+            placedAuxiliaryWindows.insert(container.containerID)
+        }
+        for window in manager.winampModernHostedWindowsForArrangement() where window.isVisible {
+            let slot = tiler.nextSlot(for: window.frame.size)
+            if trace {
+                NSLog("[place/tile] hosted %@ -> %@",
+                      NSStringFromRect(window.frame), NSStringFromRect(slot))
+            }
+            window.setFrameOrigin(slot.origin)
+        }
+    }
+
+    /// Where a window goes when it opens on its own, after the initial arrangement has run.
+    ///
+    /// The first free slot in the same tiling sequence `arrangeWindows` uses, so a window opened from
+    /// the menu lands where the arrangement would have put it, without disturbing anything already on
+    /// screen. Placement happens once per window, so one the user has moved is never yanked back.
+    ///
+    /// The skin's own `default_x`/`default_y` are deliberately not consulted. They are Winamp's
+    /// desktop arrangement for a player at the origin, and they do not survive contact with this:
+    /// Defix's put `pledit` at x 822–1228 and the media library at x 1120–1920, overlapping by 108px
+    /// before any of NullPlayer's own windows are counted.
     private func place(_ container: AuxiliaryContainer) {
         guard !placedAuxiliaryWindows.contains(container.containerID) else { return }
         placedAuxiliaryWindows.insert(container.containerID)
         let size = container.window.frame.size
-        guard let anchor = window?.frame ?? NSScreen.main?.visibleFrame else { return }
-        var origin: NSPoint
-        if let offset = container.defaultOffset {
-            // The skin's own arrangement: Winamp Modern's playlist sits at `default_x="354"` beside a
-            // player at 0, its album art under that at `default_y="165"`. Measured from the player's
-            // top-left, at the current UI Size, with the skin's downward y flipped into AppKit's.
-            origin = Self.arrangedOrigin(playerFrame: anchor, size: size, offset: offset,
-                                         scale: skinScale)
-        } else if container.isNotifier, let screen = (window?.screen ?? NSScreen.main)?.visibleFrame {
-            origin = NSPoint(x: screen.maxX - size.width - 12,
-                             y: screen.minY + 12)
-        } else {
-            // The skin says nothing: stack under whatever it already has on screen, so opening the
-            // playlist and then the library does not put one on top of the other.
-            let occupied = auxiliaryContainers
-                .filter { $0.containerID != container.containerID && $0.window.isVisible }
-                .reduce(0) { $0 + $1.window.frame.height }
-            origin = NSPoint(x: anchor.minX, y: anchor.minY - occupied - size.height)
+
+        // A notifier is a corner toast: host-driven, transient, and the corner is the point of it.
+        if container.isNotifier, let screen = (window?.screen ?? NSScreen.main)?.visibleFrame {
+            var origin = NSPoint(x: screen.maxX - size.width - 12, y: screen.minY + 12)
+            origin.x = min(max(origin.x, screen.minX), max(screen.minX, screen.maxX - size.width))
+            origin.y = min(max(origin.y, screen.minY), max(screen.minY, screen.maxY - size.height))
+            container.window.setFrameOrigin(origin)
+            return
         }
-        if let visible = (window?.screen ?? NSScreen.main)?.visibleFrame {
-            origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
-            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+
+        let manager = WindowManager.shared
+        let occupied = manager.occupiedWindowFrames(excluding: container.window)
+        guard let origin = manager.tiledOrigin(for: size, avoiding: occupied) else { return }
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
+            NSLog("[place] %@ size=%@ -> %@ avoiding=%d", container.containerID,
+                  NSStringFromSize(size), NSStringFromPoint(origin), occupied.count)
         }
         container.window.setFrameOrigin(origin)
     }
@@ -1475,6 +1517,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
         origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
         guard origin != target.frame.origin else { return }
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
+            // A script parking its own window overrides whatever `place` decided, and legitimately
+            // so. Traced next to `[place]` because the two are indistinguishable from the outside:
+            // an overlap after a good `[place]` line is the skin's arithmetic, not the host's.
+            NSLog("[place/script] \(container) -> \(NSStringFromPoint(origin)) "
+                  + "(was \(NSStringFromPoint(target.frame.origin)))")
+        }
         target.setFrameOrigin(origin)
     }
 

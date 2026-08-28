@@ -1065,6 +1065,9 @@ class WindowManager {
             }
             _ = controller.showHostedWindow(id)
             applyAlwaysOnTopToWindow(controller.hostedWindow(ifMaterialized: id))
+            if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
+                NSLog("[place/hosted] \(id) afterShow=\(NSStringFromRect(controller.hostedWindow(ifMaterialized: id)?.frame ?? .zero)) main=\(NSStringFromRect(mainWindowController?.window?.frame ?? .zero))")
+            }
         } else {
             _ = controller.toggleHostedWindow(id)
         }
@@ -1346,6 +1349,106 @@ class WindowManager {
         updateDockedChildWindows()
     }
     
+    // MARK: - Winamp Modern window tiling (B56)
+
+    /// Where a `.wal` skin's windows go.
+    ///
+    /// Winamp Modern has no center stack — a skin's windows are whatever shape and size the author
+    /// chose — so their arrangement is a **tiling**, computed in one deterministic sweep rather than
+    /// negotiated per window as each one opens.
+    ///
+    /// That distinction is the whole fix. Deciding a window's spot when it opens cannot work here:
+    /// at launch the skin's containers are created and shown during skin load, before `WindowManager`
+    /// has revealed the player at its restored frame, and before the UI-size pass has settled the
+    /// sizes. Measured on Defix, every window was placed against a player at `{{0,695},{406,355}}`
+    /// that finished at `{{0,677},{426,373}}`, and against its own size 5% smaller than it ended up.
+    /// Nor can the skin's own `default_x`/`default_y` be the answer: Defix's put `pledit` at x 822–1228
+    /// and the media library at x 1120–1920, overlapping by 108px before anything else happens.
+    ///
+    /// So the layout is generated, not repaired. Columns run down from the player, each window flush
+    /// under the last; a window that will not fit starts the next column to the right. Fixed order,
+    /// no scoring, no iteration — the same inputs always give the same arrangement.
+    struct WinampModernTiler {
+        let region: NSRect
+        private var columnX: CGFloat
+        private var columnWidth: CGFloat
+        private var cursorY: CGFloat
+
+        /// The player is the anchor and never moves: it owns the top of the first column, and the
+        /// first slot is flush beneath it.
+        init(playerFrame: NSRect, region: NSRect) {
+            self.region = region
+            self.columnX = playerFrame.minX
+            self.columnWidth = playerFrame.width
+            self.cursorY = playerFrame.minY
+        }
+
+        /// The next slot for a window of `size`, advancing the cursor past it.
+        mutating func nextSlot(for size: NSSize) -> NSRect {
+            if cursorY - size.height < region.minY {
+                columnX += columnWidth
+                columnWidth = 0
+                cursorY = region.maxY
+            }
+            // No right-edge clamp, deliberately. Pulling a column back onto the screen can only ever
+            // move it *left*, into the column already there — on a 1600pt region it dragged the media
+            // library from x=852 to x=760 and straight through its neighbour. When the screen is full
+            // the honest answer is a window hanging off the right, not one on top of another;
+            // non-overlap is the invariant, staying on screen is the preference.
+            let slot = NSRect(x: columnX, y: cursorY - size.height,
+                              width: size.width, height: size.height)
+            cursorY = slot.minY
+            columnWidth = max(columnWidth, size.width)
+            return slot
+        }
+    }
+
+    /// A tiler anchored on the player's current frame, over the screen it is on.
+    func winampModernTiler() -> WinampModernTiler? {
+        guard let player = mainWindowController?.window?.frame,
+              let region = (mainWindowController?.window?.screen ?? NSScreen.main)?.visibleFrame
+        else { return nil }
+        return WinampModernTiler(playerFrame: player, region: region)
+    }
+
+    /// Every player window currently on screen, for a caller that must not land on one.
+    func occupiedWindowFrames(excluding excluded: NSWindow? = nil) -> [NSRect] {
+        allWindows().compactMap { window in
+            guard window !== excluded else { return nil }
+            return window.frame.isEmpty ? nil : window.frame
+        }
+    }
+
+    /// The first tiling slot that is clear of `occupied` — how a window opened *after* the initial
+    /// arrangement joins it without disturbing anything already placed. Walks the same slot sequence
+    /// `arrangeWinampModernWindows` uses, so a window opened later lands where the arrangement would
+    /// have put it.
+    func tiledOrigin(for size: NSSize, avoiding occupied: [NSRect]) -> NSPoint? {
+        guard var tiler = winampModernTiler() else { return nil }
+        for _ in 0..<64 {
+            let slot = tiler.nextSlot(for: size)
+            if !occupied.contains(where: { $0.intersects(slot) }) { return slot.origin }
+            if slot.minX + size.width >= tiler.region.maxX && slot.minY <= tiler.region.minY {
+                break
+            }
+        }
+        return nil
+    }
+
+    /// The materialized hosted windows, for the arrangement sweep to lay out alongside the skin's own.
+    func winampModernHostedWindowsForArrangement() -> [NSWindow] {
+        winampModernHostedController?.materializedHostedWindows.map(\.window) ?? []
+    }
+
+    /// Lay out the loaded `.wal` skin's windows in one sweep. No-op in every other mode.
+    ///
+    /// Called once launch has settled — the first moment the player's final frame and every window's
+    /// final size are known, which is the moment the arrangement can be computed at all.
+    func arrangeWinampModernWindows() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        winampModernHostedController?.arrangeWindows()
+    }
+
     /// Position a sub-window (EQ, Playlist, Spectrum, or Waveform) in the vertical stack.
     /// Fills the first gap between visible stack windows if one exists,
     /// otherwise positions below the lowest visible window in the stack.
@@ -1354,6 +1457,23 @@ class WindowManager {
         
         if let kind = centerStackWindowKind(for: window) {
             applyCenterStackSizingConstraints(window, kind: kind)
+        }
+
+        // Winamp Modern has no center stack for this to scan — the skin's windows belong to no
+        // column and are any size — so a hosted window joins the tiling instead. Everything below is
+        // the Classic/Original stack, untouched.
+        if uiMode.controllerFamily == .winampModern {
+            if let origin = tiledOrigin(for: window.frame.size,
+                                        avoiding: occupiedWindowFrames(excluding: window)) {
+                isSnappingWindow = true
+                window.setFrameOrigin(origin)
+                isSnappingWindow = false
+                if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
+                    NSLog("[place/tile] hosted %@", NSStringFromRect(window.frame))
+                }
+                postLayoutChangeNotification()
+            }
+            return
         }
 
         let mainFrame = mainWindow.frame
