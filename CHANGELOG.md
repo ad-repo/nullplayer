@@ -71,6 +71,15 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: NullPlayer's own windows open as wide as the player** — Cava, the
+  Spectrum Analyzer, the Audio Analyzer, Flow, the Waveform and PeppyMeter wear the skin's frame in a
+  `.wal` skin, but they opened at their own default width, which left a narrow column of skin
+  artwork beside a much wider player. They now open at the player's width, aligned to its left edge,
+  whenever the player is the wider of the two. A player narrower than the window's default changes
+  nothing — the default is the size the contents were drawn for. This is the opening size only: a
+  window you have resized keeps the size you gave it, and one restored from a previous session opens
+  where it was.
+
 - **Winamp 5.x modern skins: the equalizer wears the skin's own frame** — in a `.wal` skin that
   ships no equalizer of its own, the Equalizer opened as a flat black-and-orange slab beside windows
   that were wearing the skin's artwork: on Defix Hi-END 200 the Spectrum Analyzer sat in the skin's

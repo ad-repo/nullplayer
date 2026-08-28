@@ -1077,14 +1077,38 @@ class WindowManager {
     /// The equalizer has always opened as wide as the player it docks under, in every UI mode. A
     /// hosted one starts at the skin frame's own default instead, so it is widened once — on first
     /// materialization only, so a window the user has since resized is never snapped back.
+    ///
+    /// Every other hosted window — Cava, the spectrum analyzer, Flow, the analyzer, the waveform —
+    /// follows the same rule in one direction only: a player wider than the window's own default
+    /// pulls it out to match, and a narrower player is ignored. The registry default is a floor,
+    /// never a ceiling, so a small skin never shrinks these windows below the size they were cut for.
     private func applyHostedWindowDefaultWidth(_ window: NSWindow, id: WinampModernHostedWindowID) {
-        guard id == .equalizer, let mainWindow = mainWindowController?.window else { return }
-        let width = mainWindow.frame.width
-        guard width > 0, width != window.frame.width else { return }
-        var frame = window.frame
-        frame.size.width = width
-        frame.origin.x = mainWindow.frame.minX
+        guard let mainWindow = mainWindowController?.window else { return }
+        // The skin frame's own resize limits still win: a frame that cannot be drawn this wide keeps
+        // the widest size it can draw, rather than being set and bounced back by the resize handler.
+        let frame = WindowManager.winampModernHostedOpeningFrame(
+            window.frame,
+            id: id,
+            mainFrame: mainWindow.frame,
+            maximumWidth: max(window.contentMaxSize.width, window.contentMinSize.width))
+        guard frame != window.frame else { return }
         window.setFrame(frame, display: false)
+    }
+
+    /// The width rule above, as arithmetic: pure, so it can be exercised without a window server.
+    /// Returns `frame` unchanged whenever the rule does not apply.
+    static func winampModernHostedOpeningFrame(_ frame: NSRect,
+                                               id: WinampModernHostedWindowID,
+                                               mainFrame: NSRect,
+                                               maximumWidth: CGFloat) -> NSRect {
+        guard mainFrame.width > 0 else { return frame }
+        guard id == .equalizer || mainFrame.width > frame.width else { return frame }
+        let width = min(mainFrame.width, maximumWidth)
+        guard width > 0, width != frame.width else { return frame }
+        var widened = frame
+        widened.size.width = width
+        widened.origin.x = mainFrame.minX
+        return widened
     }
 
     func hostedWindowVisibilityDidChange(id: WinampModernHostedWindowID, visible: Bool,

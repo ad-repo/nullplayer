@@ -439,6 +439,17 @@ every skin-owned step has declined (B55, above).
 - Window size is per registry entry and then clamped by the selected skin frame's hard resize limits.
   Center-stack sizing is a preference inside those bounds, not a replacement geometry; PeppyMeter
   therefore retains its larger authored height instead of collapsing to the spectrum-family size.
+- **The player's width is a floor on the opening width, not a target.** A `.wal` player is whatever
+  width the skin drew, and the registry defaults were cut for a 275px classic player, so a wide skin
+  used to open Cava or the spectrum analyzer as a narrow column beside it. A hosted window wider than
+  its default player therefore opens at the player's width and left edge
+  (`WindowManager.winampModernHostedOpeningFrame`, applied by `applyHostedWindowDefaultWidth`); a
+  player *narrower* than the registry default is ignored, because that default is the size the
+  content was cut for and shrinking to a small skin would clip it. The equalizer is the exception in
+  the other direction: it matches the player in **both**, as it has in every UI mode. Three rules
+  hold the whole thing together — it runs on **first materialization only** (a window the user has
+  resized is never yanked back), never when a restored frame exists, and the skin frame's own
+  `contentMaxSize` clamps the result, so the renderer is never handed a width it would bounce back.
 
 Materialized hosted windows join `WindowManager`'s managed-window graph for snapping, docking,
 always-on-top, ordering, Compact Mode, state capture, and orphan checks. Unopened route descriptors
