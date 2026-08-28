@@ -20,6 +20,12 @@ that family). Windows
 separators, `.`, and `..` are normalized; a path escaping `/` is a hard error. A `*` wildcard is
 allowed **only** in the final include component and returns sorted, deterministic results.
 
+**`@HAVE_LIBRARY@` is a markup macro, not a path variable.** After the include graph is expanded,
+every XML attribute value replaces it with `1`, because NullPlayer hosts a Media Library surface;
+unknown `@…@` macros remain unchanged. The ordering matters: the resolved document is what surface
+inventory, synthesis, type registration and object creation all read. Four measured skins put the
+macro on a Media Library container's `default_visible`, while Defix also passes it to a script.
+
 Cross-mount climbs work, which is how cPro-Bento reaches its engine:
 `@COLORTHEMESPATH@\..\..\Plugins\classicPro\engine\load.xml`.
 
@@ -289,4 +295,3 @@ way `drawImage` re-flips its rect — restoring the graphics state would discard
 is built pre-flipped instead (`WasabiResourceCache.regionMask`, which reads its source buffer bottom
 row first). A mask built the wrong way up looks plausible on a symmetric control and is wrong on
 every other one.
-

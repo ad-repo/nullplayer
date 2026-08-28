@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| BB5 | Substitute `@HAVE_LIBRARY@` | 6 skins / 6 uses ([M8]) | S | Measured |
 | BB15 | `parser_*` / `shutdown()` | 6 skins / 15 MAKI program symbols ([M9]) | M | Measured |
 | BB9 | Finish the Multi Content View visualization placements | 4 variants / 2 base markups ([M6]) | M | Measured |
 | B14 | `<Wasabi:TabSheet>` | 4 skins / 5 declarations ([M10]); contradicts the old “one measured skin” note | L | Measured |
@@ -167,20 +166,6 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
       the player rather than the primary display. Repeat after moving the player back to the primary
       display. If either display is Retina, confirm there is no 2× oversizing. Archive B41 only after
       this check is accepted.
-
----
-
-### BB5
-
-- [ ] **BB5. `@HAVE_LIBRARY@`** — carried over from B36's follow-up because it is not Bento-only.
-      A second unresolved token, never used as a path so the VFS never sees it
-      (`<script … param="@HAVE_LIBRARY@">` here; `default_visible="@HAVE_LIBRARY@"` on the
-      media-library container in Styx, Shield_Amp, S7Reflex, Defix). Winamp substitutes `1`; doing so
-      is a *behaviour* change — four skins would start opening a library window — and needs its own
-      live QA. **If this is picked up, move it to `TASKS.md` first**: four of the five skins it
-      affects are not Bento.
-
----
 
 ---
 

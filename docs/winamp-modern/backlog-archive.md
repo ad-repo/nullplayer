@@ -2,6 +2,28 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## BB5 — Substitute `@HAVE_LIBRARY@` across markup — closed 2026-08-27
+
+### BB5
+
+- [x] **BB5. `@HAVE_LIBRARY@`** — carried over from B36's follow-up because it is not Bento-only.
+      A second unresolved token, never used as a path so the VFS never sees it
+      (`<script … param="@HAVE_LIBRARY@">` here; `default_visible="@HAVE_LIBRARY@"` on the
+      media-library container in Styx, Shield_Amp, S7Reflex, Defix). Winamp substitutes `1`; doing so
+      is a *behaviour* change — four skins would start opening a library window — and needs its own
+      live QA. **If this is picked up, move it to `TASKS.md` first**: four of the five skins it
+      affects are not Bento.
+
+The earlier Defix repair substituted the macro only when binding a script parameter. BB5 moves the
+rule to the expanded XML document, after include expansion and before inventory, synthesis and
+initialization, so non-path attributes see the same host capability. Unknown macros remain literal.
+Manual QA was accepted on 2026-08-27. Regression coverage:
+`WinampModernPhase25RegressionTests.testTheLibraryMacroIsExpandedBeforeContainerTopology`.
+
+Reach command: `rg -i -o '@HAVE_LIBRARY@' "$corpus"` — 6 uses across 6 skins.
+
+---
+
 ## B17 — Preserve groupdef redefinition order in the surface inventory — closed 2026-08-27
 
 ### B17

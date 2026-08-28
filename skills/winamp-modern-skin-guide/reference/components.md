@@ -25,6 +25,10 @@ the stock Winamp Modern skin's `Pledit` + `winamp.albumart`, Ujola Cat's `PLEdit
 `EQ` + `thinger`, Overdrive_2's `Pledit`, Love is War Miku's `notifier`, Rika's and T800's
 `Warp Browser`. Four parts:
 
+The value may be Winamp's `@HAVE_LIBRARY@` markup macro rather than a literal `1`. It is resolved
+across the expanded document before topology runs, so the Media Library containers in Styx,
+Shield_Amp, S7Reflex and Defix enter this same path rather than being parsed as false.
+
 - **The attribute** is decoded in `WinampModernContainerTopology` with everything else a container
   declares (`opensByDefault`; the main player is always true whatever it says), and applied by the
   controller right after `scriptsDidStart()` — so a window that opens at load is told `onSetVisible`

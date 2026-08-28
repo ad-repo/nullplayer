@@ -127,10 +127,12 @@ Three ordering rules make or break this:
   standard frame script needs `content` to call `newGroup`, but `deliverXUIParams` only sends
   attributes for XUI-tag instances. `notify` is parsed separately and fires on any object with scripts.
 
-`<script param="…">` carries Winamp's own macros rather than a path, so it is expanded in
-`WasabiSkinInitializer`, not by the VFS: `@HAVE_LIBRARY@` → `1` (we host a library surface), anything
-else passed through. Defix's global script reads `stringToInteger(getParam())` as "is there a media
-library?" and drops the tab when told there is not.
+`<script param="…">` may carry Winamp's markup macros rather than a path. The expanded XML document
+resolves `@HAVE_LIBRARY@` to `1` (we host a library surface) before initialization, and leaves
+anything unknown untouched; the VFS is not involved. Defix's global script reads
+`stringToInteger(getParam())` as "is there a media library?" and drops the tab when told there is not.
+See [loading.md](loading.md) for the document-wide rule; four other skins use the same macro on a
+container attribute instead of a script.
 
 `WasabiSkinRuntime.instantiateGroup` performs the expansion (set by `WasabiSkinInitializer`, so
 runtime growth shares the load-time VFS, limits, and object budget). Scripts declared inside the new

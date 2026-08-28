@@ -37,6 +37,11 @@ final class WalXMLNode {
         }
         return true
     }
+    func resolveAttributeValues(with resolver: (String) -> String) {
+        for (name, value) in attributes {
+            attributes[name] = resolver(value)
+        }
+    }
     func replaceChildren(_ newChildren: [WalXMLNode]) { children = newChildren }
     func appendChild(_ child: WalXMLNode) { children.append(child) }
 }
@@ -52,6 +57,31 @@ struct WalExpandedXMLDocument {
     let roots: [WalXMLNode]
     let visitedPaths: [String]
     let diagnostics: [WalDiagnostic]
+}
+
+/// Winamp expands a small set of host-capability macros in markup values after includes have been
+/// resolved. Keep these separate from VFS path variables: values such as `default_visible` and a
+/// script's `param` are not paths and never pass through `WalVirtualFileSystem`.
+enum WasabiXMLMacroResolver {
+    static func resolve(_ raw: String) -> String {
+        guard raw.contains("@") else { return raw }
+        return raw.replacingOccurrences(of: "@HAVE_LIBRARY@", with: "1",
+                                        options: [.caseInsensitive])
+    }
+
+    static func resolve(_ raw: String?) -> String? {
+        raw.map(resolve)
+    }
+
+    static func resolve(in document: WalExpandedXMLDocument) {
+        func walk(_ nodes: [WalXMLNode]) {
+            for node in nodes {
+                node.resolveAttributeValues(with: resolve)
+                walk(node.children)
+            }
+        }
+        walk(document.roots)
+    }
 }
 
 /// Wasabi XML is often a fragment rather than one strict XML document. This parser accepts multiple

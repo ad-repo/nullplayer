@@ -181,10 +181,11 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   before the type-specific drawing, so a `<text alpha="0">` is invisible. Skins stack readouts in one
   slot and show one at a time by moving their alphas (Defix's Kbps / KHz / Channels), so text that
   ignores it prints every variant on top of the others. Phase 25
-- A `<script param="…">` carries Winamp's macros, not a path: `@HAVE_LIBRARY@` expands to `1` (we host
-  a library surface). A skin reads it with `getParam()` and lays itself out from the answer — Defix
-  drops the Media Library tab out of its SUI tab strip when told there is none. An unrecognized macro
-  is passed through unchanged. Phase 25
+- Winamp markup macros are resolved across the expanded XML document before inventory and
+  initialization: `@HAVE_LIBRARY@` expands to `1` (we host a library surface) in a script `param`, a
+  container's `default_visible`, or any other attribute. Defix reads it with `getParam()` and lays
+  out its SUI from the answer; Styx, Shield_Amp, S7Reflex and Defix also use it to open their Media
+  Library container. An unrecognized macro is passed through unchanged. Phase 25 / BB5
 - `windowholder hold="guid:…"` component embedding, and `<componentbucket>` — Winamp's **thinger**:
   the five hostable components drawn as icons, clicked to open, scrolled by `CB_*`, and named by the
   `<text display="componentbucket">` beside it (B34; see

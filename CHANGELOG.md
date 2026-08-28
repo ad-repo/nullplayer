@@ -71,6 +71,11 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins now recognize that Media Library support exists everywhere markup asks**
+  — `@HAVE_LIBRARY@` was already answered inside one skin's startup script, but four other skins put
+  the same Winamp macro on their Media Library window instead. It is now expanded across the whole
+  loaded skin, so those library windows can open with the player as authored.
+
 - **Winamp 5.x modern skins stay crisp at exact integer UI sizes** — bitmap icons and one-pixel
   borders now use nearest-neighbour filtering when UI Size × display scale is an exact integer, such
   as 100% on Retina (2×) or 150% (3×). Fractional enlargement and every downscale remain smoothly

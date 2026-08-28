@@ -229,7 +229,7 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
         XCTAssertLessThan(lastParam, skinLevel, "the skin-level block runs after the params land")
     }
 
-    // MARK: - 25.5 `@HAVE_LIBRARY@` is a script param macro, not a path variable
+    // MARK: - 25.5 / BB5 `@HAVE_LIBRARY@` is a markup macro, not a path variable
 
     /// Defix reads `stringToInteger(getParam())` as "is there a media library?". Reading the literal
     /// `@HAVE_LIBRARY@` as 0, it dropped the Media Library and Playlist tabs out of its SUI tab
@@ -245,6 +245,21 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
         XCTAssertEqual(parameters["skinlevel.maki"], "1", "@HAVE_LIBRARY@ — we host the library")
         XCTAssertEqual(parameters["owned.maki"], "@NOT_A_MACRO@ 4",
                        "an unrecognized macro passes through untouched")
+    }
+
+    /// The macro is not script-specific. Four corpus skins put it on their Media Library
+    /// container's `default_visible`, so it must be resolved before topology decides which windows
+    /// open with the skin. Unknown macros remain literal markup.
+    func testTheLibraryMacroIsExpandedBeforeContainerTopology() throws {
+        let runtime = try makeRuntime(xml: Self.macroXML,
+                                      files: [("owned.maki", Self.makeScript()),
+                                              ("skinlevel.maki", Self.makeScript())])
+        let info = try XCTUnwrap(WinampModernContainerTopology.analyze(
+            graph: runtime.loadedSkin.runtime.graph
+        ).first { $0.id == "Library Macro" })
+
+        XCTAssertTrue(info.opensByDefault)
+        XCTAssertEqual(info.object.attributes["name"], "@NOT_A_MACRO@")
     }
 
     // MARK: - 25.6 `notify="key,value"` delivers XUI params on a `<group>` instance
@@ -330,6 +345,9 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
         <layout id="normal" w="40" h="20">
           <Synthetic:Widget id="widget"/>
         </layout>
+      </container>
+      <container id="Library Macro" name="@NOT_A_MACRO@" default_visible="@HAVE_LIBRARY@">
+        <layout id="normal" w="120" h="80"/>
       </container>
       <scripts><script file="skinlevel.maki" param="@HAVE_LIBRARY@"/></scripts>
     </WasabiXML>

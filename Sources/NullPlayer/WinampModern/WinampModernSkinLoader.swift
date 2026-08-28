@@ -86,6 +86,7 @@ final class WinampModernSkinLoader {
         }
         let entryPath = "/Skins/\(mountName)/\(archive.skinXMLPath)"
         let loaded = try WalXMLDocumentLoader(vfs: vfs, limits: xmlLimits).load(entryPath: entryPath)
+        WasabiXMLMacroResolver.resolve(in: loaded)
         // Take stock of the skin's declared surfaces and append windows for the ones it leaves out,
         // *before* initialization, so synthetic XML is registered, validated, instantiated, and
         // script-bound by exactly the same passes as everything the skin wrote (Phase 13.2).
