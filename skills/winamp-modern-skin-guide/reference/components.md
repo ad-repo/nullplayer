@@ -433,9 +433,9 @@ every skin-owned step has declined (B55, above).
 - Close hides and retains the instance. Reopen reuses it; UI Size changes resize only materialized
   instances; skin/mode teardown destroys them once. If request-time construction fails, the partial
   graph/window is rolled back and the existing standalone controller opens immediately.
-- The hosted surface is chromeless: the Wasabi standard frame owns drag, close, resize, keyboard,
-  and artwork. The same existing feature view draws its shared `.wal`-palette fallback chrome only
-  when it remains inside the standalone controller.
+- The hosted surface is chromeless: the Wasabi standard frame owns close, resize, keyboard, and
+  artwork. The same existing feature view draws its shared `.wal`-palette fallback chrome only when
+  it remains inside the standalone controller. **It does not own the drag** — see below.
 - Window size is per registry entry and then clamped by the selected skin frame's hard resize limits.
   Center-stack sizing is a preference inside those bounds, not a replacement geometry; PeppyMeter
   therefore retains its larger authored height instead of collapsing to the spectrum-family size.
@@ -450,6 +450,44 @@ every skin-owned step has declined (B55, above).
   hold the whole thing together — it runs on **first materialization only** (a window the user has
   resized is never yanked back), never when a restored frame exists, and the skin frame's own
   `contentMaxSize` clamps the result, so the renderer is never handed a width it would bounce back.
+
+#### A frame supplies chrome, not a drag surface (B57)
+
+The rule: **a hosted surface passes a press it does not consume to the window drag.** The frame's
+title strip is a supplement to that, never a replacement for it.
+
+B55 read "the frame owns the chrome" as "the frame owns the drag" and gave all eight surfaces a
+`guard hostedContext == nil else { return }` in `mouseDown`/`mouseDragged`/`mouseUp`. What that
+actually left is measurable, and it is small. Standard-frame title strips across the 36 installed
+skins: **corneramp_redux 15px, Anexa/Bio-Nid/Rika/T800 18px, cPro-Bento and micro 21px, Core-X5 and
+S7Reflex 24px, Nullsoft 2000 SP4 Lite 27px, Defix 42px, Big Bento 45px.** A strip is a *fixed* height,
+so it is a smaller share of the window the larger the window gets — on Nullsoft 2000 the hosted
+projectM window (550×580) was **6%** draggable, against a body that is a handle everywhere in Classic
+and Original. Two skins never reach this path at all (Overdrive_2 and Sony_Walkman have no usable
+standard frame, so every hosted window falls back to the standalone one, which drags normally).
+
+`WinampModernHostedWindowDrag` implements it on the app's existing prime-then-move idiom: the press is
+primed at `mouseDown` (`windowWillPrimeDragging`) and only becomes a drag once the pointer has
+travelled 3pt, which is what keeps a click a click and lets the double-clicks these surfaces carry
+still fire. Movement goes through `windowWillMove` so snapping and docking are unchanged, and
+`mouseUp` answers whether the press moved the window so a caller can drop the click it would
+otherwise have performed on release.
+
+Two things follow for any new hosted surface:
+
+- **The surface gets first refusal.** Sliders, rows and buttons claim their presses before the drag
+  is primed; what is left is background, and background moves the window. The equalizer is the case
+  that proves it — hosted, its `Metrics` spread the preamp, the ten bands and the buttons across the
+  frame's width, and only the margins around them are a handle.
+- **A body that is entirely a control has no body drag, and that is correct.** `WaveformView`'s
+  hosted `waveformRect` is the whole view, so every press there seeks; its handle is the frame strip,
+  exactly as it is that view's own title bar when standalone. Do not invent one.
+
+Not covered by B57, and still open: `WinampModernVisualizationSurfaceView` swallows single clicks the
+same way but sits inside the skin's *own* window, so its drag has to route through the parent's skin
+hit test rather than a `hostedContext` (B58); the hosted library and video surfaces (B60); and skins
+whose own markup leaves the *player* nearly undraggable, which no host-side surface change can reach
+(B59).
 
 Materialized hosted windows join `WindowManager`'s managed-window graph for snapping, docking,
 always-on-top, ordering, Compact Mode, state capture, and orphan checks. Unopened route descriptors

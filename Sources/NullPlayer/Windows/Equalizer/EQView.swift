@@ -42,6 +42,8 @@ class EQView: NSView {
     /// draws the title bar, the close button and the window drag, so this view draws and hit-tests
     /// only the equalizer itself.
     private var hostedContext: WinampModernHostedSurfaceContext?
+    /// The window drag the body keeps while the skin's frame owns the chrome (B57).
+    private var hostedDrag = WinampModernHostedWindowDrag()
     
     // MARK: - Layout Constants
     
@@ -731,9 +733,13 @@ class EQView: NSView {
             return
         }
         
-        // Not on any control - start window drag. A hosted view never drags: the frame around it is
-        // the skin's own, and its title bar already owns the drag (B55).
-        if hostedContext != nil { return }
+        // Not on any control - start window drag. Hosted, the skin's frame owns the chrome but not
+        // the drag: its title strip is 15–45px, so the body stays a handle here as it is standalone
+        // (B57, correcting B55).
+        if hostedContext != nil {
+            hostedDrag.prime(event, context: hostedContext)
+            return
+        }
 
         // Only allow undocking if dragging from title bar area
         // When title bars are hidden, all drags allow undocking
@@ -760,6 +766,11 @@ class EQView: NSView {
             return
         }
         
+        if hostedContext != nil {
+            hostedDrag.drag(event)
+            return
+        }
+
         // Handle window dragging
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
@@ -777,6 +788,8 @@ class EQView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
+        // A press that moved the window is not also a click on whatever it started over.
+        if hostedContext != nil, hostedDrag.end() { return }
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToOriginalCoordinates(viewPoint)
         let skinPoint = NSPoint(x: point.x, y: originalWindowSize.height - point.y)

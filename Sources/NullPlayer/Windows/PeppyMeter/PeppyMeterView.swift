@@ -9,6 +9,8 @@ final class PeppyMeterView: NSView {
     private var isHighlighted = false
     private(set) var isFullscreen = false
     private var hostedContext: WinampModernHostedSurfaceContext?
+    /// The window drag the body keeps while the skin's frame owns the chrome (B57).
+    private var hostedDrag = WinampModernHostedWindowDrag()
     private var hostedPresenter: PeppyMeterPresenter?
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
@@ -184,8 +186,13 @@ final class PeppyMeterView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        guard hostedContext == nil else { return }
         guard !isFullscreen else { return }
+        // Hosted, the skin's frame draws the chrome and the meter is all body — which is exactly
+        // what moves the window when this view stands on its own.
+        if hostedContext != nil {
+            hostedDrag.prime(event, context: hostedContext)
+            return
+        }
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToSkinCoordinates(viewPoint)
         if hitTestCloseButton(at: point) {
@@ -202,8 +209,11 @@ final class PeppyMeterView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard hostedContext == nil else { return }
         guard !isFullscreen else { return }
+        if hostedContext != nil {
+            hostedDrag.drag(event)
+            return
+        }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
         var origin = window.frame.origin
@@ -213,8 +223,11 @@ final class PeppyMeterView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard hostedContext == nil else { return }
         guard !isFullscreen else { return }
+        if hostedContext != nil {
+            hostedDrag.end()
+            return
+        }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if isDraggingWindow, let window {
             isDraggingWindow = false

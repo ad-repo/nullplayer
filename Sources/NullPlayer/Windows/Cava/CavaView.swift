@@ -10,6 +10,8 @@ final class CavaView: NSView {
     private var isHighlighted = false
     private var cachedRenderer: SkinRenderer?
     private var hostedContext: WinampModernHostedSurfaceContext?
+    /// The window drag the body keeps while the skin's frame owns the chrome (B57).
+    private var hostedDrag = WinampModernHostedWindowDrag()
     private var hostedStyle: WinampModernSurfaceStyle?
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
@@ -215,7 +217,10 @@ final class CavaView: NSView {
             return
         }
 
-        guard hostedContext == nil else { return }
+        if hostedContext != nil {
+            hostedDrag.prime(event, context: hostedContext)
+            return
+        }
 
         if hitTestTitleBar(at: point) {
             isDraggingWindow = true
@@ -234,7 +239,10 @@ final class CavaView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard hostedContext == nil else { return }
+        if hostedContext != nil {
+            hostedDrag.drag(event)
+            return
+        }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
         var origin = window.frame.origin
@@ -244,7 +252,10 @@ final class CavaView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard hostedContext == nil else { return }
+        if hostedContext != nil {
+            hostedDrag.end()
+            return
+        }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if isDraggingWindow, let window {
             isDraggingWindow = false

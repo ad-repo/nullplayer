@@ -19,6 +19,8 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
 
     /// Hosted surface context when mounted inside a `.wal` skin's standard frame.
     private var hostedContext: WinampModernHostedSurfaceContext?
+    /// The window drag the body keeps while the skin's frame owns the chrome (B57).
+    private var hostedDrag = WinampModernHostedWindowDrag()
 
     /// The skin renderer
     private var renderer: ModernSkinRenderer!
@@ -492,6 +494,7 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
             if visualizationGLView?.currentEngineType == .projectM {
                 showPresetRatingOverlay()
             }
+            hostedDrag.prime(event, context: hostedContext)
             return
         }
 
@@ -522,6 +525,10 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if hostedContext != nil {
+            hostedDrag.drag(event)
+            return
+        }
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
@@ -537,6 +544,7 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     }
     
     override func mouseUp(with event: NSEvent) {
+        if hostedContext != nil, hostedDrag.end() { return }
         let point = convert(event.locationInWindow, from: nil)
 
         // End window dragging

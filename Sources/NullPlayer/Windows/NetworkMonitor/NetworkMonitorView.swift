@@ -14,6 +14,8 @@ final class NetworkMonitorView: NSView {
     private var animationTimer: Timer?
     private var direction = NetworkMonitorDirection.load()
     private var hostedContext: WinampModernHostedSurfaceContext?
+    /// The window drag the body keeps while the skin's frame owns the chrome (B57).
+    private var hostedDrag = WinampModernHostedWindowDrag()
     private var hostedMonitor: NetworkThroughputMonitor?
 
     private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
@@ -212,7 +214,10 @@ final class NetworkMonitorView: NSView {
             toggleDirection()
             return
         }
-        guard hostedContext == nil else { return }
+        if hostedContext != nil {
+            hostedDrag.prime(event, context: hostedContext)
+            return
+        }
         if hitTestTitleBar(at: point) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
@@ -230,7 +235,10 @@ final class NetworkMonitorView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard hostedContext == nil else { return }
+        if hostedContext != nil {
+            hostedDrag.drag(event)
+            return
+        }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
         var origin = window.frame.origin
@@ -240,7 +248,10 @@ final class NetworkMonitorView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard hostedContext == nil else { return }
+        if hostedContext != nil {
+            hostedDrag.end()
+            return
+        }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if isDraggingWindow, let window {
             isDraggingWindow = false

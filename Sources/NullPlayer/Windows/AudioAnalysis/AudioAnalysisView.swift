@@ -16,6 +16,8 @@ final class AudioAnalysisView: NSView {
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
     private var hostedContext: WinampModernHostedSurfaceContext?
+    /// The window drag the body keeps while the skin's frame owns the chrome (B57).
+    private var hostedDrag = WinampModernHostedWindowDrag()
     private var hostedConsumerCoordinator: AudioAnalysisConsumerCoordinator?
     private var hostedStyle: WinampModernSurfaceStyle?
 
@@ -168,7 +170,10 @@ final class AudioAnalysisView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        guard hostedContext == nil else { return }
+        if hostedContext != nil {
+            hostedDrag.prime(event, context: hostedContext)
+            return
+        }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if hitTestCloseButton(at: point) {
             pressedButton = .close
@@ -192,7 +197,10 @@ final class AudioAnalysisView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard hostedContext == nil else { return }
+        if hostedContext != nil {
+            hostedDrag.drag(event)
+            return
+        }
         guard isDraggingWindow, let window else { return }
         let currentPoint = event.locationInWindow
         var origin = window.frame.origin
@@ -202,7 +210,10 @@ final class AudioAnalysisView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard hostedContext == nil else { return }
+        if hostedContext != nil {
+            hostedDrag.end()
+            return
+        }
         let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
         if isDraggingWindow, let window {
             isDraggingWindow = false

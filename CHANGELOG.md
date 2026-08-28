@@ -71,6 +71,14 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: NullPlayer's own windows drag from anywhere again** — Cava, the Spectrum
+  Analyzer, the Audio Analyzer, Flow, the Waveform, PeppyMeter, projectM and the Equalizer wear the
+  skin's own frame in a `.wal` skin, and could only be moved by the narrow title strip at the top of
+  that frame — 15 to 45 pixels depending on the skin, however tall the window itself was. Dragging
+  anywhere on the window moves it again, as it always has in the Classic and Original skins. What
+  each window does with a click is unchanged: sliders, buttons and rows still take their own presses,
+  double-clicking the Spectrum Analyzer still cycles its style, and the waveform still seeks.
+
 - **Winamp 5.x modern skins: NullPlayer's own windows open as wide as the player** — Cava, the
   Spectrum Analyzer, the Audio Analyzer, Flow, the Waveform and PeppyMeter wear the skin's frame in a
   `.wal` skin, but they opened at their own default width, which left a narrow column of skin

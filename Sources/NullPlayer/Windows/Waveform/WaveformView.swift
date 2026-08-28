@@ -7,6 +7,8 @@ class WaveformView: BaseWaveformView {
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
     private var hostedContext: WinampModernHostedSurfaceContext?
+    /// The window drag the body keeps while the skin's frame owns the chrome (B57).
+    private var hostedDrag = WinampModernHostedWindowDrag()
     private var hostedStyle: WinampModernSurfaceStyle?
 
     override var waveformRect: NSRect {
@@ -167,6 +169,7 @@ class WaveformView: BaseWaveformView {
         let point = convert(event.locationInWindow, from: nil)
         if hostedContext != nil {
             if waveformRect.contains(point) { beginWaveformDrag(at: point) }
+            else { hostedDrag.prime(event, context: hostedContext) }
             return
         }
         if closeButtonRect().contains(point) {
@@ -188,6 +191,7 @@ class WaveformView: BaseWaveformView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if hostedContext != nil, hostedDrag.drag(event) { return }
         if isDraggingWindow, let window {
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
@@ -205,6 +209,7 @@ class WaveformView: BaseWaveformView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if hostedContext != nil, hostedDrag.end() { return }
         let point = convert(event.locationInWindow, from: nil)
         if isDraggingWindow {
             isDraggingWindow = false

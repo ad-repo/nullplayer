@@ -2,6 +2,45 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B57 — NullPlayer's own windows barely drag inside a skin frame — closed 2026-08-28
+
+### B57
+
+Reported live: the hosted windows were "very hard to drag, the area seems very small". Found by
+measuring, with `WinampModernDragProbe` (`WINAMP_MODERN_DRAG_HOSTED`, documented in
+`reference/harness.md`), not by reading the markup.
+
+**B55's mistake, in one line.** It read *the skin's frame owns the chrome* as *the frame owns the
+drag*, and gave all eight hosted surfaces a `guard hostedContext == nil else { return }` in
+`mouseDown`/`mouseDragged`/`mouseUp`. The same view class, standalone in Classic and Original, moves
+its window from anywhere in its body — `SpectrumView:365`, `PeppyMeterView:197`. Hosted, every press
+in the body was swallowed, and because the surface is a plain AppKit subview of
+`WinampModernMainView` the press never reached `shouldDragWindow` either: the whole skin-side drag
+policy is bypassed by view mounting.
+
+**What was left, measured across the 36 installed skins.** The frame's title strip, and nothing else:
+corneramp_redux 15px, Anexa/Bio-Nid/Rika/T800 18px, cPro-Bento and micro 21px, Core-X5 and S7Reflex
+24px, Nullsoft 2000 SP4 Lite 27px, Defix 42px, Big Bento 45px. A strip is a fixed height, so it is a
+smaller share of the window the bigger the window: the hosted projectM window (550×580) measured
+**6%** draggable on Nullsoft 2000, **4%** on corneramp, against 100% for the same content standalone.
+PeppyMeter at 343×254: 13% on Nullsoft, 21% on Lobe, 30% on Defix.
+
+**The fix.** `WinampModernHostedWindowDrag` — the app's own prime-then-move idiom
+(`ModernLibraryBrowserView` drags a hidden-title-bar window the same way): primed at `mouseDown`,
+becomes a drag after 3pt of travel, moves through `windowWillMove` so snapping and docking are
+unchanged, and reports at `mouseUp` whether the press moved the window so the click it would
+otherwise have performed is dropped. Wired into all eight surfaces inside their existing
+`hostedContext != nil` branches, so Classic and Original are untouched — the rule in
+`reference/components.md` → *A frame supplies chrome, not a drag surface*.
+
+The travel threshold is what keeps these surfaces' own gestures: Spectrum's double-click still cycles
+quality, Cava's and Flow's still toggle, projectM's still toggles performance mode. Two surfaces are
+deliberately narrower than "the whole body": the equalizer drags from its margins only (its bands,
+preamp and buttons claim their presses first), and the hosted waveform does not body-drag at all
+because its `waveformRect` is the whole view and every press there seeks — its handle is the frame
+strip, exactly as it is its own title bar standalone. Both are pinned by
+`WinampModernHostedWindowDragTests`.
+
 ## B56 — Skin windows spawn on top of each other — closed 2026-08-28
 
 ### B56

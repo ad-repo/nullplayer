@@ -28,6 +28,8 @@ class SpectrumView: NSView {
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
     private var hostedContext: WinampModernHostedSurfaceContext?
+    /// The window drag the body keeps while the skin's frame owns the chrome (B57).
+    private var hostedDrag = WinampModernHostedWindowDrag()
     
     /// Observer for spectrum data notifications
     private var spectrumObserver: NSObjectProtocol?
@@ -337,6 +339,7 @@ class SpectrumView: NSView {
 
         if hostedContext != nil {
             if event.clickCount == 2 { cycleQualityMode() }
+            hostedDrag.prime(event, context: hostedContext)
             return
         }
         
@@ -375,6 +378,11 @@ class SpectrumView: NSView {
         if isFullscreen {
             return
         }
+
+        if hostedContext != nil {
+            hostedDrag.drag(event)
+            return
+        }
         
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
@@ -394,6 +402,11 @@ class SpectrumView: NSView {
         if isFullscreen {
             isDraggingWindow = false
             pressedButton = nil
+            return
+        }
+
+        if hostedContext != nil {
+            hostedDrag.end()
             return
         }
         
