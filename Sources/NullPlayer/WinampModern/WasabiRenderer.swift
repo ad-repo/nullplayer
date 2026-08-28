@@ -1403,10 +1403,16 @@ final class WasabiSceneRenderer {
     }
 
     /// The raw component reference a holder declares, in the order Wasabi reads them for that element.
+    ///
+    /// `hold` is last on a `<component>` rather than absent: `param` is the attribute that form is
+    /// documented with and every other corpus skin uses, but Defix writes its detached visualizer's
+    /// box as `<component … hold="guid:{0000000A-…}">`. Reading only `param`/`guid` there resolved
+    /// that holder to no kind at all — not the engine, not even the analyzer fallback — so
+    /// **Detach Visualizer** opened a window with an empty grey box in it.
     private static func componentReference(of object: WasabiObject) -> String? {
         let keys: [String]
         if object.typeName.caseInsensitiveCompare("component") == .orderedSame {
-            keys = ["param", "guid"]
+            keys = ["param", "guid", "hold"]
         } else {
             keys = ["hold", "component", "guid"]
         }

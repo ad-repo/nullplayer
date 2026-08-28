@@ -76,6 +76,43 @@ never on a skin's object ids:
   from under the first, which is why "the tab works and the mini doesn't".
 - Every other holder draws the analyzer rather than sitting black.
 
+### A `<component>` can name its holder in `hold` (Defix, 2026-08-28)
+
+Three elements can hold a component, and they do not read the same attribute. `windowholder` /
+`componentbucket` take `hold` (then `component`, then `guid`); `<component>` is documented with
+**`param`**, which is what mmd3, CornerAmp and Winamp Modern all write. Defix writes its detached
+visualizer's box the fourth way:
+
+```xml
+<component id="VISCON.component.vis" … hold="guid:{0000000A-000C-0010-FF7B-01014263450C}"/>
+```
+
+Both readers took `param`/`guid` only on that element, so this box resolved to **no kind at all** —
+not `.visualization`, not even `.other`. That is worse than it sounds: an unrecognized holder is not
+drawn by `drawComponent` and is not in `componentHolders()`, so it got neither the host's engine nor
+the BB9 analyzer fallback. **Detach Visualizer** opened a correctly framed window with an empty slab
+of the frame's own colour where the visualization should be, and every probe that keys on holders
+(`HOLDERS`, `VIS holder`) reported nothing to explain it.
+
+`hold` is now read **last** on a `<component>`, in both readers, which must stay in step:
+
+- `WasabiRenderer.componentReference(of:)` — what draws and what hosts
+- `WasabiSurfaceInventory.holderKind(of:)` — what the surface catalog reaches
+
+Last, not first, so `param` still wins wherever a skin declares both and nothing that already
+resolved moves. This changes no routing: `.visualization` is not in `managedKinds` and `VISCON`
+declares no `component=` GUID of its own, so Defix's catalog still reads
+`visualization=classic(the skin declares no visualization surface)` and **Windows ▸ Visualizations**
+still opens NullPlayer's own window.
+
+> **The render dump does not see this container.** `RENDER-DUMP containers:` lists Defix's other
+> nine but not `VISCON`, so no `VIS holder` line is printed for it either — before *or* after the
+> fix — even though the app parses it, opens it and now renders in it. `VISCON` declares
+> `default_w="406" default_h="360"` and no `visible=`, so it is neither hidden nor collapsed and
+> should survive `windowContainers`. Unexplained, and the reason the corpus table below undercounts.
+> Confirm a visualization holder **in the app** (`WINAMP-MODERN-VIS: resume`) before trusting a
+> headless zero.
+
 ### What the renderer draws
 
 `WasabiSceneRenderer.hostedVisualizationHolders` is the set of holders the view layer has actually
@@ -184,4 +221,9 @@ player.
 
 The other 23 declare no visualization container, and NullPlayer's own window serves them exactly as
 before.
+
+**This count is a floor, not a census.** It is what the render dump prints, and the dump does not
+enumerate Defix's `VISCON` (see the `hold` section above) — a real, openable visualization container
+with a real `{0000000A}` box in it. Treat the table as "at least these", and measure a specific skin
+in the app before concluding it has none.
 

@@ -328,6 +328,43 @@ final class WinampModernPhase13Tests: XCTestCase {
                        "references below the redefinition use its new body")
     }
 
+    /// A `<component>` that names its GUID in `hold` rather than `param`.
+    ///
+    /// Defix writes its detached visualizer's box that way (`VISCON.component.vis`). Both holder
+    /// readers took `param`/`guid` only on that element, so the box resolved to no kind at all — it
+    /// got neither the host's engine nor the analyzer fallback, and **Detach Visualizer** opened a
+    /// window with an empty slab of the frame's own colour in it.
+    ///
+    /// `param` still wins where a skin declares both: `hold` is read last, so nothing that already
+    /// resolved moves.
+    func testComponentElementNamesItsHolderInHoldAsWellAsParam() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="200" h="200">
+              <component id="VISCON.component.vis" x="0" y="0" w="100" h="100"
+                         hold="guid:{0000000A-000C-0010-FF7B-01014263450C}"/>
+              <component id="both" x="100" y="0" w="100" h="100"
+                         param="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}"
+                         hold="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+
+        let main = try XCTUnwrap(loaded.surfaceInventory.containers.first { $0.isMainPlayer })
+        XCTAssertTrue(main.reachableKinds.contains(.visualization),
+                      "a <component hold=…> box is a visualization holder the inventory can see")
+
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost(), containerID: "main")
+        let kinds = renderer.componentHolders().reduce(into: [String: WinampModernComponentKind]()) {
+            $0[$1.object.attributes["id"] ?? ""] = $1.surfaceID.componentKind
+        }
+        XCTAssertEqual(kinds["VISCON.component.vis"], .visualization,
+                       "the renderer must agree, or the box draws nothing at all")
+        XCTAssertEqual(kinds["both"], .playlist, "param still wins — hold is read last")
+    }
+
     /// The cPro shape: surfaces embedded in the main window through engine holders. Nothing is
     /// missing, so nothing may be synthesized — a duplicate window is the failure to avoid.
     func testSUISkinWithScriptBuiltHoldersSynthesizesNothing() throws {

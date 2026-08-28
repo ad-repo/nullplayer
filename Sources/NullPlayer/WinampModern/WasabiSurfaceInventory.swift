@@ -331,9 +331,12 @@ struct WinampModernSurfaceInventory {
         return identifiers.filter { !$0.isEmpty }
     }
 
+    /// Kept in step with `WasabiRenderer.componentReference(of:)` — the inventory and the renderer
+    /// must agree about what a holder holds, so `hold` is read on a `<component>` here too (Defix's
+    /// `VISCON.component.vis`).
     private static func holderKind(of node: WalXMLNode) -> WinampModernComponentKind? {
         let keys = node.name.caseInsensitiveCompare("component") == .orderedSame
-            ? ["param", "guid"]
+            ? ["param", "guid", "hold"]
             : ["hold", "component", "guid"]
         for key in keys {
             if let value = node.attribute(key), let kind = WinampModernComponentRegistry.kind(for: value) {

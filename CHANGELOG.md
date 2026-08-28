@@ -71,6 +71,16 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: Defix's detached visualizer window shows a visualization** — Defix
+  Hi-END 200's **Detach Visualizer** button opened a correctly framed window, with its Previous /
+  Next / Presets / Options / Reattach controls along the bottom, and an empty grey box where the
+  visualization belonged. The skin writes that box as a `<component>` that names Winamp's
+  visualization plugin in `hold=` rather than the usual `param=`, and NullPlayer read only `param`
+  there — so the box resolved to nothing at all and got neither the real engine nor the fallback
+  analyzer. It now renders ProjectM (or Geiss, or Tripex) like any other skin's visualization
+  window, independently of NullPlayer's own Visualizations window, so the two can run different
+  presets side by side.
+
 - **Winamp 5.x modern skins: a player button that opened a window will open it again** — a skin's own
   button asks whether the window it targets is already showing before deciding what the click means,
   and a control inside a closed window was still answering "visible" from the last time it had been
