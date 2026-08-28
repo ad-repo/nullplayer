@@ -117,10 +117,18 @@ final class WinampModernVideoSurfaceView: WinampModernVideoSurface {
         container.removeFromSuperview()
     }
 
-    /// Identical here, and that is the point: this surface owns nothing terminal, so the holder
-    /// coming and going is already safe. The library and visualization surfaces need the two paths
-    /// kept apart.
-    func unmountFromHolder() { prepareForUITeardown() }
+    /// **A holder leaving is a tab switch, not the end of the film** (B63). It shares the teardown's
+    /// safety — this surface owns nothing terminal, so the holder coming and going is fine either way
+    /// — but not its *reveal*: unparking with `detachVideoOutput()` here popped NullPlayer's own
+    /// video window out over the skin every time the user left cPro-Bento's Video tab, which reads as
+    /// the player escaping rather than the picture being put away. The film keeps playing, unseen,
+    /// and `reconcileHostedSurfaces` parks it back when the tab returns.
+    ///
+    /// The scene's own teardown still reveals: there is no tab to come back to.
+    func unmountFromHolder() {
+        hideVideoOutput()
+        container.removeFromSuperview()
+    }
 }
 
 /// The black box the skin lays out, and the single source of truth for where the parked window goes.

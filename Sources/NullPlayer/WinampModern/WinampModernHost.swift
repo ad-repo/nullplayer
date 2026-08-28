@@ -251,6 +251,16 @@ extension WinampModernHost {
     }
 }
 
+/// What a running video session answers for the readouts a `.wal` skin drives from playback: the
+/// transport state, the clock and the title. Injected as a closure so the host can be exercised
+/// without a `WindowManager`.
+struct WinampModernVideoSession {
+    var state: PlaybackState
+    var currentTime: TimeInterval
+    var duration: TimeInterval
+    var title: String
+}
+
 final class WinampModernAudioEngineHost: WinampModernHost {
     typealias ArtworkSnapshot = (trackID: UUID?, image: NSImage?)
 
@@ -345,9 +355,30 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         return artworkLoading()
     }
 
-    var playbackState: PlaybackState { engine.state }
-    var currentTime: TimeInterval { engine.currentTime }
-    var duration: TimeInterval { engine.duration }
+    /// **A film is not the audio engine's clock.** `AudioEngine` is *paused* for the whole of a
+    /// video session (`WindowManager.videoPlaybackDidStart`), so a host that answers only from it
+    /// reports a `.wal` skin's transport as paused and its readout as 0:00 while the picture plays
+    /// in plain sight — in cPro-Bento's own Video tab, where the film is the thing on screen.
+    /// Classic and Original never had this because their views substitute
+    /// `WindowManager.isVideoActivePlayback` at every draw; this is the same substitution, made once
+    /// at the seam every `.wal` readout, script and `getPlayItemMetaDataString` key already goes
+    /// through.
+    ///
+    /// Keyed on the video's **title**, not on `isVideoActivePlayback`: that property's
+    /// `isVideoOutputVisible` term goes false the moment the picture is unparked, which is precisely
+    /// the state a film left running behind another tab is in.
+    var videoSession: () -> WinampModernVideoSession? = {
+        let manager = WindowManager.shared
+        guard let title = manager.currentVideoTitle else { return nil }
+        return WinampModernVideoSession(state: manager.videoPlaybackState,
+                                        currentTime: manager.videoCurrentTime,
+                                        duration: manager.videoDuration,
+                                        title: title)
+    }
+
+    var playbackState: PlaybackState { videoSession()?.state ?? engine.state }
+    var currentTime: TimeInterval { videoSession()?.currentTime ?? engine.currentTime }
+    var duration: TimeInterval { videoSession()?.duration ?? engine.duration }
     var volume: Double {
         get { Double(engine.volume) }
         set { engine.volume = Float(max(0, min(1, newValue))) }
@@ -375,7 +406,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         get { Int(engine.sweetFadeDuration.rounded()) }
         set { engine.sweetFadeDuration = TimeInterval(newValue) }
     }
-    var trackTitle: String { engine.currentTrack?.title ?? "" }
+    var trackTitle: String { videoSession()?.title ?? engine.currentTrack?.title ?? "" }
     var trackArtist: String { engine.currentTrack?.artist ?? "" }
     var trackAlbum: String { engine.currentTrack?.album ?? "" }
     /// The library row for the playing track, looked up once per track rather than once per key —

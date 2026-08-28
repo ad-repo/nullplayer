@@ -71,6 +71,15 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: a film playing in cPro-Bento's Video tab now has a running clock, and
+  stays in the tab** — the picture appeared in the tab exactly as it should, but the skin's transport
+  sat on its paused artwork and the time readout stayed at 0:00 for the whole film, because the skin
+  was still reading the audio player — which is deliberately paused while a video plays. The
+  transport, the elapsed and remaining time and the title now follow the film, and pausing or
+  resuming it reaches the skin's own animations. Switching to another tab used to throw nullPlayer's
+  own video window out over the skin; the picture is now simply put away, the film keeps playing, and
+  coming back to the Video tab puts it back in its box.
+
 - **Winamp 5.x modern skins: opening Big Bento's side playlist no longer throws the player into the
   corner of the screen** — in the Big Bento Modern skins, showing the playlist panel beside the
   player jumped the whole window to the top-left of the monitor, wherever you had put it. The skin
@@ -314,7 +323,7 @@
 
 - **Winamp 5.x modern skins: the media library no longer sits on top of the other tabs** — in a skin that keeps its library, playlist and video in tabs of one window, going Media Library → Playlist → Media Library → Playlist left the library browser drawn across the playlist, both of them legible at once, at every window size; on the Video tab it left whatever strip of itself the picture did not cover. nullPlayer keeps one library browser per skin and puts it back when its tab comes round again, but it was destroying that browser every time the tab closed — so the second visit put an already-destroyed browser back on screen, and the third found it in a state where the close-down did nothing at all and left it there for the rest of the session. Closing a tab now takes the browser off screen and leaves it intact for its next turn, which is what it was always meant to do, and the same fix carries the skin's visualization box, which was destroyed the same way.
 
-- **Winamp 5.x modern skins: a skin that plays video in its own tab** — cPro-Bento keeps everything in one window, and its **Video** tab was an empty black box: play a film and nullPlayer's own video window opened beside the skin, exactly as if the skin had no video surface at all. It has one — it just isn't a window. The skin hosts video in a tab of its main window and deliberately shrinks its standalone video window to nothing so Winamp cannot open a second one, and nullPlayer only knew how to fill a *window*. Video now plays **in the tab**, in the box the skin drew for it, with the skin's own video buttons beneath it: start a film with the tab closed and the skin switches to it, and switching away to another tab hands the picture back to nullPlayer's own window so it never keeps playing somewhere nobody can see. Skins that declare a real video window of their own — fourteen of the measured thirty-one, including all three Miku skins, multipass and mmd3 — are untouched and still play there.
+- **Winamp 5.x modern skins: a skin that plays video in its own tab** — cPro-Bento keeps everything in one window, and its **Video** tab was an empty black box: play a film and nullPlayer's own video window opened beside the skin, exactly as if the skin had no video surface at all. It has one — it just isn't a window. The skin hosts video in a tab of its main window and deliberately shrinks its standalone video window to nothing so Winamp cannot open a second one, and nullPlayer only knew how to fill a *window*. Video now plays **in the tab**, in the box the skin drew for it, with the skin's own video buttons beneath it: start a film with the tab closed and the skin switches to it, and switching away to another tab puts the picture away without stopping the film — coming back to the tab puts it back. Skins that declare a real video window of their own — fourteen of the measured thirty-one, including all three Miku skins, multipass and mmd3 — are untouched and still play there.
 
 - **Winamp 5.x modern skins: a tab or button that goes dead the first time you press it** — a skin's compiled script clears an object it is holding on to by assigning `NULL` to it, and MAKI compiles that literal to a plain zero. nullPlayer stored the zero as-is, so the variable was empty without actually being empty: the moment a script read anything off it — which is what ClassicPro's tab strip does on the very first tab you activate in a session — the whole handler was abandoned part-way through, taking the tab switch and the strip's own re-layout with it. Assigning `NULL` now empties the variable, as it does in Winamp, so scripts that lean on the pattern run to the end.
 

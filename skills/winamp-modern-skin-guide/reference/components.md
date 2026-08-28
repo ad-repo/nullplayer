@@ -676,6 +676,11 @@ Library → Playlist). The video surface never had the defect because B20 had al
 teardown non-terminal; the visualization surface did, and is now unmounted by stopping its engine and
 keeping it, with `resumeRendering()` starting it again on the way back in.
 
+The video surface later needed the two paths kept apart for a different reason (B63): its teardown
+hands the picture back to NullPlayer's own window, and doing that on a *tab switch* pops that window
+out over the skin. Unmounting now unparks and stays hidden, and a returning holder re-parks the
+picture — [components/video.md](components/video.md) → *A holder leaving is a tab switch*.
+
 #### Repaint routes are per-window, and scripts are not
 
 `graphDidMutate`, `repaintRequested` and `objectRepaintRequested` are **single-owner** callbacks on the

@@ -93,6 +93,8 @@ This file is a router. Read the one focused reference your symptom names.
 | NullPlayer-hosted text size or palette | [reference/components.md](reference/components.md) |
 | Auxiliary window freezes; repaint or teardown issue | [reference/components.md](reference/components.md) |
 | Video picture, child-window sizing, control bar | [reference/components/video.md](reference/components/video.md) |
+| Clock or transport frozen while a video plays | [reference/components/video.md](reference/components/video.md) → *The picture's clock* |
+| Video window pops out when a tab changes | [reference/components/video.md](reference/components/video.md) → *A holder leaving is a tab switch* |
 | AVS/MilkDrop component holder or embedded visualization | [reference/components/visualization.md](reference/components/visualization.md) |
 | Several visualization holders show the wrong engine | [reference/components/visualization.md](reference/components/visualization.md) → *one holder per skin* |
 | Browser/WebKit, navigation, search URL, duplicate toolbar | [reference/components/browser.md](reference/components/browser.md) |

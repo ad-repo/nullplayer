@@ -44,14 +44,68 @@ When debugging any "the hosted thing is the wrong size" report, **compare the fr
 (`video: box … refused, window took …`); it is the line that ended this defect after three wrong
 theories.
 
+### The picture's clock is not the audio engine's (B63)
+
+`WindowManager.videoPlaybackDidStart()` **pauses `AudioEngine`** for the whole of a film. So a host
+that answers `playbackState`, `currentTime`, `duration` and `trackTitle` from the engine alone reports
+a skin's transport as *paused* and its readout as *0:00* while the picture plays in plain sight — and
+in an embedded surface the picture is the thing the user is looking at, in the same window as the
+frozen clock. Classic and Original never had this: their views substitute
+`WindowManager.isVideoActivePlayback` at every draw.
+
+`WinampModernAudioEngineHost.videoSession` is the same substitution made **once, at the host** — the
+seam every `.wal` readout, script binding and `getPlayItemMetaDataString` key already passes through,
+so a `<text display="time">` the renderer draws and a `timeelapsed` a script writes cannot disagree
+about how far into the film it is. Two details are load-bearing:
+
+- **It is keyed on the video's title, not on `isVideoActivePlayback`.** That property's
+  `isVideoOutputVisible` term goes false the moment the picture is unparked — which is exactly the
+  state a film left running behind another tab is in, and the one where the clock must keep ticking.
+- **It is a closure, re-read on every access.** The value is polled ten times a second; a snapshot
+  taken when the skin loaded would freeze the readout at whatever it said then.
+
+The transitions have no callback of their own — `videoPlaybackDidStart` fires once and *nothing at
+all* reports a pause — so `WinampModernMainView.updateTime` compares the state against
+`lastPlaybackState` each tick and calls `updatePlaybackState()` when it moved. That is what gets a
+paused film's play/pause artwork repainted and its `onPause` / `onResume` to the skin's scripts. The
+clock keeps ticking while a film is paused (the video view's time observer is a plain repeating
+timer), so the comparison is actually reached.
+
+### A holder leaving is a tab switch, not the end of the film (B63)
+
+For a **window**-hosted surface, the holder only ever goes away with the scene, and handing the
+picture back to NullPlayer's own window is right. For an **embedded** one it is not: cPro-Bento's tab
+strip removes and restores that holder all session long, so `detachVideoOutput()`'s reveal popped our
+video window out over the skin every time the user left the Video tab — which reads as the player
+escaping, not as the picture being put away.
+
+So the video surface joins the library and visualization surfaces in keeping the two paths apart, on
+a different axis than they do (see [components.md](../components.md) → *Unmounting is not teardown*):
+
+- `unmountFromHolder()` — unpark and **stay hidden**. The film plays on, unseen.
+- `prepareForUITeardown()` — unpark and **reveal** if a film is still running. The scene is going;
+  there is no tab to come back to.
+
+Unparking either way is not optional: the one video view in the app must never be left orphaned in a
+view that is about to leave the hierarchy.
+
+Hiding only works because something parks the picture back. `reconcileHostedSurfaces` watches for a
+video holder *appearing* — that is the tab being switched to again, and the only other route that
+parks a picture runs on a **play** call, which will not come, because the film has been playing all
+along. It re-attaches one turn later (after a layout pass, which is what gives the returning box its
+frame) and asks `hostedVideoSurface` for the target, so the largest visible box wins exactly as it did
+the first time.
+
 ### The rest of the shape
 
 - **Routing.** `.video` is a **routed** surface but not a **managed** one
   (`WinampModernSurfaceInventory.routedKinds` vs `managedKinds`). Never synthesized — a skin that
-  draws no video window is served by the host's own. Never embedded — Winamp Modern's player also
-  declares an invisible in-player `windowholder` for the component, and resolving there would leave
-  the skin's real video window empty. So the catalog only ever answers `.declaredContainer` or
-  `.classicFallback`.
+  draws no video window is served by the host's own. Embedded **only** when the skin declares no
+  visible video window of its own (B23): Winamp Modern's player also declares an invisible in-player
+  `windowholder` for the component, and resolving there would leave the skin's real video window
+  empty, so a skin with a visible one keeps it. cPro-Bento is the case the exception exists for — its
+  video lives in an SUI tab and its standalone `Video` container is a deliberate 1×1 stub. So the
+  catalog answers `.embedded`, `.declaredContainer` or `.classicFallback`.
 - **`autoopen` / `autoclose`.** Playing reveals the skin's video window; stopping hides it and
   unparks, so no child window is left hanging off a skin window a mode switch may take away.
 - **Casting never resurrects a local window.** Every `play*` entry point returns before reaching the

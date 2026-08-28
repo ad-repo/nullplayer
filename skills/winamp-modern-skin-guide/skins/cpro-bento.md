@@ -55,8 +55,12 @@ synthesized and nothing left to the classic fallback.
 - **The Video tab plays video** (B23) — the skin embeds the video component in its tab sheet
   (`centro.windowholder.video`) and collapses its standalone `Video` container to a 1×1 stub, so
   until the embedded-video route existed the tab was an empty box and every film opened NullPlayer's
-  own window beside it. Playing with the tab closed switches to it; switching away mid-film hands the
-  picture back to our window.
+  own window beside it. Playing with the tab closed switches to it. **Switching away mid-film hides
+  the picture and leaves the film running**, and switching back parks it in the tab again (B63); it
+  used to hand the picture to NullPlayer's own window, which popped that window out over the skin on
+  every tab switch. The transport and the clock follow the film rather than the paused audio engine —
+  also B63, and see [reference/components/video.md](../reference/components/video.md). Confirmed live
+  2026-08-28.
 - **The Media Library tab selects itself at launch** (B25) — the host still sends
   `System.onGetCancelComponent`, but no longer walks the holder's `autoopen="1"` chain and writes
   `visible="1"` behind the tab script's back. Once MAKI object-typed `NULL` coercion was corrected,

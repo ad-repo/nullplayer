@@ -731,10 +731,12 @@ final class WinampModernMainView: NSView {
         }
 
         var liveVideo: Set<WasabiObjectID> = []
+        var videoHolderAppeared = false
         for holder in holders where holder.kind == .video {
             liveVideo.insert(holder.object.stableID)
             guard videoSurfaces[holder.object.stableID] == nil,
                   let surface = componentHost?.makeVideoSurface() else { continue }
+            videoHolderAppeared = true
             videoSurfaces[holder.object.stableID] = surface
             // `noshowcmdbar="1"` — the holder's own instruction that it draws the transport itself.
             surface.showsCommandBar =
@@ -771,11 +773,26 @@ final class WinampModernMainView: NSView {
         renderer.hostedVisualizationHolders = liveVis
 
         for (id, surface) in videoSurfaces where !liveVideo.contains(id) {
-            // Hands the picture back to its own window if a film is still running — the holder going
-            // away is not a stop, and the one video view in the app must never be left orphaned in a
-            // view that is about to leave the hierarchy.
+            // Unparks the picture — the one video view in the app must never be left orphaned in a
+            // view that is about to leave the hierarchy — and leaves it hidden. The holder going away
+            // is a tab switch, not a stop, so the film plays on and the window it came from stays put.
             surface.unmountFromHolder()
             videoSurfaces[id] = nil
+        }
+        // …and the holder coming *back* is the tab being switched to again, which is the only moment
+        // that can park the picture there a second time: the reveal route runs on a *play* call, and
+        // the film has been playing all along. After a layout pass, because that is what gives the
+        // new box its frame, and asked of `hostedVideoSurface` so the largest visible box wins the
+        // same way the first parking did.
+        if videoHolderAppeared, sceneIsVisible,
+           WindowManager.shared.currentVideoPlayerController?.currentTitle != nil {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isTornDown else { return }
+                self.needsLayout = true
+                self.layoutSubtreeIfNeeded()
+                self.hostedVideoSurface?.attachVideoOutput()
+                self.hostedVideoSurface?.updateOutputPlacement()
+            }
         }
 
         var liveHostedWindows: Set<WasabiObjectID> = []
@@ -1363,6 +1380,11 @@ final class WinampModernMainView: NSView {
     /// *script* moves in response to `onPostedPosition` still comes back through
     /// `objectRepaintRequested` and names its own rect.
     func updateTime(current: TimeInterval, duration: TimeInterval) {
+        // A video session reports no transitions of its own — `videoPlaybackDidStart` fires once and
+        // nothing at all reports a pause — so the clock is the only place a `.wal` scene can learn
+        // that the film paused or resumed. One enum compare per tick, and `updatePlaybackState` does
+        // nothing unless the state actually moved.
+        if host.playbackState != lastPlaybackState { updatePlaybackState() }
         if duration > 0 {
             let posted = Int32(max(0, min(255, current / duration * 255)))
             for object in renderer.loadedSkin.runtime.graph.objects(xmlID: "HiddenSeek") {

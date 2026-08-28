@@ -17,6 +17,46 @@ belong in MAKI geometry. Fractional values floor, invalid/non-positive values an
 beyond MAKI's signed integer range clamp. `WinampModernPhase78Tests` covers dispatch, numeric
 boundaries, unsupported-demand accounting and teardown.
 
+## B63 — cPro-Bento: the clock froze during a film, and the video window popped out on a tab switch — closed 2026-08-28
+
+Reported live: "when you play video in the cpro_bento skin, it displays properly in the tab but the
+timer is in a paused state despite it running. if I switch tabs the video pops out rather than be
+hidden".
+
+Two unrelated defects behind one report.
+
+**The frozen clock.** `WindowManager.videoPlaybackDidStart()` *pauses* `AudioEngine` for the whole of
+a film, and `WinampModernAudioEngineHost` answered `playbackState`, `currentTime`, `duration` and
+`trackTitle` from the engine alone — so the skin read "paused, 0:00" while the picture played in its
+own tab. Classic and Original never had this because their views substitute
+`WindowManager.isVideoActivePlayback` at every draw; the `.wal` host had no equivalent. Fixed with a
+`videoSession` provider on the host, the one seam every `.wal` readout, script binding and
+`getPlayItemMetaDataString` key already goes through, so the renderer's clock and a script's
+`timeelapsed` cannot disagree. Keyed on the video's **title**, not on `isVideoActivePlayback`, whose
+`isVideoOutputVisible` term goes false the moment the picture is unparked — precisely the state a film
+running behind another tab is in. A video session posts no transitions of its own (`videoPlaybackDidStart`
+fires once and nothing reports a pause), so `WinampModernMainView.updateTime` compares the state each
+tick and calls `updatePlaybackState()` when it moved; that is what repaints a paused film's transport
+artwork and delivers `onPause` / `onResume` to the skin's scripts.
+
+**The escaping window.** A holder leaving the scene ran `unmountFromHolder()` → `detachVideoOutput()`,
+which unparks *revealing* NullPlayer's own video window. That is right for a skin's video **window**
+closing (B20), and wrong for a **tab**: cPro-Bento's tab strip removes and restores that holder all
+session long, so leaving the Video tab threw our window out over the skin. `unmountFromHolder()` now
+unparks and stays hidden — the film plays on, unseen — while `prepareForUITeardown()` keeps the reveal,
+because a scene that is going has no tab to come back to. `reconcileHostedSurfaces` re-parks the
+picture when the holder *reappears*: that is the only moment that can, since the other parking route
+runs on a **play** call and the film has been playing all along.
+
+Durable rules landed in
+[`reference/components/video.md`](../../skills/winamp-modern-skin-guide/reference/components/video.md)
+(*The picture's clock is not the audio engine's*, *A holder leaving is a tab switch, not the end of the
+film*), with the unmount/teardown split cross-referenced from
+[`reference/components.md`](../../skills/winamp-modern-skin-guide/reference/components.md). The same
+file's stale "never embedded" routing bullet was corrected — B23 made cPro-Bento's tab the embedded
+case. Regression coverage is `WinampModernPhase79Tests`; `swift test` 1368 passing. Confirmed live by the
+reporter.
+
 ## B62 — cPro-Bento: three buttons blacked out under the pointer, and the corner bolt did nothing — closed 2026-08-28
 
 Reported live: "there are 3 unimplemented buttons on cpro__bento skin. the bottom 2 on the right and
