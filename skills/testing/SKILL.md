@@ -280,6 +280,16 @@ sleep(5)
 XCTAssertTrue(playingIndicator.exists)
 ```
 
+### Dynamic AppKit Menus
+
+Test dynamic `NSMenu` builders through the real builder whenever the behavior depends on mode. Save
+and restore `WindowManager.shared.uiMode` with `defer`, then assert the resulting flat item titles,
+relative placement, separators, submenu ownership, represented object, action, and check state. If a
+menu section normally depends on a loaded skin or live controller, keep the production section
+appender internal and feed it synthetic rows; this tests the real `NSMenuItem` construction without
+loading an archive or inventing a test-only runtime path. Always cover the empty input so a missing
+section cannot leave a stray separator.
+
 ## Test Data and Fixtures
 
 Test audio files are located in `Tests/Fixtures/`:

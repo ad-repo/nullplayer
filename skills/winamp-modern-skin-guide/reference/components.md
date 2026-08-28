@@ -194,7 +194,17 @@ Two rules came out of it:
   `container '<id>' has no window and is unreachable`) instead of vanishing;
 - `isListedInWindowMenu` rejects a `name` beginning with `:` — a Wasabi string-table reference we do
   not resolve. The standard `Component` shell is `name=":componenttitle"`, and making it openable
-  otherwise puts an empty frame under that name in three skins' **Skin Windows** menu.
+  otherwise puts an empty frame under that name in three skins' **Windows** menu.
+
+The application menu keeps window ownership explicit. NullPlayer-owned surfaces are the first block
+of the **Windows** menu. A loaded skin's named, menu-visible containers appear directly in a second
+block after a separator, but only after `skinWindows` removes every container routed by the surface
+catalog. That makes the blocks non-overlapping: playlist, EQ, library, video, and visualization use
+their NullPlayer entries, while genuinely skin-owned windows use the skin block. Skin windows do not
+belong in the **Skins** menu, whose loaded-skin section is for themes and skin settings. **Text Size**
+is window presentation rather than skin selection, so it sits beside **UI Size** in the Windows menu
+while retaining its per-skin value. The `.winampModern` Windows menu also omits NullPlayer's
+**Compact Mode** and **Compact Window** entries because `.wal` skins own their compact/shade layouts.
 
 #### Revealing an embedded surface: the script gets the last word, not the first
 

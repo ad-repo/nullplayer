@@ -162,11 +162,10 @@ final class WinampModernPhase48Tests: XCTestCase {
         XCTAssertEqual(classicCalls, [.visualization])
     }
 
-    /// **The defect the first live pass found.** Routing the surface gave it a route; it did not give
-    /// anyone a way to *ask*. A container carrying a `component=` GUID is kept out of the Skin Windows
-    /// menu so a routed surface cannot be reached twice, and with no skin in the corpus binding a
-    /// button to its AVS window, "I cannot find a visualization window" was the whole experience.
-    func testTheAVSWindowIsOfferedInTheSkinWindowsMenu() throws {
+    /// The topology keeps a named AVS container menu-eligible so the host can route its standard
+    /// Visualizations command to it; the reconciled catalog then removes it from the separate
+    /// skin-owned block so the same window is not listed twice.
+    func testTheAVSWindowIsEligibleForTheWindowsMenu() throws {
         let loaded = try load(xml: skinXML(withAVSContainer: true))
         let containers = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
         let avs = try XCTUnwrap(containers.first { $0.id == "avs" })
@@ -174,6 +173,18 @@ final class WinampModernPhase48Tests: XCTestCase {
         XCTAssertTrue(WinampModernContainerTopology.isListedInWindowMenu(avs),
                       "otherwise the window has no way to be opened at all")
         XCTAssertEqual(WinampModernContainerTopology.displayName(of: avs), "Visualization")
+    }
+
+    func testEveryRoutedContainerIsExcludedFromTheSkinOwnedWindowBlock() {
+        let catalog = WinampModernSurfaceCatalog(
+            playlist: .declaredContainer(id: "pledit"),
+            equalizer: .declaredContainer(id: "eq"),
+            library: .synthesizedContainer(id: "nullplayer.library"),
+            video: .declaredContainer(id: "video"),
+            visualization: .declaredContainer(id: "avs"))
+
+        XCTAssertEqual(catalog.routedContainerIDs,
+                       ["pledit", "eq", "nullplayer.library", "video", "avs"])
     }
 
     /// And the rule it must not break: a surface that *does* have a menu item of its own stays out,

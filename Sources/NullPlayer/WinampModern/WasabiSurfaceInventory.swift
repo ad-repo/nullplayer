@@ -58,8 +58,8 @@ struct WinampModernSurfaceInventory {
     ///   chrome and the `VID_*` buttons, empty. An SUI skin that hosts video in a tab and collapses
     ///   its standalone container to a stub (cPro-Bento) has no such window, and embedding is the
     ///   only place its picture can go (B23);
-    /// * it stays in the **Skin Windows** menu, because unlike the playlist / EQ / library it has no
-    ///   menu item of its own to collide with, and Winamp lists Video in its Windows menu too.
+    /// * it is reached by NullPlayer's **Video Player** row in the Windows menu; it does not also
+    ///   appear in the skin-owned window block.
     ///
     /// `.visualization` (B20a) is routed on the same terms, and stays **never embedded**: the only
     /// corpus skin an in-player holder would move is BLAKK, and nothing has measured what it should
@@ -72,16 +72,15 @@ struct WinampModernSurfaceInventory {
     /// not.
     static let routedKinds: [WinampModernComponentKind] = managedKinds + [.video, .visualization]
 
-    /// Routed surfaces that still belong in the host's **Skin Windows** menu.
+    /// Routed surfaces whose declared `.wal` containers are opened by the host's existing Windows
+    /// menu rows rather than by the skin-owned window block.
     ///
-    /// The managed three are excluded from it because each has a menu item of its own (Windows →
-    /// Playlist / Equalizer / Library) and a second entry would be a second route to one window.
-    /// These two have no such item — and, measured, **no skin binds a button to its AVS window
-    /// either**: all eight visualization containers in the corpus declare a `name`
+    /// These two route the Video Player and Visualizations rows to the skin containers when present.
+    /// Measured skins often bind no button to their AVS window: all eight visualization containers
+    /// in the corpus declare a `name`
     /// (`Visualization`, `Visualizer`, `Visualizations`), none declares `nomenu="1"`, and none of
-    /// their players carries a `TOGGLE guid:vis`. In Winamp they are opened from *its* Windows menu,
-    /// so that is where they have to be here. Both toggles route through the surface coordinator, so
-    /// the menu entry and the Visualizations menu's own item cannot reach different windows.
+    /// their players carries a `TOGGLE guid:vis`. The existing host rows therefore remain the route,
+    /// and the coordinator makes them open the skin window instead of a competing NullPlayer window.
     static let windowMenuRoutedKinds: Set<WinampModernComponentKind> = [.video, .visualization]
 
     /// Surfaces with no home in this skin: not embedded, no declared container, not ambiguous, and

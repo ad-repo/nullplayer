@@ -30,13 +30,13 @@ struct WinampModernSurfaceCatalog {
     let visualization: WinampModernSurfaceTarget
 
     /// The container ids this catalog already routes. A surface reached through the catalog has its
-    /// own menu item (Windows → Playlist / Equalizer / Library), so anything listing skin windows
+    /// own NullPlayer menu item, so anything listing skin-owned windows
     /// must skip these or the user gets two entry points to one window — which is the disagreement
     /// the catalog was built to end. Container *kind* is not enough to spot them: Defix's `pledit`
     /// declares no `component=` GUID and is routed from the declarative surface inventory instead.
     var routedContainerIDs: Set<String> {
         var ids: Set<String> = []
-        for kind in WinampModernSurfaceInventory.managedKinds {
+        for kind in WinampModernSurfaceInventory.routedKinds {
             switch self[kind] {
             case .declaredContainer(let id), .synthesizedContainer(let id): ids.insert(id.lowercased())
             case .embedded, .classicFallback: continue

@@ -221,6 +221,12 @@ When adding or refactoring top menu bar content:
 - Avoid `NSMenuItem.copy()` for action-bearing items; copied items can lose expected target/action behavior in this app.
 - Keep side effects (network discovery, long-running work) out of menu construction.
 - Prefer lifecycle startup for services and `menuNeedsUpdate(_:)` for state refresh when a menu opens.
+- Keep entries in the menu that owns their action, not merely the object they configure. In
+  `.winampModern`, **Text Size** is adjacent to **UI Size** in Windows, and named skin-owned windows
+  form a flat section after NullPlayer-owned windows; neither belongs in Skins. Filter the skin block
+  through the reconciled surface catalog so playlist, EQ, library, video, and visualization never
+  acquire duplicate rows. NullPlayer's **Compact Mode** and **Compact Window** are omitted because a
+  `.wal` skin owns its compact/shade layouts.
 - For Sonos room selection UX, use `SonosRoomCheckboxView` when persistent-open submenu behavior is required.
 - For library-browser column visibility menus, use `ColumnVisibilityCheckboxView` for persistent-open checkbox rows. Keep column preferences mode-scoped: Modern uses `BrowserVisible*Columns`; Classic uses `ClassicBrowserVisible*Columns`.
 

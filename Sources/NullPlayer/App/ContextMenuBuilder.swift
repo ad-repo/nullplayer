@@ -119,19 +119,30 @@ class ContextMenuBuilder {
         menu.addItem(recreate)
         #endif
 
+        // A `.wal` skin may declare extra windows that are not backed by any NullPlayer surface.
+        // Keep those in their own section: `winampModernSkinWindows` has already removed every
+        // container routed as a playlist, EQ, library, video, or visualization window, so none of
+        // these entries overlaps the NullPlayer-owned window list above.
+        if wm.uiMode.controllerFamily == .winampModern {
+            addWinampModernSkinWindowSection(to: menu, windows: wm.winampModernSkinWindows)
+        }
+
         menu.addItem(NSMenuItem.separator())
 
-        // Compact Mode works in both classic and modern UI. Set apart on its own, above the
-        // display toggles.
-        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
-        compactMode.target = MenuActions.shared
-        compactMode.state = wm.compactModeEnabled ? .on : .off
-        menu.addItem(compactMode)
-        let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
-        compactWindow.target = MenuActions.shared
-        compactWindow.state = wm.compactWindowEnabled ? .on : .off
-        menu.addItem(compactWindow)
-        menu.addItem(NSMenuItem.separator())
+        // Compact controls belong to the classic and NullPlayer-owned UI families. A `.wal` skin
+        // supplies its own compact/shade layouts, so showing NullPlayer's alternatives here creates
+        // a second, unrelated compact-window model.
+        if wm.uiMode.controllerFamily != .winampModern {
+            let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+            compactMode.target = MenuActions.shared
+            compactMode.state = wm.compactModeEnabled ? .on : .off
+            menu.addItem(compactMode)
+            let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
+            compactWindow.target = MenuActions.shared
+            compactWindow.state = wm.compactWindowEnabled ? .on : .off
+            menu.addItem(compactWindow)
+            menu.addItem(NSMenuItem.separator())
+        }
 
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
         alwaysOnTop.target = MenuActions.shared
@@ -146,6 +157,9 @@ class ContextMenuBuilder {
         }
 
         menu.addItem(buildUISizeMenuItem(wm: wm))
+        if wm.uiMode.controllerFamily == .winampModern {
+            menu.addItem(buildWinampModernTextSizeMenuItem(wm: wm))
+        }
 
         menu.addItem(buildWindowLockMenuItem())
 
@@ -171,6 +185,25 @@ class ContextMenuBuilder {
 
         menu.autoenablesItems = false
         return menu
+    }
+
+    /// Appends the loaded `.wal` skin's unique windows as a flat, separated section. Kept internal
+    /// so the menu contract can be exercised without loading an archive or creating real windows.
+    static func addWinampModernSkinWindowSection(
+        to menu: NSMenu,
+        windows: [(id: String, name: String, isVisible: Bool)]
+    ) {
+        guard !windows.isEmpty else { return }
+        menu.addItem(NSMenuItem.separator())
+        for skinWindow in windows {
+            let item = NSMenuItem(title: skinWindow.name,
+                                  action: #selector(MenuActions.toggleWinampModernSkinWindow(_:)),
+                                  keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = skinWindow.id
+            item.state = skinWindow.isVisible ? .on : .off
+            menu.addItem(item)
+        }
     }
 
     /// Builds the top-level "Skins" menu content for the macOS menu bar.
@@ -931,13 +964,12 @@ class ContextMenuBuilder {
             openFolder.target = MenuActions.shared
             winampModernMenu.addItem(openFolder)
 
-            // Everything scoped to the **loaded skin**, in one block: how large it draws the text
-            // NullPlayer puts inside it, what it can be coloured as, what it lets the user configure,
-            // and which of its own windows are open. All four are stored per skin and all four change
-            // meaning when the skin does. Only Text Size is unconditional — the other three depend on
-            // the skin declaring one — so the group's separator is placed around what was actually
-            // added rather than written inline after each block.
-            var skinSpecific: [NSMenuItem] = [buildWinampModernTextSizeMenuItem(wm: wm)]
+            // Everything configured for the **loaded skin**, in one block: what it can be coloured
+            // as and what it lets the user configure. Window-related controls live together in the
+            // Windows menu: Text Size sits beside UI Size, and skin-defined windows follow the
+            // NullPlayer window block. These entries depend on the skin declaring them, so the
+            // group's separator is placed around what was actually added.
+            var skinSpecific: [NSMenuItem] = []
 
             // Which visualization the skin's `<vis>` box draws (B53) — only for a skin that declares
             // one. Defix declares none (its VIS buttons are a toolbar over the host's own
@@ -978,27 +1010,6 @@ class ContextMenuBuilder {
                                               keyEquivalent: "")
                 settingsItem.target = MenuActions.shared
                 skinSpecific.append(settingsItem)
-            }
-
-            // The skin's own extra windows (Phase 27.7). A `.wal` skin declares windows it binds no
-            // button to and expects Winamp's Windows menu to open — Defix's two speaker cabinets and
-            // its configurator are declared, render correctly, and were unreachable without this.
-            let skinWindows = WindowManager.shared.winampModernSkinWindows
-            if !skinWindows.isEmpty {
-                let windowsItem = NSMenuItem(title: "Skin Windows", action: nil, keyEquivalent: "")
-                let windowsMenu = NSMenu()
-                windowsMenu.autoenablesItems = false
-                for skinWindow in skinWindows {
-                    let item = NSMenuItem(title: skinWindow.name,
-                                          action: #selector(MenuActions.toggleWinampModernSkinWindow(_:)),
-                                          keyEquivalent: "")
-                    item.target = MenuActions.shared
-                    item.representedObject = skinWindow.id
-                    if skinWindow.isVisible { item.state = .on }
-                    windowsMenu.addItem(item)
-                }
-                windowsItem.submenu = windowsMenu
-                skinSpecific.append(windowsItem)
             }
 
             if !skinSpecific.isEmpty {

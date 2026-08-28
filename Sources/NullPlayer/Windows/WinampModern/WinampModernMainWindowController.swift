@@ -1691,9 +1691,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         return true
     }
 
-    /// Which routed surface a container *is*, for the two kinds the Skin Windows menu lists. Matched
-    /// through the catalog rather than the container's own GUID, because a skin can declare the
-    /// window without one (Love is War Miku's bare `<container id="video">`).
+    /// Which routed surface a container *is*. Matched through the catalog rather than the
+    /// container's own GUID, because a skin can declare the window without one (Love is War Miku's
+    /// bare `<container id="video">`). This remains useful to non-menu callers that address an
+    /// auxiliary window directly; routed containers are excluded from the skin-owned menu section.
     private func routedSurfaceKind(ofContainer id: String) -> WinampModernComponentKind? {
         guard let catalog = surfaceCoordinator?.catalog else { return nil }
         for kind in WinampModernSurfaceInventory.windowMenuRoutedKinds {
@@ -1703,7 +1704,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     }
 
     /// The windows this skin declares that only the host can open: named, not `nomenu`, and not one
-    /// of the surfaces the catalog already routes. Empty for a single-window SUI.
+    /// of the NullPlayer surfaces the catalog already routes. Empty for a single-window SUI.
     var skinWindows: [(id: String, name: String, isVisible: Bool)] {
         // The catalog's own containers are excluded here rather than in the markup rule: whether a
         // container is *routed* is a runtime fact (Defix's `pledit` carries no component GUID and is
@@ -1721,9 +1722,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     @discardableResult
     func toggleSkinWindow(id: String) -> Bool {
         guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return false }
-        // The two routed surfaces the menu *does* list (visualization, video) go through the
-        // coordinator, so this entry and the Visualizations menu's own item reach one window with one
-        // set of bookkeeping — and the video window still gets its picture parked on it (Phase 48).
+        // Routed surfaces go through the coordinator for non-menu callers too, preserving the same
+        // visibility bookkeeping and ensuring the video window still gets its picture parked on it.
         if let kind = routedSurfaceKind(ofContainer: container.containerID) {
             surfaceCoordinator?.toggleSurface(kind)
             return true
