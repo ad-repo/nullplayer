@@ -33,10 +33,11 @@ Classic's sub-windows too). Gate on the mode explicitly —
 `uiMode.controllerFamily == .winampModern` — so the other modes run the identical code path they ran
 before, and the claim is enforced by the compiler rather than by an argument.
 
-Corollary: verify in the running app, not in your head. Window geometry in particular has no useful
-armchair form — `WINAMP_MODERN_PLACE_TRACE=1` prints the frames
-([reference/harness.md](reference/harness.md)), and one launch settles what a page of reasoning
-cannot. The window arrangement itself is in
+Corollary: verify in the running app, not in your head. Window geometry has no useful armchair form,
+and B56 cost four confident statically-reasoned fixes — each wrong, two of them regressions — before
+anyone launched the app. The loop for measuring it is in the `testing` skill ("Window geometry:
+measure it, never reason about it"); `WINAMP_MODERN_PLACE_TRACE=1` is the probe for this subsystem
+([reference/harness.md](reference/harness.md)) and the arrangement itself is in
 [reference/components.md](reference/components.md).
 
 ### Pick your working mode first

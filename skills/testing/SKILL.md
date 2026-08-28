@@ -100,6 +100,55 @@ Tests/
 | Audio models | 6 | AudioOutputDevice |
 | Other | 17 | Various utility tests |
 
+## Window geometry: measure it, never reason about it
+
+**A claim about where a window ends up is only ever worth what the measurement behind it is worth.**
+Placement, docking, stacking and overlap have no useful armchair form: they depend on frames that move
+during launch, sizes that settle a layout pass later, and an ordering between skin load, state
+restoration and window reveal that is nowhere near obvious in the source. Reading the code and
+reasoning it through produces answers that are plausible, specific, and wrong.
+
+This is not hypothetical. B56 (`.wal` windows opening on top of each other) took four confident
+statically-reasoned fixes — each shipped, each wrong, two of them regressions — before anyone launched
+the app. The first measurement identified the real cause in one run.
+
+### The loop
+
+```bash
+pkill -9 -x NullPlayer; sleep 1
+WINAMP_MODERN_PLACE_TRACE=1 .build/arm64-apple-macosx/debug/NullPlayer > /tmp/run.log 2>&1 &
+sleep 12                       # let restore + the layout pass settle
+PID=$(pgrep -x NullPlayer)
+
+# Drive the UI: menu items by name, addressing the debug build by pid — never by app
+# name, which launches the *installed* copy instead.
+osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
+  to click menu item \"Equalizer\" of menu 1 of menu bar item \"Windows\" of menu bar 1"
+
+# Read the finished layout back, rather than judging it by eye or by screenshot.
+osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
+  to get {position, size} of every window"
+```
+
+The accessibility dump is flattened — *n* positions then *n* sizes — and its origin is **top-left**,
+unlike AppKit's. Convert once, then check every pair for intersection arithmetically. "It looks fine"
+is not a result; a table of frames is.
+
+### What to instrument
+
+Trace the *decision* and the *outcome* separately, behind an env var, and make the pair distinguish
+causes that look identical from outside — the value a placement chose, and the frame the window
+actually has once it is on screen. A good origin followed by a bad frame means something moved it
+afterwards, which is a different bug from choosing badly. `WINAMP_MODERN_PLACE_TRACE` is the worked
+example (see `winamp-modern-skin-guide/reference/harness.md`); document any new probe in its owning
+skill in the same change.
+
+### Unit-test the pure part
+
+Whatever geometry can be lifted out of AppKit should be, and then tested as a property rather than by
+example: *no two slots may overlap, whatever the inputs*. `WinampModernWindowTilingTests` is the model,
+and it caught a real overlap bug in the tiler that the manual pass had missed.
+
 ## UI Tests
 
 Location: `Tests/NullPlayerUITests/`
