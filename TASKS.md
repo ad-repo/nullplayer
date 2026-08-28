@@ -154,16 +154,9 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
 
 ### B41
 
-- [x] **B41 implementation and automated coverage.** `getMonitorWidth()` / `getMonitorHeight()` are
-      zero-argument integer System methods. The runtime's earlier compatibility stub always read
-      `NSScreen.main`, which is the primary display rather than necessarily the display containing
-      the skin. The window controller now supplies the frame of the screen containing the `.wal`
-      player, including during startup before the borderless player becomes `NSApp.mainWindow`.
-      Values are AppKit **logical screen points**, matching the runtime's other desktop coordinates;
-      they are never multiplied by `backingScaleFactor`, because Retina backing pixels do not belong
-      in MAKI geometry. Fractional values floor, invalid/non-positive values answer zero, and values
-      beyond MAKI's signed integer range clamp. `WinampModernPhase78Tests` covers dispatch, numeric
-      boundaries, unsupported-demand accounting and teardown.
+The implementation and its automated coverage shipped; that record is in
+[the archive](docs/winamp-modern/backlog-archive.md). Only the manual check below keeps B41 open.
+
 - [ ] **B41 manual QA.** When a second display is available, load Big Bento Modern, move the player
       to that display, open the right-side playlist with its bottom-right up-arrow, and toggle
       **Enlarge Playlist**. Confirm the side column opens and sizes against the display containing

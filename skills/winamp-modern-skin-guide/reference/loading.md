@@ -59,6 +59,17 @@ closing** tag (a `</foo>` matching nothing on the stack — no corpus skin does 
 until one demands otherwise), an unterminated comment, declaration, tag or attribute value, a tag
 with no name, and every depth/node-count bound.
 
+### `loadMap("file.png")` resolves against the **skin**, not the calling script
+
+`Map.loadMap` takes either a declared `<bitmap>` id or a path, and the path form is relative to the
+skin — an engine's scripts live in their own mount and read the *skin's* artwork by bare filename.
+ClassicPro's `player.maki` sizes the Winamp corner bolt with `loadMap("buttons.png")` and gives the
+button its `image`/`downImage` only when `getWidth()` answers 332; resolved beside the script (in
+`/Plugins/classicPro/engine/one/scripts/`) the file was never found, the width came back 0, and the
+logo was invisible at rest — its `hoverImage` is the only artwork the markup declares, so it appeared
+only under the pointer. Try the script's own directory first, then `vfs.skinRoot`, and require the
+file to **exist** at each step rather than returning the first path that merely canonicalizes.
+
 ### Sibling skin mounts
 
 An **overlay skin** is written against another skin: its own archive ships only what it changes and

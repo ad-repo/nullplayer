@@ -429,7 +429,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // MARK: - Menu Actions
     
-    @objc private func showAbout() {
+    @objc func showAbout() {
         // Create custom About window
         let windowWidth: CGFloat = 340
         let windowHeight: CGFloat = 540

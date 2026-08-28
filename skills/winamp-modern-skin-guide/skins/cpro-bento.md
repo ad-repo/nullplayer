@@ -20,8 +20,14 @@ browserpro     200×200     4 nodes
 compatibility  degraded — 46 findings, all warnings: 0 errors, 0 unsupported methods at startup
                resources 12 · groups 34
 bitmaps        main/normal: 57 resolved, 3 unresolved
-               (beatvis.overlay, custom.repeat., custom.shuffle. — declared, never shipped)
+               (beatvis.overlay, custom.repeat.0, custom.shuffle.0)
 ```
+
+The two `custom.*.0` misses are **not** a defect and must not be "fixed": they are the *rest* frames
+of the skin's own ghost shuffle/repeat overlays, and `colors.xml` deliberately declares only
+`custom.shuffle.1` / `custom.repeat.1` / `custom.repeat.2`. State 0 draws nothing so the engine's
+button shows through unchanged. (Before B62 this line read `custom.repeat.` / `custom.shuffle.`
+without the state digit — that *was* the defect, and the digit appearing is the fix.)
 
 The 46 warnings are duplicate ids (the skin's own `custom-element-overide.xml` and `colors.xml`
 deliberately override engine art, plus the engine overriding itself) and optional missing bitmaps
@@ -79,6 +85,18 @@ synthesized and nothing left to the classic fallback.
   `player-normal-group.xml` / `xui/CentroSUI/_v2/drawer.xml`) populates with the six themes, and the
   drawer's switch / previous / next buttons all resolve it through `action_target`.
 
+- **Mute, shuffle and repeat, artwork and all** (B62). All three are `<nstatesbutton>`s whose
+  `image`/`hoverImage`/`downImage` are *prefixes*; only `image` was being suffixed with the state, so
+  the hover and press frames named ids nothing answered and each button disappeared under the pointer
+  against the skin's black display. Shuffle and repeat were driving the engine correctly the whole
+  time through their `cfgattrib` — only their artwork was frozen on state 0. Mute was genuinely dead:
+  it is unbound, `mute_but.onToggle` is the whole of its behaviour, and `toggleActivation` accepted
+  only `togglebutton`. The general rule is in [reference/rendering.md](../reference/rendering.md) →
+  *An `<nstatesbutton>`'s three artwork attributes are all prefixes*.
+- **The corner Winamp bolt** (B62) — visible at rest, and its right-click multi-button menu chooses
+  what the left click does. See the trap below for why it was invisible, and the table for what each
+  of its six commands reaches.
+
 ### Not implemented or knowingly wrong
 
 - **Guilist-backed widgets** — `getItemLabel`, `getItemFocused`, `setSubItem`, `getAttributeName`: the
@@ -91,6 +109,24 @@ synthesized and nothing left to the classic fallback.
 - The full unimplemented-method tally is in [compatibility.md](../compatibility.md).
 
 ### Traps this skin sets
+
+- **The bolt is a multi-button: the right-click menu picks, the *left* click acts.** Nothing happens
+  when you choose a row — `bolt.onRightButtonUp` only writes `setPublicInt("cPro.multibutton", a)`,
+  and `bolt.onLeftClick` runs whichever of six branches that names. The choice **persists between
+  launches**, so a stale value reads as "only one of these works". Measured with
+  `WINAMP_MODERN_RENDER_CLICK_PICK` (two clicks in one run, `@x,y;x,y`, and read the *second* click's
+  `CLICK action:`):
+
+  | Menu choice | id | Reaches |
+  |---|---|---|
+  | Change Color Theme | 3 | `colorthemes_next` — works |
+  | Explore Folder | 1 | `ClassicProFile.exploreFile` — reveals the playing file in Finder |
+  | Show Quick Playlist | 2 | a script-built track menu over the live queue — works (empty with no queue, which is what the harness sees) |
+  | Show Track Menu | 5 | `trackmenu` — works |
+  | Show Send to Menu | 4 | `ML_SendTo`, **deliberately inert** — NullPlayer publishes no Send To targets |
+  | Open About Winamp | 0 | `TOGGLE guid:{D6201408-…}` → NullPlayer's own About panel (B62; nothing answered this GUID before, and it is the **default**, so out of the box the logo did nothing at all) |
+
+
 
 - **The top-right damage came from the *playlist* column, not the volume slider.** `centro.plframe`'s
   collapsed top pane (`centro.playlist.directory`, the closed mini view) is **correctly** 6px tall, but

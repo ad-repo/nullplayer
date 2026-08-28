@@ -2,6 +2,67 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B41 (implementation) — `getMonitorWidth` / `getMonitorHeight` answer the player's own display — shipped 2026-08-26
+
+Moved out of `TASKS.md`, where it had been sitting as a closed `- [x]` item under an otherwise open
+entry. **B41 itself remains open** for its manual two-display check; only this half is done.
+
+`getMonitorWidth()` / `getMonitorHeight()` are zero-argument integer System methods. The runtime's
+earlier compatibility stub always read `NSScreen.main`, which is the primary display rather than
+necessarily the display containing the skin. The window controller now supplies the frame of the
+screen containing the `.wal` player, including during startup before the borderless player becomes
+`NSApp.mainWindow`. Values are AppKit **logical screen points**, matching the runtime's other desktop
+coordinates; they are never multiplied by `backingScaleFactor`, because Retina backing pixels do not
+belong in MAKI geometry. Fractional values floor, invalid/non-positive values answer zero, and values
+beyond MAKI's signed integer range clamp. `WinampModernPhase78Tests` covers dispatch, numeric
+boundaries, unsupported-demand accounting and teardown.
+
+## B62 — cPro-Bento: three buttons blacked out under the pointer, and the corner bolt did nothing — closed 2026-08-28
+
+Reported live: "there are 3 unimplemented buttons on cpro__bento skin. the bottom 2 on the right and
+the button next to the volume. they just turn black when you mouse over them. the winamp logo on the
+far right corner does nothing".
+
+Four faults, three of them one root cause.
+
+**The blacking out.** `mute`, `shuffle` and `repeat` are `<nstatesbutton>`s whose `image`,
+`hoverImage` and `downImage` are all *prefixes* (`image="mute.1." hoverimage="mute.2."`, bitmaps
+`mute.1.0` … `mute.3.1`). Only `image` was suffixed with the state, so hover and press named ids
+nothing answered; an unresolved id draws nothing, and on this skin what showed through was its black
+display. Fixed in `WasabiSceneRenderer.resolvedBitmapID`, which now owns the whole choice for the
+type and falls back pressed → hover → rest state → bare base.
+
+**The frozen artwork.** The state came from an unused `state` attribute, plus an `xmlID.contains
+("repeat")` special case. It now resolves from the `cfgattrib` binding (mapping through
+`cfgvals="0;1;-1"` **positionally**, so the state is the value's index), then the object's own counted
+`value`, then the id. Shuffle and repeat had been driving the engine correctly the whole time — only
+their lamps were stuck on state 0, which is why they read as unimplemented.
+
+**The dead mute.** `toggleActivation` accepted only `togglebutton`, so an `nstatesbutton` was never
+flipped and `mute_but.onToggle` — which is the entirety of mute's behaviour — never ran. It now
+accepts the type and cycles `(value + 1) % nstates`; `setActivated` writes `value` alongside
+`activated` so a persisted mute does not come up lit while counting itself on state 0.
+
+**The invisible bolt.** Its markup declares only `hoverImage`, which is why it appeared solely under
+the pointer. `player.maki` gives it `image="winamp.logo.1"` only when `loadMap("buttons.png")` reports
+332 wide, and `mapLogicalPath` resolved that bare filename beside the *script* — in the engine mount —
+rather than in the skin, so `getWidth()` answered 0. Now falls back to `vfs.skinRoot`, requiring the
+file to exist at each step.
+
+**And the bolt genuinely did nothing.** It is a multi-button: the right-click menu only records which
+of six commands the *left* click runs, and the default is `TOGGLE guid:{D6201408-…}` — About Winamp —
+which nothing answered. Routed to NullPlayer's own About panel alongside the existing
+colour-themes-preferences GUID case. The other five were measured with a new probe flag,
+`WINAMP_MODERN_RENDER_CLICK_PICK` (the harness's popup presenter had always answered 0, "the user
+picked nothing", which for a menu whose choice only takes effect on a later click is the same as never
+opening it): four work, `ML_SendTo` is deliberately inert. The per-command table is in
+[`skins/cpro-bento.md`](../../skills/winamp-modern-skin-guide/skins/cpro-bento.md).
+
+Durable rules landed in [`reference/rendering.md`](../../skills/winamp-modern-skin-guide/reference/rendering.md)
+(*An `<nstatesbutton>`'s three artwork attributes are all prefixes*) and
+[`reference/loading.md`](../../skills/winamp-modern-skin-guide/reference/loading.md)
+(*`loadMap("file.png")` resolves against the skin*). Confirmed live by the reporter.
+
 ## B61 — opening Big Bento's side playlist threw the player into the corner of the monitor — closed 2026-08-28
 
 Reported live: "you open the playlist panel and the window repositions to the top corner of the

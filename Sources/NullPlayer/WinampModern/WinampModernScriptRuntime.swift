@@ -663,8 +663,21 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
            (try? loadedSkin.vfs.data(at: path, location: definition.source)) != nil {
             return path
         }
-        return try? loadedSkin.vfs.resolve(bitmapID, relativeTo: scriptSource.path,
-                                           location: scriptSource).logicalPath
+        // The path form is relative to the **skin**, not to the script that called it — a `.wal`
+        // engine's scripts sit in their own mount and read the *skin's* artwork by bare filename.
+        // ClassicPro's `player.maki` sizes the Winamp bolt from `buttons.png` and only gives that
+        // button an `image` when the answer is 332 wide; resolved beside the script the file was
+        // never found, `getWidth()` answered 0, and the logo stayed invisible until the pointer was
+        // over it, because `hoverImage` is the only artwork its markup declares.
+        for base in [scriptSource.path, loadedSkin.vfs.skinRoot.map { $0 + "/skin.xml" }] {
+            guard let base,
+                  let resolved = try? loadedSkin.vfs.resolve(bitmapID, relativeTo: base,
+                                                             location: scriptSource),
+                  (try? loadedSkin.vfs.data(at: resolved.logicalPath, location: scriptSource)) != nil
+            else { continue }
+            return resolved.logicalPath
+        }
+        return nil
     }
 
     /// Load and start the scripts a runtime-instantiated subtree declares, so nested components come
@@ -1182,9 +1195,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// second copy of the state here would let `getActivated()` disagree with the value the skin reads.
     @discardableResult
     func toggleActivation(of object: WasabiObject) -> Bool {
-        guard object.typeName.caseInsensitiveCompare("togglebutton") == .orderedSame,
+        let type = object.typeName.lowercased()
+        guard type == "togglebutton" || type == "nstatesbutton",
               Self.configBinding(of: object) == nil else { return false }
-        let activated = object.attributes["activated"] != "1"
+        // An `nstatesbutton` is a togglebutton that counts: a click advances it to the next state
+        // and wraps, and `getCurCfgVal()` is how its script reads the position it landed on.
+        // ClassicPro's mute is one of these with no binding — `mute_but.onToggle` is the whole of
+        // its behaviour (save the volume, set it to zero, and back) and nothing was ever flipping
+        // it, so the button was inert however completely the engine implemented it.
+        let states = type == "nstatesbutton" ? max(1, Int(object.attributes["nstates"] ?? "") ?? 2) : 2
+        let previous = Int(object.attributes["value"] ?? "") ?? (object.attributes["activated"] == "1" ? 1 : 0)
+        let state = (max(0, previous) + 1) % states
+        _ = object.setAttribute("value", value: String(state))
+        let activated = state != 0
         _ = object.setAttribute("activated", value: activated ? "1" : "0")
         notifyObjectDidMutate(object)
         // The state is flipped *before* the notification, because that is what the handler reads:
@@ -1192,6 +1215,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         _ = try? dispatch(object: object, event: "ontoggle", arguments: [.boolean(activated)])
         notifyActivated(object, activated: activated)
         return true
+    }
+
+    /// Write a button's activation, keeping an `nstatesbutton`'s counted position in step with it.
+    ///
+    /// The two are one state, spelled twice: `activated` is what `getActivated()` and a togglebutton's
+    /// `activeimage` read, `value` is the state index the artwork is cut in and what `getCurCfgVal()`
+    /// answers. ClassicPro restores a persisted mute with `setActivated(true)` at startup, so without
+    /// this the lamp came up lit while the button still counted itself as sitting on state 0.
+    private func setActivated(_ object: WasabiObject, _ activated: Bool) {
+        _ = object.setAttribute("activated", value: activated ? "1" : "0")
+        if object.typeName.caseInsensitiveCompare("nstatesbutton") == .orderedSame {
+            _ = object.setAttribute("value", value: activated ? "1" : "0")
+        }
+        notifyObjectDidMutate(object)
     }
 
     /// `onActivate(int activated)` — Wasabi raises it whenever a button's activation changes,
@@ -3128,14 +3165,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             notifyObjectDidMutate(object)
             return .null
         case "setactivated":
-            _ = object.setAttribute("activated", value: arguments[0].truthy ? "1" : "0")
-            notifyObjectDidMutate(object)
+            setActivated(object, arguments[0].truthy)
             _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(arguments[0].truthy)])
             notifyActivated(object, activated: arguments[0].truthy)
             return .null
         case "setactivatednocallback":
-            _ = object.setAttribute("activated", value: arguments[0].truthy ? "1" : "0")
-            notifyObjectDidMutate(object)
+            setActivated(object, arguments[0].truthy)
             return .null
         // For a `cfgattrib`-bound control the stored preference **is** the activation — the button
         // keeps no second copy, which is why `toggleActivation` refuses these. Answering from the

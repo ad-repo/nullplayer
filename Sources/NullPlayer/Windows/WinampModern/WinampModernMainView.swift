@@ -1913,6 +1913,13 @@ final class WinampModernMainView: NSView {
             // dialog, and the popup below is the same list that dialog would show.
             if parameter?.uppercased().contains(Self.colorThemePreferencesGUID) == true {
                 showColorThemeMenu()
+            } else if parameter?.uppercased().contains(Self.aboutWinampGUID) == true {
+                // Winamp's **About Winamp** window. ClassicPro's corner bolt is a multi-button whose
+                // default command is this GUID (`player.m`'s `bolt.onLeftClick`, branch 0), so with
+                // nothing answering it the logo did nothing at all until the user picked one of the
+                // other five from its right-click menu. NullPlayer's own About panel is the same
+                // window in spirit and the only one it has to offer.
+                NSApp.sendAction(#selector(AppDelegate.showAbout), to: nil, from: nil)
             } else if let kind = WinampModernComponentRegistry.kind(for: parameter) {
                 routeComponentToggle(kind)
             } else if let parameter, !parameter.isEmpty {
@@ -2107,6 +2114,8 @@ final class WinampModernMainView: NSView {
     /// Winamp's preferences page for colour themes. A skin that opens it is asking for the same list
     /// the popup below shows.
     private static let colorThemePreferencesGUID = "53DE6284-7E88-4C62-9F93-22ED68E6A024"
+    /// Winamp's About Winamp window, the ClassicPro corner bolt's default command.
+    private static let aboutWinampGUID = "D6201408-476A-4308-BF1B-7BACA1124B12"
 
     /// Apply a theme and repaint.
     ///

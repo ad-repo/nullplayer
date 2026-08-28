@@ -953,7 +953,16 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                     runtime.popupPresenter = { items, point in
                                         let where_ = point.map { " at \(Int($0.x)),\(Int($0.y))" } ?? ""
                                         print("CLICK menu\(where_): " + Self.describe(items))
-                                        return 0
+                                        // A menu the user *dismisses* answers 0, and for a skin whose
+                                        // command only takes effect on a later click that is the same
+                                        // as never opening it. ClassicPro's multi-button is the case:
+                                        // the right-click menu only records which command the **left**
+                                        // click will run, so every one of its six choices was
+                                        // unmeasurable without a pick.
+                                        let picked = env["WINAMP_MODERN_RENDER_CLICK_PICK"]
+                                            .flatMap { Int32($0) } ?? 0
+                                        if picked != 0 { print("CLICK menu pick: \(picked)") }
+                                        return picked
                                     }
                                 }
                                 let handled = (try? runtime.dispatch(object: target, event: event,

@@ -3777,20 +3777,29 @@ final class WasabiSceneRenderer {
             case .stopped: return object.attributes["stopbitmap"]
             }
         }
+        // An `nstatesbutton` owns all three of its artwork attributes as **prefixes**, not just
+        // `image`: ClassicPro's mute is `image="mute.1." hoverimage="mute.2." downimage="mute.3."`
+        // and the bitmaps it declares are `mute.1.0`…`mute.3.1`. Suffixing only `image` left the
+        // hover and the press naming ids nothing answers, so the button vanished under the mouse and
+        // the skin's black display showed through — read as three dead buttons in cPro-Bento alone
+        // (mute, shuffle, repeat), two of which were driving the host correctly all along.
+        if type == "nstatesbutton" {
+            let state = nStatesButtonState(of: object)
+            var candidates: [String] = []
+            if pressed, let down = object.attributes["downimage"] { candidates.append("\(down)\(state)") }
+            if pressed || hovered, let hover = object.attributes["hoverimage"] { candidates.append("\(hover)\(state)") }
+            if let image = object.attributes["image"] {
+                // Not every skin names its states `<base><n>`; Winamp Modern's LEDs use a plain
+                // `image` with a separate `activeimage`. Fall back to the base rather than a
+                // dangling id — and to the rest state's artwork rather than to nothing, so a skin
+                // that ships no hover frame stays visible under the mouse instead of blinking out.
+                candidates.append("\(image)\(state)")
+                candidates.append(image)
+            }
+            return candidates.first { resources.bitmap(identifier: $0) != nil } ?? candidates.first
+        }
         if pressed, let down = object.attributes["downimage"] { return down }
         if hovered, let hover = object.attributes["hoverimage"] { return hover }
-        if type == "nstatesbutton", let base = object.attributes["image"] {
-            let state: Int
-            if object.xmlID?.lowercased().contains("repeat") == true {
-                state = host.repeatEnabled ? 1 : 0
-            } else {
-                state = max(0, Int(object.attributes["state"] ?? "0") ?? 0)
-            }
-            // Not every skin names its states `<base><n>`; Winamp Modern's LEDs use a plain `image`
-            // with separate `activeimage`. Fall back to the base rather than a dangling id.
-            let stateID = "\(base)\(state)"
-            return resources.bitmap(identifier: stateID) != nil ? stateID : base
-        }
         if type == "togglebutton" || object.attributes["activeimage"] != nil {
             let id = object.xmlID?.lowercased()
             var active = (id == "shuffle" && host.shuffleEnabled) || (id == "repeat" && host.repeatEnabled)
@@ -3809,6 +3818,40 @@ final class WasabiSceneRenderer {
             if active, let image = object.attributes["activeimage"] { return image }
         }
         return object.attributes["image"]
+    }
+
+    /// Which of an `nstatesbutton`'s states is showing.
+    ///
+    /// Three sources, in the order Wasabi resolves them:
+    ///
+    /// 1. A `cfgattrib` binding — the preference *is* the state. `cfgvals="0;1;-1"` maps the
+    ///    attribute's values onto the states positionally (ClassicPro's repeat: off / playlist /
+    ///    track), so the state is the value's **index** in that list rather than the value itself.
+    ///    NullPlayer's engine has one repeat flag, so only the first two are ever reached.
+    /// 2. The object's own cycled position (`value`), which is what a click on an unbound button
+    ///    advances — ClassicPro's mute is `nstates="2"` with no binding at all.
+    /// 3. The id, for a skin that draws shuffle/repeat and binds nothing (boom names its artwork
+    ///    `Player.shuffle-Selected`); the click path in the view reads the same host flags back.
+    private func nStatesButtonState(of object: WasabiObject) -> Int {
+        let count = max(1, Int(object.attributes["nstates"] ?? "") ?? 2)
+        var state = 0
+        if let value = configValueProvider?(object) {
+            let mapped = (object.attributes["cfgvals"] ?? "")
+                .split(separator: ";")
+                .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+            state = mapped.firstIndex(of: value) ?? (value != 0 ? 1 : 0)
+        } else if let value = Int(object.attributes["value"] ?? "") {
+            state = value
+        } else if object.attributes["activated"] == "1" {
+            state = 1
+        } else {
+            switch object.xmlID?.lowercased() {
+            case "shuffle": state = host.shuffleEnabled ? 1 : 0
+            case "repeat": state = host.repeatEnabled ? 1 : 0
+            default: state = 0
+            }
+        }
+        return min(max(state, 0), count - 1)
     }
 
     private func isInteractive(_ object: WasabiObject) -> Bool {

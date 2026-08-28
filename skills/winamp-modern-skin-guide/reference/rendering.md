@@ -2,6 +2,37 @@
 
 Reference for the `winamp-modern-skin-guide` skill: clipping, hit testing, text and fonts, the drawable elements, colour themes, and animated layers.
 
+#### An `<nstatesbutton>`'s three artwork attributes are all *prefixes* — and a click has to count
+
+`image`, `hoverImage` and `downImage` on an `nstatesbutton` name a **family**, not a bitmap: the id
+that resolves is `<attribute><state>`. ClassicPro's mute is `image="mute.1." hoverimage="mute.2."
+downimage="mute.3." nstates="2"` and the bitmaps it declares are `mute.1.0` … `mute.3.1`. Suffixing
+only `image` leaves the hover and the press naming ids nothing answers, and an unresolved id draws
+**nothing** — so the button vanishes under the pointer and whatever is behind it shows through. On a
+near-black skin that reads as "the button turns black on mouseover", and it hid three of cPro-Bento's
+controls (mute, shuffle, repeat), two of which were driving the engine correctly all along. Fall back
+down the family — pressed → hover → the rest state's own artwork → the bare base — so a skin that
+ships no hover frame stays visible rather than blinking out.
+
+**Which state is showing has three sources, in this order** (`WasabiSceneRenderer.nStatesButtonState`):
+
+1. A `cfgattrib` binding — the preference **is** the state, and `cfgvals="0;1;-1"` maps its *values*
+   onto the states positionally, so the state is the value's **index** in that list, not the value.
+   ClassicPro's repeat is `nstates="3"` with exactly that list (off / playlist / track); NullPlayer's
+   engine has one repeat flag, so only the first two are reachable.
+2. The object's own counted position (`value`), which is what a **click** advances.
+3. The `id`, for a skin that draws shuffle/repeat and binds nothing (boom names its artwork
+   `Player.shuffle-Selected`); the view's click path reads the same host flags back.
+
+An `nstatesbutton` is a togglebutton that counts, so `toggleActivation` has to accept one and cycle
+it `(value + 1) % nstates`, dispatching `onToggle` as it does for a plain togglebutton. ClassicPro's
+mute is unbound and `mute_but.onToggle` — save the volume, zero it, restore it — is the *whole* of
+its behaviour, so while only `togglebutton` was accepted the button was inert however completely the
+engine implemented it. `setActivated` must write `value` alongside `activated` for the same reason:
+they are one state spelled twice (`getActivated()` reads the first, `getCurCfgVal()` the second), and
+a persisted mute restored with `setActivated(true)` otherwise came up lit while still counting itself
+on state 0.
+
 #### A `cfgattrib` control has no `action` — the binding *is* what it does
 
 `cfgattrib="{GUID};Name"` binds a control to a Winamp preference, and a skin both **writes** it from
