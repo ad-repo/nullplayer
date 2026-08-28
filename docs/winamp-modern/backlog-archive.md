@@ -2,6 +2,40 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B61 — opening Big Bento's side playlist threw the player into the corner of the monitor — closed 2026-08-28
+
+Reported live: "you open the playlist panel and the window repositions to the top corner of the
+monitor". Big Bento Modern (Windows 10 edition), side playlist.
+
+**Measured, not reasoned.** `WINAMP_MODERN_PLACE_TRACE=1` printed
+`[place/script] o44 -> {0, 128} (was {100, 98})` on the toggle — a *script* move, so neither the
+tiler nor `place`. A temporary probe on `resize` named the receiver and the arguments:
+`resize on layout id=normal prog=player-normal.xml args=0,0,1536,878` — `pledit.maki` re-placing the
+player with `resize(getLeft(), getTop(), w, h)`, both reads answering 0.
+
+**Cause: the read and the write were in different spaces.** `getLeft()`/`getTop()` on a layout answer
+its own canvas origin (0); the `x`/`y` a `resize()` writes are pushed to the desktop as absolute
+screen coordinates. Handing back what was just read therefore meant "move to 0,0", and the
+`moveContainerWindow` clamp landed the player at the top-left of the visible frame.
+
+**Fix.** `applyContainerGeometry` compares the written `x`/`y` against the origin the object reported
+*before* the write and skips the move when they are the same pair. Only the round trip is recognised,
+never the value, so a script writing a position it did not read — Big Bento's search-results popup
+(BB31) — still moves its window. A `<container>`, which has no layout space of its own, now reports
+the host's real desktop origin (`containerOriginQuery` → `winampScreenOrigin`), the exact inverse of
+the point `containerMoveRequested` accepts; the graph attribute stays as the fallback.
+
+**The wrong fix, shipped and reverted the same day.** Making a *layout* report its desktop position
+looks like the principled answer — Wasabi does call a layout a window — and it fixed B61. It also
+broke multipass: its side drawers are positioned from `layoutMainNormal.getLeft()`, so every drawer
+and its hover region moved off the artwork, reported live as drawers that could not be opened and
+that "autosense very strangely". `newgroupaslayout` depends on the same 0. A layout is the space its
+children are laid out in, and skins do arithmetic across that boundary; the round-trip problem
+belongs on the write side, where it cannot disturb a read.
+
+**Verified in the running app** at two window positions, and confirmed by the reporter for both
+skins. Detail in `skills/winamp-modern-skin-guide/reference/scripting.md`.
+
 ## B57 — NullPlayer's own windows barely drag inside a skin frame — closed 2026-08-28
 
 ### B57

@@ -81,6 +81,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Host readout or EQ change never reaches a script | [reference/scripting.md](reference/scripting.md) |
 | Keyboard, mouse wheel, wrapper value, scrolling | [reference/scripting.md](reference/scripting.md) |
 | `getAutoWidth` / `getAutoHeight`, scripted layout drift | [reference/scripting.md](reference/scripting.md) |
+| Window jumps to a screen corner when a skin panel opens | [reference/scripting.md](reference/scripting.md) → *Writing back the position a window just read* |
 | `setText`/search terms disappear through `embed_xui` | [reference/scripting.md](reference/scripting.md) |
 | Slider action families and `onSetPosition` | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
 | Playlist/EQ/library hosting, synthesis, topology | [reference/components.md](reference/components.md) |

@@ -699,6 +699,33 @@ the skin whatever window is focused, as in Winamp. See [compatibility/maki-surfa
 Drive it with `WINAMP_MODERN_RENDER_KEY` (harness) or `WINAMP_MODERN_DEBUG_KEY` (the app) — see
 [harness.md](harness.md).
 
+### Writing back the position a window just read is not a move
+
+`resize(getLeft(), getTop(), w, h)` is how a skin resizes a window while leaving it where it is, and
+the two halves of it have to agree about the space they are in. They did not: `getLeft()`/`getTop()`
+on a **layout** answer its own canvas origin — 0 — while the `x`/`y` a `resize()` writes are pushed
+out to the desktop as absolute screen coordinates. A skin handing back what it just read therefore
+parked its window in the top-left corner of the monitor. Big Bento Modern does exactly this from
+`pledit.maki` every time the side playlist opens (B61).
+
+**It is fixed on the write, not on the read.** `applyContainerGeometry` takes the origin the object
+reported *before* the write (`reportedOrigin`) and skips `containerMoveRequested` when the new `x`/`y`
+are that same pair. Only the round trip is recognised, never the value — a script that writes a
+position it did not read is still a move, whatever that position is, which is what keeps Big Bento's
+search-results popup landing under its search box (BB31).
+
+**Do not "fix" this by making a layout report its desktop position instead.** It is the obvious move
+and it is wrong: a layout is the space every object inside it is laid out in, and skins do arithmetic
+across that boundary. multipass positions its side drawers from `layoutMainNormal.getLeft()`, and
+adding the window's desktop origin there moved every drawer *and its hover region* off the artwork it
+belongs to — drawers that could not be opened and fired from inches away. `newgroupaslayout` depends
+on the same 0 (see its note in `WinampModernScriptRuntime`). A `<container>` is different: it has no
+layout space of its own, so it does report the host's desktop origin, via `containerOriginQuery` →
+`WinampModernMainWindowController.winampScreenOrigin` — the exact inverse of the point
+`containerMoveRequested` accepts. The graph's `x`/`y` are only the fallback there, because they hold
+the last position a *script* wrote and go stale the moment the user drags the window, `place`, the
+tiler or state restoration moves it.
+
 ### gotoTarget animation
 
 `setTargetX/Y/W/H/A` + `setTargetSpeed` + `gotoTarget()` animates an object toward its target

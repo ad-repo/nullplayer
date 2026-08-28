@@ -71,6 +71,13 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: opening Big Bento's side playlist no longer throws the player into the
+  corner of the screen** — in the Big Bento Modern skins, showing the playlist panel beside the
+  player jumped the whole window to the top-left of the monitor, wherever you had put it. The skin
+  was resizing itself while asking to stay where it was, and that request was being read as "move to
+  the origin". The window now stays put, whether the panel is opened or closed, and the panel itself
+  is unchanged.
+
 - **Winamp 5.x modern skins: NullPlayer's own windows drag from anywhere again** — Cava, the Spectrum
   Analyzer, the Audio Analyzer, Flow, the Waveform, PeppyMeter, projectM and the Equalizer wear the
   skin's own frame in a `.wal` skin, and could only be moved by the narrow title strip at the top of

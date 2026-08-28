@@ -801,6 +801,44 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             else { return nil }
             return container.window.isKeyWindow
         }
+        // `getLeft()` / `getTop()` on a container or layout — where that window is on the desktop.
+        // The graph attribute is the last position a script wrote, and every other route that moves
+        // a window (the user dragging it, `place`, the tiler, state restoration) leaves it stale, so
+        // the window itself has to answer. Big Bento's side playlist reopens with
+        // `resize(getLeft(), getTop(), w, h)`; reading a stale 0 threw the player into the corner of
+        // the monitor (B61).
+        scripts.containerOriginQuery = { [weak self] id in
+            self?.containerWindow(forID: id).map(Self.winampScreenOrigin(of:))
+        }
+    }
+
+    /// The window backing a container id, resolved the way `containerActiveQuery` resolves it: the
+    /// main container is the player's own window, a hosted id is answered only once its window has
+    /// actually been materialized, and everything else is one of the skin's auxiliary windows.
+    private func containerWindow(forID id: String) -> NSWindow? {
+        if let view = skinView, let mainID = view.renderer.container.xmlID,
+           mainID.caseInsensitiveCompare(id) == .orderedSame {
+            return view.window
+        }
+        if let hostedID = Self.matchingHostedWindowID(id),
+           let window = hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) {
+            return window
+        }
+        guard let matchedID = Self.matchingContainerID(id,
+                                                       in: auxiliaryContainers.map(\.containerID)),
+              let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+        else { return nil }
+        return container.window
+    }
+
+    /// A window's origin in Winamp's screen space — top-left origin, relative to the display it is
+    /// on — which is the exact inverse of the transform `moveContainerWindow` applies to the point a
+    /// script hands back. The round trip has to be lossless, or a script re-placing itself at the
+    /// position it just read would walk the window down the screen.
+    private static func winampScreenOrigin(of window: NSWindow) -> CGPoint {
+        guard let screen = window.screen ?? NSScreen.main else { return .zero }
+        return CGPoint(x: window.frame.minX - screen.frame.minX,
+                       y: screen.frame.maxY - window.frame.maxY)
     }
 
     static func matchingContainerID(_ requestedID: String, in containerIDs: [String]) -> String? {
