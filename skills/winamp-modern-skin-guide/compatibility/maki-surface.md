@@ -145,8 +145,13 @@ By area:
   window state** (`containerVisibilityQuery`), not from the graph's `visible` attribute, which the
   host never writes when a window is opened from the Windows menu or closed from its own titlebar —
   read off the attribute the toggle inverts after the first manual close. `isVisible()` answers from
-  the same place for a container; for anything else it **walks up the parent chain** — an object
-  inside a hidden group is not visible, matching Winamp's rule (B22, Phase 34 addendum)
+  the same place, in **two terms and only two**: the window the object lives in, asked of the host,
+  and then the object's **own** `visible` attribute. Nothing inside a closed window is visible; inside
+  an open one the object's attribute is the whole answer, and the ancestor **groups** between the two
+  are deliberately not consulted. Both halves were learned the hard way — walking the group chain
+  broke cPro-Bento, whose script shows a tab page whose parent group is still hidden, and reading the
+  attribute alone broke Defix, whose `ML` button asks a tab page in a shut window and read its stale
+  `visible="1"` as "already showing, close it" (B22)
 - **`GuiObject.isActive()`** — "does my window have the keyboard?", answered by walking up to the
   object's **container** and asking the host whether that window is key. The gate a skin puts in front
   of a key handler: `onKeyDown` reaches every program in the skin whatever window is focused, so

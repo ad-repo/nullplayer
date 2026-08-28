@@ -144,6 +144,66 @@ final class WinampModernPhase34Tests: XCTestCase {
         XCTAssertFalse(tabAnswer.truthy, "tab_ml's own attribute is visible=0")
     }
 
+    /// B22, the half the revert left open: an object inside a **closed window** is not on screen,
+    /// whatever its own attribute still says.
+    ///
+    /// Defix's `ML` round button sends `opentab ML` to its SUI, and the handler asks the
+    /// media-library tab page whether it is already showing before deciding what the click means.
+    /// The page keeps `visible="1"` from the last time that tab was selected, so with the SUI window
+    /// shut it answered yes and every press took the "already showing — close it" branch: the button
+    /// could only ever shut a window the menu had opened. The **window** is the outer term here, and
+    /// it is a different question from the hidden parent *group* the revert above is about.
+    func testIsVisibleIsFalseForAnObjectInsideAClosedWindow() throws {
+        let (runtime, program, page) = try makeTabPageRuntime()
+        runtime.containerVisibilityQuery = { $0.caseInsensitiveCompare("sui") == .orderedSame ? false : nil }
+
+        let answer = try runtime.invoke(method: "isVisible",
+                                        on: MakiObjectReference(.gui(page.stableID)),
+                                        arguments: [], program: program)
+        XCTAssertFalse(answer.truthy, "the window it lives in is down, so nothing in it is visible")
+    }
+
+    /// And the revert still holds *inside* an open window: the object's own attribute is the answer,
+    /// with the ancestor groups between it and the window not consulted. This is the cPro-Bento case
+    /// — a script shows a tab page whose parent group is still hidden — measured with a host present,
+    /// which is the arrangement the check above added.
+    func testIsVisibleReadsTheAttributeWhenTheWindowIsOpen() throws {
+        let (runtime, program, page) = try makeTabPageRuntime()
+        runtime.containerVisibilityQuery = { _ in true }
+
+        let answer = try runtime.invoke(method: "isVisible",
+                                        on: MakiObjectReference(.gui(page.stableID)),
+                                        arguments: [], program: program)
+        XCTAssertTrue(answer.truthy, "the window is up, so the page's own attribute is the answer")
+    }
+
+    /// A tab page carrying `visible="1"` inside a hidden group, inside a named auxiliary window —
+    /// the shape of Defix's `wdh.ml` under its `SUI`.
+    private func makeTabPageRuntime() throws
+        -> (WinampModernScriptRuntime, MakiProgram, WasabiObject) {
+        let xml = """
+        <WasabiXML>
+          <container id="sui">
+            <layout id="normal" w="32" h="32">
+              <group id="sui.content" x="0" y="0" w="32" h="32" visible="0">
+                <group id="wdh.ml" x="0" y="0" w="32" h="32" visible="1"/>
+              </group>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml))
+        addTeardownBlock { loaded.teardown() }
+        let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: Host())
+        addTeardownBlock { runtime.teardown() }
+        let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [],
+                                  bindings: [], instructions: [],
+                                  source: WalSourceLocation(path: "/Skins/Synthetic/t.maki"),
+                                  ownerID: nil, parameter: nil)
+        let page = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "wdh.ml").first)
+        return (runtime, program, page)
+    }
+
     // MARK: - 2. Negative `sysregion` is a mask, not artwork
 
     /// `sysregion="-2"` means "contribute to the window region, do not paint". Its bitmap is a

@@ -255,12 +255,33 @@ non-default display styles, which have no headless route in (below). **Grade B, 
   round button assigned to a toggling target would have done the same.
   **The harness could not see this** — it owns no windows, so the doubled toggle printed as one clean
   `CLICK action:`. It was found with `WINAMP_MODERN_DEBUG_CLICK` in the running app.
-- **The `ML` round button works the first time — fixed (B22).** Previously reported live 2026-08-20
-  as not opening the media library until some other window had been opened once. The button's
-  branch sends `opentab ML` to the SUI, and the `onAction` handler checks `isVisible()` on the
-  tab page — which was inside a hidden parent group but returned true because only the object's
-  own attribute was checked. `effectiveVisibility(of:)` now walks the parent chain (as Winamp
-  does), so a tab page inside a hidden group correctly reports false.
+- **The `ML` round button opens the media library — fixed 2026-08-28 (B22), on the second attempt.**
+  Reported live 2026-08-20 as not opening the library until some other window had been opened once,
+  and again 2026-08-28 as a button that "will not open the window but does close it". The button's
+  branch sends `opentab ML` to the SUI, and the `onAction` handler asks the media-library tab page
+  `isVisible()` before deciding what the click means:
+
+  ```
+  ACTION opentab param=ML -> group#sui.content
+  CALL-TRACE isvisible() on group#wdh.ml -> 1     <- the SUI window is shut
+  CALL-TRACE hide() on container#SUI              <- so it takes the "already showing" branch
+  ```
+
+  `wdh.ml` keeps `visible="1"` from the last time that tab was selected, and
+  `effectiveVisibility(of:)` consulted the host only for **window** objects (container, layout), so a
+  plain group answered from its stale attribute. The button could therefore only ever shut a window
+  the Windows menu had opened. It now returns false for any object whose enclosing window the host
+  reports closed.
+
+  **The first attempt was the wrong shape and was reverted** (`df9d1028`): walking the whole ancestor
+  chain broke cPro-Bento, whose script shows a tab page whose parent group is still hidden. The window
+  is a different question from a hidden group, and only the window belongs in this answer — see
+  [maki-surface.md](../compatibility/maki-surface.md) → `Container.toggle()`.
+
+  **The harness cannot see this**, for the same reason it could not see the doubled toggle above: it
+  owns no windows, so `containerVisibilityQuery` answers nil and every object reads visible. It was
+  found with `WINAMP_MODERN_CALL_TRACE=1` in the running app, where the three lines above sit
+  together.
 - **The playlist box's readouts were blank — two separate causes, both fixed 2026-08-19.** The user
   reported it as "the playlist window shows art but not the track information", and noticed that
   enabling *Two infoboxes in the playlist* makes the second box show it. That second box is a

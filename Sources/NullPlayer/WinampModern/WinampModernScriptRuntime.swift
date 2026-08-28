@@ -4109,9 +4109,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return .null
     }
 
-    /// Visible *as the user sees it*. For a container that is its window's state, which only the host
-    /// knows; for anything else the graph attribute is the whole truth. `nil` from the host — the
-    /// headless harness, or an id no window backs — falls back to the attribute.
+    /// Visible *as the user sees it*. The window this object lives in is the outer term — only the
+    /// host knows whether it is on screen — and the object's own `visible` attribute is the inner
+    /// one. `nil` from the host (the headless harness, the player's own container, an id no window
+    /// backs) falls back to the attribute alone.
+    ///
+    /// The ancestor **groups** between the two are deliberately not consulted: Winamp's
+    /// `GuiObject::isVisible()` answers for the object itself, and walking the group chain broke
+    /// cPro-Bento's tab system, whose script shows a tab page whose parent group is still hidden
+    /// (B22). A closed *window* is a different question, and it is the one Defix asks.
     private func effectiveVisibility(of object: WasabiObject) -> Bool {
         // A layout answers for its window as its container does, and for the same reason: the window
         // is the thing that is actually on screen, and the host can close it (a dismissed
@@ -4119,9 +4125,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // *layout* whether it is open before re-showing it, so a stale `visible="1"` there left the
         // skin believing a window the user had dismissed was still up — and the next search filled a
         // list nobody could see (BB31).
-        if Self.isWindowObject(object), let hosted = enclosingWindowID(of: object)
-            .flatMap({ containerVisibilityQuery?($0) }) {
-            return hosted
+        if let hosted = enclosingWindowID(of: object).flatMap({ containerVisibilityQuery?($0) }) {
+            // Nothing inside a closed window is on screen, whatever its own attribute still says.
+            // Defix's `ML` round button asks the media-library tab page this before deciding what
+            // its click means; with the SUI window shut and the page's stale `visible="1"` answering
+            // yes, every press took the "already showing — close it" branch, so the button could
+            // only ever shut a window the menu had opened (B22).
+            guard hosted else { return false }
+            if Self.isWindowObject(object) { return true }
         }
         return isVisible(object)
     }

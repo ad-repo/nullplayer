@@ -71,6 +71,12 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: a player button that opened a window will open it again** — a skin's own
+  button asks whether the window it targets is already showing before deciding what the click means,
+  and a control inside a closed window was still answering "visible" from the last time it had been
+  on screen. Defix Hi-END 200's media-library button therefore read every press as "already open" and
+  could only ever close the window, never reopen it.
+
 - **Winamp 5.x modern skins now recognize that Media Library support exists everywhere markup asks**
   — `@HAVE_LIBRARY@` was already answered inside one skin's startup script, but four other skins put
   the same Winamp macro on their Media Library window instead. It is now expanded across the whole
