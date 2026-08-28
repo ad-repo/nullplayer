@@ -336,24 +336,42 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
 - **An equalizer is never synthesized** (`synthesizableKinds` excludes it). Synthesis always builds
   the same body — a standard frame around a `<component>` holder *we* invented — and never wraps the
   skin's own controls. For the playlist and the library that holder resolves to a complete NullPlayer
-  surface, so the window earns its place. The equalizer's hosted surface is a stand-in:
+  surface, so the window earns its place. The equalizer's component holder is a stand-in:
   `drawEqualizerComponent` paints eleven tracks with 3px thumbs and nothing else — no on/off, no auto,
   no presets, no band labels, no dB scale.
   **Two routes reach an equalizer and they must agree.** The menu resolves through the catalog
   (`routeWinampModernSurface`), while a skin's own `TOGGLE Eq` button goes through
   `WinampModernMainView.routeComponentToggle`, which checks the *auxiliary containers* before falling
-  through to the classic window. Leaving the container synthesized but unrouted made those two
-  disagree: the menu opened the full classic EQ and the skin's button opened the stub. Not building it
-  is what keeps them consistent — both now land on the classic window, which has painted from the
-  skin's own palette since Phase 16. Defix and T800 are the measured cases (neither declares a single
-  EQ control); a skin that draws its own equalizer is matched as embedded or declared first and never
-  reaches synthesis.
+  through to `WindowManager.toggleEqualizer()`. Leaving the container synthesized but unrouted made
+  those two disagree: the menu opened the full classic EQ and the skin's button opened the stub. Not
+  synthesizing it is what keeps them consistent — both fall past synthesis into the same window.
+  Defix and T800 are the measured cases (neither declares a single EQ control); a skin that draws its
+  own equalizer is matched as embedded or declared first and never reaches synthesis.
+- **What that fall-through opens is a hosted window, not the standalone one** (B55). The equalizer is
+  the one *component kind* in the hosted-window registry, and it is there for the reason synthesis
+  rejected it: a hosted window mounts the complete `EQView` — bands, preamp, ON/AUTO/PRESETS, the
+  curve — inside the skin's own standard frame, where the synthesized `<component guid:eq>` holder
+  would have mounted the stub. So the order the equalizer actually resolves in is **embedded →
+  declared → hosted window in the skin's frame → NullPlayer's own window**, and only the last of
+  those wears the flat palette chrome. Both routes still agree because both end at
+  `WindowManager.toggleEqualizer()`, which consults the coordinator, then the materializer, then the
+  standalone controller — in that order, from one place.
+  `EQView` draws the classic layout in a *hosted* mode: no title bar, no close button and no window
+  drag (the frame owns all three), and its `Metrics` spread the ten bands, the preamp and the buttons
+  across whatever width the frame gives it, so a client area wider than the 275 the artwork was cut
+  for fills rather than letterboxes. Drawing and hit testing read the same `Metrics`, which is the
+  only thing keeping a spread slider clickable where it is drawn. The window opens at the player's
+  own width on first materialization only — never re-applied, so a window the user has resized stays
+  resized.
 
 #### NullPlayer-owned hosted windows are lazy
 
-Spectrum, Cava, Flow, PeppyMeter, Audio Analysis, Waveform, and ProjectM use a second, typed window catalog.
-They are application features, not Winamp component GUIDs, so they must never be added to
-`WinampModernComponentRegistry` or to load-time component synthesis.
+Spectrum, Cava, Flow, PeppyMeter, Audio Analysis, Waveform, ProjectM — and the fallback equalizer —
+use a second, typed window catalog. All but the equalizer are application features rather than Winamp
+component GUIDs, so they must never be added to `WinampModernComponentRegistry` or to load-time
+component synthesis. The equalizer is the one exception, and only on its *fallback* path: it is still
+a component kind, still routed by the surface coordinator first, and reaches this catalog only once
+every skin-owned step has declined (B55, above).
 
 - `WinampModernHostedWindowRegistry` is the only production table for identity, title, geometry,
   hard minimum/maximum size, center-stack policy, and content construction. A new application-owned

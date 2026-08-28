@@ -18,6 +18,9 @@ enum WinampModernSurfaceID: Hashable, CustomStringConvertible {
     static let audioAnalysis: Self = .hostWindow(.audioAnalysis)
     static let waveform: Self = .hostWindow(.waveform)
     static let projectM: Self = .hostWindow(.projectM)
+    /// The equalizer reaches this only as a *fallback*: a skin that declares an equalizer surface of
+    /// its own is matched as embedded or declared by the surface coordinator and never gets here.
+    static let hostedEqualizer: Self = .hostWindow(.equalizer)
 
     var componentKind: WinampModernComponentKind? {
         guard case .component(let kind) = self else { return nil }
@@ -65,6 +68,7 @@ enum WinampModernSurfaceID: Hashable, CustomStringConvertible {
 
 enum WinampModernHostedWindowID: String, CaseIterable {
     case spectrum
+    case equalizer
     case cava
     case flow
     case peppyMeter
@@ -106,6 +110,28 @@ enum WinampModernHostedWindowRegistry {
             ),
             makeSurface: { context in
                 let view = SpectrumView(frame: NSRect(origin: .zero, size: SkinElements.SpectrumWindow.windowSize))
+                view.configureForHostedSurface(context: context)
+                return view
+            }
+        ),
+        // The equalizer a `.wal` skin declares none of. It is a real Winamp component kind, so it is
+        // routed by the surface coordinator first and only reaches this table once every skin-owned
+        // step has declined — see `reference/components.md`, *Synthesizing a missing window*. What it
+        // hosts is the complete `EQView`, not the `drawEqualizerComponent` stub a synthesized
+        // `<component guid:eq>` holder would resolve to, which is why this window earns its place
+        // where load-time synthesis deliberately does not.
+        WinampModernHostedWindowDefinition(
+            id: .equalizer,
+            title: "Equalizer",
+            defaultSize: Skin.baseEQSize,
+            minimumSize: Skin.baseEQSize,
+            maximumSize: nil,
+            stackPolicy: WinampModernHostedStackPolicy(
+                participatesInCenterStack: true,
+                preferredHeightMultiplier: 1
+            ),
+            makeSurface: { context in
+                let view = EQView(frame: NSRect(origin: .zero, size: Skin.baseEQSize))
                 view.configureForHostedSurface(context: context)
                 return view
             }

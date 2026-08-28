@@ -14,11 +14,17 @@ undriven measurement. A skin's own thumbnail cannot answer this class of questio
 
 **Shape of the skin:** separate windows — `main` (406×355) plus `pledit`, `SUI` (its media
 library/browser/visualization window, 800×600), two `SPEAKER` cabinets, `Config` (an About page),
-`browserpro`, `searchresults` and `notifier`. **The equalizer is the classic fallback, not a
-synthesized window** — the catalog says so in as many words (`equalizer=classic(the skin declares no
-equalizer surface)`), because this skin declares no equalizer surface *and* no `EQ_BAND`/`EQ_PREAMP`/
+`browserpro`, `searchresults` and `notifier`. **The equalizer is the fallback, not a synthesized
+window** — the catalog says so in as many words (`equalizer=classic(the skin declares no equalizer
+surface)`), because this skin declares no equalizer surface *and* no `EQ_BAND`/`EQ_PREAMP`/
 `<eqvis>` control for one to be recognised from, so nothing qualifies for synthesis. Its `EQSwitch`
 proxy carries `action="TOGGLE" param="Eq"`, an id nothing in the skin declares.
+
+Since B55 that fallback is a **hosted window in Defix's own standard frame** — the wood bezel the
+Spectrum Analyzer already wore — rather than the flat palette slab it used to be, which was the one
+auxiliary window here that looked like it came from a different program. It opens at the player's
+406 width with the bands spread to fill it. The catalog line is unchanged: `classic(...)` names the
+step that *declined*, and the hosted window sits after it.
 
 Almost everything the skin draws is script-driven: a global `<scripts>` block in `skin.xml` (`CORE_SCRIPT.maki`, 47 KB) plus a
 55 KB main-layout script.

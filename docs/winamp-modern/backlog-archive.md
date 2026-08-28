@@ -1816,3 +1816,55 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
       WINAMP word was traced to the original 79×15 crop in `window/window.png`: it contains authored
       partial-alpha edge pixels, which nearest correctly preserves. The adjacent hamburger's hard
       edges were crisp. Regression coverage is `WinampModernPhase77Tests`.
+
+---
+
+## B55 — Fallback equalizer in the skin's own frame — closed 2026-08-28
+
+- [x] **B55. The fallback equalizer is the only Modern auxiliary window with no skin chrome.**
+      Reported live 2026-08-28 on Defix Hi-End 200: the Spectrum Analyzer materializes inside the
+      skin's own `<Wasabi:StandardFrame:…>` (wood bezel, skin artwork) while the equalizer is a flat
+      palette slab drawn by `EQView.drawWinampModernNormalMode`. Defix declares no equalizer surface
+      and no `EQ_BAND`/`EQ_PREAMP`/`<eqvis>`, so it lands on the classic fallback — correct per the
+      routing order, but the equalizer is now the only NullPlayer-owned auxiliary window still on the
+      Phase 16 palette path rather than the hosted-window path. The old objection (a synthesized
+      `<component guid:eq>` holder resolves to the `drawEqualizerComponent` stub, and the menu route
+      and the skin's `TOGGLE Eq` route would then disagree) does not apply to a hosted window, which
+      mounts the complete `EQView` inside the skin's frame exactly as Spectrum/Cava/Waveform do.
+
+- [x] Add `equalizer` to `WinampModernHostedWindowID` and a `WinampModernHostedWindowRegistry` entry
+      (title, `Skin.baseEQSize` geometry, center-stack policy, `makeSurface`)
+- [x] Give `EQView` a hosted mode: `configureForHostedSurface`, no title bar/close/window-drag, the
+      content scaled into the holder's bounds, `WinampModernHostedSurface` conformance
+- [x] Route `showEqualizer`/`toggleEqualizer`/`isEqualizerVisible` through
+      `routeWinampModernHostedWindow(.equalizer, …)` after the surface coordinator declines
+- [x] Add the `.equalizer` case to `showClassicHostedWindowForWinampModern` and `centerStackKind`
+- [x] Move the compact-mode snapshot, detached-frame capture and frame persistence onto an
+      `equalizerWindow` accessor so a hosted equalizer is saved and restored like `spectrumWindow`
+- [x] Verify the skin's own `TOGGLE Eq` and the Windows menu reach the same window (by construction:
+      `routeComponentToggle` → `componentHost.toggleClassicWindow(.equalizer)` →
+      `WindowManager.toggleEqualizer()`, the same entry point the menu item uses)
+- [x] `swift test` (1344 passed, goldens included), then live QA on Defix and on a skin that declares
+      its own equalizer (the declared/embedded routes must be unchanged). **The 17-skin render sweep
+      was not run and was judged unnecessary:** nothing in the scene renderer changed — the diff is
+      `EQView`, `WindowManager` routing, and one id plus one registry entry, whose only load-time
+      effect is an extra *route descriptor* that materializes nothing until the equalizer is opened
+- [x] Land the docs: `reference/components.md` (the never-synthesized note and the hosted-window
+      list), `skins/defix-hi-end-200.md`, and move B55 to the backlog archive
+
+      **Closed by moving the fallback onto the hosted-window path** rather than by relaxing the
+      never-synthesize rule: `WinampModernHostedWindowID.equalizer` plus one registry entry mounts
+      the complete `EQView` inside the skin's standard frame, where a synthesized
+      `<component guid:eq>` holder would have mounted the `drawEqualizerComponent` stub. The
+      equalizer is therefore the one *component kind* in that registry, and it is reached only after
+      the surface coordinator's embedded and declared steps decline; `WindowManager.toggleEqualizer()`
+      remains the single door, so the Windows menu and a skin's own `TOGGLE Eq` cannot disagree.
+
+      `EQView` gained a hosted mode — no title bar, close button or window drag, since the frame owns
+      all three — and a `Metrics` type that spreads the bands, preamp and buttons across whatever
+      width the frame gives it. Drawing and hit testing read the same `Metrics`, and the window takes
+      the player's width on first materialization only, so a resized window stays resized.
+
+      Manual QA accepted 2026-08-28 on Defix Hi-End 200 (wood frame, 406 wide, bands filling the
+      width). CornerAmp Redux re-checked in the same session: `equalizer=declared:eq` and its own
+      275×145 window, unchanged. `swift test`: 1344 passed.

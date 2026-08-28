@@ -71,6 +71,16 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: the equalizer wears the skin's own frame** — in a `.wal` skin that
+  ships no equalizer of its own, the Equalizer opened as a flat black-and-orange slab beside windows
+  that were wearing the skin's artwork: on Defix Hi-END 200 the Spectrum Analyzer sat in the skin's
+  wood-panelled frame and the equalizer looked like it had come from a different program. It now
+  opens in that same frame, with the full equalizer inside it — ten bands, preamp, ON, AUTO, PRESETS
+  and the response curve — at the same width as the player, with the bands spread to fill it rather
+  than squeezed into the middle. Skins that draw their own equalizer are untouched, and a skin whose
+  frames cannot host one still gets the standalone window, which keeps painting from the skin's
+  palette as before.
+
 - **Winamp 5.x modern skins: Defix's detached visualizer window shows a visualization** — Defix
   Hi-END 200's **Detach Visualizer** button opened a correctly framed window, with its Previous /
   Next / Presets / Options / Reattach controls along the bottom, and an empty grey box where the

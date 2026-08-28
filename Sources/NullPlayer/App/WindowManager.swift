@@ -1047,6 +1047,7 @@ class WindowManager {
               controller.handlesHostedWindow(id) else { return false }
 
         let wasVisible = controller.isHostedWindowVisible(id)
+        let wasMaterialized = controller.hostedWindow(ifMaterialized: id) != nil
         if !toggle || !wasVisible {
             if let window = controller.hostedWindow(materializing: id) {
                 markModeDependentWindow(window)
@@ -1055,6 +1056,7 @@ class WindowManager {
                     if let restoredFrame, restoredFrame != .zero {
                         applyRestoredCenterStackFrame(restoredFrame, to: window, kind: kind)
                     } else {
+                        if !wasMaterialized { applyHostedWindowDefaultWidth(window, id: id) }
                         positionSubWindow(window)
                     }
                 } else if let restoredFrame, restoredFrame != .zero {
@@ -1067,6 +1069,19 @@ class WindowManager {
             _ = controller.toggleHostedWindow(id)
         }
         return true
+    }
+
+    /// The equalizer has always opened as wide as the player it docks under, in every UI mode. A
+    /// hosted one starts at the skin frame's own default instead, so it is widened once — on first
+    /// materialization only, so a window the user has since resized is never snapped back.
+    private func applyHostedWindowDefaultWidth(_ window: NSWindow, id: WinampModernHostedWindowID) {
+        guard id == .equalizer, let mainWindow = mainWindowController?.window else { return }
+        let width = mainWindow.frame.width
+        guard width > 0, width != window.frame.width else { return }
+        var frame = window.frame
+        frame.size.width = width
+        frame.origin.x = mainWindow.frame.minX
+        window.setFrame(frame, display: false)
     }
 
     func hostedWindowVisibilityDidChange(id: WinampModernHostedWindowID, visible: Bool,
@@ -1086,6 +1101,7 @@ class WindowManager {
         defer { isPerformingWinampModernHostedFallback = false }
         switch id {
         case .spectrum: showOnly ? showSpectrum() : toggleSpectrum()
+        case .equalizer: showOnly ? showEqualizer() : classicToggleEqualizer()
         case .cava: showOnly ? showCava() : toggleCava()
         case .flow: showOnly ? showNetworkMonitor() : toggleNetworkMonitor()
         case .peppyMeter: showOnly ? showPeppyMeter() : togglePeppyMeter()
@@ -1099,6 +1115,7 @@ class WindowManager {
     func refreshWinampModernSurfaces() {
         winampModernSurfaces?.surfaceContentDidChange()
         equalizerWindowController?.window?.contentView?.needsDisplay = true
+        equalizerWindow?.contentView?.markSubtreeForDisplayAndLayout()
     }
 
     /// The classic fallback's only entry point, called *by* the coordinator when a skin offers no
@@ -1252,6 +1269,9 @@ class WindowManager {
     
     func showEqualizer(at restoredFrame: NSRect? = nil) {
         if routeWinampModernSurface(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
+        // The skin owns no equalizer, so NullPlayer's goes inside the skin's own frame when one
+        // qualifies (B55) and into the standalone window below when none does.
+        if routeWinampModernHostedWindow(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = equalizerWindowController == nil
         if isNewWindow {
             switch uiMode.controllerFamily {
@@ -1288,11 +1308,25 @@ class WindowManager {
         if let coordinator = winampModernSurfaces, coordinator.handles(.equalizer) {
             return coordinator.isSurfaceVisible(.equalizer)
         }
+        if winampModernHostedController?.handlesHostedWindow(.equalizer) == true {
+            return winampModernHostedController?.isHostedWindowVisible(.equalizer) == true
+        }
         return equalizerWindowController?.window?.isVisible == true
+    }
+
+    /// The equalizer's native window, whichever of the three routes owns it. An equalizer the *skin*
+    /// draws has no NullPlayer window at all, so this is nil for it — as it is for every other
+    /// skin-owned surface.
+    var equalizerWindow: NSWindow? {
+        if winampModernHostedController?.handlesHostedWindow(.equalizer) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .equalizer)
+        }
+        return equalizerWindowController?.window
     }
 
     func toggleEqualizer() {
         if routeWinampModernSurface(.equalizer, toggle: true) { return }
+        if routeWinampModernHostedWindow(.equalizer, toggle: true) { return }
         classicToggleEqualizer()
     }
 
@@ -1852,7 +1886,8 @@ class WindowManager {
 
         return CompactWindowSnapshot(
             main: snap(mainWindowController),
-            equalizer: snap(equalizerWindowController, trackDetachedState: true),
+            equalizer: snap(equalizerWindowController, trackDetachedState: true)
+                ?? snapWindow(equalizerWindow, trackDetachedState: true),
             playlist: snap(playlistWindowController, trackDetachedState: true),
             spectrum: snapWindow(spectrumWindow, trackDetachedState: true),
             audioAnalysis: snapWindow(audioAnalysisWindow, trackDetachedState: true),
@@ -1982,7 +2017,11 @@ class WindowManager {
         }
 
         restore(snapshot.main, controller: mainWindowController)
-        restore(snapshot.equalizer, controller: equalizerWindowController)
+        if equalizerWindowController != nil {
+            restore(snapshot.equalizer, controller: equalizerWindowController)
+        } else {
+            restoreRouted(snapshot.equalizer, window: equalizerWindow, show: showEqualizer)
+        }
         restore(snapshot.playlist, controller: playlistWindowController)
         restoreRouted(snapshot.spectrum, window: spectrumWindow, show: showSpectrum)
         restoreRouted(snapshot.audioAnalysis, window: audioAnalysisWindow, show: showAudioAnalysis)
@@ -4466,6 +4505,7 @@ class WindowManager {
     private func centerStackKind(for id: WinampModernHostedWindowID) -> CenterStackWindowKind? {
         switch id {
         case .spectrum: return .spectrum
+        case .equalizer: return .equalizer
         case .cava: return .cava
         case .flow: return .networkMonitor
         case .peppyMeter: return .peppyMeter
@@ -6534,7 +6574,7 @@ class WindowManager {
             )
         }
         return DetachedWindowFrames(
-            equalizer: detachedFrame(equalizerWindowController?.window),
+            equalizer: detachedFrame(equalizerWindow),
             playlist: detachedFrame(playlistWindowController?.window),
             spectrum: detachedFrame(spectrumWindow),
             waveform: detachedFrame(waveformWindow),
@@ -6590,7 +6630,7 @@ class WindowManager {
 
     private func restoreDetachedWindowFrames(_ frames: DetachedWindowFrames) {
         let restorations: [(NSRect?, NSWindow?)] = [
-            (frames.equalizer, equalizerWindowController?.window),
+            (frames.equalizer, equalizerWindow),
             (frames.playlist, playlistWindowController?.window),
             (frames.spectrum, spectrumWindow),
             (frames.waveform, waveformWindow),
@@ -6846,7 +6886,7 @@ class WindowManager {
         if let frame = playlistWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("PlaylistWindowFrame"))
         }
-        if let frame = equalizerWindowController?.window?.frame {
+        if let frame = equalizerWindow?.frame {
             defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("EqualizerWindowFrame"))
         }
         if let frame = plexBrowserWindowController?.window?.frame {

@@ -107,6 +107,11 @@ recognized by its controls (`EQ_BAND`, `EQ_PREAMP`, `<eqvis>`), and a synthesize
 `EQ_TOGGLE`/`EQ_AUTO` deliberately do not count as evidence: a button that opens the equalizer is not
 an equalizer.
 
+An equalizer is never synthesized. A skin that declares none gets NullPlayer's own equalizer **in the
+skin's own standard frame**, through the hosted-window registry (B55), and only a skin whose frames
+cannot host one falls all the way through to the standalone palette-coloured window. See
+[reference/components.md](reference/components.md#synthesizing-a-missing-window).
+
 ### Not implemented in the playlist
 
 `PlEdit.enqueueFile(path)` and `System.playFile(path)` are **not implemented**: both take a filesystem
