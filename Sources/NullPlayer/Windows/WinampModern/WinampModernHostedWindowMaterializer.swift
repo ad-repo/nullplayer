@@ -171,7 +171,8 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         var view: WinampModernMainView?
         var nativeWindow: NSWindow?
         do {
-            let createdRoot = try instantiate(.init(definition: definition, frame: frame))
+            let createdRoot = try instantiate(.init(definition: definition, frame: frame,
+                                                    playerWidth: skinPlayerWidth()))
             root = createdRoot
             let renderer = try WasabiSceneRenderer(loadedSkin: loadedSkin, host: host,
                                                    containerID: id.containerIdentifier)
@@ -252,6 +253,14 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                 location: WalSourceLocation(path: WasabiSurfaceSynthesizer.sourcePath)))
             return nil
         }
+    }
+
+    /// The player's width in skin pixels, which caps how wide a hosted frame may insist on being.
+    /// Measured live, so a skin the user has resized still governs its own windows' floor.
+    private func skinPlayerWidth() -> CGFloat? {
+        guard let width = WindowManager.shared.mainWindowController?.window?.frame.width,
+              width > 0 else { return nil }
+        return width / max(skinScale(), 0.01)
     }
 
     private func setVisible(_ visible: Bool, for instance: MaterializedWindow) {

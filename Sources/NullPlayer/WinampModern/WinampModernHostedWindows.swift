@@ -258,6 +258,29 @@ enum WinampModernHostedWindowRoute {
 struct WinampModernHostedWindowInstantiation {
     let definition: WinampModernHostedWindowDefinition
     let frame: WinampModernHostedFrameDescriptor
+    /// The skin player's own width, in skin pixels, when one is on screen to measure.
+    let playerWidth: CGFloat?
+
+    init(definition: WinampModernHostedWindowDefinition,
+         frame: WinampModernHostedFrameDescriptor,
+         playerWidth: CGFloat? = nil) {
+        self.definition = definition
+        self.frame = frame
+        self.playerWidth = playerWidth
+    }
+
+    /// The floor the synthesized frame declares, which is *not* simply the registry minimum.
+    ///
+    /// Those minimums were cut for the 275px classic player, and they become the hosted window's
+    /// `minimum_w` — so under a narrower `.wal` skin (Anaheim and micro are both 240 wide) they are
+    /// a floor above the player itself, and nothing can pull the window in to match it. A skin's own
+    /// player width is proof that width is legible in that skin, so it caps the width floor. The
+    /// height floor is the registry's, untouched: only the width follows the player.
+    var minimumSize: CGSize {
+        guard let playerWidth, playerWidth >= 1 else { return definition.minimumSize }
+        return CGSize(width: min(definition.minimumSize.width, playerWidth.rounded()),
+                      height: definition.minimumSize.height)
+    }
 }
 
 /// Load-time routing metadata only. A route does not add graph objects or create an AppKit window;

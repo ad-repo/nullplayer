@@ -562,8 +562,8 @@ final class WasabiSkinInitializer {
             "id": "normal",
             "default_w": String(Int(request.definition.defaultSize.width)),
             "default_h": String(Int(request.definition.defaultSize.height)),
-            "minimum_w": String(Int(request.definition.minimumSize.width)),
-            "minimum_h": String(Int(request.definition.minimumSize.height)),
+            "minimum_w": String(Int(request.minimumSize.width)),
+            "minimum_h": String(Int(request.minimumSize.height)),
         ]
         if let maximum = request.definition.maximumSize {
             if maximum.width.isFinite { layoutAttributes["maximum_w"] = String(Int(maximum.width)) }

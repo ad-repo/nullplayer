@@ -439,17 +439,30 @@ every skin-owned step has declined (B55, above).
 - Window size is per registry entry and then clamped by the selected skin frame's hard resize limits.
   Center-stack sizing is a preference inside those bounds, not a replacement geometry; PeppyMeter
   therefore retains its larger authored height instead of collapsing to the spectrum-family size.
-- **The player's width is a floor on the opening width, not a target.** A `.wal` player is whatever
-  width the skin drew, and the registry defaults were cut for a 275px classic player, so a wide skin
-  used to open Cava or the spectrum analyzer as a narrow column beside it. A hosted window wider than
-  its default player therefore opens at the player's width and left edge
-  (`WindowManager.winampModernHostedOpeningFrame`, applied by `applyHostedWindowDefaultWidth`); a
-  player *narrower* than the registry default is ignored, because that default is the size the
-  content was cut for and shrinking to a small skin would clip it. The equalizer is the exception in
-  the other direction: it matches the player in **both**, as it has in every UI mode. Three rules
-  hold the whole thing together — it runs on **first materialization only** (a window the user has
-  resized is never yanked back), never when a restored frame exists, and the skin frame's own
-  `contentMaxSize` clamps the result, so the renderer is never handed a width it would bounce back.
+- **A hosted window opens at the player's width, in both directions.** A `.wal` player is whatever
+  width the skin drew, and the registry defaults were cut for a 275px classic player, so left alone a
+  wide skin opens Cava or the spectrum analyzer as a narrow column beside the player and a narrow one
+  (Anaheim and micro are both 240) leaves them jutting out past it. Every hosted window therefore
+  opens at the player's width and left edge — the rule the equalizer has followed in every UI mode
+  (`WindowManager.winampModernHostedOpeningFrame`, applied by `applyHostedWindowDefaultWidth`). Three
+  rules hold it together: it runs on **first materialization only** (a window the user has resized is
+  never yanked back), never when a restored frame exists, and the skin frame's own
+  `contentMinSize`/`contentMaxSize` clamp the result, so the renderer is never handed a width it
+  would bounce back.
+
+- **The width floor is the narrower of the registry minimum and the player itself.** This is what
+  makes the paragraph above true rather than merely intended. A hosted window's floor is not really
+  the registry `minimumSize`: that number is written into the synthesized frame as `minimum_w`
+  (`WasabiSkinInitializer.instantiateHostedWindowAtRuntime`), and from there it becomes *both*
+  `window.contentMinSize` and the renderer's own `resize(to:)` clamp. For the spectrum family that
+  number is `SkinElements.SpectrumWindow.minSize` — 275, **the same as their default width** — so
+  under any skin narrower than 275 the floor sat at the default and the match to a narrower player
+  was arithmetically impossible. It looked like a rule that did nothing rather than a floor that
+  blocked it. `WinampModernHostedWindowInstantiation.minimumSize` now caps the width floor at the
+  skin's own player width, measured live by the materializer in skin pixels: a skin that draws a
+  240px player is proof 240 is legible in that skin. Height floors are untouched, and the classic
+  `SkinElements` constants are untouched, so Classic and Original keep their 275.
+  **When a geometry rule appears to do nothing, check the clamp before the arithmetic.**
 
 #### A frame supplies chrome, not a drag surface (B57)
 
